@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 from app.utils import ProcessRunner, get_logger
+from app.utils.platform import IS_WINDOWS
 from app.utils.platform.process import platform_process
 
 logger = get_logger("自定义脚本执行工具")
@@ -37,7 +38,9 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
         return False
 
     try:
-        logger.info(f"开始执行{task_name}: {script_path}")
+        logger.info(
+            f"开始执行{task_name}: {script_path}, 工作目录: {script_path.parent}"
+        )
 
         # 根据文件类型选择执行方式
         if script_path.suffix.lower() == ".py":
@@ -47,6 +50,19 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
             cmd = ["cmd.exe", "/c", str(script_path), "admin"]
         elif script_path.suffix.lower() == ".exe":
             cmd = [str(script_path)]
+        elif script_path.suffix.lower() == ".ps1":
+            cmd = [
+                "powershell.exe" if IS_WINDOWS else "pwsh",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(script_path),
+            ]
+        elif script_path.suffix.lower() == ".js":
+            cmd = ["node", str(script_path)]
+        elif script_path.suffix.lower() == ".sh":
+            cmd = ["bash", str(script_path)]
         elif script_path.suffix.lower() == "":
             logger.warning(f"{task_name}脚本没有指定后缀名, 无法执行")
             return False
@@ -57,11 +73,19 @@ async def execute_script_task(script_path: Path, task_name: str) -> bool:
 
         # 创建异步子进程
         result = await ProcessRunner.run_process(
-            *cmd, cwd=script_path.parent, timeout=600
+            *cmd,
+            cwd=script_path.parent,
+            timeout=600,
+            kill_tree_on_cancel=True,
         )
 
         if result.returncode == 0:
-            logger.success(f"{task_name}执行成功, 输出:\n{result.stdout}")
+            logger.success(
+                f"{task_name}进程正常退出(返回码: {result.returncode}), "
+                f"输出:\n{result.stdout}"
+            )
+            if result.stderr:
+                logger.warning(f"{task_name}错误输出:\n{result.stderr}")
             return True
         else:
             logger.warning(f"{task_name}执行失败({result.returncode}):")

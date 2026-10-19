@@ -49,6 +49,7 @@ from typing import Dict
 import httpx
 
 from app.core import Config
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
@@ -496,7 +497,7 @@ async def derive_miyoushe_cookie_token(
     }
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+    async with create_community_client(proxy=resolved_proxy) as client:
         response = await client.get(
             PASSPORT_COOKIE_URL,
             headers=headers,
@@ -853,7 +854,7 @@ async def _get_game_roles(
     headers["x-rpc-device_id"] = device_id or _generate_device_id(cookie)
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+    async with create_community_client(proxy=resolved_proxy) as client:
         response = await client.get(
             ROLES_URL,
             headers=headers,
@@ -917,7 +918,7 @@ async def _fetch_miyoushe_sign_info(
     url = f"{game_cfg.get('info_url', INFO_URL)}?{query}"
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+    async with create_community_client(proxy=resolved_proxy) as client:
         response = await client.get(
             url,
             headers=headers,
@@ -960,7 +961,7 @@ async def _fetch_miyoushe_sign_reward(
 
     try:
         resolved_proxy = proxy if proxy is not None else Config.proxy
-        async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+        async with create_community_client(proxy=resolved_proxy) as client:
             response = await client.get(
                 url,
                 headers=headers,
@@ -1038,7 +1039,7 @@ async def _do_sign(
         headers.update(game_cfg.get("extra_headers", {}))
 
         resolved_proxy = proxy if proxy is not None else Config.proxy
-        async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
+        async with create_community_client(proxy=resolved_proxy) as client:
             response = await client.post(
                 sign_url,
                 headers=headers,

@@ -166,7 +166,7 @@ def _write_config_or_hint(path: Path, payload: bytes) -> None:
     except PermissionError as e:
         raise RuntimeError(
             f"奇想盒配置目录不可写（{path.parent}）：请以管理员身份运行 AUTO-MAS 后重试；"
-            "或把配置来源切到「直控」，配置全部在奇想盒 app 内维护（MAS 不写入）"
+            "或把配置来源切到「原生」，配置全部在奇想盒 app 内维护（MAS 不写入）"
         ) from e
 
 

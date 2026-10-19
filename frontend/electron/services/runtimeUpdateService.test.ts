@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import {
   abortRuntimeUpdateForShutdown,
@@ -18,7 +18,7 @@ import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './run
 import {
   RUNTIME_BINARY_CANCELLED,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   type RuntimeBinaryAlignOptions,
   type RuntimeBinaryAlignResult,
 } from './runtimeBinaryService'
@@ -244,7 +244,7 @@ function developmentConfig(): RuntimeLaunchConfig {
  */
 const alignStub = {
   calls: [] as RuntimeBinaryAlignOptions[],
-  result: { status: 'unpinned' } as RuntimeBinaryAlignResult,
+  result: { status: 'current', target: { version: 'v0.1.10' } } as RuntimeBinaryAlignResult,
   hold: null as Promise<void> | null,
   /** 顺序断言要看它时打开；缺省不进流水，免得每条既有断言都要改。 */
   logCalls: false,
@@ -280,7 +280,7 @@ beforeEach(() => {
   callLog = []
   progressUpdates.length = 0
   alignStub.calls = []
-  alignStub.result = { status: 'unpinned' }
+  alignStub.result = { status: 'current', target: { version: 'v0.1.10' } }
   alignStub.hold = null
   alignStub.logCalls = false
   FakeRuntimeClient.scripts = [[helloEvent, okResult()]]
@@ -504,7 +504,7 @@ describe('bootstrap 失败的两种现场', () => {
   })
 
   it('第 0 步（Runtime 对齐）失败时只给整条重来，不给修复运行环境', () => {
-    expect(resolveRetryActions('python', RUNTIME_PIN_UNAVAILABLE)).toEqual(['bootstrap'])
+    expect(resolveRetryActions('python', RUNTIME_LATEST_UNAVAILABLE)).toEqual(['bootstrap'])
     expect(resolveRetryActions('python', RUNTIME_BINARY_DOWNLOAD_FAILED)).toEqual(['bootstrap'])
     // Runtime 自己的结果码不受影响。
     expect(resolveRetryActions('python', 'PYTHON_VERSION_MISMATCH')).toEqual(['repair'])
@@ -891,12 +891,16 @@ describe('模式分流', () => {
   })
 })
 
-// ==================== 第 0 步：Runtime 对齐到目标版本 ====================
+// ==================== 第 0 步：Runtime 对齐到线上最新版 ====================
 
-describe('第 0 步：Runtime 对齐到目标版本', () => {
-  it('停机之后、bootstrap 命令之前按目标版本对齐 Runtime', async () => {
+describe('第 0 步：Runtime 对齐到线上最新版', () => {
+  it('停机之后、bootstrap 命令之前按目标版本的发布通道对齐 Runtime', async () => {
     alignStub.logCalls = true
-    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' }, pinSource: 'cnb' }
+    alignStub.result = {
+      status: 'upgraded',
+      target: { version: 'v0.1.10' },
+      targetSource: 'cnb',
+    }
 
     const outcome = await updateBackendViaRuntime(
       TARGET,
@@ -911,8 +915,9 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
       'run:bootstrap --version v5.6.0',
       'startBackend',
     ])
+    // 目标版本是正式版 v5.6.0，第 0 步只追 Runtime 正式版。
     expect(alignStub.calls[0]).toMatchObject({
-      version: TARGET,
+      channel: 'stable',
       runtimePath: RUNTIME_PATH,
       appRoot: APP_ROOT,
     })
@@ -921,8 +926,8 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
   it('第 0 步失败：结局是 bootstrap、只给整条重来一个入口，源码没动也不重启后端', async () => {
     alignStub.result = {
       status: 'failed',
-      code: RUNTIME_PIN_UNAVAILABLE,
-      error: '无法确认 v5.6.0 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
     }
 
     const outcome = await updateBackendViaRuntime(
@@ -934,8 +939,8 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
     expect(outcome).toMatchObject({
       success: false,
       phase: 'bootstrap',
-      code: RUNTIME_PIN_UNAVAILABLE,
-      error: '无法确认 v5.6.0 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
       retryable: true,
       retryActions: ['bootstrap'],
       supportRequired: false,
@@ -948,14 +953,14 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
     alignStub.result = {
       status: 'failed',
       code: RUNTIME_BINARY_DOWNLOAD_FAILED,
-      error: '没能下载到本版本需要的 Runtime v0.1.10',
+      error: '没能下载到线上最新的 Runtime v0.1.10',
     }
     await updateBackendViaRuntime(TARGET, collect, createDeps(createBackend(), managedConfig()))
     expect(describeRetryAction('bootstrap')).toEqual(['bootstrap', '--version', 'v5.6.0'])
 
     callLog = []
     alignStub.logCalls = true
-    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' } }
+    alignStub.result = { status: 'upgraded', target: { version: 'v0.1.10' } }
     const retried = await retryBackendUpdate('bootstrap', collect)
 
     expect(retried.success).toBe(true)
@@ -986,10 +991,11 @@ describe('第 0 步：Runtime 对齐到目标版本', () => {
     expect(callLog).toEqual(['stopBackend', 'startBackend'])
   })
 
-  it('目标分支没有钉扎、或 Runtime 已一致时照常更新', async () => {
+  it('Runtime 已是最新、刚升过级或开发者自带时照常更新', async () => {
     for (const result of [
-      { status: 'unpinned' },
-      { status: 'current', pin: { version: 'v0.1.10' } },
+      { status: 'current', target: { version: 'v0.1.10' } },
+      { status: 'upgraded', target: { version: 'v0.1.10' }, targetSource: 'cnb' },
+      { status: 'skipped' },
     ] as RuntimeBinaryAlignResult[]) {
       callLog = []
       resetRuntimeUpdateSession()

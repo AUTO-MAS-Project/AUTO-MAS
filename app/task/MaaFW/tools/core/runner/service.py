@@ -176,8 +176,11 @@ class MaaFWRunnerService:
         task_snapshot: dict[str, Any] | None = None,
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
+        global_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
         script_hotkeys: dict[str, dict[str, str]] | None = None,
+        secret_inputs: Any = None,
+        no_default_fallback_inputs: Any = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -188,8 +191,11 @@ class MaaFWRunnerService:
             task_snapshot=task_snapshot,
             task_ids=task_ids,
             task_options=task_options,
+            global_options=global_options,
             managed_env_root=managed_env_root,
             script_hotkeys=script_hotkeys,
+            secret_inputs=secret_inputs,
+            no_default_fallback_inputs=no_default_fallback_inputs,
         )
 
     def create_job_payload(
@@ -200,9 +206,11 @@ class MaaFWRunnerService:
         failure_screenshot_dir: str | Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        task_start_gate_mode: str = "screen",
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -227,9 +235,11 @@ class MaaFWRunnerService:
             ),
             failureScreenshotPrefix=failure_screenshot_prefix,
             taskStartNotBefore=task_start_not_before,
+            taskStartGateMode=task_start_gate_mode,
             runDeadlineAt=run_deadline_at,
             taskTimeLimitSeconds=task_time_limit_seconds,
             taskTimeLimitOverrides=task_time_limit_overrides,
+            loopGuard=bool(loop_guard),
         )
 
     def prepare_environment(
@@ -290,8 +300,13 @@ class MaaFWRunnerService:
         install_agent_dependencies: bool = True,
         progress: ProjectEnvironmentProgressCallback | None = None,
         cancel_event: threading.Event | None = None,
+        lenient_health_check: bool = False,
     ) -> dict[str, Any]:
         """Prewarm the exact Runner pool identity and project Agent runtimes.
+
+        ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只有宿主运行前 / 运行后
+        的环境确认传；缺省严格（更新预检、编辑页手动准备等），见 ``agent_env.prepare_agent_envs``。
+        放行的原因在结果的 ``agents.healthWarnings``。
 
         The preflight lease is always released before returning. A later run
         resolves the same canonical requirements, reuses the prepared runtime,
@@ -366,6 +381,9 @@ class MaaFWRunnerService:
                 bootstrap_python=bootstrap_python,
                 install_dependencies=install_agent_dependencies,
                 progress=report_agent_progress,
+                # 项目没自带原生库时，agent 的 maafw 钉成 runner 刚解析出的确切版本。
+                runner_maafw_version=environment.maafw_version,
+                lenient_health_check=lenient_health_check,
             )
             output_fingerprint = project_environment_fingerprint(project_path)
             if (

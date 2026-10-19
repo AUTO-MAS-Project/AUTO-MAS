@@ -1,8 +1,9 @@
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWControlConfig } from '@/composables/useMaaFWScriptConfig'
 import {
   prepareMaaFWFlavorPage,
@@ -90,6 +91,15 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   const env = useMaaFWEnvPrepare(scriptId, maafwConfig, channel)
   const { envPreparedPath, runAgentEnvPrepare } = env
 
+  // 脚本在跑（配置锁定）：自动准备运行环境推迟到跑完。解锁时已经读到 interface、
+  // 环境还没准备过，就按读 interface 时那样补一次
+  const { configLocked } = useScriptConfigLock(scriptId)
+  watch(configLocked, locked => {
+    if (locked || !previewData.value) return
+    if (env.envReady.value || env.envPreparing.value || env.envFailed.value) return
+    void runAgentEnvPrepare()
+  })
+
   // 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转
   let pageUnmounted = false
   onBeforeUnmount(() => {
@@ -134,23 +144,31 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
     { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
     { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
-    { label: t('edit.import2'), value: previewData.value?.importCount ?? 0 },
+    { label: t('edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
     { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
   ])
+
+  // 最近一次读 interface 失败的原因：读不到时基础信息区落到引导卡片，原因留在卡片上，
+  // 不只靠一闪而过的提示
+  const previewError = ref('')
 
   const runPreview = async (options: { forceEnv?: boolean } = {}) => {
     const path = maafwConfig.Info.Path.trim()
     if (!path) {
       previewData.value = null
+      previewError.value = ''
       return
     }
     previewLoading.value = true
+    previewError.value = ''
     try {
       // 带 scriptId：内嵌脚本读的是 AUTO-MAS 的副本，path 只在没有脚本时兜底。
       const response = await previewMaaFWInterface(path, scriptId)
       if (!response || response.code !== 200 || !response.data) {
         previewData.value = null
-        message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
+        // 后端没给原因就不记：卡片标题已经是「读取项目失败」，不再重复一行
+        previewError.value = response?.message || ''
+        message.error(previewError.value || t('edit.maafwPreviewFailed'))
         return
       }
       previewData.value = response.data as MaaFWInterfacePreviewData
@@ -159,10 +177,13 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       await syncProjectName()
       // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
       // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
-      void runAgentEnvPrepare(path, options.forceEnv === true)
+      // 脚本正在跑时不准备：运行占着项目目录，后端一定回 409，面板会平白报一次失败；
+      // 跑完后由下面的 watch 补上。
+      if (!configLocked.value) void runAgentEnvPrepare(path, options.forceEnv === true)
     } catch (error) {
       previewData.value = null
-      message.error(error instanceof Error ? error.message : String(error))
+      previewError.value = error instanceof Error ? error.message : String(error)
+      message.error(previewError.value || t('edit.maafwPreviewFailed'))
     } finally {
       previewLoading.value = false
     }
@@ -238,7 +259,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
       if (!maafwConfig.Info.Name) {
-        maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
+        maafwConfig.Info.Name = scriptDetail.name ?? flavor.value.defaultScriptName
         formData.name = maafwConfig.Info.Name
       }
 
@@ -274,6 +295,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     pageLoading,
     previewLoading,
     previewData,
+    previewError,
     maafwConfig,
     formData,
     rules,

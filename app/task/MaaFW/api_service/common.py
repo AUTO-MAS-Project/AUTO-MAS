@@ -34,6 +34,7 @@ from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     GroupMember,
+    effective_channel,
     embedded_project_dir,
     ensure_embedded_copy,
     resolve_maafw_project_root,
@@ -108,7 +109,8 @@ def maafw_group_members(script_id: str) -> list[GroupMember]:
         members.append(
             GroupMember(
                 script_id=str(uid),
-                channel=str(config.get("Update", "Channel") or "stable"),
+                # 各自所在的组：开发者模式的脚本是它的私有渠道，别人的导入 / 更新切不到它
+                channel=effective_channel(str(uid), config),
                 busy=bool(getattr(config, "is_locked", False)),
                 name=str(config.get("Info", "Name") or ""),
                 proxy_url=resolve_update_proxy_url(config) or None,

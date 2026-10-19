@@ -11,8 +11,9 @@
           <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
-            style="width: 140px"
+            class="power-select"
             size="large"
+            :dropdown-match-select-width="false"
             @change="onPowerActionChange"
           >
             <a-select-option
@@ -79,24 +80,29 @@
             <!-- 任务控制栏 -->
             <SchedulerTaskControl
               v-model:selected-task-id="tab.selectedTaskId"
-              v-model:selected-mode="tab.selectedMode"
+              :selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
               v-model:selected-user-ids="tab.selectedUserIds"
+              v-model:queue-user-scope="tab.queueUserScope"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"
               :resume-script-loading="tab.resumeScriptLoading"
               :user-options="tab.userOptions || []"
+              :user-disabled-options="tab.userDisabledOptions || []"
               :user-options-loading="tab.userOptionsLoading"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
-              :is-cycle-queue="tab.isCycleQueue"
               :cycle-next-list="tab.cycleNextList || []"
+              :queue-scope-groups="tab.queueScopeGroups || []"
+              :queue-scope-loading="tab.queueScopeLoading"
+              :queue-scope-failed="tab.queueScopeFailed"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
               @refresh-users="() => loadUserOptions(tab)"
+              @refresh-queue-scope="() => loadQueueScope(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
               @refresh-tasks="loadTaskOptions"
@@ -139,7 +145,10 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
+import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref, watch } from 'vue'
+import { useLocalStorage } from '@vueuse/core'
+import { message } from 'ant-design-vue'
+import { useTheme } from '@/composables/useTheme'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { POWER_ACTION_LABEL_KEY, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
@@ -158,6 +167,20 @@ defineOptions({ name: 'SchedulerPage' })
 const logger = window.electronAPI.getLogger('调度中心')
 
 const statusLabel = useStatusLabel()
+
+const { isDark, themeMode, appearanceId, activeAppearance } = useTheme()
+const logThemeMode = useLocalStorage('auto-mas.scheduler.log-theme', 'theme', {
+  onError: error => {
+    logger.error(`保存日志主题失败: ${String(error)}`)
+    message.error(t('scheduler.log.saveThemeFailed'))
+  },
+})
+
+// 页面统一设置默认配色，新增日志面板时保留已有手选；外观加载期间也跟随主题色。
+const resetLogThemeMode = () => {
+  logThemeMode.value = appearanceId.value ? 'theme' : isDark.value ? 'dark' : 'light'
+}
+watch([activeAppearance, appearanceId, themeMode, isDark], resetLogThemeMode, { immediate: true })
 
 // 使用业务逻辑层
 const {
@@ -179,6 +202,7 @@ const {
   handleTaskSelectionChange,
   loadResumeScriptOptions,
   loadUserOptions,
+  loadQueueScope,
 
   // keep-alive 激活/停用
   setSchedulerViewActive,
@@ -278,6 +302,7 @@ onUnmounted(() => {
 // keep-alive 生命周期钩子
 onActivated(() => {
   logger.info('调度中心组件激活（路由切回）')
+  resetLogThemeMode()
   setSchedulerViewActive(true)
 })
 
@@ -332,6 +357,13 @@ onDeactivated(() => {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
   margin-right: 8px;
+}
+
+/* 电源操作下拉：宽度随选项文案自适应（最小 140px 保持原有视觉宽度）。
+   固定 140px 会截断 ja/en 的「強制シャットダウン」「Force shut down」等长文案。 */
+.power-select {
+  width: max-content;
+  min-width: 140px;
 }
 
 /* 标签页样式 */

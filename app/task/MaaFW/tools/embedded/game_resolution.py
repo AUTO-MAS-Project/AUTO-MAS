@@ -14,12 +14,27 @@ Unity 播放器把 PlayerPrefs 存在 ``HKCU\\Software\\<公司名>\\<产品名>
   ``GraphicsSettings_PCResolution``、终末地的 ``video_resolution_*``），启动后可能
   按自己那层重新套一遍分辨率。这里**只改 Unity 那层**，游戏自有层的键名与语义各不
   相同，未经实机验证不写；HSR 专项的 ``HSRGameResolutionOverride`` 是那种做法的例子。
+  终末地实测（2026-09-30）：自有层 ``video_full_screen=1`` 时照样按显示器全屏，三次覆盖
+  失效两次。
+- **这个通用选项不做逐游戏适配**，定位是能跑就行（2026-10-04 定）。理由：只有 Win32
+  控制方式会用到它，MaaFW 项目绝大多数走模拟器 ADB，分辨率由模拟器决定；真正走 PC 的
+  Unity 项目寥寥，而且项目自己往往带了改分辨率的预任务（MaaEnd 的 GameSetting 两层都写）。
+  别往这里加游戏专属的键表。某个游戏确有需要时，由它的特调或专项自己调：专项参照
+  ``HSRGameResolutionOverride``、MaaEnd 专项的 ``Game.SetResolution``；特调目前没有
+  启动游戏前的钩子，需要时在 ``flavor.py`` 按 ``ensure_game_updated`` 的样子加一个可选钩子。
 - 游戏正常退出时 Unity 会把当时的分辨率写回这些值，所以恢复不能只删自己写的那几个，
   必须按快照把原值与原类型整表写回、原本不存在的删掉。
+- 快照写目标值之前先落盘（``data/maafw_resolution_journal/<键路径哈希>.json``），恢复成功才删。
+  MAS 中途崩溃、被强杀时游戏还开着、退出时把目标值写回注册表；下次 ``apply`` 看到残留的
+  快照就先按它恢复原值、再重新快照，否则改过的值会被当成原值，用户的分辨率再也回不来。
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
+import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -178,6 +193,32 @@ class _RegistryValueSnapshot:
     value: Any = None
     value_type: int | None = None
 
+    def to_json(self) -> dict[str, Any]:
+        if not self.exists:
+            return {"exists": False}
+        value = self.value
+        if isinstance(value, bytes):
+            return {
+                "exists": True,
+                "type": self.value_type,
+                "bytes": base64.b64encode(value).decode("ascii"),
+            }
+        return {"exists": True, "type": self.value_type, "value": value}
+
+    @classmethod
+    def from_json(cls, data: Any) -> _RegistryValueSnapshot:
+        if not isinstance(data, dict) or not data.get("exists"):
+            return cls(exists=False)
+        if "bytes" in data:
+            value: Any = base64.b64decode(str(data["bytes"]))
+        else:
+            value = data.get("value")
+        return cls(exists=True, value=value, value_type=int(data["type"]))
+
+
+def _default_journal_dir() -> Path:
+    return Path.cwd() / "data" / "maafw_resolution_journal"
+
 
 def resolve_unity_registry_path(exe_path: Path) -> str | None:
     """从游戏 exe 反查 Unity PlayerPrefs 所在的 HKCU 相对路径。
@@ -211,11 +252,13 @@ class UnityGameResolutionOverride:
         width: int,
         height: int,
         registry_module: Any | None = None,
+        journal_dir: Path | None = None,
     ) -> None:
         self.registry_path = registry_path
         self.width = int(width)
         self.height = int(height)
         self._registry = registry_module if registry_module is not None else _winreg
+        self._journal_dir = journal_dir
         self._snapshot: dict[str, _RegistryValueSnapshot] = {}
         self._active = False
         self._owner = id(self)
@@ -227,13 +270,20 @@ class UnityGameResolutionOverride:
         width: int,
         height: int,
         registry_module: Any | None = None,
+        journal_dir: Path | None = None,
     ) -> UnityGameResolutionOverride | None:
         """按 exe 反查注册表路径；不是 Unity 游戏返回 None。"""
 
         registry_path = resolve_unity_registry_path(exe_path)
         if registry_path is None:
             return None
-        return cls(registry_path, width, height, registry_module=registry_module)
+        return cls(
+            registry_path,
+            width,
+            height,
+            registry_module=registry_module,
+            journal_dir=journal_dir,
+        )
 
     @property
     def label(self) -> str:
@@ -255,12 +305,17 @@ class UnityGameResolutionOverride:
                         f"未找到注册表键 HKCU\\{self.registry_path}，"
                         "游戏可能尚未首次运行过"
                     )
+                # 上一次覆盖没恢复就断了（MAS 崩溃 / 被强杀）：先按落盘的快照还原原值，
+                # 再快照，否则改过的值会被当成原值
+                self._recover_from_journal(registry)
                 self._snapshot = self._snapshot_key(registry)
+                self._write_journal()
                 self._write_targets(registry)
                 self._active = True
             except Exception:
                 if self._snapshot:
-                    self._restore_snapshot(registry, suppress_errors=True)
+                    if not self._restore_snapshot(registry):
+                        self._remove_journal()
                 self._snapshot = {}
                 self._release_owner()
                 raise
@@ -276,13 +331,71 @@ class UnityGameResolutionOverride:
                 self._release_owner()
                 return False
 
-            errors = self._restore_snapshot(registry, suppress_errors=False)
+            errors = self._restore_snapshot(registry)
             if errors:
+                # 落盘的快照留着：下次 apply 前还会按它再恢复一次
                 raise RuntimeError("；".join(errors))
+            self._remove_journal()
             self._snapshot = {}
             self._active = False
             self._release_owner()
         return True
+
+    def _journal_path(self) -> Path:
+        directory = (
+            self._journal_dir
+            if self._journal_dir is not None
+            else _default_journal_dir()
+        )
+        digest = hashlib.sha256(self.registry_path.casefold().encode("utf-8"))
+        return directory / f"{digest.hexdigest()[:16]}.json"
+
+    def _write_journal(self) -> None:
+        """写目标值之前把快照落盘；写不进去就不改注册表（崩溃后原值就找不回来了）。"""
+
+        path = self._journal_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "registryPath": self.registry_path,
+            "values": {
+                name: snapshot.to_json() for name, snapshot in self._snapshot.items()
+            },
+        }
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, path)
+
+    def _remove_journal(self) -> None:
+        try:
+            self._journal_path().unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    def _recover_from_journal(self, registry: Any) -> None:
+        path = self._journal_path()
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"读取上次临时分辨率的原值记录失败（{path}）：{exc}"
+            ) from exc
+        if not isinstance(data, dict) or data.get("registryPath") != self.registry_path:
+            return
+        values = data.get("values")
+        if not isinstance(values, dict):
+            return
+        self._snapshot = {
+            str(name): _RegistryValueSnapshot.from_json(item)
+            for name, item in values.items()
+            if str(name) in MANAGED_VALUES
+        }
+        errors = self._restore_snapshot(registry)
+        self._snapshot = {}
+        if errors:
+            raise RuntimeError("上次临时改过的分辨率没恢复成功：" + "；".join(errors))
+        self._remove_journal()
 
     def _require_registry(self) -> Any:
         if self._registry is None:
@@ -332,7 +445,9 @@ class UnityGameResolutionOverride:
             for name, value in _target_values(self.width, self.height):
                 registry.SetValueEx(key, name, 0, registry.REG_DWORD, value)
 
-    def _restore_snapshot(self, registry: Any, *, suppress_errors: bool) -> list[str]:
+    def _restore_snapshot(self, registry: Any) -> list[str]:
+        """按快照整表写回；返回失败项（调用方决定抛不抛、留不留落盘的快照）。"""
+
         errors: list[str] = []
         try:
             with self._open_key(registry) as key:
@@ -352,10 +467,7 @@ class UnityGameResolutionOverride:
                         errors.append(f"恢复注册表值 {name} 失败：{exc}")
         except Exception as exc:  # noqa: BLE001
             errors.append(f"打开注册表 HKCU\\{self.registry_path} 失败：{exc}")
-
-        if errors and not suppress_errors:
-            return errors
-        return []
+        return errors
 
 
 __all__ = [

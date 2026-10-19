@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
+import { t } from './i18n'
 import { useTheme } from './composables/useTheme.ts'
 import { useUpdateModal } from './composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
@@ -14,19 +15,28 @@ import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
+import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
 import { useLocale } from './composables/useLocale.ts'
+import { useDesktopMascotHost } from './composables/useDesktopMascotHost'
+import { useTrayTaskActions } from './composables/useTrayTaskActions'
+import { isBackendRuntimeUpdating } from './composables/useBackendRuntimeUpdate'
+import { useSchedulerLogic } from './views/scheduler/useSchedulerLogic'
+import { TaskCreateIn } from './api'
 
 const logger = window.electronAPI.getLogger('App组件')
 
 // 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
-const DebugPanel = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
-  : null
+const DebugPanel =
+  import.meta.env.DEV &&
+  (window as Window & { __AUTO_MAS_E2E__?: boolean }).__AUTO_MAS_E2E__ !== true
+    ? defineAsyncComponent(() => import('./components/devtools/index.vue'))
+    : null
 
 const route = useRoute()
-const { antdTheme, initTheme } = useTheme()
+const { antdTheme } = useTheme()
 const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
@@ -43,9 +53,25 @@ const isStandalonePage = computed(
   () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
 )
 
+const { trackStartedTask } = useSchedulerLogic()
+useDesktopMascotHost({ isStandalonePage, isInitializationPage, playSound, trackStartedTask })
+useTrayTaskActions({
+  active: computed(
+    () =>
+      !isStandalonePage.value &&
+      (isInitializationPage.value || (isAppReady.value && performanceStore.initialized))
+  ),
+  canStart: () => !isBackendRuntimeUpdating(),
+  onStarted: task =>
+    trackStartedTask({
+      ...task,
+      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      modeLabel: t('scheduler.mode.autoProxy'),
+    }),
+})
+
 onMounted(async () => {
   logger.info('App组件已挂载')
-  initTheme()
   logger.info('主题初始化完成')
   await performanceStore.initialize()
   logger.info(`性能模式初始化完成: ${performanceStore.lowPerformanceMode ? '低性能' : '标准'}`)
@@ -72,6 +98,8 @@ onMounted(async () => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale">
+    <ThemeTokenBridge />
+    <AppearanceDecoration />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
@@ -118,19 +146,27 @@ onMounted(async () => {
   box-sizing: border-box;
 }
 
+#app {
+  background: transparent;
+}
+
 .app-container {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-container {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-content {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -143,6 +179,8 @@ onMounted(async () => {
 }
 
 .standalone-container {
+  position: relative;
+  z-index: 1;
   height: 100vh;
   width: 100vw;
   overflow: hidden;

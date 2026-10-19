@@ -10,6 +10,10 @@ export type MaaPlanConfig_Info = {
     /**
      * 计划表模式
      */
-    Mode?: ('ALL' | 'Weekly' | null);
+    Mode?: ('ALL' | 'Weekly' | 'Rotate' | null);
+    /**
+     * 多天轮换的天数，仅 Rotate 模式使用
+     */
+    RotateDays?: (number | null);
 };
 

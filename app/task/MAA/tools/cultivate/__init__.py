@@ -25,6 +25,7 @@ yituliu 为输入适配器，service 为应用编排层与组合根。调用方
 （AutoProxy / API）只 import 本包出口，不直接触碰内核内部模块。
 """
 
+from .clipboard import CultivateImportError, parse_clipboard_targets
 from .engine import (
     aggregate,
     apply_achievements,
@@ -51,6 +52,7 @@ from .service import (
     DepotCultivateService,
     depot_cultivate_service,
     dump_cultivate_targets,
+    filter_observed_cultivate_targets,
     get_certifying_chain,
     get_inventory_chain,
     get_progression_chain,
@@ -98,6 +100,7 @@ __all__ = [
     "SklandAccountRef",
     "SklandProgressionProvider",
     "CultivateDataSet",
+    "CultivateImportError",
     "CultivatePlan",
     "DemandEntry",
     "DepotCultivateService",
@@ -128,6 +131,7 @@ __all__ = [
     "dataset_to_json",
     "download_dataset",
     "dump_cultivate_targets",
+    "filter_observed_cultivate_targets",
     "get_dataset_cached",
     "get_certifying_chain",
     "get_inventory_chain",
@@ -138,6 +142,7 @@ __all__ = [
     "load_dataset",
     "load_oper_box_names",
     "parse_cultivate_targets",
+    "parse_clipboard_targets",
     "parse_depot_payload",
     "parse_oper_box_names",
     "parse_oper_box_payload",

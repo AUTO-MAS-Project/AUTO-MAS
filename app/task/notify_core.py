@@ -30,6 +30,7 @@ SRC / HSR / MaaEnd / OkNte / general / Okww / MAA / M9A / MaaFW / BetterGI 的
 
 import io
 from collections.abc import Sequence
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +121,22 @@ async def push_proxy_result(
         [global_target(include_system=include_system, system_timeout_seconds=10)],
         task_info,
         summary_text=summary_text,
+    )
+
+
+async def push_maintenance_notice(*, message: str, task_info: object) -> DispatchResult:
+    """维护跳过只推送游戏状态，沿用原有通知时机与渠道。"""
+    if not should_send_result({"uncompleted_count": 0}, task_info=task_info):
+        return DispatchResult()
+    return await dispatch_task_report(
+        NotifyPayload(
+            title=message,
+            text=message,
+            html=f"<p>{escape(message)}</p>",
+            summary=NotificationSummary(text=message, title=message),
+        ),
+        [global_target(include_system=True, system_timeout_seconds=10)],
+        task_info,
     )
 
 

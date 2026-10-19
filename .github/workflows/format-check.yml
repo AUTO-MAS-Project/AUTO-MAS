@@ -49,7 +49,7 @@ jobs:
       - name: 设置 Yarn
         run: |
           corepack enable
-          corepack prepare yarn@4.9.1 --activate
+          corepack prepare yarn@4.18.1 --activate
 
       - name: 安装前端依赖
         working-directory: frontend
@@ -66,3 +66,9 @@ jobs:
       - name: 检查前端格式
         working-directory: frontend
         run: yarn format:check
+
+      # E2E 浏览器流程不在 CI 跑；这里只守基础设施契约（数据根隔离、配置种子白名单、
+      # 启动参数），一秒内跑完，且不需要装依赖或启动服务。
+      - name: 检查 E2E 基础设施契约
+        working-directory: frontend
+        run: node --test e2e/harness.check.mjs

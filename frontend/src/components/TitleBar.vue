@@ -1,5 +1,5 @@
 <template>
-  <div class="title-bar" :class="{ 'title-bar-dark': isDark }">
+  <div class="title-bar" :class="{ 'title-bar-dark': isDark, 'title-bar-macos': isMacOS }">
     <!-- 左侧：Logo和软件名 -->
     <div class="title-bar-left">
       <div class="logo-section">
@@ -54,7 +54,7 @@
     <div class="title-bar-center drag-region"></div>
 
     <!-- 右侧：窗口控制按钮 -->
-    <div class="title-bar-right">
+    <div v-if="!isMacOS" class="title-bar-right">
       <div class="window-controls">
         <button
           class="control-button minimize-button"
@@ -68,7 +68,8 @@
           :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
-          <BorderOutlined />
+          <SwitcherOutlined v-if="isMaximized" />
+          <BorderOutlined v-else />
         </button>
         <button
           v-if="!hideCloseButton"
@@ -168,13 +169,17 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
 import { useUiPreferences } from '@/composables/useUiPreferences'
+import {
+  confirmCloseIfRunningTasks,
+  hasRunningTasks,
+} from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 import {
   BorderOutlined,
   CloseOutlined,
   LoadingOutlined,
   MinusOutlined,
+  SwitcherOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
@@ -185,12 +190,13 @@ import type { RuntimeUpdateRetryAction } from '@/types/electron'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('标题栏')
+const isMacOS = window.electronAPI.isMacOS
 const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
-const { startTaskById } = useSchedulerLogic()
 let removeTrayActionListener: (() => void) | undefined
+let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -264,23 +270,6 @@ const downloadHint = computed(() => {
   }
   return ''
 })
-
-// 检查是否有运行中的队列任务
-const hasRunningTasks = (): boolean => {
-  try {
-    const saved = sessionStorage.getItem('scheduler-tabs-session')
-    if (saved) {
-      const tabs = JSON.parse(saved)
-      if (Array.isArray(tabs)) {
-        return tabs.some((tab: any) => tab.status === '运行')
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`检查运行任务状态失败: ${errorMsg}`)
-  }
-  return false
-}
 
 const { isDark } = useTheme()
 const isMaximized = ref(false)
@@ -399,7 +388,6 @@ const minimizeWindow = async () => {
 const toggleMaximize = async () => {
   try {
     await window.electronAPI?.windowMaximize()
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`切换最大化状态失败: ${errorMsg}`)
@@ -418,23 +406,7 @@ const doCloseWindow = async () => {
 }
 
 const closeWindow = async () => {
-  // 检查是否有运行中的队列任务
-  if (hasRunningTasks()) {
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    // 没有运行中的任务，直接关闭
-    await doCloseWindow()
-  }
+  if (await confirmCloseIfRunningTasks()) await doCloseWindow()
 }
 
 // 托盘触发退出：与窗口关闭按钮走同一套确认流程
@@ -442,20 +414,10 @@ const handleTrayQuit = () => {
   if (hasRunningTasks()) {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
     window.electronAPI?.windowFocus?.()
-    Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => {
-        doCloseWindow()
-      },
-    })
-  } else {
-    void doCloseWindow()
   }
+  void confirmCloseIfRunningTasks().then(confirmed => {
+    if (confirmed) return doCloseWindow()
+  })
 }
 
 // 托盘触发重启：统一确认窗风格（与关闭确认一致）
@@ -475,16 +437,7 @@ const handleTrayRestart = () => {
   })
 }
 
-// 托盘触发启动任务：不调起前端，直接按任务 ID 新建调度台并启动
-const handleTrayStartTask = (taskId?: string, label?: string) => {
-  if (!taskId) {
-    logger.warn('托盘启动任务缺少任务 ID，忽略')
-    return
-  }
-  void startTaskById(taskId, label)
-}
-
-// 托盘动作请求统一入口：启动任务 / 退出 / 重启
+// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
   action: 'quit' | 'restart' | 'startTask'
   taskId?: string
@@ -494,14 +447,24 @@ const handleTrayActionRequest = (request: {
     handleTrayRestart()
   } else if (request.action === 'quit') {
     handleTrayQuit()
-  } else {
-    handleTrayStartTask(request.taskId, request.label)
   }
 }
 
 onMounted(async () => {
-  // 监听托盘动作请求（启动任务 / 退出 / 重启）
+  // 监听托盘退出和重启请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
+
+  // 双击标题栏或系统快捷键也会改变窗口状态。
+  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
+    isMaximized.value = maximized
+  })
+
+  try {
+    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
+  }
 
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
@@ -513,26 +476,21 @@ onMounted(async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取界面设置失败: ${errorMsg}`)
   }
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
+  removeWindowMaximizedListener?.()
+  removeWindowMaximizedListener = undefined
 })
 </script>
 
 <style scoped>
 .title-bar {
   height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid #e8e8e8;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -544,8 +502,8 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark {
-  background: #1f1f1f;
-  border-bottom: 1px solid #333;
+  background: var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated));
+  border-bottom: 1px solid var(--ant-color-border);
 }
 
 .title-bar-left {
@@ -555,6 +513,10 @@ onBeforeUnmount(() => {
   min-width: 64px;
   height: 100%;
   -webkit-app-region: drag;
+}
+
+.title-bar-macos .title-bar-left {
+  padding-left: 80px;
 }
 
 .logo-section {
@@ -600,7 +562,7 @@ onBeforeUnmount(() => {
 .title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--ant-color-text);
   position: relative;
   z-index: 1;
 }
@@ -615,7 +577,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .title-text {
-  color: #fff;
+  color: var(--ant-color-text);
 }
 
 .startup-status {
@@ -627,7 +589,7 @@ onBeforeUnmount(() => {
 }
 
 .title-bar-dark .version-text {
-  color: #ffffff;
+  color: var(--ant-color-text);
 }
 
 .title-bar-center {
@@ -660,13 +622,13 @@ onBeforeUnmount(() => {
   justify-content: center;
   cursor: pointer;
   transition: background-color 0.2s;
-  color: #666;
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
 
 .title-bar-dark .control-button {
-  color: #ccc;
+  color: var(--ant-color-text-secondary);
 }
 
 .control-button:hover {

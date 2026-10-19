@@ -6,6 +6,16 @@ from pathlib import Path
 
 from app.utils.io import write_file
 
+MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
+"""历史活动优先侧车文件；保留时不复制到 MAA 运行目录。"""
+
+_MAA_STAMINA_TASK_ALIASES = {
+    ("DepotMaintain", "活动库存保持"): ("DepotMaintain", "活动关均衡理智"),
+    ("DepotMaintain", ""): ("DepotMaintain", "库存保持与干员养成"),
+    ("DepotMaintain", "库存保持"): ("DepotMaintain", "库存保持与干员养成"),
+    ("Fight", "理智作战"): ("Fight", "理智任务"),
+}
+
 _MAA_BASE_PRESET = {
     "gui.json": {
         "Current": "Default",
@@ -42,6 +52,21 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
+def _fill_missing(target: dict, defaults: dict) -> None:
+    """把 ``defaults`` 里 ``target`` 缺失的键补进去；已有值一律不动。"""
+
+    for key, value in defaults.items():
+        if key not in target:
+            target[key] = deepcopy(value)
+        elif isinstance(target[key], dict) and isinstance(value, dict):
+            _fill_missing(target[key], value)
+
+
+# 随包预设里由 MAA 自己维护、MAS 不该代填的根级键：配置版本与迁移元数据一旦写错
+# 会触发 MAA 的旧格式迁移器，反而把整份配置判成不可解析。
+_MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
+
+
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     """Fold the current configuration into ``Default`` and guarantee both sides.
 
@@ -51,6 +76,10 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     already be ``Default``. Folding and the fallback must therefore run
     unconditionally, or the later hard indexing of ``Global`` /
     ``Configurations["Default"]`` raises ``KeyError``.
+
+    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
     """
 
     if not isinstance(gui_set.get("Global"), dict):
@@ -77,6 +106,16 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
             configurations["Default"] = configurations[current]
         gui_set["Current"] = "Default"
 
+    for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
+        preset = get_maa_base_preset(name)
+        for key, value in preset.items():
+            if key in _MAA_ROOT_KEYS_NOT_FILLED:
+                continue
+            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
+            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
+                continue
+            _fill_missing(doc, {key: value})
+
 
 def maa_task_identity(task: object) -> tuple[str, str] | None:
     """Return the stable business identity of one MAA task.
@@ -95,6 +134,13 @@ def maa_task_identity(task: object) -> tuple[str, str] | None:
     return task_type, name
 
 
+def canonical_maa_task_identity(task: object) -> tuple[str, str] | None:
+    """对齐三段理智流程的新旧任务名；结构校验仍使用原始身份。"""
+
+    identity = maa_task_identity(task)
+    return _MAA_STAMINA_TASK_ALIASES.get(identity, identity) if identity else None
+
+
 def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
     """Return task identities in queue order, ignoring task settings."""
 
@@ -106,24 +152,6 @@ def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
         if identity is None:
             return None
         signature.append(identity)
-    return tuple(signature)
-
-
-def maa_task_queue_signature(queue: object) -> tuple[tuple, ...] | None:
-    """Return the queue structure while ignoring each task's advanced settings."""
-
-    if not isinstance(queue, list):
-        return None
-
-    signature = []
-    for task in queue:
-        identity = maa_task_identity(task)
-        if identity is None:
-            return None
-        enabled = task.get("IsEnable", True)
-        if enabled is not None and not isinstance(enabled, bool):
-            return None
-        signature.append((*identity, enabled))
     return tuple(signature)
 
 
@@ -144,15 +172,23 @@ def restore_maa_default_task_queue(
     existing_tasks: dict[tuple[str, str], dict] = {}
     if isinstance(queue, list):
         for task in queue:
-            identity = maa_task_identity(task)
+            identity = canonical_maa_task_identity(task)
             if identity is not None:
-                existing_tasks.setdefault(identity, task)
+                existing = existing_tasks.get(identity)
+                # 新身份优先；旧库存同时有空名与有名来源时选有名项，不串用设置。
+                if (
+                    existing is None
+                    or maa_task_identity(task) == identity
+                    or (not existing.get("Name") and task.get("Name"))
+                ):
+                    existing_tasks[identity] = task
 
-    structural_keys = {"$type", "Name", "IsEnable", "TaskType"}
+    # 补齐新预设时保留已有任务的勾选；只有新增任务使用预设的默认开关。
+    structural_keys = {"$type", "Name", "TaskType"}
     restored_queue = []
     for default_task in default_queue:
         task = deepcopy(default_task)
-        identity = maa_task_identity(task)
+        identity = canonical_maa_task_identity(task)
         existing = existing_tasks.get(identity) if identity is not None else None
         if existing is not None:
             task.update(
@@ -167,12 +203,17 @@ def restore_maa_default_task_queue(
 
 
 def is_valid_maa_task_queue(expected: object, current: object) -> bool:
-    """Allow task-setting edits only when the queue structure is unchanged."""
+    """Allow task-setting edits only when the queue layout is unchanged.
 
-    expected_signature = maa_task_queue_signature(expected)
+    IsEnable 是用户在原界面里最常动的任务开关，属于任务设置而不是队列结构：
+    算进签名会把「取消勾选一个任务」判成结构变化，整次会话的改动（含高级
+    设置）一起丢弃。这里只比对身份序列。
+    """
+
+    expected_layout = maa_task_queue_layout_signature(expected)
     return (
-        expected_signature is not None
-        and maa_task_queue_signature(current) == expected_signature
+        expected_layout is not None
+        and maa_task_queue_layout_signature(current) == expected_layout
     )
 
 

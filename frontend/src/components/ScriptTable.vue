@@ -346,7 +346,7 @@
                             }}
                           </a-tag>
 
-                          <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
+                          <!-- ZzzOd 脚本显示配置来源标签（独立来源/原生来源） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
                             :color="getZzzOdModeTagColor(user)"
@@ -355,7 +355,7 @@
                             {{ getZzzOdModeLabel(user) }}
                           </a-tag>
 
-                          <!-- ZzzOd 用户模式显示区服/账号（直控事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
+                          <!-- ZzzOd 独立来源显示区服/账号（原生来源的事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
                           <template v-if="script.type === 'ZzzOd' && isZzzOdUserMode(user)">
                             <a-tag color="blue" class="server-tag">
                               {{ getZzzOdRegionLabel(user) }}
@@ -404,6 +404,26 @@
                           >
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
+
+                          <!-- 当前配置来源与覆写状态：跟在账号标签之后，与账号名同行左对齐，弱化显示 -->
+                          <div
+                            v-if="getConfigSource(script, user)"
+                            class="user-config-summary"
+                            :class="{ 'is-overlay-on': getOverlayState(script, user) }"
+                          >
+                            <span class="user-config-summary__label">{{
+                              t('comp.currentConfig', { source: getConfigSource(script, user) })
+                            }}</span>
+                            <template v-if="getOverlayState(script, user) !== null">
+                              <span class="user-config-summary__sep" aria-hidden="true">·</span>
+                              <span class="user-config-summary__dot" aria-hidden="true"></span>
+                              {{
+                                getOverlayState(script, user)
+                                  ? t('comp.configOverrideEnabled')
+                                  : t('comp.configOverrideDisabled')
+                              }}
+                            </template>
+                          </div>
                         </div>
 
                         <!-- 用户详细信息 - MAA和SRC脚本用户 -->
@@ -478,36 +498,6 @@
                       </div>
 
                       <div class="user-actions">
-                        <a-tooltip
-                          v-if="shouldShowMaaEndUserConfigButton(script, user)"
-                          :title="t('comp.configurePerUserMaaend')"
-                        >
-                          <a-button
-                            v-if="!props.activeConnections.has(user.id)"
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleStartMaaEndUserConfig(script, user)"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configureMaaend') }}
-                          </a-button>
-                          <a-button
-                            v-else
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            disabled
-                            style="color: #52c41a; border-color: #52c41a"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            {{ t('comp.configuring') }}
-                          </a-button>
-                        </a-tooltip>
                         <a-tooltip :title="t('comp.editUserConfiguration')">
                           <a-button
                             type="default"
@@ -585,6 +575,22 @@ import {
 
 const { t } = useI18n()
 
+const CONFIG_SOURCE_KEYS: Record<string, string> = {
+  shared: 'comp.configSourceShared',
+  independent: 'comp.configSourceIndependent',
+  native: 'comp.configSourceNative',
+}
+
+const OVERLAY_SCRIPT_TYPES = new Set([
+  'MAA',
+  'SRC',
+  'MaaEnd',
+  'Okww',
+  'OkNte',
+  'BetterGI',
+  'Whimbox',
+])
+
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
@@ -610,8 +616,6 @@ interface Emits {
   (e: 'startSrcConfig', script: Script): void
 
   (e: 'startMaaEndConfig', script: Script): void
-
-  (e: 'startMaaEndUserConfig', script: Script, user: User): void
 
   (e: 'startOkwwConfig', script: Script): void
 
@@ -741,20 +745,29 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
-const handleStartMaaEndUserConfig = (script: Script, user: User) => {
-  emit('startMaaEndUserConfig', script, user)
-}
-
 const isMaaEndPresetSupported = (script: Script) => {
   const controllerType =
     script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
-// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
-const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
+const getConfigSource = (script: Script, user: User): string => {
+  let mode = user.Info.Base
+  // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
+  if (isMaaFWFamily(script.type)) mode = 'independent'
+  else if (script.type === 'BAAH') mode = 'native'
+  // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
+  else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
+    mode = 'independent'
+  const sourceKey = CONFIG_SOURCE_KEYS[mode]
+  return sourceKey ? t(sourceKey) : ''
 }
+
+// null 表示该专项没有覆写层或状态未知，此时不显示覆写段。
+const getOverlayState = (script: Script, user: User): boolean | null =>
+  OVERLAY_SCRIPT_TYPES.has(script.type) && user.Info.IfQuickConfig !== undefined
+    ? user.Info.IfQuickConfig
+    : null
 
 const handleStartOkwwConfig = (script: Script) => {
   emit('startOkwwConfig', script)
@@ -772,9 +785,13 @@ const getScriptTypeLabel = (script: Script) => {
   const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
-  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示
+  // 类型标签（MFW / M9A …，不是内部类型名 MaaFW）
   if (isMaaFWFamily(type)) {
-    return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
+    return (
+      (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() ||
+      resolveMaaFWFlavor(type).typeTagLabel
+    )
   }
   return type
 }
@@ -964,12 +981,12 @@ const getServerDisplayName = (server: string): string => {
 
 // ZzzOd：配置来源标签（独立模式/原生模式）
 const getZzzOdModeLabel = (user: User): string =>
-  user.Info.Mode === '直控' ? '原生模式' : '独立模式'
+  user.Info.Base === 'native' ? '原生模式' : '独立模式'
 
-const getZzzOdModeTagColor = (user: User): string => (user.Info.Mode === '直控' ? 'gold' : 'blue')
+const getZzzOdModeTagColor = (user: User): string => (user.Info.Base === 'native' ? 'gold' : 'blue')
 
-// ZzzOd：字段类标签仅在用户模式展示（直控的事实源是一条龙原生配置）
-const isZzzOdUserMode = (user: User): boolean => user.Info.Mode !== '直控'
+// ZzzOd：字段类标签仅在独立来源展示（原生来源的事实源是一条龙原生配置）
+const isZzzOdUserMode = (user: User): boolean => user.Info.Base !== 'native'
 
 const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
 
@@ -1337,6 +1354,36 @@ const onUserDragEnd = async (script: Script) => {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.user-config-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+}
+
+.user-config-summary__label {
+  color: var(--ant-color-text-tertiary);
+}
+
+.user-config-summary__sep {
+  color: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ant-color-text-quaternary);
+}
+
+.user-config-summary.is-overlay-on .user-config-summary__dot {
+  background: var(--ant-color-success);
 }
 
 .info-tag {

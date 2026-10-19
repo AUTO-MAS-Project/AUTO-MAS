@@ -25,7 +25,7 @@
   归档一次；下发/覆盖类操作按用户归档会把上一轮下发的 MAS 配置误当原生
   内容挤进保留池；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 下发处）：``mas`` 归档
-  本轮下发源（脚本态共享 Default 目录、用户态当前用户目录，按 owner 各归
+  本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，按 owner 各归
   各的；运行回写与会话保存会覆盖它）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
@@ -35,8 +35,8 @@
 进 DailyTask.json，不在 ConfigFile 中）——侧车让「MAS 用户配置备份」真正
 覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填表单（对齐
 ZzzOd / MAA 字段回填模式）。
-MAS 配置目录 owner 由用户当前的 ``Info.Mode`` 三态决定（脚本=Default 共
-享、用户=独立目录、直控=无 MAS 配置），解析逻辑见 ``restore_service``。
+MAS 配置目录 owner 由用户当前的 ``Info.Base`` 三态决定（shared=Default 共
+享、independent=独立目录、native=无 MAS 配置），解析逻辑见 ``restore_service``。
 时间戳快照、指纹去重、保留清理与整目录恢复的通用逻辑由公共模块
 ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
 ok-ww 特有的 owner 目录布局、覆盖层侧车、恢复语义（恢复前强制归档当前）
@@ -48,18 +48,23 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    BASE_FILE_NAME,
+    META_FILE_NAMES,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
     dir_files,
+    file_set_hash,
     get_backup_dir,
     list_times,
     mask_account,
+    read_backup_base,
     read_overlay_sidecar,
     restore_dir,
-    write_backup_mode,
+    write_backup_base,
 )
+from app.utils.constants import BASE_NATIVE, BASE_SHARED, BASE_SOURCE_LABELS
+from app.utils.io import force_rmtree
 
 logger = get_logger("OK-WW 配置备份")
 
@@ -86,7 +91,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 
     **恒按用户分桶**——备份内容（ConfigFile 快照 + 覆盖层字段侧车）的
     侧车是用户级的，按用户分桶才能保证每个用户只看到、只恢复自己的备份。
-    注意池与恢复目标解耦：脚本态用户的下发源是共享 Default 目录，但其
+    注意池与恢复目标解耦：shared 来源用户的下发源是共享 Default 目录，但其
     池仍是 ``mas/{user_id}``（多用户各自持有该共享目录的快照，侧车互不
     混淆）。
     """
@@ -104,17 +109,17 @@ def native_backup_root(config_path: str | Path) -> Path:
     return project_backup_root() / "native" / config_root_key(config_path)
 
 
-def owner_for_mode(mode: str, user_id: str) -> str | None:
-    """三态配置来源 → MAS 配置目录 owner（单一事实来源）。
+def owner_for_mode(base: str, user_id: str) -> str | None:
+    """base 来源三态 → MAS 配置目录 owner（单一事实来源）。
 
-    脚本=共享 ``Default`` 目录、用户=当前用户独立目录、直控=无 MAS 配置
-    （返回 ``None``）。运行下发（``_okww_mas_config_dir``）、归档/恢复
-    （``restore_service``）都必须经此解析，禁止各自内联映射。
+    shared=共享 ``Default`` 目录、independent=当前用户独立目录、native=无
+    MAS 配置（返回 ``None``）。运行下发（``_okww_mas_config_dir``）、归档/
+    恢复（``restore_service``）都必须经此解析，禁止各自内联映射。
     """
 
-    if mode == "直控":
+    if base == BASE_NATIVE:
         return None
-    return "Default" if mode == "脚本" else user_id
+    return "Default" if base == BASE_SHARED else user_id
 
 
 def mas_config_dir(script_id: str, owner: str) -> Path:
@@ -125,14 +130,14 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Id", "Mode")
+_OVERLAY_INFO_KEYS = ("Id", "Base")
 """侧车收录的 MAS 用户 Info 段字段：账号 Id（运行时被 AutoProxy 消费，
 页面认知的一部分，进侧车随备份走、恢复回填；对齐 MAA 收账号先例）
-与 Mode（配置文件来源，仅预览不回填）"""
+与 Base（配置文件来源，仅预览不回填）"""
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
-"""仅预览不回填的字段：配置来源决定运行下发方式（脚本/用户/直控），
-恢复时以当前值为准，回填旧值会静默翻转用户态/脚本态。"""
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
+"""仅预览不回填的字段：配置来源决定运行下发方式（shared/independent/native），
+恢复时以当前值为准，回填旧值会静默翻转 shared/independent 来源。"""
 
 _OVERLAY_TASK_KEYS = (
     "WhichToFarm",
@@ -154,7 +159,7 @@ _OVERLAY_KEY_GROUP = {
 
 
 def read_overlay_values(config) -> dict:
-    """读取配置对象的侧车字段：Info.Id/Mode（账号 + 配置文件来源）+ Task
+    """读取配置对象的侧车字段：Info.Id/Base（账号 + 配置文件来源）+ Task
     快速配置覆盖层字段。
 
     鸭子类型，仅需 ``get(group, key)``；值为 ``None``（配置项不存在）的键
@@ -174,7 +179,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
 
     旧版备份无组归属的键回退到 Task 段（历史行为）；侧车键名与 Task
     覆盖层字段键名一致，无冲突。仅预览字段（配置文件来源）不回填：
-    恢复目标目录由当前模式决定，回填旧值会静默改变用户态/脚本态。
+    恢复目标目录由当前模式决定，回填旧值会静默改变 shared/independent 来源。
     """
 
     grouped: dict[str, dict] = {}
@@ -211,16 +216,16 @@ def archive_mas_backup(
     mas_dir: Path,
     overlay: dict | None = None,
     force: bool = False,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> Path | None:
     """归档 MAS 配置整份 + 覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
-    ``mas_dir`` 是归档/恢复目标路径，由调用方按三态 owner 解析（脚本态
-    共享 Default 目录、用户态独立目录）——池与目标解耦。
+    ``mas_dir`` 是归档/恢复目标路径，由调用方按三态 owner 解析（shared 来源
+    共享 Default 目录、independent 来源用独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
     （内存 JSON 直接入档，免临时文件）。
-    ``mode`` 为归档时点的配置来源（当前 ``Info.Mode``）：tri_state 池靠
+    ``base`` 为归档时点的配置来源（当前 ``Info.Base``）：tri_state 池靠
     备份标注做跨来源恢复的来源切换，运行前/恢复前 force 归档同样必须
     带上，否则该备份会被当成旧版无标注条目、恢复时不切来源。
     目录与侧车皆空时无可归档内容返回 ``None``；``force=True`` 恢复前
@@ -235,10 +240,49 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    if mode:
-        write_backup_mode(dest, mode)
+    if base:
+        write_backup_base(dest, base)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
+
+
+def mas_rollback_point(
+    script_id: str,
+    user_id: str,
+    mas_dir: Path,
+    overlay: dict | None = None,
+    base: str | None = None,
+) -> str | None:
+    """覆盖（导入）前存底：返回内容等于当前现场、可供回滚的归档时间戳。
+
+    存底与 :func:`archive_mas_backup` 同源（进用户池，可在「配置恢复」里
+    手工找回）。内容与来源都一致时复用既有归档，否则新建快照，
+    避免改写历史归档的来源标记。
+    目录与侧车皆空时无可存底内容，返回 ``None``（同样没有可回滚的东西）。
+    """
+
+    files = collect_mas_files(mas_dir, overlay)
+    if not files:
+        return None
+    store_root = mas_backup_root(script_id, user_id)
+    fingerprint = file_set_hash(files)
+    for ts in list_times(store_root):
+        entry = {
+            rel: path
+            for rel, path in dir_files(store_root / ts).items()
+            if rel not in META_FILE_NAMES
+        }
+        try:
+            if file_set_hash(entry) == fingerprint and (
+                base is None or read_backup_base(store_root / ts) == base
+            ):
+                return ts
+        except OSError:
+            continue
+    if base:
+        files[BASE_FILE_NAME] = base
+    dest = archive_files(files, store_root, force=True)
+    return dest.name if dest is not None else None
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
@@ -259,12 +303,12 @@ def restore_mas_backup(
     ts: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> dict | None:
     """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
     ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
-    路径，由调用方按三态 owner 解析（脚本态共享 Default 目录、用户态独立
+    路径，由调用方按三态 owner 解析（shared 来源共享 Default 目录、independent 来源独立
     目录）。``overlay`` 为当前用户的覆盖层字段，随恢复前存底一起归档。
     返回该备份的覆盖层字段（供调用方回填 MAS 用户配置；旧版备份无侧车
     返回 ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
@@ -276,17 +320,16 @@ def restore_mas_backup(
     mas_dir = Path(mas_dir)
     # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
     # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判。
-    # mode 标注恢复时点的配置来源（跨来源恢复时 set_mode 已切回备份来源，
+    # base 标注恢复时点的配置来源（跨来源恢复时 set_base 已切回备份来源，
     # 与存底目录 owner 一致），保证该存底自身可跨来源找回
     archive_mas_backup(
-        script_id, user_id, mas_dir, overlay=overlay, force=True, mode=mode
+        script_id, user_id, mas_dir, overlay=overlay, force=True, base=base
     )
-    # 备份只有侧车（目录缺失/为空时归档的纯字段备份）时跳过目录写回：
-    # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
+    # 备份只有侧车时恢复空目录，避免把元数据写入配置目录。
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
         restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
@@ -295,6 +338,12 @@ def restore_mas_backup(
             (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
+        # 只有侧车也代表一个空的 MAS 配置目录；先清掉旧文件，避免恢复后
+        # 继续沿用导入失败留下的半目录。
+        force_rmtree(mas_dir)
+        if mas_dir.exists():
+            raise OSError(f"配置目录无法清空: {mas_dir}")
+        mas_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
 
@@ -304,21 +353,21 @@ def archive_mas_runtime_backup(
     user_id: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
     运行回写与会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，
     绝不中止随后的运行或会话（归档是现场保护，不是前置条件）。
     ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    三态解析（脚本态=Default 共享目录、用户态=独立目录；直控用户无 MAS
+    三态解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源用户无 MAS
     配置，调用方不调用本函数）。native 池与此处无关：原生配置跨用户
     共享，由 manager ``prepare`` 在任务级一次性归档
     （见 :func:`archive_native_backup`）。
     """
 
     try:
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, mode=mode)
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, base=base)
     except Exception:
         logger.opt(exception=True).warning(
             "ok-ww 运行前 MAS 配置归档失败，已跳过（不阻断任务）"
@@ -445,15 +494,18 @@ _FILE_TO_OVERLAY_KEY = {
 
 _OVERLAY_FIELD_LABELS = {
     "Id": "账号",
-    "Mode": "配置文件来源",
+    "Base": "配置文件来源",
     **{overlay: _FIELD_LABELS[file] for file, overlay in _FILE_TO_OVERLAY_KEY.items()},
 }
 """覆盖层字段（侧车键名）中文标签，文件字段词表派生 + 页面专属键补充"""
 
 _OVERLAY_ENUM_VALUE_LABELS = {
-    overlay: _ENUM_VALUE_LABELS[file]
-    for file, overlay in _FILE_TO_OVERLAY_KEY.items()
-    if file in _ENUM_VALUE_LABELS
+    "Base": BASE_SOURCE_LABELS,
+    **{
+        overlay: _ENUM_VALUE_LABELS[file]
+        for file, overlay in _FILE_TO_OVERLAY_KEY.items()
+        if file in _ENUM_VALUE_LABELS
+    },
 }
 """覆盖层枚举字段的取值中文词表，从文件字段词表派生"""
 
@@ -555,11 +607,11 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
     """
 
     rows: list[dict] = []
-    if "Mode" in overlay:
+    if "Base" in overlay:
         rows.append(
             {
-                "key": _OVERLAY_FIELD_LABELS["Mode"],
-                "value": _overlay_value("Mode", overlay["Mode"]),
+                "key": _OVERLAY_FIELD_LABELS["Base"],
+                "value": _overlay_value("Base", overlay["Base"]),
             }
         )
     if "Id" in overlay:

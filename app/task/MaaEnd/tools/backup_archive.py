@@ -24,7 +24,7 @@
   目录 ``config/`` 当前状态（整目录）——安装配置物理上跨用户共享，只在
   任务级归档一次；
 - 运行 / 配置会话下发前（AutoProxy / ScriptConfig 的 ``set_maaend``）：
-  ``mas`` 归档本轮下发源（脚本态共享 Default 目录、用户态当前用户目录，
+  ``mas`` 归档本轮下发源（shared 来源共享 Default 目录、independent 来源当前用户目录，
   按 owner 各归各的；会话保存会覆盖它）；
 - 编辑界面进入 / 退出（前端 ensure）：进入时归档 ``native``（MAS 触碰前
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
@@ -34,7 +34,7 @@
 mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让「MAS 用户
 配置备份」真正覆盖用户在 MAS 页面配的东西，恢复时随文件一起回滚并回填
 表单（对齐 ok-ww 覆盖层模式）。MAS 配置目录 owner 由用户当前的
-``Info.Mode`` 决定（脚本=Default 共享、用户=独立目录、直控=无 MAS 配置），
+``Info.Base`` 决定（shared=Default 共享、independent=独立目录、native=无 MAS 配置），
 解析逻辑见 ``restore_service``。时间戳快照、指纹去重、保留清理与整目录
 恢复的通用逻辑由公共模块 ``app.utils.config_archive`` 提供（默认每池保留
 10 份），本模块只保留 MaaEnd 特有的 owner 目录布局、覆盖层侧车、恢复
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.config_archive import (
-    MODE_FILE_NAME,
+    META_FILE_NAMES,
     OVERLAY_SIDECAR_NAME,
     archive_files,
     config_root_key,
@@ -56,9 +56,10 @@ from app.utils.config_archive import (
     mask_account,
     read_overlay_sidecar,
     restore_dir,
-    write_backup_mode,
+    write_backup_base,
 )
 from app.utils.constants import (
+    BASE_SOURCE_LABELS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_TASK_GROUPS,
@@ -90,7 +91,7 @@ def mas_backup_root(script_id: str, user_id: str) -> Path:
 
     **恒按用户分桶**——备份内容（ConfigFile 快照 + 快速配置覆盖层侧车）
     的侧车是用户级的，按用户分桶才能保证每个用户只看到、只恢复自己的
-    备份。池与恢复目标解耦：脚本态用户的下发源是共享 Default 目录，但
+    备份。池与恢复目标解耦：shared 来源用户的下发源是共享 Default 目录，但
     其池仍是 ``mas/{user_id}``。
     """
 
@@ -116,7 +117,7 @@ def mas_config_dir(script_id: str, owner: str) -> Path:
 # ══════════════════ MAS 配置（池按用户，目标路径按 owner） ══════════════════
 
 _OVERLAY_INFO_KEYS = (
-    "Mode",
+    "Base",
     "Id",
     "IfQuickConfig",
     "SanityMode",
@@ -156,7 +157,7 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 """仅预览不回填的字段：配置文件来源决定恢复目标目录，恢复时以当前值为准"""
 
 _TASK_LABELS = {
@@ -201,7 +202,7 @@ _TASK_LABELS.update(
 _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_TASK)
 
 _OVERLAY_FIELD_LABELS = {
-    "Mode": "配置文件来源",
+    "Base": "配置文件来源",
     "Id": "账号",
     "SanityMode": "理智任务配置模式",
     "IfSeizeDeliveryJobs": "抢委托送货",
@@ -303,7 +304,7 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。
 
     仅预览字段（配置文件来源等）不回填：恢复目标目录由当前模式决定，
-    回填旧值会静默改变脚本态/用户态/直控态。
+    回填旧值会静默改变 shared/independent/native 三态。
     """
 
     grouped: dict[str, dict] = {}
@@ -340,16 +341,16 @@ def archive_mas_backup(
     mas_dir: Path,
     overlay: dict | None = None,
     force: bool = False,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> Path | None:
     """归档 MAS 配置整份 + 快速配置覆盖层字段侧车到用户池（指纹去重，无变化跳过）。
 
     ``user_id`` 是池归属（恒按用户分桶，见 :func:`mas_backup_root`）；
-    ``mas_dir`` 是归档/恢复目标路径，由调用方按 owner 解析（脚本态共享
-    Default 目录、用户态独立目录）——池与目标解耦。
+    ``mas_dir`` 是归档/恢复目标路径，由调用方按 owner 解析（shared 来源共享
+    Default 目录、independent 来源用独立目录）——池与目标解耦。
     侧车参与指纹：只改表单覆盖层字段、未动 ConfigFile 时同样新建归档
     （内存 JSON 直接入档，免临时文件）。
-    ``mode`` 为归档时点的配置来源（当前 ``Info.Mode``）：tri_state 池靠
+    ``base`` 为归档时点的配置来源（当前 ``Info.Base``）：tri_state 池靠
     备份标注做跨来源恢复的来源切换，运行前/恢复前 force 归档同样必须
     带上，否则该备份会被当成旧版无标注条目、恢复时不切来源。
     目录不存在或为空时无可恢复内容，返回 ``None``；``force=True`` 恢复前
@@ -364,8 +365,8 @@ def archive_mas_backup(
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
-    if mode:
-        write_backup_mode(dest, mode)
+    if base:
+        write_backup_base(dest, base)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
@@ -388,12 +389,12 @@ def restore_mas_backup(
     ts: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> dict | None:
     """把用户池归档恢复到 MAS 配置目录（恢复前自动归档当前，误恢复可找回）。
 
     ``user_id`` 是池归属（与归档一致按用户分桶）；``mas_dir`` 是恢复目标
-    路径，由调用方按 owner 解析（脚本态共享 Default 目录、用户态独立目
+    路径，由调用方按 owner 解析（shared 来源共享 Default 目录、independent 来源用独立目
     录）。``overlay`` 为当前用户的覆盖层字段，随恢复前存底一起归档。
     返回该备份的覆盖层字段（供调用方回填 MAS 用户配置；旧版备份无侧车
     返回 ``None``），侧车文件随即从目录中分离删除，不留在 ConfigFile 里。
@@ -405,17 +406,17 @@ def restore_mas_backup(
     mas_dir = Path(mas_dir)
     # 恢复前存底不设目录条件：目标目录缺失/为空时页面字段（overlay）仍需
     # 存底——恢复会清空目标，不存底就丢；无可归档内容由 archive 自判。
-    # mode 标注恢复时点的配置来源（跨来源恢复时 set_mode 已切回备份来源，
+    # base 标注恢复时点的配置来源（跨来源恢复时 set_base 已切回备份来源，
     # 与存底目录 owner 一致），保证该存底自身可跨来源找回
     archive_mas_backup(
-        script_id, user_id, mas_dir, overlay=overlay, force=True, mode=mode
+        script_id, user_id, mas_dir, overlay=overlay, force=True, base=base
     )
     # 备份只有侧车（目录缺失/为空时归档的纯字段备份）时跳过目录写回：
     # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
     managed = [
         rel
         for rel in dir_files(backup_dir)
-        if rel not in (MODE_FILE_NAME, OVERLAY_SIDECAR_NAME)
+        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
         restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
@@ -433,21 +434,21 @@ def archive_mas_runtime_backup(
     user_id: str,
     mas_dir: Path,
     overlay: dict | None = None,
-    mode: str | None = None,
+    base: str | None = None,
 ) -> None:
     """运行 / 配置会话下发前归档 MAS 配置（下发源）到用户池。
 
     会话保存会覆盖它，下发前存底；指纹去重，失败只记日志，绝不中止随后
     的运行或会话（归档是现场保护，不是前置条件）。
     ``user_id`` 是池归属；``mas_dir`` 是下发源目录，由调用方按当前用户
-    owner 解析（脚本态=Default 共享目录、用户态=独立目录；直控用户无 MAS
+    owner 解析（shared 来源=Default 共享目录、independent 来源=独立目录；原生来源用户无 MAS
     配置，调用方不调用本函数）。native 池与此处无关：原生配置跨用户
     共享，由 manager ``prepare`` 在任务级一次性归档
     （见 :func:`archive_native_backup`）。
     """
 
     try:
-        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, mode=mode)
+        archive_mas_backup(script_id, user_id, mas_dir, overlay=overlay, base=base)
     except Exception:
         logger.opt(exception=True).warning(
             "MaaEnd 运行前 MAS 配置归档失败，已跳过（不阻断任务）"
@@ -751,6 +752,7 @@ def _overlay_value(key: str, value) -> str:
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {
+        "Base": BASE_SOURCE_LABELS,
         "SeizeDeliveryJobsCommissionSource": _COMMISSION_SOURCE_LABELS,
         "AutoCollectMode": _AUTO_COLLECT_MODE_LABELS,
         "SanityTaskType": _SANITY_TASK_TYPE_LABELS,
@@ -874,9 +876,9 @@ def build_overlay_summary(
     sections: list[dict] = []
 
     mas_rows: list[dict] = []
-    if "Mode" in overlay:
+    if "Base" in overlay:
         mas_rows.append(
-            {"key": "配置文件来源", "value": _overlay_value("Mode", overlay["Mode"])}
+            {"key": "配置文件来源", "value": _overlay_value("Base", overlay["Base"])}
         )
     if "DailyOnceTasks" in overlay:
         mas_rows.append({"key": "每日仅执行一次", "value": _daily_once_text(overlay)})

@@ -32,9 +32,16 @@ export function useMaaFWUpdatePanel({
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
   const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 
-  const isAutoUpdateDisabled = computed(() =>
-    Boolean(previewData.value && !previewData.value.project.version)
-  )
+  // 与后端 can_check_project_update 同一口径：没声明 version 判断不了新旧；没有
+  // mirrorchyan_rid 时，只有下载源选 GitHub、interface 又声明了 github 仓库才查得到版本
+  // （只看 GitHub Release）。查不到的情况自动更新都不会发生
+  const isAutoUpdateDisabled = computed(() => {
+    const project = previewData.value?.project
+    if (!project) return false
+    if (!project.version) return true
+    if (project.mirrorchyanRid?.trim()) return false
+    return !(maafwConfig.Update.Source === 'GitHub' && project.github?.trim())
+  })
 
   // 手动更新过程（检查 / 下载 / 覆盖 / 校验 + 逐行日志）同样由后端推过来，
   // 折叠成一份面板状态交给「项目更新」区块显示。

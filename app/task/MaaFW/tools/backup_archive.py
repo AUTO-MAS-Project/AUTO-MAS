@@ -18,13 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MaaFW 配置备份归档：MAS 用户字段侧车 / MaaFW 项目 config/ 与 interface.json。
+"""MaaFW 配置备份归档：MAS 用户字段侧车 / MaaFW 项目 config/。
 
 备份时机（MAS「动手前」）：
 
 - 任务启动（manager ``prepare``）：``native`` 归档 MaaFW 项目 ``config/``
-  目录 + ``interface.json`` 当前状态——运行时物化 preset/选项会写这两处，
-  归档必须在任何写入前；
+  目录当前状态，归档必须在任何写入前；
 - 编辑界面进入（前端 ensure）：``native`` 捕捉「MAS 操作前原始态」；
 - 编辑界面退出（前端 ensure）：``mas`` 归档 MAS 编辑页核心字段终态。
 
@@ -32,8 +31,12 @@ MaaFW 与 M9A 同属 MaaFramework 线：没有 per-user ConfigFile 目录，MAS
 用户配置是字段（Info / Task.SelectedPreset / Task.TaskSnapshot / Device 段，
 存共享 ScriptConfig.json），运行时物化进项目配置。因此 ``mas`` 池是**纯
 字段侧车**（无目录部分），恢复即字段回填 MaaFWUserConfig。``native`` 池 =
-项目 ``config/`` 目录（maa_option.json 等 Toolkit 配置）+ ``interface.json``
-（任务定义与物化 preset 处），按物理项目根指纹分桶。
+项目 ``config/`` 目录（maa_option.json 等 Toolkit 配置），按视图路径指纹分桶。
+
+``interface.json`` 不进 native 池：载荷 + 视图之后它随项目版本走（换版本、重新导入
+另一个项目时整份换掉），MAS 运行期不写它；视图路径永不变，桶里会同时有旧版本、甚至
+另一个项目的备份，恢复它会让视图里的 interface 与资源、pipeline 版本对不上。早先的
+备份里还带着它，恢复时跳过、预览时只作参考。
 
 时间戳快照、指纹去重、保留清理与目录恢复由公共模块
 ``app.utils.config_archive`` 提供（默认每池保留 10 份），本模块只保留
@@ -41,8 +44,14 @@ MaaFW 特有的侧车、恢复语义（恢复前强制归档当前）与预览�
 """
 
 import json
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from app.task.MaaFW.tools.core.interface.loader import parse_json_text
+from app.task.MaaFW.tools.core.interface.models import (
+    DUPLICATE_TASK_SUFFIX_SEPARATOR,
+    PRETASK_TASK_PREFIX,
+)
 from app.utils import get_logger
 from app.utils.config_archive import (
     OVERLAY_SIDECAR_NAME,
@@ -55,12 +64,13 @@ from app.utils.config_archive import (
     read_overlay_sidecar,
     restore_files,
 )
+from app.utils.constants import BASE_SOURCE_LABELS
 
 logger = get_logger("MaaFW 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Mode", "IfQuickConfig", "Account", "Controller", "Resource")
+_OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "Account", "Controller", "Resource")
 """MAS 编辑页核心字段（UserData.Info，运行时物化进项目配置）"""
 
 _OVERLAY_TASK_KEYS = ("SelectedPreset", "TaskSnapshot")
@@ -85,11 +95,11 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Mode"}
+_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
 """仅预览不回填的字段：配置来源决定运行下发方式，恢复时以当前值为准"""
 
 _OVERLAY_FIELD_LABELS = {
-    "Mode": "配置来源",
+    "Base": "配置来源",
     "IfQuickConfig": "启用快速配置",
     "Account": "账号",
     "Controller": "Controller",
@@ -121,7 +131,7 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 MaaFWUserConfig 用）。
 
-    仅预览字段（配置来源）不回填：回填旧来源会静默翻转脚本态/用户态/直控。
+    仅预览字段（配置来源）不回填：回填旧来源会静默翻转 shared/independent/native。
     """
 
     grouped: dict[str, dict] = {}
@@ -188,18 +198,20 @@ def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> N
     archive_mas_backup(script_id, user_id, overlay)
 
 
-# ══════════════════ MaaFW 项目配置（config/ + interface.json） ══════════════════
+# ══════════════════ MaaFW 项目配置（config/） ══════════════════
 
 _INTERFACE_FILE = "interface.json"
-"""MaaFW 项目 interface 定义（任务定义与物化 preset 处）"""
+"""早先的 native 备份里带着的 interface 定义：只用于预览，恢复时跳过"""
+
+_CONFIG_PREFIX = "config/"
 
 
 def native_backup_root(script_id: str, project_path: str | Path) -> Path:
     """MaaFW 项目配置的**脚本级**归档根：``data/{script_id}/MaaFWBackups/native/{key}``。
 
     MaaFW 是通用性专项（接入任意 MaaFW 项目，项目属于单个脚本实例）：
-    归档生命周期随脚本；``key`` 仍取物理项目根指纹，脚本内换绑项目后旧
-    备份不与新项目混淆。
+    归档生命周期随脚本。``key`` 取视图路径指纹，而视图路径由脚本 ID 推出、永不变，
+    所以换版本、重新导入另一个项目后仍是同一个桶——这正是 interface.json 不进这个池的原因。
     """
 
     return (
@@ -215,15 +227,12 @@ def native_backup_root(script_id: str, project_path: str | Path) -> Path:
 def collect_native_files(project_path: str | Path) -> dict[str, Path]:
     """收集 MaaFW 项目配置文件集（相对键 → 当前路径；缺失项跳过）。
 
-    - ``interface.json``：任务定义与物化 preset 处；
-    - ``config/**``：项目配置目录（运行时物化处，排除 resource/ 资产）。
+    只收 ``config/**``（项目配置目录，排除 resource/ 资产）；``interface.json`` 随项目
+    版本走，不归档（见模块说明）。
     """
 
     project_path = Path(project_path)
     files: dict[str, Path] = {}
-    interface_path = project_path / _INTERFACE_FILE
-    if interface_path.is_file():
-        files[_INTERFACE_FILE] = interface_path
     config_dir = project_path / "config"
     if config_dir.is_dir():
         for rel, path in dir_files(config_dir).items():
@@ -234,10 +243,10 @@ def collect_native_files(project_path: str | Path) -> dict[str, Path]:
 def archive_native_backup(
     script_id: str, project_path: str | Path, force: bool = False
 ) -> Path | None:
-    """归档 MaaFW 项目 ``config/`` 目录 + ``interface.json``（指纹去重）。
+    """归档 MaaFW 项目 ``config/`` 目录（指纹去重）。
 
     归档落到**脚本级池**（``data/{script_id}/``，生命周期随脚本实例）。
-    项目缺 ``config/`` 与 ``interface.json`` 时无可归档内容，返回 ``None``。
+    项目缺 ``config/`` 时无可归档内容，返回 ``None``。
     """
 
     files = collect_native_files(project_path)
@@ -267,20 +276,44 @@ def get_native_backup_dir(
     return get_backup_dir(native_backup_root(script_id, project_path), ts)
 
 
+_NO_CONFIG_REASON_INTERFACE_ONLY = (
+    "这份备份里没有项目配置（config/），只有备份时的 interface.json，仅供参考、不能恢复"
+)
+_NO_CONFIG_REASON = "这份备份里没有项目配置（config/），不能恢复"
+
+
+def native_restore_scope(files: Mapping[str, Path]) -> tuple[list[str], str]:
+    """一份 native 备份恢复时会写回哪些文件（``config/*``），以及不能恢复的原因（能恢复为空串）。
+
+    预览与恢复共用这一份判断：预览据此返回 ``restoreAllowed`` / ``warnings``，界面禁用「一键
+    恢复」并说明原因，与真点下去时的拒绝一致。早先只收了 interface.json 的备份就是不能恢复的。
+    """
+
+    managed = sorted(rel for rel in files if rel.startswith(_CONFIG_PREFIX))
+    if managed:
+        return managed, ""
+    if _INTERFACE_FILE in files:
+        return managed, _NO_CONFIG_REASON_INTERFACE_ONLY
+    return managed, _NO_CONFIG_REASON
+
+
 def restore_native_backup(script_id: str, project_path: str | Path, ts: str) -> None:
     """把归档恢复到 MaaFW 项目（恢复前自动归档当前，误恢复可找回）。
 
-    按归档内相对键写回（``interface.json`` → 项目根、``config/*`` →
-    项目 ``config/``）；replace 语义：``config/`` 子树整棵按备份替换，残留
-    的同前缀文件一并清除，不动 ``resource/`` 等备份外资产。
+    只写回 ``config/*`` → 项目 ``config/``；replace 语义：``config/`` 子树整棵按备份
+    替换，残留的同前缀文件一并清除，不动 ``resource/`` 等备份外资产。早先备份里的
+    ``interface.json`` 跳过：它属于备份时的项目版本，写回会与视图里的资源对不上。
     """
 
     backup_dir = get_native_backup_dir(script_id, project_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
+    managed, reason = native_restore_scope(dir_files(backup_dir))
+    if reason:
+        raise ValueError(reason)
     project_path = Path(project_path)
     archive_native_backup(script_id, project_path, force=True)
-    restore_files(backup_dir, project_path)
+    restore_files(backup_dir, project_path, managed)
     logger.info(f"MaaFW 项目配置已恢复备份 {ts}")
 
 
@@ -315,18 +348,36 @@ def _parse_json_dict(raw) -> dict:
     return {}
 
 
-def build_overlay_preview(overlay: dict) -> dict:
-    """mas 池预览：分区行（MAS 独有 / MaaFW 对应 / 设备覆盖）。"""
+def _instance_label(instance_id: str, task_label: Callable[[str], str] | None) -> str:
+    if task_label is not None:
+        label = task_label(instance_id)
+        if label:
+            return label
+    head, separator, _ = instance_id.rpartition(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+    return (head if separator and head else instance_id).removeprefix(
+        PRETASK_TASK_PREFIX
+    )
+
+
+def build_overlay_preview(
+    overlay: dict, task_label: Callable[[str], str] | None = None
+) -> dict:
+    """mas 池预览：分区行（MAS 独有 / MaaFW 对应 / 设备覆盖）。
+
+    ``task_label`` 把快照里的任务实例 ID（重复任务带 ``__MAS_DUP__`` 后缀）换成界面上
+    看到的显示名；不给（读不到 interface）就只去掉重复后缀、显示任务 name。
+    """
 
     sections: list[dict] = []
 
     mas_rows: list[dict] = []
-    for key in ("Mode", "IfQuickConfig"):
+    for key in ("Base", "IfQuickConfig"):
         if key in overlay:
+            raw = overlay[key]
             value = (
-                _format_bool(overlay[key])
-                if isinstance(overlay[key], bool)
-                else _summary_text(overlay[key])
+                _format_bool(raw)
+                if isinstance(raw, bool)
+                else BASE_SOURCE_LABELS.get(str(raw), _summary_text(raw))
             )
             mas_rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": value})
     if mas_rows:
@@ -342,11 +393,10 @@ def build_overlay_preview(overlay: dict) -> dict:
         order = snapshot.get("taskOrder") or []
         checked = snapshot.get("taskChecked") or {}
         names = [
-            str(name)
+            _instance_label(name, task_label)
             for name in order
-            if isinstance(name, str) and bool(checked.get(name, True))
+            if isinstance(name, str) and name and bool(checked.get(name, True))
         ]
-        names = [name for name in names if name]
         task_rows.append(
             {"key": "已启用任务", "value": "、".join(names) if names else "无"}
         )
@@ -379,12 +429,11 @@ def build_overlay_preview(overlay: dict) -> dict:
 
 
 def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> dict:
-    """native 池预览：反读归档内 interface.json 的任务/方案概览。
+    """native 池预览：恢复会写回的 ``config/`` 文件，外加早先备份里 interface 的版本。
 
-    MaaFW 项目配置的核心是 interface.json（任务定义、preset 与选中方案）。
-    反读 ``tasks`` 定义名列表 + 顶层 ``version``；不深入逐任务参数
-    （结构随项目漂移，经「查看详细配置」看原生）。config/ 内 Toolkit
-    选项（maa_option.json）为引擎级内部设置，不进预览。
+    只列恢复真正会写回的东西：``config/`` 下的文件名（不深入内容，经「查看详细配置」看
+    原生）。早先的备份带着 interface.json，读出它的 ``version`` 作「备份时项目版本」参考；
+    它按加载器同一口径解析（先 JSON、再 JSON5，带注释的 JSONC 也读得出）。
     """
 
     backup_dir = get_native_backup_dir(script_id, project_path, ts)
@@ -395,24 +444,35 @@ def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> d
         raise ValueError(f"备份内容为空: {ts}")
 
     rows: list[dict] = []
-    interface_rel = _INTERFACE_FILE
-    if interface_rel in files:
+    if _INTERFACE_FILE in files:
         try:
-            interface = json.loads(files[interface_rel].read_text(encoding="utf-8-sig"))
+            interface = parse_json_text(
+                files[_INTERFACE_FILE].read_text(encoding="utf-8-sig")
+            )
         except Exception:  # noqa: BLE001 - 坏 JSON 不阻断预览
             interface = None
-        if isinstance(interface, dict):
-            if interface.get("version") is not None:
-                rows.append(
-                    {
-                        "key": "interface 版本",
-                        "value": _summary_text(interface["version"]),
-                    }
-                )
-            tasks = interface.get("task")
-            if isinstance(tasks, list) and tasks:
-                names = [(t.get("name") if isinstance(t, dict) else t) for t in tasks]
-                rows.append({"key": "任务", "value": "、".join(str(n) for n in names)})
-    if not rows:
-        rows.append({"key": "文件", "value": f"{len(files)} 个（无 interface.json）"})
-    return {"sections": [{"name": "maafw", "label": "MaaFW 项目配置", "rows": rows}]}
+        if not isinstance(interface, dict):
+            version = "interface.json 无法解析"
+        elif interface.get("version") is not None:
+            version = _summary_text(interface["version"])
+        else:
+            version = "未声明"
+        rows.append({"key": "备份时项目版本", "value": version})
+    config_files = sorted(
+        rel.removeprefix(_CONFIG_PREFIX)
+        for rel in files
+        if rel.startswith(_CONFIG_PREFIX)
+    )
+    rows.append(
+        {
+            "key": "项目配置文件",
+            "value": _summary_text("、".join(config_files)) if config_files else "无",
+        }
+    )
+    _, reason = native_restore_scope(files)
+    return {
+        "sections": [{"name": "maafw", "label": "MaaFW 项目配置", "rows": rows}],
+        # 通用恢复组件认这两个键：不能恢复时禁用「一键恢复」并显示原因
+        "restoreAllowed": not reason,
+        "warnings": [reason] if reason else [],
+    }

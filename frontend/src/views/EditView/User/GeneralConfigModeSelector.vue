@@ -60,7 +60,7 @@
     <!--
       覆写常规配置（overlay 层）：账号级开关，两者合起来就是 3×2 的 base ⊕ overlay 子态。
       只有声明了 quickConfig 的调用方才渲染，避免给未接入运行时的专项做出死开关。
-      形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（直控 = 关、
+      形态与上面的 base 三态卡片同构；BetterGI 的 overlay 由配置来源派生（原生来源 = 关、
       共享 / 独立 = 开），传 quickConfigReadonly 只读展示派生结果，避免出现可点却无效的卡片。
     -->
     <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
@@ -112,8 +112,9 @@
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
       <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
+      <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
       <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
-      <p v-if="semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
+      <p v-if="showGuiHint && semantics.gui" class="config-effective-gui">{{ semantics.gui }}</p>
     </div>
   </a-form-item>
 </template>
@@ -152,7 +153,7 @@ const props = withDefaults(
     options?: ConfigModeOption[]
     alertMessage?: string
     /**
-     * 快速配置开关（用户级，独立于 Info.Mode）。
+     * 快速配置开关（用户级，独立于 Info.Base）。
      * 未传入表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
      * 必须显式 default: undefined：Boolean prop 未声明 default 时 Vue 会
      * casting 成 false，「不传」与「显式传 false」无法区分，守卫
@@ -162,6 +163,12 @@ const props = withDefaults(
     quickConfigDisabled?: boolean
     /** overlay 值由配置来源派生（BetterGI）：只读展示，卡片置灰且接不到变更 */
     quickConfigReadonly?: boolean | undefined
+    /**
+     * 是否在语义面板里渲染「界面入口」说明（gui）。
+     * 调用方已有自己的「配置操作」块、把这句话放到操作按钮下方时传 false，
+     * 免得同一句既挂在配置来源下、又挂在配置操作下，反而看不清「选什么就改什么」。
+     */
+    showGuiHint?: boolean
   }>(),
   {
     options: undefined,
@@ -169,6 +176,7 @@ const props = withDefaults(
     quickConfig: undefined,
     quickConfigDisabled: undefined,
     quickConfigReadonly: undefined,
+    showGuiHint: true,
   }
 )
 
@@ -343,7 +351,7 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   line-height: 1.5;
-  /* 描述文案可能含 \n 换行（如 ZZZ-OD 直控的约束说明），按原文换行渲染 */
+  /* 描述文案可能含 \n 换行（如 ZZZ-OD 原生来源的约束说明），按原文换行渲染 */
   white-space: pre-line;
 }
 
@@ -378,6 +386,15 @@ const handleOverlayChange = (event: RadioChangeEvent) => {
   margin: 0;
   color: var(--ant-color-text);
   font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 改动范围：一句话点明这次任务改的是哪一份配置，比下面的细节行更重，便于一眼扫到重点 */
+.config-effective-effect {
+  margin: 0;
+  color: var(--ant-color-text);
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
 }

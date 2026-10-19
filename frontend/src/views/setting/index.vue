@@ -3,12 +3,17 @@ import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
-import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
+import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
+import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
+import {
+  clearCustomSoundCache,
+  playPressSound,
+  previewPressSound,
+} from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -17,7 +22,11 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
+import { useHomeSatelliteStore } from '@/stores/homeSatellite'
+import { usePressSoundStore } from '@/stores/pressSound'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
+import { useAppearanceSettings } from './useAppearanceSettings'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -31,11 +40,34 @@ import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
 const { t } = useI18n()
-const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
+const {
+  themeMode,
+  themeColor,
+  appearances,
+  appearanceId,
+  activeAppearance,
+  modalContextHolder,
+  appearanceBusy,
+  themeResetting,
+  themeModeOptions,
+  appearanceValue,
+  appearanceOptions,
+  themeColorOptions,
+  handleThemeModeChange,
+  handleThemeColorChange,
+  handleAppearanceChange,
+  handleAppearanceImport,
+  handleAppearanceRemove,
+  handleThemeReset,
+} = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
+const homeSatelliteStore = useHomeSatelliteStore()
+void homeSatelliteStore.load()
+const pressSoundStore = usePressSoundStore()
+void pressSoundStore.load()
 const {
   restartPolling,
   updateVisible,
@@ -82,20 +114,6 @@ const voiceTypeOptions = computed(() => [
   { label: t('setting.voice.noisy'), value: 'noisy' },
 ])
 
-const themeModeOptions = computed(() => [
-  { label: t('setting.themeMode.system'), value: 'system' },
-  { label: t('setting.themeMode.light'), value: 'light' },
-  { label: t('setting.themeMode.dark'), value: 'dark' },
-])
-
-const themeColorOptions = computed(() =>
-  Object.entries(themeColors).map(([key, color]) => ({
-    label: t(`setting.color.${key}`),
-    value: key,
-    color,
-  }))
-)
-
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
   { label: t('setting.cursor.none'), value: 'none' },
   { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
@@ -112,6 +130,7 @@ const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
 
 // 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
 const NORMALIZED_SETTING_KEYS = new Set([
+  'Replay.Password',
   'Notify.KoishiServerAddress',
   'Notify.OpenClawQQClientSecret',
   'Notify.AuthorizationCode',
@@ -193,6 +212,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   const success = await saveSettings(category, changes)
 
   if (!success) {
+    if (category === 'Replay') throw new Error(t('setting.toast.saveFailed'))
     return
   }
 
@@ -238,14 +258,6 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   }
 }
 
-// 主题
-const handleThemeModeChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeMode(value as ThemeMode)
-}
-const handleThemeColorChange = (value: SelectValue) => {
-  if (typeof value === 'string') setThemeColor(value as ThemeColor)
-}
-
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
     Modal.confirm({
@@ -289,6 +301,137 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
     logger.error(`保存低性能模式失败: ${errorMsg}`)
     message.error(t('setting.toast.lowPerfSaveFailed'))
   }
+}
+
+const handlePauseHomeEffectsWhenRunningChange = async (enabled: boolean) => {
+  try {
+    await performanceStore.setPauseHomeEffectsWhenRunning(enabled)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存脚本运行暂停主页动效失败: ${errorMsg}`)
+    message.error(t('setting.toast.pauseHomeEffectsSaveFailed'))
+  }
+}
+
+const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
+  try {
+    await homeSatelliteStore.setStyle(style)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存主页卫星样式失败: ${errorMsg}`)
+    message.error(t('setting.toast.homeSatelliteSaveFailed'))
+  }
+}
+
+const reportPressSoundError = (action: string, error: unknown): void => {
+  const errorMsg = error instanceof Error ? error.message : String(error)
+  logger.error(`${action}失败: ${errorMsg}`)
+  message.error(t('setting.toast.pressSoundSaveFailed'))
+}
+
+const handlePressSoundEnabledChange = async (enabled: boolean) => {
+  try {
+    await pressSoundStore.persist({ enabled })
+  } catch (error) {
+    reportPressSoundError('保存按压音效开关', error)
+  }
+}
+
+const handlePressSoundPresetChange = async (value: SelectValue) => {
+  if (typeof value !== 'string') {
+    return
+  }
+
+  try {
+    await pressSoundStore.persist({ preset: value as PressSoundPreset })
+  } catch (error) {
+    reportPressSoundError('保存按压音效种类', error)
+  }
+}
+
+const handlePressSoundVolumeChange = async (volume: number) => {
+  try {
+    await pressSoundStore.persist({ volume })
+  } catch (error) {
+    reportPressSoundError('保存按压音效音量', error)
+  }
+}
+
+/** 导入自定义音频：单文件模式导一个，双文件模式分别导按下与松开 */
+const handlePressSoundImport = async (kind: 'single' | 'press' | 'release' = 'single') => {
+  try {
+    const files = await window.electronAPI.selectFile([
+      { name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] },
+    ])
+    if (files.length === 0) {
+      return
+    }
+
+    const filePath = files[0]
+    // 上限交给主进程把关：超了它只回大小、不读内容，不会为了拒绝而先把整个文件读进内存。
+    // 大小用它 stat 出来的真实字节数，不拿 base64 长度反推——那样会把 padding 当成文件内容
+    const { base64, size } = await window.electronAPI.readFileBase64(
+      filePath,
+      MAX_PRESS_SOUND_BYTES
+    )
+    if (size > MAX_PRESS_SOUND_BYTES) {
+      message.error(t('setting.toast.pressSoundTooLarge'))
+      return
+    }
+    if (!base64) {
+      message.error(t('setting.toast.pressSoundReadFailed'))
+      return
+    }
+    // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
+    clearCustomSoundCache(filePath)
+
+    const name = filePath.split(/[\\/]/).pop() ?? filePath
+    if (kind === 'single') {
+      await pressSoundStore.persist({
+        preset: 'custom',
+        customPath: filePath,
+        customName: name,
+        enabled: true,
+      })
+    } else {
+      // 双文件模式：导完第二个才切过去，只有一个文件时先只记路径
+      const pressPath = kind === 'press' ? filePath : pressSoundStore.customPath
+      const releasePath = kind === 'release' ? filePath : pressSoundStore.customReleasePath
+      const ready = Boolean(pressPath && releasePath)
+      await pressSoundStore.persist({
+        ...(kind === 'press'
+          ? { customPath: filePath, customName: name }
+          : { customReleasePath: filePath, customReleaseName: name }),
+        ...(ready ? { preset: 'customPair' as const, enabled: true } : {}),
+      })
+    }
+    message.success(t('setting.toast.pressSoundImported'))
+  } catch (error) {
+    reportPressSoundError('导入按压音效', error)
+  }
+}
+
+const handlePressSoundPreview = (phase?: PressSoundPhase) => {
+  if (phase) {
+    const filePath =
+      phase === 'release' ? pressSoundStore.customReleasePath : pressSoundStore.customPath
+    if (filePath) {
+      void playPressSound({
+        preset: 'custom',
+        volume: pressSoundStore.volume,
+        customPath: filePath,
+      })
+    }
+    return
+  }
+
+  const options = {
+    preset: pressSoundStore.preset,
+    volume: pressSoundStore.volume,
+    customPath: pressSoundStore.customPath,
+    customReleasePath: pressSoundStore.customReleasePath,
+  }
+  void previewPressSound(options)
 }
 
 // 其他操作
@@ -364,6 +507,7 @@ onMounted(() => {
 
 <template>
   <div class="settings-container">
+    <component :is="modalContextHolder" />
     <div class="settings-header">
       <h1 class="page-title">{{ t('setting.title') }}</h1>
     </div>
@@ -373,17 +517,45 @@ onMounted(() => {
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
+            :appearance-value="appearanceValue"
+            :appearance-options="appearanceOptions"
             :theme-color="themeColor"
+            :theme-color-disabled="Boolean(activeAppearance)"
+            :appearance-busy="appearanceBusy || themeResetting"
+            :theme-resetting="themeResetting"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"
             :cursor-effect-options="cursorEffectOptions"
             :low-performance-mode="performanceStore.lowPerformanceMode"
             :low-performance-mode-saving="performanceStore.saving"
+            :pause-home-effects-when-running="performanceStore.pauseHomeEffectsWhenRunning"
+            :pause-home-effects-when-running-saving="performanceStore.saving"
+            :home-satellite-style="homeSatelliteStore.style"
+            :home-satellite-style-saving="homeSatelliteStore.saving"
+            :press-sound-enabled="pressSoundStore.enabled"
+            :press-sound-preset="pressSoundStore.preset"
+            :press-sound-custom-path="pressSoundStore.customPath"
+            :press-sound-custom-name="pressSoundStore.customName"
+            :press-sound-custom-release-path="pressSoundStore.customReleasePath"
+            :press-sound-custom-release-name="pressSoundStore.customReleaseName"
+            :press-sound-volume="pressSoundStore.volume"
+            :press-sound-saving="pressSoundStore.saving"
+            :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
+            :handle-press-sound-preset-change="handlePressSoundPresetChange"
+            :handle-press-sound-volume-change="handlePressSoundVolumeChange"
+            :handle-press-sound-import="handlePressSoundImport"
+            :handle-press-sound-preview="handlePressSoundPreview"
+            :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
             :handle-theme-mode-change="handleThemeModeChange"
+            :handle-appearance-change="handleAppearanceChange"
+            :handle-appearance-import="handleAppearanceImport"
+            :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
+            :handle-theme-reset="handleThemeReset"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+            :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>

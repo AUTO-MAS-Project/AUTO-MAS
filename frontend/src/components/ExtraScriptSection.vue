@@ -5,9 +5,13 @@
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip :title="t('comp.runCustomScriptBefore')">
+        <a-tooltip
+          :title="
+            t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
+          "
+        >
           <span class="form-label">
-            {{ t('comp.runScriptBeforeTask') }}
+            {{ t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -48,9 +52,11 @@
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip :title="t('comp.runCustomScriptAfter')">
+        <a-tooltip
+          :title="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
+        >
           <span class="form-label">
-            {{ t('comp.runScriptAfterTask') }}
+            {{ t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -102,8 +108,9 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('额外脚本配置')
 
 const formData = defineModel<any>('formData', { required: true })
-defineProps<{
+const props = defineProps<{
   loading: boolean
+  scope?: 'task' | 'queue'
   // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
   hideSectionHeader?: boolean
 }>()
@@ -126,7 +133,9 @@ const selectScriptBeforeTask = async () => {
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptBeforeTask = path[0]
-      message.success(t('comp.preTaskScriptPath'))
+      message.success(
+        t(props.scope === 'queue' ? 'queue.preTaskScriptPath' : 'comp.preTaskScriptPath')
+      )
       emitSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
@@ -146,7 +155,9 @@ const selectScriptAfterTask = async () => {
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptAfterTask = path[0]
-      message.success(t('comp.postTaskScriptPath'))
+      message.success(
+        t(props.scope === 'queue' ? 'queue.postTaskScriptPath' : 'comp.postTaskScriptPath')
+      )
       emitSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {

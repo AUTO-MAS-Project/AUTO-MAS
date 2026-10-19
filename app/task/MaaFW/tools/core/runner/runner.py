@@ -32,7 +32,7 @@ import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, TextIO
+from typing import Any, BinaryIO, Callable, Literal, TextIO
 
 import maa as maa_package
 import numpy as np
@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.agent_env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
 )
+from app.task.MaaFW.tools.core.agent_env.env import AGENT_PROGRAM_MISSING_HINT
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
     _read_runtime_maafw_version,
@@ -86,6 +87,12 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 # 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
 # 就这么丢过一次，见下方注释）。
 try:
+    from .loop_guard import (
+        WINDOW_ITERATIONS,
+        LoopGuardVerdict,
+        MaaFWLoopGuard,
+        parse_loop_guard_exempt,
+    )
     from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
     from .pipeline_override import deep_merge_pipeline_override
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
@@ -99,6 +106,12 @@ try:
         signal_enable_override,
     )
 except ImportError:
+    from loop_guard import (  # type: ignore[no-redef]
+        WINDOW_ITERATIONS,
+        LoopGuardVerdict,
+        MaaFWLoopGuard,
+        parse_loop_guard_exempt,
+    )
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
@@ -195,6 +208,8 @@ SIGNAL_SCREENSHOT_KINDS = {
 SIGNAL_UNMATCHED_LOG_LIMIT = 20
 # 回调线程里发起的停止，主线程收尾时最多等它这么久。
 SIGNAL_STOP_JOIN_SECONDS = 10.0
+# agent 输出读到结尾后等它退出、取退出码的上限（秒）。
+AGENT_EXIT_CODE_WAIT_SECONDS = 2.0
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -279,10 +294,42 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 # 早交给脚本没事——终末地在窗口出现后 22s、主界面还没出来时下发，首个任务照样成功。
 # 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
 STARTUP_SCREEN_CONTENT_SECONDS = 20
+# 首个任务前的放行判据（job 的 taskStartGateMode）。screen：上面两条按画面提前放行；
+# disk_quiet：画面有内容、且客体读盘速度连续 DISK_QUIET_SAMPLES 次（每秒一次）低于
+# DISK_QUIET_READ_BYTES_PER_SECOND 才放行。依据（2026-10-16 魔改 AVD 逐秒实测，终末地 / 星铁 /
+# 1999 冷启动）：加载页和动态标题都一直在动，CPU、出帧也是标题更忙，只有读盘量分得开——
+# 加载时持续读盘，到标题后几乎为 0；终末地、1999 各轮都在到标题后 7~15s 放行。读盘安静、
+# 但还没到标题的阶段会提前放行（星铁的 logo / 健康提示页、加载页上等网络），交给项目自己识别。
+# 没处理着色器编译：游戏的管线缓存缺失时，标题前要编译几分钟（读盘安静、出帧约 0），这里会
+# 提前放行；实际用户跑脚本前必然手动登录过，那次已经编完。但做带游戏自更新的风味专项时必须
+# 处理：自更新以后可能重新编译，脚本会在没人手动登录的情况下撞上。办法是再加「这 8s 里每秒
+# 出帧都 ≥ 5」（编译时每秒最多 2 帧，标题最低约 36 帧）并放宽上限，见 app/task/MaaFW/AGENTS.md。
+# 读盘量取 /proc/vmstat 的 pgpgin（累计读入 KB）：adb shell 用户读 /proc/diskstats 和
+# /sys/block/*/stat 都被 SELinux 拒绝（API 34 镜像 Enforcing 实测），pgpgin 不需要 root，按 bio
+# 计一次、不随 dm 叠层重复计数；同一窗口与整块盘 diskstats 读速对照误差 < 2%。
+TASK_START_GATE_SCREEN = "screen"
+TASK_START_GATE_DISK_QUIET = "disk_quiet"
+DISK_QUIET_READ_BYTES_PER_SECOND = 1024 * 1024
+DISK_QUIET_SAMPLES = 8
+DISK_QUIET_SAMPLE_INTERVAL_SECONDS = 1.0
+DISK_QUIET_SHELL_TIMEOUT_MS = 5000
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 # 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
 # 计划里第一个任务超时则结束本轮。
 TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
+# 单任务时限停掉当前任务后，最多等这么久让 tasker 真正停下再投下一个任务。
+# post_stop 一发出，当前任务的 job.wait() 就立即返回，任务本身却要跑完手上那个节点
+# （含 post_delay）才结束；这期间投递会被框架以「stopping, ignore new post」拒掉
+# （task_id=0）。生产上 M9A 均衡刷停下要 0.1~0.3 秒，按 0.1 秒投递三次超时两次被拒。
+TASK_STOP_SETTLE_SECONDS = 60.0
+TASK_STOP_SETTLE_POLL_SECONDS = 0.05
+# 收尾任务（nonFatalMessage）被我们自己停下（单任务时限、原地打转）之后，最多等这么久
+# 看脚本侧是不是也强停了：MaaTaskerPostStop 的通知比 job.wait() 返回晚到（实测约 19ms）。
+NONFATAL_SCRIPT_STOP_NOTICE_SECONDS = 0.2
+# 原地打转检测（Run.LoopGuard，实验性，默认关）判定卡死：停这个任务、截图，收尾与
+# 单任务超时同一口径。截图 kind 只能是小写字母（见 SIGNAL_SCREENSHOT_KINDS 的说明）。
+LOOP_GUARD_MESSAGE = "MaaFW 任务原地打转"
+LOOP_GUARD_SCREENSHOT_KIND = "loop"
 
 
 class MaaFWRunTimeoutError(RuntimeError):
@@ -403,10 +450,7 @@ def _agent_spawn_error_hint(exc: OSError) -> str | None:
     if code is None and exc.errno == errno.ENOENT:
         code = 2
     if code == 2:
-        return (
-            "找不到 Agent 程序文件，常见原因是被杀毒软件隔离或删除；请检查杀毒软件的"
-            "隔离区并把项目目录加入信任，确认无误后在脚本页重新导入项目"
-        )
+        return f"找不到 Agent 程序文件，{AGENT_PROGRAM_MISSING_HINT}"
     if code == 3:
         return "Agent 程序所在的路径不存在，项目文件可能不完整；请在脚本页重新导入项目"
     if code == _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED:
@@ -782,9 +826,11 @@ class MaaFWRunner:
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
+        task_start_gate_mode: str = TASK_START_GATE_SCREEN,
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard_enabled: bool = False,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -795,6 +841,10 @@ class MaaFWRunner:
         self.agent_output_threads: list[threading.Thread] = []
         # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
         self._agent_handshake_errors: dict[int, str] = {}
+        # agent 进程 pid -> 日志里用的名字；运行中判「agent 已退出」时报给用户。
+        self._agent_labels: dict[int, str] = {}
+        # 运行前项目自带 Python 检查没通过、按「报错照跑」放行的原因（prepare_agent_python_envs 写）
+        self._agent_health_warnings: list[str] = []
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -814,6 +864,9 @@ class MaaFWRunner:
         self._failure_screenshot_prefix: str = failure_screenshot_prefix
         self._failure_screenshots: list[MaaFWFailureScreenshot] = []
         self._task_start_not_before: float | None = task_start_not_before
+        # 首个任务前的放行判据：screen 按画面（_wait_task_start_gate），disk_quiet 按画面有内容
+        # + 读盘停下来（_wait_task_start_disk_quiet）。宿主决定用哪种，这里不分辨游戏和设备。
+        self._task_start_gate_mode: str = task_start_gate_mode
         # 截止时刻到了由定时器线程置位并 post_stop；主线程看到它就截图、按超时收尾。
         # 不复用 _stop_requested：那个表示「用户取消」，取消不截图也不算失败。
         self._run_deadline_at: float | None = run_deadline_at
@@ -840,7 +893,12 @@ class MaaFWRunner:
         self._task_deadline_hit: threading.Event = threading.Event()
         self._task_deadline_timer: threading.Timer | None = None
         self._task_deadline_stop_posted: bool = False
+        # 单任务时限到点后发起停止的定时器线程（它在里面等停止 job）。
+        self._task_deadline_stop_thread: threading.Thread | None = None
         self._completed_tasks: list[str] = []
+        # 本轮正在处理的任务名（每个任务开始时设）：异常收尾时据此报 failedTask。
+        # 没进入任务循环（初始化、启动画面等待失败）时为 None，不把原因挂到某个任务上。
+        self._current_task_name: str | None = None
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
         self._signal_specs: dict[str, MaaFWSignalSpec] = {}
@@ -854,6 +912,23 @@ class MaaFWRunner:
         self._signal_hit: tuple[str, str] | None = None
         self._signal_task: str | None = None
         self._signal_stop_thread: threading.Thread | None = None
+        # 原地打转检测（Run.LoopGuard，实验性）。关闭时不建检测器、不喂事件、不扫豁免。
+        # 回调线程持 _loop_guard_lock 喂事件；主线程每个任务投递前持同一把锁 reset()。
+        # 判到卡死时记下（任务名, 判定）并在单独线程里 post_stop，主线程收尾。
+        self._loop_guard_lock: threading.Lock = threading.Lock()
+        self._loop_guard: MaaFWLoopGuard | None = (
+            MaaFWLoopGuard(exempt=self._loop_guard_exempt)
+            if loop_guard_enabled
+            else None
+        )
+        # 项目在节点上写 "attach": {"auto_mas_loop_guard": false} 声明豁免；资源加载后
+        # 与信号节点同一趟扫描收集，binding 列不出节点时退回命中时按名字查（带缓存）。
+        self._loop_guard_exempt_nodes: set[str] = set()
+        self._loop_guard_lookup_on_hit: bool = False
+        self._loop_guard_lookup_cache: dict[str, bool] = {}
+        self._loop_guard_hit: tuple[str, LoopGuardVerdict] | None = None
+        self._loop_guard_stop_thread: threading.Thread | None = None
+        self._loop_guard_error_logged: bool = False
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
@@ -986,12 +1061,17 @@ class MaaFWRunner:
         self._deadline_stop_posted = False
         self._task_deadline_hit.clear()
         self._task_deadline_stop_posted = False
+        self._task_deadline_stop_thread = None
         self._failure_screenshots = []
         self._completed_tasks = []
+        self._current_task_name = None
         with self._signal_lock:
             self._signal_hit = None
             self._signal_task = None
             self._signal_stop_thread = None
+        with self._loop_guard_lock:
+            self._loop_guard_hit = None
+            self._loop_guard_stop_thread = None
         self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
@@ -1045,11 +1125,10 @@ class MaaFWRunner:
                 completedTasks=completed_tasks,
             )
         except Exception as exc:
-            failed_task = (
-                self.plan.tasks[len(self._completed_task_names())].name
-                if (len(self._completed_task_names()) < len(self.plan.tasks))
-                else None
-            )
+            # 用「正在处理的任务」而不是「已完成数」当下标：前面有任务失败后继续过、
+            # 或收尾任务被放过时，已完成数会比实际位置少，指到前面的任务上。
+            # 初始化阶段失败时还没有任务，为 None。
+            failed_task = self._current_task_name
             self.send_log(f"MaaFW 任务执行失败: {exc}")
             return MaaFWRunResult(
                 success=False,
@@ -1066,6 +1145,7 @@ class MaaFWRunner:
             self._cancel_task_deadline_timer()
             self._cancel_deadline_timer()
             self._join_signal_stop()
+            self._join_loop_guard_stop()
 
     def _start_deadline_timer(self) -> None:
         """到宿主给的截止时刻就停掉当前任务。
@@ -1098,6 +1178,10 @@ class MaaFWRunner:
         # 定时器线程里只做两件事：置位、让正在跑的任务停下。截图与收尾都在主线程，
         # 那里 controller 的使用方式和普通任务失败完全一样。
         with self._post_lock:
+            # 单任务定时器被截到整轮截止时刻时，两个定时器同一时刻各转来一次；
+            # 只认第一次，否则超时日志打两遍、post_stop 也发两次。
+            if self._deadline_hit.is_set():
+                return
             self._deadline_hit.set()
             in_flight = self._task_in_flight
         if self._stop_requested.is_set():
@@ -1187,6 +1271,9 @@ class MaaFWRunner:
             stale = self._in_flight_task != self._task_deadline_task
             if not self._task_in_flight or stale:
                 return
+            # 先记线程再置位：主线程看到超时时一定也看得到这个线程，不会在停止
+            # 还没发出时就投下一个任务、再被它停掉。
+            self._task_deadline_stop_thread = threading.current_thread()
             self._task_deadline_hit.set()
         if self._stop_requested.is_set():
             return
@@ -1197,30 +1284,68 @@ class MaaFWRunner:
         except Exception as exc:
             self.send_log(f"超时停止 MaaFW tasker 失败: {exc}")
 
-    def _handle_task_deadline(self, task: MaaFWTaskRunPlan, index: int) -> bool:
-        """本任务被单任务时限停掉时收尾；返回 True 让调用方跳到下一个任务。
+    def _handle_task_deadline(
+        self, task: MaaFWTaskRunPlan, index: int
+    ) -> Literal["next", "skip_rest"] | None:
+        """本任务被单任务时限停掉时收尾。
+
+        返回 None 表示没超时；``"next"`` 让调用方跳到下一个任务；``"skip_rest"`` 让调用方
+        结束本轮（不计入失败）。
 
         计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
         第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
         计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
 
         特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
-        报它声明的那句话。
+        报它声明的那句话。特调声明的收尾任务（``nonFatalMessage``，如 M9A 的关闭游戏）
+        超时只截图、记一行，不计入本轮失败；停下时恰好又被脚本侧强停，就跳过本轮剩余
+        任务（``_nonfatal_script_stopped``），同样不计入失败。
 
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
         """
 
         if not self._task_deadline_hit.is_set():
-            return False
+            return None
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
+        if task.nonFatalMessage:
+            self._raise_if_game_launch_failed(
+                display_name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            )
+            # 放过之前同样等停止生效：收尾任务排在中间时下一个任务紧接着投递，
+            # tasker 没空闲会被拒（task_id=0）。排在队尾时后面没有要投的，不等，
+            # 免得停不下来反把本轮判成失败
+            has_next = index + 1 < len(self.plan.tasks)
+            if has_next and not self._wait_task_deadline_stop():
+                raise RuntimeError(
+                    f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
+                    f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
+                    f"{display_name}"
+                )
+            if has_next and self._nonfatal_script_stopped(
+                task, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            ):
+                return "skip_rest"
+            # 特调声明的收尾任务：截图、记一行，不算本轮失败
+            stopped = "已停止并继续后续任务" if has_next else "已停止"
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），{stopped}: "
+                f"{display_name}；{task.nonFatalMessage}"
+            )
+            return "next"
         if index == 0 or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        if not self._wait_task_deadline_stop():
+            raise RuntimeError(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
+                f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
+                f"{display_name}"
+            )
         self._failed_task_errors.append(
             (task.name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）")
         )
@@ -1234,7 +1359,279 @@ class MaaFWRunner:
             self.send_log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
             )
+        return "next"
+
+    def _nonfatal_script_stopped(self, task: MaaFWTaskRunPlan, reason: str) -> bool:
+        """收尾任务被我们自己停下（单任务时限、原地打转）时，脚本侧是不是也强停了。
+
+        是的话记两行（我们停下的原因、脚本侧强停跳过剩余任务）并返回 True，调用方结束
+        本轮、不计入失败——与没超时时被脚本侧强停同一口径。
+
+        只看 ``_external_stop_seen``，不能用 ``_external_stop_active``：它会同步查
+        ``tasker.stopping``，而我们自己的 post_stop 同样让它为 true，自停会被当成外停。
+        事件标志靠 ``_post_self_stop`` 的记账区分两者：自己发的停止先计数，通知来了抵掉，
+        抵不掉的才是脚本侧的。调用前我们自己的那次 post_stop 必须已返回（已计数）。通知
+        比 job.wait() 晚到，所以最多等 ``NONFATAL_SCRIPT_STOP_NOTICE_SECONDS``。
+        """
+
+        if self._stop_requested.is_set():
+            return False
+        if not self._external_stop_seen.wait(
+            timeout=NONFATAL_SCRIPT_STOP_NOTICE_SECONDS
+        ):
+            return False
+        if self._stop_requested.is_set():
+            return False
+        display_name = _task_display_name(task)
+        self.send_log(f"{reason}，已停止: {display_name}")
+        self.send_log(
+            f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+            f"{display_name}；{task.nonFatalMessage}"
+        )
         return True
+
+    def _wait_task_deadline_stop(self) -> bool:
+        """等单任务时限发出的停止真正生效；最多等 ``TASK_STOP_SETTLE_SECONDS``。
+
+        post_stop 一发出，当前任务的 job.wait() 就立即返回，任务本身还在跑完手上那个
+        节点，tasker 没空闲前投递一律被拒（task_id=0）。定时器线程在 ``_post_self_stop``
+        里等停止 job，那个 job 排在当前任务之后，它返回就是停止生效；之后 tasker 还要
+        收个尾才空闲，所以再看一次 ``running``。返回 False 表示等满也没停下。
+        等的时候整轮时限到点就直接按整轮超时收尾，不再说「继续后续任务」。
+        """
+
+        return self._wait_self_stop_settled(lambda: self._task_deadline_stop_thread)
+
+    def _wait_self_stop_settled(
+        self, stop_thread: Callable[[], threading.Thread | None]
+    ) -> bool:
+        """等我们自己发起的停止（单任务时限、原地打转）真正生效，tasker 空闲下来。
+
+        先等发起停止的线程结束（它在里面等停止 job），再看 ``tasker.running``；最多等
+        ``TASK_STOP_SETTLE_SECONDS``，返回 False 表示等满也没停下。
+        """
+
+        give_up_at = time.monotonic() + TASK_STOP_SETTLE_SECONDS
+        while True:
+            self._raise_if_deadline_hit()
+            thread = stop_thread()
+            busy = thread is not None and thread.is_alive()
+            if not busy and self.tasker is not None:
+                try:
+                    busy = bool(self.tasker.running)
+                except Exception:
+                    busy = False
+            if not busy:
+                return True
+            if time.monotonic() >= give_up_at:
+                return False
+            if self._stop_requested.wait(timeout=TASK_STOP_SETTLE_POLL_SECONDS):
+                raise RuntimeError("MaaFW 任务已停止")
+
+    def _handle_loop_guard(
+        self, task: MaaFWTaskRunPlan, index: int
+    ) -> Literal["next", "skip_rest"] | None:
+        """本任务被原地打转检测停掉时收尾；返回值同 ``_handle_task_deadline``。
+
+        口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
+        任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
+        又被脚本侧强停时跳过剩余任务），其余记一条任务失败再继续。必须早于
+        ``_external_stop_active``：停止是我们自己 post_stop 的，tasker 的 stopping 会置位，
+        晚了就被当成脚本侧强停、跳过本轮剩余任务。
+        """
+
+        with self._loop_guard_lock:
+            hit = self._loop_guard_hit
+            self._loop_guard_hit = None
+        if hit is None:
+            return None
+        self._join_loop_guard_stop()
+        _, verdict = hit
+        self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
+        reason = _format_loop_guard_reason(verdict)
+        display_name = _task_display_name(task)
+        has_next = index + 1 < len(self.plan.tasks)
+        # 与单任务时限同一口径：要接着投下一个任务时先等停止真正生效，tasker 没空闲
+        # 会以 task_id=0 拒掉下一个任务，再被当成脚本侧强停跳过本轮剩余任务。
+        # 结束本轮或排在队尾时不等。
+        not_settled = RuntimeError(
+            f"{reason}，停止后 {TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，"
+            f"本轮剩余任务已跳过: {display_name}"
+        )
+        if task.nonFatalMessage:
+            self._raise_if_game_launch_failed(display_name, reason)
+            if has_next and not self._wait_self_stop_settled(
+                lambda: self._loop_guard_stop_thread
+            ):
+                raise not_settled
+            if has_next and self._nonfatal_script_stopped(task, reason):
+                return "skip_rest"
+            # 特调声明的收尾任务：截图、记一行，不算本轮失败
+            stopped = "已停止并继续后续任务" if has_next else "已停止"
+            self.send_log(
+                f"{reason}，{stopped}: {display_name}；{task.nonFatalMessage}"
+            )
+            return "next"
+        if index == 0 or task.abortRoundMessage:
+            if task.abortRoundMessage:
+                reason = f"{task.abortRoundMessage}：{reason}"
+            raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        if has_next and not self._wait_self_stop_settled(
+            lambda: self._loop_guard_stop_thread
+        ):
+            raise not_settled
+        self._failed_task_errors.append((task.name, reason))
+        if has_next:
+            self.send_log(f"{reason}，已停止并继续后续任务: {display_name}")
+        else:
+            self.send_log(f"{reason}，已停止: {display_name}")
+        return "next"
+
+    def _raise_if_game_launch_failed(
+        self,
+        display_name: str,
+        message: str,
+        cause: BaseException | None = None,
+    ) -> None:
+        """这个任务里有致命控制器动作（``start_app``）失败时按「游戏未能启动」结束本轮。
+
+        特调声明的收尾任务（``nonFatalMessage``）的各条放过路径（失败、超时、打转、被脚本侧
+        强停）都要先过这一关：游戏都没起来，不能因为放过把本轮判成成功。
+        """
+
+        fatal = sorted(self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS)
+        if not fatal:
+            return
+        error = RuntimeError(
+            f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
+            f"{display_name}: {message}"
+        )
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _exited_agent(self) -> tuple[str, int] | None:
+        """运行中退出了的 agent 子进程（名字, 退出码）；都还活着时返回 None。"""
+
+        for process in self.agent_processes:
+            try:
+                exit_code = process.poll()
+            except Exception:
+                continue
+            if exit_code is not None:
+                label = self._agent_labels.get(process.pid, str(process.pid))
+                return label, exit_code
+        return None
+
+    def _raise_if_agent_exited(
+        self, display_name: str, message: str, cause: BaseException | None = None
+    ) -> None:
+        """任务失败时 agent 子进程已经退出：结束本轮，交给宿主重试。
+
+        连上之后 agent 崩溃（Python 异常退出、Go agent panic、被杀软拦掉），后面用到
+        自定义识别 / 动作的节点全部会失败，接着跑只是逐个白等、报一串节点名；宿主重试
+        会换新 worker 起新 agent。
+        """
+
+        exited = self._exited_agent()
+        if exited is None:
+            return
+        label, exit_code = exited
+        error = RuntimeError(
+            f"Agent 进程已退出（{label}, exit={exit_code}），本轮剩余任务已跳过: "
+            f"{display_name}: {message}"
+        )
+        if cause is not None:
+            raise error from cause
+        raise error
+
+    def _loop_guard_exempt(self, name: str) -> bool:
+        """节点是否声明了不做原地打转检测（检测器自己还会按节点名缓存）。"""
+
+        if name in self._loop_guard_exempt_nodes:
+            return True
+        if not self._loop_guard_lookup_on_hit:
+            return False
+        if name in self._loop_guard_lookup_cache:
+            return self._loop_guard_lookup_cache[name]
+        exempt = False
+        resource = self.resource
+        if resource is not None:
+            try:
+                exempt = parse_loop_guard_exempt(resource.get_node_data(name))
+            except Exception:
+                exempt = False
+        self._loop_guard_lookup_cache[name] = exempt
+        return exempt
+
+    def _on_loop_guard_notification(self, message: str, details: Any) -> None:
+        """把节点通知喂给原地打转检测；判到卡死时置位并在单独线程里停掉当前任务。
+
+        与 ``_on_signal_notification`` 同一个做法：这是框架的回调线程，不能在这里等
+        post_stop 的 job，截图与收尾留给主线程（``_handle_loop_guard``）。
+        """
+
+        guard = self._loop_guard
+        if guard is None or not message.startswith(
+            ("Node.Recognition.", "Node.PipelineNode.")
+        ):
+            return
+        thread: threading.Thread | None = None
+        task_name: str | None = None
+        with self._loop_guard_lock:
+            verdict = guard.feed(message, details)
+            if verdict is None:
+                return
+            if verdict.kind == "stuck":
+                with self._signal_lock:
+                    if self._task_in_flight and self._signal_hit is None:
+                        task_name = self._in_flight_task
+                if (
+                    task_name is not None
+                    and self._loop_guard_hit is None
+                    and not self._stop_requested.is_set()
+                    and not self._deadline_hit.is_set()
+                    and not self._task_deadline_hit.is_set()
+                ):
+                    self._loop_guard_hit = (task_name, verdict)
+                    thread = threading.Thread(
+                        target=self._post_loop_guard_stop,
+                        name="maafw-loop-guard-stop",
+                        daemon=True,
+                    )
+                    self._loop_guard_stop_thread = thread
+                    # 锁内启动：主线程拿到命中标记时线程一定已经在跑，join 才等得到它。
+                    thread.start()
+        if verdict.kind == "unsupported":
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}原地打转检测：MaaFramework 通知缺少所需字段"
+                f"（{verdict.detail}），本次运行不做检测"
+            )
+            return
+        summary = _format_loop_guard_detail(verdict)
+        if verdict.kind == "warn":
+            self.send_log(f"{DETAIL_LOG_PREFIX}疑似原地打转：{summary}")
+            return
+        if thread is None:
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}判定原地打转时没有可停止的任务，已忽略：{summary}"
+            )
+            return
+        self.send_log(f"{DETAIL_LOG_PREFIX}判定原地打转：{summary}")
+        self.send_log(f"{_format_loop_guard_reason(verdict)}，正在停止当前任务并截图")
+
+    def _post_loop_guard_stop(self) -> None:
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"停止 MaaFW tasker 失败: {exc}")
+
+    def _join_loop_guard_stop(self) -> None:
+        thread = self._loop_guard_stop_thread
+        if thread is None or thread is threading.current_thread():
+            return
+        with suppress(RuntimeError):
+            thread.join(timeout=SIGNAL_STOP_JOIN_SECONDS)
 
     def cleanup(self) -> None:
         self._stop_requested.set()
@@ -1319,6 +1716,11 @@ class MaaFWRunner:
         self._signal_specs = {}
         self._signal_lookup_on_hit = False
         self._signal_lookup_cache = {}
+        # 原地打转检测的豁免节点（attach.auto_mas_loop_guard: false）同一趟收集，仅开启时。
+        collect_exempt = self._loop_guard is not None
+        self._loop_guard_exempt_nodes = set()
+        self._loop_guard_lookup_on_hit = False
+        self._loop_guard_lookup_cache = {}
         resource = self.resource
         get_node_data = getattr(resource, "get_node_data", None)
         if not callable(get_node_data):
@@ -1332,12 +1734,14 @@ class MaaFWRunner:
             names = list(resource.node_list)
         except Exception as exc:
             self._signal_lookup_on_hit = True
+            self._loop_guard_lookup_on_hit = collect_exempt
             self.send_log(
                 f"{DETAIL_LOG_PREFIX}MaaFW binding 列不出节点（{exc}），不强开维护 / "
                 "更新信号节点，只在节点命中时按名字判定"
             )
             return
         specs: dict[str, MaaFWSignalSpec] = {}
+        exempt: set[str] = set()
         for name in names:
             try:
                 data = get_node_data(name)
@@ -1346,12 +1750,18 @@ class MaaFWRunner:
             spec = self._parse_signal_node(name, data)
             if spec is not None:
                 specs[name] = spec
+            if collect_exempt and parse_loop_guard_exempt(data):
+                exempt.add(name)
         self._signal_specs = specs
+        self._loop_guard_exempt_nodes = exempt
         elapsed_ms = (time.perf_counter() - started) * 1000
         found = "、".join(sorted(specs)) if specs else "无"
+        exempt_text = (
+            f"，原地打转检测豁免节点: {'、'.join(sorted(exempt))}" if exempt else ""
+        )
         self.send_log(
             f"{DETAIL_LOG_PREFIX}信号节点扫描：{len(names)} 个节点，用时 "
-            f"{elapsed_ms:.0f} ms，信号节点: {found}"
+            f"{elapsed_ms:.0f} ms，信号节点: {found}{exempt_text}"
         )
 
     def _parse_signal_node(self, name: str, data: Any) -> MaaFWSignalSpec | None:
@@ -1392,7 +1802,10 @@ class MaaFWRunner:
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
             raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
-        self._wait_job(self.resource.post_bundle(path_info.resolved))
+        self._wait_job(
+            self.resource.post_bundle(path_info.resolved),
+            failure=f"加载资源失败: {path_info.resolved}",
+        )
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:
@@ -1464,7 +1877,10 @@ class MaaFWRunner:
         self.controller = self._create_controller(device_config)
         self._apply_screenshot_target(self.controller)
         self._install_controller_sink(self.controller)
-        self._wait_job(self.controller.post_connection())
+        self._wait_job(
+            self.controller.post_connection(),
+            failure=f"连接控制器失败: {self.plan.controllerName}",
+        )
         if not self.tasker.bind(self.resource, self.controller):
             raise RuntimeError("无法绑定 MaaFW resource/controller/tasker")
         self._install_tasker_sink()
@@ -1943,6 +2359,7 @@ class MaaFWRunner:
                 ) from exc
             self.agent_clients.append(agent_client)
             self.agent_processes.append(process)
+            self._agent_labels[process.pid] = Path(command[0]).name
             self._start_agent_output_reader(process, Path(command[0]).name)
             try:
                 self._connect_agent_client(
@@ -2017,11 +2434,20 @@ class MaaFWRunner:
             prepare_agent_envs,
         )
 
-        prepare_agent_envs(
+        # 项目没自带原生库时 agent 的 maafw 钉成本 worker 实际加载的 binding 版本（宿主备 runner
+        # 环境时解析出的同一个，也在 job 的 PI_CLIENT_MAAFW_VERSION 里）。
+        _loaded, binding_version = describe_loaded_maafw()
+        result = prepare_agent_envs(
             Path(self.plan.path),
             process_agents,
             send_log=self.send_log,
+            runner_maafw_version=binding_version
+            or (self.plan.piEnv or {}).get("PI_CLIENT_MAAFW_VERSION"),
+            # 运行时口径「报错照跑」：项目自带 Python 检查没通过也照常起 agent，原因留着，
+            # agent 很快退出时带进「Agent 进程已退出」的报错（_connect_agent_client）。
+            lenient_health_check=True,
         )
+        self._agent_health_warnings = list(result.healthWarnings)
         self.send_log("[Python环境] Agent 环境准备完成")
 
     def _load_embedded_agents(self) -> None:
@@ -2130,8 +2556,14 @@ class MaaFWRunner:
             attempt += 1
             exit_code = process.poll()
             if exit_code is not None:
+                # 运行前检查「报错照跑」放过去的原因带上：agent 很快退出多半就是它，
+                # 用户看最后这句报错就知道根因，不用翻前面的日志。
                 raise RuntimeError(
                     f"Agent 进程已退出，无法连接: {label}, exit={exit_code}"
+                    + "".join(
+                        f"；运行前检查发现：{reason}"
+                        for reason in self._agent_health_warnings
+                    )
                 )
             if self._stop_requested.is_set():
                 raise RuntimeError(f"已停止，不再等待 Agent 连接: {label}")
@@ -2235,6 +2667,7 @@ class MaaFWRunner:
         thread = threading.Thread(
             target=self._read_agent_output,
             args=(process.stdout, label, process.pid),
+            kwargs={"process": process},
             name=f"maafw-agent-log-{process.pid}",
             daemon=True,
         )
@@ -2242,12 +2675,18 @@ class MaaFWRunner:
         self.agent_output_threads.append(thread)
 
     def _read_agent_output(
-        self, stream: BinaryIO | TextIO, label: str, pid: int | None = None
+        self,
+        stream: BinaryIO | TextIO,
+        label: str,
+        pid: int | None = None,
+        *,
+        process: subprocess.Popen | None = None,
     ) -> None:
         try:
             while True:
                 line = stream.readline()
                 if line in ("", b""):
+                    self._log_agent_output_closed(label, process)
                     break
                 message = self._decode_agent_output_line(line).rstrip()
                 if message:
@@ -2264,6 +2703,31 @@ class MaaFWRunner:
             return
         except Exception as exc:
             self.send_log(f"读取 agent 输出失败: {exc}")
+
+    def _log_agent_output_closed(
+        self, label: str, process: subprocess.Popen | None
+    ) -> None:
+        """agent 输出读到结尾时记一行退出码：运行中崩溃时这是唯一能直接看出根因的一行。"""
+
+        if process is None:
+            return
+        exit_code: int | None = None
+        try:
+            exit_code = process.wait(timeout=AGENT_EXIT_CODE_WAIT_SECONDS)
+        except Exception:
+            with suppress(Exception):
+                exit_code = process.poll()
+        if exit_code is None:
+            # 输出关了但进程还活着（agent 自己关了 stdout）：不能说成已退出
+            self.send_log(f"{DETAIL_LOG_PREFIX}Agent 输出已关闭，进程仍在运行: {label}")
+            return
+        if self._stop_requested.is_set() or not self._initialized:
+            # 收尾时是我们自己结束的 agent；连接阶段退出由连接循环报错。只进 .worker.log
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_code}"
+            )
+            return
+        self.send_log(f"Agent 进程已退出: {label}, exit={exit_code}")
 
     @staticmethod
     def _decode_agent_output_line(line: bytes | str) -> str:
@@ -2490,10 +2954,16 @@ class MaaFWRunner:
         渲染完成）；或者画面连续 ``STARTUP_SCREEN_CONTENT_SECONDS`` 秒都有内容，哪怕一直
         在动（动态背景、进度条）——黑屏 / 纯色会把两个计数都清零。截不到图就等到上限，
         和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
+
+        宿主要求按读盘判断（``task_start_gate_mode="disk_quiet"``）时改走
+        :meth:`_wait_task_start_disk_quiet`。
         """
 
         not_before = self._task_start_not_before
         if not_before is None:
+            return
+        if self._task_start_gate_mode == TASK_START_GATE_DISK_QUIET:
+            self._wait_task_start_disk_quiet(not_before)
             return
         remaining = min(not_before - time.time(), TASK_START_GATE_MAX_SECONDS)
         if self._run_deadline_at is not None:
@@ -2512,6 +2982,8 @@ class MaaFWRunner:
         stable_seconds = 0
         content_seconds = 0
         capture_error_logged = False
+        # 最后一帧的状态，等满上限时按它说明为什么没提前放行。
+        last_state: str | None = None
         while True:
             if self._stop_requested.wait(
                 timeout=STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS
@@ -2520,7 +2992,13 @@ class MaaFWRunner:
             self._raise_if_deadline_hit()
             left = gate_ends_at - time.monotonic()
             if left <= 0:
-                self.send_log(f"等满 {remaining:.0f}s，画面仍在变化，按上限下发任务")
+                state_text = {
+                    "no_frame": "截不到画面",
+                    "blank": "画面仍是黑屏或纯色",
+                    "changing": "画面仍在变化",
+                }.get(last_state or "")
+                state_part = f"{state_text}，" if state_text else ""
+                self.send_log(f"等满 {remaining:.0f}s，{state_part}按上限下发任务")
                 return
             try:
                 frame = _sample_startup_screen(self.controller)
@@ -2529,7 +3007,13 @@ class MaaFWRunner:
                     capture_error_logged = True
                     self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
                 frame = None
-            if frame is None or _startup_screen_is_blank(frame):
+            if frame is None:
+                last_state = "no_frame"
+            elif _startup_screen_is_blank(frame):
+                last_state = "blank"
+            else:
+                last_state = "changing"
+            if last_state != "changing":
                 # 截不到、黑屏、纯色：都还在加载，两个计数都重来
                 previous = None
                 stable_seconds = 0
@@ -2554,12 +3038,144 @@ class MaaFWRunner:
                 )
                 return
 
+    def _wait_task_start_disk_quiet(self, not_before: float) -> None:
+        """按「画面有内容、读盘停下来」放行（``task_start_gate_mode="disk_quiet"``）。
+
+        有的游戏加载页和标题都一直在动、都有内容，CPU 和出帧也是标题比加载更忙，像素判断
+        分不出两者；读盘量分得出：加载时客体持续读盘，到标题后几乎为 0。宿主在这类场合
+        （例如模拟器冷启动）传这个模式，这里每秒读一次客体 ``/proc/vmstat`` 的 ``pgpgin`` 算读盘速度：
+
+        1. 读速连续 ``DISK_QUIET_SAMPLES`` 次低于 ``DISK_QUIET_READ_BYTES_PER_SECOND``、且当前画面
+           有内容，就下发；
+        2. 到 ``not_before``（上限）时画面有内容就按上限下发；还是黑屏 / 纯色就继续等，出画面
+           再下发，从开始等算满 ``TASK_START_GATE_MAX_SECONDS`` 照常下发；
+        3. 截不到图、或读不到 ``pgpgin``，退回按时间：等满上限就下发。
+        """
+
+        started = time.monotonic()
+        hard_end = started + TASK_START_GATE_MAX_SECONDS
+        if self._run_deadline_at is not None:
+            # 截止时刻比上限还早时只等到截止时刻，下面按超时收尾。
+            hard_end = min(hard_end, started + self._run_deadline_at - time.time())
+        cap_end = min(started + (not_before - time.time()), hard_end)
+        self.send_log(
+            f"游戏刚启动，最多等 {max(cap_end - started, 0):.0f}s；画面有内容且读盘连续 "
+            f"{DISK_QUIET_SAMPLES}s 低于 1 MB/s 就提前下发任务"
+        )
+
+        try:
+            last_bytes = _guest_read_bytes(self.controller)
+        except Exception as exc:
+            self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
+            return
+        last_at = time.monotonic()
+
+        quiet_samples = 0
+        while time.monotonic() < cap_end:
+            self._hold_task_start_until(
+                min(time.monotonic() + DISK_QUIET_SAMPLE_INTERVAL_SECONDS, cap_end)
+            )
+            try:
+                read_bytes = _guest_read_bytes(self.controller)
+            except Exception as exc:
+                self._hold_task_start_by_time(cap_end, f"读不到客体读盘量（{exc}）")
+                return
+            now = time.monotonic()
+            # 计数器回绕或变小（重启过之类）时增量截成 0
+            read_rate = max(read_bytes - last_bytes, 0) / max(now - last_at, 1e-3)
+            last_bytes, last_at = read_bytes, now
+            if read_rate >= DISK_QUIET_READ_BYTES_PER_SECOND:
+                quiet_samples = 0
+                continue
+            quiet_samples += 1
+            if quiet_samples < DISK_QUIET_SAMPLES:
+                continue
+            state = self._startup_screen_state()
+            if state is None:
+                self._hold_task_start_by_time(cap_end, "截不到画面")
+                return
+            if state == "content":
+                self.send_log(
+                    f"画面有内容、读盘已连续 {DISK_QUIET_SAMPLES}s 低于 1 MB/s，下发任务"
+                    f"（实际等了 {time.monotonic() - started:.0f}s）"
+                )
+                return
+
+        self._raise_if_deadline_hit()
+        state = self._startup_screen_state()
+        if state is None:
+            self.send_log("截不到画面，按上限下发任务")
+            return
+        if state == "content":
+            self.send_log(
+                f"等满 {time.monotonic() - started:.0f}s，画面有内容，按上限下发任务"
+            )
+            return
+        left = hard_end - time.monotonic()
+        self.send_log(
+            f"等满上限时画面仍是黑屏或纯色，继续等画面出来（最多再等 {max(left, 0):.0f}s）"
+        )
+        blank_since = time.monotonic()
+        while True:
+            left = hard_end - time.monotonic()
+            if left <= 0:
+                self._raise_if_deadline_hit()
+                self.send_log(
+                    f"已等到上限 {TASK_START_GATE_MAX_SECONDS:.0f}s，画面仍是黑屏或纯色，"
+                    "照常下发任务"
+                )
+                return
+            self._hold_task_start_until(
+                time.monotonic() + min(STARTUP_SCREEN_SAMPLE_INTERVAL_SECONDS, left)
+            )
+            state = self._startup_screen_state()
+            if state is None:
+                self.send_log("截不到画面，按上限下发任务")
+                return
+            if state == "content":
+                self.send_log(
+                    f"画面出来了，下发任务（黑屏多等了 {time.monotonic() - blank_since:.0f}s）"
+                )
+                return
+
+    def _startup_screen_state(self) -> str | None:
+        """当前画面：``content`` 有内容、``blank`` 黑屏或纯色、``None`` 截不到。"""
+
+        try:
+            frame = _sample_startup_screen(self.controller)
+        except Exception:
+            return None
+        if frame is None:
+            return None
+        return "blank" if _startup_screen_is_blank(frame) else "content"
+
+    def _hold_task_start_until(self, end: float) -> None:
+        """等到单调时钟 ``end``；停止请求、运行截止都能立即打断。"""
+
+        while True:
+            left = end - time.monotonic()
+            if left <= 0:
+                return
+            if self._stop_requested.wait(timeout=min(1.0, left)):
+                raise RuntimeError("MaaFW 任务已停止")
+            self._raise_if_deadline_hit()
+
+    def _hold_task_start_by_time(self, cap_end: float, reason: str) -> None:
+        """判据取不到时退回按时间：等满上限就下发。"""
+
+        self.send_log(f"{reason}，退回按时间：等满上限就下发任务")
+        self._hold_task_start_until(cap_end)
+        self._raise_if_deadline_hit()
+
     def _run_tasks(self) -> list[str]:
         completed_tasks: list[str] = []
         self._completed_tasks = completed_tasks
         self._failed_task_errors = []
         total_tasks = len(self.plan.tasks)
         for index, task in enumerate(self.plan.tasks):
+            # 先于停止检查设：两个任务之间点停止时，记的是接下来要跑的这个，
+            # 不是上一个已完成的
+            self._current_task_name = task.name
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
             tasker = self.tasker
@@ -2576,6 +3192,14 @@ class MaaFWRunner:
             # 上一个任务超时留下的标记要在投递前清掉：投递本身抛错时定时器还没起，
             # 不清的话这次投递失败会被当成「单任务超时」收尾。
             self._task_deadline_hit.clear()
+            if self._loop_guard is not None:
+                # 上一个任务若是被单任务时限抢先收尾，打转判定发起的停止可能还没落地；
+                # 先等它做完，否则它会停掉这次投递的任务，被当成脚本侧强停跳过本轮。
+                self._join_loop_guard_stop()
+                # 每个任务从零开始数循环；上一个任务的命中标记同理清掉。
+                with self._loop_guard_lock:
+                    self._loop_guard.reset()
+                    self._loop_guard_hit = None
             pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
@@ -2616,21 +3240,38 @@ class MaaFWRunner:
                 self._raise_if_deadline_hit(task.name, only_if_stopped=True)
                 # 单任务时限到了同样是 post_stop 打断的返回，要早于普通失败判定，
                 # 否则用户看到的是「任务失败」而不是「超时」。
-                if self._handle_task_deadline(task, index):
+                if handled := self._handle_task_deadline(task, index):
+                    if handled == "skip_rest":
+                        break
+                    time.sleep(0.1)
+                    continue
+                # 原地打转检测的停止同样是我们自己 post_stop 的，同一个位置收尾。
+                if handled := self._handle_loop_guard(task, index):
+                    if handled == "skip_rest":
+                        break
                     time.sleep(0.1)
                     continue
                 message = str(exc)
-                self._failed_task_errors.append((task.name, message))
+                if not task.nonFatalMessage:
+                    self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
-                fatal = sorted(
-                    self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS
-                )
-                if fatal:
-                    actions = "、".join(fatal)
-                    raise RuntimeError(
-                        f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
-                        f"{display_name}: {message}"
-                    ) from exc
+                self._raise_if_game_launch_failed(display_name, message, cause=exc)
+                if not task.nonFatalMessage:
+                    self._raise_if_agent_exited(display_name, message, cause=exc)
+                if task.nonFatalMessage:
+                    # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
+                    # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
+                    if self._external_stop_active(tasker):
+                        self.send_log(
+                            f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+                            f"{display_name}；{task.nonFatalMessage}"
+                        )
+                        break
+                    self.send_log(
+                        f"任务失败: {display_name}: {message}；{task.nonFatalMessage}"
+                    )
+                    time.sleep(0.1)
+                    continue
                 if task.abortRoundMessage:
                     # 特调声明的关键任务（如切换账号）没做成，后面的任务会跑在错的状态上
                     raise RuntimeError(
@@ -2661,13 +3302,31 @@ class MaaFWRunner:
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # 被单任务时限 post_stop 打断的入口也可能回报成功，同样要早于
             # _external_stop_active（我们自己的强停会把 stopping 置位）。
-            if self._handle_task_deadline(task, index):
+            if handled := self._handle_task_deadline(task, index):
+                if handled == "skip_rest":
+                    break
+                time.sleep(0.1)
+                continue
+            if handled := self._handle_loop_guard(task, index):
+                if handled == "skip_rest":
+                    break
                 time.sleep(0.1)
                 continue
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
             # `job.failed` 会把一件没做的事记成「任务完成」，整轮还可能被报成
             # 全部成功。这里必须独立判一次。
+            if task.nonFatalMessage and self._external_stop_active(tasker):
+                # 特调声明的收尾任务：截图、跳过本轮剩余任务，但不算本轮失败
+                self._capture_failure_screenshot(task.name)
+                self._raise_if_game_launch_failed(
+                    display_name, "任务被脚本侧强制停止（MaaTaskerPostStop）"
+                )
+                self.send_log(
+                    f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
+                    f"{display_name}；{task.nonFatalMessage}"
+                )
+                break
             if self._external_stop_active(tasker):
                 message = "任务被脚本侧强制停止（MaaTaskerPostStop）"
                 self._failed_task_errors.append((task.name, message))
@@ -2836,19 +3495,43 @@ class MaaFWRunner:
         completed_tasks = getattr(self, "_completed_tasks", [])
         return list(completed_tasks)
 
-    def _wait_job(self, job: Job | JobWithResult) -> None:
+    def _wait_job(
+        self, job: Job | JobWithResult, *, failure: str | None = None
+    ) -> None:
+        """等 job 结束，失败时抛带原因的 RuntimeError。
+
+        ``failure``：资源加载、控制器连接这类不是任务的 job 用的说明（如「加载资源失败:
+        <路径>」）。它们是普通 Job，取不到节点与失败事件，不给说明就会抛出空串，
+        宿主那边只剩「任务执行失败」。
+        """
+
         # MaaFW returns a Job wrapper even when the native Tasker rejects a
         # task (for example, an invalid pipeline override); in that case the
         # native task id is 0 and ``job.failed`` is not reliable.  Treat it as
         # a submission failure instead of reporting an instant success.
         if getattr(job, "job_id", 1) == 0:
-            raise RuntimeError("MaaFW tasker 未接受任务（task_id=0）")
+            if failure is not None:
+                self.send_log(f"{DETAIL_LOG_PREFIX}{failure}: MaaFW job id=0")
+                raise RuntimeError(
+                    f"{failure}：MaaFramework 未接受这个请求，原因见本次运行的 .maafw.log"
+                )
+            self.send_log(f"{DETAIL_LOG_PREFIX}MaaFW tasker 未接受任务（task_id=0）")
+            raise RuntimeError(
+                "MaaFramework 拒绝了这个任务（多半是任务选项生成的覆盖无效），"
+                "原因见本次运行的 .maafw.log"
+            )
         job.wait()
         if job.failed:
             detail = None
             if isinstance(job, JobWithResult):
                 detail = job.get()
-            raise RuntimeError(self._build_job_failure_message(detail))
+            message = self._build_job_failure_message(detail)
+            if not message:
+                lead = failure or "MaaFramework 未给出失败原因"
+                message = f"{lead}，详见本次运行的 .maafw.log"
+            elif failure is not None:
+                message = f"{failure}：{message}"
+            raise RuntimeError(message)
 
     def _on_node_notification(self, message: str, details: dict[str, Any]) -> None:
         """框架每条原始通知都进这里：先打 focus 文案，再记失败摘要。
@@ -2861,6 +3544,16 @@ class MaaFWRunner:
         except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
             with suppress(Exception):
                 self.send_log(f"处理 MaaFW 信号节点通知失败: {exc}")
+        if self._loop_guard is not None:
+            try:
+                self._on_loop_guard_notification(message, details)
+            except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
+                if not self._loop_guard_error_logged:
+                    self._loop_guard_error_logged = True
+                    with suppress(Exception):
+                        self.send_log(
+                            f"{DETAIL_LOG_PREFIX}处理原地打转检测通知失败: {exc}"
+                        )
         try:
             focus_texts = self._resolve_focus_texts(message, details)
             for text in focus_texts:
@@ -3015,6 +3708,63 @@ def _sample_startup_screen(controller: Any) -> Any | None:
         return None
     stride = STARTUP_SCREEN_SAMPLE_STRIDE
     return image[::stride, ::stride].astype(np.int16)
+
+
+def _controller_shell(controller: Any, cmd: str) -> str:
+    """经 controller 在设备上跑一条 shell（只有 ADB 控制器支持），返回输出。"""
+
+    post_shell = getattr(controller, "post_shell", None)
+    if controller is None or post_shell is None:
+        raise RuntimeError("当前 controller 不支持 shell")
+    _declare_shell_signatures(Library.framework())
+    job = post_shell(cmd, DISK_QUIET_SHELL_TIMEOUT_MS).wait()
+    # 只认 succeeded：作业 invalid 时 get() 读到的是 controller 上一次的 shell 输出，
+    # 计数不变会被当成「读盘停了」
+    if not job.succeeded:
+        raise RuntimeError(f"shell 执行失败: {cmd}")
+    return str(job.get() or "")
+
+
+def _declare_shell_signatures(framework: Any) -> None:
+    """给 shell 的两个 C 接口补上 ctypes 签名（binding 自己声明过就不动）。
+
+    老 binding（实测 5.12.3、5.14.0b1）没声明：64 位控制器句柄按 C int 传，``post_shell``
+    一调用就 ``argument 1: OverflowError: int too long to convert``，读盘闸门因此一直读不到
+    读盘量、退回按时间等满上限。5.14.2 起 binding 自己声明了，这里照它的签名补
+    （同 :func:`_encode_current_screen_png`）。
+    """
+
+    from maa.define import (
+        MaaBool,
+        MaaControllerHandle,
+        MaaCtrlId,
+        MaaStringBufferHandle,
+    )
+
+    post_shell = framework.MaaControllerPostShell
+    if post_shell.argtypes is None:
+        post_shell.restype = MaaCtrlId
+        post_shell.argtypes = [MaaControllerHandle, ctypes.c_char_p, ctypes.c_int64]
+    get_output = framework.MaaControllerGetShellOutput
+    if get_output.argtypes is None:
+        get_output.restype = MaaBool
+        get_output.argtypes = [MaaControllerHandle, MaaStringBufferHandle]
+
+
+def _guest_read_bytes(controller: Any) -> int:
+    """客体累计读入的字节数：``/proc/vmstat`` 的 ``pgpgin``（KB）× 1024。
+
+    找不到 ``pgpgin`` 行、或者值不是数字就抛错，调用方按「读不到」退回按时间。
+    """
+
+    for line in _controller_shell(controller, "cat /proc/vmstat").splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "pgpgin":
+            try:
+                return int(fields[1]) * 1024
+            except ValueError:
+                break
+    raise RuntimeError("/proc/vmstat 里没有可用的 pgpgin")
 
 
 def _startup_screen_is_blank(frame: Any) -> bool:
@@ -3242,6 +3992,26 @@ def _format_task_config_detail_log(task: MaaFWTaskRunPlan) -> str:
         f"{DETAIL_LOG_PREFIX}任务配置: "
         f"name={task.name}; entry={task.entry}; options={option_text}; "
         f"override_nodes={override_text}"
+    )
+
+
+def _format_loop_guard_reason(verdict: LoopGuardVerdict) -> str:
+    """原地打转的错误消息：``MaaFW 任务原地打转（A → B 已循环 257 轮 / 10.0 分钟）``。"""
+
+    return (
+        f"{LOOP_GUARD_MESSAGE}（{' → '.join(verdict.cycle)} 已循环 "
+        f"{verdict.iterations} 轮 / {verdict.elapsed_seconds / 60:.1f} 分钟）"
+    )
+
+
+def _format_loop_guard_detail(verdict: LoopGuardVerdict) -> str:
+    """worker 日志里的判定详情：节点循环、轮数、分钟、指纹种数、单轮中位秒数。"""
+
+    return (
+        f"{' → '.join(verdict.cycle)}，已循环 {verdict.iterations} 轮 / "
+        f"{verdict.elapsed_seconds / 60:.1f} 分钟，最近 {WINDOW_ITERATIONS} 轮识别结果 "
+        f"{verdict.distinct_fingerprints} 种，单轮中位 "
+        f"{verdict.median_iteration_seconds:.1f} 秒"
     )
 
 

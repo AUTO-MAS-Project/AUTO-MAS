@@ -299,24 +299,18 @@ watch(
 const shownCandidates = computed(() => pickedImport.value?.candidates ?? props.importCandidates)
 const shownDir = computed(() => pickedImport.value?.dir ?? props.importDir)
 
-const { listShellInstances } = useMaaFWShellInstanceApi()
+const { pickShellInstanceDirectory } = useMaaFWShellInstanceApi()
 const pickImportDirectory = async () => {
-  if (!window.electronAPI?.selectFolder) {
-    message.error(t('edit.filePickingUnavailableRun'))
-    return
-  }
-  const dir = await window.electronAPI.selectFolder()
-  if (!dir) return
-  let candidates: MaaFWHotkeyImportCandidate[]
+  let picked: Awaited<ReturnType<typeof pickShellInstanceDirectory>>
   try {
-    candidates = collectHotkeyImportCandidates(
-      await listShellInstances(props.scriptId, dir),
-      props.options
-    )
+    picked = await pickShellInstanceDirectory(props.scriptId)
   } catch (error) {
     message.error(error instanceof Error ? error.message : String(error))
     return
   }
+  if (!picked) return
+  const { dir } = picked
+  const candidates = collectHotkeyImportCandidates(picked.instances, props.options)
   if (candidates.length === 0) {
     message.warning(t('edit.mfwHotkeyImportNoConfig'))
     return

@@ -59,6 +59,7 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
   Hibernate: '休眠',
   Sleep: '睡眠',
   KillSelf: '关闭软件',
+  RestartSelf: '重启软件',
   Logoff: '注销',
 }
 

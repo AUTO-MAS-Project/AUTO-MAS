@@ -25,15 +25,18 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Literal
+from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
+    ReplayRecord,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -54,8 +57,10 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
+from app.utils.constants import UTC4
 
 from .config import (
     BAAHConfig,
@@ -75,6 +80,7 @@ from .config import (
     ZzzOdConfig,
 )
 from .queue_cycle import (
+    SUCCESS_USER_STATUSES,
     CycleEntry,
     collect_cycle_entries,
     due_entries,
@@ -94,6 +100,9 @@ from .queue_cycle import (
 from .ws import MainConnection, Publisher, protocol
 
 System = LazyProxy("app.services", "System")
+
+if TYPE_CHECKING:
+    from .notify import TaskCommunitySignNotification
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
@@ -289,7 +298,7 @@ def _emulator_key(script_config: object) -> str | None:
         index = script_config.get("Emulator", "Index")
     elif isinstance(script_config, MaaEndConfig):
         # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
-        # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
+        # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
         # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
         emulator_id = script_config.get("Game", "EmulatorId")
         index = script_config.get("Game", "EmulatorIndex")
@@ -310,7 +319,246 @@ def _emulator_key(script_config: object) -> str | None:
     return f"{emulator_id}:{index}"
 
 
+@dataclass(eq=False)
+class _ReplayRequest:
+    """本轮已发起保存的回放，失败日志写完后据此补齐原因与历史关联。"""
+
+    script: ScriptItem
+    user: UserItem | None
+    explicit_reason: bool
+    reason: str
+    history_paths: list[str]
+
+
+@dataclass
 class TaskInfo(TaskItem):
+    community_sign_notification: "TaskCommunitySignNotification | None" = field(
+        default=None, init=False, repr=False
+    )
+    replay_cancelled: bool = field(default=False, init=False, repr=False)
+    _replay_runs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _replay_active: dict[str, int] = field(default_factory=dict, init=False, repr=False)
+    _replay_candidates: dict[str, dict[str, UserItem]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _replay_seen: set[tuple[str, str | None]] = field(
+        default_factory=set, init=False, repr=False
+    )
+    # script_id -> replayId -> 发起时的快照；补齐后移除，不受 _replay_seen 去重影响。
+    _replay_requests: dict[str, dict[str, _ReplayRequest]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
+    def begin_script_run(self, script: ScriptItem) -> None:
+        # 兜底：上一轮漏掉的补齐必须在清空本轮状态之前完成。
+        self.flush_replays(script)
+        previous = self._replay_runs.get(script.script_id)
+        self._replay_seen = {key for key in self._replay_seen if key[0] != previous}
+        self._replay_runs[script.script_id] = str(uuid.uuid4())
+        self._replay_candidates.pop(script.script_id, None)
+        self._replay_active.pop(script.script_id, None)
+        # 循环队列复用 ScriptItem，上一轮账号不能参与本轮预检结果。
+        script.user_list = []
+        script.current_index = -1
+        script.status = "等待"
+
+    def on_status_changed(
+        self, item: UserItem | ScriptItem, previous: str | None, status: str
+    ) -> None:
+        if self.mode != "AutoProxy" or self.replay_cancelled:
+            return
+        script = (
+            item
+            if isinstance(item, ScriptItem)
+            else next(
+                (
+                    script
+                    for script in self.script_list
+                    if any(user is item for user in script.user_list)
+                ),
+                None,
+            )
+        )
+        if script is None:
+            return
+        if isinstance(item, UserItem):
+            candidates = self._replay_candidates.setdefault(script.script_id, {})
+            if status != "异常":
+                candidates.pop(item.user_id, None)
+            elif self._replay_active.get(script.script_id, 0):
+                candidates[item.user_id] = item
+            else:
+                # 账号预检、HSR 原生来源、MFW inner task 不经过 spawn，异常即其终态。
+                self._request_replay(script, item)
+        elif status == "异常" and not self._replay_active.get(script.script_id, 0):
+            self._request_replay(script)
+
+    def on_user_execution_started(self, script: ScriptItem) -> None:
+        self._replay_active[script.script_id] = (
+            self._replay_active.get(script.script_id, 0) + 1
+        )
+
+    def on_user_execution_finished(self, script: ScriptItem) -> None:
+        active = max(0, self._replay_active.get(script.script_id, 0) - 1)
+        self._replay_active[script.script_id] = active
+        if active:
+            return
+        candidates = self._replay_candidates.pop(script.script_id, {})
+        for user in candidates.values():
+            if user.status == "异常":
+                self._request_replay(script, user)
+        if script.status == "异常":
+            self._request_replay(script)
+
+    def _request_replay(
+        self,
+        script: ScriptItem | None,
+        user: UserItem | None = None,
+        *,
+        reason: str = "",
+    ) -> None:
+        if self.mode != "AutoProxy" or self.replay_cancelled:
+            return
+        try:
+            if not Config.get("Replay", "Enabled"):
+                return
+            script_id = script.script_id if script else "scheduler"
+            run_id = self._replay_runs.setdefault(script_id, str(uuid.uuid4()))
+            key = (run_id, user.user_id if user else None)
+            if key in self._replay_seen or (
+                user is None and any(seen[0] == run_id for seen in self._replay_seen)
+            ):
+                return
+            self._replay_seen.add(key)
+            options = Config.obs_replay_options()
+            record = ReplayRecord(
+                replayId=str(uuid.uuid4()),
+                taskId=self.task_id,
+                scriptId=script.script_id if script else None,
+                userId=user.user_id if user else None,
+                scriptName=script.name if script else "调度任务",
+                userName=user.name if user else "",
+                failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                reason=reason or self._replay_reason(user),
+                historyPaths=self._replay_history_paths(script, user),
+            )
+            RuntimeTasks.spawn(
+                self._save_replay(options, record), name=f"obs-replay:{record.replayId}"
+            )
+            if script is not None:
+                self._replay_requests.setdefault(script_id, {})[record.replayId] = (
+                    _ReplayRequest(
+                        script=script,
+                        user=user,
+                        explicit_reason=bool(reason),
+                        reason=record.reason,
+                        history_paths=list(record.historyPaths),
+                    )
+                )
+        except Exception as error:
+            logger.warning(f"无法安排失败回放: {type(error).__name__}")
+
+    @staticmethod
+    def _replay_reason(user: UserItem | None) -> str:
+        if user is None:
+            return "脚本执行异常"
+        return user.result if user.log_record else "账号执行异常"
+
+    @staticmethod
+    def _replay_history_paths(
+        script: ScriptItem | None, user: UserItem | None
+    ) -> list[str]:
+        if script is None or user is None:
+            return []
+        try:
+            script_config = Config.ScriptConfig[uuid.UUID(script.script_id)]
+        except (KeyError, ValueError):
+            script_config = None
+        if isinstance(script_config, MaaFWConfig):
+            # MaaFW 引擎（含特调）自己拼 history 路径，文件名带脚本名前缀。
+            from app.task.MaaFW.tools.embedded.history_paths import (
+                maafw_history_log_path,
+            )
+
+            return [
+                str(
+                    maafw_history_log_path(user.name, start, script.name).with_suffix(
+                        ".json"
+                    )
+                )
+                for start in user.log_record
+            ]
+        return [
+            str(
+                Config.build_history_log_path(
+                    script_name=script.name,
+                    user_name=user.name,
+                    log_time=start.astimezone(UTC4),
+                ).with_suffix(".json")
+            )
+            for start in user.log_record
+        ]
+
+    def flush_replays(self, script: ScriptItem | None = None) -> None:
+        """按当前日志补齐已发起回放的原因与历史关联。
+
+        保存在发现失败时立即发起，部分适配器之后才建日志或写失败原因；在脚本
+        管理器收尾（历史已写完）后调用，``script`` 为空时补齐全部在途脚本。
+        补齐只读当前状态，失败只记日志，不影响任务结果。
+        """
+
+        try:
+            if script is None:
+                pending = list(self._replay_requests.values())
+                self._replay_requests.clear()
+            else:
+                pending = [self._replay_requests.pop(script.script_id, {})]
+            for requests in pending:
+                for replay_id, request in requests.items():
+                    reason = (
+                        request.reason
+                        if request.explicit_reason
+                        else self._replay_reason(request.user)
+                    )
+                    history_paths = self._replay_history_paths(
+                        request.script, request.user
+                    )
+                    if (
+                        reason == request.reason
+                        and history_paths == request.history_paths
+                    ):
+                        continue
+                    RuntimeTasks.spawn(
+                        self._update_replay(replay_id, reason, history_paths),
+                        name=f"obs-replay-update:{replay_id}",
+                    )
+        except Exception as error:
+            logger.warning(f"无法补齐失败回放信息: {type(error).__name__}")
+
+    async def _save_replay(self, options, record: ReplayRecord) -> None:
+        from app.services.obs_replay import ObsReplay
+
+        try:
+            await ObsReplay.save(options, record)
+        except Exception as error:
+            logger.warning(f"失败回放未保存: {error}")
+            await Publisher.send(
+                id=self.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning", message=f"失败回放未保存：{error}"
+                ),
+            )
+
+    async def _update_replay(
+        self, replay_id: str, reason: str, history_paths: list[str]
+    ) -> None:
+        from app.services.obs_replay import ObsReplay
+
+        await ObsReplay.update_record(
+            replay_id, reason=reason, history_paths=history_paths
+        )
+
     async def on_change(self):
         await Publisher.send(
             id=self.task_id,
@@ -368,6 +616,8 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
+    wait_for_finalizer_on_cancel = True
+
     def __init__(
         self,
         task_info: TaskInfo,
@@ -389,6 +639,10 @@ class Task(TaskExecuteBase):
         self.is_closing = False
         self._exit_result = "success"
         self._exit_error: str | None = None
+        self._queue_run_started = False
+        self._queue_before_script_ran = False
+        self._queue_after_script_ran = False
+        self._queue_script_task: asyncio.Task | None = None
 
     def _record_error(self, error: str) -> None:
         """保留任务遇到的首个错误，供完成事件提供机器可读结果。"""
@@ -398,6 +652,15 @@ class Task(TaskExecuteBase):
 
     def cancel(self) -> bool:
         """记录显式取消结果，覆盖尚未进入脚本执行阶段的任务。"""
+        self.task_info.replay_cancelled = True
+        self.stopped_manually = True
+        # 运行前脚本随主任务取消；运行后脚本在独立的收尾协程里，需要主动取消。
+        if (
+            self._queue_after_script_ran
+            and self._queue_script_task is not None
+            and not self._queue_script_task.done()
+        ):
+            self._queue_script_task.cancel()
         cancelled = super().cancel()
         if cancelled and self._exit_result == "success":
             self._exit_result = "cancelled"
@@ -428,6 +691,7 @@ class Task(TaskExecuteBase):
             )
             for script_id in script_ids
         ]
+        self.task_info.schedule_on_change()
 
         logger.success(
             f"任务 {self.task_info.task_id} 检索完成，包含 {len(self.task_info.script_list)} 个脚本项"
@@ -470,6 +734,54 @@ class Task(TaskExecuteBase):
                 (time.perf_counter() - started_at) * 1000,
                 unit="millisecond",
                 attributes=metric_attributes,
+            )
+
+    @contextmanager
+    def _observe_script_run(
+        self, script_item: ScriptItem, script_config
+    ) -> Iterator[None]:
+        """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+        结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+        拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+        """
+
+        from app.services.telemetry import record_count
+
+        outcome = "error"
+        try:
+            yield
+            user_statuses = [
+                user.status
+                for user in script_item.user_list
+                if not user.maintenance_skipped
+            ]
+            if script_item.status == "异常":
+                outcome = "failed"
+            elif script_item.user_list and not user_statuses:
+                outcome = "skipped"
+            elif not user_statuses:
+                # 运行前检查没过时还没加载用户，脚本状态是「异常」
+                outcome = "failed" if script_item.status == "异常" else "no_user"
+            elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
+                outcome = "success"
+            elif "异常" in user_statuses:
+                outcome = "failed"
+            else:
+                outcome = "incomplete"
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            record_count(
+                "auto_mas.script.runs",
+                attributes={
+                    "script_type": _SCRIPT_TYPE_BY_CLASS.get(
+                        type(script_config).__name__, "unknown"
+                    ),
+                    "mode": self.task_info.mode,
+                    "outcome": outcome,
+                },
             )
 
     def _build_task_item(
@@ -518,6 +830,14 @@ class Task(TaskExecuteBase):
         # prepare 也放进 try，它一失败标记就得跟着清。
         try:
             await self.prepare()
+            await self._notice_scope_skipped_scripts()
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                queue_uid,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -530,7 +850,7 @@ class Task(TaskExecuteBase):
 
         queue = Config.QueueConfig[queue_uid]
         now = datetime.now()
-        entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
+        entries = self._collect_entries(queue_uid)
 
         # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
         # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
@@ -585,25 +905,59 @@ class Task(TaskExecuteBase):
                 continue
             results.append(await self._run_cycle_entry(queue_uid, entry, entries))
 
-        if results and not any(result == "success" for result in results):
+        if results and not any(result in ("success", "skipped") for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
-    @staticmethod
-    def _collect_entries(queue_uid: uuid.UUID) -> list[CycleEntry]:
-        return collect_cycle_entries(
+    def _scope_skipped_script_ids(self) -> set[str]:
+        """本次运行范围内被整项排除的托管（勾选后一个用户都没选）。"""
+
+        scope = self.task_info.user_ids_by_script
+        if not scope:
+            return set()
+        return {script_id for script_id, user_ids in scope.items() if not user_ids}
+
+    async def _notice_scope_skipped_scripts(self) -> None:
+        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return
+        for script_item in self.task_info.script_list:
+            if script_item.script_id not in skipped:
+                continue
+            script_item.status = "跳过"
+            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何用户")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                ),
+            )
+
+    def _collect_entries(self, queue_uid: uuid.UUID) -> list[CycleEntry]:
+        """收集队列的待运行条目，并剔除本次一个用户都没选的托管。"""
+
+        entries = collect_cycle_entries(
             Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
         )
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return entries
+        return [entry for entry in entries if entry.script_id not in skipped]
 
     async def _run_cycle_entry(
         self,
         queue_uid: uuid.UUID,
         entry: CycleEntry,
         entries: list[CycleEntry],
-    ) -> Literal["success", "failed", "blocked"]:
+    ) -> Literal["success", "failed", "blocked", "skipped"]:
         """跑一个队列项。
 
         Returns:
             ``blocked`` 表示脚本被别的任务占用、本轮没跑；``failed`` 表示跑了但没成功。
+            ``skipped`` 表示维护跳过，按原周期排下一轮，不立即重试。
         """
 
         # 脚本列表是建任务时冻结的，靠下标回写状态。队列结构在运行中被改过
@@ -627,11 +981,13 @@ class Task(TaskExecuteBase):
 
         # collect 时已过滤掉被删的脚本，这里只防它在本轮中途被删。
         if script_uid not in Config.ScriptConfig:
+            self.task_info.begin_script_run(script_item)
             script_item.status = "异常"
             logger.warning(f"循环跳过: {script_uid} 对应脚本已被删除")
             return "failed"
 
         script_config = Config.ScriptConfig[script_uid]
+        self.task_info.current_index = entry.index
         root_paths, emulator_key = _exclusive_resources(script_config)
         reservation_owner = self.task_info.task_id
 
@@ -646,7 +1002,9 @@ class Task(TaskExecuteBase):
             logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
             return "blocked"
 
+        self.task_info.begin_script_run(script_item)
         started_at = datetime.now()
+        previous_started_at = queue_item.get("Data", "LastCycleStartedAt")
         success = False
         # 循环要跑上几天，单个条目出错只算这一轮失败，不能把整个循环带崩；
         # 用户主动停止走的是 CancelledError，不在这里拦。
@@ -680,7 +1038,8 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                await self._spawn_with_preview(task_item, entry, queue_uid)
+                with self._observe_script_run(script_item, script_config):
+                    await self._spawn_with_preview(task_item, entry, queue_uid)
 
                 success = is_script_success(
                     script_item.status,
@@ -691,6 +1050,18 @@ class Task(TaskExecuteBase):
             logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
         finally:
             self.script_reservations.release(script_uid, reservation_owner)
+            # 管理器已收尾、历史已写完，按最终日志补齐本条目的失败回放。
+            self.task_info.flush_replays(script_item)
+
+        # 维护可能在 manager 准备期间开始；全员尚未开跑时不留实际运行记录。
+        if (
+            script_item.status == "跳过"
+            and script_item.user_list
+            and all(user.maintenance_skipped for user in script_item.user_list)
+        ):
+            await queue_item.set("Data", "LastCycleStartedAt", previous_started_at)
+            await self._advance_cycle_after_maintenance(queue_item)
+            return "skipped"
 
         # 成败都要把下次运行时间推到未来，否则失败的条目会立刻再被挑中。
         finished_at = datetime.now()
@@ -707,6 +1078,15 @@ class Task(TaskExecuteBase):
         if not success:
             logger.warning(f"循环任务未成功: {entry.script_name}")
         return "success" if success else "failed"
+
+    async def _advance_cycle_after_maintenance(self, queue_item) -> None:
+        """仅消费本次排期，不记录代理执行，也不安排维护结束补跑。"""
+        skipped_at = datetime.now()
+        if queue_item.get("Schedule", "IntervalAnchor") == "start":
+            next_run_at = next_after_start(queue_item, skipped_at)
+        else:
+            next_run_at = next_after_finish(queue_item, skipped_at)
+        await queue_item.set("Schedule", "NextRunAt", format_next_run(next_run_at))
 
     async def _spawn_with_preview(
         self,
@@ -774,8 +1154,9 @@ class Task(TaskExecuteBase):
             await self._run_cycle_task()
             return
 
-        # MAS 调度触发的签到先完成，结果随本次脚本完成通知汇总；手动签到按钮不经过此处。
+        # 签到在后台并行执行；完成事件由通知层接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
+            from app.core.notify import TaskCommunitySignNotification
             from app.core.timer import MainTimer
 
             sign_source = {
@@ -783,11 +1164,22 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.community_results = await MainTimer.try_community_for_task(
-                source=sign_source
+            community_sign = TaskCommunitySignNotification(self.task_info)
+            self.task_info.community_sign_notification = community_sign
+            MainTimer.schedule_community_for_task(
+                source=sign_source, on_completed=community_sign.receive
             )
 
         await self.prepare()
+
+        if self.task_info.queue_id is not None:
+            self._queue_run_started = True
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptBeforeTask",
+                "ScriptBeforeTask",
+                "队列运行前脚本",
+            )
 
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
@@ -817,6 +1209,64 @@ class Task(TaskExecuteBase):
         await ensure_desktop_available()
         await self._run_script_list(start_index)
 
+    async def _run_queue_extra_script(
+        self, queue_id: str | uuid.UUID, if_key: str, path_key: str, label: str
+    ) -> bool:
+        """执行队列级额外脚本；每个阶段只允许由队列生命周期调用一次。"""
+
+        if self.stopped_manually or self.is_closing:
+            return False
+
+        queue_uid = uuid.UUID(str(queue_id))
+        if queue_uid not in Config.QueueConfig:
+            return False
+        queue_config = Config.QueueConfig[queue_uid]
+        if not queue_config.get("Info", if_key):
+            return False
+
+        script_path = str(queue_config.get("Info", path_key) or "").strip()
+        if not script_path:
+            return False
+
+        if if_key == "IfScriptBeforeTask":
+            if self._queue_before_script_ran:
+                return False
+            self._queue_before_script_ran = True
+        elif if_key == "IfScriptAfterTask":
+            if self._queue_after_script_ran:
+                return False
+            self._queue_after_script_ran = True
+
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="info", message=f"开始执行{label}"),
+        )
+        # 发布通知会让出执行权，停止请求可能恰好落在创建脚本进程之前。
+        if self.stopped_manually or self.is_closing:
+            return False
+        script_task = asyncio.create_task(execute_script_task(Path(script_path), label))
+        self._queue_script_task = script_task
+        try:
+            succeeded = await script_task
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="info" if succeeded else "warning",
+                    message=f"{label}执行{'成功' if succeeded else '失败'}",
+                ),
+            )
+            return succeeded
+        except asyncio.CancelledError:
+            # 停止收尾脚本后仍发布任务终态，且不再安排完成后操作。
+            if self.stopped_manually and if_key == "IfScriptAfterTask":
+                return False
+            raise
+        finally:
+            if self._queue_script_task is script_task:
+                self._queue_script_task = None
+
     def _is_script_scheduled_today(self, index: int) -> bool:
         """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
 
@@ -829,6 +1279,7 @@ class Task(TaskExecuteBase):
             start_index, len(self.task_info.script_list)
         ):
             script_item = self.task_info.script_list[self.task_info.current_index]
+            self.task_info.begin_script_run(script_item)
             current_script_uid = uuid.UUID(script_item.script_id)
 
             # 检查任务对应脚本是否仍存在
@@ -842,6 +1293,21 @@ class Task(TaskExecuteBase):
                     data=WSTaskNoticeData(
                         level="error",
                         message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
+                )
+                continue
+
+            # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            script_scope = self.task_info.script_user_scope(script_item.script_id)
+            if script_scope is not None and not script_scope:
+                script_item.status = "跳过"
+                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
                     ),
                 )
                 continue
@@ -917,13 +1383,31 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                await self.spawn(task_item)
+                with self._observe_script_run(script_item, script_config):
+                    await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
+                # 管理器已收尾、历史已写完，按最终日志补齐本脚本的失败回放。
+                self.task_info.flush_replays(script_item)
 
     async def final_task(self) -> None:
 
+        # 崩溃或取消时脚本循环来不及补齐，这里收掉还在途的失败回放。
+        self.task_info.flush_replays()
+
+        # 收尾脚本完成后才发布终态，期间队列仍可被停止。
+        if self._queue_run_started and self.task_info.queue_id is not None:
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptAfterTask",
+                "ScriptAfterTask",
+                "队列运行后脚本",
+            )
+
         logger.info(f"任务结束: {self.task_info.task_id}")
+
+        if self.task_info.community_sign_notification is not None:
+            self.task_info.community_sign_notification.finish()
 
         # 完成面板文本带采集节点详情（与推送报告同源渲染），
         # 未配置推送的用户在调度台也能看到
@@ -959,12 +1443,17 @@ class Task(TaskExecuteBase):
         # 那会把关机之类的动作接在一次手动停止后面。
         if (
             not self.is_closing
+            and not self.stopped_manually
             and not self.task_info.is_cycle
             and self.task_info.mode == "AutoProxy"
             and self.task_info.queue_id is not None
         ):
             if Config.power_sign == "NoAction":
-                queue_config = Config.QueueConfig[uuid.UUID(self.task_info.queue_id)]
+                queue_uid = uuid.UUID(self.task_info.queue_id)
+                if queue_uid not in Config.QueueConfig:
+                    logger.info(f"队列 {queue_uid} 已删除，跳过完成后操作")
+                    return
+                queue_config = Config.QueueConfig[queue_uid]
                 Config.power_sign = queue_config.get("Info", "AfterAccomplish")
                 # 队列可为完成后操作单独设定延时, 延时期间不弹出倒计时窗口
                 Config.power_delay = (
@@ -978,6 +1467,15 @@ class Task(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         """处理任务异常并记录退出状态。"""
+        current = self.task_info.current_index
+        script = (
+            self.task_info.script_list[current]
+            if 0 <= current < len(self.task_info.script_list)
+            else None
+        )
+        self.task_info._request_replay(
+            script, reason=f"任务执行异常：{type(e).__name__}: {e}"
+        )
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"
@@ -1221,6 +1719,28 @@ class _TaskManager:
 
         return frozenset(selected)
 
+    def _resolve_queue_user_scope(
+        self, queue_id: uuid.UUID, queue_user_ids: dict[str, list[str]]
+    ) -> dict[str, frozenset[str]]:
+        # 校验队列任务按脚本指定的本次运行用户，口径与脚本任务的多选一致。
+        queue_script_ids = {
+            str(script_id) for script_id in self._queue_script_ids(queue_id)
+        }
+        scope: dict[str, frozenset[str]] = {}
+        for script_id, user_ids in queue_user_ids.items():
+            if script_id not in queue_script_ids:
+                queue_name = Config.QueueConfig[queue_id].get("Info", "Name")
+                raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
+            if not user_ids:
+                # 空集合是有意义的取值：该托管本次一个用户都不跑。
+                scope[script_id] = frozenset()
+                continue
+            scope[script_id] = (
+                self._resolve_target_users(uuid.UUID(script_id), list(user_ids))
+                or frozenset()
+            )
+        return scope
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1229,6 +1749,7 @@ class _TaskManager:
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
         user_ids: list[str] | None = None,
+        queue_user_ids: dict[str, list[str]] | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1242,6 +1763,8 @@ class _TaskManager:
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
             user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
+            queue_user_ids (dict[str, list[str]]): 按脚本ID指定本次运行的用户 ID;
+                仅队列任务可用, 未列出的脚本不限, 空列表表示该脚本本次整项跳过。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1269,6 +1792,12 @@ class _TaskManager:
         ):
             raise ValueError("指定运行用户仅支持脚本的自动代理任务")
 
+        # 队列的用户范围是按托管分别收窄，与脚本任务的整任务用户范围是两套入参。
+        if queue_user_ids is not None and (
+            mode not in ("AutoProxy", "CycleRun") or uid not in Config.QueueConfig
+        ):
+            raise ValueError("按脚本指定运行用户仅支持队列任务")
+
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
         is_cycle = mode == "CycleRun"
@@ -1291,6 +1820,7 @@ class _TaskManager:
             Config.running_cycle_queue_ids.add(uid)
 
         selected_user_ids: frozenset[str] | None = None
+        selected_user_scope: dict[str, frozenset[str]] | None = None
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1333,6 +1863,10 @@ class _TaskManager:
             ]
             target_script_ids = [script_id for script_id, _ in queue_entries]
             script_run_days = [days for _, days in queue_entries]
+            if queue_user_ids is not None:
+                selected_user_scope = self._resolve_queue_user_scope(
+                    queue_id, queue_user_ids
+                )
         elif script_uid is not None and script_uid in Config.ScriptConfig:
             target_script_ids = [script_uid]
         else:
@@ -1368,6 +1902,7 @@ class _TaskManager:
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
                 user_ids=selected_user_ids,
+                user_ids_by_script=selected_user_scope,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
@@ -1433,7 +1968,9 @@ class _TaskManager:
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
             # 倒计时进度由电源任务经 power.countdown.updated 持续推送
-            await System.start_power_task()
+            from app.core.timer import MainTimer
+
+            await System.start_power_task(before_power=MainTimer.drain_community_tasks)
 
     async def stop_task(self, task_id: str) -> None:
         """

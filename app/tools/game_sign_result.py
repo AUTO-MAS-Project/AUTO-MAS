@@ -52,6 +52,9 @@ def build_skland_sign_results(
             reward_map = game_result.get("奖励") or {}
             if not isinstance(reward_map, dict):
                 reward_map = {}
+            failure_reasons = game_result.get("失败原因") or {}
+            if not isinstance(failure_reasons, dict):
+                failure_reasons = {}
             failures = game_result.get("失败", [])
             if game_result.get("总计") == 0 and failures:
                 reason = str(failures[0])
@@ -79,7 +82,11 @@ def build_skland_sign_results(
                             "platform": "森空岛",
                             "status": status,
                             "reward": reward,
-                            "reason": "签到失败" if status == "失败" else "",
+                            "reason": str(
+                                failure_reasons.get(account_label) or "签到失败"
+                            )
+                            if status == "失败"
+                            else "",
                         }
                     )
         return results

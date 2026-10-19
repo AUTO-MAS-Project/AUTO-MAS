@@ -38,13 +38,19 @@ import json
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Awaitable, Callable, Collection, Mapping
+from typing import Awaitable, Callable, Collection, Mapping, Sequence
 
 import httpx
 
 from app.utils.constants import UTC4
 
-from .engine import apply_achievements, build_plan, has_material_gap, judge_achievements
+from .engine import (
+    apply_achievements,
+    build_plan,
+    has_material_gap,
+    judge_achievements,
+    select_auto_cultivate_targets,
+)
 from .providers import (
     DefaultProgressionProvider,
     LocalInventoryProvider,
@@ -106,12 +112,36 @@ def get_inventory_chain() -> tuple[InventoryProvider, ...]:
     return INVENTORY_POOL
 
 
+def filter_observed_cultivate_targets(
+    targets: Sequence[OperatorTarget], snapshots: Mapping[str, ProgressionSnapshot]
+) -> tuple[list[OperatorTarget], list[OperatorTarget]]:
+    """按干员划分有完整执行观测的目标，缺数据的干员留待后续同步。"""
+
+    ready = []
+    deferred = []
+    for target in targets:
+        snapshot = snapshots[target.operator_id]
+        # 未纳入备料的维度也不能交给自动培养消耗库存。
+        missing_observation = any(
+            snapshot.source == "default"
+            or (
+                goal.kind in ("skill", "mastery", "module")
+                and snapshot.source not in ("skland", "manual")
+            )
+            or (goal.kind in ("skill", "mastery") and snapshot.data.skill_level is None)
+            for goal in target.goals
+            if goal.state not in ("achieved", "pending_confirm")
+        )
+        (deferred if missing_observation else ready).append(target)
+    return ready, deferred
+
+
 # 数据集加载端口签名：(配置目录, 代理) -> 数据集
 DatasetLoader = Callable[
     [Path, "httpx.Proxy | str | None"], Awaitable[CultivateDataSet]
 ]
 
-_VALID_GOAL_KINDS: tuple[GoalKind, ...] = ("elite", "mastery", "module")
+_VALID_GOAL_KINDS: tuple[GoalKind, ...] = ("elite", "skill", "mastery", "module")
 _VALID_GOAL_STATES: tuple[GoalState, ...] = (
     "not_started",
     "in_progress",
@@ -133,10 +163,11 @@ def _parse_goal(payload: object) -> Goal | None:
     to_level = payload.get("to_level")
     if not isinstance(to_level, int) or isinstance(to_level, bool):
         return None
-    # elite 上限 2；mastery/module 上限 3
-    if not 1 <= to_level <= (2 if goal_kind == "elite" else 3):
+    minimum = 2 if goal_kind == "skill" else 1
+    maximum = 7 if goal_kind == "skill" else 2 if goal_kind == "elite" else 3
+    if not minimum <= to_level <= maximum:
         return None
-    if goal_kind == "elite":
+    if goal_kind in ("elite", "skill"):
         target_id = ""
     else:
         target_id = payload.get("target_id")
@@ -151,8 +182,7 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
     """把用户配置的养成目标 JSON 解析为契约目标（宽容：跳过非法条目）。
 
     字段与内核对齐：``operator_id`` + ``goals[{kind, target_id, to_level,
-    state}]``。结构保留三类 goal（决策 32 接口预留），档位上限按 kind
-    校验（elite 1-2，mastery/module 1-3）。
+    state}]``。档位按 kind 校验（elite 1-2，skill 2-7，mastery/module 1-3）。
     """
 
     if not isinstance(payload, list):
@@ -213,10 +243,9 @@ def filter_catalog_by_goals(
 ) -> list[dict]:
     """goal-aware 选择器过滤：剔除已无可加目标的干员（纯函数，决策 38）。
 
-    - 观测无专精/模组维度（来源非 skland，local 识别无此类字段）：退化
-      PR2 口径，已精 2 剔除；
-    - skland 快照：精 2 且目录内技能专精全满(3) 且模组全满(3) 才剔除；
-      目录未列出技能与模组时无法判断，保留（宁多勿少）；
+    - 普通技能等级未观测或未满时保留；其他维度沿用既有过滤规则；
+    - skland 快照：目录内精英化、技能等级、专精与模组目标均已满才剔除；
+      目录未列出技能等级、专精与模组时无法判断，保留（宁多勿少）；
     - 干员不在快照中（未拥有/未识别）保留；
     - ``keep_ids``（用户已存目标引用的干员）一律保留：目录同时是编辑行的
       名称来源，被剔除的干员会让已存目标显示成内部 ID、且无法再添加目标
@@ -233,17 +262,24 @@ def filter_catalog_by_goals(
             kept.append(item)
             continue
         progression = snapshot.data
+        max_skill_level = item.get("maxSkillLevel", 0)
+        if max_skill_level > 1 and (
+            progression.skill_level is None or progression.skill_level < max_skill_level
+        ):
+            kept.append(item)
+            continue
         if snapshot.source != "skland":
             if progression.elite < 2:
                 kept.append(item)
             continue
-        if progression.elite < 2:
+        if progression.elite < item.get("maxElite", 2):
             kept.append(item)
             continue
         skills = item.get("skills") or []
         modules = item.get("modules") or []
         if not skills and not modules:
-            kept.append(item)
+            if max_skill_level <= 1:
+                kept.append(item)
             continue
         mastery_maxed = all(
             progression.masteries.get(skill["value"], 0) >= 3 for skill in skills
@@ -448,7 +484,7 @@ class DepotCultivateService:
                     chain=get_progression_chain(),
                     context=context,
                 )
-        _, plan, _ = await self.prepare_cultivate(
+        _, plan, _, _ = await self.prepare_cultivate(
             targets=targets,
             maa_data_dir=maa_data_dir,
             config_path=config_path,
@@ -468,7 +504,11 @@ class DepotCultivateService:
         today: date | None = None,
         context: ProviderContext | None = None,
         skland: tuple[Mapping[str, Progression], int] | None = None,
-    ) -> tuple[list[OperatorTarget], CultivatePlan | None, bool]:
+        require_observations: bool = False,
+        auto_raise: bool = False,
+    ) -> tuple[
+        list[OperatorTarget], CultivatePlan | None, bool, tuple[OperatorTarget, ...]
+    ]:
         """注入前的养成用例编排：达成拦截 → 剩余目标建计划 → 缺口判定。
 
         方案 §4.1 注入三步判定的数据组织：先经自证链判定达成并流转状态
@@ -481,10 +521,12 @@ class DepotCultivateService:
                 森空岛快照时使用）；传入时 `skland` 参数被忽略。
             skland: 森空岛整表快照 (练度映射, 拉取时刻)；None = 未绑定或
                 拉取失败，链短路落 local（决策 37/38）。
+            require_observations: 实际执行要求练度与库存可用，预览仍允许估算。
+            auto_raise: 使用本次练度与库存按材料达成率选取最多十名干员。
 
         Returns:
-            (流转后的目标列表, 养成计划, 是否存在材料缺口)；目标全部达成
-            移除时计划为 None、缺口为 False。
+            (流转后的目标列表, 养成计划, 是否存在材料缺口, 自动培养名单)；
+            目标全部达成移除时计划为 None、缺口为 False、培养名单为空。
 
         Raises:
             Exception: 数据集不可用等错误原样抛出，由调用方 fail-open
@@ -514,6 +556,12 @@ class DepotCultivateService:
             for target in targets
         }
         inventory_result = resolve_inventory(context, self._inventory_chain)
+        if require_observations and inventory_result is None:
+            raise ValueError("本账号尚无可用的仓库识别数据")
+        if require_observations:
+            _, deferred = filter_observed_cultivate_targets(targets, snapshots)
+            if deferred:
+                raise ValueError("部分养成目标尚无可用的练度数据")
         inventory: Mapping[str, int] = inventory_result[0] if inventory_result else {}
 
         updated_targets = apply_achievements(
@@ -525,7 +573,7 @@ class DepotCultivateService:
             today=today,
         )
         if not updated_targets:
-            return [], None, False
+            return [], None, False, ()
 
         plan = build_plan(
             targets=updated_targets,
@@ -535,7 +583,17 @@ class DepotCultivateService:
             inventory=inventory,
         )
         gap = has_material_gap(updated_targets, snapshots, inventory, dataset, today)
-        return updated_targets, plan, gap
+        auto_targets = (
+            select_auto_cultivate_targets(
+                targets=updated_targets,
+                snapshots=snapshots,
+                inventory=inventory,
+                data=dataset,
+            )
+            if auto_raise
+            else ()
+        )
+        return updated_targets, plan, gap, auto_targets
 
     async def _load_dataset(
         self, config_path: Path, proxy: httpx.Proxy | str | None
@@ -555,6 +613,7 @@ __all__ = [
     "get_inventory_chain",
     "get_progression_chain",
     "dump_cultivate_targets",
+    "filter_observed_cultivate_targets",
     "parse_cultivate_targets",
     "takeover_notice_patch_value",
 ]

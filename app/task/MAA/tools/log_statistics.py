@@ -28,11 +28,38 @@ MAA 日志的格式（理智、公招、关卡掉落行）与统计产物都是 
 import json
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 from app.utils import get_logger
 
 logger = get_logger("MAA 日志统计")
+
+
+def parse_cultivate_progress(logs: Iterable[str]) -> list[str]:
+    """收集 MAA 明确输出成功的培养步骤，保留阶段结果而不判定目标达成。"""
+
+    progress: dict[str, list[str]] = {}
+    operator_name: str | None = None
+    for log in logs:
+        for line in log.splitlines():
+            match = re.search(r"干员培养\s+\d+[:：](.+?)\s+成功\s*$", line)
+            if match is not None:
+                operator_name = match.group(1).strip()
+                continue
+
+            step = line.strip()
+            if operator_name is not None and re.fullmatch(
+                r"精英化\s+[12]|技能等级\s+[2-7]|技能\s+[1-3]\s+专精\s+[1-3]",
+                step,
+            ):
+                steps = progress.setdefault(operator_name, [])
+                if step not in steps:
+                    steps.append(step)
+            else:
+                operator_name = None
+
+    return [f"{name}：{'、'.join(steps)}（成功）" for name, steps in progress.items()]
 
 
 def _parse_drop_count(text: str) -> int:
@@ -69,14 +96,19 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
 
     target_task_names = {
         "Fight",
+        "理智任务",
+        "活动关均衡理智",
+        "库存保持与干员养成",
         "理智作战",
         "活动关优先",
+        "活动库存保持",
         "库存保持",
         "养成计划",
     }
     annihilation_markers = ("剿灭", "剿滅", "Annihilation", "殲滅", "섬멸")
     fight_start_markers = (
         "开始任务: Fight",
+        "开始任务: 理智任务",
         "开始任务: 理智作战",
         "Start Task Chain: Fight",
     )
@@ -97,7 +129,8 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
         match = re.search(r"Completed Task Chain:\s*([^,\r\n]+)", line)
         if match is None:
             return None
-        return match.group(1).strip() or None
+        name = multi_chain_suffix.sub("", match.group(1).strip())
+        return name or None
 
     task_ranges: list[tuple[int, int]] = []
     for end_index, line in enumerate(logs):
@@ -184,6 +217,10 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
 
     logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
 
+    # 先保留原始日志，统计解析失败时仍可据此排查。
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text("".join(logs), encoding="utf-8")
+
     data = {
         "recruit_statistics": defaultdict(int),
         "drop_statistics": defaultdict(dict),
@@ -220,6 +257,9 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
             while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
                 i += 1
 
+            if i >= len(logs):
+                break  # 中止时公招结果可能尚未完整输出。
+
             if i < len(logs) and "Tags" in logs[i]:  # 识别星级
                 star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
                 if star_match:
@@ -241,9 +281,6 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
     # 和库存保持任务。
     data["drop_statistics"] = _parse_drop_statistics(logs)
 
-    # 保存日志
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("".join(logs), encoding="utf-8")
     # 保存统计数据
     log_path.with_suffix(".json").write_text(
         json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"

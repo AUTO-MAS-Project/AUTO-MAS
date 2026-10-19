@@ -31,9 +31,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 import httpx
@@ -41,6 +41,7 @@ import httpx
 from app.services.gi_updater.common import UpdaterError
 from app.services.gi_updater.presets import PresetConfig
 from app.services.gi_updater.sophon import MAIN_MATCHING_FIELD, decompress
+from app.services.update_transport import download_range, read_range
 
 __all__ = [
     "ManifestRef",
@@ -171,22 +172,13 @@ async def fetch_range(
             会整份回，那种情况下游会拿错内容）。
     """
     if length <= 0:
-        # 空文件在清单里是真会出现的；拼出 bytes=N-(N-1) 是个非法请求头
         return b""
-    headers = {"Range": f"bytes={offset}-{offset + length - 1}"}
     try:
-        response = await client.get(url, headers=headers, timeout=_CHUNK_TIMEOUT)
-        response.raise_for_status()
-    except httpx.HTTPError as error:
+        return await read_range(
+            client, url, offset=offset, length=length, timeout=_CHUNK_TIMEOUT
+        )
+    except (httpx.HTTPError, ValueError) as error:
         raise UpdaterError(f"取分片失败 {url}: {error}") from error
-    data = response.content
-    if len(data) != length:
-        raise UpdaterError(f"分片长度不符 {url}: 期望 {length} 实际 {len(data)}")
-    return data
-
-
-#: 流式落盘的攒块大小：每攒够这么多字节才回一次主循环之外的写
-_STREAM_FLUSH_BYTES = 1 << 20
 
 
 async def stream_range_to(
@@ -198,50 +190,24 @@ async def stream_range_to(
     *,
     on_bytes: Callable[[int], None] | None = None,
 ) -> int:
-    """按 Range 把一段数据**流式**写进 ``path``，返回收到的字节数。
+    """按 Range 流式写入分片，解压、校验与同步进度回调由 BGI 负责。"""
 
-    与 :func:`fetch_range` 的差别只在内存：整段不攒在内存里，几百 MiB 的文件几路并发同时
-    下也不会把驻留量抬到数 GiB。解压与校验由调用方在写完之后用工作线程做。
+    async def report(size: int) -> None:
+        if on_bytes is not None:
+            on_bytes(size)
 
-    ``on_bytes`` 每攒够一块就报一次网上到达的字节数，供上层的心跳行取用（一批文件要
-    几分钟才全部完成，界面需要更密的动静）。
-
-    Raises:
-        UpdaterError: 网络失败、非 200，或回来的长度不等于要的 ``length``（口径与
-            :func:`fetch_range` 一致）。
-    """
-    headers = {"Range": f"bytes={offset}-{offset + length - 1}"}
-    received = 0
-    buffer = bytearray()
     try:
-        with open(path, "wb") as handle:
-            async with client.stream(
-                "GET", url, headers=headers, timeout=_CHUNK_TIMEOUT
-            ) as response:
-                response.raise_for_status()
-                async for block in response.aiter_bytes():
-                    buffer += block
-                    if len(buffer) >= _STREAM_FLUSH_BYTES:
-                        await asyncio.to_thread(_write_all, handle, bytes(buffer))
-                        received += len(buffer)
-                        if on_bytes is not None:
-                            on_bytes(len(buffer))
-                        buffer.clear()
-            if buffer:
-                await asyncio.to_thread(_write_all, handle, bytes(buffer))
-                received += len(buffer)
-                if on_bytes is not None:
-                    on_bytes(len(buffer))
-    except httpx.HTTPError as error:
+        return await download_range(
+            client,
+            url,
+            Path(path),
+            offset=offset,
+            length=length,
+            timeout=_CHUNK_TIMEOUT,
+            on_bytes=report if on_bytes is not None else None,
+        )
+    except (httpx.HTTPError, ValueError) as error:
         raise UpdaterError(f"取分片失败 {url}: {error}") from error
-    if received != length:
-        raise UpdaterError(f"分片长度不符 {url}: 期望 {length} 实际 {received}")
-    return received
-
-
-def _write_all(handle, data: bytes) -> None:  # noqa: ANN001
-    """把一块数据写进已打开的文件（在线程里跑，主循环不碰磁盘）。"""
-    handle.write(data)
 
 
 def blob_url(prefix: str, name: str) -> str:

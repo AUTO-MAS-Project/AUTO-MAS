@@ -50,6 +50,8 @@ task/daily_task/all_in_one_task.py），全部取自上游用户可见输出（�
 教训——单步失败 ≠ 进程失败）。
 """
 
+from collections.abc import Callable
+
 from app.task.Whimbox.contracts import WhimboxRunVerdict
 
 # 进程级致命（判异常）：出现即失败，不再等收尾行。
@@ -146,7 +148,57 @@ def _abort_reason(message: str) -> str:
 
 
 class WhimboxMarkerParser:
-    """IRunResultParser 默认实现：marker 表逐条匹配的纯函数判定器。"""
+    """保留全文判定契约；运行期只增量检测致命与收尾标志。"""
+
+    def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        """每轮重试清空标志，避免沿用上一轮结论。"""
+
+        self._fatal_message: str | None = None
+        self._fatal_priority = len(WHIMBOX_FATAL_MARKERS)
+        self._sequence_done = False
+        self._marker_tail = ""
+
+    def feed(self, text: str) -> None:
+        """仅检查新增文本；保留短尾以识别跨读取边界的标志。"""
+
+        scan = self._marker_tail + text
+        for i, (needle, message) in enumerate(WHIMBOX_FATAL_MARKERS):
+            if i < self._fatal_priority and needle in scan:
+                self._fatal_priority = i
+                self._fatal_message = message
+        self._sequence_done = (
+            self._sequence_done or WHIMBOX_SEQUENCE_DONE_MARKER in scan
+        )
+        overlap = (
+            max(
+                len(WHIMBOX_SEQUENCE_DONE_MARKER),
+                *(len(needle) for needle, _ in WHIMBOX_FATAL_MARKERS),
+            )
+            - 1
+        )
+        self._marker_tail = scan[-overlap:]
+
+    def evaluate_incremental(
+        self,
+        log_text: Callable[[], str],
+        *,
+        process_running: bool,
+        stalled_minutes: float | None = None,
+        stalled: bool = False,
+    ) -> WhimboxRunVerdict:
+        """普通日志不物化历史；收尾时复用全文判定与原文提取。"""
+
+        if self._fatal_message is not None:
+            return WhimboxRunVerdict(status="fatal", message=self._fatal_message)
+        return self.evaluate(
+            log_text() if self._sequence_done else "",
+            process_running=process_running,
+            stalled_minutes=stalled_minutes,
+            stalled=stalled,
+        )
 
     def evaluate(
         self,

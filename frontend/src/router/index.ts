@@ -325,10 +325,10 @@ const routes = [
     meta: { title: '游戏社区' },
   },
   {
-    path: '/tools',
-    name: 'Tools',
-    component: () => import('../views/tools/index.vue'),
-    meta: { title: '工具' },
+    path: '/theme-store',
+    name: 'ThemeStore',
+    component: () => import('../views/themeStore/index.vue'),
+    meta: { title: '主题商店' },
   },
   {
     path: '/settings',

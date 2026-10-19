@@ -18,9 +18,9 @@ export type ZzzOdUserConfig_Info = {
      */
     Status?: (boolean | null);
     /**
-     * 配置来源（脚本/用户/直控）
+     * base 来源（shared=共享、independent=独立、native=脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | '直控' | null);
+    Base?: ('shared' | 'independent' | 'native' | null);
     /**
      * 是否启用快速配置（与配置来源独立）
      */
@@ -30,7 +30,7 @@ export type ZzzOdUserConfig_Info = {
      */
     SlotIdx?: (number | null);
     /**
-     * 一条龙启动器（直控/用户两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）
+     * 一条龙启动器（原生/独立两态通用；自动=优先上次成功并失败自动切换重试，原始/集成=固定相应 exe）
      */
     LauncherMode?: ('自动' | '原始' | '集成' | null);
     /**

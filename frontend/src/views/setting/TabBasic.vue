@@ -1,47 +1,114 @@
 <script setup lang="ts">
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  DeleteOutlined,
+  QuestionCircleOutlined,
+  ReloadOutlined,
+  SkinOutlined,
+  UploadOutlined,
+} from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
+import { navigateTo } from '@/router'
 import { useLocale } from '@/composables/useLocale'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { SUPPORTED_LOCALES, type AppLocale } from '@/i18n'
 import type { CursorEffect } from '@/types/cursorEffect'
+import type { HomeSatelliteStyle } from '@/types/homeSatellite'
+import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import type { GlobalConfig } from '@/api'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import LogHighlightSettings from '@/components/LogHighlightSettings.vue'
 import TrayMenuEditor from './components/TrayMenuEditor.vue'
+import MascotSettings from './components/MascotSettings.vue'
+import PressSoundSettings from './components/PressSoundSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
   themeMode: ThemeMode | 'system'
+  appearanceValue: string
+  appearanceOptions: { label: string; value: string }[]
   themeColor: ThemeColor
+  themeColorDisabled?: boolean
+  appearanceBusy: boolean
+  themeResetting: boolean
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
   cursorEffect: CursorEffect
   cursorEffectOptions: { label: string; value: CursorEffect }[]
   lowPerformanceMode: boolean
   lowPerformanceModeSaving: boolean
-  handleThemeModeChange(value: SelectValue): void
-  handleThemeColorChange(value: SelectValue): void
+  pauseHomeEffectsWhenRunning: boolean
+  pauseHomeEffectsWhenRunningSaving: boolean
+  homeSatelliteStyle: HomeSatelliteStyle
+  homeSatelliteStyleSaving: boolean
+  pressSoundEnabled: boolean
+  pressSoundPreset: PressSoundPreset
+  pressSoundCustomPath: string
+  pressSoundCustomName: string
+  pressSoundCustomReleasePath: string
+  pressSoundCustomReleaseName: string
+  pressSoundVolume: number
+  pressSoundSaving: boolean
+  handlePressSoundEnabledChange(_enabled: boolean): Promise<void>
+  handlePressSoundPresetChange(value: SelectValue): Promise<void>
+  handlePressSoundVolumeChange(_volume: number): Promise<void>
+  handlePressSoundImport(kind?: 'single' | 'press' | 'release'): Promise<void>
+  handlePressSoundPreview(phase?: PressSoundPhase): void
+  handleHomeSatelliteStyleChange(_style: HomeSatelliteStyle): Promise<void>
+  handleThemeModeChange(value: SelectValue): Promise<void>
+  handleAppearanceChange(value: SelectValue): Promise<void>
+  handleAppearanceImport(): Promise<void>
+  handleAppearanceRemove(): Promise<void>
+  handleThemeColorChange(value: SelectValue): Promise<void>
+  handleThemeReset(): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
+  handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
   handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
 }
 
 const {
   settings,
   themeMode,
+  appearanceValue,
+  appearanceOptions,
   themeColor,
+  themeColorDisabled = false,
+  appearanceBusy,
+  themeResetting,
   themeModeOptions,
   themeColorOptions,
   cursorEffect,
   cursorEffectOptions,
   lowPerformanceMode,
   lowPerformanceModeSaving,
+  pauseHomeEffectsWhenRunning,
+  pauseHomeEffectsWhenRunningSaving,
+  homeSatelliteStyle,
+  homeSatelliteStyleSaving,
+  pressSoundEnabled,
+  pressSoundPreset,
+  pressSoundCustomPath,
+  pressSoundCustomName,
+  pressSoundCustomReleasePath,
+  pressSoundCustomReleaseName,
+  pressSoundVolume,
+  pressSoundSaving,
+  handlePressSoundEnabledChange,
+  handlePressSoundPresetChange,
+  handlePressSoundVolumeChange,
+  handlePressSoundImport,
+  handlePressSoundPreview,
+  handleHomeSatelliteStyleChange,
   handleThemeModeChange,
+  handleAppearanceChange,
+  handleAppearanceImport,
+  handleAppearanceRemove,
   handleThemeColorChange,
+  handleThemeReset,
   handleCursorEffectChange,
   handleLowPerformanceModeChange,
+  handlePauseHomeEffectsWhenRunningChange,
   handleSettingChange,
 } = defineProps<TabBasicProps>()
 
@@ -58,6 +125,10 @@ const handleLocaleChange = (value: unknown): void => {
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('setting.basic.appearance') }}</h3>
+        <a-button :loading="themeResetting" :disabled="appearanceBusy" @click="handleThemeReset">
+          <template #icon><ReloadOutlined /></template>
+          {{ t('setting.basic.resetTheme') }}
+        </a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
@@ -68,20 +139,47 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="themeMode"
-              size="large"
-              style="width: 100%"
-              @change="handleThemeModeChange"
-            >
-              <a-select-option
-                v-for="option in themeModeOptions"
-                :key="option.value"
-                :value="option.value"
+            <div class="appearance-controls">
+              <a-select
+                class="appearance-select"
+                :value="appearanceValue"
+                :disabled="appearanceBusy"
+                size="large"
+                @change="handleAppearanceChange"
               >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
+                <a-select-option
+                  v-for="option in appearanceOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </a-select-option>
+              </a-select>
+              <a-button
+                :aria-label="t('setting.basic.importAppearance')"
+                :loading="appearanceBusy"
+                :disabled="appearanceBusy"
+                @click="handleAppearanceImport"
+              >
+                <template #icon><UploadOutlined /></template>
+                {{ t('setting.basic.importAppearance') }}
+              </a-button>
+              <a-button :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
+                <template #icon><SkinOutlined /></template>
+                {{ t('setting.basic.themeStore') }}
+              </a-button>
+              <a-button
+                v-if="appearanceValue.startsWith('appearance:')"
+                danger
+                :loading="appearanceBusy"
+                :disabled="appearanceBusy"
+                :aria-label="t('setting.basic.removeAppearance')"
+                @click="handleAppearanceRemove"
+              >
+                <template #icon><DeleteOutlined /></template>
+                {{ t('setting.basic.removeAppearance') }}
+              </a-button>
+            </div>
           </div>
         </a-col>
         <a-col :span="12">
@@ -94,6 +192,7 @@ const handleLocaleChange = (value: unknown): void => {
             </div>
             <a-select
               :value="themeColor"
+              :disabled="themeColorDisabled || appearanceBusy"
               size="large"
               style="width: 100%"
               @change="handleThemeColorChange"
@@ -137,6 +236,24 @@ const handleLocaleChange = (value: unknown): void => {
         </a-col>
       </a-row>
     </div>
+
+    <MascotSettings />
+
+    <PressSoundSettings
+      :enabled="pressSoundEnabled"
+      :preset="pressSoundPreset"
+      :volume="pressSoundVolume"
+      :saving="pressSoundSaving"
+      :custom-path="pressSoundCustomPath"
+      :custom-name="pressSoundCustomName"
+      :custom-release-path="pressSoundCustomReleasePath"
+      :custom-release-name="pressSoundCustomReleaseName"
+      @enabled-change="handlePressSoundEnabledChange"
+      @preset-change="handlePressSoundPresetChange"
+      @volume-change="handlePressSoundVolumeChange"
+      @import="handlePressSoundImport"
+      @preview="handlePressSoundPreview"
+    />
 
     <div class="form-section">
       <div class="section-header">
@@ -183,6 +300,54 @@ const handleLocaleChange = (value: unknown): void => {
               size="large"
               style="width: 100%"
               @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
+            >
+              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.homeSatellite') }}</span>
+              <a-tooltip :title="t('setting.basic.homeSatelliteTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="homeSatelliteStyle"
+              :disabled="homeSatelliteStyleSaving"
+              :loading="homeSatelliteStyleSaving"
+              size="large"
+              style="width: 100%"
+              @change="(style: any) => handleHomeSatelliteStyleChange(style)"
+            >
+              <a-select-option value="classic">
+                {{ t('setting.basic.homeSatelliteClassic') }}
+              </a-select-option>
+              <a-select-option value="galaxy">
+                {{ t('setting.basic.homeSatelliteGalaxy') }}
+              </a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.basic.pauseHomeEffects') }}</span>
+              <a-tooltip :title="t('setting.basic.pauseHomeEffectsTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="pauseHomeEffectsWhenRunning"
+              :disabled="pauseHomeEffectsWhenRunningSaving"
+              :loading="pauseHomeEffectsWhenRunningSaving"
+              size="large"
+              style="width: 100%"
+              @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
             >
               <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
               <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
@@ -272,3 +437,29 @@ const handleLocaleChange = (value: unknown): void => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.appearance-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.appearance-select {
+  flex: 1 1 144px;
+  min-width: 144px;
+}
+
+/* 选择框加三个按钮在半栏里放不下时，选择框独占一行，按钮排到下一行。 */
+@media (max-width: 1440px) {
+  .appearance-controls {
+    align-items: stretch;
+  }
+
+  .appearance-controls :deep(.ant-select) {
+    flex-basis: 100%;
+  }
+}
+</style>

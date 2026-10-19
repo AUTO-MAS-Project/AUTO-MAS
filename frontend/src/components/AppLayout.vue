@@ -1,10 +1,19 @@
 <template>
-  <a-layout style="flex: 1; min-height: 0; overflow: hidden">
+  <a-layout
+    style="
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      background: transparent;
+    "
+  >
     <a-layout-sider
       :width="SIDER_WIDTH"
       :theme="isDark ? 'dark' : 'light'"
       :style="{
-        background: 'var(--ant-color-bg-elevated)',
+        background: 'var(--app-appearance-elevated-surface-bg, var(--ant-color-bg-elevated))',
         borderRight: '1px solid var(--ant-color-border)',
       }"
     >
@@ -37,7 +46,7 @@
       </div>
     </a-layout-sider>
 
-    <a-layout style="flex: 1; min-width: 0">
+    <a-layout style="flex: 1; min-width: 0; background: transparent">
       <a-layout-content class="content-area">
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
@@ -61,14 +70,17 @@ import {
   HistoryOutlined,
   HomeOutlined,
   SettingOutlined,
-  ToolOutlined,
+  SkinOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h } from 'vue'
+import { computed } from 'vue'
+import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
+import type { AppearanceMenuIconKey } from '@/types/appearance'
+import { createAppearanceMenuIcon } from './appearanceMenuIcon'
 
 const { t } = useI18n()
 
@@ -76,11 +88,14 @@ const SIDER_WIDTH = 160
 
 const router = useRouter()
 const route = useRoute()
-const { isDark } = useTheme()
+const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
-// 工具：生成菜单项
-const icon = (Comp: any) => () => h(Comp)
+// 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
+const icon =
+  (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
+  () =>
+    createAppearanceMenuIcon(key, Comp, menuIcons)
 
 // 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
 // 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
@@ -89,35 +104,39 @@ const icon = (Comp: any) => () => h(Comp)
 const isDevelopment = computed(() => import.meta.env.DEV)
 
 const mainMenuItems = computed(() => [
-  { key: '/home', label: t('comp.home'), icon: icon(HomeOutlined) },
-  { key: '/scripts', label: t('comp.scripts'), icon: icon(FileTextOutlined) },
-  { key: '/plans', label: t('comp.plans'), icon: icon(CalendarOutlined) },
-  { key: '/emulators', label: t('comp.emulators'), icon: icon(DatabaseOutlined) },
-  { key: '/queue', label: t('comp.queue'), icon: icon(UnorderedListOutlined) },
-  { key: '/scheduler', label: t('comp.scheduler'), icon: icon(ControlOutlined) },
+  { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
+  { key: '/scripts', label: t('comp.scripts'), icon: icon('scripts', FileTextOutlined) },
+  { key: '/plans', label: t('comp.plans'), icon: icon('plans', CalendarOutlined) },
+  { key: '/emulators', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
+  { key: '/queue', label: t('comp.queue'), icon: icon('queue', UnorderedListOutlined) },
+  { key: '/scheduler', label: t('comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
 ])
 
 // 开发环境专用菜单项
 const devMenuItems = computed(() => [
-  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon(SettingOutlined) },
-  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon(SettingOutlined) },
-  { key: '/OverlayMaskDev', label: t('comp.overlayEasterEggTest'), icon: icon(SettingOutlined) },
+  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon('testRouter', SettingOutlined) },
+  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
+  {
+    key: '/OverlayMaskDev',
+    label: t('comp.overlayEasterEggTest'),
+    icon: icon('overlayMaskDev', SettingOutlined),
+  },
   ...(import.meta.env.DEV
     ? [
         {
           key: '/update-download-dev',
           label: t('comp.updateDownloadTest'),
-          icon: icon(BugOutlined),
+          icon: icon('updateDownloadDev', BugOutlined),
         },
       ]
     : []),
 ])
 
 const bottomMenuItems = computed(() => [
-  { key: '/gamesign', label: t('comp.checkIns'), icon: icon(CarryOutOutlined) },
-  { key: '/history', label: t('comp.history'), icon: icon(HistoryOutlined) },
-  { key: '/tools', label: t('comp.tools'), icon: icon(ToolOutlined) },
-  { key: '/settings', label: t('comp.settings'), icon: icon(SettingOutlined) },
+  { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
+  { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
+  { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
+  { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
 ])
 
 type MenuEntry = NonNullable<MenuProps['items']>[number]
@@ -271,6 +290,17 @@ const onMenuClick: MenuProps['onClick'] = info => {
   line-height: 1;
   transition: color 0.16s ease;
   margin-right: 0;
+}
+
+.sider-content :deep(.appearance-menu-icon) {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex: 0 0 24px;
+}
+
+.sider-content :deep(.appearance-menu-icon + .ant-menu-title-content) {
+  margin-inline-start: 0 !important;
 }
 
 /* Hover */

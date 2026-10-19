@@ -21,8 +21,13 @@ import {
   RUNTIME_BINARY_CANCELLED,
   RuntimeBinaryAlignOptions,
   RuntimeBinaryAlignResult,
-  alignRuntimeBinaryWithVersion,
+  RuntimeBinarySyncProgress,
+  RuntimeBinaryCheckOptions,
+  RuntimeBinaryUpdateCheck,
+  alignRuntimeBinaryWithLatest,
+  checkRuntimeBinaryLatest,
 } from './runtimeBinaryService'
+import { resolveRuntimeReleaseChannel, type RuntimeReleaseChannel } from './runtimeReleaseService'
 import {
   CreateRuntimeClientOptions,
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -281,7 +286,7 @@ interface BootstrapProgressDetail {
 export const NETWORK_PROBE_STAGE = 'network.probe'
 
 /**
- * 第 0 步合成的两个 stage：核对 Runtime 版本、下载 Runtime 可执行文件。
+ * 第 0 步合成的两个 stage：解析线上最新 Runtime 版本、下载 Runtime 可执行文件。
  *
  * 它们发生在 bootstrap 之前，与 `uv.download` 共用「运行环境」段的进度条；段内进度只增
  * 不减（见 {@link BootstrapProgressBridge}），要是让这十几兆的下载把段推到 99%，随后
@@ -488,7 +493,7 @@ function clampRunningPercent(percent: number): number {
 export interface RuntimeStageOutcome {
   success: boolean
   error?: string
-  /** 第 0 步的全部钉扎来源均因网络失败。 */
+  /** 第 0 步的全部线上来源均因网络失败。 */
   networkUnavailable?: true
   /** Runtime 的结构化结果码；旧链路不产生。 */
   code?: string
@@ -623,8 +628,9 @@ export interface RuntimeInitializationOptions {
    * `bootstrap` 与 `workspace sync` 的 `--version` 都跟着它走。
    */
   targetVersion?: string
-  /** 第 0 步的实现，测试注入；默认真的联网读钉扎、下载替换。 */
+  /** 第 0 步的实现，测试注入；默认真的联网解析线上最新版、下载替换。 */
   alignRuntimeBinary?: (options: RuntimeBinaryAlignOptions) => Promise<RuntimeBinaryAlignResult>
+  checkRuntimeBinary?: (options: RuntimeBinaryCheckOptions) => Promise<RuntimeBinaryUpdateCheck>
 }
 
 // 走统一工厂而不是裸 new RuntimeClient：遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient
@@ -646,6 +652,8 @@ export class RuntimeInitializationService {
   private activeControl: RuntimeRunControl | null = null
   /** 第 0 步是否在途：它不是 Runtime 命令，取消要靠这个标志而不是 stdin。 */
   private aligning = false
+  /** 覆盖对齐、握手和命令之间的间隙，避免恢复与二进制更新重叠。 */
+  private operating = false
   /** 本次 bootstrap / 重试期间是否收到过取消；每次开始时清零。 */
   private cancelRequested = false
   private readonly alignRuntimeBinary: NonNullable<
@@ -655,7 +663,7 @@ export class RuntimeInitializationService {
   constructor(private readonly options: RuntimeInitializationOptions) {
     this.createClient = options.createClient ?? defaultClientFactory
     this.mirrorService = options.mirrorService
-    this.alignRuntimeBinary = options.alignRuntimeBinary ?? alignRuntimeBinaryWithVersion
+    this.alignRuntimeBinary = options.alignRuntimeBinary ?? alignRuntimeBinaryWithLatest
   }
 
   get launchConfig(): RuntimeSupervisedLaunchConfig {
@@ -665,6 +673,72 @@ export class RuntimeInitializationService {
   /** 本实例的目标版本；省略时退回应用自身版本。 */
   get targetVersion(): string {
     return this.options.targetVersion ?? resolveRuntimeTargetVersion()
+  }
+
+  get isBusy(): boolean {
+    return this.operating || this.activeControl !== null || this.aligning
+  }
+
+  async checkRuntimeBinaryUpdate(): Promise<RuntimeBinaryUpdateCheck> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) return { status: 'skipped' }
+    try {
+      return await (this.options.checkRuntimeBinary ?? checkRuntimeBinaryLatest)({
+        channel: this.releaseChannel,
+        runtimePath,
+        appRoot,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`检查 Runtime 更新失败: ${message}`)
+      return { status: 'unavailable', error: message }
+    }
+  }
+
+  /** 失败页只重做第 0 步，保留源码、依赖与上一次失败的处置动作。 */
+  async updateRuntimeBinary(
+    onProgress: (progress: RuntimeBinarySyncProgress) => void,
+    stopBackends?: () => Promise<void>
+  ): Promise<RuntimeBinaryAlignResult> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) {
+      return { status: 'failed', error: '当前运行模式无法更新 Runtime，请重新安装完整程序。' }
+    }
+    if (this.isBusy) {
+      return { status: 'failed', error: '运行环境操作尚未结束，请稍后再试。' }
+    }
+
+    this.cancelRequested = false
+    this.operating = true
+    this.aligning = true
+    try {
+      await stopBackends?.()
+      if (this.cancelRequested) return { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
+      return await this.alignRuntimeBinary({
+        channel: this.releaseChannel,
+        runtimePath,
+        appRoot,
+        onProgress,
+        isCancelled: () => this.cancelRequested,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`更新 Runtime 失败: ${message}`)
+      return { status: 'failed', error: message, code: RUNTIME_BINARY_ALIGN_ERROR }
+    } finally {
+      this.aligning = false
+      this.operating = false
+    }
+  }
+
+  /**
+   * 本次要追的 Runtime 发布通道。
+   *
+   * 跟随目标版本：本体是预发布版（`v5.7.0-beta.5`）时也接受 Runtime 预发布版，正式版本体
+   * 只接受 Runtime 正式版。更新流程换目标版本时，通道跟着目标版本走。
+   */
+  get releaseChannel(): RuntimeReleaseChannel {
+    return resolveRuntimeReleaseChannel(this.targetVersion)
   }
 
   /**
@@ -682,8 +756,8 @@ export class RuntimeInitializationService {
       logger.info('已向在途 Runtime 命令下发 cancel')
       return true
     }
-    if (this.aligning) {
-      logger.info('已要求第 0 步（Runtime 核对）停下')
+    if (this.operating || this.aligning) {
+      logger.info('已要求当前运行环境操作停下')
       return true
     }
     return false
@@ -698,12 +772,25 @@ export class RuntimeInitializationService {
     onProgress: (update: BootstrapProgressUpdate) => void,
     mirror?: RuntimeMirrorSelection | null
   ): Promise<RuntimeStageOutcome> {
+    if (this.isBusy) return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
+    this.operating = true
+    try {
+      return await this.runBootstrap(onProgress, mirror)
+    } finally {
+      this.operating = false
+    }
+  }
+
+  private async runBootstrap(
+    onProgress: (update: BootstrapProgressUpdate) => void,
+    mirror?: RuntimeMirrorSelection | null
+  ): Promise<RuntimeStageOutcome> {
     const version = this.targetVersion
     const bridge = new BootstrapProgressBridge(onProgress)
     bridge.takeOver()
     this.cancelRequested = false
 
-    // 第 0 步：先让 Runtime 自己对上目标版本的钉扎，再交给它去克隆源码。
+    // 第 0 步：先让 Runtime 自己对齐到线上最新版，再交给它去克隆源码。
     const aligned = await this.alignRuntime(bridge)
     // 更新服务显式传 targetVersion，不能把切换到新版本的失败当成离线启动。
     const reuseEnvironment =
@@ -712,7 +799,7 @@ export class RuntimeInitializationService {
       this.options.targetVersion === undefined &&
       !this.cancelRequested
     if (!aligned.success && !reuseEnvironment) {
-      bridge.fail('python', aligned.error ?? '核对 Runtime 版本失败')
+      bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
       return aligned
     }
 
@@ -755,6 +842,21 @@ export class RuntimeInitializationService {
     mirrorKey?: string,
     mode: RuntimeRetryMode = 'auto'
   ): Promise<RuntimeStageOutcome> {
+    if (this.isBusy) return { success: false, error: '运行环境操作尚未结束，请稍后再试。' }
+    this.operating = true
+    try {
+      return await this.runRetryStage(stage, onProgress, mirrorKey, mode)
+    } finally {
+      this.operating = false
+    }
+  }
+
+  private async runRetryStage(
+    stage: InitializationRunStage,
+    onProgress: (update: BootstrapProgressUpdate) => void,
+    mirrorKey?: string,
+    mode: RuntimeRetryMode = 'auto'
+  ): Promise<RuntimeStageOutcome> {
     if (stage === 'mirror' || stage === 'pip' || stage === 'git') {
       logger.info(`${stage} 段在 Runtime 链路没有对应物，直接跳过`)
       onProgress({
@@ -773,27 +875,43 @@ export class RuntimeInitializationService {
       if (!mirror) {
         logger.info(`镜像源 ${mirrorKey} 在 Runtime 目录里没有对应源，按默认轮换重跑 bootstrap`)
       }
-      return this.bootstrap(onProgress, mirror)
+      return this.runBootstrap(onProgress, mirror)
     }
 
     const command = this.resolveRetryCommand(stage, mode)
     if (!command) {
       logger.warn(`未知的重试段 ${stage}，按整条 bootstrap 重跑`)
-      return this.bootstrap(onProgress)
+      return this.runBootstrap(onProgress)
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
     this.cancelRequested = false
-    // 「运行环境」段的重试同样先过第 0 步：上一次可能正是它失败的（钉扎取不到、下载
+    // 「运行环境」段的重试同样先过第 0 步：上一次可能正是它失败的（最新版解析不到、下载
     // 失败），不重做就等于跳过了失败的那件事；它没失败时只多问一次版本，几十毫秒。
     if (stage === 'python') {
       const aligned = await this.alignRuntime(bridge)
       if (!aligned.success) {
-        bridge.fail('python', aligned.error ?? '核对 Runtime 版本失败')
+        bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
         return aligned
       }
     }
     let outcome = await this.execute(command, mirror, bridge)
+    if (
+      !outcome.success &&
+      this.options.launchConfig.mode === 'managed' &&
+      stage === 'dependency' &&
+      [
+        'LOCKFILE_MISSING',
+        'LOCKFILE_OUTDATED',
+        'LOCKFILE_INVALID',
+        'LOCKFILE_CHECK_FAILED',
+      ].includes(outcome.code ?? '') &&
+      !this.cancelRequested
+    ) {
+      logger.info('锁文件检查失败，自动恢复受管程序文件并重新准备环境')
+      // bootstrap 自身不回到 retryStage，因此每次局部重试最多自动恢复一次。
+      return this.runBootstrap(onProgress)
+    }
     if (
       !outcome.success &&
       stage === 'dependency' &&
@@ -898,9 +1016,9 @@ export class RuntimeInitializationService {
   }
 
   /**
-   * 第 0 步：把 Runtime 可执行文件对齐到目标版本的发布分支所钉扎的那一版。
+   * 第 0 步：把 Runtime 可执行文件对齐到线上最新版。
    *
-   * 只在 managed 模式做：development 模式监督的是开发者的检出，不由钉扎管；找不到 exe 时
+   * 只在 managed 模式做：development 模式监督的是开发者的检出，不归版本对齐管；找不到 exe 时
    * 交给随后的 {@link execute} 按 `RUNTIME_NOT_FOUND` 失败，这里不重复报。进度挂在
    * 「运行环境」段上，字节进度只进网络细节行（见 {@link RUNTIME_BINARY_DOWNLOAD_STAGE}）。
    *
@@ -909,7 +1027,7 @@ export class RuntimeInitializationService {
    */
   private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
     const outcome = await this.runAlignment(bridge)
-    // 对齐期间收到的取消不能丢：exe 本来就一致、目标分支没钉扎这些路径不会去看取消判据，
+    // 对齐期间收到的取消不能丢：exe 本来就最新、开发者自带 Runtime 这些路径不会去看取消判据，
     // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
     if (outcome.success && this.cancelRequested) {
       logger.info('第 0 步结束时发现已被取消，不再进入 bootstrap')
@@ -922,12 +1040,12 @@ export class RuntimeInitializationService {
     const { mode, runtimePath, appRoot } = this.options.launchConfig
     if (mode !== 'managed' || !runtimePath) return { success: true }
 
-    const version = this.targetVersion
+    const channel = this.releaseChannel
     this.aligning = true
     let result: RuntimeBinaryAlignResult
     try {
       result = await this.alignRuntimeBinary({
-        version,
+        channel,
         runtimePath,
         appRoot,
         isCancelled: () => this.cancelRequested,
@@ -950,10 +1068,10 @@ export class RuntimeInitializationService {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      logger.error(`核对 Runtime 版本时出错: ${message}`)
+      logger.error(`解析或下载最新 Runtime 时出错: ${message}`)
       return {
         success: false,
-        error: `核对 Runtime 版本时出错（${message}），请重试；仍然失败时请带上日志反馈。`,
+        error: `解析或下载最新 Runtime 时出错（${message}），请重试；仍然失败时请带上日志反馈。`,
         code: RUNTIME_BINARY_ALIGN_ERROR,
         retryable: true,
         remediation: ['retry', 'open-log'],
@@ -965,13 +1083,12 @@ export class RuntimeInitializationService {
 
     switch (result.status) {
       case 'upgraded':
-        logger.info(`Runtime 已按 ${version} 的钉扎更新到 ${result.pin?.version}`)
-        bridge.observe(RUNTIME_BINARY_CHECK_STAGE, `Runtime 已更新到 ${result.pin?.version}`)
+        logger.info(`Runtime 已更新到线上最新 ${result.target?.version}`)
+        bridge.observe(RUNTIME_BINARY_CHECK_STAGE, `Runtime 已更新到 ${result.target?.version}`)
         return { success: true }
       case 'current':
-        logger.info(`Runtime ${result.pin?.version} 已与 ${version} 的钉扎一致`)
+        logger.info(`Runtime 已是线上最新 ${result.target?.version}`)
         return { success: true }
-      case 'unpinned':
       case 'skipped':
         return { success: true }
       case 'cancelled':
@@ -1034,6 +1151,7 @@ export class RuntimeInitializationService {
       outcome = await client.run(command, {
         onStarted: control => {
           this.activeControl = control
+          if (this.cancelRequested) control.cancel()
         },
         onProgress: event =>
           bridge.observe(event.stage, event.message, event.percent, {

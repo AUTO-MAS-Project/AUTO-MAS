@@ -151,7 +151,7 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
+                  :model-value="formData.Info.Base"
                   :options="configModeOptions"
                   :disabled="pageLoading"
                   :alert-message="configModeAlert"
@@ -160,11 +160,11 @@
               </a-col>
             </a-row>
 
-            <!-- 一条龙启动器（直控/用户两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）固定在右侧；
-                 左侧按模式切换：直控为「运行实例」，用户为「快速导入配置」（母版下拉选择来源实例 + 导入按钮，
+            <!-- 一条龙启动器（原生来源/独立来源两种模式通用；未安装的启动器选项禁用变灰，悬停选项查看说明）固定在右侧；
+                 左侧按模式切换：原生来源为「运行实例」，独立来源为「快速导入配置」（母版下拉选择来源实例 + 导入按钮，
                  外观与周围下拉框一致；确认后覆盖本用户配置（账号+任务编排）） -->
             <a-row :gutter="24">
-              <a-col v-if="formData.Info.Mode === '直控'" :span="12">
+              <a-col v-if="formData.Info.Base === 'native'" :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -197,7 +197,7 @@
                   <div class="import-group">
                     <a-select
                       v-model:value="importSourceIdx"
-                      :options="instanceOptions"
+                      :options="importInstanceOptions"
                       :placeholder="t('edit.zzzodImportPlaceholder')"
                       :loading="instancesLoading"
                       size="large"
@@ -258,8 +258,8 @@
               </a-col>
             </a-row>
 
-            <!-- 直控：实例管理（参与「全部实例」运行 / 添加 / 重命名 / 删除，实时写回 one_dragon.yml） -->
-            <template v-if="formData.Info.Mode === '直控'">
+            <!-- 原生来源：实例管理（参与「全部实例」运行 / 添加 / 重命名 / 删除，实时写回 one_dragon.yml） -->
+            <template v-if="formData.Info.Base === 'native'">
               <div class="instance-manage">
                 <div class="instance-manage-header">
                   <span class="form-label">
@@ -354,7 +354,7 @@
                 </div>
               </div>
 
-              <!-- 直控：选择配置实例（选完即编辑下方账号字段与任务配置） -->
+              <!-- 原生来源：选择配置实例（选完即编辑下方账号字段与任务配置） -->
               <a-row :gutter="24">
                 <a-col :span="12">
                   <a-form-item>
@@ -386,7 +386,7 @@
                 :message="t('edit.zzzodDirectBindAlert')"
               />
 
-              <!-- 直控：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
+              <!-- 原生来源：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
               <a-spin :spinning="nativeLoading">
                 <template v-if="nativeInstanceIdx !== null">
                   <a-row :gutter="24">
@@ -466,7 +466,7 @@
               </a-spin>
             </template>
 
-            <!-- 账号配置（用户模式：MAS 字段化配置） -->
+            <!-- 账号配置（独立来源：MAS 字段化配置） -->
             <template v-else>
               <a-row :gutter="24">
                 <a-col :span="12">
@@ -605,7 +605,7 @@
               </a-row>
             </template>
 
-            <!-- 直控：添加 / 重命名实例弹窗（放在模式分支之后，避免打断 v-if/v-else 配对） -->
+            <!-- 原生来源：添加 / 重命名实例弹窗（放在模式分支之后，避免打断 v-if/v-else 配对） -->
             <a-modal
               v-model:open="addInstanceOpen"
               :title="t('edit.zzzodAddInstance')"
@@ -763,7 +763,7 @@
               </h3>
               <div class="section-header-actions">
                 <a-switch
-                  v-if="formData.Info.Mode === '直控'"
+                  v-if="formData.Info.Base === 'native'"
                   v-model:checked="nativeLaunchArgs.launch_argument"
                   size="large"
                   @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
@@ -785,8 +785,8 @@
               :bordered="false"
             >
               <a-collapse-panel key="launch-args" :header="t('edit.zzzodLaunchArgsDetail')">
-                <!-- 直控：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
-                <template v-if="formData.Info.Mode === '直控'">
+                <!-- 原生来源：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
+                <template v-if="formData.Info.Base === 'native'">
                   <a-spin :spinning="nativeLoading">
                     <template v-if="nativeInstanceIdx !== null">
                       <a-row :gutter="24">
@@ -1051,7 +1051,7 @@
 
             <p class="section-desc">
               {{
-                formData.Info.Mode === '直控'
+                formData.Info.Base === 'native'
                   ? t('edit.zzzodDirectTasksDesc')
                   : t('edit.zzzodOneDragonDesc')
               }}
@@ -1172,11 +1172,11 @@
 
             <!-- ══ 预备编队（独立组件：team.yml 固定 20 个编队，与一条龙编队页一致）══ -->
             <ZzzOdPredefinedTeams
-              v-if="formData.Info.Mode !== '直控' || nativeInstanceIdx !== null"
+              v-if="formData.Info.Base !== 'native' || nativeInstanceIdx !== null"
               ref="teamsRef"
               :script-id="scriptId"
               :user-id="userId"
-              :instance-idx="formData.Info.Mode === '直控' ? nativeInstanceIdx : null"
+              :instance-idx="formData.Info.Base === 'native' ? nativeInstanceIdx : null"
             />
           </div>
         </a-form>
@@ -1345,7 +1345,7 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
-    Mode: '用户',
+    Base: 'independent',
     IfQuickConfig: true,
     SlotIdx: -1,
     LauncherMode: '自动',
@@ -1403,23 +1403,23 @@ const pushLogModeOptions = [
 ]
 
 // 游戏结束后操作（value 为后端 OneDragon.AfterDone 取值，与一条龙原生「结束后」
-// 同词表；用户/脚本模式经配置会话双向联动，直控模式直读写原生 after_done）
+// 同词表；独立来源/共享来源模式经配置会话双向联动，原生来源直读写原生 after_done）
 const afterDoneOptions = [
   { label: t('edit.zzzodAfterDoneNone'), value: '无' },
   { label: t('edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
   { label: t('edit.zzzodAfterDoneShutdown'), value: '关机' },
 ]
 
-/** 「游戏结束后操作」按模式分流：直控写原生 after_done（与原生 GUI 同源），
+/** 「游戏结束后操作」按模式分流：原生来源写原生 after_done（与原生 GUI 同源），
  * 用户/脚本写 MAS 用户字段（该模式无原生实例概念） */
 type AfterDoneValue = NonNullable<NonNullable<ZzzOdUserConfig['OneDragon']>['AfterDone']>
 const afterDoneValue = computed<AfterDoneValue>({
   get: () =>
-    formData.Info.Mode === '直控'
+    formData.Info.Base === 'native'
       ? nativeAfterDone.value
       : (formData.OneDragon.AfterDone ?? '关闭游戏'),
   set: value => {
-    if (formData.Info.Mode === '直控') {
+    if (formData.Info.Base === 'native') {
       nativeAfterDone.value = value
     } else {
       formData.OneDragon.AfterDone = value
@@ -1430,7 +1430,7 @@ const afterDoneValue = computed<AfterDoneValue>({
 const afterDoneSaving = ref(false)
 const handleAfterDoneChange = async () => {
   if (configLocked.value) return
-  if (formData.Info.Mode === '直控') {
+  if (formData.Info.Base === 'native') {
     afterDoneSaving.value = true
     try {
       await saveNativeConfig({ afterDone: nativeAfterDone.value }, 'afterDone', true)
@@ -1442,12 +1442,12 @@ const handleAfterDoneChange = async () => {
   await saveField('OneDragon.AfterDone', formData.OneDragon.AfterDone)
 }
 
-// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 「脚本」置灰：一条龙运行时脚本态与用户态同分支（AutoProxy 均按该用户字段注入绑定槽），
+// 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
+// 「共享」置灰：一条龙运行时共享来源与独立来源同分支（AutoProxy 均按该用户字段注入绑定槽），
 // 不存在可共享的脚本级配置树，选了也不生效——禁用并悬停说明原因
 const configModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'database' | 'setting'
@@ -1456,7 +1456,7 @@ const configModeOptions: Array<{
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useScriptS'),
     icon: 'database',
@@ -1465,14 +1465,14 @@ const configModeOptions: Array<{
   },
   {
     label: t('edit.zzzodModeUser'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.zzzodModeUser'),
     description: t('edit.zzzodModeUserDesc'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.zzzodModeDirectDesc'),
     icon: 'setting',
@@ -1481,7 +1481,7 @@ const configModeOptions: Array<{
 
 // 蓝色说明框随所选模式动态切换（只显示当前模式的行为，减少固定长文案）
 const configModeAlert = computed(() =>
-  formData.Info.Mode === '直控'
+  formData.Info.Base === 'native'
     ? t('edit.zzzodConfigSourceDirectAlert')
     : t('edit.zzzodConfigSourceUserAlert')
 )
@@ -1607,20 +1607,20 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
-  if (typeof value !== 'string' || !['用户', '直控'].includes(value)) return
-  const prev = formData.Info.Mode
-  if (value === '直控' && prev !== '直控') {
-    // 每脚本仅允许一个直控用户：直控是脚本级全局视图（实例/活跃/运行实例
-    // 都是一份 one_dragon.yml），多直控用户共享状态互相干扰
+  if (typeof value !== 'string' || !['independent', 'native'].includes(value)) return
+  const prev = formData.Info.Base
+  if (value === 'native' && prev !== 'native') {
+    // 每脚本仅允许一个原生来源用户：原生来源是脚本级全局视图（实例/活跃/运行实例
+    // 都是一份 one_dragon.yml），多原生来源用户共享状态互相干扰
     try {
       const resp = await getUsers(scriptId)
       const hasOtherDirect = Object.entries(resp?.data ?? {}).some(
         ([uid, user]) =>
           uid !== userId.value &&
-          String((user as { Info?: { Mode?: string } })?.Info?.Mode ?? '') === '直控'
+          String((user as { Info?: { Base?: string } })?.Info?.Base ?? '') === 'native'
       )
       if (hasOtherDirect) {
-        formData.Info.Mode = prev
+        formData.Info.Base = prev
         message.error(t('edit.zzzodDirectModeLimit'))
         return
       }
@@ -1628,18 +1628,18 @@ const handleConfigModeChange = async (value: boolean | string) => {
       logger.warn(e instanceof Error ? e.message : String(e))
     }
   }
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await saveField('Info.Mode', formData.Info.Mode)
-  if (value === '直控') {
-    // 进入直控：公共初始化（备份 + 默认实例 + 加载原生配置）
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await saveField('Info.Base', formData.Info.Base)
+  if (value === 'native') {
+    // 进入原生来源：公共初始化（备份 + 默认实例 + 加载原生配置）
     await enterDirectMode()
-  } else if (prev === '直控') {
-    // 离开直控（切回用户）：补一份「配置完成时」的备份
+  } else if (prev === 'native') {
+    // 离开原生来源（切回独立来源）：补一份「配置完成时」的备份
     await ensureDirectBackup()
   }
 }
 
-/** 直控/用户共用的按需归档入口（通用 /backup/ensure 三时机，指纹去重）。
+/** 原生来源/独立来源共用的按需归档入口（通用 /backup/ensure 三时机，指纹去重）。
  * onedragon=一条龙原生配置当前状态；mas=绑定槽 MAS 终态（未绑定槽跳过） */
 const ensurePoolBackup = async (target: string): Promise<void> => {
   if (!userId.value) return
@@ -1659,14 +1659,14 @@ const ensurePoolBackup = async (target: string): Promise<void> => {
   }
 }
 
-/** 一条龙原生配置按需归档（进入直控/用户编辑页、退出直控时调用） */
+/** 一条龙原生配置按需归档（进入原生来源/独立来源编辑页、退出原生来源时调用） */
 const ensureDirectBackup = () => ensurePoolBackup('onedragon')
 
-/** 用户模式退出时机：归档绑定槽 MAS 终态 + 一条龙原生配置终态（编辑会话包络） */
+/** 独立来源退出时机：归档绑定槽 MAS 终态 + 一条龙原生配置终态（编辑会话包络） */
 const ensureUserExitBackups = () =>
   Promise.all([ensurePoolBackup('mas'), ensurePoolBackup('onedragon')])
 
-/** 进入直控的公共初始化（模式切换与页面加载共用）：
+/** 进入原生来源的公共初始化（模式切换与页面加载共用）：
  * 补「改动前」备份 → 默认选第一个实例 → 加载所选实例原生配置 */
 const enterDirectMode = async () => {
   await ensureDirectBackup()
@@ -1678,7 +1678,7 @@ const enterDirectMode = async () => {
   }
 }
 
-// ══ 实例列表（直控「选择实例」来源）══
+// ══ 实例列表（原生来源「选择实例」来源）══
 const instances = ref<ZzzOdInstanceOut[]>([])
 const instancesLoading = ref(false)
 
@@ -1687,6 +1687,11 @@ const instanceOptions = computed(() =>
     label: `${String(item.idx).padStart(2, '0')} - ${item.name}`,
     value: item.idx,
   }))
+)
+
+// 导入母版与原生来源实例选择独立；后端另按原生注册表校验来源。
+const importInstanceOptions = computed(() =>
+  instanceOptions.value.filter(item => item.value !== formData.Info.SlotIdx)
 )
 
 const loadInstances = async () => {
@@ -1704,7 +1709,7 @@ const loadInstances = async () => {
   }
 }
 
-// ══ 实例管理（直控：添加 / 重命名 / 删除 / 参与「全部实例」开关，实时写回 one_dragon.yml）══
+// ══ 实例管理（原生来源：添加 / 重命名 / 删除 / 参与「全部实例」开关，实时写回 one_dragon.yml）══
 const instanceName = ref('')
 const addInstanceOpen = ref(false)
 const renameInstanceOpen = ref(false)
@@ -1869,7 +1874,7 @@ const isRequiredAccountKey = (key: string) => {
   return key === 'account' || key === 'password'
 }
 
-/** 显式设为当前活跃：「仅运行当前」运行时跑的就是它；直控页编辑不自动改活跃 */
+/** 显式设为当前活跃：「仅运行当前」运行时跑的就是它；原生来源页编辑不自动改活跃 */
 const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   if (configLocked.value) return
   instanceOpLoading.value = true
@@ -1893,6 +1898,18 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
 // ══ 快速导入配置：左侧母版下拉 + 右侧导入按钮共同构成导入功能 ══
 // 当前选中的母版（来源）实例；导入成功后复位
 const importSourceIdx = ref<number | null>(null)
+watch(
+  importInstanceOptions,
+  options => {
+    if (
+      importSourceIdx.value !== null &&
+      !options.some(item => item.value === importSourceIdx.value)
+    ) {
+      importSourceIdx.value = null
+    }
+  },
+  { immediate: true }
+)
 const importLoading = ref(false)
 // 预备编队组件引用：导入整体覆盖槽配置后需要强制刷新编队显示
 const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
@@ -1965,13 +1982,13 @@ const loadLaunchers = async () => {
   }
 }
 
-// ══ 直控：所选实例的原生配置（强绑定一条龙原始 YAML，页面即改原生）══
+// ══ 原生来源：所选实例的原生配置（强绑定一条龙原始 YAML，页面即改原生）══
 const nativeInstanceIdx = ref<number | null>(null)
 // 运行实例（value 为一条龙原生中文取值，label 走词表；初始值对齐上游
 // InstanceRun.ALL 默认，加载后由后端返回值覆盖）
 const nativeInstanceRun = ref('全部实例')
-// 直控模式下「游戏结束后操作」读写的是一条龙原生 after_done（UI 与原生 GUI
-// 同源，改哪边另一边都同步）；用户/脚本模式走 MAS 用户字段（会话双向联动）
+// 原生来源下「游戏结束后操作」读写的是一条龙原生 after_done（UI 与原生 GUI
+// 同源，改哪边另一边都同步）；独立来源/共享来源模式走 MAS 用户字段（会话双向联动）
 const nativeAfterDone = ref<AfterDoneValue>('无')
 const instanceRunOptions = [
   { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
@@ -1983,7 +2000,7 @@ const nativeAccountFields = ref<ZzzOdNativeAccountField[]>([])
 const nativeAccountValues = reactive<Record<string, string>>({})
 const nativeTasks = ref<TaskCard[]>([])
 
-// 直控启动参数（game.yml 字段 + dx12 开关；改动即时整组提交，与其他区块解耦）
+// 原生来源启动参数（game.yml 字段 + dx12 开关；改动即时整组提交，与其他区块解耦）
 const getDefaultLaunchArgs = (): ZzzOdNativeLaunchArgs => ({
   launch_argument: false,
   screen_size: ZzzOdNativeLaunchArgs.screen_size._1920X1080,
@@ -2000,9 +2017,9 @@ const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
 const launchArgsOpen = ref<string[]>([])
 watch(
   () =>
-    [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
+    [formData.Info.Base, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
   ([mode, userOn, nativeOn]) => {
-    launchArgsOpen.value = (mode === '直控' ? nativeOn : userOn) ? ['launch-args'] : []
+    launchArgsOpen.value = (mode === 'native' ? nativeOn : userOn) ? ['launch-args'] : []
   },
   { immediate: true }
 )
@@ -2052,7 +2069,7 @@ const handleNativeInstanceChange = async (instanceIdx: number) => {
 }
 
 /** 运行实例（仅运行当前/全部启用实例）是 one_dragon.yml 全局设置，
- * 与直控页当前编辑哪个实例无关，独立保存 */
+ * 与原生来源页当前编辑哪个实例无关，独立保存 */
 const runModeSaving = ref(false)
 const handleNativeInstanceRunChange = async () => {
   if (configLocked.value) return
@@ -2072,7 +2089,7 @@ const handleNativeInstanceRunChange = async () => {
   }
 }
 
-/** 直控按需保存：只提交指定区块并只回读该区块。
+/** 原生来源按需保存：只提交指定区块并只回读该区块。
  *
  *  - 账号字段（「保存设置」按钮）：全量提交 account + tasks + instanceRun；
  *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
@@ -2140,7 +2157,7 @@ const saveNativeConfig = async (
   }
 }
 
-/** 直控启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
+/** 原生来源启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
  *
  * 不发全量：并发点不同开关时，全量会携带其他字段的旧值，串行写盘后后者
  * 覆盖前者已落盘的字段（丢更新）；单字段提交 + 后端「值未变跳过」语义
@@ -2242,9 +2259,9 @@ const setPopoverOpen = (appId: string, open: boolean) => {
   taskPopoverOpen.value = { ...taskPopoverOpen.value, [appId]: open }
 }
 
-/** 拉取任务配置字段（直控读所选实例原生 yml；用户读绑定槽） */
+/** 拉取任务配置字段（原生来源读所选实例原生 yml；独立来源读绑定槽） */
 const loadTaskConfig = async (card: TaskCard): Promise<TaskConfigField[]> => {
-  const instanceIdx = formData.Info.Mode === '直控' ? nativeInstanceIdx.value : null
+  const instanceIdx = formData.Info.Base === 'native' ? nativeInstanceIdx.value : null
   const resp = await Service.getZzzodAppConfigApiApiScriptsZzzodAppConfigGet(
     scriptId,
     userId.value,
@@ -2344,7 +2361,7 @@ const saveTaskConfigField = async (
       userId: userId.value,
       appId: card.app_id,
       values: { [field.field]: value },
-      instanceIdx: formData.Info.Mode === '直控' ? nativeInstanceIdx.value : undefined,
+      instanceIdx: formData.Info.Base === 'native' ? nativeInstanceIdx.value : undefined,
     })
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
@@ -2419,7 +2436,7 @@ const savePlanModal = async () => {
       userId: userId.value,
       appId: planModal.appId,
       values,
-      instanceIdx: formData.Info.Mode === '直控' ? nativeInstanceIdx.value : undefined,
+      instanceIdx: formData.Info.Base === 'native' ? nativeInstanceIdx.value : undefined,
     })
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodTaskConfigSaveFailed'))
@@ -2462,10 +2479,10 @@ const formatPreviewValue = (key: string, raw: string): string => {
     case 'status':
       // 后端传 str(bool)（"True"/"False"），大小写与 YAML 表示不定，统一小写比较
       return raw.toLowerCase() === 'true' ? t('edit.yes') : t('edit.no')
-    case 'mode':
-      return raw === '用户'
+    case 'base':
+      return raw === 'independent'
         ? t('edit.zzzodModeUser')
-        : raw === '直控'
+        : raw === 'native'
           ? t('edit.directControl')
           : raw
     case 'launcher_mode':
@@ -2529,13 +2546,13 @@ const openRestoreModal = () => {
 }
 
 // 一键恢复成功：MAS 恢复含字段回填，刷新表单；一条龙恢复不回填 MAS 字段，
-// 但直控页表单（账号/任务/运行实例读自原生文件）必须重拉，否则旧表单值在
-// 下次「保存设置」时全量写回、静默撤销刚做的恢复（用户模式 AppList 同理）
+// 但原生来源页表单（账号/任务/运行实例读自原生文件）必须重拉，否则旧表单值在
+// 下次「保存设置」时全量写回、静默撤销刚做的恢复（独立来源 AppList 同理）
 const handleRestored = (target: string) => {
   restoreOpen.value = false
   if (target === 'mas') {
     void loadUserData()
-  } else if (formData.Info.Mode === '直控' && nativeInstanceIdx.value !== null) {
+  } else if (formData.Info.Base === 'native' && nativeInstanceIdx.value !== null) {
     void loadNativeConfig(nativeInstanceIdx.value)
   } else {
     void loadUserData()
@@ -2647,7 +2664,7 @@ const confirmForceRestoreDetail = (
   })
 
 // ══ 一条龙任务（OneDragon.AppList JSON 字段，打开页面即可开关）══
-// 卡片结构与操作封装见 useZzzOdTaskBoard（用户模式与直控模式共用）
+// 卡片结构与操作封装见 useZzzOdTaskBoard（独立来源与原生来源共用）
 type TaskCard = ZzzOdTaskCard
 
 const savedApps = computed<{ app_id: string; enabled: boolean }[]>(() => {
@@ -2692,9 +2709,9 @@ const taskCards = computed<TaskCard[]>(() => {
   return cards
 })
 
-/** 当前模式展示的任务卡片：用户=MAS 字段编排；直控=所选实例的原生编排 */
+/** 当前模式展示的任务卡片：独立来源=MAS 字段编排；原生来源=所选实例的原生编排 */
 const activeTaskCards = computed<TaskCard[]>(() =>
-  formData.Info.Mode === '直控' ? nativeTasks.value : taskCards.value
+  formData.Info.Base === 'native' ? nativeTasks.value : taskCards.value
 )
 
 /** 拖拽排序的渲染数据源：跟随当前模式任务列表，拖拽过程由 vuedraggable 就地更新 */
@@ -2713,9 +2730,9 @@ const persistAppList = (list: { app_id: string; enabled: boolean }[]) => {
   void saveField('OneDragon.AppList', formData.OneDragon.AppList)
 }
 
-/** 按当前模式落盘任务看板：直控写实例原生编排；用户模式写 AppList 字段 */
+/** 按当前模式落盘任务看板：原生来源写实例原生编排；独立来源写 AppList 字段 */
 const commitTaskBoard = (list: TaskCard[]) => {
-  if (formData.Info.Mode === '直控') {
+  if (formData.Info.Base === 'native') {
     nativeTasks.value = list
     void saveNativeConfig({ tasks: toNativeTaskIn(list) }, 'tasks', true)
     return
@@ -2733,7 +2750,7 @@ const {
   commit: commitTaskBoard,
 })
 
-// ══ 原生 GUI 设置会话（直控模式专用；viewOnly 为只读查看会话）══
+// ══ 原生 GUI 设置会话（原生来源专用；viewOnly 为只读查看会话）══
 const {
   zzzodConfigLoading,
   zzzodWebsocketId,
@@ -2747,8 +2764,8 @@ const {
 
 const handleZzzodConfig = () => {
   if (configLocked.value) return
-  if (formData.Info.Mode === '直控') {
-    // 直控：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
+  if (formData.Info.Base === 'native') {
+    // 原生来源：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。
     // 传当前编辑实例：会话窗口临时切活跃到它（GUI 打开即所见实例，结束还原）
     void startSession(scriptId, false, nativeInstanceIdx.value)
@@ -2840,11 +2857,11 @@ onMounted(async () => {
     await loadUser()
     // 三个请求互不依赖，并行发出
     await Promise.all([loadInstances(), loadLaunchers(), loadCatalog()])
-    // 已是直控模式的用户：公共初始化（备份 + 默认实例 + 加载原生配置）
-    if (formData.Info.Mode === '直控') {
+    // 已是原生来源的用户：公共初始化（备份 + 默认实例 + 加载原生配置）
+    if (formData.Info.Base === 'native') {
       await enterDirectMode()
     } else {
-      // 用户模式进入：归档一条龙原生配置当前状态（MAS 操作前的原始态，
+      // 独立来源进入：归档一条龙原生配置当前状态（MAS 操作前的原始态，
       // 指纹去重），保证后续 MAS 侧修改始终有可还原的进入时点
       await ensureDirectBackup()
     }
@@ -2854,7 +2871,7 @@ onMounted(async () => {
 // 「在一条龙内配置」会话结束后回读会刷新后端字段，重新拉取保持表单同步。
 // 查看会话（view mask）虽不回读字段，但「查看详细配置」会先真恢复备份——
 // 会话结束后表单同样需要按恢复后的配置重新拉取，否则旧表单值会在用户
-// 下次保存时写回、静默撤销恢复。直控时以所选实例的原生配置为准。
+// 下次保存时写回、静默撤销恢复。原生来源时以所选实例的原生配置为准。
 watch(showZzzodConfigMask, (now, before) => {
   if (before && !now && !showZzzodViewMask.value && userId.value) {
     refreshAfterSession()
@@ -2867,7 +2884,7 @@ watch(showZzzodViewMask, (now, before) => {
 })
 
 const refreshAfterSession = () => {
-  if (formData.Info.Mode === '直控') {
+  if (formData.Info.Base === 'native') {
     if (nativeInstanceIdx.value !== null) {
       void loadNativeConfig(nativeInstanceIdx.value).catch(e => {
         logger.error(e instanceof Error ? e.message : String(e))
@@ -2883,13 +2900,13 @@ const refreshAfterSession = () => {
 onUnmounted(() => {
   // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
   flushAllTaskConfigSaves()
-  // 编辑会话退出时机：直控归档一条龙终态（进入时的 ensureDirectBackup 与之
-  // 配对）；用户模式归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
+  // 编辑会话退出时机：原生来源归档一条龙终态（进入时的 ensureDirectBackup 与之
+  // 配对）；独立来源归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
   // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
   // 先停会话再归档——并行会与回写撞车，归档到半程状态
   void (async () => {
     await stopSession()
-    if (formData.Info.Mode === '直控') {
+    if (formData.Info.Base === 'native') {
       await ensureDirectBackup()
     } else {
       await ensureUserExitBackups()
@@ -3031,7 +3048,7 @@ onUnmounted(() => {
   color: var(--ant-color-primary);
 }
 
-/* 直控绑定提示与原生配置保存按钮间距 */
+/* 原生来源绑定提示与原生配置保存按钮间距 */
 .native-bind-alert {
   margin-bottom: 8px;
 }
@@ -3040,7 +3057,7 @@ onUnmounted(() => {
   margin-top: 8px;
 }
 
-/* 直控账号字段「保存设置」：左对齐，与下方下一区块拉开间距 */
+/* 原生来源账号字段「保存设置」：左对齐，与下方下一区块拉开间距 */
 .native-save-row {
   display: flex;
   justify-content: flex-start;
@@ -3048,13 +3065,13 @@ onUnmounted(() => {
   margin-bottom: 24px;
 }
 
-/* 直控账号字段必填标记（账号切换需要完整登录信息） */
+/* 原生来源账号字段必填标记（账号切换需要完整登录信息） */
 .required-mark {
   color: var(--ant-color-error);
   margin-right: 2px;
 }
 
-/* 直控：实例管理（与任务卡片同一视觉语言：同边框/底色/圆角/悬停） */
+/* 原生来源：实例管理（与任务卡片同一视觉语言：同边框/底色/圆角/悬停） */
 .instance-manage {
   margin-bottom: 16px;
 }

@@ -42,10 +42,13 @@
   ``config/configs/<id>.json``：``{name, item_id, tasks[], global_options}``，任务是
   ``{name, item_id, is_checked, task_option}``。``item_id`` 为 ``PreTask`` / ``Controller`` /
   ``Resource`` / ``Post-Action`` 的四条不是任务：控制方式在 ``Controller`` 的
-  ``task_option.controller_type``，资源在 ``Resource`` 的 ``task_option.resource``，资源级选项在
-  它的 ``setting_options``。选项是 ``{选项名: {value, branches?: {case 名: {子选项…}}, hidden?}}``：
-  select / switch 的 ``value`` 是 case 名，input 是 ``{输入名: 值}``（值可能是数字），
-  ``hidden`` 表示所在分支此刻不生效；``_`` 开头的键（``_speedrun_config``）是外壳自己的设置。
+  ``task_option.controller_type``，资源在 ``Resource`` 的 ``task_option.resource``。全局选项
+  （外壳叫 setting 选项）现行版本存在 ``Resource`` 的 ``task_option.setting_options``、根层
+  ``global_options`` 写空，老版本存在根层：两边并成外壳全局表，同名时以 ``setting_options`` 为准。
+  选项是 ``{选项名: {value, branches?: {case 名: {子选项…}}, hidden?}}``：select / switch 的
+  ``value`` 是 case 名，input 是 ``{输入名: 值}``（值可能是数字），``hidden`` 表示所在分支此刻
+  不生效；分支里**生效的** input 子选项现行版本不带包装，直接写成 ``{输入名: 值}``（或裸值），
+  不生效的才是 ``{value, hidden: true}``。``_`` 开头的键（``_speedrun_config``）是外壳自己的设置。
 
 这是在外壳私有格式上做的一次性映射（黑箱规范里的「私有格式」条目）：外壳改了格式，表现是
 扫不到实例（只记日志）或导入时跳过项变多（结果里逐项列出），不会写坏任何东西。
@@ -71,8 +74,10 @@ from app.task.MaaFW.tools.core.interface.models import (
     iter_pretasks,
 )
 from app.task.MaaFW.tools.core.interface.task_config import (
+    build_global_option_map,
     build_interface_preset_snapshot,
     build_task_option_maps,
+    normalize_global_options,
     normalize_task_options_by_task,
 )
 from app.utils import get_logger
@@ -93,6 +98,8 @@ _SWITCH_TRUE_NAMES = frozenset({"yes", "y", "true", "on", "1", "是", "开"})
 _SWITCH_FALSE_NAMES = frozenset({"no", "n", "false", "off", "0", "否", "关"})
 _CHOICE_TYPES = frozenset({"select", "scan_select", "switch"})
 _FIELD_TYPES = frozenset({"input", "hotkey"})
+#: MFW-PyQt6 选项条目的包装键：带其中任一个的是 ``{value, branches?, hidden?}``，否则是裸值
+_MFW_WRAPPER_KEYS = frozenset({"value", "branches", "hidden"})
 
 
 @dataclass(frozen=True)
@@ -115,10 +122,11 @@ class ShellInstance:
     controller: str = ""
     resource: str = ""
     tasks: list[ShellTask] = field(default_factory=list)
-    #: 全局选项：MXU 的 ``globalOptionValues``（所有实例共用）、MFW-PyQt6 的 ``global_options``
+    #: 全局选项：MXU 的 ``globalOptionValues``（所有实例共用）、MFW-PyQt6 的 ``setting_options``
+    #: 并上根层 ``global_options``
     global_options: Mapping[str, Any] = field(default_factory=dict)
-    #: 资源级选项原样保留：MFAAvalonia 的 ``ResourceOptionItems``、MFW-PyQt6 的
-    #: ``setting_options``；None 表示没有这个字段
+    #: 资源级选项原样保留：MFAAvalonia 的 ``ResourceOptionItems``；MFW-PyQt6 只在
+    #: ``setting_options`` 不是对象时留着它（报「格式无法识别」）。None 表示没有
     resource_options: Any = None
 
 
@@ -129,6 +137,11 @@ class ShellImportPlan:
     snapshot: dict[str, Any]
     task_count: int
     skipped: list[str] = field(default_factory=list)
+    #: 外壳实际记着的全局选项值（没补默认值）。``snapshot["globalOptions"]`` 按项目默认值补齐了，
+    #: 只适合新建用户；覆盖到已有用户时拿它叠在用户现有的全局表上，外壳没记的不动
+    recorded_global_options: dict[str, MaaFWTaskOptionValue] = field(
+        default_factory=dict
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +382,13 @@ def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
             if not name or not _truthy(task.get("is_checked")):
                 continue
             tasks.append(ShellTask(name=name, raw_options=options))
-        global_options = payload.get("global_options")
+        # 现行版本把全局选项存在 Resource 的 setting_options（根层 global_options 写空），老版本
+        # 存在根层：两边并成外壳全局表，同名时以 setting_options 为准（它是现行版本写的）
+        root_global = payload.get("global_options")
+        global_options = {
+            **(root_global if isinstance(root_global, dict) else {}),
+            **(resource_options if isinstance(resource_options, dict) else {}),
+        }
         instances.append(
             ShellInstance(
                 id=f"mfw:{config_id}",
@@ -379,10 +398,11 @@ def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
                 controller=controller,
                 resource=resource,
                 tasks=tasks,
-                global_options=global_options
-                if isinstance(global_options, dict)
-                else {},
-                resource_options=resource_options,
+                global_options=global_options,
+                # 不是对象的 setting_options 留着，换算时记一条「格式无法识别」
+                resource_options=None
+                if resource_options is None or isinstance(resource_options, dict)
+                else resource_options,
             )
         )
     return instances
@@ -514,6 +534,7 @@ def plan_instance_import(
     skipped: list[str] = []
     labels = _Labels(interface, translate)
     option_maps = build_task_option_maps(interface)
+    global_option_map = build_global_option_map(interface)
     tasks_by_name: dict[str, MaaFWTask] = {}
     names_by_entry: dict[str, list[str]] = {}
     for task in interface.task:
@@ -522,27 +543,63 @@ def plan_instance_import(
         tasks_by_name[task.name] = task
         names_by_entry.setdefault(task.entry, []).append(task.name)
 
-    # 全局 / 资源级选项：MAS 把它们并进每个任务的选项表（见 build_task_option_maps），
-    # 所以换算一次，再分给选项表里有它们的任务
-    shared_values = _shared_option_values(instance, interface, labels, skipped)
+    # 全局 / 资源级选项换算一次。外壳全局表（MXU 的 globalOptionValues、MFW-PyQt6 的
+    # setting_options 并上根层 global_options）里、项目也声明为全局选项的值进用户的全局表；其余（资源级，以及外壳记在
+    # 全局表里、项目却没声明为全局的）分给选项表里有它们的任务（见 build_task_option_maps）。
+    # 只属于全局的选项外壳全局表没记时，再取队列里第一条记着它的任务的值
+    global_shared, resource_shared = _global_and_resource_option_values(
+        instance, interface, labels, skipped
+    )
+    global_values = {
+        name: value
+        for name, value in global_shared.items()
+        if name in global_option_map
+    }
+    task_shared_values = {
+        **resource_shared,
+        **{
+            name: value
+            for name, value in global_shared.items()
+            if name not in global_option_map
+        },
+    }
+    global_values_from_tasks: dict[str, MaaFWTaskOptionValue] = {}
 
     def collect_task_options(
-        raw_options: Any, option_map: Mapping[str, MaaFWOption], prefix: str
+        raw_options: Any,
+        option_map: Mapping[str, MaaFWOption],
+        prefix: str,
+        *,
+        route_global: bool = False,
     ) -> dict[str, MaaFWTaskOptionValue]:
-        """一条任务自己的选项，叠在全局 / 资源级选项上（任务自己记的优先）。"""
+        """一条任务自己的选项，叠在资源级选项上（任务自己记的优先）。
 
-        values = {k: v for k, v in shared_values.items() if k in option_map}
-        values.update(
-            _task_own_option_values(
-                instance,
-                raw_options,
-                option_map,
-                interface.option,
-                prefix,
-                labels,
-                skipped,
-            )
+        ``route_global``：任务里记着的、对这条任务只属于全局的选项（选项表里没有）不留在
+        任务上，交给全局表；任务 / 资源 / 控制器自己也引用的照常是任务的值（PI 顺序叠在全局
+        之上）。前置任务不走这条，它的选项一直只认自己声明的。
+        """
+
+        # 前置任务照旧也吃外壳全局表里的值（它没有全局层，选项只认自己的那份）
+        shared = (
+            task_shared_values
+            if route_global
+            else {**task_shared_values, **global_values}
         )
+        values = {k: v for k, v in shared.items() if k in option_map}
+        own_values = _task_own_option_values(
+            instance,
+            raw_options,
+            {**global_option_map, **option_map} if route_global else option_map,
+            interface.option,
+            prefix,
+            labels,
+            skipped,
+        )
+        for name, value in own_values.items():
+            if route_global and name not in option_map:
+                global_values_from_tasks.setdefault(name, value)
+            else:
+                values[name] = value
         return values
 
     # MXU 把前置任务（pretask）当成队列里的一条 ``__MXU_PRETASK__<名>`` 存，MAS 的队列也认
@@ -606,6 +663,7 @@ def plan_instance_import(
             shell_task.raw_options,
             option_maps.get(task_name, {}),
             f"「{task_label}」的选项",
+            route_global=True,
         )
         preset_tasks.append(
             MaaFWPresetTask(name=task_name, enabled=True, option=values)
@@ -630,15 +688,21 @@ def plan_instance_import(
             )
         )
         queued = [*pretask_values, *queued]
+    recorded_global_options = {**global_values_from_tasks, **global_values}
     return ShellImportPlan(
         snapshot={
             "taskOrder": queued,
             "taskChecked": {task_id: True for task_id in queued},
             "taskOptions": {task_id: task_options[task_id] for task_id in queued},
+            # 外壳没记的全局选项按项目默认值补齐，与任务选项同一口径
+            "globalOptions": normalize_global_options(
+                recorded_global_options, interface
+            ),
         },
         task_count=len(queued),
         # 同一个选项在嵌套分支里可能出现多次（MFW-PyQt6 的 branches），同样的跳过只记一次
         skipped=list(dict.fromkeys(skipped)),
+        recorded_global_options=recorded_global_options,
     )
 
 
@@ -649,7 +713,7 @@ def collect_instance_hotkeys(
 
     选项换算与 ``plan_instance_import`` 同一套：MXU 读 ``globalOptionValues`` 与各任务的
     ``optionValues``，MFAAvalonia 读当前资源的 ``ResourceOptionItems`` 与各任务的选项，MFW-PyQt6
-    读 ``global_options``、资源级 ``setting_options`` 与各任务的 ``task_option``（含嵌套分支）。
+    读全局表（``setting_options`` 并上根层 ``global_options``）与各任务的 ``task_option``（含嵌套分支）。
     先全局 / 资源级、再按队列顺序逐个任务覆盖（同一字段后出现的为准）。只留 interface 里
     ``type == "hotkey"`` 的选项、其 ``hotkeys`` 里声明过的字段、非空的值；不与默认值比较，
     对不上的项也不记跳过（这里不是导入，跳过项由导入用户那条路报）。
@@ -696,22 +760,38 @@ def _shared_option_values(
     labels: _Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
-    """全局 / 资源级选项：MXU 的 ``globalOptionValues``、MFAAvalonia 当前资源的
-    ``ResourceOptionItems``、MFW-PyQt6 的 ``global_options`` 与资源级 ``setting_options``。"""
+    """全局 / 资源级选项并成一张表（同名时外壳全局表里的为准）。"""
 
-    shared_values: dict[str, MaaFWTaskOptionValue] = {}
+    global_values, resource_values = _global_and_resource_option_values(
+        instance, interface, labels, skipped
+    )
+    return {**resource_values, **global_values}
+
+
+def _global_and_resource_option_values(
+    instance: ShellInstance,
+    interface: MaaFWInterface,
+    labels: _Labels,
+    skipped: list[str],
+) -> tuple[dict[str, MaaFWTaskOptionValue], dict[str, MaaFWTaskOptionValue]]:
+    """``(外壳全局表, 资源级)``：前者是 MXU 的 ``globalOptionValues``、MFW-PyQt6 的
+    ``setting_options`` 并上根层 ``global_options``；后者是 MFAAvalonia 当前资源的
+    ``ResourceOptionItems``。"""
+
+    global_values: dict[str, MaaFWTaskOptionValue] = {}
+    resource_values: dict[str, MaaFWTaskOptionValue] = {}
     if instance.source == SOURCE_MXU and instance.global_options:
-        shared_values = _mxu_option_values(
+        global_values = _mxu_option_values(
             instance.global_options, interface.option, "全局选项", labels, skipped
         )
     if instance.source == SOURCE_MFAA and instance.resource_options is not None:
-        shared_values = _mfaa_resource_option_values(
+        resource_values = _mfaa_resource_option_values(
             instance, interface.option, labels, skipped
         )
     if instance.source == SOURCE_MFW:
-        for raw_shared, prefix in (
-            (instance.global_options, "全局选项"),
-            (instance.resource_options, "资源选项"),
+        for raw_shared, prefix, target in (
+            (instance.global_options, "全局选项", global_values),
+            (instance.resource_options, "资源选项", resource_values),
         ):
             if raw_shared is None or raw_shared == {}:
                 continue
@@ -719,9 +799,55 @@ def _shared_option_values(
                 skipped.append(f"{prefix}（格式无法识别）")
                 continue
             _mfw_collect_options(
-                raw_shared, interface.option, prefix, labels, shared_values, skipped
+                raw_shared, interface.option, prefix, labels, target, skipped
             )
-    return shared_values
+    _drop_password_fields(global_values, interface.option, "全局选项", labels, skipped)
+    _drop_password_fields(
+        resource_values, interface.option, "资源选项", labels, skipped
+    )
+    return global_values, resource_values
+
+
+_PASSWORD_SKIP_NOTE = "密码字段不从外壳配置导入，请在 AUTO-MAS 里重新填写"
+
+
+def _drop_password_fields(
+    values: dict[str, MaaFWTaskOptionValue],
+    all_options: Mapping[str, MaaFWOption],
+    owner_prefix: str,
+    labels: _Labels,
+    skipped: list[str],
+) -> None:
+    """interface 声明为 password 的 input 字段不从外壳导入（原地去掉），有值的记一条跳过。
+
+    外壳存密码各有各的办法（MFW-PyQt6 用自己的 Fernet 密钥加密），MAS 解不了也不该解：照抄进来
+    就是把外壳的密文当明文用，覆盖到已有用户时还会盖掉用户在 MAS 里存好的密码。字段整个不带，
+    新建用户留空，覆盖时保留用户现有的值。
+    """
+
+    for name in list(values):
+        definition = all_options.get(name)
+        value = values[name]
+        if (
+            definition is None
+            or definition.type != "input"
+            or not isinstance(value, dict)
+        ):
+            continue
+        secret = {item.name for item in definition.inputs or [] if item.password}
+        if not secret or not secret & value.keys():
+            continue
+        for field_name in secret & value.keys():
+            if str(value[field_name] or "").strip():
+                skipped.append(
+                    f"{owner_prefix}「{labels.option(name)}」的"
+                    f"「{labels.field(definition, field_name)}」（{_PASSWORD_SKIP_NOTE}）"
+                )
+        kept = {key: item for key, item in value.items() if key not in secret}
+        if kept:
+            values[name] = kept
+        else:
+            del values[name]
 
 
 def _task_own_option_values(
@@ -754,6 +880,7 @@ def _task_own_option_values(
         values.update(
             _mxu_option_values(raw_options or {}, option_map, prefix, labels, skipped)
         )
+    _drop_password_fields(values, all_options, prefix, labels, skipped)
     return values
 
 
@@ -992,6 +1119,10 @@ def _mfw_collect_options(
 
     同一个选项可能既在外层又在某个分支里（``hidden`` 的那份是不生效分支里的旧值）：
     生效的那份优先，都不生效时取先出现的。
+
+    现行版本把分支里**生效的** input 子选项直接写成值（``{输入名: 值}``，见 MFW-PyQt6 的
+    ``switch.get_option``），不带 ``{value: …}`` 包装：对象里没有 ``value`` / ``branches`` /
+    ``hidden`` 这几个键就整个当字段值、按生效处理；不是对象的按选项类型当裸值。
     """
 
     if hidden_names is None:
@@ -1001,25 +1132,22 @@ def _mfw_collect_options(
         if name.startswith("_"):
             continue  # 外壳自己的设置（_speedrun_config 速通），不是 interface 选项
         owner = f"{owner_prefix}「{labels.option(name)}」"
-        if not isinstance(raw, dict):
-            skipped.append(f"{owner}的取值")
-            continue
         definition = option_map.get(name)
         if definition is None:
             skipped.append(owner)
             continue
-        hidden = raw.get("hidden") is True
+        wrapped = isinstance(raw, dict) and bool(_MFW_WRAPPER_KEYS & raw.keys())
+        hidden = wrapped and raw.get("hidden") is True
+        raw_value = raw.get("value") if wrapped else raw
         if name not in values or (name in hidden_names and not hidden):
-            value = _mfw_option_value(
-                raw.get("value"), definition, owner, labels, skipped
-            )
+            value = _mfw_option_value(raw_value, definition, owner, labels, skipped)
             if value is not None:
                 values[name] = value
                 if hidden:
                     hidden_names.add(name)
                 else:
                     hidden_names.discard(name)
-        branches = raw.get("branches")
+        branches = raw.get("branches") if wrapped else None
         if isinstance(branches, dict):
             for nested in branches.values():
                 if isinstance(nested, dict):
@@ -1069,6 +1197,16 @@ def _mfw_option_value(
                 skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
         return chosen
     if definition.type in _FIELD_TYPES:
+        declared = [
+            item.name
+            for item in (
+                definition.inputs if definition.type == "input" else definition.hotkeys
+            )
+            or []
+        ]
+        # 只有一个字段的 input，外壳可能直接存成那个字段的值（MFW-PyQt6 InputOptionItem 无输入名时）
+        if isinstance(raw, (str, int, float, bool)) and len(declared) == 1:
+            raw = {declared[0]: raw}
         fields = _field_values(raw, definition, owner, labels, skipped)
         if fields is None:
             skipped.append(f"{owner}的取值")

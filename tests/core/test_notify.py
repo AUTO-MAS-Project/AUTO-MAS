@@ -12,6 +12,7 @@ from app.core.notify import (
     user_target,
 )
 from app.core.notify_channels import get_notify_channels
+from app.models.notification import NotificationSummary
 
 _UNSET = object()
 
@@ -22,11 +23,15 @@ class _Webhook:
         self._name = name
 
     def get(self, group: str, key: str) -> str | bool:
-        assert group == "Info"
-        if key == "Name":
-            return self._name
-        assert key == "Enabled"
-        return self._enabled
+        values = {
+            ("Info", "Name"): self._name,
+            ("Info", "Enabled"): self._enabled,
+            ("Data", "Url"): "https://example.com/webhook",
+            ("Data", "Template"): '{"title": "{title}", "content": "{content}"}',
+            ("Data", "Headers"): "{}",
+            ("Data", "Method"): "POST",
+        }
+        return values[(group, key)]
 
 
 class _Webhooks:
@@ -75,9 +80,9 @@ class _Config:
 
 
 class _Notify:
-    """与 Notifier 协议同名同参的录制发送器（不是 ``**kwargs``）。
+    """通过统一投递面记录各渠道适配器的实际调用。
 
-    参数名与协议不一致会直接 TypeError，防止发送调用悄悄写错关键字；
+    传输方法保留显式参数，防止适配器悄悄写错关键字；
     哨兵默认值用于区分“省略参数”与“显式传默认值”。
     """
 
@@ -85,6 +90,9 @@ class _Notify:
         self.calls: list[str] = []
         self.kwargs: list[dict] = []
         self.plan = plan or {}
+
+    async def send_channel(self, channel, target, rendered):
+        return await channel.send(self, target, rendered)
 
     async def _run(self, method: str, **kwargs):
         self.calls.append(method)
@@ -134,14 +142,14 @@ class _Notify:
         )
 
     async def WebhookPush(
-        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, image_base64=_UNSET
+        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
     ):
         return await self._run(
             "WebhookPush",
             title=title,
             content=content,
             webhook=webhook,
-            image_base64=image_base64,
+            images=images,
         )
 
     async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
@@ -163,10 +171,18 @@ def _run(awaitable):
 
 
 def _global_target(
-    config: _Config, *, include_system: bool = False, empty_policy="send"
+    config: _Config,
+    *,
+    include_system: bool = False,
+    empty_policy="send",
+    system_timeout_seconds=None,
 ):
     with patch.object(notify_module, "Config", config):
-        return global_target(include_system=include_system, empty_policy=empty_policy)
+        return global_target(
+            include_system=include_system,
+            empty_policy=empty_policy,
+            system_timeout_seconds=system_timeout_seconds,
+        )
 
 
 def _protocol_members():
@@ -178,59 +194,11 @@ def _protocol_members():
 
 
 def test_notifier_fake_matches_protocol_signatures() -> None:
-    """录制发送器与 Notifier 协议逐方法同参同名同默认形态（真实实现的对比
-    见 test_real_notify_implementation_matches_protocol）。"""
-
     members = _protocol_members()
-    assert sorted(members) == [
-        "ServerChanPush",
-        "WebhookPush",
-        "push_plyer",
-        "send_cmcc_newmsg",
-        "send_koishi",
-        "send_mail",
-        "send_openclaw_qq",
-    ]
-    for name, protocol_method in members.items():
-        fake = getattr(_Notify, name, None)
-        assert fake is not None, name
-        proto = inspect.signature(protocol_method).parameters
-        fake_params = inspect.signature(fake).parameters
-        assert list(proto) == list(fake_params), name
-        for param_name, proto_param in proto.items():
-            if param_name == "self":
-                continue
-            fake_param = fake_params[param_name]
-            assert proto_param.kind == fake_param.kind, (name, param_name)
-            # 哨兵默认值必须存在（用于区分省参与显式传默认值），
-            # 协议里有默认值的参数假实现里也得有
-            assert fake_param.default is not fake_param.empty, (name, param_name)
-
-
-def test_real_notify_implementation_matches_protocol() -> None:
-    """仓库无类型检查器，这是 Notifier 协议与真实 Notify 实现不漂移的唯一断言。"""
-
-    from app.services.notification import Notification
-
-    for name, protocol_method in _protocol_members().items():
-        # 取类而不是实例：实例方法是绑定签名，会少掉 self，与协议不可比
-        real = getattr(Notification, name, None)
-        assert real is not None, name
-        real_params = inspect.signature(real).parameters
-        assert list(real_params) == list(
-            inspect.signature(protocol_method).parameters
-        ), name
-        for param_name, param in real_params.items():
-            if param_name == "self":
-                continue
-            assert (
-                param.kind
-                == inspect.signature(protocol_method).parameters[param_name].kind
-            ), (name, param_name)
-            assert (param.default is param.empty) == (
-                inspect.signature(protocol_method).parameters[param_name].default
-                is inspect.signature(protocol_method).parameters[param_name].empty
-            ), (name, param_name)
+    assert list(members) == ["send_channel"]
+    assert list(inspect.signature(_Notify.send_channel).parameters) == list(
+        inspect.signature(Notifier.send_channel).parameters
+    )
 
 
 def test_dispatch_isolates_false_result_and_names_webhook() -> None:
@@ -365,7 +333,7 @@ def test_system_notification_fallbacks() -> None:
     )
 
     assert result.attempted == 1
-    # 三个 or 回退：system_* 缺省时标题/正文/ticker 落到通用字段
+    # 未提供摘要时，系统通知使用通用标题、正文和默认显示时长。
     assert notify.kwargs[0] == {
         "title": "标题",
         "message": "正文",
@@ -383,19 +351,18 @@ def test_system_notification_passes_override_values() -> None:
             NotifyPayload(
                 title="标题",
                 text="正文",
-                system_title="系统标题",
-                system_message="系统正文",
-                system_ticker="系统ticker",
-                system_timeout=7,
+                summary=NotificationSummary(
+                    title="系统标题", text="系统ticker\n系统正文"
+                ),
             ),
-            [_global_target(config, include_system=True)],
+            [_global_target(config, include_system=True, system_timeout_seconds=7)],
             notifier=notify,
         )
     )
 
     assert notify.kwargs[0] == {
         "title": "系统标题",
-        "message": "系统正文",
+        "message": "系统ticker\n系统正文",
         "ticker": "系统ticker",
         "t": 7,
     }

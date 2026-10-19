@@ -52,8 +52,16 @@ STATUS_FAILED = "failed"
 PACKAGE_KIND_FULL = "full"
 PACKAGE_KIND_INCREMENTAL = "incremental"
 
-# 核心包里表示「本次更新已收尾」的 completed 子状态；除 updated 外都算成功结束。
+# 日志行级别：要用户留意的行（如项目发错版本号），面板整行标红；普通行不带级别。
+LOG_LEVEL_ALERT = "alert"
+
 _FINAL_STAGES = frozenset({"completed", "failed"})
+# 核心包以 ``completed`` 收尾、但其实没装上也没法确认已是最新的子状态：点了「更新」却
+# 取不到可安装的包（CDK 过期 / 额度用尽、GitHub 查不到）、项目没接入 Mirror 酱没法检查、
+# interface 没写版本。结论行按失败显示，别给绿色对勾。其余（updated / no_update）是成功。
+_UNSUCCESSFUL_COMPLETED_STATUSES = frozenset(
+    {"no_installable_candidate", "skipped", "version_missing"}
+)
 _THROTTLED_STAGES = frozenset({"downloading", "extracting", "applying"})
 
 _STAGE_MESSAGES: dict[str, str] = {
@@ -62,10 +70,10 @@ _STAGE_MESSAGES: dict[str, str] = {
     "downloaded": "更新包下载完成",
     "extracting": "正在解压更新包",
     "plan_validated": "更新计划校验通过，正在准备新版本",
-    "staged": "已从当前版本复制出新版本骨架，开始套用更新包",
+    "staged": "已准备好新版本目录，开始套用更新包",
     "applying": "正在套用更新包",
     "post_validating": "正在预检新版本的运行环境",
-    "committed": "新版本已登记，正在切换脚本",
+    "committed": "新版本已就绪，正在切换",
     # 不再发出：新版本只在 staging 里建，失败就丢掉，没有回滚。词表项留着兼容。
     "rolled_back": "更新失败，已回滚到更新前状态",
 }
@@ -262,11 +270,15 @@ class MaaFWUpdateProgressTracker:
 
     # ------------------------------------------------------------------ 入口
 
-    def log(self, line: str) -> WSMaaFWProjectUpdateProgressData:
-        """一行更新日志；调用方已打码也无妨，这里再过一遍。"""
+    def log(
+        self, line: str, *, alert: bool = False
+    ) -> WSMaaFWProjectUpdateProgressData:
+        """一行更新日志；调用方已打码也无妨，这里再过一遍。``alert``：面板里整行标红。"""
 
         text = sanitize_log_message(str(line))
-        return self._data("log", message=text, log=text)
+        return self._data(
+            "log", message=text, log=text, logLevel=LOG_LEVEL_ALERT if alert else None
+        )
 
     def checking(self, message: str = "") -> WSMaaFWProjectUpdateProgressData:
         return self._data("checking", message=message or _STAGE_MESSAGES["checking"])
@@ -336,9 +348,12 @@ class MaaFWUpdateProgressTracker:
         self, stage: str, event: Mapping[str, Any]
     ) -> WSMaaFWProjectUpdateProgressData:
         message = str(event.get("message") or "")
-        if stage == "failed":
+        if (
+            stage == "failed"
+            or str(event.get("status") or "") in _UNSUCCESSFUL_COMPLETED_STATUSES
+        ):
             return self._data(
-                stage, status=STATUS_FAILED, message=message or "更新失败"
+                "failed", status=STATUS_FAILED, message=message or "更新失败"
             )
         return self._data(
             "completed", status=STATUS_SUCCESS, message=message or "更新已完成"

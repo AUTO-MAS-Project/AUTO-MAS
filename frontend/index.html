@@ -14,15 +14,21 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background-color: #ffffff;
+        background-color: var(--ant-color-bg-layout, #ffffff);
+        color: var(--ant-color-text, rgba(0, 0, 0, 0.88));
       }
 
-      /* 深色模式支持 */
+      /* 挂载前 token 还没写入：先按系统深色兜底，initTheme 加上 html.dark 后按所选主题兜底 */
       @media (prefers-color-scheme: dark) {
         html,
         body {
-          background-color: #000000;
+          background-color: var(--ant-color-bg-layout, #000000);
         }
+      }
+
+      html.dark,
+      html.dark body {
+        background-color: var(--ant-color-bg-layout, #000000);
       }
 
       #app {

@@ -23,9 +23,9 @@
 用类属性 ``FLAVOR = "模块路径:属性名"`` 指向一个满足 ``MaaFWFlavor`` 协议的对象。
 
 引擎这一侧只做五件事：按需导入并缓存那个对象、在建运行计划前调一次
-``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型、在模拟器启动后
-调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的快照整理钩子。这里不出现任何具体
-专项的名字；专项自己的逻辑全在它自己的包里。
+``decorate_selection``、在导入项目后用 ``matches_project`` 决定脚本类型（换了类型时取可选的
+换类型说明发通知）、在模拟器启动后调一次可选的游戏更新钩子、在写用户任务快照前调一次可选的
+快照整理钩子。这里不出现任何具体专项的名字；专项自己的逻辑全在它自己的包里。
 
 可选钩子 ``sanitize_task_snapshot``（写用户任务快照前整理）的契约：
 
@@ -55,7 +55,7 @@
   ``resource_name`` 是运行计划的资源名；``package_name`` 是这次随模拟器拉起的包名（空串
   表示没拉起游戏）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``if_auto_install``
   对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
-  返回 ``app.utils.game_apk.GameUpdateResult``。
+  返回 ``app.utils.game_update.GameUpdateResult``。
 - **结果**：``NeedManualUpdate`` → 本用户本次运行判失败，失败原因就是 ``message``，发错误
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
@@ -68,6 +68,81 @@
 - **效果**：建运行计划后由 ``runner_task._mark_abort_round_tasks`` 标到对应任务的
   ``abortRoundMessage`` 上；这些任务失败或单任务超时时本轮直接结束（不再跑后面的任务），
   按普通失败结算、宿主照常重试。普通任务失败仍是记失败后继续。
+
+可选属性 ``nonfatal_entries``（收尾任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 这个任务失败时接在日志后的说明（如 M9A 的
+  ``{"Close1999": "MAS 收尾时会关闭游戏/模拟器，不影响本轮结果"}``）。同样按 ``getattr``
+  探测，不进协议。
+- **效果**：建运行计划后由 ``runner_task._mark_nonfatal_tasks`` 标到对应任务的
+  ``nonFatalMessage`` 上；这些任务失败、单任务超时或原地打转时照常截图（只留在 history，
+  本轮成功时不进通知），写一行日志接上这句说明，不计入本轮失败、不触发重试，然后继续。
+  单任务超时后若后面还有任务，与普通任务一样先等停止生效再继续，等满仍没停下就按失败跳过本轮剩余
+  任务；排在队尾时不等。
+  被脚本侧强停（不论回报成功还是失败）时同样截图记一行、不计入失败，并照旧跳过本轮剩余任务。
+  单任务超时或原地打转停下时恰好又被脚本侧强停，同样按这条跳过本轮剩余任务、不计入失败。
+  同轮别的任务失败时本轮仍判失败。用户停止、整轮时限、信号节点、游戏没能启动
+  （``start_app`` 失败）都先于放过处理，不在放过之列。
+- **优先级**：放过优先于「计划里第一个任务超时 / 打转就结束本轮」；同一个 entry 同时声明在
+  ``abort_round_entries`` 与 ``nonfatal_entries`` 里时按收尾任务处理。
+
+可选属性 ``skip_on_retry_entries``（重试不补跑）的契约：
+
+- **形状**：``frozenset[str]``，任务 entry 的集合。同样按 ``getattr`` 探测，不进协议；没声明
+  等于空集，行为与以前完全一样。不用另两个声明的 ``dict[entry, 说明]``：这里没有逐任务的
+  话要说，跳过原因统一是「前面的尝试已完成」，写成字典只会多出一列没人读的值。
+- **效果**：本轮有任务失败或超时、要进入下一次尝试时，``runner_task`` 在周期任务过滤重建计划
+  之后，把这些 entry 里**本次运行任一次尝试已完成过**的任务剔出计划（记进 ``skippedTasks``，
+  原因「前面的尝试已完成」），每次重试开头按当前计划的 ``skippedTasks`` 写一行列出跳过了哪些
+  （worker 崩溃后沿用原计划的那次也照写）。累计所有拿到结果的尝试，按任务名判断；同名任务
+  在计划里有多份时全部重跑（runner 只回报任务名，分不清完成的是哪一份），重试开头写一行说明，
+  只有一份的照常剔。没声明的任务照旧全部补跑；
+  声明了但这次没完成（失败、超时、没轮到）的照跑。worker 崩溃、拿不到结果的那次尝试不知道
+  完成了什么，不据它剔。剔完计划为空时按「剩余任务都已完成」结束本轮、算作完成。
+- **该列什么**：只列重跑纯属浪费、且不依赖本轮前面步骤状态的任务（领取、收菜这类做完就没了
+  的）。启动 / 关闭游戏、切换账号这类每次尝试都要重做的受管任务不要列。
+
+可选属性 ``unselectable_entries``（不可选任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 为什么不能选（如 M9A 小游戏的「需手动进入对应页面
+  （M9A 没有自动导航）」）。同样按 ``getattr`` 探测，不进协议；没声明等于空表，行为完全不变。
+- **用途**：项目里有、但 MAS 无人值守跑不了的任务（要用户先手动停在某个页面之类）。
+- **界面**：``/maafw/preview`` 按脚本的特调（没有脚本时按项目认领的特调）给这些任务填
+  ``unselectableReason``（就是这里的原因），其余任务为 ``None``；用户页据此把它们挡在「添加任务」
+  与预设模板之外，已在队列里的照常显示、可删，并提示一次运行时会跳过。不改写用户配置。
+- **运行**：``runner_task`` 归一化队列之后、``decorate_selection`` 之前按 entry 剔掉它们（连同选项），
+  按原因合并写一行用户日志（「已跳过「任务甲」「任务乙」：原因」，同名任务只列一次，顺序按队列）。
+  剔完为空就是普通的空队列：特调不补首尾，引擎照常报「没有可执行任务」。
+- **优先级**：被剔掉的任务不进计划，所以优先于 ``abort_round_entries`` / ``nonfatal_entries`` /
+  ``skip_on_retry_entries``——同一个 entry 也写在那三处里时，那三处对它不起作用。
+
+可选属性 ``no_default_fallback_inputs``（字符串字段不回落 default 的例外）的契约：
+
+- **形状**：``frozenset[tuple[str, str]]``，元素是 ``(选项名, 字段名)``。同样按 ``getattr`` 探测，
+  不进协议；没声明等于空集，行为完全不变。
+- **效果**：引擎对字符串 input 没填（没存或存的是空串）时回落 interface 的 ``default``
+  （``runner/pipeline_override._string_input_fallback``）。列在这里的字段不回落，没填就下发空串。
+  ``runner_task`` 两条建计划的路（快照路与特调的 ``task_ids`` 路）都按脚本的特调传，通用 MaaFW
+  没有例外。``/maafw/preview`` 按同一个特调把这些字段的 ``default`` 置成 null（与补
+  ``unselectableReason`` 同一处）：用户页把没填的字段显示成 default，不置空就会显示一个运行时
+  并不下发的值。
+- **该列什么**：default 是项目留下的字面量占位、真下发会出错的字段（如 M9A 自定义兑换码的
+  「占位」）。能跑的 default 别列。
+
+可选钩子 ``retype_notice_lines``（按项目换类型时的通知说明）的契约：
+
+- **可选**：按 ``getattr`` 探测，不进协议；没实现等于没有要说的。
+- **何时调**：导入 / 复用项目后脚本按项目换了类型（``api_service.embedded._apply_project_flavor``），
+  换入的特调以 ``entering=True``、换出的特调以 ``entering=False`` 各调一次。
+- **签名**：``retype_notice_lines(self, *, entering: bool, has_users: bool) -> list[str]``；
+  ``has_users`` 是脚本此刻有没有用户——只对已有用户说的话（「把账号栏改掉」之类）没有用户时
+  不要返回。
+- **效果**：返回的行接在系统通知「已按项目识别为 …」下面；引擎自己不写任何专项的行为说明，
+  标题里的类型名取 ``type_key``。
+
+魔改 AVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
+``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
+``app.utils.emulator2.service.mod_avd_binding_error`` 按脚本类型（``MaaFWConfig`` / MAA）判。
 """
 
 from __future__ import annotations
@@ -80,7 +155,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.utils import get_logger
-from app.utils.game_apk import GameUpdateResult
+from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("MaaFW 特调")
 
@@ -134,6 +209,63 @@ def resolve_flavor(script_config: Any) -> MaaFWFlavor | None:
     if not spec:
         return None
     return _load_flavor(str(spec))
+
+
+_UNSELECTABLE_DEFAULT_REASON = "MAS 无人值守运行不了这个任务"
+
+
+def unselectable_entries(flavor: Any) -> dict[str, str]:
+    """特调声明的不可选任务：entry → 原因，契约见模块说明。没声明（或不是特调）返回空表。"""
+
+    declared = (
+        getattr(flavor, "unselectable_entries", None) if flavor is not None else None
+    )
+    if not isinstance(declared, dict):
+        return {}
+    return {
+        str(entry): str(reason or "").strip() or _UNSELECTABLE_DEFAULT_REASON
+        for entry, reason in declared.items()
+        if str(entry or "").strip()
+    }
+
+
+def no_default_fallback_inputs(flavor: Any) -> frozenset[tuple[str, str]]:
+    """特调声明的不回落 default 的字符串字段，契约见模块说明。没声明（或不是特调）返回空集。"""
+
+    declared = (
+        getattr(flavor, "no_default_fallback_inputs", None)
+        if flavor is not None
+        else None
+    )
+    if not isinstance(declared, (set, frozenset, list, tuple)):
+        return frozenset()
+    return frozenset(
+        (str(item[0]), str(item[1]))
+        for item in declared
+        if isinstance(item, (list, tuple)) and len(item) == 2
+    )
+
+
+def retype_notice_lines(flavor: Any, *, entering: bool, has_users: bool) -> list[str]:
+    """特调声明的换类型说明，契约见模块说明。没实现、不是特调或钩子出错都返回空表。"""
+
+    hook = getattr(flavor, "retype_notice_lines", None) if flavor is not None else None
+    if not callable(hook):
+        return []
+    try:
+        lines = hook(entering=entering, has_users=has_users)
+    except Exception as exc:  # noqa: BLE001 - 通知文案出错不该挡住换类型
+        logger.warning(f"MaaFW 特调生成换类型说明失败：{exc}")
+        return []
+    return [str(line).strip() for line in lines or () if str(line or "").strip()]
+
+
+def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
+    """认领这个项目的特调对象（与 ``decide_project_config_class`` 同一口径）；没有返回 None。"""
+
+    config_class = decide_project_config_class(interface_model)
+    spec = getattr(config_class, "FLAVOR", None)
+    return _load_flavor(str(spec)) if spec else None
 
 
 GameUpdateHook = Callable[..., Awaitable[GameUpdateResult]]
@@ -333,11 +465,15 @@ __all__ = [
     "GameUpdateHook",
     "MaaFWFlavor",
     "SnapshotSanitizer",
+    "no_default_fallback_inputs",
     "decide_project_config_class",
+    "flavor_for_project",
     "flavored_config_classes",
     "resolve_flavor",
     "resolve_game_update_hook",
     "resolve_snapshot_sanitizer",
+    "retype_notice_lines",
     "sanitize_user_task_update",
+    "unselectable_entries",
     "user_config_type_transform",
 ]

@@ -73,6 +73,7 @@ from .payloads import (
     lineage_lock,
     manifest_files,
     manifest_path,
+    mark_damaged,
     payload_dir,
     projection_revision_of,
     read_lineage,
@@ -217,6 +218,18 @@ class RangeHTTPReader:
         self.size = total
 
     def _request(self, start: int, end: int) -> tuple[bytes, int | None]:
+        pieces, total = self._request_pieces(start, end, split=None)
+        return b"".join(pieces), total
+
+    def _request_pieces(
+        self, start: int, end: int, *, split: int | None
+    ) -> tuple[list[bytes], int | None]:
+        """发一次 Range 请求，响应体按 ``split`` 字节切成块交回（``None`` = 不切）。
+
+        边收边切：以前先整段放进 bytearray、再 ``bytes()`` 一份、再切块，一个几十 MB
+        的条目峰值是两三份；现在同一时刻只多一个块。
+        """
+
         expected = end - start + 1
         if self.fetched + expected > self.max_bytes:
             raise HealSkip(
@@ -228,6 +241,8 @@ class RangeHTTPReader:
             raise HealSkip("读取发行包超时")
         self.requests += 1
         buffer = bytearray()
+        pieces: list[bytes] = []
+        received = 0
         request_started = time.monotonic()
         try:
             with self.client.stream(
@@ -255,9 +270,13 @@ class RangeHTTPReader:
                     )
                 for chunk in response.iter_bytes():
                     buffer.extend(chunk)
+                    received += len(chunk)
                     self.received += len(chunk)
-                    if len(buffer) > expected:
+                    if received > expected:
                         raise HealSkip("下载服务器回的区间比请求的长")
+                    while split is not None and len(buffer) >= split:
+                        pieces.append(bytes(buffer[:split]))
+                        del buffer[:split]
                     if self.cancelled is not None and self.cancelled():
                         raise RangeReadCancelled("update cancelled")
                     if self.on_chunk is not None:
@@ -276,10 +295,26 @@ class RangeHTTPReader:
             ) from exc
         finally:
             self.network_seconds += time.monotonic() - request_started
-        if len(buffer) != expected:
+        if received != expected:
             raise HealSkip("下载服务器回的区间不完整")
         self.fetched += expected
-        return bytes(buffer), parsed[2]
+        if buffer:
+            pieces.append(bytes(buffer))
+        return pieces, parsed[2]
+
+    def ensure_window(self, end: int, window: int) -> None:
+        """边读边取的读法（单个很大的条目）：丢掉当前位置之前的块，当前位置所在块
+        还没缓存时，从当前位置起预读最多 ``window`` 字节（到 ``end`` 为止）。
+
+        与整段 ``prefetch`` 要的是同一批块（只是分几次要），所以取回计划的字节数不变；
+        内存里同时最多留一个窗口。"""
+
+        self.forget(self.position)
+        # 当前位置所在块多半是上一次读剩下的半块，看下一块：没缓存就从当前位置起取一窗。
+        ahead = self.position // self.block_size + 1
+        if ahead > min(end, self.size - 1) // self.block_size or ahead in self.blocks:
+            return
+        self.prefetch(self.position, min(end, self.position + window - 1))
 
     def _ensure(self, first: int, last: int) -> None:
         """把 ``[first, last]`` 里还没有的块读进来，连续缺的合成一次请求。"""
@@ -295,10 +330,9 @@ class RangeHTTPReader:
         for run in runs:
             start = run[0] * self.block_size
             end = min(self.size, (run[-1] + 1) * self.block_size) - 1
-            data = self._request(start, end)[0]
-            for offset, index in enumerate(run):
-                begin = offset * self.block_size
-                self.blocks[index] = data[begin : begin + self.block_size]
+            pieces = self._request_pieces(start, end, split=self.block_size)[0]
+            for index, piece in zip(run, pieces):
+                self.blocks[index] = piece
 
     def prefetch(self, start: int, end: int) -> None:
         """把 ``[start, end]`` 字节预读进缓存（缺的块合成一次请求）：区间差量把相邻的
@@ -1072,6 +1106,16 @@ def rebuild_payload(
         except OSError:
             logger.warning("MaaFW 补齐 staging 清理失败，留待启动时清理：%s", staging)
         raise
+    if damaged:
+        # 被写穿过的载荷：坏的 inode 经 clone_payload_into 原样链进了新载荷，新 id 也得标
+        # damaged，否则「damaged 只要全量包」的保护在补齐后失效，下次差量包（或区间差量）
+        # 会以坏内容为基线套上去。登记已完成，标记失败只记日志。
+        try:
+            mark_damaged(target.root, target.lineage, registered.payload_id)
+        except (OSError, PayloadError) as exc:
+            logger.warning(
+                "MaaFW 补齐后的载荷 %s 没能标上 damaged：%s", registered.payload_id, exc
+            )
     return registered
 
 
@@ -1244,7 +1288,7 @@ async def heal_payload(
                 "reason": reason[:500],
             },
         )
-        message = f"检查 {version} 是否漏装文件没做成（{reason}），本次照常运行"
+        message = f"检查 {version} 是否缺文件没有完成（{reason}），本次照常运行"
         logger.info(
             "MaaFW 载荷 %s：%s（第 %d 次）", target.payload_id, message, attempts
         )
@@ -1350,7 +1394,7 @@ async def heal_payload(
             await after_register(registered)
         except Exception:  # noqa: BLE001 - 载荷已在册，没切过去的下次组同步补上
             logger.warning("MaaFW 补齐后的切换失败", exc_info=True)
-            log("补齐后的版本已登记，但切换脚本时出错；下次运行前会再同步")
+            log("已补齐缺失的文件，但切换脚本时出错；下次运行前会再同步")
     return HealOutcome(
         "healed",
         version=version,

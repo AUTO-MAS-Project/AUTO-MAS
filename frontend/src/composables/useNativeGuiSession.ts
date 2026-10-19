@@ -5,7 +5,12 @@ import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
+import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_CONFIG_DISCARDED,
+  WS_TASK_NOTICE,
+} from '@/services/websocket/types'
 
 /**
  * 原生设置会话（MAA / ok-ww / MaaEnd 共用）：打开原生 GUI 并遮罩等待，保存后
@@ -46,17 +51,26 @@ export function useNativeGuiSession(options: {
   const stopping = ref(false)
   let stoppingPromise: Promise<boolean> | null = null
   let keepFailedSession = false
+  // 本次会话的改动是否已被后端丢弃（原因见后端 WSTaskConfigDiscardedData）
+  let discardedReason: string | null = null
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
   const SESSION_WARNING_ADVANCE_MS = 30 * 1000
+  // 停止响应返回后，再给后端已写出的 WebSocket 帧留一个回合，避免「已保存」
+  // 提示抢先于「改动被丢弃」弹窗（后端在停止响应前就发出了丢弃帧）
+  const DISCARD_FRAME_GRACE_MS = 300
 
   let configTimeout: number | null = null
   let warningTimeout: number | null = null
 
-  const clearSession = () => {
-    subscriptionIds.value.forEach(unsubscribe)
-    subscriptionIds.value = []
+  // keepSubscriptions=true 时保留订阅：丢弃帧先于停止响应发出，但到达顺序不保证，
+  // 保存流程要等完这一回合才能判断该不该提示「已保存」。
+  const clearSession = (keepSubscriptions = false) => {
+    if (!keepSubscriptions) {
+      subscriptionIds.value.forEach(unsubscribe)
+      subscriptionIds.value = []
+    }
     taskId.value = null
     showConfigMask.value = false
     showViewMask.value = false
@@ -70,7 +84,7 @@ export function useNativeGuiSession(options: {
     }
   }
 
-  const stopSession = (keepOnFailure = false): Promise<boolean> => {
+  const stopSession = (keepOnFailure = false, keepSubscriptions = false): Promise<boolean> => {
     if (stoppingPromise) {
       keepFailedSession ||= keepOnFailure
       return stoppingPromise
@@ -88,7 +102,7 @@ export function useNativeGuiSession(options: {
         if (response.code !== 200) {
           throw new Error(response.message || t(keys.stopFailed))
         }
-        clearSession()
+        clearSession(keepSubscriptions)
         return true
       } catch (e) {
         logger.error(e instanceof Error ? e.message : String(e))
@@ -106,6 +120,7 @@ export function useNativeGuiSession(options: {
   const startSession = async (startTaskId: string, viewOnly = false): Promise<boolean> => {
     try {
       configLoading.value = true
+      discardedReason = null
       const response = await Service.addTaskApiDispatchStartPost({
         taskId: startTaskId,
         mode: TaskCreateIn.mode.SCRIPT_CONFIG,
@@ -124,6 +139,10 @@ export function useNativeGuiSession(options: {
 
           message.error(t(keys.setupFailed, { p0: wsMessage.data.message }))
           void stopSession()
+        }),
+        subscribe({ id: response.taskId, type: WS_TASK_CONFIG_DISCARDED }, wsMessage => {
+          discardedReason = wsMessage.data.reason
+          showConfigDiscardWarning(t, wsMessage.data.reason)
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
@@ -152,11 +171,16 @@ export function useNativeGuiSession(options: {
 
   const saveSession = async () => {
     if (!taskId.value) return
-    if (await stopSession(true)) {
-      message.success(t(keys.saved))
-    } else {
+    if (!(await stopSession(true, true))) {
       message.error(t(keys.saveFailed))
+      return
     }
+    await new Promise(resolve => window.setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+    subscriptionIds.value.forEach(unsubscribe)
+    subscriptionIds.value = []
+    // 改动已被丢弃时不再提示「已保存」——弹窗已经说明去向，两条提示互相矛盾
+    if (discardedReason) return
+    message.success(t(keys.saved))
   }
 
   return {

@@ -68,6 +68,8 @@ def _goal_current_level(progression: Progression, goal: Goal) -> int:
 
     if goal.kind == "elite":
         return progression.elite
+    if goal.kind == "skill":
+        return progression.skill_level or 0
     if goal.kind == "mastery":
         return progression.masteries.get(goal.target_id, 0)
     return progression.modules.get(goal.target_id, 0)
@@ -82,22 +84,42 @@ def build_requirements(
 
     等级路径严格顺序不可跳级：区间=逐档求和，天然包含中间档材料
     （中间档是要真实消耗的，属正确行为）。已达成（achieved）与待确认
-    （pending_confirm，可能已养成但无法自证）的目标不参与计算；专精/模组
-    目标在快照未携带该维度观测（森空岛降级 local/default）时同样不参与
+    （pending_confirm，可能已养成但无法自证）的目标不参与计算；技能等级、
+    专精与模组目标在快照未携带该维度观测时同样不参与
     ——达成检测不受影响，目标保留，观测恢复后自动续刷。
+    有效专精目标补齐普通技能 7 级的前置需求，每个干员只计算一次。
     """
 
     requirements: dict[str, Requirement] = {}
     for target in targets:
         snapshot = snapshots.get(target.operator_id)
         progression = snapshot.data if snapshot is not None else Progression.default()
-        for goal_index, goal in enumerate(target.goals):
-            # 已达成不参与计算；待确认（可能已养成但无法自证）暂停刷取，
-            # 避免用户确认前无限补刷——确认后移除，否认则恢复 in_progress
-            if goal.state in ("achieved", "pending_confirm"):
-                continue
+        # 已达成与待确认目标暂停刷取，避免用户确认前无限补刷。
+        goals = [
+            (goal_index, goal)
+            for goal_index, goal in enumerate(target.goals)
+            if goal.state not in ("achieved", "pending_confirm")
+        ]
+        mastery_index = next(
+            (index for index, goal in goals if goal.kind == "mastery"), None
+        )
+        if mastery_index is not None:
+            # 不改保存的目标；前置需求归到已有技能目标，缺失时归到专精目标。
+            skill_index = next(
+                (index for index, goal in goals if goal.kind == "skill"), mastery_index
+            )
+            goals = [(index, goal) for index, goal in goals if goal.kind != "skill"]
+            goals.append((skill_index, Goal(kind="skill", target_id="", to_level=7)))
+        for goal_index, goal in goals:
             # 专精/模组未观测时 current 恒为 0，展开会从第一档重算需求
-            if goal.kind != "elite" and not _mastery_module_observed(snapshot):
+            if goal.kind in ("mastery", "module") and not _mastery_module_observed(
+                snapshot
+            ):
+                continue
+            if goal.kind == "skill" and (
+                not _mastery_module_observed(snapshot)
+                or progression.skill_level is None
+            ):
                 continue
             current = _goal_current_level(progression, goal)
             for entry in demands.get(target.operator_id, ()):
@@ -140,6 +162,48 @@ def aggregate(requirements: list[Requirement]) -> list[Requirement]:
                 sources=existing.sources + requirement.sources,
             )
     return list(merged.values())
+
+
+def select_auto_cultivate_targets(
+    targets: list[OperatorTarget] | tuple[OperatorTarget, ...],
+    snapshots: Mapping[str, ProgressionSnapshot],
+    inventory: Mapping[str, int],
+    data: CultivateDataSet,
+) -> tuple[OperatorTarget, ...]:
+    """按各材料满足比例均值选取最多十名干员。
+
+    每名干员独立对比现有成品库存，不预分配共享材料；同分沿用目标顺序。
+    模组没有自动培养入口，不参与评分，也不占用名额。
+    """
+
+    scored: list[tuple[OperatorTarget, float]] = []
+    for target in targets:
+        goals = tuple(
+            goal
+            for goal in target.goals
+            if goal.kind != "module"
+            and goal.state not in ("achieved", "pending_confirm")
+        )
+        if not goals:
+            continue
+        candidate = replace(target, goals=goals)
+        requirements = build_requirements(
+            targets=(candidate,), snapshots=snapshots, demands=data.demands
+        )
+        completion = (
+            sum(
+                min(inventory.get(item.item_id, 0) / item.amount, 1.0)
+                for item in requirements
+            )
+            / len(requirements)
+            if requirements
+            else 1.0
+        )
+        scored.append((candidate, completion))
+    return tuple(
+        target
+        for target, _ in sorted(scored, key=lambda item: item[1], reverse=True)[:10]
+    )
 
 
 def _build_recipe_map(data: CultivateDataSet) -> dict[str, Recipe]:
@@ -500,7 +564,10 @@ def build_plan(
     requirements = aggregate(build_requirements(targets, snapshots, data.demands))
     gross, unobtainable = synthesize(requirements, data, today, blacklist)
     held = dict(inventory or {})
-    net, _ = _farm_demand_net(requirements, held, data, today, blacklist)
+    reservations: dict[str, float] = {}
+    net, _ = _farm_demand_net(
+        requirements, held, data, today, blacklist, reservations=reservations
+    )
     entries = tuple(
         replace(entry, held=held.get(entry.item_id, 0))
         for entry in recommend_stages(net, data, today, blacklist)
@@ -537,6 +604,10 @@ def build_plan(
         entries=tuple(entries),
         demands=demands,
         unobtainable=tuple(unobtainable),
+        reservations=tuple(
+            Requirement(item_id=item_id, amount=math.ceil(amount))
+            for item_id, amount in sorted(reservations.items())
+        ),
     )
 
 
@@ -546,6 +617,8 @@ def _farm_demand_net(
     data: CultivateDataSet,
     today: date | None = None,
     blacklist: frozenset[str] = frozenset(),
+    *,
+    reservations: dict[str, float] | None = None,
 ) -> tuple[list[Requirement], list[Requirement]]:
     """按库存抵扣后的净需求，折算到可刷取材料（与 synthesize 同分支同选路）。
 
@@ -588,6 +661,9 @@ def _farm_demand_net(
 
         if amount <= 0:
             return
+        # 预留完整消耗再扣现存：已有材料也会被培养消耗，合成原料同理。
+        if reservations is not None:
+            reservations[item_id] = reservations.get(item_id, 0.0) + amount
         use = min(amount, stock.get(item_id, 0))
         if use:
             stock[item_id] -= use
@@ -774,6 +850,7 @@ def apply_achievements(
 
 _GOAL_LABELS: Mapping[str, str] = {
     "elite": "精",
+    "skill": "技能等级",
     "mastery": "专精",
     "module": "模组",
 }

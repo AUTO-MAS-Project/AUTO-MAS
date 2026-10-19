@@ -59,10 +59,9 @@ import re
 import threading
 import time
 from collections.abc import Callable
-from contextlib import contextmanager, suppress
+from contextlib import suppress
 from datetime import datetime
 from difflib import SequenceMatcher
-from functools import lru_cache
 from pathlib import Path
 
 import cv2
@@ -70,10 +69,12 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.task.proxy_helpers import find_pids_by_name
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
 
 from .account_switch import mask_account
 
@@ -253,26 +254,6 @@ _CHECK_SAT_MIN = 60
 _CHECK_VAL_MIN = 120
 
 
-@lru_cache(maxsize=1)
-def _user32_dpi_api():
-    user32 = ctypes.windll.user32
-    user32.SetThreadDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-    user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
-    return user32
-
-
-@contextmanager
-def _per_monitor_dpi():
-    """切换到 per-monitor DPI 感知，保证窗口坐标换算在跨 DPI 显示器下正确。"""
-    user32 = _user32_dpi_api()
-    previous = user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
-    try:
-        yield
-    finally:
-        if previous:
-            user32.SetThreadDpiAwarenessContext(previous)
-
-
 # ── 窗口定位 ────────────────────────────────────────────────────────────
 
 
@@ -292,20 +273,28 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_game_hwnd(*, wait: bool = True) -> int:
+def _genshin_process_alive() -> bool:
+    """是否仍有原神本地客户端进程存活（窗口等待期的快速失败判定）。"""
+    return any(find_pids_by_name(name) for name in _GENSHIN_PROCESS_NAMES)
+
+
+def _find_game_hwnd(*, wait: bool = True, allow_relaunch: bool = False) -> int:
     """按所属进程名定位原神主窗口（官服 YuanShen / 国际服 GenshinImpact）。
 
-    用 ``EnumWindows + psutil.Process(pid).name()`` 而非 process_iter 的 name 属性，
-    规避提权进程 name 读取被拒导致的漏判；同进程存在多个窗口时取面积最大者。
+    用 ``EnumWindows + psutil.Process(pid).name()`` 确认窗口归属；
+    同进程存在多个窗口时取面积最大者。
 
     Args:
         wait: 为 True 时在宽限期 ``_GAME_WINDOW_WAIT_SECONDS`` 内轮询等待窗口就绪，
             吸收 MAS 拉起游戏后窗口延迟亮相的启动阶段；为 False 时单次枚举立即返回。
+        allow_relaunch: 更新后的窗口重定位允许游戏退出并重新启动，保留整个宽限期。
 
     Raises:
-        RuntimeError: 宽限期结束仍未定位到原神游戏窗口。
+        RuntimeError: 宽限期结束仍未定位到原神游戏窗口；或非重启等待中，
+            已观察到存活的原神进程随后全部退出时提前抛出。
     """
     deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    process_seen = False
     while True:
         candidates: list[int] = []
 
@@ -325,9 +314,21 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
             return max(candidates, key=_window_area)
         if not wait or time.monotonic() >= deadline:
             break
-        logger.info(
-            f"原神游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
-        )
+        if _genshin_process_alive():
+            process_seen = True
+            logger.info(
+                f"原神游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            )
+        else:
+            # 首次未见进程不能证明已退出；更新重启也会有短暂的进程空窗。
+            if process_seen and not allow_relaunch:
+                raise RuntimeError(
+                    f"原神游戏进程已退出（{_GENSHIN_PROCESS_NAMES}），"
+                    "请确认游戏已由 MAS 成功启动"
+                )
+            logger.info(
+                f"正在等待原神游戏进程启动或重启，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            )
         time.sleep(_WINDOW_POLL_INTERVAL)
     raise RuntimeError(
         f"未找到原神游戏窗口（进程 {_GENSHIN_PROCESS_NAMES}），"
@@ -502,11 +503,6 @@ def _wait_ocr_text(
             return box
         time.sleep(1)
     return None
-
-
-def _on_title_screen(hwnd: int) -> bool:
-    """标题界面（「点击进入」横条）。"""
-    return _find_text(_read_texts(hwnd), _TITLE_TEXTS) is not None
 
 
 def _on_login_dialog(hwnd: int) -> bool:
@@ -811,7 +807,7 @@ def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
     游戏退出后的短暂空窗，若更新耗时过长（启动器接手）则最终抛出失败。
     """
     on_log("游戏窗口句柄已失效（可能进入更新流程），重新定位原神窗口...")
-    return _find_game_hwnd(wait=True)
+    return _find_game_hwnd(wait=True, allow_relaunch=True)
 
 
 # ── 退出登录弹窗 → 登录对话框 ───────────────────────────────────────────
@@ -1562,6 +1558,9 @@ def account_switch(
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
         raise RuntimeError("BetterGI 账号切换仅支持 Windows 平台")
+    # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
+    # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
+    pyautogui.FAILSAFE = False
     account = str(account or "").strip()
     password = str(password or "")
     resource = str(resource or "官服").strip() or "官服"

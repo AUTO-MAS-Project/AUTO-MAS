@@ -43,6 +43,8 @@ class MaaFWInterfaceValidationReport(BaseModel):
 _EMULATOR_EXTRA_RELATION: dict[str, dict[str, bool]] = {
     "mumu": {"screencap": True, "input": True},
     "ldplayer": {"screencap": True, "input": False},
+    # 魔改 AVD：AVDExtras 只有截图（MaaFramework v5.7.0 起），输入走默认（Maatouch）
+    "avd": {"screencap": True, "input": False},
 }
 
 
@@ -153,7 +155,8 @@ def build_interface_preview_data(
                 "description": tr_description(preset.description),
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
-                "snapshot": snapshot.model_dump(mode="json"),
+                # 实例显示名只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它
+                "snapshot": snapshot.model_dump(mode="json", exclude={"taskLabels"}),
             }
         )
 
@@ -390,7 +393,8 @@ def interface_display_name(root_path: str | Path, interface: MaaFWInterface) -> 
 def interface_text_translator(
     root_path: str | Path, interface: MaaFWInterface
 ) -> Callable[[str | None], str | None]:
-    """按项目简体中文语言文件翻 ``$键`` 文案的函数，与预览里的 label 同一口径。
+    """按项目简体中文语言文件（没有就用 ``languages`` 里第一份）翻 ``$键`` 文案的函数，
+    与预览里的 label 同一口径。
 
     语言文件只读一次；翻不出来（没有语言文件、缺键、不是 ``$`` 开头）原样返回。
     """
@@ -404,8 +408,20 @@ def interface_text_translator(
     return translate
 
 
+def _fallback_language_file(interface: MaaFWInterface) -> str | None:
+    """没有简体中文语言文件时退而取 ``languages`` 里第一份：只带英文 / 日文语言文件、label
+    写成 ``$键`` 的项目，翻成外文也比把 ``$task.xxx`` 原样给人看强。"""
+
+    for value in (interface.languages or {}).values():
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, Any]:
-    language_file = simplified_chinese_language_file(interface)
+    language_file = simplified_chinese_language_file(
+        interface
+    ) or _fallback_language_file(interface)
     if language_file is None:
         return {}
 

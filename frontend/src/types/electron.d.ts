@@ -1,4 +1,22 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
+import type {
+  DesktopMascotHostAPI,
+  DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
+} from '@/types/desktopMascot'
+import type {
+  AppearanceCleanupResult,
+  AppearanceImportResult,
+  InstalledAppearance,
+  LocalAppearanceInspectResult,
+  OnlineAppearanceCoverResult,
+  OnlineAppearanceDetailResult,
+  OnlineAppearanceInstallResult,
+  OnlineAppearanceListResult,
+  OnlineAppearancePrepareResult,
+  OnlineAppearanceQuery,
+} from '@/types/appearance'
 
 // Electron API 类型定义
 export interface PathDiscoveryCandidate {
@@ -46,6 +64,24 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 /** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
 export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+
+export interface RuntimeBinaryUpdateResult {
+  status: 'upgraded' | 'current' | 'skipped' | 'cancelled' | 'failed'
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryProgress {
+  progress: number
+  message: string
+}
 
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
@@ -185,7 +221,13 @@ export interface VirtualDisplayPromptPayload {
   monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  isMacOS: boolean
+  listMascots?: () => Promise<MascotSummary[]>
+  importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
+  removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
+  /** 不带选择状态时表示资源列表变化。 */
+  onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
@@ -198,13 +240,18 @@ export interface ElectronAPI {
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
   appRestart: () => Promise<void>
+  /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
+  appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
+  onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
+  appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
   appPrepareQuit?: () => Promise<number | null>
   /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
@@ -214,7 +261,7 @@ export interface ElectronAPI {
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
-  onAppCloseRequested?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: (confirmRunningTasks: boolean) => void) => () => void
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
@@ -264,11 +311,22 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{
+  exportLogs: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    skippedPaths?: string[]
+    errorCode?: 'window-unavailable' | 'directory-missing' | 'no-files'
+    error?: string
+  }>
+  exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
     error?: string
+    errorCode?: 'no-installation' | 'no-files' | 'export-failed'
+    collectedCount?: number
+    incompleteCount?: number
   }>
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
@@ -374,8 +432,53 @@ export interface ElectronAPI {
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
+  /** 按 base64 读二进制文件（音频等）；渲染进程用它拼 data URL */
+  readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
+
+  // 自定义外观包
+  listAppearances?: () => Promise<InstalledAppearance[]>
+  getAppearance?: (id: string) => Promise<InstalledAppearance | null>
+  importAppearance?: (zipPath: string, replace?: boolean) => Promise<AppearanceImportResult>
+  removeAppearance?: (id: string) => Promise<{ success: boolean; error?: string }>
+  clearInvalidAppearance?: (expectedId: string) => Promise<AppearanceCleanupResult>
+  listOnlineAppearances?: (
+    query?: OnlineAppearanceQuery,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceListResult>
+  getOnlineAppearance?: (
+    fileKey: string,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceDetailResult>
+  prepareOnlineAppearance?: (
+    fileKey: string,
+    versionNo: number,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearancePrepareResult>
+  installOnlineAppearance?: (
+    token: string,
+    replace?: boolean,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceInstallResult>
+  discardOnlineAppearance?: (
+    token: string,
+    category?: AppearanceCategory
+  ) => Promise<{ success: boolean }>
+  getOnlineAppearanceCover?: (
+    fileKey: string,
+    versionNo?: number,
+    category?: AppearanceCategory
+  ) => Promise<OnlineAppearanceCoverResult>
+  inspectLocalAppearance?: (
+    zipPath: string,
+    category?: AppearanceCategory
+  ) => Promise<LocalAppearanceInspectResult>
+  inspectAppearanceCover?: (
+    imagePath: string
+  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  onAppearanceChanged?: (callback: () => void) => () => void
+  onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
   // ==================== 初始化 API ====================
 
@@ -397,6 +500,10 @@ export interface ElectronAPI {
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
   /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
   getRuntimeInitContext?: () => Promise<RuntimeInitContext>
+  updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
+  checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
+  onRuntimeBinaryProgress: (callback: (progress: RuntimeBinaryProgress) => void) => void
+  removeRuntimeBinaryProgressListener: () => void
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>

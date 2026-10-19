@@ -45,6 +45,9 @@ class MaaFWTaskRunPlan(BaseModel):
     # 特调声明的关键任务（如 M9A 的切换账号）：失败或超时就结束本轮、报这句，由宿主照常
     # 重试；None 是普通任务，失败后继续后面的任务。
     abortRoundMessage: str | None = None
+    # 特调声明的收尾任务（如 M9A 的关闭游戏）：失败、超时或原地打转都照常截图并写一行日志
+    # （接上这句说明），但不计入本轮失败、不触发重试；None 是普通任务。
+    nonFatalMessage: str | None = None
 
 
 class MaaFWSkippedTaskPlan(BaseModel):
@@ -81,6 +84,9 @@ class MaaFWRunPlan(BaseModel):
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
+    # 用户的全局选项表（已解密、叠过脚本级键位），各任务覆盖里全局那一层的取值。任务的
+    # options 是给人看的合并结果，同一选项任务自己也有值时看不到这一层，宿主给日志打码时两处都收。
+    globalOptions: dict[str, Any] = Field(default_factory=dict)
     # 建计划时降级处理的项（例如没设的快捷键被跳过），宿主写进用户可见的运行日志。
     warnings: list[str] = Field(default_factory=list)
     # 项目 zh_cn 语言文件的内容，worker 用它翻译 pipeline focus 文案里的 ``$key``。
@@ -143,6 +149,9 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 虽已出现、画面还没渲染出来，worker 把资源加载、连 controller、起 agent 都
     # 做完后再等到这个点，而不是在宿主里干等。None 表示不等。
     taskStartNotBefore: float | None = None
+    # 首个任务前怎么判断游戏已就绪：screen 按画面提前放行（默认）；disk_quiet 要画面有内容
+    # 且客体读盘停下来（runner._wait_task_start_disk_quiet）。宿主决定用哪种。
+    taskStartGateMode: str = "screen"
     # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
     # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
     runDeadlineAt: float | None = None
@@ -152,3 +161,6 @@ class MaaFWRunnerJobPayload(BaseModel):
     taskTimeLimitSeconds: int | None = None
     # 按任务名覆盖的单任务时限（秒），键是 MaaFWTaskRunPlan.name；值 0 表示该任务不限。
     taskTimeLimitOverrides: dict[str, int] | None = None
+    # 原地打转检测（实验性）：任务在短周期里反复执行同一串节点、识别结果又不变时停掉它，
+    # 收尾与单任务超时同一口径。宿主按 Run.LoopGuard 下发，默认关。
+    loopGuard: bool = False

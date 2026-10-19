@@ -49,7 +49,7 @@ Use default component styles, official props, slots, layout components, and them
 When overriding Ant Design Vue internals:
 
 1. Keep the override inside scoped styles.
-2. Use `:deep()` under the current component root class.
+2. Use `:deep()` under the current component root class only when the rendered DOM is actually its descendant. Ant Design portal shells may lack the component scope attribute; inspect the DOM and computed styles, then use a narrowly namespaced `:global(.module-modal .ant-modal-body)` when needed.
 3. Avoid global `.ant-*` overrides unless the task is a deliberate project-wide token or global fix.
 4. Avoid `!important`; if unavoidable, document the reason.
 
@@ -118,8 +118,9 @@ Before completing styling work that touches colors, borders, backgrounds, or add
 6. Avoid browser-native `alert` and `confirm`.
 7. Close protection is required when dismissing a form would lose unsaved changes.
 8. In the frameless Electron window, treat the title bar and its minimize, maximize, and close buttons as reserved application chrome. Ordinary modals, masks, drawers, and popovers must not cover or block those controls.
-9. Inspect the title bar height and stacking context before setting overlay `z-index`. Keep normal business overlays below the title bar or reserve its space; only an intentional startup or shutdown safety layer may block window controls.
+9. Inspect the title bar height and stacking context before setting overlay `z-index`. Prefer reserving the title bar height plus normal spacing; do not raise `z-index` to repair positioning. Reserve the chrome for both the overlay wrapper and its mask, since moving only the dialog does not keep window controls clickable. Only an intentional startup or shutdown safety layer may block window controls.
 10. At low window heights, constrain the dialog to the usable viewport and choose exactly one vertical scroll owner for the flow, normally the dialog body or content region. Ordinary child lists and grids must expand inside that scroller instead of adding another `overflow-y: auto`; nested scrolling is reserved for deliberately independent panes. Do not make the page body or the modal wrapper provide the overflow, and keep close and footer actions reachable.
+11. For title-bar spacing, portal styling, or dialog overflow work, read [Electron overlay layout](references/electron-overlays.md). Inventory related template modals, composable/static confirmations, and nested dialogs before declaring the feature fixed.
 
 ### Scrollbars
 
@@ -184,7 +185,7 @@ Before declaring UI work complete:
 4. Run the relevant project verification from `mas-frontend-standards`.
 5. If UI cannot be visually checked, state what was not checked and why.
 6. Confirm interactive elements are visually discoverable and disabled elements are clearly non-interactive.
-7. For overlays in Electron, test a low-height viewport and confirm title-bar controls remain visible and clickable, the outer page does not gain unintended overflow, and the dialog's internal content can still scroll.
+7. For overlays in Electron, follow the representative viewport and interaction checks in [Electron overlay layout](references/electron-overlays.md). Verify window-control hit targets and clicks while a dialog and its nested confirmation are open; a visible title bar alone does not prove it is usable.
 8. When scrollbar styling changes, inspect both light and dark themes on an actually scrollable surface.
 9. Confirm `prefers-color-scheme` appears only in `src/composables/useTheme.ts`; grep for it when touching theme-related styles.
 10. Run the CSS variable audit from `references/css-variable-audit.md` and confirm zero undefined references.

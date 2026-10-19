@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import math
+from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
@@ -50,6 +51,10 @@ class MaaFWCheckboxCountError(ValueError):
 
 #: password 字段下发失败时代替原值写进提示的文字（核心包不引宿主的 option_secrets）。
 SECRET_VALUE_PLACEHOLDER = "（密码字段，已隐藏）"
+#: 宿主在内存里解开密文后，往交给建计划的快照里写的键：``[[option 名, 字段名], …]``，
+#: 这些 input 字段的值是从密文解出来的。项目更新撤掉了 password 标记的字段，值仍是用户
+#: 当密码填的，下发失败的提示同样不带原值（与当前声明为 password 的字段同一口径）。
+SECRET_INPUTS_SNAPSHOT_KEY = "secretInputs"
 
 
 class MaaFWInputValueError(ValueError):
@@ -153,10 +158,17 @@ class MaaFWPipelineOverrideBuilder:
         *,
         controller_names: set[str],
         resource_name: str | None,
+        secret_inputs: Iterable[tuple[str, str]] = (),
+        no_default_fallback_inputs: Iterable[tuple[str, str]] = (),
     ) -> None:
         self.interface_model = interface_model
         self.controller_names = controller_names
         self.resource_name = resource_name
+        # 值是从密文解出来的 input 字段 (option 名, 字段名)：下发失败的提示按密码字段处理
+        self.secret_inputs = frozenset(secret_inputs)
+        # 字符串字段没填时不回落 default 的 input 字段 (option 名, 字段名)：特调声明的例外
+        # （宿主按特调传，核心包不认识特调）
+        self.no_default_fallback_inputs = frozenset(no_default_fallback_inputs)
         # 建覆盖时跳过的项（给用户看的原因）；调用方把它带进运行计划的告警。
         self.warnings: list[str] = []
         # 因为值下发不了而整段跳过覆盖的 input 选项（没填又没默认值、该填数字却不是）。
@@ -169,16 +181,26 @@ class MaaFWPipelineOverrideBuilder:
         self,
         task_name: str,
         options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None = None,
     ) -> MaaFWPipelineOverride:
+        """``global_options``：用户的全局表，global_option 那一组（连同它展开的子选项）按它
+        取值；其余三组按 ``options``（这个任务自己的值）。不给时四组都按 ``options``。
+
+        与 PI / MXU / MaaPiCli 一致：同一个选项既在 global_option、又在任务 / 资源 / 控制器
+        自己的 option 里时，两组各按各的值出一份覆盖，后叠的（任务的）盖住先叠的。
+        """
+
         task_definition = self._get_task_definition(task_name)
         if task_definition is None:
             return {}
 
         merged = copy.deepcopy(task_definition.pipeline_override) or {}
-        for option_names in self._task_option_groups(task_definition):
+        for option_names, values in self._task_option_group_values(
+            task_definition, options, global_options
+        ):
             merged = deep_merge_pipeline_override(
                 merged,
-                self._build_option_group_override(option_names, options),
+                self._build_option_group_override(option_names, values),
             )
         return merged
 
@@ -186,6 +208,7 @@ class MaaFWPipelineOverrideBuilder:
         self,
         task_name: str,
         options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None = None,
     ) -> list[str]:
         """这个任务建覆盖时实际会生效的选项名（按出现顺序去重）。
 
@@ -199,7 +222,33 @@ class MaaFWPipelineOverrideBuilder:
         if task_definition is None:
             return []
         names: list[str] = []
-        for option_names in self._task_option_groups(task_definition):
+        for option_names, values in self._task_option_group_values(
+            task_definition, options, global_options
+        ):
+            self._collect_active_option_names(option_names, values, set(), names)
+        return names
+
+    def active_global_option_names(
+        self, global_options: dict[str, MaaFWTaskOptionValue]
+    ) -> list[str]:
+        """global_option 那一组按全局表实际会生效的选项名（口径同 ``active_option_names``）。"""
+
+        names: list[str] = []
+        self._collect_active_option_names(
+            self.interface_model.global_option or [], global_options, set(), names
+        )
+        return names
+
+    def active_task_own_option_names(
+        self, task_name: str, options: dict[str, MaaFWTaskOptionValue]
+    ) -> list[str]:
+        """resource / controller / task 三组按任务自己的值实际会生效的选项名（不含全局组）。"""
+
+        task_definition = self._get_task_definition(task_name)
+        if task_definition is None:
+            return []
+        names: list[str] = []
+        for option_names in self._task_option_groups(task_definition)[1:]:
             self._collect_active_option_names(option_names, options, set(), names)
         return names
 
@@ -231,6 +280,20 @@ class MaaFWPipelineOverrideBuilder:
             self._get_active_controller_type(),
             referenced_values,
         )
+
+    def _task_option_group_values(
+        self,
+        task_definition: MaaFWTask,
+        options: dict[str, MaaFWTaskOptionValue],
+        global_options: dict[str, MaaFWTaskOptionValue] | None,
+    ) -> list[tuple[list[str], dict[str, MaaFWTaskOptionValue]]]:
+        """四组选项名各配上取值来源：全局组用全局表（没给就用 ``options``），其余用 ``options``。"""
+
+        groups = self._task_option_groups(task_definition)
+        return [
+            (groups[0], options if global_options is None else global_options),
+            *((names, options) for names in groups[1:]),
+        ]
 
     def _task_option_groups(self, task_definition: MaaFWTask) -> list[list[str]]:
         resource_definition = self._get_resource_definition()
@@ -396,10 +459,8 @@ class MaaFWPipelineOverrideBuilder:
         normalized_type = (pipeline_type or "string").lower()
         if normalized_type not in {"string", "str", ""} and not raw_value.strip():
             # 非字符串类型没有「空」这个取值。未填写时必须回落到 interface 声明的
-            # default —— 那是个真数字（MaaEnd 的 SupplyPlanLimit 默认 260、
-            # CloseGamePCGameSettingResolutionWidth 默认 1280），不是「占位」那种
-            # 哨兵，所以回落不会重演兑换码那个坑。字符串走不到这里：空串对它是
-            # 合法取值（M9A 的兑换码没填就该是空）。
+            # default（MaaEnd 的 SupplyPlanLimit 默认 260、CloseGamePCGameSettingResolutionWidth
+            # 默认 1280）。字符串的回落在 _string_input_fallback，走不到这里。
             fallback = "" if default is None else str(default).strip()
             if not fallback:
                 raise MaaFWInputValueError(
@@ -410,7 +471,9 @@ class MaaFWPipelineOverrideBuilder:
                 )
             raw_value = fallback
         if normalized_type in {"bool", "boolean"}:
-            typed_value = raw_value.lower() in {"true", "1", "yes", "y", "on"}
+            # 先 strip 再比，与用户页的开关显示（maafwOptionValues 的 isMaaFWTruthyInputText）同口径：
+            # 存量或外壳导入的「 true 」页面上显示「是」，运行时也得是 true
+            typed_value = raw_value.strip().lower() in {"true", "1", "yes", "y", "on"}
             return typed_value, "true" if typed_value else "false"
         if normalized_type in {"int", "integer"}:
             # 整数形态的小数（「99.0」「1e20」，preset / 默认值里写成数字时常见）规范成整数；
@@ -484,10 +547,19 @@ class MaaFWPipelineOverrideBuilder:
                 for key, nested_value in value.items()
             }
             attach_value = copied.get("attach")
-            if isinstance(attach_value, dict) and option_name in attach_value:
+            if isinstance(attach_value, dict):
+                # 两种写法：键名就是选项名（按键赋值）；或者某个值整个写成
+                # "{选项名}"（MaaFgo 的 bbc_source_config: "{BBC转换来源配置}"），整值换成
+                # 选中的值。只认整值，不做子串替换。
+                placeholder = f"{{{option_name}}}"
                 updated_attach = copy.deepcopy(attach_value)
-                updated_attach[option_name] = selected_value
-                copied["attach"] = updated_attach
+                changed = False
+                for key, item in attach_value.items():
+                    if key == option_name or item == placeholder:
+                        updated_attach[key] = selected_value
+                        changed = True
+                if changed:
+                    copied["attach"] = updated_attach
             return copied
         if isinstance(value, list):
             return [
@@ -495,6 +567,34 @@ class MaaFWPipelineOverrideBuilder:
                 for item in value
             ]
         return copy.deepcopy(value)
+
+    def _string_input_fallback(
+        self, option_name: str, input_item: Any, raw_text: str
+    ) -> str:
+        """字符串字段没填（没存，或存的正好是空串）时回落 interface 的 ``default``。
+
+        PI v2 规范与 MaaPiCli、MFAAvalonia（``TaskLoader`` 把 ``input.Default`` 写进配置）、MXU、
+        MFW-PyQt6 都把 default 当字段的初值；不回落的话没填的字段下发空串，项目拿到的是坏
+        override（MaaEnd 表达式缺右操作数、MRA 的 ``expected: [""]``、MaaStellaSora agent 里的
+        ``float("")``）。存量快照里显式存的 ``""`` 走同一条回落，不迁移、不改写快照。
+
+        - 纯空白串算用户填了值，原样下发；default 原样用、不 strip（纯空白的 default 也回落）。
+        - default 是空串或没写的，不回落（照旧空串）。
+        - password 字段不回落：密码没有「初值」可言。
+        - 特调声明的例外不回落（``no_default_fallback_inputs``）：M9A 的自定义兑换码 default 是
+          字面量「占位」，旧版迁移专门把预填的它清成空串（``app/task/M9A/migration.py``），agent
+          遇到交不过去的码会中断整个兑换、后面真正的兑换码也不交。
+        - 数字 / 布尔的空值回落在 ``_coerce_input_value``（strip 后为空才算没填），口径不变。
+        """
+
+        if raw_text != "" or input_item.password:
+            return raw_text
+        if (input_item.pipeline_type or "string").lower() not in {"string", "str", ""}:
+            return raw_text
+        if (option_name, input_item.name) in self.no_default_fallback_inputs:
+            return raw_text
+        default = input_item.default
+        return default if isinstance(default, str) and default != "" else raw_text
 
     def _build_input_override(
         self,
@@ -509,16 +609,8 @@ class MaaFWPipelineOverrideBuilder:
         text_replacements: dict[str, str] = {}
         for input_item in option.inputs:
             raw_option_value = options.get(option_name)
-            # 用户没填就当空，**不回退到 interface 的 default**。
-            #
-            # interface 里 input 的 default 是「用户打开该项后 UI 预填的提示值」，
-            # 不是「没配时该应用的值」：M9A 的 自定义兑换码 default 就是字面量
-            # 「占位」，MFAAvalonia 自己的配置里存的是空串。真机上把「占位」当真
-            # 兑换码发出去，游戏兑换不掉，该任务直接卡死。
-            #
-            # 需要哨兵默认值的选项，interface 作者是写在 switch 的 case override
-            # 里的（如 自定义吃糖次数=No -> EatCandyStart.max_hit=114514），
-            # 不依赖 input default，因此这里置空不会误伤它们。
+            # 用户没填时回落 interface 的 default（字符串见 _string_input_fallback，数字 / 布尔
+            # 见 _coerce_input_value）：default 是字段的初值，不是给人看的提示。
             raw_text = ""
             if isinstance(raw_option_value, dict):
                 field_value = raw_option_value.get(input_item.name)
@@ -528,6 +620,7 @@ class MaaFWPipelineOverrideBuilder:
                 raw_text = raw_option_value
             elif isinstance(raw_option_value, list):
                 raw_text = raw_option_value[0] if raw_option_value else ""
+            raw_text = self._string_input_fallback(option_name, input_item, raw_text)
 
             try:
                 typed_value, text_value = self._coerce_input_value(
@@ -536,7 +629,8 @@ class MaaFWPipelineOverrideBuilder:
                     input_item.default,
                     option_name=option_name,
                     field_name=input_item.name,
-                    secret=bool(input_item.password),
+                    secret=bool(input_item.password)
+                    or (option_name, input_item.name) in self.secret_inputs,
                 )
             except MaaFWInputValueError as exc:
                 # 与 hotkey 没有默认值时同一口径：这个选项的覆盖整段跳过（半替换会把

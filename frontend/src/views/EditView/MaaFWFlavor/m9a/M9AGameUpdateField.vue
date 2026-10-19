@@ -13,6 +13,7 @@
     </template>
     <a-select
       v-model:value="context.maafwConfig.Run.GameUpdateMode"
+      size="large"
       style="width: 100%"
       :options="gameUpdateModeOptions"
       @change="(value: string | number) => emit('change', 'Run', 'GameUpdateMode', value)"

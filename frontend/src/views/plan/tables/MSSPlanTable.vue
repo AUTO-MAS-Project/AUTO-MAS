@@ -2,7 +2,7 @@
   <div>
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
       <a-table
-        :key="`mss-config-table-${currentMode}`"
+        :key="`mss-config-table-${currentMode}-${columnKeys.length}`"
         :columns="configColumns"
         :data-source="configRows"
         :pagination="false"
@@ -24,8 +24,8 @@
               class="config-control"
               :bordered="false"
               :list-height="STAGE_LIST_HEIGHT"
-              :disabled="isColumnDisabled(asTimeKey(column.key))"
-              @update:value="(value: string) => handleStageChange(asTimeKey(column.key), value)"
+              :disabled="isColumnDisabled(column.key)"
+              @update:value="(value: string) => handleStageChange(column.key, value)"
             >
               <a-select-option v-for="stage in TRIBULATION_STAGES" :key="stage" :value="stage">
                 {{ shortStage(stage) }}
@@ -39,17 +39,16 @@
               class="config-control"
               :bordered="false"
               :options="
-                difficultyOptions(keyOf(asTimeKey(column.key)).TribulationStage).map(level => ({
+                difficultyOptions(keyOf(column.key).TribulationStage).map(level => ({
                   label: level,
                   value: level,
                 }))
               "
               :disabled="
-                isColumnDisabled(asTimeKey(column.key)) ||
-                isOverriddenBySwitch('Difficulty', asTimeKey(column.key))
+                isColumnDisabled(column.key) || isOverriddenBySwitch('Difficulty', column.key)
               "
               @update:value="
-                (value: number) => handleFieldChange(asTimeKey(column.key), { Difficulty: value })
+                (value: number) => handleFieldChange(column.key, { Difficulty: value })
               "
             />
 
@@ -57,10 +56,9 @@
               v-else-if="record.rowKey === 'SkipDifficulty' || record.rowKey === 'ConsumeAllEnergy'"
               :checked="record[column.key]"
               size="small"
-              :disabled="isColumnDisabled(asTimeKey(column.key))"
+              :disabled="isColumnDisabled(column.key)"
               @change="
-                (checked: boolean) =>
-                  handleFieldChange(asTimeKey(column.key), { [record.rowKey]: checked })
+                (checked: boolean) => handleFieldChange(column.key, { [record.rowKey]: checked })
               "
             />
 
@@ -72,12 +70,12 @@
               :min="1"
               :max="99"
               :disabled="
-                isColumnDisabled(asTimeKey(column.key)) ||
-                isOverriddenBySwitch(record.rowKey as string, asTimeKey(column.key))
+                isColumnDisabled(column.key) ||
+                isOverriddenBySwitch(record.rowKey as string, column.key)
               "
               @change="
                 (value: number | null) =>
-                  handleFieldChange(asTimeKey(column.key), { [record.rowKey]: value ?? 1 })
+                  handleFieldChange(column.key, { [record.rowKey]: value ?? 1 })
               "
             />
           </template>
@@ -87,7 +85,7 @@
 
     <div v-show="viewMode === 'simple'" class="simple-table-wrapper">
       <a-table
-        :key="`mss-simple-table-${currentMode}`"
+        :key="`mss-simple-table-${currentMode}-${columnKeys.length}`"
         :columns="simpleColumns"
         :data-source="simpleRows"
         :pagination="false"
@@ -166,7 +164,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { TIME_KEYS, type TimeKey } from '@/composables/usePlanDataCoordinator'
+import {
+  planColumnKeys,
+  planColumnPath,
+  planDayLabel,
+  readPlanColumn,
+  type PlanMode,
+} from '@/utils/planDays'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 
 /**
@@ -216,7 +220,7 @@ const STAGE_LIST_HEIGHT = 320
 
 interface Props {
   tableData: Record<string, any> | null
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
   viewMode: 'config' | 'simple'
   planId?: string
   handlePlanChange: PlanChangeHandler
@@ -225,12 +229,18 @@ interface Props {
 const props = defineProps<Props>()
 const { t } = useI18n()
 
-const asTimeKey = (value: string): TimeKey => value as TimeKey
+/** 列键：ALL 加当天的天键；周计划是星期名，多天轮换是 "1"~"N" */
+const columnKeys = computed(() =>
+  planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays)
+)
+
+const columnTitle = (key: string) =>
+  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 
 /** 当前模式只认一列：ALL 模式看「全局」，Weekly 模式看具体星期 */
-const isColumnDisabled = (timeKey: TimeKey) => {
-  if (props.currentMode === 'ALL') return timeKey !== 'ALL'
-  return timeKey === 'ALL'
+const isColumnDisabled = (key: string) => {
+  if (props.currentMode === 'ALL') return key !== 'ALL'
+  return key === 'ALL'
 }
 
 /**
@@ -239,10 +249,10 @@ const isColumnDisabled = (timeKey: TimeKey) => {
  *
  * **只是置灰，值照留**：把开关关回去时原来的难度 / 次数还在，不用重填。
  */
-const isOverriddenBySwitch = (rowKey: string, timeKey: TimeKey): boolean => {
-  const key = keyOf(timeKey)
-  if (rowKey === 'Difficulty') return key.SkipDifficulty
-  if (rowKey === 'FightTimes') return key.ConsumeAllEnergy
+const isOverriddenBySwitch = (rowKey: string, key: string): boolean => {
+  const dayConfig = keyOf(key)
+  if (rowKey === 'Difficulty') return dayConfig.SkipDifficulty
+  if (rowKey === 'FightTimes') return dayConfig.ConsumeAllEnergy
   return false
 }
 
@@ -285,8 +295,9 @@ const difficultyOptions = (stage: string) =>
   Array.from({ length: difficultyLimitOf(stage) }, (_, index) => index + 1)
 
 /** 读某个日期槽位的完整配置，缺字段用默认值补齐 */
-const keyOf = (timeKey: TimeKey): StellaPlanKey => {
-  const raw = props.tableData?.[timeKey]?.Key as Partial<StellaPlanKey> | undefined
+const keyOf = (key: string): StellaPlanKey => {
+  const slot = readPlanColumn(props.tableData, key) as { Key?: Partial<StellaPlanKey> } | undefined
+  const raw = slot?.Key
   const stage = typeof raw?.TribulationStage === 'string' ? raw.TribulationStage : ''
   const effectiveStage = stage || DEFAULT_KEY.TribulationStage
   const number = (value: unknown, fallback: number, max: number) => {
@@ -302,8 +313,8 @@ const keyOf = (timeKey: TimeKey): StellaPlanKey => {
   }
 }
 
-const days = (pick: (timeKey: TimeKey) => unknown) =>
-  Object.fromEntries(TIME_KEYS.map(timeKey => [timeKey, pick(timeKey)]))
+const days = (pick: (key: string) => unknown) =>
+  Object.fromEntries(columnKeys.value.map(key => [key, pick(key)]))
 
 const configColumns = computed(() => [
   {
@@ -315,10 +326,10 @@ const configColumns = computed(() => [
     align: 'center',
   },
   // 列宽压到 130：八列加配置项列一共 1160px，一屏能全放下（与 MAA 那张表同口径）
-  ...TIME_KEYS.map(timeKey => ({
-    title: t(`plan.week.${timeKey}`),
-    dataIndex: timeKey,
-    key: timeKey,
+  ...columnKeys.value.map(key => ({
+    title: columnTitle(key),
+    dataIndex: key,
+    key,
     width: 130,
     align: 'center' as const,
   })),
@@ -328,27 +339,27 @@ const configRows = computed(() => [
   {
     rowKey: 'TribulationStage',
     fieldName: t('plan.table.tribulationStage'),
-    ...days(timeKey => keyOf(timeKey).TribulationStage),
+    ...days(key => keyOf(key).TribulationStage),
   },
   {
     rowKey: 'SkipDifficulty',
     fieldName: t('plan.table.skipDifficulty'),
-    ...days(timeKey => keyOf(timeKey).SkipDifficulty),
+    ...days(key => keyOf(key).SkipDifficulty),
   },
   {
     rowKey: 'Difficulty',
     fieldName: t('plan.table.difficulty'),
-    ...days(timeKey => keyOf(timeKey).Difficulty),
+    ...days(key => keyOf(key).Difficulty),
   },
   {
     rowKey: 'ConsumeAllEnergy',
     fieldName: t('plan.table.consumeAllEnergy'),
-    ...days(timeKey => keyOf(timeKey).ConsumeAllEnergy),
+    ...days(key => keyOf(key).ConsumeAllEnergy),
   },
   {
     rowKey: 'FightTimes',
     fieldName: t('plan.table.fightTimes'),
-    ...days(timeKey => keyOf(timeKey).FightTimes),
+    ...days(key => keyOf(key).FightTimes),
   },
 ])
 
@@ -399,23 +410,23 @@ const simpleColumns = computed(() => [
 ])
 
 const simpleRows = computed(() =>
-  TIME_KEYS.map(timeKey => ({
-    key: timeKey,
-    timeKey,
-    timeLabel: t(`plan.week.${timeKey}`),
-    ...keyOf(timeKey),
+  columnKeys.value.map(key => ({
+    key,
+    timeKey: key,
+    timeLabel: columnTitle(key),
+    ...keyOf(key),
   }))
 )
 
 /** 改一项：把该槽位的整套配置合并回去，没动的字段保持原值 */
-const handleFieldChange = async (timeKey: TimeKey, patch: Partial<StellaPlanKey>) => {
-  await props.handlePlanChange(`${timeKey}.Key`, { ...keyOf(timeKey), ...patch }, false)
+const handleFieldChange = async (key: string, patch: Partial<StellaPlanKey>) => {
+  await props.handlePlanChange(planColumnPath(key, 'Key'), { ...keyOf(key), ...patch }, false)
 }
 
 /** 换关卡：难度上限跟着关卡变，越界的难度夹回新上限 */
-const handleStageChange = async (timeKey: TimeKey, stage: string) => {
-  const current = keyOf(timeKey)
-  await handleFieldChange(timeKey, {
+const handleStageChange = async (key: string, stage: string) => {
+  const current = keyOf(key)
+  await handleFieldChange(key, {
     TribulationStage: stage,
     Difficulty: Math.min(current.Difficulty, difficultyLimitOf(stage)),
   })

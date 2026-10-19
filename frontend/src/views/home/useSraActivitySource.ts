@@ -3,6 +3,7 @@ import { i18n, translate } from '@/i18n'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
 import { useHomeActivitySource } from './useHomeActivitySource'
+import { normalizeSraActivityTime } from './sraActivityTime'
 
 /** 与后端现有活动服务一致的请求超时 */
 const FETCH_TIMEOUT_MS = 20_000
@@ -16,6 +17,17 @@ interface SraSourceData {
   cover?: string
   activities: SraActivityItem[]
 }
+
+const normalizeSourceData = (data: SraSourceData): SraSourceData => ({
+  ...data,
+  startTime: normalizeSraActivityTime(data.startTime),
+  endTime: normalizeSraActivityTime(data.endTime),
+  activities: data.activities.map(item => ({
+    ...item,
+    startTime: normalizeSraActivityTime(item.startTime),
+    endTime: normalizeSraActivityTime(item.endTime),
+  })),
+})
 
 const SOURCE_BASE = 'https://starrailassistant.top/api/v1/activity'
 
@@ -62,7 +74,8 @@ export const useSraActivitySource = (game: string, nameKey: string) => {
       try {
         const raw = localStorage.getItem(snapshotKey(game, currentLocale()))
         if (!raw) return false
-        const cached = JSON.parse(raw) as SraSourceData
+        // 旧快照也可能保存裸时间，与在线数据使用同一时区规则。
+        const cached = normalizeSourceData(JSON.parse(raw) as SraSourceData)
         overview.value = { Available: true, Stale: false, Message: '', ...cached }
         return true
       } catch {
@@ -90,7 +103,7 @@ export const useSraActivitySource = (game: string, nameKey: string) => {
             lastError = 'HTTP ' + response.status
             continue
           }
-          return (await response.json()) as SraSourceData
+          return normalizeSourceData((await response.json()) as SraSourceData)
         } catch (fetchError) {
           lastError = fetchError instanceof Error ? fetchError.message : String(fetchError)
           if (signal.aborted) break

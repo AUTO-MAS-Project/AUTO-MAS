@@ -15,6 +15,10 @@ import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
+import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
+import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -28,17 +32,22 @@ import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
+import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
+import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
+import type { MaaEndLauncherPathOut } from '../models/MaaEndLauncherPathOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
@@ -51,11 +60,17 @@ import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
 import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
+import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { ShareAppearanceCategoryIn } from '../models/ShareAppearanceCategoryIn';
+import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
+import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
+import type { ShareAppearanceMineOut } from '../models/ShareAppearanceMineOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -83,6 +98,29 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
+    /**
+     * 获取游戏已完成活动
+     * @param game
+     * @param server
+     * @returns GameCalendarActivitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getActivityCompletionsApiInfoActivityCompletionsGet(
+        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki',
+        server: 'cn' | 'jp' | 'global' = 'cn',
+    ): CancelablePromise<GameCalendarActivitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/activity/completions',
+            query: {
+                'game': game,
+                'server': server,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response
@@ -197,13 +235,22 @@ export class GetService {
     }
     /**
      * 信息总览
+     * @param refresh
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
-    public static getOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
+    public static getOverviewApiInfoGetOverviewPost(
+        refresh: boolean = false,
+    ): CancelablePromise<InfoOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/get/overview',
+            query: {
+                'refresh': refresh,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -259,6 +306,9 @@ export class GetService {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -364,6 +414,29 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从终末地客户端路径识别官方启动器路径
+     * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+     *
+     * 只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+     * @param scriptId
+     * @returns MaaEndLauncherPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
+        scriptId: string,
+    ): CancelablePromise<MaaEndLauncherPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maaend/launcher-path',
             query: {
                 'scriptId': scriptId,
             },
@@ -574,6 +647,25 @@ export class GetService {
         });
     }
     /**
+     * 校验并转换 MAA 剪贴板养成目标（不落库）
+     * @param requestBody
+     * @returns MaaCultivateImportOut Successful Response
+     * @throws ApiError
+     */
+    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
+        requestBody: MaaCultivateImportIn,
+    ): CancelablePromise<MaaCultivateImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * MAA 养成计划预览（纯计算不落库）
      * @param requestBody
      * @returns CultivatePreviewOut Successful Response
@@ -764,6 +856,47 @@ export class GetService {
         });
     }
     /**
+     * 查询魔改 AVD 根目录的组件状态
+     * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
+     * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
+     * @param requestBody
+     * @returns Emulator2AvdStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdStatusApiEmulator2AvdStatusPost(
+        requestBody: Emulator2AvdStatusIn,
+    ): CancelablePromise<Emulator2AvdStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 实例选项
+     * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
+        requestBody: Emulator2AvdInstanceIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询调度队列配置信息
      * @param requestBody
      * @returns QueueGetOut Successful Response
@@ -877,6 +1010,17 @@ export class GetService {
         });
     }
     /**
+     * 查询保留的失败回放
+     * @returns ReplayListOut Successful Response
+     * @throws ApiError
+     */
+    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/replays',
+        });
+    }
+    /**
      * 搜索历史记录总览信息
      * @param requestBody
      * @returns HistorySearchOut Successful Response
@@ -924,6 +1068,17 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/get',
+        });
+    }
+    /**
+     * 检查 OBS 回放缓冲
+     * @returns ObsReplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/check',
         });
     }
     /**
@@ -1051,6 +1206,63 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @param requestBody
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号在分享站上的全部外观
+     * @param requestBody
+     * @returns ShareAppearanceMineOut Successful Response
+     * @throws ApiError
+     */
+    public static listMyShareAppearancesApiShareAppearanceMinePost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceMineOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/mine',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取自己外观某个版本的封面
+     * @param requestBody
+     * @returns ShareAppearanceCoverOut Successful Response
+     * @throws ApiError
+     */
+    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
+        requestBody: ShareAppearanceCoverIn,
+    ): CancelablePromise<ShareAppearanceCoverOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/cover',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

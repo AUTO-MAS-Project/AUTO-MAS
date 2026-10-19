@@ -44,6 +44,8 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
+import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
@@ -63,8 +65,11 @@ import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { HSRUpdateIn } from '../models/HSRUpdateIn';
 import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
+import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
+import type { MaaEndLauncherPathOut } from '../models/MaaEndLauncherPathOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
@@ -78,8 +83,12 @@ import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWMirrorCdkIn } from '../models/MaaFWMirrorCdkIn';
+import type { MaaFWMirrorCdkOut } from '../models/MaaFWMirrorCdkOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
+import type { MaaFWShellInstanceApplyOut } from '../models/MaaFWShellInstanceApplyOut';
 import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImportIn';
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
@@ -88,6 +97,8 @@ import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
 import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
+import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -119,6 +130,7 @@ import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
@@ -132,6 +144,15 @@ import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAppearanceCategoryIn } from '../models/ShareAppearanceCategoryIn';
+import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
+import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
+import type { ShareAppearanceDescriptionIn } from '../models/ShareAppearanceDescriptionIn';
+import type { ShareAppearanceDescriptionOut } from '../models/ShareAppearanceDescriptionOut';
+import type { ShareAppearanceMineOut } from '../models/ShareAppearanceMineOut';
+import type { ShareAppearanceUploadIn } from '../models/ShareAppearanceUploadIn';
+import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOut';
+import type { ShareAppearanceUploadsOut } from '../models/ShareAppearanceUploadsOut';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
@@ -249,6 +270,48 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
+        });
+    }
+    /**
+     * 获取游戏已完成活动
+     * @param game
+     * @param server
+     * @returns GameCalendarActivitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getActivityCompletionsApiInfoActivityCompletionsGet(
+        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki',
+        server: 'cn' | 'jp' | 'global' = 'cn',
+    ): CancelablePromise<GameCalendarActivitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/activity/completions',
+            query: {
+                'game': game,
+                'server': server,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置游戏活动完成状态
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setActivityCompletionApiInfoActivityCompletionsPost(
+        requestBody: GameCalendarActivityCompletionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/activity/completions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -376,13 +439,22 @@ export class Service {
     }
     /**
      * 信息总览
+     * @param refresh
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
-    public static getOverviewApiInfoGetOverviewPost(): CancelablePromise<InfoOut> {
+    public static getOverviewApiInfoGetOverviewPost(
+        refresh: boolean = false,
+    ): CancelablePromise<InfoOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/get/overview',
+            query: {
+                'refresh': refresh,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -438,6 +510,9 @@ export class Service {
     /**
      * 获取终末地版本图与版本名
      * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     *
+     * 给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+     * 横幅要空着等好几秒。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -581,6 +656,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从终末地客户端路径识别官方启动器路径
+     * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+     *
+     * 只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+     * @param scriptId
+     * @returns MaaEndLauncherPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
+        scriptId: string,
+    ): CancelablePromise<MaaEndLauncherPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maaend/launcher-path',
             query: {
                 'scriptId': scriptId,
             },
@@ -1000,6 +1098,25 @@ export class Service {
         });
     }
     /**
+     * 校验并转换 MAA 剪贴板养成目标（不落库）
+     * @param requestBody
+     * @returns MaaCultivateImportOut Successful Response
+     * @throws ApiError
+     */
+    public static parseMaaCultivateImportApiScriptsMaaCultivateImportPost(
+        requestBody: MaaCultivateImportIn,
+    ): CancelablePromise<MaaCultivateImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * MAA 养成计划预览（纯计算不落库）
      * @param requestBody
      * @returns CultivatePreviewOut Successful Response
@@ -1136,6 +1253,29 @@ export class Service {
         });
     }
     /**
+     * 立即从来源目录同步（跟随来源目录 / 源码形态）
+     * 脚本页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     *
+     * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
+     * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sync',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 列出可作为克隆来源的其它 MFW 脚本
      * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
      *
@@ -1247,6 +1387,29 @@ export class Service {
         });
     }
     /**
+     * 把一份外壳配置的任务队列覆盖到已有用户
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+     *
+     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+     * 覆盖的是任务队列与任务选项，用户名不动。
+     * @param requestBody
+     * @returns MaaFWShellInstanceApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
+        requestBody: MaaFWShellInstanceApplyIn,
+    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/apply',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
      * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
@@ -1305,6 +1468,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 MFW 项目的 Mirror 酱 CDK 状态
+     * 脚本编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     *
+     * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
+     * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
+     * @param requestBody
+     * @returns MaaFWMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost(
+        requestBody: MaaFWMirrorCdkIn,
+    ): CancelablePromise<MaaFWMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1400,7 +1586,7 @@ export class Service {
      *
      * ``useMasConfig=True``（用户独立配置）时以 per-user 副本为权威源（固定「MAS独立配置」
      * 槽位名，副本缺失按内置模板），返回该用户将写入槽位的自定义组；``userId`` 必填。
-     * 否则（非独立模式直控）读取 BGI ``{configName}`` 实配的自定义组。
+     * 否则（非独立模式用 BGI 原生配置）读取 BGI ``{configName}`` 实配的自定义组。
      * @param scriptId
      * @param userId
      * @param configName
@@ -1777,7 +1963,7 @@ export class Service {
      * 返回秘境刷取配置（领奖树脂/分解圣遗物/奖励识别）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的秘境刷取设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoDomainConfig/autoArtifactSalvageConfig，camelCase）。
      * @param scriptId
      * @param userId
@@ -1805,7 +1991,7 @@ export class Service {
     }
     /**
      * 保存 BetterGI 全局 config.json 的秘境刷取配置段
-     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏秘境刷取配置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1828,7 +2014,7 @@ export class Service {
      * 返回自动幽境危战设置（刷取战场/战斗队伍/战斗策略/次数与树脂）。
      *
      * ``userId`` 非空时以该用户 per-user 副本为权威源（副本缺失回退 BGI 全局实配），
-     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（直控模式）读
+     * 使独立配置下每个用户的幽境设置互不影响；``userId`` 为空（原生来源模式）读
      * BGI 全局 config.json（autoStygianOnslaughtConfig 段，camelCase）。
      * @param scriptId
      * @param userId
@@ -1856,7 +2042,7 @@ export class Service {
     }
     /**
      * 保存 BetterGI 全局 config.json 的自动幽境危战设置段
-     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（直控模式）写 BGI 全局 config.json。
+     * 把右栏自动幽境危战设置写回 per-user 副本；userId 为空（原生来源模式）写 BGI 全局 config.json。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -2046,7 +2232,7 @@ export class Service {
         });
     }
     /**
-     * 设置运行实例（直控；one_dragon.yml 全局 instance_run）
+     * 设置运行实例（原生来源；one_dragon.yml 全局 instance_run）
      * 白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。
      * @param requestBody
      * @returns OutBase Successful Response
@@ -2316,7 +2502,7 @@ export class Service {
     }
     /**
      * 保存任务级配置（绑定槽；直控传 instanceIdx 直接写原生实例）
-     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，直控写指定原生实例）。
+     * 字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。
      * @param requestBody
      * @returns ZzzOdAppConfigOut Successful Response
      * @throws ApiError
@@ -2386,7 +2572,7 @@ export class Service {
         });
     }
     /**
-     * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
+     * 保存实例原生配置（原生来源模式直接写回一条龙原始 YAML）
      * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
@@ -2407,7 +2593,7 @@ export class Service {
     }
     /**
      * 获取一条龙两种启动器的安装情况与默认项
-     * 渲染「启动器」下拉用（直控/用户两态通用）：未安装的启动器选项禁用变灰。
+     * 渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。
      * @param scriptId
      * @returns ZzzOdLauncherOut Successful Response
      * @throws ApiError
@@ -2650,8 +2836,8 @@ export class Service {
     }
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
-     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
+     * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target
@@ -3408,6 +3594,17 @@ export class Service {
         });
     }
     /**
+     * 查询保留的失败回放
+     * @returns ReplayListOut Successful Response
+     * @throws ApiError
+     */
+    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/replays',
+        });
+    }
+    /**
      * 搜索历史记录总览信息
      * @param requestBody
      * @returns HistorySearchOut Successful Response
@@ -3611,6 +3808,28 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检查 OBS 回放缓冲
+     * @returns ObsReplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/check',
+        });
+    }
+    /**
+     * 试存 OBS 回放
+     * @returns ObsReplaySaveOut Successful Response
+     * @throws ApiError
+     */
+    public static saveObsReplayApiSettingObsSavePost(): CancelablePromise<ObsReplaySaveOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/save',
         });
     }
     /**
@@ -3899,6 +4118,101 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/share/auth/cancel',
+        });
+    }
+    /**
+     * 上传外观包到分享站
+     * @param requestBody
+     * @returns ShareAppearanceUploadOut Successful Response
+     * @throws ApiError
+     */
+    public static uploadShareAppearanceApiShareAppearanceUploadPost(
+        requestBody: ShareAppearanceUploadIn,
+    ): CancelablePromise<ShareAppearanceUploadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/upload',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号的外观上传记录
+     * @param requestBody
+     * @returns ShareAppearanceUploadsOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareAppearanceUploadsApiShareAppearanceUploadsPost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceUploadsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/uploads',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前账号在分享站上的全部外观
+     * @param requestBody
+     * @returns ShareAppearanceMineOut Successful Response
+     * @throws ApiError
+     */
+    public static listMyShareAppearancesApiShareAppearanceMinePost(
+        requestBody?: ShareAppearanceCategoryIn,
+    ): CancelablePromise<ShareAppearanceMineOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/mine',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取自己外观某个版本的封面
+     * @param requestBody
+     * @returns ShareAppearanceCoverOut Successful Response
+     * @throws ApiError
+     */
+    public static getMyShareAppearanceCoverApiShareAppearanceCoverPost(
+        requestBody: ShareAppearanceCoverIn,
+    ): CancelablePromise<ShareAppearanceCoverOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/cover',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改自己外观的描述
+     * @param requestBody
+     * @returns ShareAppearanceDescriptionOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMyShareAppearanceDescriptionApiShareAppearanceDescriptionPost(
+        requestBody: ShareAppearanceDescriptionIn,
+    ): CancelablePromise<ShareAppearanceDescriptionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/appearance/description',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

@@ -28,6 +28,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.utils import ProcessManager, get_logger
+from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED
 from app.utils.io import mark_native_config_injected, swap_in_dir
 
 from .AutoProxy import (
@@ -35,7 +36,7 @@ from .AutoProxy import (
     _OKWW_REL_EXE,
     _OKWW_REL_PYTHONW,
     _configure_okww_launcher,
-    _okww_config_mode,
+    _okww_config_base,
     _okww_mas_config_dir,
 )
 from .tools.backup_archive import (
@@ -80,12 +81,12 @@ class ScriptConfigTask(TaskExecuteBase):
         self.exe_path = self.root_path / _OKWW_REL_EXE
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
-        mode = "脚本"
+        mode = BASE_SHARED
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
-            mode = _okww_config_mode(target_user_config.get("Info", "Mode"))
-        self.use_mas_config = mode != "直控"
-        # MAS 配置目录 owner（脚本态共享 Default、用户态独立目录；直控无 MAS 配置）
+            mode = _okww_config_base(target_user_config.get("Info", "Base"))
+        self.use_mas_config = mode != BASE_NATIVE
+        # MAS 配置目录 owner（shared 共享 Default、independent 独立目录；native 无 MAS 配置）
         self.mas_owner = (
             owner_for_mode(mode, target_user_id) if self.use_mas_config else None
         )
@@ -114,7 +115,11 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.mas_config_dir,
                 overlay=self.mas_overlay,
                 # 备份标注来源：tri_state 池跨来源恢复靠它切回
-                mode="用户" if self.mas_owner == self.cur_user_item.user_id else "脚本",
+                base=(
+                    BASE_INDEPENDENT
+                    if self.mas_owner == self.cur_user_item.user_id
+                    else BASE_SHARED
+                ),
             )
 
         # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
@@ -163,7 +168,7 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
             self.cur_user_item.status = "完成"
         elif not self.crashed:
-            logger.success("OK-WW 直控配置已由脚本原生 GUI 保存")
+            logger.success("OK-WW 原生来源配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception) -> None:

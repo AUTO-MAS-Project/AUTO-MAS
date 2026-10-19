@@ -4,7 +4,12 @@
 /* eslint-disable */
 import type { HistoryIndexItem } from './HistoryIndexItem';
 import type { PullCountStatistics } from './PullCountStatistics';
+import type { ReplayRecord } from './ReplayRecord';
 export type HistoryData = {
+    /**
+     * 本轮失败回放
+     */
+    replays?: Array<ReplayRecord>;
     /**
      * 历史记录索引列表
      */

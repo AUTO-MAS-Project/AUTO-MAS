@@ -237,23 +237,3 @@ async def has_running_activity(line_type: BlueArchiveLineType) -> bool | None:
         return None
 
     return has_running_activity_in(items, time.time())
-
-
-async def resolve_activity_state(
-    line_type: BlueArchiveLineType,
-) -> tuple[ActivityInfo | None, ActivityInfo | None] | None:
-    """查询指定服正在进行的活动与下一个未开始的活动。
-
-    Args:
-        line_type: 服务器标识（``JP`` / ``Globle`` / ``CN``）。
-
-    Returns:
-        tuple[ActivityInfo | None, ActivityInfo | None] | None: 依次为进行中的
-            活动、下一个未开始的活动；取数失败为 None。
-    """
-
-    items = await _timeline(line_type)
-    if items is None:
-        return None
-
-    return collect_activities(items, time.time())
