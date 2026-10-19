@@ -16,6 +16,7 @@ import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from time import time_ns
 
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager
@@ -24,6 +25,7 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
@@ -44,7 +46,7 @@ from app.utils.io import (
 )
 
 from .AutoProxy import AutoProxyTask
-from .resource_loader import load_maaend_controller_protocol
+from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
 from .tools.notify import collect_recent_error_images, push_notification
@@ -86,6 +88,8 @@ class MaaEndManager(ScriptManagerBase):
         self.had_original_script_config = False
         self.script_config_base = BASE_SHARED
         self._device_provider = device_provider
+        self.error_image_start_ns: int | None = None
+        self.error_screenshot_paths: list[Path] = []
 
     async def check(self) -> str:
         # Update 是「检查更新」按钮的一次性任务，不进 METHOD_BOOK——那张表按用户循环。
@@ -138,14 +142,35 @@ class MaaEndManager(ScriptManagerBase):
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
         if self.controller_protocol == "Win32" and self.task_info.mode == "AutoProxy":
-            launcher_path = Path(str(script_config.Game.LauncherPath or ""))
-            if not launcher_path.is_file() or launcher_path.name.lower() not in {
-                "launcher.exe",
-                "games.exe",
-            }:
-                return "请在游戏设置中选择鹰角官方启动器 Launcher.exe 或 Games.exe"
-        if self.task_info.mode == "AutoProxy" and (
-            not (root_path / "config/mxu-MaaEnd.json").exists()
+            loader = MaaEndResourceLoader.get_loaded(Path(script_config.Info.Path))
+            launch_mode = loader.resolve_launch_mode(
+                script_config.Game.LaunchMode, controller_name
+            )
+            if launch_mode == "MaaEnd":
+                if controller_name not in loader.pretask_controllers("LaunchGamePC"):
+                    return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
+            else:
+                # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
+                client_exe = Path(str(script_config.Game.Path or "").strip())
+                try:
+                    launcher = resolve_launcher_exe(
+                        client_exe, str(script_config.Game.LauncherPath or "")
+                    )
+                except ValueError as error:
+                    return str(error)
+                if launcher is None:
+                    return (
+                        "未找到终末地官方启动器, 请选择鹰角官方启动器 "
+                        "Launcher.exe 或 Games.exe！"
+                    )
+        if (
+            self.task_info.mode == "AutoProxy"
+            and not (
+                Path(
+                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
+                )
+                / "config/mxu-MaaEnd.json"
+            ).exists()
         ):
             return "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成！"
 
@@ -252,6 +277,10 @@ class MaaEndManager(ScriptManagerBase):
         )
         if result == "restored":
             logger.info("已恢复上次中断前的 MaaEnd 原始配置")
+        elif result == "legacy":
+            logger.warning(
+                "检测到上次中断残留的 MaaEnd 原生配置快照由旧版本生成, 已改名保留以便手动恢复"
+            )
         elif result == "skipped":
             logger.warning(
                 "检测到 MaaEnd 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
@@ -296,6 +325,16 @@ class MaaEndManager(ScriptManagerBase):
             return None
         script_config = self.script_config
         if not isinstance(script_config, MaaEndConfig):
+            return None
+        if (
+            self.controller_protocol == "Win32"
+            and str(script_config.Game.LaunchMode or "").strip() == "Launcher"
+        ):
+            # 启动器启动：游戏更新由官方启动器界面处理（MAS 只负责点按钮与等待），
+            # 跳过 API 直下的更新接管，避免两套更新互相打架
+            logger.info(
+                "启动方式为「启动器启动」，游戏更新交由启动器处理，跳过更新接管"
+            )
             return None
         if not script_config.Game.IfAutoUpdate:
             return None
@@ -346,6 +385,8 @@ class MaaEndManager(ScriptManagerBase):
             )
             return
 
+        # 通知收图使用未取整的时间，避免带入同一秒内上一轮留下的截图。
+        self.error_image_start_ns = time_ns()
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
@@ -399,6 +440,8 @@ class MaaEndManager(ScriptManagerBase):
             if self.task_info.mode == "ScriptConfig":
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
+            elif self.task_info.mode == "AutoProxy":
+                kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
                 await self.run_user_task(current_user, task)
@@ -447,8 +490,13 @@ class MaaEndManager(ScriptManagerBase):
                 # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
                 mirror_report_to_dispatch(self.script_info, user_result_text)
                 error_images = (
-                    collect_recent_error_images(self.script_config.Info.Path)
-                    if error_count
+                    collect_recent_error_images(
+                        self.script_config.Info.Path,
+                        started_at_ns=self.error_image_start_ns,
+                        ended_at_ns=time_ns(),
+                        diagnostic_paths=self.error_screenshot_paths,
+                    )
+                    if error_count and self.error_image_start_ns is not None
                     else ()
                 )
                 result = self.build_proxy_report(result_text=user_result_text)

@@ -1,12 +1,12 @@
 /** 主页中心图标（星核）按压音效：两套内置音效，或用户自己导入的音频文件 */
-export type PressSoundPreset = 'duck' | 'fx1' | 'custom'
+export type PressSoundPreset = 'duck' | 'fx1' | 'custom' | 'customPair'
 
 /** 一次按压的两个阶段：按下与松开 */
 export type PressSoundPhase = 'press' | 'release'
 
 /** 内置音效组与它们在 public/sounds/ 下的文件；顺序就是设置页下拉的顺序 */
 export const BUILTIN_PRESS_SOUNDS: ReadonlyArray<{
-  value: Exclude<PressSoundPreset, 'custom'>
+  value: 'duck' | 'fx1'
   press: string
   release: string
 }> = [
@@ -22,13 +22,12 @@ export const DEFAULT_PRESS_SOUND_VOLUME = 0.6
 /** 用户导入的音频上限：够放一段短音效，又不至于把配置撑爆 */
 export const MAX_PRESS_SOUND_BYTES = 1024 * 1024
 
-export const isBuiltinPressSound = (
-  preset: PressSoundPreset
-): preset is Exclude<PressSoundPreset, 'custom'> => preset !== 'custom'
+export const isBuiltinPressSound = (preset: PressSoundPreset): preset is 'duck' | 'fx1' =>
+  preset === 'duck' || preset === 'fx1'
 
 export const normalizePressSoundPreset = (value: unknown): PressSoundPreset => {
-  if (value === 'custom') {
-    return 'custom'
+  if (value === 'custom' || value === 'customPair') {
+    return value
   }
 
   const builtin = BUILTIN_PRESS_SOUNDS.find(item => item.value === value)

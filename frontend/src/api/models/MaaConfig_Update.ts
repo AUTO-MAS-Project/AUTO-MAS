@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type MaaConfig_Update = {
     /**
+     * 更新接管一次性迁移版本
+     */
+    TakeoverMigrationVersion?: (number | null);
+    /**
      * 本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）
      */
     MirrorChyanCDK?: (string | null);

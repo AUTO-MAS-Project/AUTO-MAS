@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Annotated, Callable
+from typing import Annotated
 
 from pydantic import Field, PrivateAttr
 
@@ -36,7 +36,6 @@ from app.config import (
     ui,
     virtual_field,
 )
-from app.config.types import KeyboardKeyString
 from app.utils.constants import UTC8
 
 from ..schema import TagItem
@@ -98,40 +97,6 @@ class GameSignAccountGroup(DomainEntry):
 class ToolsConfig(DomainEntry):
     "工具配置"
 
-    class ArknightsPCFields(ConfigGroup):
-        AnotherQuitKey: KeyboardKeyString = Field(
-            description="自定义退出、暂停键位", default_factory=lambda: "space"
-        )
-
-        Enabled: bool = Field(
-            description="是否启用 ArknightsPC 工具", default_factory=lambda: False
-        )
-
-        NextFrameKey: KeyboardKeyString = Field(
-            description="下一帧键位", default_factory=lambda: "f"
-        )
-
-        PauseKey: KeyboardKeyString = Field(
-            description="暂停键位", default_factory=lambda: "f10"
-        )
-
-        RetreatKey: KeyboardKeyString = Field(
-            description="撤退键位", default_factory=lambda: "t"
-        )
-
-        SelectDeployedKey: KeyboardKeyString = Field(
-            description="选中已部署干员键位", default_factory=lambda: "w"
-        )
-
-        Status: Virtual[str] = Field(
-            description="工具状态 Tag", default_factory=lambda: None
-        )
-        UseSkillKey: KeyboardKeyString = Field(
-            description="释放技能键位", default_factory=lambda: "r"
-        )
-
-    ArknightsPC: ArknightsPCFields = Field(default_factory=ArknightsPCFields)
-
     class GameSignFields(ConfigGroup):
         ActivityEnabled: bool = Field(
             default_factory=lambda: True, description="GameSign - 启用日常便笺"
@@ -176,38 +141,7 @@ class ToolsConfig(DomainEntry):
     def GameSign_Accounts(self) -> ConfigCollection:
         return self._game_sign_accounts
 
-    arknights_pc_running: bool = Field(default=False, exclude=True)
-    arknights_pc_get_connected: Callable = Field(default=lambda: False, exclude=True)
     _game_sign_result_data: dict = PrivateAttr(default_factory=dict)
-
-    @property
-    def arknights_pc_connected(self) -> bool:
-        return self.arknights_pc_get_connected()
-
-    def arknights_pc_status(self) -> str:
-        if not self.ArknightsPC.Enabled:
-            return TagItem(text="未启用", color="gray").model_dump_json()
-        elif self.arknights_pc_running:
-            if self.arknights_pc_connected:
-                return TagItem(text="运行中", color="green").model_dump_json()
-            else:
-                return TagItem(text="未连接", color="red").model_dump_json()
-        else:
-            return TagItem(text="已暂停", color="yellow").model_dump_json()
-
-    @property
-    def arknights_pc_keys(self) -> list[str]:
-        """获取明日方舟 PC 按键配置"""
-        return [
-            getattr(self.ArknightsPC, _)
-            for _ in (
-                "SelectDeployedKey",
-                "UseSkillKey",
-                "RetreatKey",
-                "NextFrameKey",
-                "AnotherQuitKey",
-            )
-        ]
 
     def game_sign_status(self) -> str:
         """游戏社区状态标签"""
@@ -218,13 +152,6 @@ class ToolsConfig(DomainEntry):
     def game_sign_result(self) -> str:
         """游戏社区结果 JSON"""
         return json.dumps(self._game_sign_result_data, ensure_ascii=False)
-
-    @virtual_field("ArknightsPC.Status")
-    def compute_ArknightsPC_Status(self):
-        try:
-            return self.arknights_pc_status()
-        except Exception as exc:
-            return str(exc)
 
     @virtual_field("GameSign.Result")
     def compute_GameSign_Result(self):

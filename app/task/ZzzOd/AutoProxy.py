@@ -54,6 +54,7 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 
 import asyncio
 import json
+import re
 import shutil
 import uuid
 from contextlib import suppress
@@ -173,9 +174,8 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("指令[ 一条龙 ] 执行失败", "ZZZ-OD 一条龙运行失败"),
 )
 
-# 节点失败不触发重跑：运行记录 diff 里的应用失败只记录进任务报告（次日运行
-# 时 zzz-od 会按运行记录自行重试失败节点）。运行级失败（启动器/登录/配置）
-# 由致命日志关键词 + check_log 超时态走 main_task 的「用户运行失败 → 重试」分支。
+# 应用最终失败触发有界重跑，内部操作的失败不直接判负；重试保留运行记录，
+# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。
 
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
@@ -195,14 +195,55 @@ def _match_fatal(log: str) -> str | None:
     return next((msg for needle, msg in _ZZZOD_BUILTIN_FATAL if needle in log), None)
 
 
-def _failed_apps(diffs: list) -> list[str]:
-    """从运行记录 diff 中提取本轮失败的应用 id（剔除汇总信号应用）。"""
+def _failed_apps(
+    diffs: list,
+    log: str,
+    app_name_book: dict[str, str],
+    *,
+    slot_idx: int | None = None,
+) -> list[str]:
+    """按实例取应用最后一次结果；缺少应用日志时沿用运行记录差分。
 
-    return [
+    只识别目录中的应用终态及上游「应用已完成」，不把内部指令失败当成应用
+    失败。日志可覆盖连续两轮同为失败、运行记录差分为空的情形。
+    """
+
+    failed = {
         app_id
         for app_id, _, new in diffs
         if new == RUN_STATUS_FAILED and app_id not in _SUMMARY_APP_IDS
-    ]
+    }
+    app_ids = {
+        name: app_id
+        for app_id, name in app_name_book.items()
+        if app_id not in _SUMMARY_APP_IDS
+    }
+    results: dict[tuple[int | None, str], bool] = {}
+    current_slot = None
+    for line in log.splitlines():
+        segment = re.search(r"开始加载实例配置 (\d+)", line)
+        if segment is not None:
+            current_slot = int(segment.group(1))
+        if slot_idx is not None and current_slot != slot_idx:
+            continue
+        terminal = re.search(r"指令\[ (.+?) \] 执行(成功|失败)", line)
+        skipped = re.search(r"应用已完成 (.+?)\s*$", line)
+        if terminal is not None:
+            name = terminal.group(1)
+            is_failed = terminal.group(2) == "失败"
+        elif skipped is not None:
+            name = skipped.group(1)
+            is_failed = False
+        else:
+            continue
+        app_id = app_ids.get(name)
+        if app_id is not None:
+            results[current_slot, app_id] = is_failed
+
+    observed = {app_id for _, app_id in results}
+    failed.difference_update(observed)
+    failed.update(app_id for (_, app_id), is_failed in results.items() if is_failed)
+    return sorted(failed)
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -869,10 +910,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         # 读取失败的条目值为 None，表示状态未知）
         self._slot_record_files: dict[int, dict[str, bytes | None]] = {}
         self._multi_uids: set[str] = set()
-        self._multi_judged: set[int] = set()
+        self._multi_succeeded: set[int] = set()
         self._multi_ran = False
-        # 本轮判定为完成但部分任务执行失败的节点展示名（写入 script_info.log/通知）
-        self._partial_failed_apps: list[str] = []
+        self._shutdown_after_success: bool = False
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
@@ -1267,11 +1307,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.check_log,
         )
 
-        with suppress(Exception):
-            self._app_name_book = {
-                item["app_id"]: item["app_name"]
-                for item in list_app_catalog(self.script_root_path)
-            }
+        self._app_name_book = {
+            item["app_id"]: item["app_name"]
+            for item in list_app_catalog(self.script_root_path)
+        }
+        if not self._app_name_book:
+            raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
         # 用户级节点详情推送模式（build_user_result_text 按此渲染）
         self.cur_user_item.push_log_mode = str(
@@ -1360,10 +1401,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                         "--instance",
                         ",".join(str(slot) for slot, _ in self._injected_slots),
                     ]
-            # 游戏结束后操作：委托一条龙在运行收尾时执行。上游 CLI 只认
-            # --close-game / --shutdown 参数，不读原生 after_done 配置（该
-            # 配置只在一条龙 GUI 内启动运行时生效），故由 MAS 传参；关机
-            # 固定 60 秒，与一条龙 GUI 内启动的口径一致。取值随来源：
+            # 上游 CLI 不读原生 after_done 配置，关闭游戏通过参数下发；关机
+            # 延后到 MAS 确认最终成功并完成收尾，避免首轮部分失败就启动倒计时，
+            # 导致补跑中途关机。延时固定 60 秒，与一条龙 GUI 一致。取值随来源：
             # native=原生 after_done（与原生配置/GUI 显示一致），shared/independent
             # =该用户的 MAS 字段（经配置会话双向联动与 GUI 保持一致）。多实例
             # 切换整轮共用触发者的值。与 MAS 收尾的 CloseOnFinish
@@ -1374,8 +1414,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 after_done = str(self.cur_user_config.OneDragon.AfterDone or "关闭游戏")
             if after_done == "关闭游戏":
                 launcher_args.append("--close-game")
-            elif after_done == "关机":
-                launcher_args.extend(["--shutdown", "60"])
+            self._shutdown_after_success = after_done == "关机"
 
             # 任务结束后关闭游戏由 MAS 侧兜底执行（见 kill_managed_process），
             # 不依赖一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
@@ -1579,19 +1618,14 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             user_status = "异常"
         else:
             diffs = diff_run_records(records_before, records_after)
-            failed_apps = _failed_apps(diffs)
-            # 节点失败只记录不重跑（次日 zzz-od 按运行记录自行重试），本轮仍判
-            # 完成；结果向框架成功契约 Success! 归一，失败节点进 script_info.log
-            # 供任务详情与通知展示（历史层保持只认 Success! 的干净契约）
+            failed_apps = _failed_apps(diffs, log, self._app_name_book)
             if failed_apps:
-                self._partial_failed_apps = [
+                failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
                 ]
-                log_status = "Success!"
-                user_status = "完成"
-                self.script_info.log = "部分任务执行失败: " + "、".join(
-                    self._partial_failed_apps
-                )
+                log_status = "ZZZ-OD 部分任务执行失败: " + "、".join(failed_names)
+                user_status = "异常"
+                self.script_info.log = log_status
             elif any(new == RUN_STATUS_SUCCESS for _, _, new in diffs):
                 log_status = "Success!"
                 user_status = "完成"
@@ -1619,9 +1653,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 user_status = "异常"
 
         self.cur_user_log.status = log_status
-        # 以 run_book 向 main_task 通信终态：判定为完成的路径统一归一为
-        # Success!（部分节点失败/原生来源跳过也视为成功，否则会空跑满重试次数
-        # 并以失败落库）；具体说明已写入 script_info.log 供详情展示
+        # 仅成功或上游确认已完成的任务走成功分支，应用失败交给 main_task 重试。
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
@@ -1702,14 +1734,18 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.script_root_path, slot, self._slot_record_files.get(slot, {})
             )
             diffs = diff_run_records(before, after)
-            # 节点失败只记录不判异常（次日 zzz-od 按运行记录自行重试）
-            failed_apps = _failed_apps(diffs)
+            failed_apps = _failed_apps(diffs, log, self._app_name_book, slot_idx=slot)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
             # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空，需要
             # 回落判完成（详见 _judge_all_skipped：以「整轮跑完」为判据，
             # 不用启动器/实例加载证据，那两者都发生在应用组之前）
             all_skipped = _judge_all_skipped(log, diffs)
-            ok = fatal is None and not runtime_failed and (success or all_skipped)
+            ok = (
+                fatal is None
+                and not runtime_failed
+                and not failed_apps
+                and (success or all_skipped)
+            )
             all_ok = all_ok and ok
 
             user_item.status = "完成" if ok else "异常"
@@ -1735,12 +1771,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
             record.status = record_status
             # 节点详情由 log_box 统一采集（final_task 收尾时按账号路由）；
-            # 数据落库只在状态变化时写，防止重试期间 ProxyTimes 多次自增
-            if slot not in self._multi_judged or ok:
-                await self._persist_multi_user_result(
-                    cfg, ok, slot in self._multi_judged
-                )
-            self._multi_judged.add(slot)
+            # 每轮同步最终状态，成功计数在整个补跑期间每个用户只增加一次。
+            await self._persist_multi_user_result(
+                cfg, ok, slot in self._multi_succeeded
+            )
+            if ok:
+                self._multi_succeeded.add(slot)
 
         if runtime_failed:
             self.cur_user_log.status = runtime_status
@@ -1777,21 +1813,21 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         await cfg.commit()
 
     async def _persist_multi_user_result(
-        self, cfg: ZzzOdUserConfig, ok: bool, judged_before: bool
+        self, cfg: ZzzOdUserConfig, ok: bool, succeeded_before: bool
     ) -> None:
         """多实例切换：逐用户写回代理数据（对齐 _persist_user_run_result 语义）。
 
-        ok → 成功（幂等：重试时已写过的用户跳过自增）；ok=False → 仅当本次
-        运行尚未写过该用户时落「失败」，重试成功后仍可翻转为成功。
+        每轮同步成败状态，首次成功才累计次数，避免其他账号失败导致的重跑
+        重复计次；后续失败仍需如实落盘。
         """
 
         if ok:
-            if cfg.Data.LastProxyStatus == "成功" and judged_before:
-                return
-            await self._apply_proxy_success(cfg)
+            if succeeded_before:
+                cfg.Data.LastProxyStatus = "成功"
+                await cfg.commit()
+            else:
+                await self._apply_proxy_success(cfg)
         else:
-            if judged_before:
-                return
             cfg.Data.LastProxyStatus = "失败"
             await cfg.commit()
 
@@ -1819,7 +1855,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._slot_records_before = {}
         self._slot_record_files = {}
         self._multi_uids = set()
-        self._multi_judged = set()
+        self._multi_succeeded = set()
         if not slots:
             return
         failed: list[tuple[int, str]] = []
@@ -1842,6 +1878,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
                 failed.append((slot, str(e)))
         if failed:
+            # 配置未完整恢复时保留现场，不能因实际运行用户已完成就自动关机。
+            self._shutdown_after_success = False
             # 失败槽里留着 MAS 注入内容：只标该槽对应的用户，不牵连已恢复成功的槽
             for slot, _ in failed:
                 user_item = slot_owner_items.get(slot) or self.cur_user_item
@@ -1956,11 +1994,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if not self.run_book:
                     user_result = self.cur_user_item.result
-                elif self._partial_failed_apps:
-                    # 判定完成但部分节点失败：结果保持成功，明细告知用户
-                    user_result = "部分任务未完成，将于次日重试: " + "、".join(
-                        self._partial_failed_apps
-                    )
                 else:
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
@@ -1980,6 +2013,22 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
 
         await self._persist_user_run_result()
+        # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
+        if self._shutdown_after_success and self.run_book:
+            shutdown_error = ""
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    "shutdown", "/s", "/t", "60"
+                )
+                if await process.wait() != 0:
+                    shutdown_error = "任务已完成，但未能安排自动关机，请检查系统权限"
+            except OSError as e:
+                shutdown_error = f"任务已完成，但未能安排自动关机: {e}"
+            if shutdown_error:
+                logger.error(shutdown_error)
+                await self._push_dispatch_log(shutdown_error)
+            else:
+                await self._push_dispatch_log("一条龙任务已完成，60 秒后关机")
 
     async def _persist_user_run_result(self) -> None:
         # 多实例切换：各用户的数据已在 _judge_multi 逐用户写回，避免重复计数

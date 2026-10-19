@@ -589,6 +589,10 @@ class MaaConfig(DomainEntry):
     Run: RunFields = Field(default_factory=RunFields)
 
     class UpdateFields(ConfigGroup):
+        TakeoverMigrationVersion: Annotated[int, Field(ge=0, le=1)] = Field(
+            default=1, description="更新接管一次性迁移版本"
+        )
+
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",
             description="本脚本的 Mirror 酱 CDK（加密存储，留空回退 MAS 全局配置）",
@@ -600,6 +604,24 @@ class MaaConfig(DomainEntry):
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[MaaUserConfig] = collection(MaaUserConfig)
+
+    @classmethod
+    def normalize_payload(cls, data):
+        data = super().normalize_payload(data)
+        if data and "TakeoverMigrationVersion" not in data.get("Update", {}):
+            data.setdefault("Update", {})["TakeoverMigrationVersion"] = 0
+        return data
+
+    async def migrate_update_takeover(self, *, global_cdk: str) -> bool:
+        """为有 CDK 的旧脚本一次性开启接管，之后保留用户的选择。"""
+        if self.Update.TakeoverMigrationVersion:
+            return False
+        enabled = bool(self.Update.MirrorChyanCDK.strip() or global_cdk.strip())
+        values = {"TakeoverMigrationVersion": 1}
+        if enabled:
+            values["TakeoverEnabled"] = True
+        await self.update(type(self).model_validate({"Update": values}))
+        return enabled
 
 
 class MaaEndUserConfig(DomainEntry):
@@ -990,6 +1012,10 @@ class MaaEndConfig(DomainEntry):
     related_config: ClassVar = {}
 
     class GameFields(ConfigGroup):
+        LaunchMode: Literal["Client", "Launcher", "MAS", "MaaEnd"] = Field(
+            default="Launcher", description="游戏启动方式，Client 为历史迁移值"
+        )
+
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "", description="终末地游戏启动参数"
         )
@@ -2325,7 +2351,7 @@ class MaaFWConfig(DomainEntry):
         )
 
         WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 60,
+            default_factory=lambda: 120,
             description="游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。 Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来； MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满； MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。",
         )
 
@@ -2543,6 +2569,14 @@ class M9AConfig(MaaFWConfig):
         M9AUserConfig
     )
 
+    class GameFields(MaaFWConfig.GameFields):
+        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+            default=15, description="启动等待时间(秒)"
+        )
+
+    # 独立特调类型有意覆盖分组默认值，保留准确字段提示。
+    Game: GameFields = Field(default_factory=GameFields)  # pyright: ignore[reportIncompatibleVariableOverride]
+
 
 class MSSUserConfig(MaaFWUserConfig):
     """MSS（MaaStellaSora / 星塔旅人）用户配置：MaaFW 用户配置再加一项计划表引用。
@@ -2616,6 +2650,29 @@ class MSSConfig(MaaFWConfig):
     UserData: ConfigCollection[MSSUserConfig] = collection(  # pyright: ignore[reportIncompatibleVariableOverride]
         MSSUserConfig
     )
+
+    async def _activate_from_payload(
+        self, payload, *, regenerate_uuids: bool = False
+    ) -> None:
+        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
+        import asyncio
+
+        from app.task.MaaEnd.resource_loader import try_load_maaend_options
+
+        payload = type(self).normalize_payload(payload)
+        game = payload.get("Game", {})
+        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
+            root = Path(str(payload.get("Info", {}).get("Path") or ""))
+            if (root / "interface.json").is_file():
+                options = await asyncio.to_thread(try_load_maaend_options, root)
+                if options is not None:
+                    game["LaunchMode"] = (
+                        "MaaEnd"
+                        if game.get("ControllerType")
+                        in options["launchGameControllers"]
+                        else "MAS"
+                    )
+        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
 
 
 class GeneralUserConfig(DomainEntry):
@@ -2731,7 +2788,7 @@ class OkwwUserConfig(DomainEntry):
             default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
         )
 
-        LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
+        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
             description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
         )
 
@@ -2929,7 +2986,7 @@ class OkNteUserConfig(DomainEntry):
             default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
         )
 
-        LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
+        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
             description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
         )
 
@@ -3080,7 +3137,7 @@ class BetterGIUserConfig(DomainEntry):
             default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
         )
 
-        LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
+        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
             description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
         )
 

@@ -53,6 +53,18 @@ def convert_legacy(
             data[uid] = convert_legacy(document[uid], entry_type.build())
         return {"order": order, "data": data}
 
+    from app.models.config.plan import PlanDaysConfig
+
+    if isinstance(node, PlanDaysConfig):
+        # 历史 JSON 的 Days 容器仅在一次性升级展开；运行期直接使用配置分组。
+        document = dict(document)
+        days = document.pop("Days", None)
+        if isinstance(days, dict):
+            for day, value in days.items():
+                group = node.day_group_of(str(day))
+                if group is not None:
+                    document[group] = value
+
     normalize = getattr(type(node), "normalize_payload", None)
     source = migrate_legacy_fields(
         type(node), normalize(document) if normalize else document

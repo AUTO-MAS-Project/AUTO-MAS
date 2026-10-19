@@ -6,12 +6,19 @@ const data = ref<DesktopMascotData | null>(null)
 const frame = ref(0)
 const dragging = ref(false)
 const lookFrame = ref<number | null>(null)
+const noticeElement = ref<HTMLElement>()
+const noticeWidth = ref(0)
+const viewportWidth = ref(window.innerWidth)
 const motionPreference = window.matchMedia('(prefers-reduced-motion: reduce)')
 const reducedMotion = ref(motionPreference.matches)
 let dispose: (() => void) | undefined
 let disposeUpdate: (() => void) | undefined
 let disposeLook: (() => void) | undefined
 let frameTimer: ReturnType<typeof setInterval> | undefined
+let activePointerId: number | null = null
+let pointerTarget: HTMLElement | null = null
+let dragRevision = 0
+let noticeObserver: ResizeObserver | undefined
 
 const isIdleMessage = computed(
   () =>
@@ -50,10 +57,12 @@ const spriteImageUrl = computed(() => {
 
 const avatarStyle = computed(() => {
   if (!data.value) return {}
-  const { width, height, opacity, colors } = data.value
+  const { width, height, offsetX, offsetY, opacity, colors } = data.value
   return {
     width: `${width}px`,
     height: `${height}px`,
+    left: `${offsetX}px`,
+    top: `${offsetY}px`,
     opacity,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
@@ -65,21 +74,25 @@ const spriteStyle = computed(() => {
   if (!data.value?.animation) return {}
   const { animation, state, reaction } = data.value
   const columns = looking.value ? 3 : animation.columns
-  const rows = dragSprite.value ? 1 : looking.value ? 3 : 2
-  const column = looking.value
-    ? lookFrame.value! % 3
+  const actionRows = Math.ceil(animation.frameCount / animation.columns)
+  const rows = looking.value ? 3 : actionRows * (dragSprite.value ? 1 : 2)
+  const currentFrame = looking.value
+    ? lookFrame.value!
     : stopped.value
-      ? Math.min(2, animation.columns - 1)
+      ? Math.min(2, animation.frameCount - 1)
       : frame.value
-  const row = looking.value
-    ? Math.floor(lookFrame.value! / 3)
-    : reacting.value
-      ? reaction === 'success'
-        ? 1
-        : 0
-      : stopped.value || (!dragging.value && state === 'working')
-        ? 1
-        : 0
+  const action =
+    looking.value || dragSprite.value
+      ? 0
+      : reacting.value
+        ? reaction === 'success'
+          ? 1
+          : 0
+        : stopped.value || (!dragging.value && state === 'working')
+          ? 1
+          : 0
+  const column = currentFrame % columns
+  const row = action * actionRows + Math.floor(currentFrame / columns)
   return {
     width: `${columns * 100}%`,
     height: `${rows * 100}%`,
@@ -89,15 +102,64 @@ const spriteStyle = computed(() => {
 
 const noticeStyle = computed(() => {
   if (!data.value) return {}
-  const { height, colors } = data.value
+  const {
+    width,
+    height,
+    offsetX,
+    offsetY,
+    noticeBelow,
+    noticeWidth: maxNoticeWidth,
+    noticeHeight,
+    colors,
+  } = data.value
+  const anchor = offsetX + width / 2
+  const boxWidth = noticeWidth.value || maxNoticeWidth
+  const left = Math.max(0, Math.min(anchor - boxWidth / 2, viewportWidth.value - boxWidth))
+  const arrow = anchor - left
+  const leftRadius = Math.max(0, Math.min(colors.radius, arrow - 5))
+  const rightRadius = Math.max(0, Math.min(colors.radius, boxWidth - arrow - 5))
   return {
-    bottom: `${height + 12}px`,
+    left: `${left}px`,
+    maxWidth: `${maxNoticeWidth}px`,
+    maxHeight: `${Math.max(0, noticeHeight - 12)}px`,
+    '--mascot-notice-arrow-x': `${arrow - 1}px`,
+    top: noticeBelow ? `${offsetY + height + 12}px` : undefined,
+    bottom: noticeBelow ? undefined : `${height + 12}px`,
+    '--mascot-notice-content-height': `${Math.max(0, noticeHeight - 38 - (isIdleMessage.value && data.value.idleMessage?.author && noticeHeight >= 78 ? 20 : 0))}px`,
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
-    borderRadius: `${colors.radius}px`,
+    borderRadius: noticeBelow
+      ? `${leftRadius}px ${rightRadius}px ${colors.radius}px ${colors.radius}px`
+      : `${colors.radius}px ${colors.radius}px ${rightRadius}px ${leftRadius}px`,
   }
 })
+
+watch(
+  noticeElement,
+  element => {
+    noticeObserver?.disconnect()
+    if (!element) return
+    measureNotice()
+    noticeObserver = new ResizeObserver(measureNotice)
+    noticeObserver.observe(element)
+  },
+  { flush: 'post' }
+)
+
+watch(
+  () =>
+    [
+      data.value?.animation,
+      data.value?.state,
+      dragging.value,
+      lookFrame.value,
+      data.value?.reaction,
+    ] as const,
+  () => {
+    frame.value = 0
+  }
+)
 
 watch(
   () =>
@@ -109,35 +171,39 @@ watch(
       dragging.value,
       lookFrame.value,
       data.value?.reaction,
+      data.value?.fps,
     ] as const,
-  ([animation, state, animate, reduced, isDragging, look, reaction]) => {
+  ([animation, state, animate, reduced, isDragging, look, reaction, customFps]) => {
     clearInterval(frameTimer)
-    frame.value = 0
     if (!animation || !animate || reduced) return
     if (!isDragging && reaction === 'stopped') return
     if (!isDragging && !reaction && state === 'idle' && look !== null && animation.lookImageUrl)
       return
     const fps =
-      isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps
+      customFps ??
+      (isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps)
     frameTimer = setInterval(() => {
-      frame.value = (frame.value + 1) % animation.columns
+      frame.value = (frame.value + 1) % animation.frameCount
     }, 1000 / fps)
   }
 )
 
 onMounted(async () => {
+  window.addEventListener('resize', updateViewportWidth)
   motionPreference.addEventListener('change', updateMotionPreference)
   const api = window.desktopMascotAPI
   if (!api) return
   let changed = false
   let pendingUpdate: DesktopMascotUpdate = {}
   dispose = api.onChanged(value => {
+    endDrag()
     changed = true
     data.value = value
     lookFrame.value = value.lookFrame ?? null
     pendingUpdate = {}
   })
   disposeUpdate = api.onUpdated(update => {
+    if (update.dragging === false && update.dragSession === dragRevision) endDrag()
     if (data.value) Object.assign(data.value, update)
     else Object.assign(pendingUpdate, update)
   })
@@ -156,9 +222,19 @@ onUnmounted(() => {
   disposeUpdate?.()
   disposeLook?.()
   clearInterval(frameTimer)
+  noticeObserver?.disconnect()
+  window.removeEventListener('resize', updateViewportWidth)
   motionPreference.removeEventListener('change', updateMotionPreference)
-  if (dragging.value) window.desktopMascotAPI?.pointer('end')
+  endDrag()
 })
+
+function measureNotice(): void {
+  noticeWidth.value = noticeElement.value?.getBoundingClientRect().width ?? 0
+}
+
+function updateViewportWidth(): void {
+  viewportWidth.value = window.innerWidth
+}
 
 function updateMotionPreference(event: MediaQueryListEvent): void {
   reducedMotion.value = event.matches
@@ -182,37 +258,70 @@ function hover(): void {
   if (!dragging.value) window.desktopMascotAPI?.pointer('hover')
 }
 
-function startDrag(event: PointerEvent): void {
-  if (event.button !== 0) return
+async function startDrag(event: PointerEvent): Promise<void> {
+  if (event.button !== 0 || activePointerId !== null) return
+  const api = window.desktopMascotAPI
+  if (!api || !data.value) return
   event.preventDefault()
-  dragging.value = true
   const target = event.currentTarget as HTMLElement
+  const bounds = target.getBoundingClientRect()
+  activePointerId = event.pointerId
+  pointerTarget = target
+  const revision = ++dragRevision
   target.setPointerCapture(event.pointerId)
-  window.desktopMascotAPI?.pointer('start')
+  try {
+    const accepted = await api.startDrag({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+      session: revision,
+      revision: data.value.revision,
+    })
+    if (revision !== dragRevision) return
+    if (!accepted) {
+      endDrag()
+      return
+    }
+    dragging.value = true
+    api.pointer('move', revision)
+  } catch {
+    if (revision === dragRevision) endDrag()
+  }
 }
 
-function moveDrag(): void {
-  if (dragging.value) window.desktopMascotAPI?.pointer('move')
+function moveDrag(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) return
+  if (event.buttons === 0) endDrag(event)
+  else if (dragging.value) window.desktopMascotAPI?.pointer('move', dragRevision)
 }
 
-function endDrag(): void {
-  if (!dragging.value) return
+function endDrag(event?: PointerEvent): void {
+  if (activePointerId === null || (event && event.pointerId !== activePointerId)) return
+  const pointerId = activePointerId
+  const target = pointerTarget
+  const session = dragRevision
+  activePointerId = null
+  pointerTarget = null
+  dragRevision++
   dragging.value = false
-  window.desktopMascotAPI?.pointer('end')
+  if (target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
+  window.desktopMascotAPI?.pointer('end', session)
 }
 </script>
 
 <template>
   <div v-if="data" class="desktop-mascot" @mousemove="hover" @mouseleave="hover">
     <div
-      v-if="noticeText"
+      v-if="noticeText && data.noticeHeight >= 58"
+      ref="noticeElement"
       class="mascot-notice"
-      :class="{ 'idle-message': isIdleMessage }"
+      :class="{ 'idle-message': isIdleMessage, 'notice-below': data.noticeBelow }"
       :style="noticeStyle"
       role="status"
     >
       <span>{{ noticeText }}</span>
-      <small v-if="isIdleMessage && data.idleMessage?.author" class="mascot-notice-author"
+      <small
+        v-if="isIdleMessage && data.idleMessage?.author && data.noticeHeight >= 78"
+        class="mascot-notice-author"
         >—— {{ data.idleMessage.author }}</small
       >
     </div>
@@ -220,7 +329,6 @@ function endDrag(): void {
       class="mascot-avatar"
       :class="{
         dragging,
-        'drag-sprite': dragSprite,
         stopped,
         'reduced-motion': (reducedMotion && !data.motionOverride) || !data.animate,
       }"
@@ -256,36 +364,12 @@ function endDrag(): void {
 
 .mascot-avatar {
   position: absolute;
-  right: 0;
-  bottom: 0;
   cursor: grab;
   touch-action: none;
 }
 
 .mascot-avatar.dragging {
   cursor: grabbing;
-  transform-origin: 50% 15%;
-  animation: mascot-drag-sway 600ms ease-in-out infinite;
-}
-
-.mascot-avatar.dragging.reduced-motion {
-  animation: none;
-  transform: translate(-8px, -8px);
-}
-
-.mascot-avatar.dragging.drag-sprite {
-  animation: none;
-  transform: translate(-8px, -8px);
-}
-
-@keyframes mascot-drag-sway {
-  0%,
-  100% {
-    transform: translate(-8px, -8px) rotate(-4deg);
-  }
-  50% {
-    transform: translate(-8px, -8px) rotate(4deg);
-  }
 }
 
 .mascot-avatar.stopped {
@@ -351,7 +435,7 @@ function endDrag(): void {
 
 .mascot-notice {
   position: absolute;
-  right: 0;
+  width: max-content;
   max-width: 100%;
   box-sizing: border-box;
   padding: 12px;
@@ -369,6 +453,7 @@ function endDrag(): void {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  max-height: var(--mascot-notice-content-height);
   overflow: hidden;
 }
 
@@ -389,7 +474,7 @@ function endDrag(): void {
 
 .mascot-notice::after {
   position: absolute;
-  right: 64px;
+  left: var(--mascot-notice-arrow-x);
   bottom: -5px;
   width: 8px;
   height: 8px;
@@ -397,6 +482,12 @@ function endDrag(): void {
   border-bottom: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-elevated);
   content: '';
-  transform: rotate(45deg);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.mascot-notice.notice-below::after {
+  top: -5px;
+  bottom: auto;
+  transform: translateX(-50%) rotate(225deg);
 }
 </style>

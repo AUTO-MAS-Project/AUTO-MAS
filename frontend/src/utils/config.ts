@@ -16,6 +16,8 @@ export interface FrontendConfig {
   /** 为空时跟随主题附带的桌宠；否则固定使用独立桌宠。 */
   desktopMascotId?: string | null
   desktopMascotEnabled?: boolean
+  /** 为空时使用动画包的帧率；自定义范围为 1～120 FPS。 */
+  desktopMascotFps?: number | null
   desktopMascotAnimationPaused?: boolean
   desktopMascotIdleMessagePaused?: boolean
   desktopMascotPosition?: { x: number; y: number }
@@ -28,10 +30,19 @@ export interface FrontendConfig {
   pressSoundEnabled?: boolean
   pressSoundPreset?: PressSoundPreset
   pressSoundVolume?: number
-  /** 用户导入音频的绝对路径；preset 为 custom 时使用 */
+  /** 用户导入音频的绝对路径（两个文件时是「按下」那个）；preset 为 custom / customPair 时使用 */
   pressSoundCustomPath?: string
   /** 用户导入音频的显示名，仅用于界面 */
   pressSoundCustomName?: string
+  /** 自定义两个文件时「松开」音频的绝对路径，preset 为 customPair 时使用 */
+  pressSoundCustomReleasePath?: string
+  /** 「松开」音频的显示名，仅用于界面 */
+  pressSoundCustomReleaseName?: string
+
+  /** 用户自定义背景的绝对路径；为空时使用内置或外观包背景。 */
+  customBackgroundPath?: string
+  /** 自定义背景下的主界面表面透明度；范围为 0.10～1.00。 */
+  customSurfaceOpacity?: number
 
   // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
   mysteryUnlockedDate?: string
@@ -63,6 +74,7 @@ export interface FrontendConfig {
 const DEFAULT_CONFIG: FrontendConfig = {
   themeMode: 'system',
   themeColor: 'blue',
+  desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,
   pauseHomeEffectsWhenRunning: true,
@@ -71,6 +83,10 @@ const DEFAULT_CONFIG: FrontendConfig = {
   pressSoundVolume: 0.6,
   pressSoundCustomPath: '',
   pressSoundCustomName: '',
+  pressSoundCustomReleasePath: '',
+  pressSoundCustomReleaseName: '',
+  customBackgroundPath: '',
+  customSurfaceOpacity: 1,
   selectedGitMirror: 'github',
   selectedPythonMirror: 'tsinghua',
   selectedPipMirror: 'tsinghua',

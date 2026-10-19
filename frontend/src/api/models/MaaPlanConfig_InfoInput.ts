@@ -4,9 +4,13 @@
 /* eslint-disable */
 export type MaaPlanConfig_InfoInput = {
     /**
+     * 多天轮换天数
+     */
+    RotateDays?: (number | null);
+    /**
      * 计划表模式
      */
-    Mode?: ('ALL' | 'Weekly' | null);
+    Mode?: ('ALL' | 'Weekly' | 'Rotate' | null);
     /**
      * 计划表名称
      */

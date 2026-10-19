@@ -36,7 +36,9 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
+from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
+from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
@@ -74,6 +76,7 @@ from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
 from app.services import ConfigCenterError
+from app.services.endfield_launcher import discover_launcher_exe
 from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
@@ -518,7 +521,8 @@ class BetterGIScriptDirsOut(OutBase):
         default=None, description="键鼠脚本（录制）目录"
     )
     autoFightDir: Optional[str] = Field(
-        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+        default=None,
+        description="自动战斗策略目录（User/AutoFight，*.txt / *.json 各算一份策略）",
     )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 
@@ -1062,7 +1066,21 @@ class MaaEndAutoCollectGroup(BaseModel):
     defaultCases: list[str] = Field(..., description="上游默认路线")
 
 
+class MaaEndLauncherPathOut(OutBase):
+    """MaaEnd 启动器路径识别结果（供前端自动识别与落盘）"""
+
+    launcher_path: str = Field(
+        ..., description="由游戏客户端路径识别到的启动器 Launcher.exe 完整路径"
+    )
+
+
 class MaaEndOptionsOut(OutBase):
+    launchGameControllers: list[str] = Field(
+        default_factory=list, description="支持 MaaEnd 原生启动的控制器"
+    )
+    gameSettingControllers: list[str] = Field(
+        default_factory=list, description="支持独立游戏显示设置的控制器"
+    )
     projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
     projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
     autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
@@ -1103,6 +1121,10 @@ class ScriptIndexItem(BaseModel):
         "WhimboxConfig",
         "MSSConfig",
     ] = Field(..., description="配置类型")
+
+    activityGame: str | None = Field(
+        default=None, description="对应的游戏活动标识，无游戏归属时为空"
+    )
 
 
 class UserIndexItem(BaseModel):
@@ -1930,7 +1952,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
+        activity_games = {
+            config.__name__: game for config, game in SCRIPT_CALENDAR_GAMES.items()
+        }
+        index = [
+            ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
+            for item in index
+        ]
         data = {
             uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
                 **cfg
@@ -1960,7 +1988,7 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
         data = script.data.model_dump(exclude_unset=True)
-        # 魔改 AVD 目前只支持 M9A 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
+        # 魔改 AVD 目前只支持 MaaFW 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
         refusal = await emulator2_service.mod_avd_binding_error(script.scriptId, data)
         if refusal:
             return OutBase(code=500, status="error", message=refusal)
@@ -2014,6 +2042,56 @@ async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
             # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
             message=str(e),
             client_path="",
+        )
+
+
+@router.get(
+    "/maaend/launcher-path",
+    tags=["Get"],
+    summary="从终末地客户端路径识别官方启动器路径",
+    response_model=MaaEndLauncherPathOut,
+    status_code=200,
+)
+async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
+    """按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+
+    只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+    """
+
+    try:
+        script_uid = uuid.UUID(scriptId)
+        script_config = Config.ScriptConfig[script_uid]
+        if not isinstance(script_config, RuntimeMaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        client_exe = Path(str(script_config.Game.Path or "").strip())
+        if not client_exe.is_file():
+            raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
+        launcher_path = discover_launcher_exe(client_exe)
+        if launcher_path is None:
+            raise ValueError(
+                "未能从游戏客户端路径识别到终末地官方启动器, "
+                "请手动选择终末地启动器的可执行文件（.exe）"
+            )
+        return MaaEndLauncherPathOut(
+            code=200,
+            status="success",
+            message="",
+            launcher_path=launcher_path.as_posix(),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_maaend_launcher_path_api失败: {type(e).__name__}: {e}"
+        )
+        return MaaEndLauncherPathOut(
+            code=(
+                400
+                if isinstance(e, (ValueError, KeyError, TypeError, FileNotFoundError))
+                else 500
+            ),
+            status="error",
+            # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
+            message=str(e),
+            launcher_path="",
         )
 
 
@@ -2168,6 +2246,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            launchGameControllers=data["launchGameControllers"],
+            gameSettingControllers=data["gameSettingControllers"],
             projectName=data["projectName"],
             projectVersion=data["projectVersion"],
             autoCollectGroups=[
@@ -3114,7 +3194,7 @@ async def get_hsr_stage_options_api(
     status_code=200,
 )
 async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
-    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt`` 文件名。"""
+    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt``、``*.json`` 文件名。"""
 
     try:
         script_config = _bettergi_script_config(scriptId)

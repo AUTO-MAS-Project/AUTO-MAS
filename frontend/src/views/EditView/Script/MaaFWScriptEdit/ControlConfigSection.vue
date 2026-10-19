@@ -134,10 +134,10 @@
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
-            <!-- 特调在包名旁登记了组件（插入点 besidePackageName）时两列并排，窄屏上下排；
-                 没有时包名独占整列 -->
+            <!-- 包名、特调在包名旁登记的组件（插入点 besidePackageName）、等待时间依次两两并排，
+                 窄屏上下排 -->
             <a-row :gutter="16">
-              <a-col :xs="24" :xl="$slots.besidePackageName ? 12 : 24">
+              <a-col :xs="24" :xl="12">
                 <a-form-item>
                   <template #label>
                     <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
@@ -158,6 +158,26 @@
               </a-col>
               <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
                 <slot name="besidePackageName" />
+              </a-col>
+              <a-col :xs="24" :xl="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                      <span class="form-label">
+                        {{ t('edit.waitTimeSeconds') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="maafwConfig.Game.WaitTime"
+                    :min="0"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
+                  />
+                </a-form-item>
               </a-col>
             </a-row>
           </a-col>
@@ -229,7 +249,7 @@
               </a-input-group>
             </a-form-item>
           </a-col>
-          <!-- 游戏已经开着时第二行整行隐藏，键位映射挪到启动方式右边 -->
+          <!-- 由脚本自身控制游戏时第二行整行隐藏，键位映射挪到启动方式右边 -->
           <MaaFWHotkeyField
             v-if="launchMode !== 'DirectExe'"
             :script-id="scriptId"

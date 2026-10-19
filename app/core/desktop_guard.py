@@ -324,6 +324,8 @@ class _DesktopGuard:
         self._prompt_delivered = False
         # 弹窗挂着期间连续几轮没再看到回来的屏。收回和弹出一样要判据连续成立。
         self._prompt_idle_ticks = 0
+        # 挂着虚拟屏期间的「保持显示开启」请求，见 `_sync_display_hold`。
+        self._display_hold = None
 
     @property
     def lock(self) -> asyncio.Lock:
@@ -392,6 +394,8 @@ class _DesktopGuard:
             try:
                 async with self._lock:
                     await self._tick(confirm=True)
+                    # MAS 执行睡眠 / 休眠前会撤掉所有请求，醒来后屏还挂着就在这里补回。
+                    self._sync_display_hold()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -619,11 +623,31 @@ class _DesktopGuard:
         self._quiet_until = 0.0
         self._last_failure = ""
         logger.info(f"已挂载虚拟显示器: {await asyncio.to_thread(_describe)}")
+        self._sync_display_hold()
+
+    def _sync_display_hold(self) -> None:
+        """挂着虚拟屏期间保持显示开启，拆掉就撤销。
+
+        Windows 到点熄屏是整机状态，虚拟屏照样跟着熄；熄屏时鹰角启动器这类网页界面不出
+        画面，MaaEnd「🚀启动游戏（PC）」在里面什么都认不出（2026-10-17/18 生产两晚失败，
+        亮屏 5 秒即过）。挂着虚拟屏说明没有真实显示器亮着，保持开启不会点亮任何东西。
+        """
+
+        from app.services.platform.power import power
+
+        hold = self._display_hold
+        if self._display is not None:
+            if hold is None or not hold.active:
+                self._display_hold = power.hold_display("虚拟显示器")
+        elif hold is not None:
+            self._display_hold = None
+            hold.release()
 
     async def _teardown(self, reason: str) -> None:
         # 屏都要没了，问用户拆不拆的弹窗自然作废，先收掉。
         await self._close_prompt()
         display, self._display = self._display, None
+        self._sync_display_hold()
         if display is None:
             return
         with suppress(Exception):

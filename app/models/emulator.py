@@ -48,6 +48,9 @@ class DeviceInfo:
     title: str
     status: DeviceStatus
     adb_address: str
+    app_launch: str = ""
+    """``open`` 带包名时拉应用那一步的结果（``AppLaunchResult.reason``，如冷启动 ``launched``、
+    在前台 ``already-running``、从后台切回 ``resumed``）；没拉应用、或后端不支持带包启动时为空串。"""
 
 
 @dataclass(frozen=True)

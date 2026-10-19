@@ -1,4 +1,3 @@
-
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -62,9 +61,7 @@ class LDManager(DeviceBase):
     def __init__(self, config: EmulatorConfig) -> None:
         emulator_path = config.Info.Path
         if emulator_path is None or not emulator_path.exists():
-            raise FileNotFoundError(
-                f"LDPlayerManager.exe文件不存在: {emulator_path}"
-            )
+            raise FileNotFoundError(f"LDPlayerManager.exe文件不存在: {emulator_path}")
 
         if config.Info.Type != "ldplayer":
             raise ValueError("配置的模拟器类型不是ldplayer")

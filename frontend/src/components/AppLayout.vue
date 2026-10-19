@@ -71,7 +71,6 @@ import {
   HomeOutlined,
   SettingOutlined,
   SkinOutlined,
-  ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { computed } from 'vue'
@@ -92,7 +91,7 @@ const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
-// 菜单图标可由外观包按固定键替换；缺少资源时继续使用内置图标。
+// 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
   (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
   () =>
@@ -136,7 +135,6 @@ const devMenuItems = computed(() => [
 const bottomMenuItems = computed(() => [
   { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/tools', label: t('comp.tools'), icon: icon('tools', ToolOutlined) },
   { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
   { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
 ])

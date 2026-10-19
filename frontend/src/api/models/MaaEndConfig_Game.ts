@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type MaaEndConfig_Game = {
     /**
+     * 游戏启动方式，Client 为历史迁移值
+     */
+    LaunchMode?: ('Client' | 'Launcher' | 'MAS' | 'MaaEnd' | null);
+    /**
      * 终末地游戏启动参数
      */
     Arguments?: (string | null);

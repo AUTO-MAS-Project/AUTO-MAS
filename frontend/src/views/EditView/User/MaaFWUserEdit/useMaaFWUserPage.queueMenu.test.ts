@@ -1,5 +1,5 @@
 import { effectScope, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 // 用户页任务队列右键菜单背后的动作：复制（带选项与显示名、插在正下方）、改显示名（落盘、按基础名编号）、
 // 删除时显示名一起清掉；受管 / 不可选任务不复制

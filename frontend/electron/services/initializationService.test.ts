@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { InitializationService, InitializationProgress } from './initializationService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
@@ -69,13 +69,16 @@ vi.mock('./logger', () => ({
     silly: vi.fn(),
   }),
 }))
-// 第 0 步（Runtime 对齐）真实实现会联网读钉扎、跑 exe；这里只关心编排有没有经过它。
-// 模块内部互相调用不经过 mock，所以要桩的是 RuntimeInitializationService 导入的这个入口。
-const { alignCalls } = vi.hoisted(() => ({ alignCalls: [] as { version: string }[] }))
+// 第 0 步（Runtime 对齐到线上最新版）真实实现会联网解析发布列表、跑 exe；这里只关心编排
+// 有没有经过它。模块内部互相调用不经过 mock，所以要桩的是 RuntimeInitializationService
+// 导入的这个入口。
+const { alignCalls } = vi.hoisted(() => ({
+  alignCalls: [] as { channel: 'stable' | 'prerelease' }[],
+}))
 vi.mock('./runtimeBinaryService', async importActual => ({
   ...(await importActual<typeof import('./runtimeBinaryService')>()),
-  alignRuntimeBinaryWithVersion: async (options: { version: string }) => {
-    alignCalls.push({ version: options.version })
+  alignRuntimeBinaryWithLatest: async (options: { channel: 'stable' | 'prerelease' }) => {
+    alignCalls.push({ channel: options.channel })
     return { status: 'skipped' }
   },
 }))
@@ -314,8 +317,8 @@ describe('managed 模式', () => {
     const result = await new InitializationService(APP_ROOT).initialize(onProgress)
 
     expect(result.success).toBe(true)
-    // 第 0 步在 bootstrap 命令之前，目标版本是应用自身版本。
-    expect(alignCalls).toEqual([{ version: 'v5.5.0-beta.3' }])
+    // 第 0 步在 bootstrap 命令之前，通道跟随本体版本：预发布版本体追 Runtime 预发布版。
+    expect(alignCalls).toEqual([{ channel: 'prerelease' }])
     expect(runtimeClientCalls).toEqual([['bootstrap', '--version', 'v5.5.0-beta.3']])
     expect(installCalls).toEqual(['backend'])
 

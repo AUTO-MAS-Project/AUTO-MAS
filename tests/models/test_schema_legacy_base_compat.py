@@ -11,7 +11,12 @@ from pydantic import ValidationError
 
 from app.api.scripts import UserUpdateIn
 from app.config.wire import config_contract
-from app.models.config import GeneralUserConfig, HSRUserConfig, MaaFWUserConfig, MaaUserConfig
+from app.models.config import (
+    GeneralUserConfig,
+    HSRUserConfig,
+    MaaFWUserConfig,
+    MaaUserConfig,
+)
 
 GeneralUserConfig_Input = config_contract(GeneralUserConfig, mode="input")
 HSRUserConfig_Input = config_contract(HSRUserConfig, mode="input")
@@ -47,7 +52,9 @@ class LegacyInfoModeCompatTest(unittest.TestCase):
         """显式 Base 优先；未知 Mode 与旧 Literal 语义一致地拒绝。"""
 
         self.assertEqual(
-            MaaUserConfig_Input.model_validate({"Info": {"Mode": "脚本", "Base": "native"}}).Info.Base,
+            MaaUserConfig_Input.model_validate(
+                {"Info": {"Mode": "脚本", "Base": "native"}}
+            ).Info.Base,
             "native",
         )
         with self.assertRaises(ValidationError):

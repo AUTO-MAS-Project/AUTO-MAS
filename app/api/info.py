@@ -38,15 +38,18 @@ from typing import (
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from PIL import Image
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     Field,
+    model_validator,
 )
 
 from app.core import Config
+from app.core.game_calendar import GameCalendar
 from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
@@ -58,6 +61,53 @@ from app.models.schema import (
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
+
+
+class GameCalendarActivityInfo(BaseModel):
+    name: str = Field(..., min_length=1, max_length=500, description="活动名称")
+    startTime: AwareDatetime = Field(..., description="活动开始时间，包含时区")
+    endTime: AwareDatetime = Field(..., description="活动结束时间，包含时区")
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if not self.name.strip() or self.endTime <= self.startTime:
+            raise ValueError("活动名称不能为空，结束时间必须晚于开始时间")
+        return self
+
+
+class GameCalendarActivityUpdateIn(GameCalendarActivityInfo):
+    completed: bool = Field(..., description="是否由用户标记为已完成")
+
+
+class GameCalendarActivityScopeIn(BaseModel):
+    game: Literal[
+        "endfield",
+        "starrail",
+        "genshin",
+        "zenless",
+        "wutheringwaves",
+        "nte",
+        "reverse1999",
+        "bluearchive",
+        "arknights",
+        "stellasora",
+        "infinitynikki",
+    ] = Field(..., description="首页游戏标识")
+    server: Literal["cn", "jp", "global"] = Field(
+        default="cn", description="碧蓝档案服务器，其它游戏忽略此字段"
+    )
+
+
+class GameCalendarActivityCompletionIn(
+    GameCalendarActivityScopeIn, GameCalendarActivityUpdateIn
+):
+    pass
+
+
+class GameCalendarActivitiesOut(OutBase):
+    data: list[GameCalendarActivityInfo] = Field(
+        default_factory=list, description="用户已完成且未过期的活动"
+    )
 
 
 class InfoOut(OutBase):
@@ -101,6 +151,61 @@ class PlanComboxIn(BaseModel):
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 logger = get_logger("信息获取 API")
+
+
+@router.get(
+    "/activity/completions",
+    tags=["Get"],
+    summary="获取游戏已完成活动",
+    response_model=GameCalendarActivitiesOut,
+)
+async def get_activity_completions(
+    scope: GameCalendarActivityScopeIn = Depends(),
+) -> GameCalendarActivitiesOut:
+    try:
+        activities = await GameCalendar.completed_activities(
+            game=scope.game, server=scope.server
+        )
+        return GameCalendarActivitiesOut(
+            data=[
+                GameCalendarActivityInfo(
+                    name=item.name, startTime=item.start_at, endTime=item.end_at
+                )
+                for item in activities
+            ]
+        )
+    except (OSError, ValueError, TypeError):
+        logger.exception("读取游戏活动完成状态失败")
+        return GameCalendarActivitiesOut(
+            code=500, status="error", message="读取活动完成状态失败"
+        )
+
+
+@router.post(
+    "/activity/completions",
+    tags=["Set"],
+    summary="设置游戏活动完成状态",
+    response_model=OutBase,
+)
+async def set_activity_completion(
+    payload: GameCalendarActivityCompletionIn,
+) -> OutBase:
+    try:
+        await GameCalendar.set_activity_completed(
+            game=payload.game,
+            server=payload.server,
+            name=payload.name,
+            start=payload.startTime,
+            end=payload.endTime,
+            completed=payload.completed,
+        )
+        return OutBase()
+    except ValueError as error:
+        return OutBase(code=400, status="error", message=str(error))
+    except (OSError, TypeError):
+        logger.exception("保存游戏活动完成状态失败")
+        return OutBase(code=500, status="error", message="保存活动完成状态失败")
+
 
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，
 ## 少了会返回 {"code": 403, "msg": "缺少游戏信息"}；它同时给三个服，

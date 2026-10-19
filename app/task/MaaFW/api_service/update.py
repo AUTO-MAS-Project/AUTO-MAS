@@ -48,6 +48,7 @@ from app.task.MaaFW.tools.core.interface.loader import (
     load_interface_model_cached,
 )
 from app.task.MaaFW.tools.core.project_update import (
+    ALERT_LOG_PREFIX,
     MaaFWProjectUpdateError,
     can_check_project_update,
     discover_maafw_project_update,
@@ -382,6 +383,12 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     def send_update_log(line: str) -> None:
         # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
         text = sanitize_log_message(str(line))
+        if text.startswith(ALERT_LOG_PREFIX):
+            # 要用户留意的行（项目发错版本号）：去掉前缀，面板里整行标红
+            text = text.removeprefix(ALERT_LOG_PREFIX)
+            _maafw_update_logger.warning(text)
+            publish_progress(tracker.log(text, alert=True))
+            return
         _maafw_update_logger.info(text)
         if text.startswith(DETAIL_LOG_PREFIX):
             # 详情行（预检里健康检查的完整 traceback）只进后端日志，不上更新面板
@@ -459,6 +466,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 # 而用户可能只是随手点了下「检查更新」。真更新时再取。
                 version_only=True,
                 on_skipped=skipped.append,
+                # 项目发错的高主版本号只在手动更新时拉回；检查时就告诉用户点「更新」会回退。
+                allow_misnumbered_rollback=True,
             )
         except MaaFWProjectUpdateError as exc:
             message = f"MFW 更新检查失败: {exc}"
@@ -644,6 +653,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 github_mirror_urls=github_release_mirror_urls,
                 payload=target,
                 after_register=after_register,
+                # 项目发错的高主版本号只在手动更新时拉回，运行前 / 运行后自动更新不回退。
+                allow_misnumbered_rollback=True,
             )
 
         try:

@@ -257,11 +257,14 @@ def main():
         )
 
     from app.core import Config
+    from app.core.restore_bindings import resolve_restore_pools
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+
+    Config.set_restore_pool_resolver(resolve_restore_pools)
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -289,10 +292,15 @@ def main():
 
         await Config.init_config()
 
+        from app.api.ws_command import execute_ws_command
+        from app.core.notify_channels import initialize_notification_channels
+
+        initialize_notification_channels(command_executor=execute_ws_command)
+
         background_task: asyncio.Task | None = None
 
         async def initialize_background_services() -> None:
-            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、ArknightWin32、主定时器。
+            """后台完成重活初始化：MCP 挂载、活动关卡、历史清理、诊断文件清理、主定时器。
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
@@ -334,13 +342,6 @@ def main():
 
                 await mount_mcp_server(app)
 
-            async def init_arknight_win32() -> None:
-                # 只接管开关、启用时在后台发起加载，不在这里导入：导入会整套载入
-                # MaaFramework 原生库，新装环境首次能拖过监督器的 60 秒健康预算
-                from app.MaaFW import arknights_pc
-
-                await arknights_pc.start()
-
             async def start_desktop_guard() -> None:
                 from app.core.desktop_guard import DesktopGuard
 
@@ -349,23 +350,6 @@ def main():
             async def init_stage_info() -> None:
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
                 await Config.get_stage(wait_stale=False)
-
-            async def start_openclaw_qq() -> None:
-                from app.services.openclaw_qq import openclaw_qq_manager
-
-                await openclaw_qq_manager.start()
-
-            async def start_koishi() -> None:
-                # 初始化 Koishi 系统客户端（如果已启用）
-                if not Config.setting.Notify.IfKoishiSupport:
-                    return
-
-                from app.api.ws_command import execute_ws_command
-                from app.utils.websocket import ws_client_manager
-
-                # 出站客户端不再反射导入 API，命令执行器需显式注入
-                ws_client_manager.set_command_executor(execute_ws_command)
-                await ws_client_manager.init_system_client_koishi()
 
             app.state.background_status = "running"
             try:
@@ -393,20 +377,15 @@ def main():
                     _maafw_startup_maintenance()
                 )
 
-                if IS_WINDOWS:
-                    await run_optional_step(
-                        "明日方舟 PC 工具初始化", init_arknight_win32
-                    )
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
-                # QQ 维持官方网关连接以完成扫码绑定。
-                await run_optional_step("QQ 通知通道", start_openclaw_qq)
-                await run_optional_step("Koishi 客户端", start_koishi)
+                from app.services.notification import Notify
+
+                await run_optional_step("通知渠道", Notify.start)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -481,9 +460,7 @@ def main():
                 await System.cancel_power_task()
 
             await MainTimer.stop()
-            from app.services.openclaw_qq import openclaw_qq_manager
 
-            await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
@@ -498,6 +475,12 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
+            from app.core.notify import shutdown_community_notifications
+
+            await shutdown_community_notifications()
+            from app.services.notification import Notify
+
+            await Notify.stop()
             from app.config import config_manager
 
             await config_manager.flush()

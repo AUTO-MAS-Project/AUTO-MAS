@@ -1,9 +1,9 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
-  DesktopMascotColors,
-  DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
+  DesktopMascotHostAPI,
+  DesktopMascotSelection,
+  DesktopMascotTaskHostAPI,
 } from '@/types/desktopMascot'
 import type {
   AppearanceCleanupResult,
@@ -64,6 +64,24 @@ export type ElectronApiEndpointKey = 'local' | 'websocket'
 
 /** 后端启动链路：`off` 走原有的自行启动 python.exe，其余两种由 Runtime 监督。 */
 export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
+
+export interface RuntimeBinaryUpdateResult {
+  status: 'upgraded' | 'current' | 'skipped' | 'cancelled' | 'failed'
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryUpdateCheck {
+  status: 'available' | 'current' | 'skipped' | 'unavailable'
+  currentVersion?: string | null
+  target?: { version: string }
+  error?: string
+}
+
+export interface RuntimeBinaryProgress {
+  progress: number
+  message: string
+}
 
 /** 更新失败的三类结局，界面据此决定给什么按钮。 */
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
@@ -203,20 +221,13 @@ export interface VirtualDisplayPromptPayload {
   monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
-export interface ElectronAPI {
+export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  isMacOS: boolean
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
-  onMascotChanged?: (callback: () => void) => () => void
-  setDesktopMascotReady(
-    ready: boolean,
-    labels?: DesktopMascotMenuLabels,
-    colors?: DesktopMascotColors
-  ): Promise<void>
-  setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
-  setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
-  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
-  onDesktopMascotError(callback: () => void): () => void
+  /** 不带选择状态时表示资源列表变化。 */
+  onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
@@ -239,6 +250,8 @@ export interface ElectronAPI {
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
+  appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
   appPrepareQuit?: () => Promise<number | null>
   /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
@@ -248,7 +261,7 @@ export interface ElectronAPI {
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
-  onAppCloseRequested?: (callback: () => void) => () => void
+  onAppCloseRequested?: (callback: (confirmRunningTasks: boolean) => void) => () => void
 
   // 窗口可见性/后台状态
   getWindowActivity?: () => Promise<'visible' | 'background'>
@@ -298,10 +311,12 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{
+  exportLogs: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
     success: boolean
     message?: string
     zipPath?: string
+    skippedPaths?: string[]
+    errorCode?: 'window-unavailable' | 'directory-missing' | 'no-files'
     error?: string
   }>
   exportMaaIssueReport: (dialogLabels?: { title: string; zipFilterName: string }) => Promise<{
@@ -485,6 +500,10 @@ export interface ElectronAPI {
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
   /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
   getRuntimeInitContext?: () => Promise<RuntimeInitContext>
+  updateRuntimeBinary: () => Promise<RuntimeBinaryUpdateResult>
+  checkRuntimeBinaryUpdate: () => Promise<RuntimeBinaryUpdateCheck>
+  onRuntimeBinaryProgress: (callback: (progress: RuntimeBinaryProgress) => void) => void
+  removeRuntimeBinaryProgressListener: () => void
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>

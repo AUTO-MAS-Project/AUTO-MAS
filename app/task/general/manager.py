@@ -117,7 +117,9 @@ class GeneralManager(ScriptManagerBase):
         ].Script.LogPath:
             return "未填写日志路径, 请检查脚本配置中的日志路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Enabled:
-            game_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Game.Path
+            game_path = Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].Game.Path
             if Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].Game.Type == "Emulator" and (
@@ -133,9 +135,7 @@ class GeneralManager(ScriptManagerBase):
                 return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
             elif Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
-            ].Game.Type == "Client" and (
-                game_path is None or not game_path.exists()
-            ):
+            ].Game.Type == "Client" and (game_path is None or not game_path.exists()):
                 return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
             elif Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
@@ -176,6 +176,10 @@ class GeneralManager(ScriptManagerBase):
         )
         if result == "restored":
             logger.info("已恢复上次中断前的通用脚本原始配置")
+        elif result == "legacy":
+            logger.warning(
+                "检测到上次中断残留的 通用脚本 原生配置快照由旧版本生成, 已改名保留以便手动恢复"
+            )
         elif result == "skipped":
             logger.warning(
                 "检测到通用脚本原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"

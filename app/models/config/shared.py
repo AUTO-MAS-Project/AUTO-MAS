@@ -433,17 +433,12 @@ def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
                 plan["LegacyIndex"] = True
                 plans.append(plan)
     if old_task.get("IfActivityFirst", True):
-        medicine = old_task.get(
-            "ActivityMedicineNumb", data.get("Info", {}).get("MedicineNumb", 0)
-        )
         plans.append(
             {
                 "StageType": "activity",
                 "StageIndex": old_task.get("ActivityStageIndex", 1),
                 "DropCount": 999,
                 "OrundumDropCount": 9999,
-                "UseMedicine": medicine > 0,
-                "MedicineCount": medicine,
                 "LegacyActivityFirst": True,
             }
         )
@@ -461,28 +456,17 @@ def migrate_maa_stamina_pipeline(data: dict) -> tuple[dict, bool]:
 BAAH_PLAN_KEY_SHAPE = {
     # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
     # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
-    "Event": ([1, 1], 2, 3),
-    "Wanted": ([1, -1, 1], 2, 4),
-    "Special": ([1, -1, 1], 2, 4),
-    "Exchange": ([1, -1, 1], 2, 4),
+    "Wanted": ([1, -1, -1], 2, 4),
+    "Special": ([1, -1, -1], 2, 4),
+    "Exchange": ([1, -1, -1], 2, 4),
     "Hard": ([1, 1, -1], 2, 4),
     "Normal": ([1, 1, -1], 2, 4),
 }
 
 
 def default_baah_plan_key() -> dict[str, Any]:
-    """返回 BAAH 计划表默认 key，六个字段都给具体值。
-
-    新建的计划表默认按「多类混打」排：每一类都有值，用户拿到的是一张和以前一样的
-    表。**不能**返回空 key——那表示六类全都不干预，新计划表会变成「什么都不管」。
-    校验器与 BAAHPlanConfig 的 default_key 都用它生成，避免默认值在两处各写
-    一份后漂移。
-    """
-
-    return {
-        field: list(default)
-        for field, (default, _minimum, _maximum) in BAAH_PLAN_KEY_SHAPE.items()
-    }
+    """默认拉满悬赏通缉和交流会、关闭特别委托，其余沿用 BAAH。"""
+    return {"Wanted": [1, -1, -1], "Special": [], "Exchange": [1, -1, -1]}
 
 
 def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
@@ -550,7 +534,7 @@ def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
     """
 
     return schema_model.BAAHPlanKey.model_validate(raw_key).model_dump(
-        exclude_none=True
+        exclude_none=True, exclude={"Event"}
     )
 
 

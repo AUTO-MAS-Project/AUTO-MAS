@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { i18n } from '@/i18n'
 import type { MaaFWOptionInfo } from '@/types/script'
 import {

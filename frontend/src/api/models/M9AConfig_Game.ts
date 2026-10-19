@@ -28,7 +28,7 @@ export type M9AConfig_Game = {
      */
     UnityResolution?: ('Off' | '1920x1080' | '1280x720' | null);
     /**
-     * 游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。 Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来； MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满； MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
+     * 启动等待时间(秒)
      */
     WaitTime?: (number | null);
 };

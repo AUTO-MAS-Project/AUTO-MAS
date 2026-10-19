@@ -151,6 +151,10 @@ class Emulator2InstanceCreateIn(BaseModel):
     cpu: Optional[int] = Field(
         default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
     )
+    fps: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+    )
     dataPartitionGb: Optional[int] = Field(
         default=None,
         description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
@@ -405,6 +409,9 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
         default=None, description="内存 MB, 每次开机用 -memory 传"
     )
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    fps: Optional[int] = Field(
+        default=None, description="帧率 (hw.lcd.vsync), 下次开机生效"
+    )
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
     initialized: bool = Field(
         default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
@@ -577,6 +584,7 @@ async def create_instance(
             {
                 "memory_mb": payload.memoryMb,
                 "cpu": payload.cpu,
+                "fps": payload.fps,
                 "data_partition_gb": payload.dataPartitionGb,
             },
         )

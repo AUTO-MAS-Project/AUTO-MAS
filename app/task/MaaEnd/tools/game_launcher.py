@@ -1,6 +1,6 @@
 """以真实鹰角启动器为父进程启动终末地，也供 MXU 前置程序独立调用。
 
-临时补位：MaaEnd #6457 尚未提供 PC 启动入口；上游提供后改为调用并移除。
+供用户显式选择「MAS 启动」时使用；MaaEnd 原生启动不调用此入口。
 启动方式参考 AliceJump/ok-end-field#520，不修改游戏文件或启动参数。
 """
 
@@ -169,6 +169,12 @@ def _verify_launcher(path: Path) -> None:
         or (signature.get("signer") or "").upper() not in _OFFICIAL_SIGNERS
     ):
         raise RuntimeError(f"鹰角启动器签名校验失败，请重新选择官方启动器: {path}")
+
+
+def verify_launcher_signature(path: Path) -> None:
+    """对外的签名校验入口：启动器启动在拉起前复用同一套校验。"""
+
+    _verify_launcher(path)
 
 
 def _game_running(game_path: Path) -> bool:

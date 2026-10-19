@@ -194,19 +194,19 @@ BAAH_PLAN_KEY_SLOT_RULES: dict[str, tuple[BAAHSlotRule, ...]] = {
         BAAHSlotRule("活动关卡开关", minimum=0, maximum=1, fallback=1),
     ),
     "Wanted": (
-        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("地区", minimum=1, maximum=3),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
     ),
     "Special": (
-        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("地区", minimum=1, maximum=2),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
     ),
     "Exchange": (
-        BAAHSlotRule("学院", minimum=1),
+        BAAHSlotRule("学院", minimum=1, maximum=3),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
@@ -281,7 +281,7 @@ BAAH_PLAN_KEY_MIN_LENGTH = 2
 class BAAHPlanKey(BaseModel):
     """BAAH 计划表某一天要打的关卡。
 
-    六个字段各自有三种状态，缺一不可地区分：
+    五类非活动关卡各自有三种状态，缺一不可地区分：
     缺席（字段不在 key 里）＝今天这一类不干预，BAAH 沿用自己配置文件里的关卡与开关；
     空数组＝今天不打这一类；有值（如 ``[3, -1, 1]``）＝今天按这个参数打这一类。
     因此默认值是 ``None`` 而不是某套具体关卡：补成默认值会把「不干预」静默变成
@@ -290,6 +290,7 @@ class BAAHPlanKey(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # 只兼容旧客户端的输入；配置加载和保存时移除，运行期不再从计划表下发活动关卡。
     Event: Optional[list[int]] = Field(
         default=None,
         max_length=3,
@@ -663,6 +664,10 @@ class WSMaaFWProjectUpdateProgressData(BaseModel):
     status: str = Field(..., description="running / success / failed")
     message: str = Field(default="", description="当前阶段的用户可读描述")
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    logLevel: Optional[str] = Field(
+        default=None,
+        description="新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null",
+    )
     percent: Optional[float] = Field(
         default=None,
         description="当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null",
@@ -1515,3 +1520,8 @@ __all__ = [
     "BlueArchiveActivityIn",
     "MSSPlanKey",
 ]
+
+
+PLAN_ROTATE_DAYS_DEFAULT = 7
+PLAN_ROTATE_DAYS_MAX = 31
+BAAH_PLAN_ROTATE_DAYS_DEFAULT = 3

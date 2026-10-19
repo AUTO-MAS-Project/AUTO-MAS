@@ -44,6 +44,8 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
+import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
@@ -67,6 +69,7 @@ import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
 import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
+import type { MaaEndLauncherPathOut } from '../models/MaaEndLauncherPathOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
@@ -267,6 +270,48 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
+        });
+    }
+    /**
+     * 获取游戏已完成活动
+     * @param game
+     * @param server
+     * @returns GameCalendarActivitiesOut Successful Response
+     * @throws ApiError
+     */
+    public static getActivityCompletionsApiInfoActivityCompletionsGet(
+        game: 'endfield' | 'starrail' | 'genshin' | 'zenless' | 'wutheringwaves' | 'nte' | 'reverse1999' | 'bluearchive' | 'arknights' | 'stellasora' | 'infinitynikki',
+        server: 'cn' | 'jp' | 'global' = 'cn',
+    ): CancelablePromise<GameCalendarActivitiesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/activity/completions',
+            query: {
+                'game': game,
+                'server': server,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 设置游戏活动完成状态
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setActivityCompletionApiInfoActivityCompletionsPost(
+        requestBody: GameCalendarActivityCompletionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/activity/completions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -611,6 +656,29 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从终末地客户端路径识别官方启动器路径
+     * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
+     *
+     * 只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
+     * @param scriptId
+     * @returns MaaEndLauncherPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
+        scriptId: string,
+    ): CancelablePromise<MaaEndLauncherPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maaend/launcher-path',
             query: {
                 'scriptId': scriptId,
             },
@@ -1493,7 +1561,7 @@ export class Service {
     }
     /**
      * 获取 BetterGI 自动战斗策略选项
-     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt`` 文件名。
+     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt``、``*.json`` 文件名。
      * @param scriptId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError

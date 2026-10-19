@@ -23,13 +23,10 @@
 """QQ 官方机器人扫码绑定 API。"""
 
 from fastapi import APIRouter, Body
-from pydantic import (
-    BaseModel,
-    Field,
-)
+from pydantic import BaseModel, Field
 
+from app.core.notify_channels import get_channel_sender
 from app.models.schema import OutBase
-from app.services.openclaw_qq import openclaw_qq_manager
 from app.utils import get_logger
 
 
@@ -86,7 +83,7 @@ async def get_status() -> OpenClawQQStatusOut:
     """
 
     try:
-        state = openclaw_qq_manager.status()
+        state = get_channel_sender("openclaw_qq").status()
     except Exception as exc:
         logger.opt(exception=True).warning(
             f"get_status失败: {type(exc).__name__}: {exc}"
@@ -113,7 +110,7 @@ async def start_login() -> OpenClawQQQrStartOut:
     """创建二维码；App ID 和客户端密钥只在后台登录确认后保存。"""
 
     try:
-        result = await openclaw_qq_manager.start_login()
+        result = await get_channel_sender("openclaw_qq").start_login()
     except ValueError as exc:
         return OpenClawQQQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
@@ -148,7 +145,9 @@ async def check_login(
     """
 
     try:
-        result = await openclaw_qq_manager.check_login(session_id=body.sessionId)
+        result = await get_channel_sender("openclaw_qq").check_login(
+            session_id=body.sessionId
+        )
     except Exception as exc:
         logger.opt(exception=True).warning(
             f"check_login失败: {type(exc).__name__}: {exc}"
@@ -177,7 +176,7 @@ async def unbind() -> OutBase:
     """解除绑定并清理本地保存的 QQ 协议状态。"""
 
     try:
-        await openclaw_qq_manager.unbind()
+        await get_channel_sender("openclaw_qq").unbind()
     except Exception as exc:
         logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(

@@ -473,13 +473,17 @@ class TaskInfo(TaskItem):
         except (KeyError, ValueError):
             script_config = None
         if isinstance(script_config, MaaFWConfig):
-            # MaaFW 引擎（含特调）自己拼 history 路径，文件名不带脚本名前缀。
+            # MaaFW 引擎（含特调）自己拼 history 路径，文件名带脚本名前缀。
             from app.task.MaaFW.tools.embedded.history_paths import (
                 maafw_history_log_path,
             )
 
             return [
-                str(maafw_history_log_path(user.name, start).with_suffix(".json"))
+                str(
+                    maafw_history_log_path(user.name, start, script.name).with_suffix(
+                        ".json"
+                    )
+                )
                 for start in user.log_record
             ]
         return [

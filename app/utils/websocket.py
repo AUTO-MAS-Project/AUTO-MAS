@@ -30,16 +30,12 @@
 
 import asyncio
 import json
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
-
-# 远程命令执行器签名: (endpoint, params) -> 归一化结果字典
-CommandExecutor = Callable[[str, Optional[Dict[str, Any]]], Awaitable[Dict[str, Any]]]
-
 
 # ============== WebSocket 客户端实例 ==============
 
@@ -48,7 +44,7 @@ class WebSocketClient:
     """出站 WebSocket 客户端，可创建多个实例连接不同服务端。
 
     心跳由 websockets 库协议层 ping/pong 维护；
-    支持指数退避自动重连与可注入的远程命令执行器。
+    支持指数退避自动重连与消息、连接事件回调。
     """
 
     _instance_counter = 0  # 实例计数器，用于生成唯一标识
@@ -64,8 +60,6 @@ class WebSocketClient:
         on_connect: Optional[Callable[[], Any]] = None,
         on_disconnect: Optional[Callable[[], Any]] = None,
         name: Optional[str] = None,
-        auth_token: Optional[str] = None,
-        command_executor: Optional[CommandExecutor] = None,
     ):
         """
         初始化 WebSocket 客户端
@@ -80,8 +74,6 @@ class WebSocketClient:
             on_connect: 连接成功时的回调函数
             on_disconnect: 断开连接时的回调函数
             name: 客户端名称，用于日志标识，不传则自动生成
-            auth_token: 认证令牌，设置后连接成功时会自动发送认证消息
-            command_executor: 远程命令执行器，处理 type=="command" 的入站消息
         """
         WebSocketClient._instance_counter += 1
         self.name = name or f"WSClient-{WebSocketClient._instance_counter}"
@@ -101,8 +93,6 @@ class WebSocketClient:
         self._running = False
         self._reconnect_count = 0
         self._receive_task: Optional[asyncio.Task] = None
-        self._auth_token: Optional[str] = auth_token
-        self._command_executor = command_executor
 
     @property
     def is_connected(self) -> bool:
@@ -125,10 +115,6 @@ class WebSocketClient:
             self._reconnect_count = 0
 
             self.logger.info(f"WebSocket 连接成功: {self.url}")
-
-            # 自动进行认证（如果设置了 token）
-            if self._auth_token:
-                await self._authenticate(self._auth_token)
 
             if self.on_connect:
                 result = self.on_connect()
@@ -189,103 +175,18 @@ class WebSocketClient:
             self.logger.error(f"发送消息失败: {type(e).__name__}: {e}")
             return False
 
-    async def send_auth(
-        self,
-        token: str,
-        auth_type: str = "auth",
-        extra_data: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        """发送认证消息。"""
-        self._auth_token = token
-        auth_message = {
-            "id": "Client",
-            "type": auth_type,
-            "data": {"token": token, **(extra_data or {})},
-        }
-        success = await self.send(auth_message)
-        if success:
-            self.logger.info("已发送认证消息")
-        return success
-
     async def _handle_message(self, raw_message: str):
-        """
-        处理接收到的消息
-
-        Args:
-            raw_message: 原始消息字符串
-        """
+        """解析 JSON 后交给消息所有者，不识别业务消息类型。"""
         try:
             data = json.loads(raw_message)
-
-            # 处理 command 类型消息（外部进程远程调用后端命令）
-            if data.get("type") == "command":
-                await self._handle_command(data)
-                # 同时也调用消息回调（如果有）
-                if self.on_message:
-                    result = self.on_message(data)
-                    if asyncio.iscoroutine(result):
-                        await result
-                return
-
-            # 调用消息回调
             if self.on_message:
                 result = self.on_message(data)
                 if asyncio.iscoroutine(result):
                     await result
-
         except json.JSONDecodeError as e:
             self.logger.warning(f"消息解析失败: {e}")
         except Exception as e:
             self.logger.error(f"处理消息时发生异常: {type(e).__name__}: {e}")
-
-    async def _handle_command(self, data: Dict[str, Any]):
-        """
-        处理 command 类型消息
-
-        Args:
-            data: 消息数据，格式为:
-                {
-                    "id": "Koishi",
-                    "type": "command",
-                    "data": {
-                        "endpoint": "queue.info",
-                        "params": {...}  # 可选
-                    }
-                }
-        """
-        if self._command_executor is None:
-            self.logger.warning("未配置命令执行器，忽略 command 消息")
-            return
-
-        try:
-            msg_id = data.get("id", "Unknown")
-            msg_data = data.get("data", {})
-            endpoint = msg_data.get("endpoint")
-            params = msg_data.get("params")
-
-            if not endpoint:
-                self.logger.warning(
-                    f"收到来自 [{msg_id}] 的 command 消息，但缺少 endpoint"
-                )
-                return
-
-            self.logger.info(f"收到来自 [{msg_id}] 的命令: {endpoint}")
-
-            result = await self._command_executor(endpoint, params)
-
-            # 发送响应
-            response = {
-                "id": "Client",
-                "type": "response",
-                "data": {"endpoint": endpoint, "request_id": msg_id, **result},
-            }
-            await self.send(response)
-            self.logger.debug(
-                f"已响应命令 [{endpoint}]: success={result.get('success')}"
-            )
-
-        except Exception as e:
-            self.logger.error(f"处理命令时发生异常: {type(e).__name__}: {e}")
 
     async def _receive_loop(self):
         """消息接收循环"""
@@ -392,24 +293,6 @@ class WebSocketClient:
 
         self.logger.info("WebSocket 客户端已停止")
 
-    async def _authenticate(self, token: str) -> bool:
-        """
-        发送认证消息
-
-        Args:
-            token: 认证令牌
-
-        Returns:
-            bool: 发送是否成功
-        """
-        # 保存 token 以便重连时使用
-        self._auth_token = token
-        auth_message = {"id": "Client", "type": "auth", "data": {"token": token}}
-        success = await self.send(auth_message)
-        if success:
-            self.logger.info("已发送认证消息")
-        return success
-
 
 # ============== WebSocket 客户端管理器 ==============
 
@@ -417,24 +300,10 @@ class WebSocketClient:
 class WSClientManager:
     """出站 WebSocket 客户端管理器，用于管理多个客户端实例"""
 
-    # 系统客户端名称常量
-    KOISHI_CLIENT_NAME = "Koishi"
-
     def __init__(self):
         self._clients: Dict[str, WebSocketClient] = {}
-        self._system_clients: set[str] = {self.KOISHI_CLIENT_NAME}
         self._tasks: Dict[str, asyncio.Task] = {}
-        self._command_executor: Optional[CommandExecutor] = None
         self._logger = get_logger("WS管理器")
-
-    def set_command_executor(self, executor: CommandExecutor) -> None:
-        """
-        注入远程命令执行器（应用启动时调用一次）。
-
-        Args:
-            executor: 命令执行器，签名为 (endpoint, params) -> 结果字典。
-        """
-        self._command_executor = executor
 
     def get_client(self, name: str) -> Optional[WebSocketClient]:
         """获取客户端实例"""
@@ -448,6 +317,9 @@ class WSClientManager:
         ping_timeout: float = 30.0,
         reconnect_interval: float = 5.0,
         max_reconnect_attempts: int = -1,
+        *,
+        on_connect: Optional[Callable[[], Any]] = None,
+        on_message: Optional[Callable[[Dict[str, Any]], Any]] = None,
     ) -> WebSocketClient:
         """创建新的 WebSocket 客户端"""
 
@@ -455,12 +327,12 @@ class WSClientManager:
         if name in self._clients:
             await self.remove_client(name)
 
-        async def on_connect():
+        async def connected():
             self._logger.info(f"客户端 [{name}] 已连接到 {url}")
-
-            # 如果是 Koishi 系统客户端，自动发送认证
-            if name == self.KOISHI_CLIENT_NAME and name in self._system_clients:
-                await self._auto_auth_koishi()
+            if on_connect:
+                result = on_connect()
+                if asyncio.iscoroutine(result):
+                    await result
 
         async def on_disconnect():
             self._logger.info(f"客户端 [{name}] 已断开连接")
@@ -472,10 +344,10 @@ class WSClientManager:
             ping_timeout=ping_timeout,
             reconnect_interval=reconnect_interval,
             max_reconnect_attempts=max_reconnect_attempts,
-            on_connect=on_connect,
+            on_connect=connected,
+            on_message=on_message,
             on_disconnect=on_disconnect,
             name=name,
-            command_executor=self._command_executor,
         )
 
         self._clients[name] = client
@@ -545,13 +417,8 @@ class WSClientManager:
         return True
 
     async def remove_client(self, name: str) -> bool:
-        """删除客户端（系统客户端不可删除）"""
+        """断开并删除客户端。"""
         if name not in self._clients:
-            return False
-
-        # 系统客户端不可删除
-        if name in self._system_clients:
-            self._logger.warning(f"尝试删除系统客户端 [{name}]，已拒绝")
             return False
 
         # 先断开连接
@@ -563,109 +430,3 @@ class WSClientManager:
 
         self._logger.info(f"已删除 WebSocket 客户端: {name}")
         return True
-
-    async def send_auth(
-        self,
-        name: str,
-        token: str,
-        auth_type: str = "auth",
-        extra_data: Optional[Dict[str, Any]] = None,
-    ) -> bool:
-        """发送认证消息"""
-        client = self._clients.get(name)
-        if not client or not client.is_connected:
-            return False
-
-        return await client.send_auth(
-            token=token, auth_type=auth_type, extra_data=extra_data
-        )
-
-    async def _auto_auth_koishi(self):
-        """Koishi 系统客户端自动认证（连接/重连时调用）"""
-        from app.core import Config
-
-        token = Config.setting.Notify.KoishiToken
-        if token:
-            # 稍微延迟以确保连接稳定
-            await asyncio.sleep(0.1)
-            auth_success = await self.send_auth(
-                name=self.KOISHI_CLIENT_NAME, token=token, auth_type="auth"
-            )
-            if auth_success:
-                self._logger.success("Koishi 系统客户端认证消息已发送")
-            else:
-                self._logger.warning("Koishi 系统客户端认证消息发送失败")
-        else:
-            self._logger.warning("Koishi Token 为空，跳过认证")
-
-    @staticmethod
-    def http_to_ws_url(http_url: str) -> str:
-        """将 HTTP URL 转换为 WebSocket URL"""
-        if http_url.startswith("https://"):
-            return "wss://" + http_url[8:]
-        elif http_url.startswith("http://"):
-            return "ws://" + http_url[7:]
-        elif http_url.startswith("wss://") or http_url.startswith("ws://"):
-            return http_url
-        else:
-            # 默认添加 ws://
-            return "ws://" + http_url
-
-    async def init_system_client_koishi(self) -> bool:
-        """
-        初始化 Koishi 系统客户端
-
-        根据配置自动创建并连接 Koishi WebSocket 客户端
-
-        Returns:
-            bool: 是否成功初始化并连接
-        """
-        from app.core import Config
-
-        # 检查是否启用 Koishi 通知
-        if not Config.setting.Notify.IfKoishiSupport:
-            self._logger.info("Koishi 通知未启用，跳过系统客户端初始化")
-            return False
-
-        # 获取服务器地址并转换为 WebSocket URL
-        http_url = Config.setting.Notify.KoishiServerAddress
-        if not http_url:
-            self._logger.warning("Koishi 服务器地址为空，跳过系统客户端初始化")
-            return False
-
-        ws_url = self.http_to_ws_url(http_url)
-
-        self._logger.info(f"正在初始化 Koishi 系统客户端: {ws_url}")
-
-        try:
-            # 创建客户端
-            await self.create_client(
-                name=self.KOISHI_CLIENT_NAME,
-                url=ws_url,
-                ping_interval=15.0,
-                ping_timeout=30.0,
-                reconnect_interval=5.0,
-                max_reconnect_attempts=-1,  # 无限重连
-            )
-
-            # 标记为系统客户端
-            self._system_clients.add(self.KOISHI_CLIENT_NAME)
-
-            # 连接客户端
-            success = await self.connect_client(self.KOISHI_CLIENT_NAME)
-
-            if success:
-                self._logger.success(f"Koishi 系统客户端连接成功: {ws_url}")
-                # 认证已在 on_connect 回调中自动处理
-                return True
-            else:
-                self._logger.warning("Koishi 系统客户端连接失败，将在后台持续重连")
-                return False
-
-        except Exception as e:
-            self._logger.error(f"初始化 Koishi 系统客户端失败: {type(e).__name__}: {e}")
-            return False
-
-
-# 全局管理器实例
-ws_client_manager = WSClientManager()

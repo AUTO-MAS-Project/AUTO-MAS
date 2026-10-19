@@ -10,7 +10,7 @@ export type OkNteUserConfig_Data = {
     /**
      * 上次代理状态（未知/成功/失败）
      */
-    LastProxyStatus?: ('未知' | '成功' | '失败' | null);
+    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | null);
     /**
      * 上次运行的 ok-nte 任务序号（-t N）
      */

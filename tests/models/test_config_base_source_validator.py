@@ -5,8 +5,13 @@ import unittest
 from pydantic import TypeAdapter, ValidationError
 from app.models.config import MaaUserConfig
 
+
 def base_adapter():
-    return TypeAdapter(MaaUserConfig.InfoFields.model_fields["Base"].rebuild_annotation())
+    return TypeAdapter(
+        MaaUserConfig.InfoFields.model_fields["Base"].rebuild_annotation()
+    )
+
+
 from app.utils.constants import normalize_base_source
 
 

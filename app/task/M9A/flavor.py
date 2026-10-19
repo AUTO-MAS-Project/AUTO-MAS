@@ -28,8 +28,8 @@ input 选项；关闭放队尾。用户排的顺序不影响这三项。队列�
 另实现了引擎的三个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）、
 ``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
 下载安装，``game_update.py``）与 ``retype_notice_lines``（按项目换成 / 换出 M9A 时通知里说明
-启停与切号）；并给了引擎的六项可选声明：``supports_mod_avd``（魔改 AVD）、
-``abort_round_entries``（切号失败结束本轮）、``nonfatal_entries``（关闭游戏失败不算失败）、
+启停与切号）；并给了引擎的五项可选声明：``abort_round_entries``（切号失败结束本轮）、
+``nonfatal_entries``（关闭游戏失败不算失败）、
 ``skip_on_retry_entries``（完成过的重试不补跑）、``unselectable_entries``（五个小游戏不可选、
 运行时跳过）、``no_default_fallback_inputs``（自定义兑换码没填不回落「占位」），契约都在 MaaFW ``tools/embedded/flavor.py`` 的模块说明里。除这些之外 M9A 与
 通用 MaaFW 没有运行期差别。
@@ -120,8 +120,6 @@ class M9AFlavor:
     """满足 ``MaaFWFlavor`` 协议的 M9A 特调对象。"""
 
     type_key = TYPE_KEY
-    #: 魔改 AVD 目前只对 M9A 放行（引擎的可选声明，契约见 MaaFW ``flavor.py`` 的模块说明）
-    supports_mod_avd = True
     # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上
     abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
     # 关闭游戏失败、超时只记一行，不算本轮失败：收尾时 MAS 会关闭模拟器，重跑一整轮没有意义

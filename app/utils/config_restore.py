@@ -23,8 +23,8 @@
 本层在其之上补齐「目标池」抽象：
 
 - 专项在 ``tools/restore_service.py`` 声明 :class:`ConfigRestorePool` 池表
-  （普通函数，显式收 :class:`RestoreContext`，可直接单测），核心门面按脚本
-  类型分发并用 :func:`build_restore_service` 一次性绑定上下文；
+  （普通函数，显式收 :class:`RestoreContext`，可直接单测），宿主按脚本类型
+  解析池表，核心门面用 :func:`build_restore_service` 一次性绑定上下文；
 - HTTP 层只有一组通用端点（``/backup/list|ensure|restore|preview|file``），
   target 取值由专项池定义，校验失败统一 400；
 - 服务层不感知任何脚本结构，也不做文件读写之外的业务（守卫/信息字段回填等

@@ -27,6 +27,8 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
+import httpx
+
 from app.utils import LazyProxy, get_logger
 
 logger = get_logger("信息上报")
@@ -43,23 +45,19 @@ class _MatomoHandler:
 
     def __init__(self):
 
-        self.session = None
+        self.session: httpx.AsyncClient | None = None
 
-    async def _get_session(self):
+    async def _get_session(self) -> httpx.AsyncClient:
         """获取HTTP会话"""
 
-        if self.session is None or self.session.closed:
-            # aiohttp 导入约 105ms，延迟到首次上报时
-            import aiohttp
-
-            timeout = aiohttp.ClientTimeout(total=10)
-            self.session = aiohttp.ClientSession(timeout=timeout)
+        if self.session is None or self.session.is_closed:
+            self.session = httpx.AsyncClient(timeout=10)
         return self.session
 
     async def close(self):
         """关闭HTTP会话"""
-        if self.session and not self.session.closed:
-            await self.session.close()
+        if self.session is not None and not self.session.is_closed:
+            await self.session.aclose()
 
     def _build_base_params(
         self, custom_vars: Optional[Dict[str, Any]] = None
@@ -116,13 +114,14 @@ class _MatomoHandler:
             params.update({"e_c": category, "e_a": action, "e_n": name, "e_v": value})
             params = {k: v for k, v in params.items() if v is not None}
 
-            async with session.get(self.base_url, params=params) as response:
-                if response.status == 200:
-                    logger.debug(f"Matomo事件上报成功: {category}/{action}")
-                else:
-                    logger.warning(f"Matomo事件上报失败: {response.status}")
+            async with asyncio.timeout(10):
+                response = await session.get(self.base_url, params=params)
+            if response.status_code == 200:
+                logger.debug(f"Matomo事件上报成功: {category}/{action}")
+            else:
+                logger.warning(f"Matomo事件上报失败: {response.status_code}")
 
-        except asyncio.TimeoutError:
+        except (asyncio.TimeoutError, httpx.TimeoutException):
             logger.warning("Matomo事件上报超时")
         except Exception as e:
             logger.error(f"Matomo事件上报错误: {e}")

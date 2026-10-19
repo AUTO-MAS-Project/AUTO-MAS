@@ -1,4 +1,3 @@
-
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
@@ -19,6 +18,7 @@ import json
 import shutil
 import uuid
 from copy import deepcopy
+from pathlib import Path
 from typing import Literal
 
 from app.config import ConfigCollection
@@ -35,7 +35,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -44,7 +44,6 @@ from .AutoProxy import (
 )
 from .base_preset import (
     MAA_STAMINA_LEGACY_FILENAME,
-    capture_maa_legacy_activity_sources,
     ensure_maa_default_configuration,
     get_maa_base_preset,
     is_valid_maa_task_queues,
@@ -310,13 +309,6 @@ class ScriptConfigTask(TaskExecuteBase):
         base_configurations = base_gui_new_set.get("Configurations")
         repaired_queues = 0
         managed_queue = self._uses_managed_queue() and not self.view_only
-        if managed_queue:
-            base_gui_set = read_maa_config_with_fallback(mas_dir, "gui.json")
-            capture_maa_legacy_activity_sources(
-                mas_dir,
-                base_gui_new_set,
-                current_configuration=base_gui_set.get("Current", "Default"),
-            )
         if managed_queue and isinstance(base_configurations, dict):
             for configuration in base_configurations.values():
                 if not isinstance(configuration, dict):
@@ -398,6 +390,11 @@ class ScriptConfigTask(TaskExecuteBase):
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
         # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
         # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
         self._maa_config_baseline = {

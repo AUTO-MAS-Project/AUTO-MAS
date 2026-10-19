@@ -177,6 +177,7 @@ export interface MaaEndScriptConfig {
   }
   Game: {
     ControllerType: string | null
+    LaunchMode: 'Client' | 'Launcher' | 'MAS' | 'MaaEnd'
     Path: string | null
     LauncherPath: string | null
     Arguments: string
@@ -733,6 +734,7 @@ export interface ScriptIndexItem {
 export interface ScriptDetail {
   uid: string
   type: ScriptType
+  activityGame?: string | null
   name: string
   config:
     | MaaConfig

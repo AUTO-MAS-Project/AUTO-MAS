@@ -86,6 +86,11 @@ HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 GITHUB_VERSION_CHECK_TIMEOUT = 10.0
 GITHUB_VERSION_CHECK_PAGE_SIZE = 20
 
+# 带这个前缀的更新日志行要用户留意：手动更新的「更新过程」面板去掉前缀、整行标红
+# （``api_service/update.py``）。只在手动更新（``allow_misnumbered_rollback``）时发，
+# 运行前 / 运行后自动更新的任务日志收不到它。
+ALERT_LOG_PREFIX = "[MaaFW 提醒] "
+
 ProgressCallback = Callable[[dict[str, Any]], None]
 
 logger = logging.getLogger("automas.maafw.project_update.updater")
@@ -128,6 +133,9 @@ class MaaFWProjectUpdateCandidate:
     project_fingerprint: str | None = None
     # 只查版本时为真：有新版本且来源可用，但尚未去换下载地址。
     url_deferred: bool = False
+    # 当前版本是项目发错的高主版本号，这次按权威源回到更低的版本（见
+    # :func:`_is_misnumbered_current`）：登记时顶替组里那个发错的 latest。
+    misnumbered_rollback: bool = False
 
     @property
     def installable(self) -> bool:
@@ -485,6 +493,7 @@ async def update_maafw_project_if_needed(
     github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     payload: PayloadTarget | None = None,
     after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
+    allow_misnumbered_rollback: bool = False,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需更新项目：发现 → 下载一次 → 在 staging 里从当前载荷 + 包建新载荷 →
     预检 → 并入共用库 → 登记。项目视图在这里一个字节都不动。
@@ -507,6 +516,8 @@ async def update_maafw_project_if_needed(
     源生效。镜像清单与开关都在宿主侧（``tools/embedded/update_mirrors.py``），
     核心包只管按顺序试。``projection`` / ``project_lock_*`` 只为签名兼容留着：
     新载荷恒按投影白名单落地，互斥由宿主的谱系锁负责。
+    ``allow_misnumbered_rollback``：当前版本是项目发错的高主版本号时按权威源回到更低的
+    版本（见 :func:`_is_misnumbered_current`）。只给手动更新传；自动更新不回退，只记一行。
     """
 
     send_update_log = send_log or (lambda _: None)
@@ -576,11 +587,13 @@ async def update_maafw_project_if_needed(
         damaged = False
         stale_projection = False
         native_residue = False
+        base_missing = ""
         if payload is not None:
             try:
                 base_manifest = payload.manifest()
-            except PayloadError:
+            except PayloadError as exc:
                 base_manifest = {}
+                base_missing = str(exc)
             source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
             # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
@@ -631,7 +644,13 @@ async def update_maafw_project_if_needed(
                     send_update_log(
                         "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
                     )
-        if prefer_full and not damaged and not stale_projection and not native_residue:
+        if (
+            prefer_full
+            and not damaged
+            and not stale_projection
+            and not native_residue
+            and not base_missing
+        ):
             send_update_log("当前版本是本地导入的，改为请求全量包")
         force_full = force_full_package()
         if force_full:
@@ -639,6 +658,15 @@ async def update_maafw_project_if_needed(
             send_update_log(
                 f"已设环境变量 {FORCE_FULL_PACKAGE_ENV}=1：一律请求全量包、不按区间差量"
             )
+        gate = precheck_gate
+        if base_missing:
+            # 新载荷要以当前载荷为基准建，它的清单不在本机就一定建不成（以前要等下载、
+            # 解压完才在 build_from_package 里失败，每次运行都白下一遍）。与上次预检失败的
+            # 备忘同一处拦：有新版本时按「有更新但不可安装」返回，不换下载地址、不下载。
+            missing_reason = f"{base_missing}，无法以它为基准构建新版本"
+
+            async def gate(_version: str) -> str:
+                return missing_reason
 
         (
             discovery,
@@ -651,8 +679,9 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
-            precheck_gate=precheck_gate,
+            precheck_gate=gate,
             cancel_event=cancel_event,
+            allow_misnumbered_rollback=allow_misnumbered_rollback,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -683,6 +712,12 @@ async def update_maafw_project_if_needed(
     if discovery is None:
         if version_check is not None:
             message = f"MaaFW 项目已是最新版本: {current_version}"
+            if skipped_reason and _is_misnumbered_current(
+                version_check.superseded_by or version_check.version_name,
+                current_version,
+            ):
+                # 发错的高主版本号，自动更新不回退：结论行说清要手动更新。
+                message = skipped_reason
             status = "no_update"
         else:
             message = skipped_reason or "MaaFW 项目未配置可用更新源，跳过更新"
@@ -878,6 +913,7 @@ async def discover_maafw_project_update(
     prefer_full_package: bool = False,
     version_only: bool = False,
     on_skipped: Callable[[str], None] | None = None,
+    allow_misnumbered_rollback: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Discover a newer project version and pick where to download it from.
 
@@ -909,6 +945,8 @@ async def discover_maafw_project_update(
     ``on_skipped``：返回 ``None`` 而且是**没查成**（不是已是最新）时收到原因——
     只看 GitHub 时 GitHub 连不上、仓库里没有可用的 Release 之类。不给它，调用方
     只能把 ``None`` 一律当「已是最新」。
+
+    ``allow_misnumbered_rollback`` 同 :func:`update_maafw_project_if_needed`。
     """
 
     (
@@ -923,6 +961,7 @@ async def discover_maafw_project_update(
         send_log=send_log,
         prefer_full_package=prefer_full_package,
         version_only=version_only,
+        allow_misnumbered_rollback=allow_misnumbered_rollback,
     )
     if discovery is None and version_check is None and on_skipped is not None:
         on_skipped(skipped_reason or "更新检查已跳过")
@@ -958,6 +997,7 @@ async def _discover_project_update_detailed(
     version_only: bool = False,
     precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
     cancel_event: threading.Event | None = None,
+    allow_misnumbered_rollback: bool = False,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
     MaaFWMirrorChyanVersionCheck | None,
@@ -984,6 +1024,11 @@ async def _discover_project_update_detailed(
     :class:`MaaFWProjectUpdateError`、不再发请求——尤其不去带 CDK 换下载地址（那一下
     会扣 Mirror 酱当日额度）。运行前更新过了宽限期还停在检查阶段时，宿主置位令牌就能
     让这一段完全不联网。
+
+    ``allow_misnumbered_rollback``：当前版本是项目发错的高主版本号（见
+    :func:`_is_misnumbered_current`）时按权威源的版本返回更新，候选包标
+    ``misnumbered_rollback``、日志带 :data:`ALERT_LOG_PREFIX`。不传（自动更新）时
+    不回退：记一行说明，返回 ``None``，原因是「自动更新不回退」那句结论。
     """
 
     def stop_if_cancelled() -> None:
@@ -1121,9 +1166,25 @@ async def _discover_project_update_detailed(
             version_label = "GitHub"
             version_check.superseded_by = github_latest
 
+    misnumbered = False
     if not _is_remote_newer(latest, current):
         reason = f"已是最新版本: {current or latest}"
-        return None, version_check, reason
+        if not _is_misnumbered_current(latest, current):
+            return None, version_check, reason
+        found = f"当前 {current} 主版本号高于 {version_label} 最新 {latest}"
+        if not allow_misnumbered_rollback:
+            send_update_log(f"{found}，可能是项目发错了版本号")
+            # 调用方拿它当结论行，别再说成「已是最新」。
+            return (
+                None,
+                version_check,
+                f"自动更新不回退发错的版本号，可在脚本编辑页点「更新」回到 {latest}",
+            )
+        misnumbered = True
+        send_update_log(
+            f"{ALERT_LOG_PREFIX}{found}，按项目发错版本号处理，"
+            + (f"点「更新」会回到 {latest}" if version_only else f"更新到 {latest}")
+        )
 
     def unavailable(reason: str):
         send_update_log(reason)
@@ -1165,6 +1226,7 @@ async def _discover_project_update_detailed(
                     version=latest,
                     to_version=latest,
                     url_deferred=True,
+                    misnumbered_rollback=misnumbered,
                 ),
             )
             return (
@@ -1176,6 +1238,11 @@ async def _discover_project_update_detailed(
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         prefer_full = prefer_full_package
+        if misnumbered and not prefer_full:
+            # 回退只这一次，按全量包整版重建：不带发错的那个 current_version 去问，
+            # 不让 Mirror 酱从它往回算差量包。
+            prefer_full = True
+            send_update_log("按项目发错版本号回退，改为请求全量包")
         # 用户已经停了就别去换地址：那一下会扣今日下载额度，换来的地址也用不上。
         stop_if_cancelled()
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
@@ -1196,6 +1263,8 @@ async def _discover_project_update_detailed(
                 "更新源选的是 Mirror 酱，请检查 CDK 或改用 GitHub 源"
             )
         discovery = _discovery_from_mirror_check(authorized)
+        if discovery.candidate is not None:
+            discovery.candidate.misnumbered_rollback = misnumbered
         send_update_log(f"install package source: MirrorChyan; version={latest}")
         return (
             _attach_version_check(discovery, authorized, current),
@@ -1218,6 +1287,7 @@ async def _discover_project_update_detailed(
             source_config=config,
             proxy=proxy,
             target_version=latest,
+            misnumbered_rollback=misnumbered,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
@@ -1236,6 +1306,7 @@ async def _discover_project_update_detailed(
         # spells the matching tag with a conventional leading ``v``.
         github_discovery.candidate.version = latest
         github_discovery.candidate.to_version = latest
+        github_discovery.candidate.misnumbered_rollback = misnumbered
         send_update_log(f"install package source: GitHub Release; version={latest}")
 
     discovery = MaaFWProjectUpdateDiscovery(
@@ -1588,9 +1659,11 @@ async def apply_maafw_project_update(
         built, actual_version = await asyncio.to_thread(build)
         # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
         # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
+        # 删不掉（杀软正在扫刚解压的 DLL，WinError 32）不算更新失败：新载荷已在 staging 里
+        # 建好，解压目录只是临时目录，下面 finally 再删一次，还在就留给启动期清理。
         timer.start("清理解压目录")
-        await asyncio.to_thread(
-            remove_tree, range_dir if range_entries is not None else extract_dir
+        await _remove_tree_in_thread(
+            range_dir if range_entries is not None else extract_dir
         )
         timer.finish()
         if is_cancelled():
@@ -1672,6 +1745,9 @@ async def apply_maafw_project_update(
                 # 发现阶段已按 _is_remote_newer 确认目标比组版本新：沿用同一口径前进，
                 # 否则非 PEP 440 版本号的更新登记了却推不动 latest、每次运行重来一遍。
                 version_checked=True,
+                # 发错版本号的回退目标比组版本旧，按版本比永远推不动 latest；只顶替发错的
+                # 那个高主版本号，下载期间别人登记的同主版本新版本不会被它盖掉。
+                misnumbered_rollback=candidate.misnumbered_rollback,
             )
         )
     except PayloadCancelled as exc:
@@ -2205,11 +2281,15 @@ async def _check_github_release_update(
     proxy: httpx.Proxy | None,
     target_version: str = "",
     timeout: float = 30.0,
+    misnumbered_rollback: bool = False,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Fetch the exact version picked by the version check from GitHub Releases.
 
     ``timeout`` is per request; the projection heal check passes a shorter one
     because it runs synchronously before a task starts.
+
+    ``misnumbered_rollback``：版本检查已判定当前版本是发错的高主版本号、目标比它旧，
+    不再要求目标比当前版本新。
 
     The repository is always ``interface.github``, the tag is always the
     version check's target (``target_version``: the MirrorChyan
@@ -2280,7 +2360,9 @@ async def _check_github_release_update(
                 f"github={latest_version}, target={target_version}"
             ),
         )
-    if not _is_remote_newer(latest_version, current_version):
+    if not misnumbered_rollback and not _is_remote_newer(
+        latest_version, current_version
+    ):
         return None
     if target_version and data.get("draft") is True:
         return _build_update_discovery(
@@ -2738,6 +2820,25 @@ def _is_remote_newer(remote_version: str, current_version: str) -> bool:
         )
     except version.InvalidVersion:
         return remote != current
+
+
+def _is_misnumbered_current(remote_version: str, current_version: str) -> bool:
+    """当前版本是不是项目发错的高主版本号：权威源的最新版本主版本号比它小。
+
+    ``remote_version`` 只能是权威源给的版本（Mirror 酱的最新版本，或只看 GitHub 时
+    :func:`_query_github_release_target` 挑的那个）。2026-10-14 MAA_bbb 把本该是
+    v1.13.7 的版本发成了 v3.13.7（没标预发布），之后回到 v1.13.10 → v1.13.13，Mirror 酱对
+    ``current_version=v3.13.7`` 也回 v1.13.13；按版本号比，装上 v3.13.7 的永远是「已是最新」。
+
+    两边都要解析得出版本号。同一主版本内远端更旧（Mirror 酱滞后）不算；当前是预发布也不算——
+    beta 渠道已进新主版本、stable 还没跟上时切回 stable，等 stable 追上即可，不往回拉。
+    """
+
+    remote = _parse_release_version(remote_version)
+    current = _parse_release_version(current_version)
+    if remote is None or current is None or current.is_prerelease:
+        return False
+    return remote.major < current.major
 
 
 def _normalize_version(raw_version: str) -> str:

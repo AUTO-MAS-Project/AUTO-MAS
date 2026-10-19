@@ -22,7 +22,6 @@
 from __future__ import annotations
 
 import calendar
-from copy import deepcopy
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -43,19 +42,43 @@ from .shared import (
 )
 
 
-class WeeklyKeyPlan(DomainEntry):
+class PlanDaysConfig(DomainEntry):
+    """计划槽位以星期和 DayN 配置分组保存，按当前模式选择生效槽位。"""
+
+    @staticmethod
+    def day_group_of(day: str) -> str | None:
+        if day in calendar.day_name:
+            return day
+        if day.isdigit() and 1 <= int(day) <= schema_model.PLAN_ROTATE_DAYS_MAX:
+            return f"Day{int(day)}"
+        return None
+
+    def rotate_days(self) -> int:
+        return getattr(self, "Info").RotateDays
+
+    def rotate_group(self, now: datetime) -> str:
+        return f"Day{now.date().toordinal() % self.rotate_days() + 1}"
+
+    def current_group(self, now: datetime) -> str:
+        mode = getattr(self, "Info").Mode
+        if mode == "ALL":
+            return "ALL"
+        if mode == "Weekly":
+            return now.strftime("%A")
+        if mode == "Rotate":
+            return self.rotate_group(now)
+        raise ValueError("非法的计划表模式")
+
+
+class WeeklyKeyPlan(PlanDaysConfig):
     def get_current_key(self):
-        group = (
-            "ALL"
-            if getattr(self, "Info").Mode == "ALL"
-            else datetime.now(tz=UTC4).strftime("%A")
-        )
-        return getattr(self, group).Key.model_dump(exclude_none=True)
+        key = getattr(self, self.current_group(datetime.now(tz=UTC4))).Key
+        return key.model_dump(exclude_none=True, exclude={"Event"})
 
 
-class MaaPlanConfig(DomainEntry):
+class MaaPlanConfig(PlanDaysConfig):
     def get_current_info(self, name: str, server: str | None = None):
-        group = "ALL" if self.Info.Mode == "ALL" else game_now(server).strftime("%A")
+        group = self.current_group(game_now(server))
         return getattr(getattr(self, group), name)
 
     "MAA计划表配置"
@@ -98,8 +121,43 @@ class MaaPlanConfig(DomainEntry):
 
     Friday: FridayFields = Field(default_factory=FridayFields)
 
+    Day1: ALLFields = Field(default_factory=ALLFields)
+    Day2: ALLFields = Field(default_factory=ALLFields)
+    Day3: ALLFields = Field(default_factory=ALLFields)
+    Day4: ALLFields = Field(default_factory=ALLFields)
+    Day5: ALLFields = Field(default_factory=ALLFields)
+    Day6: ALLFields = Field(default_factory=ALLFields)
+    Day7: ALLFields = Field(default_factory=ALLFields)
+    Day8: ALLFields = Field(default_factory=ALLFields)
+    Day9: ALLFields = Field(default_factory=ALLFields)
+    Day10: ALLFields = Field(default_factory=ALLFields)
+    Day11: ALLFields = Field(default_factory=ALLFields)
+    Day12: ALLFields = Field(default_factory=ALLFields)
+    Day13: ALLFields = Field(default_factory=ALLFields)
+    Day14: ALLFields = Field(default_factory=ALLFields)
+    Day15: ALLFields = Field(default_factory=ALLFields)
+    Day16: ALLFields = Field(default_factory=ALLFields)
+    Day17: ALLFields = Field(default_factory=ALLFields)
+    Day18: ALLFields = Field(default_factory=ALLFields)
+    Day19: ALLFields = Field(default_factory=ALLFields)
+    Day20: ALLFields = Field(default_factory=ALLFields)
+    Day21: ALLFields = Field(default_factory=ALLFields)
+    Day22: ALLFields = Field(default_factory=ALLFields)
+    Day23: ALLFields = Field(default_factory=ALLFields)
+    Day24: ALLFields = Field(default_factory=ALLFields)
+    Day25: ALLFields = Field(default_factory=ALLFields)
+    Day26: ALLFields = Field(default_factory=ALLFields)
+    Day27: ALLFields = Field(default_factory=ALLFields)
+    Day28: ALLFields = Field(default_factory=ALLFields)
+    Day29: ALLFields = Field(default_factory=ALLFields)
+    Day30: ALLFields = Field(default_factory=ALLFields)
+    Day31: ALLFields = Field(default_factory=ALLFields)
+
     class InfoFields(ConfigGroup):
-        Mode: Literal["ALL", "Weekly"] = Field(
+        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
+            default=7, description="多天轮换天数"
+        )
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
             default_factory=lambda: "ALL", description="计划表模式"
         )
 
@@ -243,8 +301,43 @@ class MaaEndPlanConfig(WeeklyKeyPlan):
 
     Friday: FridayFields = Field(default_factory=FridayFields)
 
+    Day1: ALLFields = Field(default_factory=ALLFields)
+    Day2: ALLFields = Field(default_factory=ALLFields)
+    Day3: ALLFields = Field(default_factory=ALLFields)
+    Day4: ALLFields = Field(default_factory=ALLFields)
+    Day5: ALLFields = Field(default_factory=ALLFields)
+    Day6: ALLFields = Field(default_factory=ALLFields)
+    Day7: ALLFields = Field(default_factory=ALLFields)
+    Day8: ALLFields = Field(default_factory=ALLFields)
+    Day9: ALLFields = Field(default_factory=ALLFields)
+    Day10: ALLFields = Field(default_factory=ALLFields)
+    Day11: ALLFields = Field(default_factory=ALLFields)
+    Day12: ALLFields = Field(default_factory=ALLFields)
+    Day13: ALLFields = Field(default_factory=ALLFields)
+    Day14: ALLFields = Field(default_factory=ALLFields)
+    Day15: ALLFields = Field(default_factory=ALLFields)
+    Day16: ALLFields = Field(default_factory=ALLFields)
+    Day17: ALLFields = Field(default_factory=ALLFields)
+    Day18: ALLFields = Field(default_factory=ALLFields)
+    Day19: ALLFields = Field(default_factory=ALLFields)
+    Day20: ALLFields = Field(default_factory=ALLFields)
+    Day21: ALLFields = Field(default_factory=ALLFields)
+    Day22: ALLFields = Field(default_factory=ALLFields)
+    Day23: ALLFields = Field(default_factory=ALLFields)
+    Day24: ALLFields = Field(default_factory=ALLFields)
+    Day25: ALLFields = Field(default_factory=ALLFields)
+    Day26: ALLFields = Field(default_factory=ALLFields)
+    Day27: ALLFields = Field(default_factory=ALLFields)
+    Day28: ALLFields = Field(default_factory=ALLFields)
+    Day29: ALLFields = Field(default_factory=ALLFields)
+    Day30: ALLFields = Field(default_factory=ALLFields)
+    Day31: ALLFields = Field(default_factory=ALLFields)
+
     class InfoFields(ConfigGroup):
-        Mode: Literal["ALL", "Weekly"] = Field(
+        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
+            default=7, description="多天轮换天数"
+        )
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
             description="计划表模式", default_factory=lambda: "ALL"
         )
 
@@ -304,9 +397,8 @@ class MaaEndPlanConfig(WeeklyKeyPlan):
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
-        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-        for group in ["ALL", *calendar.day_name]:
+        normalized_data = super().normalize_payload(data)
+        for group in ["ALL", *calendar.day_name, *(f"Day{i}" for i in range(1, 32))]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict):
                 normalized_data[group] = {"Key": normalize_maaend_plan_key(group_data)}
@@ -336,8 +428,43 @@ class BAAHPlanConfig(WeeklyKeyPlan):
 
     Friday: FridayFields = Field(default_factory=FridayFields)
 
+    Day1: ALLFields = Field(default_factory=ALLFields)
+    Day2: ALLFields = Field(default_factory=ALLFields)
+    Day3: ALLFields = Field(default_factory=ALLFields)
+    Day4: ALLFields = Field(default_factory=ALLFields)
+    Day5: ALLFields = Field(default_factory=ALLFields)
+    Day6: ALLFields = Field(default_factory=ALLFields)
+    Day7: ALLFields = Field(default_factory=ALLFields)
+    Day8: ALLFields = Field(default_factory=ALLFields)
+    Day9: ALLFields = Field(default_factory=ALLFields)
+    Day10: ALLFields = Field(default_factory=ALLFields)
+    Day11: ALLFields = Field(default_factory=ALLFields)
+    Day12: ALLFields = Field(default_factory=ALLFields)
+    Day13: ALLFields = Field(default_factory=ALLFields)
+    Day14: ALLFields = Field(default_factory=ALLFields)
+    Day15: ALLFields = Field(default_factory=ALLFields)
+    Day16: ALLFields = Field(default_factory=ALLFields)
+    Day17: ALLFields = Field(default_factory=ALLFields)
+    Day18: ALLFields = Field(default_factory=ALLFields)
+    Day19: ALLFields = Field(default_factory=ALLFields)
+    Day20: ALLFields = Field(default_factory=ALLFields)
+    Day21: ALLFields = Field(default_factory=ALLFields)
+    Day22: ALLFields = Field(default_factory=ALLFields)
+    Day23: ALLFields = Field(default_factory=ALLFields)
+    Day24: ALLFields = Field(default_factory=ALLFields)
+    Day25: ALLFields = Field(default_factory=ALLFields)
+    Day26: ALLFields = Field(default_factory=ALLFields)
+    Day27: ALLFields = Field(default_factory=ALLFields)
+    Day28: ALLFields = Field(default_factory=ALLFields)
+    Day29: ALLFields = Field(default_factory=ALLFields)
+    Day30: ALLFields = Field(default_factory=ALLFields)
+    Day31: ALLFields = Field(default_factory=ALLFields)
+
     class InfoFields(ConfigGroup):
-        Mode: Literal["ALL", "Weekly"] = Field(
+        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
+            default=3, description="多天轮换天数"
+        )
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
             description="计划表模式", default_factory=lambda: "ALL"
         )
 
@@ -409,9 +536,8 @@ class BAAHPlanConfig(WeeklyKeyPlan):
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
-        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-        for group in ["ALL", *calendar.day_name]:
+        normalized_data = super().normalize_payload(data)
+        for group in ["ALL", *calendar.day_name, *(f"Day{i}" for i in range(1, 32))]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict) and group_data:
                 normalized_data[group] = {"Key": normalize_baah_plan_key(group_data)}
@@ -437,8 +563,43 @@ class MSSPlanConfig(WeeklyKeyPlan):
 
     Friday: FridayFields = Field(default_factory=FridayFields)
 
+    Day1: ALLFields = Field(default_factory=ALLFields)
+    Day2: ALLFields = Field(default_factory=ALLFields)
+    Day3: ALLFields = Field(default_factory=ALLFields)
+    Day4: ALLFields = Field(default_factory=ALLFields)
+    Day5: ALLFields = Field(default_factory=ALLFields)
+    Day6: ALLFields = Field(default_factory=ALLFields)
+    Day7: ALLFields = Field(default_factory=ALLFields)
+    Day8: ALLFields = Field(default_factory=ALLFields)
+    Day9: ALLFields = Field(default_factory=ALLFields)
+    Day10: ALLFields = Field(default_factory=ALLFields)
+    Day11: ALLFields = Field(default_factory=ALLFields)
+    Day12: ALLFields = Field(default_factory=ALLFields)
+    Day13: ALLFields = Field(default_factory=ALLFields)
+    Day14: ALLFields = Field(default_factory=ALLFields)
+    Day15: ALLFields = Field(default_factory=ALLFields)
+    Day16: ALLFields = Field(default_factory=ALLFields)
+    Day17: ALLFields = Field(default_factory=ALLFields)
+    Day18: ALLFields = Field(default_factory=ALLFields)
+    Day19: ALLFields = Field(default_factory=ALLFields)
+    Day20: ALLFields = Field(default_factory=ALLFields)
+    Day21: ALLFields = Field(default_factory=ALLFields)
+    Day22: ALLFields = Field(default_factory=ALLFields)
+    Day23: ALLFields = Field(default_factory=ALLFields)
+    Day24: ALLFields = Field(default_factory=ALLFields)
+    Day25: ALLFields = Field(default_factory=ALLFields)
+    Day26: ALLFields = Field(default_factory=ALLFields)
+    Day27: ALLFields = Field(default_factory=ALLFields)
+    Day28: ALLFields = Field(default_factory=ALLFields)
+    Day29: ALLFields = Field(default_factory=ALLFields)
+    Day30: ALLFields = Field(default_factory=ALLFields)
+    Day31: ALLFields = Field(default_factory=ALLFields)
+
     class InfoFields(ConfigGroup):
-        Mode: Literal["ALL", "Weekly"] = Field(
+        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
+            default=7, description="多天轮换天数"
+        )
+        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
             description="计划表模式", default_factory=lambda: "ALL"
         )
 
@@ -498,9 +659,8 @@ class MSSPlanConfig(WeeklyKeyPlan):
 
     @classmethod
     def normalize_payload(cls, data):
-        data = deepcopy(data)
-        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-        for group in ["ALL", *calendar.day_name]:
+        normalized_data = super().normalize_payload(data)
+        for group in ["ALL", *calendar.day_name, *(f"Day{i}" for i in range(1, 32))]:
             group_data = normalized_data.get(group)
             if isinstance(group_data, dict):
                 normalized_data[group] = {"Key": normalize_mss_plan_key(group_data)}

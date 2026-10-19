@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { createRocketPath, getRocketPose, RACE_TIMELINE } from './rocketFlight'
 
 const box = { left: 50, right: 650, top: 60, bottom: 430 }

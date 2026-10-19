@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-
 from app.models.config import HSRUserConfig
 from app.task.general.tools import execute_script_task
 

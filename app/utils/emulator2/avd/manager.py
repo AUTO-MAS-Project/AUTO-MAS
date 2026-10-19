@@ -27,11 +27,13 @@
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致，预研 §6.16），默认无头
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
 （每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
-实例内存、空闲页上报、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、客体日志落盘。
+实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、
+客体日志落盘、客体 Vulkan 驱动补丁。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
-关机先 ``sync`` 再 ``kill``：控制台 ``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的
-数据会丢（10-03 星铁 9 个热更新清单因此变成 0 字节）。
+关机默认让安卓自己正常关机、等 qemu 自己退出，不成再退回 ``sync`` + 控制台 ``kill``：控制台
+``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢（10-03 星铁 9 个热更新清单因此
+变成 0 字节），``sync`` 之后到 qemu 退出之间游戏写的东西也会丢（见 :meth:`AvdManager.close`）。
 """
 
 from __future__ import annotations
@@ -75,9 +77,14 @@ from .constants import (
     CLOSE_TIMEOUT_SECONDS,
     CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
+    FALLBACK_FORCE_KILL_WAIT_SECONDS,
+    FALLBACK_KILL_TIMEOUT_SECONDS,
+    FALLBACK_SYNC_TIMEOUT_SECONDS,
     FORCE_KILL_WAIT_SECONDS,
+    GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     GUEST_DIRTY_EXPIRE_CENTISECS,
     GUEST_DIRTY_WRITEBACK_CENTISECS,
+    GUEST_PATCH_DIR,
     GUEST_TMP_DIR,
     KEEP_PACKAGES,
     LIGHT_LAUNCHER,
@@ -94,10 +101,11 @@ from .constants import (
     RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     SCREEN_DENSITY,
-    SCREEN_FPS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     SYNC_TIMEOUT_SECONDS,
+    VULKAN_ENC_GUEST_PATH,
+    VULKAN_FIX_UPLOAD_PATH,
     WATCHDOG_INTERVAL_SECONDS,
     WATCHDOG_PROBE_TIMEOUT_SECONDS,
     WATCHDOG_STRIKES,
@@ -117,14 +125,24 @@ from .instances import (
     list_instances,
     memory_for,
     update_instance_meta,
+    validate_fps,
     validate_options,
     write_instance_config,
+)
+from .vulkanfix import (
+    VULKAN_ENC_FIX_SHA256,
+    VULKAN_ENC_ORIG_SHA256,
+    VulkanFixError,
+    patch_vulkan_encoder,
+    sha256,
 )
 
 logger = get_logger("魔改 AVD 管理")
 
 #: 仓库里推到客体跑的脚本。
 GUEST_SCRIPTS_DIR = SOURCE_ROOT / "res" / "avd" / "guest"
+#: ``{根目录键: 锁}``：同一条安装同时只生成一次客体驱动补丁库（几台实例一起开机时）。
+_VULKAN_PATCH_LOCKS: dict[str, asyncio.Lock] = {}
 
 #: 等 ``sys.boot_completed`` 的轮询间隔。
 _BOOT_POLL_SECONDS = 1.0
@@ -255,6 +273,10 @@ def build_launch_args(
       ``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
       文件映射的页，空闲页上报就不生效（10-03 首测），所以关掉它；设备挂在 ``-qemu`` 最后，
       占下一个空闲 PCI 槽、不挪现有设备；
+    - ``-feature VulkanBatchedDescriptorSetUpdate``（固定开）：描述符集批量更新。宿主
+      ``advancedFeatures.ini`` 默认关、镜像那边开着；不开时终末地渲染线程 67.5% 的时间耗在
+      ``vkAllocateDescriptorSets`` 的同步往返上（每帧 159 次），开了 MaaEnd 跑任务时帧率均值
+      12.8 → 30.5（aemu-lab 修复队列「终末地帧率与稳定性」）。星铁、1999 回归都带着它跑过；
     - 磁盘 write-through：客体不再发 flush（和以前客体侧 ``nobarrier`` 一样快），但 QEMU 每次写
       都把数据和 qcow2 元数据推到宿主文件，硬杀不丢已写的数据。``nobarrier`` 硬杀 3/3 把 AVD
       弄坏（内核 panic 循环），这个设置 6/6 无损（09-26）。``-qemu`` 之后全归 QEMU，所以放最后。
@@ -280,6 +302,7 @@ def build_launch_args(
         args.append("-no-window")
     args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
+    args += ["-feature", "VulkanBatchedDescriptorSetUpdate"]
     args += [
         "-qemu",
         "-global",
@@ -302,6 +325,61 @@ def guest_script(name: str) -> Path:
 #: ``{根目录键|原生索引: 看门狗任务}``。管理器会被频繁重建（状态轮询每轮一个），
 #: 看门狗必须挂在模块上，跟着实例走而不是跟着管理器对象走。
 _WATCHDOGS: dict[str, asyncio.Task] = {}
+#: ``{根目录键|原生索引: 事件}``：这台实例有一次 open 正在开机 / 做开机后设置，做完置位。和看门狗一样
+#: 挂在模块上（管理器对象会被频繁重建）。见 :meth:`_AvdCore.open`。
+_OPENING: dict[str, asyncio.Event] = {}
+#: 等前一次 open 的上限 = 最长启动等待 + 这么多秒（开机后设置里 zygote 重启最多等 120 秒，再留余量）。
+_OPENING_WAIT_EXTRA_SECONDS = 300.0
+
+
+async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event | None:
+    """排到这台实例的 open：前面有 open 没做完就一个个等，轮到时登记自己的标记并返回它。
+
+    一次置位会唤醒所有等待者，所以要循环：醒来后标记已被另一个等待者抢先登记，就接着等它。
+    跳出循环和登记之间没有 ``await``，不会有两个同时登记。总共最多等 ``timeout`` 秒，
+    超时记日志、不登记（返回 ``None``），照常继续。
+    """
+    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    waited = False
+    while (event := _OPENING.get(key)) is not None:
+        if not waited:
+            logger.info(f"{label} 正由另一次启动开机或做开机后设置，等它做完再继续")
+            waited = True
+        remaining = deadline - time.monotonic()
+        try:
+            if remaining <= 0:
+                raise TimeoutError
+            await asyncio.wait_for(event.wait(), remaining)
+        except TimeoutError:
+            logger.warning(
+                f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
+            )
+            return None
+    if waited:
+        logger.info(
+            f"{label} 另一次启动已做完（等了 {time.monotonic() - started:.0f} 秒）"
+        )
+    mine = _OPENING[key] = asyncio.Event()
+    return mine
+
+
+#: ``{根目录键|原生索引: 锁}``：这台实例有一次 close 正在做。正常关机要等 qemu 自己退出（最多十几秒），
+#: 这段时间 qemu 还在：同一台实例的 close 要排队，否则后一次会在前一次正常关机的半途退回 kill；
+#: open 也要先等它关完，否则会把正在关机的实例当成已在运行。close 不等 open（开机中照样能关）。
+_CLOSING: dict[str, asyncio.Lock] = {}
+
+
+async def _wait_closing(key: str, label: str) -> None:
+    """这台实例正在关机就等它关完（close 自身最多 28 秒，见 constants 关机那一组）。"""
+    lock = _CLOSING.get(key)
+    if lock is None or not lock.locked():
+        return
+    logger.info(f"{label} 正在关机，等它关完再开机")
+    async with lock:
+        pass
+
+
 #: 被看门狗判冻结并强杀过的实例 → 原因。``getStatus`` 据此报 ERROR，直到下次 open / close。
 _FROZEN: dict[str, str] = {}
 
@@ -680,12 +758,30 @@ class _AvdCore(DeviceBase):
             raise RuntimeError(missing_components_message(missing))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """开机并做开机后设置。同一台实例上的 open 排队：前一次还没做完（开机后最后一步会重启 zygote），
+        后一次先等它，免得后一次先返回在线、调用方拉起游戏，随后被前一次的 zygote 重启结束。
+        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、照常往下走。"""
         idx = str(idx)
         instance = self._instance(idx)
         key = _instance_key(self.root, idx)
+        max_wait = float(self.config.Info.MaxWaitTime)
+        mine = await _claim_opening(
+            key, f"魔改 AVD 实例 {idx}", max_wait + _OPENING_WAIT_EXTRA_SECONDS
+        )
+        try:
+            await _wait_closing(key, f"魔改 AVD 实例 {idx}")
+            return await self._open(idx, instance, key, max_wait)
+        finally:
+            if mine is not None:
+                mine.set()
+                if _OPENING.get(key) is mine:
+                    del _OPENING[key]
+
+    async def _open(
+        self, idx: str, instance: AvdInstance, key: str, max_wait: float
+    ) -> DeviceInfo:
         _FROZEN.pop(key, None)
         port = console_port(idx)
-        max_wait = float(self.config.Info.MaxWaitTime)
 
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         launched = process is None
@@ -702,7 +798,7 @@ class _AvdCore(DeviceBase):
             if launched:
                 host.BOOTING.discard(serial)
 
-        await self._after_boot(idx, instance)
+        await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
         return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
 
@@ -792,8 +888,8 @@ class _AvdCore(DeviceBase):
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
             f"启动魔改 AVD 实例 {idx}（{'无头' if headless else '带窗口'}，"
-            f"720p，{memory_mb} MB / {instance.cpu} 核，"
-            "气球开，不带声卡）: "
+            f"720p {instance.fps} Hz，{memory_mb} MB / {instance.cpu} 核，"
+            "气球开，不带声卡，ANDROID_EMU_VK_HIDE_REBAR=1）: "
             f"emulator {' '.join(args)}"
         )
         self._launcher = await asyncio.to_thread(
@@ -835,8 +931,13 @@ class _AvdCore(DeviceBase):
             logger.warning(f"实例 {idx} 推送 {local.name} 失败: {output}")
         return code == 0
 
-    async def _after_boot(self, idx: str, instance: AvdInstance) -> None:
+    async def _after_boot(
+        self, idx: str, instance: AvdInstance, *, fresh_boot: bool = True
+    ) -> None:
         """每次开机后的调优（重启即失效）+ 首次开机的一次性初始化。失败只记警告。
+
+        ``fresh_boot``：这次 open 是不是刚把实例开起来。本来就在跑的实例不再挂客体驱动补丁
+        （挂要重启 zygote，会把上面正在跑的游戏一起结束），见 :meth:`_ensure_vulkan_fix`。
 
         逐项照启动器 ``avd-p0.ps1`` 开机后那段。**不再做**的两项：
         ``gsm meter on|off``——每调一次，镜像的 MeterService 反而装上那个 2 GB 测试套餐（用量重置成
@@ -899,6 +1000,201 @@ class _AvdCore(DeviceBase):
 
         # 10) 方向：显示器固定横屏（持久，每次开机设一次给老实例补上）
         await self._setup_orientation(idx)
+
+        # 11) 客体 Vulkan 驱动补丁（bindlock2）。必须是最后一步：挂上后要重启 zygote，system_server
+        #     和所有应用都会重来
+        if await self._ensure_vulkan_fix(idx, fresh_boot=fresh_boot):
+            # 信箱引导弹窗的开关在 system_server 内存里，跟着 zygote 重启丢了，再设一遍
+            await self._setup_orientation(idx)
+
+    async def _ensure_vulkan_fix(self, idx: str, *, fresh_boot: bool) -> bool:
+        """把本机生成的客体驱动补丁库 bind mount 到 ``/vendor/lib64/libvulkan_enc.so`` 上，再重启 zygote。
+
+        照启动器 ``avd-p0.ps1`` 的 ``-VulkanFix``，对所有实例、所有游戏统一挂（用户 10-16 定）。补丁
+        （:mod:`.vulkanfix`）同时修星铁普通模式的描述符模板（khrfix）和终末地 ``vkBindImageMemory`` 查表的
+        数据竞争（bindlock）；不走这两处的游戏（1999、M9A）不受影响。
+
+        - 客体脚本 ``vulkanfix.sh`` 先看本次开机挂没挂过（挂过就什么都不做），再核对镜像原库的哈希
+          （不是 ``898c0bbc…`` 就不挂）；改好的库缓存在客体 ``/data/local/tmp``，下次开机直接挂。
+        - 客体里没有缓存时，从 ``<根>\\guest-patches`` 里本机生成过的那份推上去；本机也没有就从客体
+          拉原库现场生成（:meth:`_patched_vulkan_library`）。改好的库**不随包分发**。
+        - 本来就在跑的实例（``fresh_boot`` 为假）只查不挂：重启 zygote 会结束正在跑的游戏，下次开机再挂。
+
+        失败只记日志，不挡开机。返回这次是否重启了 zygote。
+        """
+        remote = f"{GUEST_TMP_DIR}/vulkanfix.sh"
+        if not fresh_boot:
+            _, mounts = await self._shell(
+                idx, f"grep -c ' {VULKAN_ENC_GUEST_PATH} ' /proc/self/mountinfo"
+            )
+            if mounts.strip() not in ("", "0"):
+                logger.info(f"实例 {idx} 客体 Vulkan 驱动补丁: 本次开机已挂上")
+            else:
+                logger.info(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁: 实例已在运行且没挂，这次不挂"
+                    "（要重启 zygote，会结束正在运行的应用），下次开机挂上"
+                )
+            return False
+
+        if not await self._push(idx, guest_script("vulkanfix.sh"), remote):
+            logger.warning(f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 推送客体脚本失败")
+            return False
+
+        async def run_fix() -> str:
+            _, output = await self._shell(
+                idx,
+                f"su 0 sh {remote} {VULKAN_ENC_ORIG_SHA256} {VULKAN_ENC_FIX_SHA256}",
+                timeout=60,
+            )
+            lines = [line.strip() for line in output.splitlines() if line.strip()]
+            return lines[-1] if lines else ""
+
+        _, ui_before = await self._shell(idx, "pidof com.android.systemui")
+        status = await run_fix()
+        logger.info(
+            f"实例 {idx} 客体 Vulkan 驱动补丁 第 1 步（客体检查）: {status or '无输出'}"
+        )
+        if status.startswith("NEED_UPLOAD"):
+            library = await self._patched_vulkan_library(idx)
+            if library is None:
+                return False
+            code, output = await host.run_adb(
+                self.root,
+                "push",
+                str(library),
+                VULKAN_FIX_UPLOAD_PATH,
+                serial=host.serial_of(console_port(idx)),
+                timeout=60,
+            )
+            if code != 0:
+                logger.warning(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 推送补丁库失败: {output[-200:]}"
+                )
+                return False
+            logger.info(
+                f"实例 {idx} 客体 Vulkan 驱动补丁 第 2 步: 已推送 {library}"
+                f"（sha256 {VULKAN_ENC_FIX_SHA256}）到 {VULKAN_FIX_UPLOAD_PATH}"
+            )
+            status = await run_fix()
+            logger.info(
+                f"实例 {idx} 客体 Vulkan 驱动补丁 第 3 步（挂载）: {status or '无输出'}"
+            )
+
+        if status.startswith("ALREADY"):
+            mounted = status.partition(" ")[2]
+            if mounted == VULKAN_ENC_FIX_SHA256:
+                logger.info(
+                    f"实例 {idx} 客体 Vulkan 驱动补丁本次开机已挂上（sha256 {mounted}）"
+                )
+            else:
+                logger.warning(
+                    f"实例 {idx} 客体驱动库上已经挂着别的文件（sha256 {mounted}），"
+                    "不是这次的补丁，没有动它"
+                )
+            return False
+        if status.startswith("VENDOR_PATCHED"):
+            logger.info(f"实例 {idx} 镜像自带的客体驱动库已是补丁版，不用挂")
+            return False
+        if not status.startswith("MOUNTED"):
+            # SKIPPED image：镜像不是预期版本；SKIPPED patched：客体缓存坏了，已删，下次重传；FAILED：挂载没成
+            logger.warning(
+                f"实例 {idx} 客体 Vulkan 驱动补丁没挂: {status or '客体脚本无输出'}"
+            )
+            return False
+
+        started = time.monotonic()
+        back = await self._wait_framework_back(idx, ui_before.strip())
+        logger.info(
+            f"实例 {idx} 客体 Vulkan 驱动补丁已挂上（sha256 {status.partition(' ')[2]}），"
+            f"zygote 重启后系统界面{'已回来' if back else '超时未回来'}"
+            f"（{time.monotonic() - started:.0f} 秒）"
+        )
+        return True
+
+    async def _patched_vulkan_library(self, idx: str) -> Path | None:
+        """本机缓存的补丁库 ``<根>\\guest-patches\\libvulkan_enc.khrfix-bindlock2.so``，没有就生成一份。
+
+        生成：从客体拉原库 → 核对哈希、打补丁、核对改完的哈希（:func:`.vulkanfix.patch_vulkan_encoder`）
+        → 写进缓存。任一步不成返回 ``None``（记日志，不挂）。同一条安装同时只生成一次。
+        本机读写出错（盘满、文件被杀毒软件占着）也只记警告、返回 ``None``，不挡开机。
+        """
+        library = self.root / GUEST_PATCH_DIR / "libvulkan_enc.khrfix-bindlock2.so"
+        try:
+            return await self._make_patched_vulkan_library(idx, library)
+        except OSError as e:
+            logger.warning(
+                f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 本机读写补丁库失败（{library}）: "
+                f"{type(e).__name__}: {e}"
+            )
+            with suppress(OSError):
+                library.with_suffix(".tmp").unlink(missing_ok=True)
+            return None
+
+    async def _make_patched_vulkan_library(
+        self, idx: str, library: Path
+    ) -> Path | None:
+        directory = library.parent
+        async with _VULKAN_PATCH_LOCKS.setdefault(root_key(self.root), asyncio.Lock()):
+            if library.is_file():
+                digest = await asyncio.to_thread(lambda: sha256(library.read_bytes()))
+                if digest == VULKAN_ENC_FIX_SHA256:
+                    logger.info(
+                        f"实例 {idx} 客体 Vulkan 驱动补丁: 用本机缓存 {library}"
+                    )
+                    return library
+                logger.warning(
+                    f"本机缓存的客体驱动补丁库哈希不对（{digest}），重新生成: {library}"
+                )
+            directory.mkdir(parents=True, exist_ok=True)
+            original = directory / f"libvulkan_enc-{idx}.orig.so"
+            try:
+                code, output = await host.run_adb(
+                    self.root,
+                    "pull",
+                    VULKAN_ENC_GUEST_PATH,
+                    str(original),
+                    serial=host.serial_of(console_port(idx)),
+                    timeout=60,
+                )
+                if code != 0 or not original.is_file():
+                    logger.warning(
+                        f"实例 {idx} 客体 Vulkan 驱动补丁没挂: 从客体拉 {VULKAN_ENC_GUEST_PATH} 失败: "
+                        f"{output[-200:]}"
+                    )
+                    return None
+                data = await asyncio.to_thread(original.read_bytes)
+                logger.info(
+                    f"实例 {idx} 从客体拉到驱动原库（sha256 {sha256(data)}），本机生成补丁库"
+                )
+                try:
+                    patched = await asyncio.to_thread(patch_vulkan_encoder, data)
+                except VulkanFixError as e:
+                    logger.warning(f"实例 {idx} 客体 Vulkan 驱动补丁没挂: {e}")
+                    return None
+                temp = library.with_suffix(".tmp")
+                await asyncio.to_thread(temp.write_bytes, patched)
+                temp.replace(library)
+            finally:
+                original.unlink(missing_ok=True)
+        logger.info(
+            f"实例 {idx} 已在本机生成客体驱动补丁库（sha256 {VULKAN_ENC_FIX_SHA256}）: {library}"
+        )
+        return library
+
+    async def _wait_framework_back(
+        self, idx: str, ui_before: str, timeout: float = 120.0
+    ) -> bool:
+        """zygote 重启后等系统界面（SystemUI）换成新进程，再多等 8 秒（照启动器）。"""
+        deadline = time.monotonic() + timeout
+        await asyncio.sleep(2.0)
+        while time.monotonic() < deadline:
+            _, ui = await self._shell(idx, "pidof com.android.systemui", timeout=10)
+            ui = ui.strip()
+            if ui and ui != ui_before:
+                await asyncio.sleep(8.0)
+                return True
+            await asyncio.sleep(2.0)
+        return False
 
     async def _setup_orientation(self, idx: str) -> None:
         """显示器固定在 0°（横屏），不跟传感器、也不跟应用的方向请求转，横屏游戏也不会翻成 180°。
@@ -1185,33 +1481,121 @@ class _AvdCore(DeviceBase):
     # ---- 关机 -----------------------------------------------------------
 
     async def close(self, idx: str) -> DeviceStatus:
+        """关机。同一台实例的 close 排队做（见 :data:`_CLOSING`）。"""
         idx = str(idx)
         instance = self._instance(idx)
+        key = _instance_key(self.root, idx)
+        lock = _CLOSING.setdefault(key, asyncio.Lock())
+        if lock.locked():
+            logger.info(f"魔改 AVD 实例 {idx} 正由另一次关闭在关，等它关完再继续")
+        async with lock:
+            return await self._close(idx, instance, key)
+
+    async def _close(self, idx: str, instance: AvdInstance, key: str) -> DeviceStatus:
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
-        _FROZEN.pop(_instance_key(self.root, idx), None)
+        _FROZEN.pop(key, None)
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         if process is None:
             return DeviceStatus.OFFLINE
 
-        # 先 sync：控制台 kill / 强杀都直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢
-        # （10-03 星铁 9 个热更新清单变成 0 字节，表现成「网络请求超时」和黑屏）。磁盘 write-through
-        # 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。强制关闭也先 sync。
-        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限见
-        # constants 里关机那一组（合计 27 秒）。sync 不走重新登记（会多等 5 秒）。
+        # 默认让安卓自己正常关机（``sys.powerctl shutdown``），等 qemu 自己退出；不成再退回
+        # 「sync + 控制台 kill + 强杀」。控制台 kill / 强杀都直接结束 qemu，客体不走关机流程：
+        # 页缓存里没写回的数据会丢（星铁热更新清单因此变成过 0 字节，表现成「网络请求超时」和黑屏），
+        # 而且 sync 之后到 qemu 真正退出之间还有 2–3 秒，这段时间里游戏写的东西 sync 也管不到。
+        # 正常关机时客体 init 依次结束各个服务和应用、把页缓存写回、卸载分区，最后断电让 qemu 自己
+        # 退出，和手机关机、MuMu / 雷电关机一样。
+        # 磁盘 write-through 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。
+        # 强制关闭（ForceKillOnClose）不走正常关机，只先 sync 再强杀。
+        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限与
+        # 三条路径的算式见 constants 里关机那一组（最坏 28 秒）。adb 命令都不走重新登记（会多等 5 秒），
+        # 私有 server 中途没了要重起时，等它的时间也从这条命令的上限里扣（total_timeout）。
         started = time.monotonic()
-        # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就不 sync 了，直接关
+        # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就既不能正常关机、
+        # 也不能 sync，直接用控制台关
         problem = await host.prepare_adb_for_close(
             self.root, port, timeout=ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS
         )
+
+        if self.config.Info.ForceKillOnClose:
+            await self._sync_before_kill(idx, port, problem, SYNC_TIMEOUT_SECONDS)
+            await self._force_kill(process, FORCE_KILL_WAIT_SECONDS)
+            logger.info(f"魔改 AVD 实例 {idx} 已强制关闭")
+            return DeviceStatus.OFFLINE
+
+        if problem is None:
+            reason = await self._graceful_shutdown(port, process)
+            if reason is None:
+                logger.info(
+                    f"魔改 AVD 实例 {idx} 正常关机完成"
+                    f"（{time.monotonic() - started:.1f} s）"
+                )
+                return DeviceStatus.OFFLINE
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 正常关机没成（{reason}），退回 sync + 控制台 kill"
+            )
+            await self._sync_before_kill(idx, port, None, FALLBACK_SYNC_TIMEOUT_SECONDS)
+            kill_timeout = FALLBACK_KILL_TIMEOUT_SECONDS
+            force_kill_wait = FALLBACK_FORCE_KILL_WAIT_SECONDS
+        else:
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 私有 adb 用不了，不能正常关机也不能 sync，"
+                f"直接用控制台关: {problem}"
+            )
+            kill_timeout = CONSOLE_KILL_TIMEOUT_SECONDS + CLOSE_TIMEOUT_SECONDS
+            force_kill_wait = FORCE_KILL_WAIT_SECONDS
+
+        await self._console_kill(idx, port, process, kill_timeout)
+        if process.is_running():
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 未在 {kill_timeout:.0f} 秒内退出，强制结束"
+            )
+            await self._force_kill(process, force_kill_wait)
+        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
+        return DeviceStatus.OFFLINE
+
+    async def _graceful_shutdown(
+        self, port: int, process: psutil.Process
+    ) -> str | None:
+        """让安卓正常关机，等 qemu 自己退出，发命令连同等待最多
+        :data:`~.constants.GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS` 秒。退出了返回 ``None``，否则返回原因。
+
+        ``sys.powerctl`` 只有 root 能写，这些 userdebug 镜像上用 ``su 0``（同 :meth:`_su`）。
+        """
+        started = time.monotonic()
+        code, output = await host.run_adb(
+            self.root,
+            "shell",
+            "su 0 setprop sys.powerctl shutdown",
+            serial=host.serial_of(port),
+            timeout=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
+            reregister=False,
+            total_timeout=True,
+        )
+        if code != 0:
+            return f"关机命令没有成功返回（返回码 {code}）: {output}"
+        remaining = GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS - (time.monotonic() - started)
+        if remaining > 0:
+            with suppress(psutil.TimeoutExpired):
+                await asyncio.to_thread(process.wait, remaining)
+        if process.is_running():
+            return f"{GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS:.0f} 秒内没有自己退出"
+        return None
+
+    async def _sync_before_kill(
+        self, idx: str, port: int, problem: str | None, timeout: float
+    ) -> None:
+        """控制台 kill / 强杀前先 ``sync``，把客体页缓存写回虚拟盘。失败只记警告。"""
+        started = time.monotonic()
         if problem is None:
             code, output = await host.run_adb(
                 self.root,
                 "shell",
                 "sync",
                 serial=host.serial_of(port),
-                timeout=SYNC_TIMEOUT_SECONDS,
+                timeout=timeout,
                 reregister=False,
+                total_timeout=True,
             )
         else:
             code, output = -1, problem
@@ -1222,25 +1606,31 @@ class _AvdCore(DeviceBase):
         else:
             logger.warning(f"魔改 AVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
-        if not self.config.Info.ForceKillOnClose:
-            try:
-                await host.console_command(
-                    port, "kill", timeout=CONSOLE_KILL_TIMEOUT_SECONDS
-                )
-            except host.ConsoleError as e:
-                logger.warning(f"实例 {idx} 正常关机失败，改为强制结束: {e}")
-            else:
-                with suppress(psutil.TimeoutExpired):
-                    await asyncio.to_thread(process.wait, CLOSE_TIMEOUT_SECONDS)
-        if process.is_running():
-            logger.warning(
-                f"魔改 AVD 实例 {idx} 未在 {CLOSE_TIMEOUT_SECONDS:.0f} 秒内退出，强制结束"
+    async def _console_kill(
+        self, idx: str, port: int, process: psutil.Process, timeout: float
+    ) -> None:
+        """发控制台 ``kill`` 并等 qemu 退出，两步合计最多 ``timeout`` 秒（发命令本身最多
+        :data:`~.constants.CONSOLE_KILL_TIMEOUT_SECONDS` 秒）。没退出由调用方强杀。"""
+        started = time.monotonic()
+        try:
+            await host.console_command(
+                port, "kill", timeout=min(CONSOLE_KILL_TIMEOUT_SECONDS, timeout)
             )
-            host.kill_process_tree(process)
+        except host.ConsoleError as e:
+            logger.warning(f"实例 {idx} 控制台 kill 失败，改为强制结束: {e}")
+            return
+        remaining = timeout - (time.monotonic() - started)
+        if remaining > 0:
             with suppress(psutil.TimeoutExpired):
-                await asyncio.to_thread(process.wait, FORCE_KILL_WAIT_SECONDS)
-        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
-        return DeviceStatus.OFFLINE
+                await asyncio.to_thread(process.wait, remaining)
+
+    @staticmethod
+    async def _force_kill(process: psutil.Process, wait: float) -> None:
+        if not process.is_running():
+            return
+        host.kill_process_tree(process)
+        with suppress(psutil.TimeoutExpired):
+            await asyncio.to_thread(process.wait, wait)
 
     # ---- 设置 -----------------------------------------------------------
 
@@ -1265,8 +1655,8 @@ class _AvdCore(DeviceBase):
                 "dpi": FieldValue(_int(display["hw.lcd.density"]), "saved"),
                 "cpu": FieldValue(instance.cpu, "saved"),
                 "memoryMb": memory,
-                # 帧率跟着客体 60 Hz 走，没有可设的项
-                "fps": FieldValue(None, "unset"),
+                # 刷新率 hw.lcd.vsync（30 / 60，下次开机生效）
+                "fps": FieldValue(instance.fps, "saved"),
             }
         )
 
@@ -1278,16 +1668,11 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """可改 CPU 与内存（下次启动生效）；显示固定 720p、帧率不可设。
-
-        帧率给的正是固定的 60 时当作没改（混放配置批量选 60 帧不该把 CPU / 内存一起拒掉），
-        其他帧率照样拒绝。"""
+        """可改 CPU、内存与帧率（30 / 60，写 ``hw.lcd.vsync``），都是下次启动生效；显示固定 720p。"""
         cleaned = validate_setting_changes(changes)
-        if cleaned.get("fps") == SCREEN_FPS:
-            del cleaned["fps"]
-        if "fps" in cleaned:
-            raise ValueError("魔改 AVD 没有可设置的帧率")
         instance = self._instance(idx)
+        # 只在这次要改帧率时校验：只改 CPU / 内存不该被手改过的 hw.lcd.vsync 挡住
+        fps = validate_fps(cleaned["fps"]) if "fps" in cleaned else None
         if {"width", "height", "dpi"} & cleaned.keys():
             _check_display(
                 cleaned.get("width", SCREEN_WIDTH),
@@ -1308,15 +1693,16 @@ class _AvdCore(DeviceBase):
             ]
             if conflicts:
                 raise SettingsConflictError(conflicts)
-        write_instance_config(
-            self.root, idx, {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
-        )
+        config_changes = {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
+        if fps is not None:
+            config_changes["hw.lcd.vsync"] = str(fps)
+        write_instance_config(self.root, idx, config_changes)
         # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
         update_instance_meta(self.root, idx, memoryMb=memory)
         applied = {
             k: v
             for k, v in cleaned.items()
-            if k in ("cpu", "memoryMb", "width", "height", "dpi")
+            if k in ("cpu", "memoryMb", "fps", "width", "height", "dpi")
         }
         logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
         return applied
@@ -1338,12 +1724,15 @@ class _AvdCore(DeviceBase):
         cpu: int | None = None,
         data_partition_gb: int | None = None,
         native_index: int | None = None,
+        fps: int | None = None,
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
-        内存、核数不给就用默认 6 GB / 6 核（:data:`~.constants.DEFAULT_MEMORY_MB` / ``DEFAULT_CPU``）。
+        内存、核数、帧率不给就用默认 6 GB / 6 核 / 60（:data:`~.constants.DEFAULT_MEMORY_MB` /
+        ``DEFAULT_CPU`` / ``DEFAULT_FPS``）。
         """
         memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
+        refresh = validate_fps(fps)
         existing = {int(idx) for idx in self._instances()}
         if native_index is None:
             native_index = await asyncio.to_thread(self._free_index, existing)
@@ -1356,10 +1745,11 @@ class _AvdCore(DeviceBase):
             memory_mb=memory,
             cpu=cores,
             data_partition_gb=data_gb,
+            fps=refresh,
         )
         logger.info(
             f"已新建魔改 AVD 实例 {native_index}（内存 "
-            f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB）"
+            f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB / 帧率 {refresh}）"
         )
         return str(native_index)
 
@@ -1396,6 +1786,7 @@ class _AvdCore(DeviceBase):
         return {
             "memoryMb": memory_for(meta),
             "cpu": instance.cpu,
+            "fps": instance.fps,
             "dataPartitionGb": instance.data_partition_gb,
             "initialized": bool(meta.get("initialized", False)),
             "launcher": meta.get("launcher") or "",

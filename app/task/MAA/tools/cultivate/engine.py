@@ -164,6 +164,48 @@ def aggregate(requirements: list[Requirement]) -> list[Requirement]:
     return list(merged.values())
 
 
+def select_auto_cultivate_targets(
+    targets: list[OperatorTarget] | tuple[OperatorTarget, ...],
+    snapshots: Mapping[str, ProgressionSnapshot],
+    inventory: Mapping[str, int],
+    data: CultivateDataSet,
+) -> tuple[OperatorTarget, ...]:
+    """按各材料满足比例均值选取最多十名干员。
+
+    每名干员独立对比现有成品库存，不预分配共享材料；同分沿用目标顺序。
+    模组没有自动培养入口，不参与评分，也不占用名额。
+    """
+
+    scored: list[tuple[OperatorTarget, float]] = []
+    for target in targets:
+        goals = tuple(
+            goal
+            for goal in target.goals
+            if goal.kind != "module"
+            and goal.state not in ("achieved", "pending_confirm")
+        )
+        if not goals:
+            continue
+        candidate = replace(target, goals=goals)
+        requirements = build_requirements(
+            targets=(candidate,), snapshots=snapshots, demands=data.demands
+        )
+        completion = (
+            sum(
+                min(inventory.get(item.item_id, 0) / item.amount, 1.0)
+                for item in requirements
+            )
+            / len(requirements)
+            if requirements
+            else 1.0
+        )
+        scored.append((candidate, completion))
+    return tuple(
+        target
+        for target, _ in sorted(scored, key=lambda item: item[1], reverse=True)[:10]
+    )
+
+
 def _build_recipe_map(data: CultivateDataSet) -> dict[str, Recipe]:
     return {recipe.result_item_id: recipe for recipe in data.recipes}
 

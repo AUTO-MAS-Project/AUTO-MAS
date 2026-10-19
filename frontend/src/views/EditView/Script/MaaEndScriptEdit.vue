@@ -167,25 +167,24 @@
             </a-col>
           </a-row>
 
-          <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="24">
-              <a-form-item :label="t('edit.maaEndLauncherPath')">
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.LauncherPath"
-                    :placeholder="t('edit.maaEndLauncherPathHint')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectLauncherPath">
-                    <template #icon><FolderOpenOutlined /></template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <MaaEndLauncherSection
+            v-if="isWinController"
+            :launch-mode="effectiveLaunchMode"
+            :capabilities-ready="launchCapabilitiesReady"
+            :capabilities-loading="maaEndOptionsLoading"
+            :maa-end-launch-supported="maaEndLaunchSupported"
+            :source="launcherSource"
+            :path="launcherPath"
+            :error="launcherError"
+            :detecting="launcherDetecting"
+            :saving="launcherSaving"
+            :disabled="isSaving || launcherSaving"
+            :can-detect="Boolean(maaEndConfig.Game.Path)"
+            @change-launch-mode="handleLaunchModeChange"
+            @change-source="changeLauncherSource"
+            @refresh="refreshLauncherPath"
+            @select-file="selectLauncherPath"
+          />
 
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="12">
@@ -220,17 +219,29 @@
                 <template #label>
                   <span class="form-label">
                     {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
+                    <a-tooltip
+                      :title="
+                        t(
+                          !isMasLaunchMode
+                            ? 'edit.maaEndArgumentsUnsupported'
+                            : 'edit.commandLineArgumentsUsed'
+                        )
+                      "
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="maaEndConfig.Game.Arguments"
+                  :disabled="isSaving || !isMasLaunchMode"
                   :placeholder="t('edit.enterLaunchArguments')"
                   size="large"
                   @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                 />
+                <div v-if="!isMasLaunchMode" class="control-hint">
+                  {{ t('edit.maaEndArgumentsUnsupported') }}
+                </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -257,13 +268,16 @@
 
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
-              <a-form-item :label="t('edit.maaEndSetResolution')">
+              <a-form-item
+                :label="t('edit.maaEndSetResolution')"
+                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+              >
                 <a-select
-                  v-model:value="maaEndConfig.Game.SetResolution"
+                  :value="canSetResolution && maaEndConfig.Game.SetResolution"
                   size="large"
                   :options="booleanOptions"
-                  :disabled="isSaving"
-                  @change="handleChange('Game', 'SetResolution', $event)"
+                  :disabled="isSaving || !launchCapabilitiesReady || !canSetResolution"
+                  @change="handleSetResolutionChange"
                 />
               </a-form-item>
             </a-col>
@@ -409,7 +423,13 @@
                 <template #label>
                   <span class="form-label">
                     {{ t('edit.endfieldAutoUpdate') }}
-                    <a-tooltip :title="t('edit.endfieldAutoUpdateHint')">
+                    <a-tooltip
+                      :title="
+                        isLauncherMode
+                          ? t('edit.maaEndAutoUpdateLauncherHint')
+                          : t('edit.endfieldAutoUpdateHint')
+                      "
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -418,6 +438,7 @@
                   v-model:value="maaEndConfig.Game.IfAutoUpdate"
                   size="large"
                   :options="booleanOptions"
+                  :disabled="isLauncherMode"
                   @change="handleChange('Game', 'IfAutoUpdate', $event)"
                 />
               </a-form-item>
@@ -644,6 +665,8 @@ import {
 } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
+import { useMaaEndLauncher } from './useMaaEndLauncher'
+import MaaEndLauncherSection from './components/MaaEndLauncherSection.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
@@ -703,6 +726,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
   },
   Game: {
     ControllerType: '',
+    LaunchMode: 'Launcher',
     Path: '',
     LauncherPath: '',
     Arguments: '',
@@ -771,6 +795,9 @@ const rules = {
 
 const controllerOptions = ref<ComboBoxItem[]>([])
 const controllerProtocols = ref<Record<string, string>>({})
+const launchGameControllers = ref<string[]>([])
+const gameSettingControllers = ref<string[]>([])
+const launchCapabilitiesReady = ref(false)
 const defaultMaaEndController = 'Win32-Front'
 
 const booleanOptions = [
@@ -795,6 +822,40 @@ const controllerProtocol = computed(
   () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
 )
 const isWinController = computed(() => controllerProtocol.value === 'Win32')
+const isLauncherMode = computed(() => maaEndConfig.Game.LaunchMode === 'Launcher')
+const maaEndLaunchSupported = computed(() =>
+  launchGameControllers.value.includes(maaEndConfig.Game.ControllerType ?? '')
+)
+const effectiveLaunchMode = computed(() =>
+  maaEndConfig.Game.LaunchMode === 'Client'
+    ? maaEndLaunchSupported.value
+      ? 'MaaEnd'
+      : 'MAS'
+    : maaEndConfig.Game.LaunchMode
+)
+const isMasLaunchMode = computed(() => effectiveLaunchMode.value === 'MAS')
+const canSetResolution = computed(() =>
+  effectiveLaunchMode.value === 'MaaEnd'
+    ? maaEndLaunchSupported.value
+    : gameSettingControllers.value.includes(maaEndConfig.Game.ControllerType ?? '')
+)
+const {
+  source: launcherSource,
+  path: launcherPath,
+  error: launcherError,
+  detecting: launcherDetecting,
+  saving: launcherSaving,
+  refresh: refreshLauncherPath,
+  selectFile: selectLauncherPath,
+  changeSource: changeLauncherSource,
+  changeLaunchMode: handleLaunchModeChange,
+} = useMaaEndLauncher({
+  game: maaEndConfig.Game,
+  getScriptId: () => scriptId,
+  enabled: () =>
+    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
+  save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
+})
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
 const showManualEmulatorIndexInput = computed(
   () =>
@@ -819,6 +880,15 @@ const handleChange = async (category: string, key: string, value: unknown) => {
     }
     return success
   }, `${category}.${key}`)
+}
+
+const handleSetResolutionChange = async (value: unknown) => {
+  if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return
+  await enqueue(async () => {
+    const success = await updateScript(scriptId, { Game: { SetResolution: value } })
+    if (success) maaEndConfig.Game.SetResolution = value
+    return success
+  }, 'Game.SetResolution')
 }
 
 const masAccountSwitchWarningShown = ref(false)
@@ -889,6 +959,12 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   if (config.Game?.RestoreDisplayType == null) {
     maaEndConfig.Game.RestoreDisplayType = 'Window'
   }
+  if (config.Game?.LaunchMode == null) {
+    maaEndConfig.Game.LaunchMode = 'Launcher'
+  }
+  if (config.Game?.LauncherPath == null) {
+    maaEndConfig.Game.LauncherPath = ''
+  }
   if (maaEndConfig.Run.AccountSwitchMethod === 'MAS') showMasAccountSwitchWarning()
 }
 
@@ -912,6 +988,9 @@ const loadEmulatorOptions = async () => {
 }
 
 const loadMaaEndOptions = async () => {
+  launchCapabilitiesReady.value = false
+  launchGameControllers.value = []
+  gameSettingControllers.value = []
   originalResolution.value = null
   originalDisplayType.value = null
   controllerOptions.value = []
@@ -922,6 +1001,9 @@ const loadMaaEndOptions = async () => {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code !== 200) return
 
+    launchGameControllers.value = response.launchGameControllers ?? []
+    gameSettingControllers.value = response.gameSettingControllers ?? []
+    launchCapabilitiesReady.value = true
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
     originalResolution.value = response.originalResolution ?? null
@@ -1062,26 +1144,12 @@ const selectGamePath = async () => {
     message.error(t('edit.pickEndfieldExe'))
     return
   }
-  maaEndConfig.Game.Path = path
-  await handleChange('Game', 'Path', path)
-  await loadMaaEndOptions()
-}
-
-const selectLauncherPath = async () => {
-  const paths = await window.electronAPI?.selectFile([
-    { name: 'Launcher.exe / Games.exe', extensions: ['exe'] },
-  ])
-  const path = paths?.[0]
-  if (!path) return
-  const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
-  if (fileName !== 'launcher.exe' && fileName !== 'games.exe') {
-    message.error(t('edit.maaEndLauncherPathHint'))
-    return
+  const success = await enqueue(() => updateScript(scriptId, { Game: { Path: path } }), 'Game.Path')
+  if (success) {
+    maaEndConfig.Game.Path = path
+    await refreshScript()
+    await loadMaaEndOptions()
   }
-  const previousPath = maaEndConfig.Game.LauncherPath
-  maaEndConfig.Game.LauncherPath = path
-  const saved = await enqueue(() => updateScript(scriptId, { Game: { LauncherPath: path } }))
-  if (!saved) maaEndConfig.Game.LauncherPath = previousPath
 }
 
 const cleanupConfigSession = () => {
@@ -1169,6 +1237,7 @@ onMounted(async () => {
   // MaaEnd 选项的默认控制器要看脚本里已有的 ControllerType, 必须排在 loadScript 之后;
   // 模拟器列表与二者无关, 并行发出
   await Promise.all([loadScript().then(loadMaaEndOptions), loadEmulatorOptions()])
+  // 初始化结束后由启动器配置的 watcher 获取自动识别结果。
   isInitializing.value = false
 })
 

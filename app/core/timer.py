@@ -29,7 +29,6 @@ from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
 from app.utils.constants import UTC8
-from app.utils.platform import IS_WINDOWS
 
 from .community_scheduler import (
     TASK_COMMUNITY_SOURCES,
@@ -147,23 +146,8 @@ class _MainTimer:
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
 
-        async def arknights_pc_tick() -> None:
-            if IS_WINDOWS and Config.ToolsConfig.ArknightsPC.Enabled:
-                # 懒导入：启动期导入失败（如更新后端撞上 app/ 重拷窗口）时这里会再抛，
-                # 不能让它把整个每秒循环带走，否则定时队列跟着停摆（#738）
-                from app.MaaFW import arknights_pc
-
-                toolkit = arknights_pc.loaded_toolkit()
-                if toolkit is None:
-                    # 还没加载（或上次加载失败）：后台发起加载，本秒跳过，
-                    # 不在这里等导入，免得卡住定时启动检查
-                    arknights_pc.ensure_loading()
-                    return
-                await toolkit.scheduled_task()
-
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
-            await self._run_loop_step("明日方舟 PC 工具巡检", arknights_pc_tick)
             await self._run_loop_step(
                 "游戏日历日程派发", self.schedule_calendar_notifications
             )

@@ -558,12 +558,6 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return out
 
 
-def is_combat_group(group: str) -> bool:
-    """是否为带执行层 Plan 的战斗 4 项组名（支持 ``自动秘境-副本A`` 形式的后缀名）。"""
-    base = _resolve_base_name(group)
-    return base in RIGHTBAR_TO_PLAN
-
-
 def plan_combat_bases(plan_steps: list[dict[str, Any]]) -> set[str]:
     """Plan 中「配过实例」的战斗步骤基名集合（**不区分启停**）。
 

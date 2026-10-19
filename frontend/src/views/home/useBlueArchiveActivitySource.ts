@@ -429,8 +429,8 @@ export const useBlueArchiveActivitySource = () => {
     },
     start,
     stop,
-    refresh: () => {
-      for (const key of SERVER_KEYS) sources[key].refresh()
+    refresh: async () => {
+      await Promise.all(SERVER_KEYS.map(key => sources[key].refresh()))
     },
   }
 }

@@ -22,4 +22,5 @@ def group_view(config, group):
     class Group:
         def __getattr__(self, name):
             return config.get(group, name)
+
     return Group()

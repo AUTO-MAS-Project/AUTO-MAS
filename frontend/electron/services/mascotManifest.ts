@@ -1,5 +1,6 @@
 import * as path from 'path'
 import type { MascotDefinition } from '../../src/types/mascotPack'
+import { normalizeMascotMenu } from './mascotMenuDefinition'
 import {
   AssetPackageError,
   assertAssetPath,
@@ -8,6 +9,10 @@ import {
   fail,
 } from './assetPackageService'
 
+// 与桌宠设置的范围保持一致；主进程与渲染进程独立编译。
+const MASCOT_MIN_FPS = 1
+const MASCOT_MAX_FPS = 120
+
 export function normalizeMascot(value: unknown): MascotDefinition | undefined {
   if (value === undefined) return undefined
   const raw = assertPlainObject(value, 'mascot')
@@ -15,6 +20,7 @@ export function normalizeMascot(value: unknown): MascotDefinition | undefined {
   const width = assertOptionalNumber(raw.width, 'mascot.width', 16, 1024)
   const opacity = assertOptionalNumber(raw.opacity, 'mascot.opacity', 0, 1)
   const animation = normalizeMascotAnimation(raw.animation)
+  const menu = normalizeMascotMenu(raw.menu)
   const position = raw.position === undefined ? undefined : raw.position
   if (
     position !== undefined &&
@@ -31,6 +37,7 @@ export function normalizeMascot(value: unknown): MascotDefinition | undefined {
     ...(opacity === undefined ? {} : { opacity }),
     ...(position === undefined ? {} : { position }),
     ...(animation === undefined ? {} : { animation }),
+    ...(menu === undefined ? {} : { menu }),
   }
 }
 
@@ -39,9 +46,20 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
   try {
     const raw = assertPlainObject(value, 'mascot.animation')
     const assetPath = assertAssetPath(raw.path, true)
-    const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 16)
-    const idleFps = assertOptionalNumber(raw.idleFps, 'mascot.animation.idleFps', 1, 24)
-    const workingFps = assertOptionalNumber(raw.workingFps, 'mascot.animation.workingFps', 1, 24)
+    const columns = assertOptionalNumber(raw.columns, 'mascot.animation.columns', 2, 120)
+    const frameCount = assertOptionalNumber(raw.frameCount, 'mascot.animation.frameCount', 2, 120)
+    const idleFps = assertOptionalNumber(
+      raw.idleFps,
+      'mascot.animation.idleFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
+    const workingFps = assertOptionalNumber(
+      raw.workingFps,
+      'mascot.animation.workingFps',
+      MASCOT_MIN_FPS,
+      MASCOT_MAX_FPS
+    )
     const lookPath = raw.lookPath === undefined ? undefined : assertAssetPath(raw.lookPath, true)
     const resultPath =
       raw.resultPath === undefined ? undefined : assertAssetPath(raw.resultPath, true)
@@ -62,9 +80,13 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
     ) {
       throw new Error('mascot.animation requires a PNG sprite sheet and an integer column count')
     }
+    if (frameCount !== undefined && (!Number.isInteger(frameCount) || frameCount < columns)) {
+      throw new Error('mascot.animation.frameCount must be an integer no smaller than columns')
+    }
     return {
       path: assetPath,
       columns,
+      ...(frameCount === undefined ? {} : { frameCount }),
       ...(idleFps === undefined ? {} : { idleFps }),
       ...(workingFps === undefined ? {} : { workingFps }),
       ...(lookPath === undefined ? {} : { lookPath }),
@@ -79,11 +101,7 @@ function normalizeMascotAnimation(value: unknown): MascotDefinition['animation']
   }
 }
 
-function validateMascotAnimationData(
-  animation: NonNullable<MascotDefinition['animation']>,
-  data: Buffer,
-  rows = 2
-): void {
+function validateMascotAnimationData(columns: number, data: Buffer, rows = 2): void {
   if (data.length < 33 || data.subarray(12, 16).toString('ascii') !== 'IHDR') {
     throw new AssetPackageError('INVALID_ANIMATION', 'mascot.animation: invalid PNG dimensions')
   }
@@ -94,7 +112,7 @@ function validateMascotAnimationData(
     !height ||
     width > 8192 ||
     height > 8192 ||
-    width % animation.columns !== 0 ||
+    width % columns !== 0 ||
     height % rows !== 0
   ) {
     throw new AssetPackageError(
@@ -119,9 +137,12 @@ export function validateMascotAssets(
   read: (assetPath: string) => Buffer
 ): void {
   if (!mascot?.animation) return
-  validateMascotAnimationData(mascot.animation, read(mascot.animation.path))
-  if (mascot.animation.resultPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.resultPath))
-  if (mascot.animation.dragPath)
-    validateMascotAnimationData(mascot.animation, read(mascot.animation.dragPath), 1)
+  const animation = mascot.animation
+  const rows = Math.ceil((animation.frameCount ?? animation.columns) / animation.columns)
+  validateMascotAnimationData(animation.columns, read(animation.path), rows * 2)
+  if (animation.lookPath) validateMascotAnimationData(3, read(animation.lookPath), 3)
+  if (animation.resultPath)
+    validateMascotAnimationData(animation.columns, read(animation.resultPath), rows * 2)
+  if (animation.dragPath)
+    validateMascotAnimationData(animation.columns, read(animation.dragPath), rows)
 }

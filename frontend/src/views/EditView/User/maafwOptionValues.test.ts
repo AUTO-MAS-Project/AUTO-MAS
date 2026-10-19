@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import type { MaaFWOptionInputInfo } from '@/types/script'
 import { checkMaaFWInputValue, effectiveMaaFWInputFieldValue } from './maafwOptionValues'
 

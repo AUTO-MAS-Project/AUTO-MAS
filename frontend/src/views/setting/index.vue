@@ -7,9 +7,13 @@ import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
-import type { PressSoundPreset } from '@/types/pressSound'
+import type { PressSoundPhase, PressSoundPreset } from '@/types/pressSound'
 import { MAX_PRESS_SOUND_BYTES } from '@/types/pressSound'
-import { clearCustomSoundCache, playPressSound } from '@/components/satellite/pressSound'
+import {
+  clearCustomSoundCache,
+  playPressSound,
+  previewPressSound,
+} from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -44,6 +48,7 @@ const {
   activeAppearance,
   modalContextHolder,
   appearanceBusy,
+  themeResetting,
   themeModeOptions,
   appearanceValue,
   appearanceOptions,
@@ -53,6 +58,7 @@ const {
   handleAppearanceChange,
   handleAppearanceImport,
   handleAppearanceRemove,
+  handleThemeReset,
 } = useAppearanceSettings()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
@@ -112,17 +118,6 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
   { label: t('setting.cursor.none'), value: 'none' },
   { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
   { label: t('setting.cursor.fluid'), value: 'fluid' },
-])
-
-const pressSoundOptions = computed<{ label: string; value: PressSoundPreset }[]>(() => [
-  { label: t('setting.pressSound.duck'), value: 'duck' },
-  { label: t('setting.pressSound.fx1'), value: 'fx1' },
-  {
-    label: pressSoundStore.customName
-      ? t('setting.pressSound.customNamed', { name: pressSoundStore.customName })
-      : t('setting.pressSound.custom'),
-    value: 'custom',
-  },
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
@@ -347,12 +342,6 @@ const handlePressSoundPresetChange = async (value: SelectValue) => {
     return
   }
 
-  // 还没导入过自定义音效时选它没有意义，不落盘
-  if (value === 'custom' && !pressSoundStore.customPath) {
-    message.warning(t('setting.toast.pressSoundCustomMissing'))
-    return
-  }
-
   try {
     await pressSoundStore.persist({ preset: value as PressSoundPreset })
   } catch (error) {
@@ -368,7 +357,8 @@ const handlePressSoundVolumeChange = async (volume: number) => {
   }
 }
 
-const handlePressSoundImport = async () => {
+/** 导入自定义音频：单文件模式导一个，双文件模式分别导按下与松开 */
+const handlePressSoundImport = async (kind: 'single' | 'press' | 'release' = 'single') => {
   try {
     const files = await window.electronAPI.selectFile([
       { name: '音频文件', extensions: ['wav', 'mp3', 'ogg', 'm4a', 'aac', 'flac'] },
@@ -395,20 +385,53 @@ const handlePressSoundImport = async () => {
     // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
     clearCustomSoundCache(filePath)
 
-    await pressSoundStore.persist({
-      preset: 'custom',
-      customPath: filePath,
-      customName: filePath.split(/[\\/]/).pop() ?? filePath,
-      enabled: true,
-    })
+    const name = filePath.split(/[\\/]/).pop() ?? filePath
+    if (kind === 'single') {
+      await pressSoundStore.persist({
+        preset: 'custom',
+        customPath: filePath,
+        customName: name,
+        enabled: true,
+      })
+    } else {
+      // 双文件模式：导完第二个才切过去，只有一个文件时先只记路径
+      const pressPath = kind === 'press' ? filePath : pressSoundStore.customPath
+      const releasePath = kind === 'release' ? filePath : pressSoundStore.customReleasePath
+      const ready = Boolean(pressPath && releasePath)
+      await pressSoundStore.persist({
+        ...(kind === 'press'
+          ? { customPath: filePath, customName: name }
+          : { customReleasePath: filePath, customReleaseName: name }),
+        ...(ready ? { preset: 'customPair' as const, enabled: true } : {}),
+      })
+    }
     message.success(t('setting.toast.pressSoundImported'))
   } catch (error) {
     reportPressSoundError('导入按压音效', error)
   }
 }
 
-const handlePressSoundPreview = () => {
-  void playPressSound(pressSoundStore.preset, pressSoundStore.volume, pressSoundStore.customPath)
+const handlePressSoundPreview = (phase?: PressSoundPhase) => {
+  if (phase) {
+    const filePath =
+      phase === 'release' ? pressSoundStore.customReleasePath : pressSoundStore.customPath
+    if (filePath) {
+      void playPressSound({
+        preset: 'custom',
+        volume: pressSoundStore.volume,
+        customPath: filePath,
+      })
+    }
+    return
+  }
+
+  const options = {
+    preset: pressSoundStore.preset,
+    volume: pressSoundStore.volume,
+    customPath: pressSoundStore.customPath,
+    customReleasePath: pressSoundStore.customReleasePath,
+  }
+  void previewPressSound(options)
 }
 
 // 其他操作
@@ -498,7 +521,8 @@ onMounted(() => {
             :appearance-options="appearanceOptions"
             :theme-color="themeColor"
             :theme-color-disabled="Boolean(activeAppearance)"
-            :appearance-busy="appearanceBusy"
+            :appearance-busy="appearanceBusy || themeResetting"
+            :theme-resetting="themeResetting"
             :theme-mode-options="themeModeOptions"
             :theme-color-options="themeColorOptions"
             :cursor-effect="cursorEffectStore.effect"
@@ -511,7 +535,10 @@ onMounted(() => {
             :home-satellite-style-saving="homeSatelliteStore.saving"
             :press-sound-enabled="pressSoundStore.enabled"
             :press-sound-preset="pressSoundStore.preset"
-            :press-sound-options="pressSoundOptions"
+            :press-sound-custom-path="pressSoundStore.customPath"
+            :press-sound-custom-name="pressSoundStore.customName"
+            :press-sound-custom-release-path="pressSoundStore.customReleasePath"
+            :press-sound-custom-release-name="pressSoundStore.customReleaseName"
             :press-sound-volume="pressSoundStore.volume"
             :press-sound-saving="pressSoundStore.saving"
             :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
@@ -525,6 +552,7 @@ onMounted(() => {
             :handle-appearance-import="handleAppearanceImport"
             :handle-appearance-remove="handleAppearanceRemove"
             :handle-theme-color-change="handleThemeColorChange"
+            :handle-theme-reset="handleThemeReset"
             :handle-cursor-effect-change="handleCursorEffectChange"
             :handle-low-performance-mode-change="handleLowPerformanceModeChange"
             :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"

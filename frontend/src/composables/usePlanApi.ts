@@ -60,7 +60,11 @@ export function usePlanApi() {
     try {
       const params: PlanUpdateIn = { planId, data }
 
-      return await Service.updatePlanApiPlanUpdatePost(params)
+      const response = await Service.updatePlanApiPlanUpdatePost(params)
+      if (response.code !== 200) {
+        throw new Error(response.message || t('misc.couldNotUpdatePlan'))
+      }
+      return response
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)

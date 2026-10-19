@@ -1737,7 +1737,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         log_item.content.extend(logs)
         try:
             await Config.save_general_log(
-                maafw_history_log_path(user_item.name, started_at),
+                maafw_history_log_path(
+                    user_item.name, started_at, self.script_info.name
+                ),
                 log_item.content,
                 log_item.status,
             )

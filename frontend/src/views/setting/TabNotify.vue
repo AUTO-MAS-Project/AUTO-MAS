@@ -291,7 +291,6 @@ const modalPopupContainer = () =>
     <NotifyChannelModal
       :open="activeChannel != null"
       :channel="activeChannel"
-      scope="global"
       :values="notifyValues"
       :save="saveField"
       :claw-binding="activeClawBinding"
