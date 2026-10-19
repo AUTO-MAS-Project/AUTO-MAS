@@ -53,7 +53,7 @@ export interface HomeActivitySource {
   /** 模块隐藏：停掉排队中的重试并挂起 */
   stop: () => void
   /** 手动刷新：清掉重试计数后立刻重取 */
-  refresh: () => void
+  refresh: () => Promise<void>
   /** 立即重取（换语言等场景用） */
   reload: () => void
   /** 可见性恢复后补一次挂起的重试 */
@@ -197,8 +197,10 @@ export const useHomeActivitySource = <T>(
     start,
     stop,
     refresh: () => {
+      clearRetry()
+      retryPending = false
       retryCount = 0
-      void load()
+      return load()
     },
     reload: () => {
       void load()

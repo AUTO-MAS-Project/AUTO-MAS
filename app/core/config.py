@@ -198,7 +198,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.7.0-beta.4"
+    VERSION = "v5.7.0-beta.5"
 
     def __init__(self) -> None:
         super().__init__()
@@ -351,6 +351,12 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json"
         )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        # 正式版没有接管字段，早期公测版默认关闭；有 CDK 的存量脚本只迁移一次。
+        for script in self.ScriptConfig.values():
+            if isinstance(script, MaaConfig) and await script.migrate_update_takeover(
+                global_cdk=str(self.get("Update", "MirrorChyanCDK") or "")
+            ):
+                logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
         if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
         if m9a_repair.needs_notice:

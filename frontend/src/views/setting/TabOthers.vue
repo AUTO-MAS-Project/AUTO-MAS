@@ -54,12 +54,6 @@ const handlePauseUntilChange = (value: string | null) => {
   void handleSettingChange('Update', 'PauseUntil', value ?? '')
 }
 
-const hotUpdateAvoidMinutes = computed(() => settings.Update?.HotUpdateAvoidMinutes ?? 5)
-const handleHotUpdateAvoidMinutesChange = (value: number | string | null) => {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 60) return
-  void handleSettingChange('Update', 'HotUpdateAvoidMinutes', value)
-}
-
 // 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
 const changelogVisible = ref(false)
 const unreleasedChangelog = import.meta.env.VITE_APP_CHANGELOG_UNRELEASED ?? {}
@@ -147,27 +141,6 @@ const copyAllInfo = async () => {
               size="large"
               style="width: 100%"
               @change="handlePauseUntilChange"
-            />
-          </div>
-        </a-col>
-        <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.hotUpdateAvoidMinutes') }}</span>
-              <a-tooltip :title="t('setting.others.hotUpdateAvoidMinutesTip')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input-number
-              :value="hotUpdateAvoidMinutes"
-              :min="0"
-              :max="60"
-              :precision="0"
-              :step="1"
-              :addon-after="t('setting.others.hotUpdateMinutes')"
-              size="large"
-              style="width: 100%"
-              @change="handleHotUpdateAvoidMinutesChange"
             />
           </div>
         </a-col>

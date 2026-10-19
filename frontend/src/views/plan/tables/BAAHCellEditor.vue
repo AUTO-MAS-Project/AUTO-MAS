@@ -43,14 +43,14 @@
         show-icon
         :message="t('plan.baah.saveFailed')"
         :description="saveErrorReason || undefined"
-      />
+      >
+        <template #action>
+          <a-button size="small" :loading="saving" @click="$emit('retry')">{{
+            t('plan.baah.retry')
+          }}</a-button>
+        </template>
+      </a-alert>
     </a-form>
-    <div class="baah-editor-footer">
-      <a-button :disabled="saving" @click="$emit('cancel')">{{ t('common.cancel') }}</a-button>
-      <a-button type="primary" :loading="saving" @click="$emit('save')">{{
-        t('plan.baah.save')
-      }}</a-button>
-    </div>
   </section>
 </template>
 
@@ -78,8 +78,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:state': [value: BAAHFieldState]
   'update:values': [value: number[]]
-  save: []
-  cancel: []
+  retry: []
   escape: []
 }>()
 const editorElement = ref<HTMLElement | null>(null)
@@ -92,7 +91,7 @@ const stateOptions = computed(() => [
 ])
 
 const partOptions = (hintKey: string, min: number, current: number) => {
-  const options = Array.from({ length: partOptionMax(hintKey) }, (_, index) => ({
+  const options = Array.from({ length: partOptionMax(hintKey, props.field) }, (_, index) => ({
     value: index + 1,
     label: hintKey === 'plan.baah.partRegion' ? baahRegionLabel(index + 1, t) : String(index + 1),
   }))
@@ -104,7 +103,11 @@ const partOptions = (hintKey: string, min: number, current: number) => {
   if (hintKey === 'plan.baah.partTimes')
     options.splice(1, 0, { value: 0, label: t('plan.baah.timesNumber', { value: 0 }) })
   // 已存的合法大数照样能看见、保存，预设下拉范围不能截断旧配置。
-  if (!options.some(option => option.value === current))
+  if (
+    hintKey !== 'plan.baah.partRegion' &&
+    hintKey !== 'plan.baah.partAcademy' &&
+    !options.some(option => option.value === current)
+  )
     options.push({
       value: current,
       label: hintKey === 'plan.baah.partRegion' ? baahRegionLabel(current, t) : String(current),
@@ -143,12 +146,5 @@ onMounted(async () => {
 }
 .baah-editor-hint {
   color: var(--ant-color-text-secondary);
-}
-.baah-editor-footer {
-  display: flex;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  gap: 8px;
-  padding-top: 12px;
 }
 </style>

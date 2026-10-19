@@ -1,6 +1,7 @@
 import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import { navigateTo } from '@/router'
 import { enterApp } from '@/utils/appEntry'
 
 const logger = window.electronAPI.getLogger('跳过初始化启动')
@@ -40,13 +41,12 @@ export function startSkippedInitializationStartup(): Promise<void> {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
-      resetInitializationStatus()
       sessionStorage.setItem('disableInitializationSkip', 'true')
       message.error(t('misc.backendFailedStartSwitching'))
 
-      if (window.location.hash !== '#/initialization') {
-        window.location.hash = '#/initialization'
-      }
+      // 取消尚未完成的主页跳转，初始化页落地前保留启动遮罩。
+      await navigateTo('/initialization', { replace: true })
+      resetInitializationStatus()
     } finally {
       finishBootstrap()
       startupPromise = null

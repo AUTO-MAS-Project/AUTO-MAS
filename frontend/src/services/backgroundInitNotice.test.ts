@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const getHealth = vi.hoisted(() => vi.fn())
 const notificationMocks = vi.hoisted(() => ({

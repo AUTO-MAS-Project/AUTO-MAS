@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { isUnselectableMaaFWTask, unselectableMaaFWQueueNotices } from './maafwUnselectableTasks'
 
 // 形状照后端预览：可选任务 unselectableReason 为 null，特调声明的给原因

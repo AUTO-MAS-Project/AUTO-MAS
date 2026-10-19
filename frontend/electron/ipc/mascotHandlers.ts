@@ -1,7 +1,15 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import type { DesktopMascotRuntime } from '../services/desktopMascotTypes'
+import type {
+  DesktopMascotColors,
+  DesktopMascotIdleMessage,
+  DesktopMascotMenuLabels,
+  DesktopMascotMenuResult,
+  DesktopMascotSelection,
+  DesktopMascotTaskMenu,
+} from '../../src/types/desktopMascot'
 import * as fs from 'fs'
 import * as path from 'path'
-import type { MascotSummary } from '../../src/types/mascotPack'
 import { getAppRoot } from '../services/environmentService'
 import { getLogger } from '../services/logger'
 import { importMascotPackage, listMascots, removeMascot } from '../services/mascotPackageService'
@@ -19,18 +27,11 @@ function forgetSource(id: string): void {
   }
 }
 
-export function broadcastMascotChange(): void {
+export function broadcastMascotChange(selection?: DesktopMascotSelection): void {
   for (const window of BrowserWindow.getAllWindows()) {
-    if (!window.isDestroyed()) window.webContents.send('mascot-changed')
+    if (!window.isDestroyed()) window.webContents.send('mascot-changed', selection)
   }
 }
-
-const summary = (mascot: MascotSummary): MascotSummary => ({
-  id: mascot.id,
-  name: mascot.name,
-  ...(mascot.description ? { description: mascot.description } : {}),
-  ...(mascot.previewUrl ? { previewUrl: mascot.previewUrl } : {}),
-})
 
 export function registerMascotHandlers(onChanged: () => void): void {
   if (registered) return
@@ -44,23 +45,19 @@ export function registerMascotHandlers(onChanged: () => void): void {
     if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
       return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 桌宠包' }
     }
-    const { mascot, existing, ...result } = importMascotPackage(
+    const result = importMascotPackage(
       app.getPath('userData'),
       path.resolve(zipPath),
       replace === true
     )
     if (result.success) {
-      logger.info(`桌宠已导入: ${mascot?.id}`)
-      if (mascot) forgetSource(mascot.id)
+      logger.info(`桌宠已导入: ${result.mascot?.id}`)
+      if (result.mascot) forgetSource(result.mascot.id)
       notify()
     } else {
       logger.warn(`桌宠导入失败: ${result.error}`)
     }
-    return {
-      ...result,
-      ...(mascot ? { mascot: summary(mascot) } : {}),
-      ...(existing ? { existing: summary(existing) } : {}),
-    }
+    return result
   })
   ipcMain.handle('mascot:remove', (_event, id: unknown) => {
     if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }
@@ -81,4 +78,183 @@ export function registerMascotHandlers(onChanged: () => void): void {
     }
     return result
   })
+}
+
+/** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */
+export function registerDesktopMascotHandlers(
+  service: Pick<
+    DesktopMascotRuntime,
+    | 'getData'
+    | 'setIdleMessage'
+    | 'handlePointer'
+    | 'startDrag'
+    | 'setDecodedImage'
+    | 'setActivity'
+    | 'showNotice'
+  > & {
+    setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void
+  },
+  getMainWindow: () => BrowserWindow | null,
+  receiveTaskMenu: (requestId: number, menu: DesktopMascotTaskMenu) => void,
+  receiveTaskActionResult: (requestId: number, result: DesktopMascotMenuResult) => void
+): () => void {
+  ipcMain.handle(
+    'desktop-mascot:ready',
+    (event, ready: unknown, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors) => {
+      if (event.sender !== getMainWindow()?.webContents || typeof ready !== 'boolean') return
+      if (
+        ready &&
+        (!colors ||
+          typeof colors.background !== 'string' ||
+          typeof colors.text !== 'string' ||
+          typeof colors.border !== 'string' ||
+          !Number.isFinite(colors.radius))
+      )
+        return
+      service.setReady(
+        ready,
+        labels &&
+          typeof labels.pauseAnimation === 'string' &&
+          typeof labels.resumeAnimation === 'string' &&
+          typeof labels.pauseIdleMessage === 'string' &&
+          typeof labels.resumeIdleMessage === 'string' &&
+          typeof labels.refreshIdleMessage === 'string' &&
+          typeof labels.refreshUnavailable === 'string' &&
+          typeof labels.quickStart === 'string' &&
+          typeof labels.stopTask === 'string' &&
+          typeof labels.noTasks === 'string' &&
+          typeof labels.noRunningTasks === 'string' &&
+          typeof labels.tasksUnavailable === 'string' &&
+          typeof labels.loadingTasks === 'string' &&
+          typeof labels.capabilityUnavailable === 'string'
+          ? labels
+          : undefined,
+        colors
+      )
+    }
+  )
+  ipcMain.handle('desktop-mascot:get', event => service.getData(event.sender))
+  ipcMain.handle('desktop-mascot:task-menu', (event, requestId: unknown, menu: unknown) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      typeof requestId !== 'number' ||
+      !Number.isSafeInteger(requestId) ||
+      !menu ||
+      typeof menu !== 'object' ||
+      !('enabled' in menu) ||
+      typeof menu.enabled !== 'boolean' ||
+      !('startFailed' in menu) ||
+      typeof menu.startFailed !== 'boolean' ||
+      !('startLoading' in menu) ||
+      typeof menu.startLoading !== 'boolean'
+    )
+      return
+    const validItems = (items: unknown): items is DesktopMascotTaskMenu['start'] =>
+      Array.isArray(items) &&
+      items.every(
+        item =>
+          item &&
+          typeof item.taskId === 'string' &&
+          item.taskId.length > 0 &&
+          typeof item.label === 'string' &&
+          typeof item.enabled === 'boolean'
+      )
+    if (
+      !('start' in menu) ||
+      !validItems(menu.start) ||
+      !('stop' in menu) ||
+      !validItems(menu.stop)
+    )
+      return
+    receiveTaskMenu(requestId, {
+      enabled: menu.enabled,
+      startFailed: menu.startFailed,
+      startLoading: menu.startLoading,
+      start: menu.start,
+      stop: menu.stop,
+    })
+  })
+  ipcMain.handle('desktop-mascot:drag-start', (event, offset: unknown) =>
+    service.startDrag(event.sender, offset)
+  )
+  ipcMain.handle(
+    'desktop-mascot:task-action-result',
+    (event, requestId: unknown, result: unknown) => {
+      if (
+        event.sender !== getMainWindow()?.webContents ||
+        !Number.isSafeInteger(requestId) ||
+        !result ||
+        typeof result !== 'object' ||
+        !('success' in result) ||
+        typeof result.success !== 'boolean' ||
+        ('message' in result && typeof result.message !== 'string')
+      )
+        return
+      receiveTaskActionResult(requestId as number, {
+        success: result.success,
+        ...('message' in result ? { message: result.message as string } : {}),
+      })
+    }
+  )
+  ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      !message ||
+      typeof message.text !== 'string' ||
+      typeof message.author !== 'string'
+    )
+      return
+    service.setIdleMessage(message)
+  })
+  const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
+    service.handlePointer(event.sender, action, session)
+  ipcMain.on('desktop-mascot:pointer', onPointer)
+  const onImageDecoded = (
+    event: Electron.IpcMainEvent,
+    imageUrl: unknown,
+    pngDataUrl: unknown
+  ): void => {
+    if (
+      typeof imageUrl !== 'string' ||
+      typeof pngDataUrl !== 'string' ||
+      !pngDataUrl.startsWith('data:image/png;base64,')
+    )
+      return
+    service.setDecodedImage(event.sender, imageUrl, pngDataUrl)
+  }
+  ipcMain.on('desktop-mascot:image-decoded', onImageDecoded)
+  ipcMain.handle('desktop-mascot:activity', (event, working: unknown, animate: unknown) => {
+    if (
+      event.sender !== getMainWindow()?.webContents ||
+      typeof working !== 'boolean' ||
+      typeof animate !== 'boolean'
+    )
+      return
+    service.setActivity(working, animate)
+  })
+  ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
+    if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
+    service.showNotice(
+      text,
+      reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
+        ? reaction
+        : undefined
+    )
+  })
+
+  return () => {
+    for (const channel of [
+      'desktop-mascot:ready',
+      'desktop-mascot:get',
+      'desktop-mascot:task-menu',
+      'desktop-mascot:task-action-result',
+      'desktop-mascot:drag-start',
+      'desktop-mascot:idle-message',
+      'desktop-mascot:activity',
+      'desktop-mascot:notice',
+    ])
+      ipcMain.removeHandler(channel)
+    ipcMain.removeListener('desktop-mascot:pointer', onPointer)
+    ipcMain.removeListener('desktop-mascot:image-decoded', onImageDecoded)
+  }
 }

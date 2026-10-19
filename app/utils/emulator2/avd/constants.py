@@ -25,9 +25,9 @@
 
 from dataclasses import dataclass
 
-#: 魔改 AVD 目前只给 M9A（特调声明 ``supports_mod_avd``，见 MaaFW ``flavor.py``）和 MAA 用：其它脚本
-#: 选了魔改 AVD 设备时，保存与运行时都用这句话拒绝，不走没测过的路。
-MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 M9A 和 MAA"
+#: 魔改 AVD 目前只给 MFW 脚本（MaaFW 引擎，通用项目与各特调）和 MAA 用：其它脚本选了魔改 AVD 设备时，
+#: 保存与运行时都用这句话拒绝，不走没测过的路。
+MOD_AVD_UNSUPPORTED_MESSAGE = "魔改 AVD 目前只支持 MFW 脚本和 MAA"
 
 #: 端口段：原生索引 i → 控制台 ``20000 + 10*i``，adb ``+1``，gRPC ``+2``。
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
@@ -67,6 +67,8 @@ LOG_KEEP_PER_INSTANCE = 10
 LOGS_DIR_MAX_BYTES = 1024**3
 #: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
 SHADER_CACHE_DIR = "shader-cache"
+#: 在本机生成的客体驱动补丁库（见 ``vulkanfix.py``），生成一次，之后各实例直接用。
+GUEST_PATCH_DIR = "guest-patches"
 
 
 def console_port(native_index: int | str) -> int:
@@ -207,8 +209,11 @@ DATA_PARTITION_RANGE_GB = (16, 512)
 #: 显示固定 720p（用户 10-04 定），开机前写进 ``config.ini`` 的 ``hw.lcd.*``，不用 ``wm size``
 #: （运行时覆盖出过小毛病）。即雷电 / MuMu 的默认值，脚本都认。
 SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = 1280, 720, 240
-#: 帧率跟着客体 60 Hz 走，没有可设的项；批量设置里选 60 帧当作没改。
-SCREEN_FPS = 60
+#: 刷新率（``config.ini`` 的 ``hw.lcd.vsync``，下次开机生效），按实例设。默认 60（用户 10-16 定：
+#: 帧率影响脚本操作）；30 是低消耗档：终末地大世界 30 Hz 下稳定 30 fps、qemu 约 1.6 核，60 Hz 下
+#: 54–61 fps、qemu 4 核以上（aemu-lab 修复队列「终末地帧率与稳定性」）。
+FPS_CHOICES = (30, 60)
+DEFAULT_FPS = 60
 
 #: 空闲页上报（气球，固定开启），开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
@@ -216,12 +221,18 @@ BALLOON_PAGE_REPORTING_ORDER = 9
 #: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
 #: 每次开机都设（不持久）。依据 10-04 硬杀实测（aemu-lab ``AGENTS.md``「关机」，32 次冷启动）：「先删旧文件
 #: 再把临时文件改名过去」这种写法，在默认 3000/500 下写完 2–34 秒内被硬杀会变成 0 字节；200/100 把窗口缩到
-#: 约 5 秒，代价是普通负载多写约 14%。AOSP 自己在低内存设备上也用 200。正常关机仍要先 ``sync``。
+#: 约 5 秒，代价是普通负载多写约 14%。AOSP 自己在低内存设备上也用 200。控制台 kill / 强杀前仍要先
+#: ``sync``；安卓正常关机由客体自己写回。
 GUEST_DIRTY_EXPIRE_CENTISECS = 200
 GUEST_DIRTY_WRITEBACK_CENTISECS = 100
 
 #: 客体脚本（``res/avd/guest/``）推到客体的位置。
 GUEST_TMP_DIR = "/data/local/tmp"
+#: 客体 Vulkan 驱动（编码器）库，补丁挂在它上面（见 ``vulkanfix.py``）。
+VULKAN_ENC_GUEST_PATH = "/vendor/lib64/libvulkan_enc.so"
+#: 客体驱动补丁的上传位置：挂上之后客体里那份改好的库标签变成 ``/vendor`` 的，adb 写不了，所以另起名字。
+#: 和 ``res/avd/guest/vulkanfix.sh`` 里的 ``u=`` 一致。
+VULKAN_FIX_UPLOAD_PATH = "/data/local/tmp/vulkanfix-upload.so"
 #: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。
 LOGCAT_BUFFER_SIZE = "16M"
 
@@ -275,16 +286,30 @@ WATCHDOG_PROBE_TIMEOUT_SECONDS = 10.0
 WATCHDOG_STRIKES = 2
 
 #: 关机各步的上限。调用方（``app/task/emulator_core.close_emulator``）整体只给 30 秒，超时后连强杀
-#: 都执行不到，所以加起来 27 秒：私有 server 没在跑时起它并替实例登记 4 + sync 3 + 控制台 kill 3
-#: + 等 qemu 退出 12 + 强杀后等 5。SDK adb 的 ``start-server`` 客户端要 2.08–2.12 秒才返回，所以起
-#: server 只等端口开始监听、不等客户端退出（第三轮复核：给 2 秒时 server 起来了 sync 却被跳过）。
-#: sync 正常几十毫秒（实测 46–93 ms），qemu 收到 kill 后 2–3 秒退出。
+#: 都执行不到，所以最坏情况要压在 28 秒以内。三条路径（见 ``AvdManager.close``）：
+#:
+#: - 正常关机（默认）：私有 server 没在跑时起它并替实例登记 4 + 安卓正常关机（发命令连同等 qemu
+#:   自己退出）15 = 19；超时或失败就退回：sync 2 + 控制台 kill 连同等 qemu 退出 5 + 强杀后等 2，
+#:   最坏 4 + 15 + 2 + 5 + 2 = 28。
+#: - 私有 adb 用不了（发不了关机命令，也发不了 sync）：4 + 控制台 kill 3 + 等 qemu 退出 12 + 强杀后
+#:   等 5 = 24。
+#: - 强制关闭（``ForceKillOnClose``）：4 + sync 3 + 强杀后等 5 = 12。
+#:
+#: SDK adb 的 ``start-server`` 客户端要 2.08–2.12 秒才返回，所以起 server 只等端口开始监听、不等客户端
+#: 退出（第三轮复核：给 2 秒时 server 起来了 sync 却被跳过）。sync 正常几十毫秒（实测 46–93 ms），
+#: qemu 收到控制台 kill 后 2–3 秒退出；安卓正常关机实测 7.4 秒 qemu 自己退出（游戏正在下载时）。
 ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS = 4.0
+GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 15.0
 SYNC_TIMEOUT_SECONDS = 3.0
 CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
 CLOSE_TIMEOUT_SECONDS = 12.0
 FORCE_KILL_WAIT_SECONDS = 5.0
-#: 关机 / 重启 / 注销前并发关魔改 AVD 实例的总时限（单台 27 秒以内，留一点余量）；到点不等，
+#: 正常关机没成、退回 sync + kill 时各步的上限（前面已经花掉最多 4 + 15 秒，只剩 9 秒）。
+#: 控制台 kill 那一步是「发 kill 连同等 qemu 退出」合计 5 秒，发命令本身仍最多 3 秒。
+FALLBACK_SYNC_TIMEOUT_SECONDS = 2.0
+FALLBACK_KILL_TIMEOUT_SECONDS = 5.0
+FALLBACK_FORCE_KILL_WAIT_SECONDS = 2.0
+#: 关机 / 重启 / 注销前并发关魔改 AVD 实例的总时限（单台 28 秒以内，留一点余量）；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
 #: 「安装 APK」一次 `adb install` 的时限。游戏安装包常有 1–3 GB，推送加安装在慢盘上要几分钟。

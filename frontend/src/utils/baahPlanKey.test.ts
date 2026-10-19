@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   applyFieldState,
   applyMixedPart,
@@ -28,7 +28,11 @@ describe('readDayFields', () => {
   })
 
   it('位数不足时补到界面暴露的位', () => {
-    expect(readDayFields({ Key: { Event: [3] } })).toEqual({ Event: [3, 1] })
+    expect(readDayFields({ Key: { Wanted: [3] } })).toEqual({ Wanted: [3, -1, -1] })
+  })
+
+  it('忽略旧计划表中的活动关卡', () => {
+    expect(readDayFields({ Key: { Event: [3, -1], Wanted: [] } })).toEqual({ Wanted: [] })
   })
 
   it('后端允许的额外位原样保留', () => {
@@ -43,14 +47,14 @@ describe('readDayFields', () => {
 
 describe('applyMixedPart', () => {
   it('只写目标类别，别的类别不补默认值', () => {
-    const write = applyMixedPart({}, 'Event', 0, 4)
-    expect(write.fields).toEqual({ Event: [4, 1] })
+    const write = applyMixedPart({}, 'Normal', 0, 4)
+    expect(write.fields).toEqual({ Normal: [4, 1, -1] })
     expect(write.corrected).toBe(false)
   })
 
   it('别的类别原样带过去', () => {
-    const write = applyMixedPart({ Wanted: [2, 3, 4] }, 'Event', 0, 4)
-    expect(write.fields).toEqual({ Wanted: [2, 3, 4], Event: [4, 1] })
+    const write = applyMixedPart({ Wanted: [2, 3, 4] }, 'Normal', 0, 4)
+    expect(write.fields).toEqual({ Wanted: [2, 3, 4], Normal: [4, 1, -1] })
   })
 
   it('保留没在界面上暴露的后端位', () => {
@@ -70,9 +74,9 @@ describe('applyMixedPart', () => {
     expect(write.corrected).toBe(false)
   })
 
-  it('活动关卡只有关卡与次数两位', () => {
-    const write = applyMixedPart(undefined, 'Event', 1, 5)
-    expect(write.fields.Event).toEqual([1, 5])
+  it('悬赏通缉默认最高关和最大次数', () => {
+    const write = applyMixedPart(undefined, 'Wanted', 0, 2)
+    expect(write.fields.Wanted).toEqual([2, -1, -1])
   })
 })
 
@@ -81,9 +85,10 @@ describe('partOptionMax', () => {
     expect(partOptionMax('plan.baah.partTimes')).toBe(10)
   })
 
-  it('地区与学院给到 10', () => {
-    expect(partOptionMax('plan.baah.partRegion')).toBe(10)
-    expect(partOptionMax('plan.baah.partAcademy')).toBe(10)
+  it('特别委托只到 2，悬赏通缉和学院只到 3', () => {
+    expect(partOptionMax('plan.baah.partRegion', 'Special')).toBe(2)
+    expect(partOptionMax('plan.baah.partRegion', 'Wanted')).toBe(3)
+    expect(partOptionMax('plan.baah.partAcademy', 'Exchange')).toBe(3)
   })
 
   it('章节位给到 30', () => {
@@ -114,21 +119,21 @@ describe('readFieldState', () => {
 
 describe('applyFieldState', () => {
   it('开：沿用原来填过的值，不重置成默认值', () => {
-    expect(applyFieldState({ Event: [4, 6] }, 'Event', 'on')).toEqual({ Event: [4, 6] })
+    expect(applyFieldState({ Wanted: [2, 4, 6] }, 'Wanted', 'on')).toEqual({ Wanted: [2, 4, 6] })
   })
 
   it('开：原来是空的就补回默认值', () => {
-    expect(applyFieldState({ Event: [] }, 'Event', 'on')).toEqual({ Event: [1, 1] })
+    expect(applyFieldState({ Wanted: [] }, 'Wanted', 'on')).toEqual({ Wanted: [1, -1, -1] })
   })
 
   it('关：写成空数组', () => {
-    expect(applyFieldState({ Event: [4, 6] }, 'Event', 'off')).toEqual({ Event: [] })
+    expect(applyFieldState({ Wanted: [2, 4, 6] }, 'Wanted', 'off')).toEqual({ Wanted: [] })
   })
 
   it('交给 BAAH：把这一类整个从今天去掉', () => {
-    const next = applyFieldState({ Event: [4, 6], Hard: [] }, 'Event', 'auto')
+    const next = applyFieldState({ Wanted: [2, 4, 6], Hard: [] }, 'Wanted', 'auto')
     expect(next).toEqual({ Hard: [] })
-    expect('Event' in next).toBe(false)
+    expect('Wanted' in next).toBe(false)
   })
 
   it('只动目标类别：把一类交给 BAAH 不会改到别的类', () => {

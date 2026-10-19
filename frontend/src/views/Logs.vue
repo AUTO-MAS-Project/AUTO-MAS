@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useLogHighlight } from '@/composables/useLogHighlight'
+import { useLogExport } from '@/composables/useLogExport'
 const logger = window.electronAPI.getLogger('日志查看')
 const route = useRoute()
 const { t } = useI18n()
@@ -26,7 +27,7 @@ const selectedLogFile = ref<'app' | 'frontend'>(
   route.query.file === 'frontend' ? 'frontend' : 'app'
 )
 const realTimeEnabled = ref(true)
-const exportingLogs = ref(false)
+const { exportingLogs, packageLogs } = useLogExport()
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
 // 已拿到的日志字节数，下一次只读这之后的新增部分；整份重载时归零
@@ -195,47 +196,6 @@ const toggleRealTime = () => {
   } else {
     stopRealTimeRefresh()
     message.info('已停止自动更新')
-  }
-}
-
-// 打包当前应用日志目录
-const packageLogs = async () => {
-  if (exportingLogs.value) return
-
-  exportingLogs.value = true
-  try {
-    const result = await window.electronAPI.exportLogs?.()
-    if (!result) {
-      message.error(t('logs.toast.packageNoResponse'))
-      logger.error('打包日志失败: 未收到响应')
-      return
-    }
-    if (result.success) {
-      message.success(t('logs.toast.packageExported'))
-      logger.info(`日志打包成功: ${result.zipPath}`)
-      if (result.zipPath) {
-        try {
-          await window.electronAPI.showItemInFolder?.(result.zipPath)
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.error(`打开压缩包所在文件夹失败: ${errorMsg}`)
-          message.error(t('logs.toast.openFolderFailed'))
-        }
-      }
-    } else if (result.error === '用户取消') {
-      // 主进程对保存对话框取消统一返回该中文文案，静默即可
-      logger.info('用户取消了日志打包')
-    } else {
-      logger.error(`打包日志失败: ${result.error}`)
-      const errorMsg = result.error || t('logs.toast.packageFailed')
-      message.error(errorMsg)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`打包日志失败: ${errorMsg}`)
-    message.error(t('logs.toast.packageError', { error: errorMsg }))
-  } finally {
-    exportingLogs.value = false
   }
 }
 

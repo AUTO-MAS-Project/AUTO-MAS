@@ -73,6 +73,8 @@ from .tools.backup_archive import (
 )
 from .tools.launcher_start import (
     async_start_game_via_launcher,
+    detect_game_maintenance_text,
+    find_client_pids,
     find_game_pids,
     find_launcher_pids,
     has_launcher_window,
@@ -749,6 +751,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
             logger.info(message)
             await self._push_dispatch_log(message)
 
+    def _maintenance_detect(self) -> str | None:
+        """维护检测：只认本专项运行客户端的窗口，避免读到同名其它游戏。
+
+        ``Client-Win64-Shipping.exe`` 是虚幻通用进程名，同机可能有另一款同名
+        进程的游戏；按本专项的启动器安装根目录树内进程与已配置客户端 exe
+        路径取 PID，读不到归属时返回 None 放行。
+        """
+
+        return detect_game_maintenance_text(
+            find_client_pids(self.game_process_path, self.launcher_path)
+        )
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -814,6 +828,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         self.cur_user_item.status = "异常"
                     continue
 
+            # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
+            # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前用户；
+            # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
+            if await self.skip_on_game_maintenance(self._maintenance_detect):
+                break
+
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
             # 开关在游戏配置区，依赖 Game.Enabled（未启用游戏配置则不生效）；
             # 用户未填写手机号时跳过不切换。
@@ -872,11 +892,40 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
 
             self.wait_event.clear()
-            await self.wait_event.wait()
+            maintenance_watch = asyncio.create_task(
+                self.watch_game_maintenance(self._maintenance_detect, self.wait_event)
+            )
+            try:
+                await self.wait_event.wait()
+            finally:
+                # 出等待循环（含用户手动中止与异常路径）都要停掉监视
+                maintenance_watch.cancel()
+                with suppress(asyncio.CancelledError):
+                    await maintenance_watch
             await self.log_monitor.stop()
+
+            # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
+            # 在日志监控停止后落笔，避免被 check_log 的末次轮询覆盖
+            if (
+                self.cur_user_item.maintenance_skipped
+                and self._maintenance_reason
+                and self.cur_user_log.status != "Success!"
+            ):
+                self.cur_user_log.status = self._maintenance_reason
+                self.cur_user_log.content.append(self._maintenance_reason)
+                self.cur_user_item.status = "跳过"
+                self.script_info.log = f"{self._maintenance_reason}\n正在中止相关程序"
+                # 通知放在最终判定处推送，避免与随后的成功结论互相矛盾
+                await self.notify_maintenance_skip(self._maintenance_reason)
+                await self.kill_managed_process(
+                    kill_game=self._game_management_enabled()
+                )
+                break
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
+                # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
+                self.clear_maintenance_hit()
                 self.script_info.log = (
                     "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
                 )
@@ -1013,7 +1062,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 statistics["user_result"] = (
                     "代理任务全部完成" if self.run_book else self.cur_user_item.result
                 )
-                success_symbol = "√" if self.run_book else "X"
+                # 维护跳过不是失败，统计标题用中性符号而非失败标记
+                success_symbol = (
+                    "√"
+                    if self.run_book
+                    else "-"
+                    if self.cur_user_item.maintenance_skipped
+                    else "X"
+                )
                 await push_notification(
                     "统计信息",
                     f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
@@ -1057,8 +1113,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的 OK-WW 自动代理任务已完成")
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
-            if self.cur_user_item.status != "完成":
+            maintenance_skipped = self.cur_user_item.maintenance_skipped
+            # 维护跳过不是失败：上次代理状态记「维护中」，用户状态保持「跳过」
+            await self.cur_user_config.set(
+                "Data",
+                "LastProxyStatus",
+                "维护中" if maintenance_skipped else "失败",
+            )
+            if maintenance_skipped:
+                if self.cur_user_item.status not in ("完成", "跳过"):
+                    self.cur_user_item.status = "异常"
+            elif self.cur_user_item.status != "完成":
                 self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):

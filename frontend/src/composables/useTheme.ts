@@ -171,18 +171,6 @@ const updateCSSVariables = () => {
     '--app-appearance-background-size',
     activeAppearance.value?.background?.size ?? 'cover'
   )
-  root.style.setProperty(
-    '--app-appearance-mascot-width',
-    `${activeAppearance.value?.mascot?.width ?? 144}px`
-  )
-  root.style.setProperty(
-    '--app-appearance-mascot-opacity',
-    String(activeAppearance.value?.mascot?.opacity ?? 1)
-  )
-  root.style.setProperty(
-    '--app-appearance-mascot-position',
-    activeAppearance.value?.mascot?.position ?? 'bottom-right'
-  )
   if (!resolvedAntTokens.value) return
   const customTokens = activeAppearance.value?.tokens
   const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]
@@ -526,6 +514,30 @@ function getThemeConfig() {
 const antdTheme = computed(getThemeConfig)
 
 export function useTheme() {
+  const resetTheme = (): Promise<void> =>
+    queueThemeChange(async () => {
+      const revision = ++themeRevision
+      const savedConfigRevision = configRevision
+      const defaults: ThemeSnapshot = {
+        themeMode: 'system',
+        themeColor: 'blue',
+        appearanceId: null,
+      }
+      themeMode.value = defaults.themeMode
+      themeColor.value = defaults.themeColor
+      appearanceId.value = null
+      activeAppearance.value = null
+      updateTheme()
+      try {
+        await saveConfig(defaults)
+        if (configRevision === savedConfigRevision) setPersistedThemeSnapshot(defaults)
+      } catch (error) {
+        if (revision === themeRevision) restorePersistedThemeSnapshot()
+        logger.error(`重置主题失败: ${error instanceof Error ? error.message : String(error)}`)
+        throw error
+      }
+    })
+
   const setThemeMode = (mode: ThemeMode): Promise<void> =>
     queueThemeChange(async () => {
       const revision = ++themeRevision
@@ -810,6 +822,7 @@ export function useTheme() {
     },
     setThemeMode,
     setThemeColor,
+    resetTheme,
     setAppearance,
     loadAppearances,
     importAppearance,

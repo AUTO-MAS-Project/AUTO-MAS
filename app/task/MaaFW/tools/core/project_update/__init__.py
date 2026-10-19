@@ -12,6 +12,7 @@ from .precheck_memo import (
     write_runtime_precheck,
 )
 from .updater import (
+    ALERT_LOG_PREFIX,
     MaaFWMirrorCdkStatus,
     MaaFWProjectUpdateCandidate,
     MaaFWProjectUpdateDiscovery,
@@ -26,6 +27,7 @@ from .updater import (
 )
 
 __all__ = [
+    "ALERT_LOG_PREFIX",
     "MaaFWMirrorCdkStatus",
     "MaaFWProjectUpdateCandidate",
     "MaaFWProjectUpdateDiscovery",

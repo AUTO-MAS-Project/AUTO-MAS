@@ -5,16 +5,19 @@
     <RuntimeBackendStartPanel
       v-if="isBackendStep"
       :retrying="flowKind === 'startup'"
+      :runtime-mode="runtimeMode"
       :show-skip-button="currentStep.canSkip"
       @update:status="handleBackendStatusChange"
       @complete="handleBackendComplete"
       @error="handleBackendError"
+      @runtime-updated="handleRuntimeUpdated"
       @skip="handleSkip"
     />
     <LaunchFailure
       v-else-if="hasFailed"
       v-bind="failureProps"
       @action="handleFailureAction"
+      @runtime-updated="handleRuntimeUpdated"
       @update:selected-mirror="handleMirrorSelect"
       @skip="handleSkip"
     />
@@ -51,10 +54,12 @@ const {
   handleBackendStatusChange,
   handleFailureAction,
   handleMirrorSelect,
+  handleRuntimeUpdated,
   handleSkip,
   hasFailed,
   isBackendStep,
   launchSteps,
+  runtimeMode,
   statusDetails,
   statusHint,
   statusProgress,

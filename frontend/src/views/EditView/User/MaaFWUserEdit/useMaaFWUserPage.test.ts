@@ -1,5 +1,5 @@
 import { effectScope, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const mocks = vi.hoisted(() => {
   const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }

@@ -26,6 +26,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
+from app.services.platform.power import power
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.controller_win32.service import (
@@ -80,7 +81,6 @@ from app.task.notify_core import (
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
-from app.utils.emulator2.avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
 from app.utils.game_apk import adb_runner_scope
 from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
@@ -191,7 +191,7 @@ _RELAY_YIELD_EVERY_LINES = 50
 _WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
-# Game.WaitTime 填 0 时等游戏窗口出现的上限（秒），与 WaitTime 的默认值相同
+# Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
 _WINDOW_READY_FALLBACK_SECONDS = 60
 # 脚本页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
@@ -473,14 +473,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.run_complete = False
+        # 本用户运行期间的「保持显示开启」请求，见 main_task。
+        self._display_hold: Any = None
         self.opened_emulator = False
         self.opened_game = False
         self.game_process_manager = ProcessManager()
         # 启动游戏前临时改写的 Unity 注册表分辨率，游戏关闭后恢复；None 表示没改
         self.game_resolution_override: UnityGameResolutionOverride | None = None
-        # 本轮游戏窗口出现的单调时钟时刻，只在游戏是刚启动的（MAS 拉起、或接管时
-        # 等到窗口冒出来）才记；据此算首个任务的最早下发时刻。None 表示游戏早就在跑。
-        self.game_window_ready_at: float | None = None
+        # 本轮游戏刚启动的单调时钟时刻，据此算首个任务的最早下发时刻。只在游戏是刚
+        # 启动的才记：桌面游戏是窗口出现那一刻（MAS 拉起、或接管时等到窗口冒出来），
+        # 模拟器是 MAS 随模拟器把游戏拉到前台那一刻。None 表示游戏早就在跑。
+        self.game_started_at: float | None = None
+        # 模拟器冷启动游戏时为真：闸门改按「画面有内容 + 客体读盘停下来」放行，上限仍是
+        # Game.WaitTime（加载页和动态标题都一直在动，像素判断分不出两者）。桌面路径始终为假。
+        self.game_start_disk_quiet = False
         self.project_lock_key: str | None = None
         self.runner_process: asyncio.subprocess.Process | None = None
         self.pretask_process: asyncio.subprocess.Process | None = None
@@ -680,6 +686,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             for warning in self.run_plan.warnings:
                 self._append_log(f"MaaFW 运行计划提示: {warning}")
 
+        # Windows 到点熄屏后，鹰角启动器这类网页界面不出画面，项目的运行前设置在里面什么都
+        # 认不出（2026-10-17/18 生产 MaaEnd「🚀启动游戏（PC）」两晚失败，亮屏 5 秒即过）。
+        # 整个用户运行期间保持显示开启，屏已熄就先叫醒；收尾时撤销，final_task 再兜一次。
+        self._ensure_display_hold()
         try:
             # 执行任务前脚本（每用户仅一次，重试不重复跑）。
             # 和下面 finally 里的后脚本放进同一个 try，两者严格配对：
@@ -690,11 +700,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            await self._run_pretasks()
             # 上一次尝试的失败摘要与是否重启过客户端：新一次另起日志后界面从头显示，
             # 不在开头写一句，用户只看到「尝试次数: 2/3」，不知道为什么重来。
             previous_failure: str | None = None
             previous_restarted = False
+            # 项目的运行前设置（interface pretask，如 MaaEnd 的「启动游戏（PC）」）放进每次
+            # 尝试里：它自己失败要能重试；游戏被本轮的「关闭游戏」任务或重启关掉后，重试也要
+            # 靠它重新拉起，否则第 2、3 次在找窗口那一步当场失败。
+            pretasks_done = False
+            # 上一次失败后 MAS 自己起的游戏 / 模拟器是否已关掉（关的时候报错也算：两个关闭
+            # 函数不论成败都清掉 opened_*，下一轮会重新拉起），这时运行前设置要重跑
+            client_reset = False
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -719,6 +735,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self._log_retry_skipped_tasks()
                     if self.run_plan is None or self.interface_model is None:
                         raise RuntimeError("MaaFW 运行计划尚未初始化")
+                    self._ensure_display_hold()
+                    if not pretasks_done or await self._pretasks_need_rerun(
+                        client_reset
+                    ):
+                        # 先清标记：重跑到一半失败时，下一轮不能因为窗口已被拉起就跳过
+                        pretasks_done = False
+                        await self._run_pretasks()
+                        pretasks_done = True
                     await self._ensure_desktop_game_started()
                     device_config = await self._build_device_config(
                         self.run_plan,
@@ -765,9 +789,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if unretryable:
                         break
                     previous_failure = message
-                    previous_restarted = await self._restart_client_before_retry(
-                        index + 1
-                    )
+                    (
+                        previous_restarted,
+                        client_reset,
+                    ) = await self._reset_client_for_retry(index + 1)
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
@@ -833,9 +858,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                     else:
                         previous_failure = message
-                        previous_restarted = await self._restart_client_before_retry(
-                            index + 1
-                        )
+                        (
+                            previous_restarted,
+                            client_reset,
+                        ) = await self._reset_client_for_retry(index + 1)
         finally:
             # 执行任务后脚本（每用户仅一次）。放在 finally 里是有意的：成功、重试全败、
             # 用户中途取消，对这个用户来说都是「跑完了」，收尾脚本都该跑到。
@@ -850,8 +876,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self._close_emulator()
             await self._close_game()
             await self._release_project_path()
+            self._release_display_hold()
 
     async def final_task(self) -> None:
+        self._release_display_hold()
         await self._shutdown_runner()
         if self.check_result != "Pass":
             if self.maintenance_skipped:
@@ -1243,6 +1271,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         device_info = await self.emulator_manager.open(
             emulator_index, package_name, **self._mod_avd_open_kwargs()
         )
+        # 只有冷启动（进程原本不在，launched）才等：进程本来就在（在前台 already-running、
+        # 从后台切回 resumed）、没给包名、拉起失败都不等；旧式模拟器管理器不回报拉应用
+        # 结果，同样不等
+        if getattr(device_info, "app_launch", "") == "launched":
+            self.game_started_at = time.monotonic()
+            self.game_start_disk_quiet = True
+            self._append_log(f"已随模拟器启动游戏: {package_name}")
+        else:
+            self.game_started_at = None
+            self.game_start_disk_quiet = False
         if Config.get("Function", "IfSilence"):
             with suppress(Exception):
                 await self.emulator_manager.setVisible(emulator_index, False)
@@ -1383,8 +1421,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             resolve_device = getattr(self.emulator_manager, "resolve_device", None)
             avd_ref = resolve_device(emulator_index) if resolve_device else None
         if avd_ref is not None and avd_ref.emulator_type == "avd":
-            if not self._supports_mod_avd():
-                raise RuntimeError(MOD_AVD_UNSUPPORTED_MESSAGE)
             self._cached_adb_profile = self._build_avd_adb_profile(avd_ref)
             return self._cached_adb_profile
 
@@ -1450,19 +1486,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
         return self._cached_adb_profile
 
-    def _supports_mod_avd(self) -> bool:
-        """这个脚本的特调声明了 ``supports_mod_avd``（目前只有 M9A）：MaaFW 里魔改 AVD 只对它放行。"""
-        return bool(
-            getattr(resolve_flavor(self.script_config), "supports_mod_avd", False)
-        )
-
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用魔改 AVD（MaaFW 里只对 M9A 特调放行）；
+        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用魔改 AVD（MaaFW 脚本一律放行）；
         旧式模拟器管理器不收这个参数。"""
         from app.utils.emulator2.facade import Emulator2Manager
 
         if isinstance(self.emulator_manager, Emulator2Manager):
-            return {"allow_mod_avd": self._supports_mod_avd()}
+            return {"allow_mod_avd": True}
         return {}
 
     def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
@@ -1837,7 +1867,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             raise
         started_at = self.cur_user_log_started_at or datetime.now()
-        history_log = maafw_history_log_path(self.cur_user_item.name, started_at)
+        history_log = maafw_history_log_path(
+            self.cur_user_item.name, started_at, self.script_info.name
+        )
         history_dir = history_log.parent
         history_stamp = history_log.stem
         job_path: Path | None = None
@@ -1857,6 +1889,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 failure_screenshot_dir=history_dir,
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
+                task_start_gate_mode=(
+                    "disk_quiet" if self.game_start_disk_quiet else "screen"
+                ),
                 run_deadline_at=run_deadline_at,
                 task_time_limit_seconds=task_time_limit_seconds,
                 task_time_limit_overrides=task_time_limit_overrides,
@@ -2172,6 +2207,35 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _shutdown_runner(self) -> None:
         await self._terminate_pretask_process()
         await self._terminate_runner_process()
+
+    async def _pretasks_need_rerun(self, client_reset: bool) -> bool:
+        """重试前判断要不要再跑一遍已经成功过的运行前设置。
+
+        只在客户端已经不在时重跑：MAS 刚关掉自己起的游戏 / 模拟器，或者 Win32 下
+        控制器的窗口已经找不到（游戏由运行前设置拉起、被队列里的「关闭游戏」任务关掉，
+        MAS 不知道它是谁起的）。游戏还开着时不重跑，免得项目的启动脚本对着已在运行的
+        游戏再走一遍。固定 HWnd、控制器没有窗口规则这两种只是「看不出窗口在不在」，
+        不挡前一种：MAS 自己关掉的客户端一定不在了。
+        """
+
+        if self.run_plan is None or not self.run_plan.pretasks:
+            return False
+        if client_reset:
+            self._append_log("游戏/模拟器已在上一次失败后关闭，重新应用运行前设置")
+            return True
+        if self.run_plan.controllerType != "Win32" or self.interface_model is None:
+            return False
+        if _optional_int(self.script_config.get("Device", "HWnd")):
+            return False
+        controller = _find_controller(
+            self.interface_model, self.run_plan.controllerName
+        )
+        if not controller_has_window_rules(controller):
+            return False
+        if await asyncio.to_thread(_match_controller_windows, controller):
+            return False
+        self._append_log("未找到游戏窗口，重新应用运行前设置")
+        return True
 
     async def _run_pretasks(self) -> None:
         if self.run_plan is None:
@@ -2498,6 +2562,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
             self._cached_adb_address = None
             self._cached_device_info = None
+            # 游戏随模拟器一起关了；下一轮重开时按那次拉起重新起算
+            self.game_started_at = None
+            self.game_start_disk_quiet = False
             # 雷电截图增强的 extras 里带着这次启动的 dnplayer pid；重开后还用旧 pid，
             # MaaFW 建不出截图实例（Failed to create ld inst），这一轮当场 connect 失败。
             self._cached_adb_profile = None
@@ -2548,7 +2615,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._note_launch_arguments_skipped()
             if await self._wait_for_desktop_game_ready(game_path):
                 # 进程在、窗口是等出来的：游戏正在启动，和 MAS 自己拉起的一样要等画面
-                self.game_window_ready_at = time.monotonic()
+                self.game_started_at = time.monotonic()
             await self._activate_desktop_game_window(game_path)
             return
 
@@ -2571,7 +2638,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
             self.opened_game = True
             await self._wait_for_desktop_game_ready(game_path)
-            self.game_window_ready_at = time.monotonic()
+            self.game_started_at = time.monotonic()
         except Exception:
             self.opened_game = False
             with suppress(Exception):
@@ -2746,23 +2813,33 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         raise RuntimeError(f"游戏进程在 {wait_time}s 内未启动: {game_path.name}")
 
     def _task_start_not_before(self) -> float | None:
-        """刚启动的桌面游戏，第一个任务最晚可下发的墙钟时刻；不用等时返回 None。
+        """本轮刚启动的游戏，第一个任务最晚可下发的墙钟时刻；不用等时返回 None。
 
-        沿用 ``Game.WaitTime``——等窗口出现用的就是它，等画面稳定再用一次同样的上限，
-        用户只需要理解一个「启动等待时间」。从窗口出现起算，扣掉已经过去的部分
-        （窗口前置、运行池租约、job 落盘）；剩下的交给 worker 在初始化完成后补足，
+        沿用 ``Game.WaitTime``，用户只需要理解一个「启动等待时间」：桌面游戏等窗口出现
+        用的就是它，等画面稳定再用一次同样的上限；模拟器上从 MAS 随模拟器把游戏拉到
+        前台起算。起算时刻（``game_started_at``）之后已经过去的部分（窗口前置、ADB 路径
+        解析、运行池租约、job 落盘）先扣掉；剩下的交给 worker 在初始化完成后补足，
         这样 MaaFW 加载资源、连 controller、起 agent 的几秒到十几秒也算在等待里。
-        worker 看到画面稳定会提前放行，这个时刻只是上限。重试轮次时游戏已经跑了
-        很久，剩余为负，直接不等。
+        worker 看到画面稳定会提前放行，这个时刻只是上限。游戏早就在跑时剩余为负，
+        直接不等。
+
+        模拟器冷启动（``game_start_disk_quiet``）时 worker 按「画面有内容、读盘停下来」提前
+        放行，到这个时刻还是黑屏就继续等。这时剩余为负也照样给时刻，让 worker 做黑屏检查。
         """
 
-        ready_at = self.game_window_ready_at
-        if ready_at is None:
+        started_at = self.game_started_at
+        if started_at is None:
             return None
         settle = max(0, int(self.script_config.get("Game", "WaitTime") or 0))
         if settle <= 0:
             return None
-        remaining = settle - (time.monotonic() - ready_at)
+        remaining = settle - (time.monotonic() - started_at)
+        if self.game_start_disk_quiet:
+            self._append_log(
+                f"模拟器冷启动游戏，最多等 {settle}s 再下发任务，画面出来且读盘停下来即提前；"
+                f"剩余约 {max(remaining, 0):.0f}s（与 MaaFW 初始化并行）"
+            )
+            return time.time() + remaining
         if remaining <= 0:
             return None
         self._append_log(
@@ -2794,6 +2871,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(0.5)
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
+
+    async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
+        """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。
+
+        前者只决定下一轮日志开头写不写「已重启」；后者给运行前设置判断要不要重跑——
+        关的时候报错，opened_* 也已清掉、下一轮会重新拉起，运行前设置同样要重来。
+        """
+
+        had_client = self.opened_game or self.opened_emulator
+        restarted = await self._restart_client_before_retry(attempt)
+        still_open = self.opened_game or self.opened_emulator
+        return restarted, bool(had_client and not still_open)
 
     async def _restart_client_before_retry(self, attempt: int) -> bool:
         """一轮失败后把 MAS 自己拉起的游戏/模拟器关掉，让下一轮从启动重新来。
@@ -2945,7 +3034,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return False
         finally:
             self.opened_game = False
-            self.game_window_ready_at = None
+            self.game_started_at = None
             await self._restore_game_resolution_override()
 
     async def _try_enter_project_path(self) -> bool:
@@ -2961,6 +3050,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await release_project_path(self.project_lock_key)
         self.project_lock_key = None
 
+    def _ensure_display_hold(self) -> None:
+        """没有生效中的「保持显示开启」请求就再请求一份。
+
+        每次尝试开头都调：电源延时 / 倒计时期间又起了任务时，MAS 执行睡眠 / 休眠前会撤掉
+        所有请求、醒来后不会自己补；请求本身失败也会变成已撤销。怕熄屏的启动器那一步就在
+        尝试开头的运行前设置里。
+        """
+
+        hold = self._display_hold
+        if hold is None or not hold.active:
+            self._display_hold = power.hold_display(
+                f"MFW 运行（{self.cur_user_item.name}）"
+            )
+
+    def _release_display_hold(self) -> None:
+        hold, self._display_hold = self._display_hold, None
+        if hold is not None:
+            hold.release()
+
     async def _save_user_logs(self) -> list[Path]:
         """保存本轮各次尝试的日志，返回对应的统计文件路径。
 
@@ -2970,7 +3078,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
-            log_path = maafw_history_log_path(self.cur_user_item.name, timestamp)
+            log_path = maafw_history_log_path(
+                self.cur_user_item.name, timestamp, self.script_info.name
+            )
             if not log_item.content:
                 log_item.content = ["未捕获到任何运行日志"]
             if log_item.status == "未开始监看日志":

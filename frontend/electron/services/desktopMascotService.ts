@@ -1,38 +1,17 @@
-import { app, BrowserWindow, Menu, nativeImage, screen, systemPreferences } from 'electron'
-import type { NativeImage, Point, WebContents } from 'electron'
+import { app, BrowserWindow, nativeImage, screen } from 'electron'
+import type { NativeImage, Point, Size, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
   DesktopMascotData,
   DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
   DesktopMascotUpdate,
+  DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
-import { getAppearance } from './appearanceService'
-import { getMascot } from './mascotPackageService'
-
-export interface DesktopMascotPreferences {
-  appearanceId?: string | null
-  /** 为空时跟随主题；有值时使用独立安装的桌宠。 */
-  desktopMascotId?: string | null
-  desktopMascotEnabled?: boolean
-  desktopMascotAnimationPaused?: boolean
-  desktopMascotIdleMessagePaused?: boolean
-  desktopMascotPosition?: Point
-}
-
-interface DesktopMascotOptions {
-  readPreferences(): DesktopMascotPreferences
-  savePosition(position: Point): void
-  saveAnimationPaused(paused: boolean): void
-  saveIdleMessagePaused(paused: boolean): void
-  getMainWindow(): BrowserWindow | null
-  onError(error: unknown): void
-}
+import { getMascotLayout, getMascotSize, isMascotVisible } from './desktopMascotGeometry'
+import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
-const NOTICE_WIDTH = 280
-const NOTICE_HEIGHT = 108
 
 // 只做鼠标命中判断，不裁剪原生透明窗口；动画取所有帧的并集，避免边缘随播放闪动。
 export function createMascotHitMask(images: NativeImage[]): Uint8Array {
@@ -47,7 +26,36 @@ export function createMascotHitMask(images: NativeImage[]): Uint8Array {
   return mask
 }
 
-export class DesktopMascotService {
+/** 各动作占连续的行，末行未用的格子不参与显示和鼠标命中。 */
+function cropAnimationFrames(
+  sheet: NativeImage,
+  columns: number,
+  frameCount: number,
+  actions: number
+): NativeImage[] {
+  const { width, height } = sheet.getSize()
+  const rows = Math.ceil(frameCount / columns)
+  const frameWidth = width / columns
+  const frameHeight = height / (rows * actions)
+  if (sheet.isEmpty() || !Number.isInteger(frameWidth) || !Number.isInteger(frameHeight)) return []
+  const frames: NativeImage[] = []
+  for (let action = 0; action < actions; action++) {
+    for (let frame = 0; frame < frameCount; frame++) {
+      frames.push(
+        sheet.crop({
+          x: (frame % columns) * frameWidth,
+          y: (action * rows + Math.floor(frame / columns)) * frameHeight,
+          width: frameWidth,
+          height: frameHeight,
+        })
+      )
+    }
+  }
+  return frames
+}
+
+export class DesktopMascotService implements DesktopMascotRuntime {
+  private disposed = false
   private window: BrowserWindow | null = null
   private data: DesktopMascotData | null = null
   private ready = false
@@ -64,16 +72,20 @@ export class DesktopMascotService {
   private animationPaused = false
   private idleMessagePaused = false
   private motionOverride = false
-  private menuLabels: DesktopMascotMenuLabels | null = null
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
+  private sourceSize: Size = { width: 1, height: 1 }
+  private maskSource: { size: Size; mask: Uint8Array } | null = null
+  private hitMasks = new Map<string, Uint8Array>()
+  private preferredWidth = 144
+  private layoutRevision = 0
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
-  setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void {
+  setReady(ready: boolean, colors?: DesktopMascotColors): void {
+    if (this.disposed) return
     this.ready = ready
-    if (labels) this.menuLabels = labels
     if (colors) this.colors = colors
     if (ready && this.window && this.data) {
       if (colors) this.updateData({ colors })
@@ -123,6 +135,22 @@ export class DesktopMascotService {
     if (working || !animate) this.updateLook(null)
   }
 
+  /** 播放偏好只同步状态，不重新读取图集和计算命中区域。 */
+  syncPreferences(): void {
+    if (this.disposed || !this.data) return
+    const preferences = this.options.readPreferences()
+    this.animationPaused = preferences.desktopMascotAnimationPaused === true
+    this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
+    this.motionOverride = typeof preferences.desktopMascotAnimationPaused === 'boolean'
+    this.updateData({
+      fps: preferences.desktopMascotFps ?? null,
+      animate: this.animate && !this.animationPaused,
+      motionOverride: this.motionOverride,
+      idleMessage: this.idleMessagePaused ? undefined : this.idleMessage,
+    })
+    if (this.animationPaused) this.updateLook(null)
+  }
+
   showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): void {
     if (!this.data || !text.trim()) return
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
@@ -135,48 +163,78 @@ export class DesktopMascotService {
     }, 8000)
   }
 
-  handlePointer(sender: WebContents, action: unknown): void {
+  startDrag(sender: WebContents, offset: unknown): boolean {
+    if (!this.window || sender !== this.window.webContents || !this.data || this.dragOffset)
+      return false
+    if (!offset || typeof offset !== 'object') return false
+    const { x, y, session, revision } = offset as DesktopMascotDragStart
+    if (
+      revision !== this.layoutRevision ||
+      !Number.isSafeInteger(session) ||
+      session <= 0 ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      x < 0 ||
+      y < 0 ||
+      x >= this.hitSize.width ||
+      y >= this.hitSize.height ||
+      this.hitMask[Math.floor(y) * this.hitSize.width + Math.floor(x)] !== 1
+    )
+      return false
+    // 抓取点来自按下事件，不用延后处理 IPC 时的鼠标位置重新命中。
+    this.dragOffset = { x, y }
+    try {
+      this.setMouseIgnored(false)
+      this.updateData({ dragging: true, dragSession: session })
+      this.updateLook(null)
+      this.moveToCursor()
+      return true
+    } catch (error) {
+      this.finishDrag(false)
+      this.options.onError(error)
+      return false
+    }
+  }
+
+  handlePointer(sender: WebContents, action: unknown, session?: unknown): void {
     const win = this.window
     if (!win || sender !== win.webContents) return
+    if (action !== 'hover' && session !== this.data?.dragSession) return
     const cursor = screen.getCursorScreenPoint()
     const bounds = win.getBounds()
-    const x = Math.floor(cursor.x - bounds.x - (bounds.width - this.hitSize.width))
-    const y = Math.floor(cursor.y - bounds.y - (bounds.height - this.hitSize.height))
+    const x = Math.floor(cursor.x - bounds.x - (this.data?.offsetX ?? 0))
+    const y = Math.floor(cursor.y - bounds.y - (this.data?.offsetY ?? 0))
     const hit =
       x >= 0 &&
       y >= 0 &&
       x < this.hitSize.width &&
       y < this.hitSize.height &&
       this.hitMask[y * this.hitSize.width + x] === 1
-    if (action === 'start' && hit) {
-      this.dragOffset = { x: cursor.x - bounds.x, y: cursor.y - bounds.y }
-      this.setMouseIgnored(false)
-    } else if (action === 'move' && this.dragOffset) {
-      win.setPosition(
-        Math.round(cursor.x - this.dragOffset.x),
-        Math.round(cursor.y - this.dragOffset.y)
-      )
-    } else if (action === 'end' && this.dragOffset) {
-      this.dragOffset = null
-      const area = screen.getDisplayMatching(bounds).workArea
-      const left = Math.max(area.x, Math.min(bounds.x, area.x + area.width - bounds.width))
-      const top = Math.max(area.y, Math.min(bounds.y, area.y + area.height - bounds.height))
-      win.setPosition(left, top)
+    if (action === 'move' && this.dragOffset) {
       try {
-        this.options.savePosition({
-          x: left + bounds.width - this.hitSize.width,
-          y: top + bounds.height - this.hitSize.height,
-        })
+        this.moveToCursor()
       } catch (error) {
+        this.finishDrag(true)
         this.options.onError(error)
       }
-      this.setMouseIgnored(true)
+    } else if (action === 'end' && this.dragOffset) {
+      try {
+        this.moveToCursor()
+      } catch (error) {
+        this.options.onError(error)
+      } finally {
+        this.finishDrag(true)
+      }
     } else if (action === 'hover' && !this.dragOffset) {
       this.setMouseIgnored(!hit)
     }
   }
 
   sync(): void {
+    if (this.disposed) return
+    this.layoutRevision++
+    this.finishDrag(true)
+    this.updateData({ revision: this.layoutRevision })
     const preferences = this.options.readPreferences()
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
     this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
@@ -185,11 +243,7 @@ export class DesktopMascotService {
       this.close()
       return
     }
-    const appearance = preferences.desktopMascotId
-      ? getMascot(app.getPath('userData'), preferences.desktopMascotId)
-      : preferences.appearanceId
-        ? getAppearance(app.getPath('userData'), preferences.appearanceId)
-        : null
+    const appearance = this.options.resolveAssets()
     if (!appearance?.mascotUrl || appearance.mascot?.opacity === 0) {
       this.close()
       return
@@ -198,25 +252,10 @@ export class DesktopMascotService {
     const image = this.decodedImage?.image ?? nativeImage.createFromDataURL(appearance.mascotUrl)
     const frames: NativeImage[] = []
     const animation = appearance.mascot?.animation
+    const frameCount = animation?.frameCount ?? animation?.columns ?? 0
     if (animation && appearance.mascotAnimationUrl) {
       const sheet = nativeImage.createFromDataURL(appearance.mascotAnimationUrl)
-      const sheetSize = sheet.getSize()
-      const frameWidth = sheetSize.width / animation.columns
-      const frameHeight = sheetSize.height / 2
-      if (!sheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              sheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(sheet, animation.columns, frameCount, 2))
     }
     const hasAnimation = frames.length > 0
     const needsImageDecode =
@@ -230,37 +269,14 @@ export class DesktopMascotService {
     }
     if (hasAnimation && animation && appearance.mascotResultUrl) {
       const resultSheet = nativeImage.createFromDataURL(appearance.mascotResultUrl)
-      const size = resultSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      const frameHeight = size.height / 2
-      if (!resultSheet.isEmpty() && Number.isInteger(frameWidth) && Number.isInteger(frameHeight)) {
-        for (let row = 0; row < 2; row++) {
-          for (let column = 0; column < animation.columns; column++) {
-            frames.push(
-              resultSheet.crop({
-                x: column * frameWidth,
-                y: row * frameHeight,
-                width: frameWidth,
-                height: frameHeight,
-              })
-            )
-          }
-        }
-      }
+      frames.push(...cropAnimationFrames(resultSheet, animation.columns, frameCount, 2))
     }
     let hasDrag = false
     if (hasAnimation && animation && appearance.mascotDragUrl) {
       const dragSheet = nativeImage.createFromDataURL(appearance.mascotDragUrl)
-      const size = dragSheet.getSize()
-      const frameWidth = size.width / animation.columns
-      if (!dragSheet.isEmpty() && Number.isInteger(frameWidth)) {
-        hasDrag = true
-        for (let column = 0; column < animation.columns; column++) {
-          frames.push(
-            dragSheet.crop({ x: column * frameWidth, y: 0, width: frameWidth, height: size.height })
-          )
-        }
-      }
+      const dragFrames = cropAnimationFrames(dragSheet, animation.columns, frameCount, 1)
+      hasDrag = dragFrames.length > 0
+      frames.push(...dragFrames)
     }
     let hasLook = false
     if (hasAnimation && appearance.mascotLookUrl) {
@@ -286,59 +302,57 @@ export class DesktopMascotService {
     }
 
     const currentBounds = this.window?.getBounds()
-    const mainBounds = this.options.getMainWindow()?.getBounds()
-    const display = currentBounds
-      ? screen.getDisplayMatching(currentBounds)
+    const mainBounds = this.options.getInitialBounds()
+    const saved = currentBounds
+      ? {
+          x: currentBounds.x + (this.data?.offsetX ?? 0),
+          y: currentBounds.y + (this.data?.offsetY ?? 0),
+        }
+      : preferences.desktopMascotPosition
+    const display = saved
+      ? screen.getDisplayNearestPoint(saved)
       : mainBounds
         ? screen.getDisplayMatching(mainBounds)
         : screen.getPrimaryDisplay()
     const area = display.workArea
-    const sourceSize = frames[0]?.getSize() ?? { width: 1, height: 1 }
-    const scale = Math.min(
-      (appearance.mascot?.width ?? 144) / sourceSize.width,
-      (area.width * 0.35) / sourceSize.width,
-      (area.height * 0.3) / sourceSize.height
+    this.sourceSize = frames[0]?.getSize() ?? { width: 1, height: 1 }
+    this.preferredWidth = appearance.mascot?.width ?? 144
+    const { width, height } = getMascotSize(this.sourceSize, this.preferredWidth, area)
+    // 载入时合并一次透明度，并预计算各显示器尺寸；拖动只切换缓存。
+    const areas = screen.getAllDisplays().map(display => display.workArea)
+    const sizes = areas.map(area => getMascotSize(this.sourceSize, this.preferredWidth, area))
+    sizes.push({ width, height })
+    const maskSize = sizes.reduce(
+      (largest, size) =>
+        size.width > largest.width || size.height > largest.height ? size : largest,
+      { width, height }
     )
-    const width = Math.max(1, Math.round(sourceSize.width * scale))
-    const height = Math.max(1, Math.round(sourceSize.height * scale))
-    const position = appearance.mascot?.position ?? 'bottom-right'
-    // 保存角色坐标；说话框始终预留透明空间，显示和收起都不改变窗口大小。
-    const saved = currentBounds
-      ? {
-          x: currentBounds.x + currentBounds.width - this.hitSize.width,
-          y: currentBounds.y + currentBounds.height - this.hitSize.height,
-        }
-      : preferences.desktopMascotPosition
-    const windowWidth = Math.max(width, NOTICE_WIDTH)
-    const windowHeight = height + NOTICE_HEIGHT
-    const bounds = {
-      x:
-        (saved?.x ??
-          (position.endsWith('left')
-            ? area.x + MASCOT_MARGIN
-            : area.x + area.width - width - MASCOT_MARGIN)) -
-        (windowWidth - width),
-      y:
-        (saved?.y ??
-          (position.startsWith('top')
-            ? area.y + MASCOT_MARGIN
-            : area.y + area.height - height - MASCOT_MARGIN)) - NOTICE_HEIGHT,
-      width: windowWidth,
-      height: windowHeight,
+    this.hitMasks.clear()
+    this.maskSource = {
+      size: maskSize,
+      mask: frames.length
+        ? createMascotHitMask(frames.map(frame => frame.resize(maskSize)))
+        : new Uint8Array(maskSize.width * maskSize.height),
     }
-    const targetArea = screen.getDisplayMatching(bounds).workArea
-    bounds.x = Math.max(
-      targetArea.x,
-      Math.min(bounds.x, targetArea.x + targetArea.width - windowWidth)
+    for (const size of sizes) this.getHitMask(size)
+    const position = appearance.mascot?.position ?? 'bottom-right'
+    // 保存角色坐标；气泡换边或横向避让时不移动角色。
+    const layout = getMascotLayout(
+      saved ?? {
+        x: position.endsWith('left')
+          ? area.x + MASCOT_MARGIN
+          : area.x + area.width - width - MASCOT_MARGIN,
+        y: position.startsWith('top')
+          ? area.y + MASCOT_MARGIN
+          : area.y + area.height - height - MASCOT_MARGIN,
+      },
+      { width, height },
+      area,
+      areas
     )
-    bounds.y = Math.max(
-      targetArea.y,
-      Math.min(bounds.y, targetArea.y + targetArea.height - windowHeight)
-    )
+    const { bounds } = layout
     this.hitSize = { width, height }
-    this.hitMask = frames.length
-      ? createMascotHitMask(frames.map(frame => frame.resize({ width, height })))
-      : new Uint8Array(width * height)
+    this.hitMask = this.getHitMask({ width, height })
     this.data = {
       imageUrl: appearance.mascotUrl,
       needsImageDecode,
@@ -346,8 +360,16 @@ export class DesktopMascotService {
       state: this.working ? 'working' : 'idle',
       animate: this.animate && !this.animationPaused,
       motionOverride: this.motionOverride,
+      fps: preferences.desktopMascotFps ?? null,
       width,
       height,
+      offsetX: layout.offset.x,
+      offsetY: layout.offset.y,
+      noticeBelow: layout.noticeBelow,
+      noticeWidth: layout.noticeWidth,
+      noticeHeight: layout.noticeHeight,
+      revision: this.layoutRevision,
+      dragging: false,
       colors: this.colors,
       notice: this.data?.notice,
       idleMessage: this.idleMessagePaused ? undefined : this.idleMessage,
@@ -358,6 +380,7 @@ export class DesktopMascotService {
             animation: {
               imageUrl: appearance.mascotAnimationUrl!,
               columns: animation.columns,
+              frameCount,
               idleFps: animation.idleFps ?? 4,
               workingFps: animation.workingFps ?? 8,
               ...(hasLook ? { lookImageUrl: appearance.mascotLookUrl } : {}),
@@ -392,24 +415,28 @@ export class DesktopMascotService {
       })
       this.window = win
       const createdWindow = win
-      win.webContents.on('context-menu', () => this.showContextMenu(createdWindow))
+      win.webContents.on('context-menu', () => {
+        if (this.window === createdWindow) this.options.onContextMenu(screen.getCursorScreenPoint())
+      })
+      const cancelRendererDrag = (): void => {
+        if (this.window !== createdWindow) return
+        this.layoutRevision++
+        this.finishDrag(true)
+        this.updateData({ revision: this.layoutRevision })
+      }
+      win.webContents.on('render-process-gone', cancelRendererDrag)
+      win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+        if (mainFrame && !inPlace) cancelRendererDrag()
+      })
       win.once('ready-to-show', () => {
-        if (!createdWindow.isDestroyed()) createdWindow.showInactive()
+        if (this.window === createdWindow && !createdWindow.isDestroyed())
+          createdWindow.showInactive()
       })
       win.on('closed', () => {
-        if (this.window !== createdWindow) return
-        this.window = null
-        this.data = null
-        this.decodedImage = null
-        if (this.noticeTimer) clearTimeout(this.noticeTimer)
-        this.noticeTimer = null
-        if (this.trackingTimer) clearInterval(this.trackingTimer)
-        this.trackingTimer = null
-        this.lastCursor = null
-        screen.removeListener('display-removed', this.handleDisplayChanged)
-        screen.removeListener('display-metrics-changed', this.handleDisplayChanged)
+        if (this.window === createdWindow) this.close()
       })
       screen.on('display-removed', this.handleDisplayChanged)
+      screen.on('display-added', this.handleDisplayChanged)
       screen.on('display-metrics-changed', this.handleDisplayChanged)
       const devServer = process.env.VITE_DEV_SERVER_URL
       const loading = devServer
@@ -432,11 +459,22 @@ export class DesktopMascotService {
       : null
   }
 
-  close(): void {
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.ready = false
+    this.close()
+  }
+
+  private close(): void {
+    this.finishDrag(true)
     const win = this.window
     this.window = null
+    if (win) this.options.onClosed()
     this.data = null
     this.decodedImage = null
+    this.maskSource = null
+    this.hitMasks.clear()
     this.dragOffset = null
     this.mouseIgnored = null
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
@@ -444,57 +482,120 @@ export class DesktopMascotService {
     if (this.trackingTimer) clearInterval(this.trackingTimer)
     this.trackingTimer = null
     this.lastCursor = null
-    if (win && !win.isDestroyed()) {
+    if (win) {
       screen.removeListener('display-removed', this.handleDisplayChanged)
+      screen.removeListener('display-added', this.handleDisplayChanged)
       screen.removeListener('display-metrics-changed', this.handleDisplayChanged)
-      win.close()
+      if (!win.isDestroyed()) win.close()
     }
   }
 
   private setMouseIgnored(ignore: boolean): void {
-    if (!this.window || this.mouseIgnored === ignore) return
+    if (!this.window || this.window.isDestroyed() || this.mouseIgnored === ignore) return
     this.window.setIgnoreMouseEvents(ignore, { forward: true })
     this.mouseIgnored = ignore
   }
 
-  private showContextMenu(win: BrowserWindow): void {
-    const labels = this.menuLabels
-    if (this.window !== win || !labels) return
-    const animationPaused =
-      this.animationPaused ||
-      (!this.motionOverride && systemPreferences.getAnimationSettings().prefersReducedMotion)
-    Menu.buildFromTemplate([
-      {
-        label: this.idleMessagePaused ? labels.resumeIdleMessage : labels.pauseIdleMessage,
-        click: () => {
-          const paused = !this.idleMessagePaused
-          try {
-            this.options.saveIdleMessagePaused(paused)
-            this.idleMessagePaused = paused
-            if (this.data) {
-              this.updateData({ idleMessage: paused ? undefined : this.idleMessage })
+  private moveToCursor(): void {
+    if (!this.window || !this.data || !this.dragOffset) return
+    const cursor = screen.getCursorScreenPoint()
+    const area = screen.getDisplayNearestPoint(cursor).workArea
+    const areas = screen.getAllDisplays().map(display => display.workArea)
+    let size = this.hitSize
+    const targetSize = getMascotSize(this.sourceSize, this.preferredWidth, area)
+    const currentPosition = { x: cursor.x - this.dragOffset.x, y: cursor.y - this.dragOffset.y }
+    const targetOffset = {
+      x: (this.dragOffset.x / this.hitSize.width) * targetSize.width,
+      y: (this.dragOffset.y / this.hitSize.height) * targetSize.height,
+    }
+    const targetPosition = { x: cursor.x - targetOffset.x, y: cursor.y - targetOffset.y }
+    if (
+      (isMascotVisible(currentPosition, size, [area]) &&
+        isMascotVisible(targetPosition, targetSize, [area])) ||
+      !isMascotVisible(currentPosition, size, areas)
+    )
+      size = targetSize
+    const resized = size.width !== this.hitSize.width || size.height !== this.hitSize.height
+    const offset = resized ? targetOffset : this.dragOffset
+    const layout = getMascotLayout(
+      { x: cursor.x - offset.x, y: cursor.y - offset.y },
+      size,
+      area,
+      areas
+    )
+    const update = {
+      width: size.width,
+      height: size.height,
+      offsetX: layout.offset.x,
+      offsetY: layout.offset.y,
+      noticeBelow: layout.noticeBelow,
+      noticeWidth: layout.noticeWidth,
+      noticeHeight: layout.noticeHeight,
+    }
+    this.window.setBounds(layout.bounds)
+    if (resized) {
+      this.dragOffset = offset
+      this.hitSize = size
+      this.hitMask = this.getHitMask(size)
+    }
+    if (
+      Object.entries(update).some(
+        ([key, value]) => this.data?.[key as keyof DesktopMascotData] !== value
+      )
+    )
+      this.updateData(update)
+  }
+
+  private getHitMask(size: Size): Uint8Array {
+    const key = `${size.width}x${size.height}`
+    const cached = this.hitMasks.get(key)
+    if (cached) return cached
+    const source = this.maskSource
+    if (source && size.width === source.size.width && size.height === source.size.height) {
+      this.hitMasks.set(key, source.mask)
+      return source.mask
+    }
+    const mask = new Uint8Array(size.width * size.height)
+    if (source) {
+      for (let y = 0; y < size.height; y++) {
+        const top = Math.floor((y * source.size.height) / size.height)
+        const bottom = Math.ceil(((y + 1) * source.size.height) / size.height)
+        for (let x = 0; x < size.width; x++) {
+          const left = Math.floor((x * source.size.width) / size.width)
+          const right = Math.ceil(((x + 1) * source.size.width) / size.width)
+          for (let sourceY = top; sourceY < bottom && !mask[y * size.width + x]; sourceY++) {
+            for (let sourceX = left; sourceX < right; sourceX++) {
+              if (source.mask[sourceY * source.size.width + sourceX]) {
+                mask[y * size.width + x] = 1
+                break
+              }
             }
-          } catch (error) {
-            this.options.onError(error)
           }
-        },
-      },
-      {
-        label: animationPaused ? labels.resumeAnimation : labels.pauseAnimation,
-        click: () => {
-          const paused = !animationPaused
-          try {
-            this.options.saveAnimationPaused(paused)
-            this.animationPaused = paused
-            this.motionOverride = true
-            this.updateData({ motionOverride: true })
-            this.setActivity(this.working, this.animate)
-          } catch (error) {
-            this.options.onError(error)
-          }
-        },
-      },
-    ]).popup({ window: win })
+        }
+      }
+    }
+    this.hitMasks.set(key, mask)
+    return mask
+  }
+
+  private finishDrag(savePosition: boolean): void {
+    const wasDragging = Boolean(this.dragOffset)
+    this.dragOffset = null
+    try {
+      if (wasDragging && savePosition && this.window && !this.window.isDestroyed() && this.data) {
+        const bounds = this.window.getBounds()
+        this.options.savePosition({
+          x: bounds.x + this.data.offsetX,
+          y: bounds.y + this.data.offsetY,
+        })
+      }
+    } catch (error) {
+      this.options.onError(error)
+    } finally {
+      this.setMouseIgnored(true)
+      if (wasDragging && this.window && !this.window.isDestroyed())
+        this.updateData({ dragging: false, dragSession: this.data?.dragSession })
+    }
   }
 
   private updateData(update: DesktopMascotUpdate): void {
@@ -529,8 +630,8 @@ export class DesktopMascotService {
       this.lastCursor = cursor
     }
     const bounds = this.window.getBounds()
-    const x = cursor.x - (bounds.x + bounds.width - this.hitSize.width / 2)
-    const y = cursor.y - (bounds.y + bounds.height - this.hitSize.height / 2)
+    const x = cursor.x - (bounds.x + this.data.offsetX + this.hitSize.width / 2)
+    const y = cursor.y - (bounds.y + this.data.offsetY + this.hitSize.height / 2)
     const distance = Math.hypot(x, y)
     if (Date.now() - this.cursorMovedAt > 1000 || distance > 900) {
       this.updateLook(null)

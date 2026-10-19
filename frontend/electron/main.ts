@@ -18,11 +18,6 @@ import {
 } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import type {
-  DesktopMascotColors,
-  DesktopMascotIdleMessage,
-  DesktopMascotMenuLabels,
-} from '../src/types/desktopMascot'
 import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
@@ -33,11 +28,17 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
-import { broadcastMascotChange, registerMascotHandlers } from './ipc/mascotHandlers'
+import { registerMascotHandlers } from './ipc/mascotHandlers'
 import {
-  DesktopMascotService,
-  type DesktopMascotPreferences,
-} from './services/desktopMascotService'
+  createDesktopMascotHost,
+  type DesktopMascotHostPreferences,
+} from './services/desktopMascotHost'
+import { DesktopMascotService } from './services/desktopMascotService'
+import { DesktopMascotMenuService } from './services/desktopMascotMenuService'
+import { createMasDesktopMascotCapabilities } from './services/masDesktopMascotCapabilities'
+import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
+import { getAppearance } from './services/appearanceService'
+import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
 import {
   canElectronExitImmediately,
@@ -49,7 +50,7 @@ import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
-import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
@@ -77,10 +78,6 @@ import {
   isPersistedRuntimeLaunchMode,
   resolveRuntimeLaunchModeDetail,
 } from './services/runtime'
-import {
-  abortRuntimeUpdateForShutdown,
-  prepareRuntimeUpdateForClose,
-} from './services/runtimeUpdateService'
 import AdmZip = require('adm-zip')
 
 // 开发环境切换到独立的 userData 目录（必须在 app ready 之前）
@@ -224,6 +221,7 @@ let tray: Tray | null = null
 let coordinatedQuit = false
 let forceQuitInProgress = false
 let quitRequestInFlight = false
+let quitConfirmationPending = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
 let quitPreparationSequence = 0
@@ -236,7 +234,7 @@ let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
-interface AppConfig extends DesktopMascotPreferences {
+interface AppConfig extends DesktopMascotHostPreferences {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
@@ -506,6 +504,7 @@ function cancelQuitRequest(token?: number): void {
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
   activeQuitPreparation = null
+  quitConfirmationPending = false
   quitPreparationExpired = false
   quitRequestInFlight = false
   relaunchAfterQuit = false
@@ -539,7 +538,6 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
   forceQuitInProgress = true
-  await abortRuntimeUpdateForShutdown()
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
@@ -584,7 +582,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   }
 }
 
-function requestRendererClose(reason: string): void {
+function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
   const win = mainWindow
@@ -598,20 +596,10 @@ function requestRendererClose(reason: string): void {
   win.setSkipTaskbar(true)
   win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
-  void prepareRuntimeUpdateForClose().then(ready => {
-    if (!ready) {
-      cancelQuitRequest()
-      return
-    }
-    if (win.isDestroyed() || win.webContents.isDestroyed()) {
-      void forceQuitAfterRendererTimeout(`${reason}（等待更新期间 renderer 已关闭）`)
-      return
-    }
-    win.webContents.send('app-close-requested')
-    quitFallbackTimer = setTimeout(() => {
-      void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
-    }, RENDERER_QUIT_FALLBACK_MS)
-  })
+  win.webContents.send('app-close-requested', confirmRunningTasks)
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout(`${reason}（等待 ${RENDERER_QUIT_FALLBACK_MS}ms 超时）`)
+  }, RENDERER_QUIT_FALLBACK_MS)
 }
 
 // 更新托盘状态
@@ -651,106 +639,30 @@ function updateTrayVisibility(config: AppConfig) {
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
-const reportDesktopMascotError = (error: unknown): void => {
-  logger.error('桌面桌宠更新失败:', error)
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('desktop-mascot:error')
-  }
+const saveMascotPreferences = (patch: Partial<DesktopMascotHostPreferences>): void => {
+  patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), patch, defaultConfig)
 }
-const desktopMascot = new DesktopMascotService({
+const mascotCapabilities = createMasDesktopMascotCapabilities({
   readPreferences: loadConfig,
-  savePosition: position => {
-    const config = loadConfig()
-    config.desktopMascotPosition = position
-    saveConfig(config)
-  },
-  saveAnimationPaused: paused => {
-    const config = loadConfig()
-    config.desktopMascotAnimationPaused = paused
-    saveConfig(config)
-  },
-  saveIdleMessagePaused: paused => {
-    const config = loadConfig()
-    config.desktopMascotIdleMessagePaused = paused
-    saveConfig(config)
-  },
+  savePreferences: saveMascotPreferences,
   getMainWindow: () => mainWindow,
-  onError: reportDesktopMascotError,
+  onPreferencesChanged: () => desktopMascot.syncPreferences(),
 })
-const syncDesktopMascot = (): void => {
-  try {
-    desktopMascot.sync()
-  } catch (error) {
-    reportDesktopMascotError(error)
-  }
-}
-
-ipcMain.handle(
-  'desktop-mascot:ready',
-  (event, ready: unknown, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors) => {
-    if (event.sender !== mainWindow?.webContents || typeof ready !== 'boolean') return
-    if (
-      ready &&
-      (!colors ||
-        typeof colors.background !== 'string' ||
-        typeof colors.text !== 'string' ||
-        typeof colors.border !== 'string' ||
-        !Number.isFinite(colors.radius))
-    )
-      return
-    desktopMascot.setReady(
-      ready,
-      labels &&
-        typeof labels.pauseAnimation === 'string' &&
-        typeof labels.resumeAnimation === 'string' &&
-        typeof labels.pauseIdleMessage === 'string' &&
-        typeof labels.resumeIdleMessage === 'string'
-        ? labels
-        : undefined,
-      colors
-    )
-  }
-)
-ipcMain.handle('desktop-mascot:get', event => desktopMascot.getData(event.sender))
-ipcMain.handle('desktop-mascot:idle-message', (event, message?: DesktopMascotIdleMessage) => {
-  if (
-    event.sender !== mainWindow?.webContents ||
-    !message ||
-    typeof message.text !== 'string' ||
-    typeof message.author !== 'string'
-  )
-    return
-  desktopMascot.setIdleMessage(message)
-})
-ipcMain.on('desktop-mascot:pointer', (event, action: unknown) =>
-  desktopMascot.handlePointer(event.sender, action)
-)
-ipcMain.on('desktop-mascot:image-decoded', (event, imageUrl: unknown, pngDataUrl: unknown) => {
-  if (
-    typeof imageUrl !== 'string' ||
-    typeof pngDataUrl !== 'string' ||
-    !pngDataUrl.startsWith('data:image/png;base64,')
-  )
-    return
-  desktopMascot.setDecodedImage(event.sender, imageUrl, pngDataUrl)
-})
-ipcMain.handle('desktop-mascot:activity', (event, working: unknown, animate: unknown) => {
-  if (
-    event.sender !== mainWindow?.webContents ||
-    typeof working !== 'boolean' ||
-    typeof animate !== 'boolean'
-  )
-    return
-  desktopMascot.setActivity(working, animate)
-})
-ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
-  if (event.sender !== mainWindow?.webContents || typeof text !== 'string') return
-  desktopMascot.showNotice(
-    text,
-    reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
-      ? reaction
-      : undefined
-  )
+const desktopMascot = createDesktopMascotHost({
+  createRuntime: options => new DesktopMascotService(options),
+  createMenuRuntime: options => new DesktopMascotMenuService(options),
+  capabilities: mascotCapabilities,
+  defaultMenu: DEFAULT_MASCOT_MENU,
+  registerHandlers: mascotCapabilities.register,
+  readPreferences: loadConfig,
+  savePreferences: saveMascotPreferences,
+  getMainWindow: () => mainWindow,
+  resolveAssets: ({ desktopMascotId, appearanceId }) =>
+    desktopMascotId
+      ? getMascot(app.getPath('userData'), desktopMascotId)
+      : appearanceId
+        ? getAppearance(app.getPath('userData'), appearanceId)
+        : null,
 })
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
@@ -908,17 +820,24 @@ function createWindow() {
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
   mainWindow = win
+  desktopMascot.attachMainWindow(win)
   lastWindowActivity = null
 
   // 崩溃时窗口若在托盘里，恢复后保持隐藏，不要自己弹出来打断用户。
   let keepHiddenAfterRecovery = false
 
+  // 主框架重载或导航后旧确认窗已销毁，撤销等待；同文档路由切换不触发此事件。
+  win.webContents.on('did-navigate', () => {
+    if (quitConfirmationPending) cancelQuitRequest()
+  })
+
   // 渲染进程崩溃恢复。Electron 不会自动重建崩掉的渲染进程：BrowserWindow 还在，
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
-    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
-    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
+    // 等待确认或保存期间 renderer 消失就取消退出，按通常崩溃流程恢复。
+    if (quitConfirmationPending) cancelQuitRequest()
+    else if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1098,7 +1017,7 @@ function createWindow() {
         updateTrayVisibility(currentConfig)
         logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
       } else {
-        requestRendererClose('窗口关闭')
+        requestRendererClose('窗口关闭', process.platform === 'darwin')
       }
     } else {
       // 仅在 renderer 已完成协调退出后允许真实关闭窗口，并立即保存窗口状态
@@ -1127,7 +1046,6 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
-    desktopMascot.setReady(false)
     closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
@@ -1204,10 +1122,7 @@ function createWindow() {
   logger.info('主窗口创建完成')
 
   // 注册初始化处理器
-  registerInitializationHandlers(
-    win,
-    () => coordinatedQuit || forceQuitInProgress || quitRequestInFlight
-  )
+  registerInitializationHandlers(win)
   logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
@@ -1483,22 +1398,35 @@ ipcMain.handle(
   }
 )
 
-ipcMain.handle('log:export', async () => {
+ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
   try {
-    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    if (!mainWindow)
+      return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
+    const dialogLabels =
+      rawDialogLabels && typeof rawDialogLabels === 'object'
+        ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+        : undefined
     const appRoot = getAppRoot()
     const debugDir = path.join(appRoot, 'debug')
 
     if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在' }
+      return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
     }
 
     // 选择保存位置
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出日志',
+      title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
       defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      filters: [
+        {
+          name:
+            typeof dialogLabels?.zipFilterName === 'string'
+              ? dialogLabels.zipFilterName
+              : 'ZIP文件',
+          extensions: ['zip'],
+        },
+      ],
     })
 
     if (result.canceled || !result.filePath) {
@@ -1517,23 +1445,12 @@ ipcMain.handle('log:export', async () => {
       maxArchiveBytes: Number.POSITIVE_INFINITY,
     }
 
-    // 读取 debug 目录下的所有文件
-    const files = fs.readdirSync(debugDir)
-
-    if (files.length === 0) {
-      return { success: false, error: '日志目录为空，没有可导出的文件' }
-    }
-
-    // 将所有日志文件添加到 ZIP
-    for (const file of files) {
-      const filePath = path.join(debugDir, file)
-      const stat = fs.statSync(filePath)
-
-      if (stat.isFile()) {
-        addDiagnosticFile(state, filePath, file)
-      } else if (stat.isDirectory() && ['maaend-login', 'runtime'].includes(file)) {
-        addDirectory(state, filePath, file)
-      }
+    // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+    const hasFiles = addDirectory(state, debugDir, '', {
+      includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+    })
+    if (!hasFiles) {
+      return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
     }
 
     // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
@@ -1556,6 +1473,7 @@ ipcMain.handle('log:export', async () => {
         skipped.length > 0
           ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
           : '日志压缩包导出成功',
+      skippedPaths: skipped.map(entry => entry.path),
       zipPath: zipPath,
     }
   } catch (error) {
@@ -1896,20 +1814,29 @@ ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
 
-ipcMain.handle('app-prepare-quit', async () => {
-  if (coordinatedQuit || forceQuitInProgress) return null
-  if (activeQuitPreparation !== null) {
-    return (await prepareRuntimeUpdateForClose()) ? activeQuitPreparation : null
-  }
+// renderer 已响应关闭请求，但用户尚未批准退出；保留请求锁，暂停强制清理。
+ipcMain.handle('app-wait-for-quit-confirmation', () => {
+  if (
+    !quitRequestInFlight ||
+    activeQuitPreparation !== null ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
   clearQuitFallback()
+  quitConfirmationPending = true
+  return true
+})
+
+ipcMain.handle('app-prepare-quit', () => {
+  if (coordinatedQuit || forceQuitInProgress) return null
+  if (activeQuitPreparation !== null) return activeQuitPreparation
+  clearQuitFallback()
+  quitConfirmationPending = false
   quitRequestInFlight = true
   const token = ++quitPreparationSequence
   activeQuitPreparation = token
   quitPreparationExpired = false
-  if (!(await prepareRuntimeUpdateForClose())) {
-    cancelQuitRequest(token)
-    return null
-  }
   quitFallbackTimer = setTimeout(() => {
     quitFallbackTimer = null
     quitPreparationExpired = true
@@ -1945,7 +1872,7 @@ ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
-    const { getRelatedProcesses } = await import('./utils/processManager')
+    const { getRelatedProcesses } = await import('./utils/processManager.js')
     return await getRelatedProcesses()
   } catch {
     logger.error('获取进程信息失败')
@@ -2107,22 +2034,7 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
-    if (
-      patch &&
-      typeof patch === 'object' &&
-      [
-        'appearanceId',
-        'desktopMascotId',
-        'desktopMascotEnabled',
-        'desktopMascotAnimationPaused',
-        'desktopMascotIdleMessagePaused',
-      ].some(key => key in patch)
-    ) {
-      syncDesktopMascot()
-      if (['desktopMascotId', 'desktopMascotEnabled'].some(key => key in patch)) {
-        broadcastMascotChange()
-      }
-    }
+    desktopMascot.configChanged(patch)
 
     if (
       patch &&
@@ -2141,7 +2053,7 @@ ipcMain.handle('save-config', (_event, patch, defaults) => {
     }
 
     // 如果是UI配置更新，需要更新托盘状态
-    if (config.UI) {
+    if (patch && typeof patch === 'object' && 'UI' in patch && config.UI) {
       updateTrayVisibility(config)
       if (Array.isArray(config.UI.TrayItems) && config.UI.TrayItems.length) {
         rebuildTrayMenu(config.UI.TrayItems)
@@ -2359,6 +2271,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
 
@@ -2384,8 +2297,9 @@ app.whenReady().then(async () => {
   registerFileHandlers()
   logger.info('文件操作处理器已注册')
 
-  registerAppearanceHandlers({ onChanged: syncDesktopMascot })
-  registerMascotHandlers(syncDesktopMascot)
+  registerAppearanceHandlers({ onChanged: desktopMascot.sync })
+  registerMascotHandlers(desktopMascot.sync)
+  desktopMascot.mount()
   logger.info('外观包处理器已注册')
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器

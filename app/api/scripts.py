@@ -29,6 +29,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.core import Config
+from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
@@ -269,7 +270,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
+        activity_games = {
+            config.__name__: game for config, game in SCRIPT_CALENDAR_GAMES.items()
+        }
+        index = [
+            ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
+            for item in index
+        ]
         data = {
             uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
                 **cfg
@@ -299,7 +306,7 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
         data = script.data.model_dump(exclude_unset=True)
-        # 魔改 AVD 目前只支持 M9A 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
+        # 魔改 AVD 目前只支持 MaaFW 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
         refusal = await emulator2_service.mod_avd_binding_error(script.scriptId, data)
         if refusal:
             return OutBase(code=500, status="error", message=refusal)
@@ -1505,7 +1512,7 @@ async def get_hsr_stage_options_api(
     status_code=200,
 )
 async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
-    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt`` 文件名。"""
+    """返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight/*.txt``、``*.json`` 文件名。"""
 
     try:
         script_config = _bettergi_script_config(scriptId)

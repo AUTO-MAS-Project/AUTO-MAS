@@ -1,6 +1,6 @@
 ---
 name: mas-skills
-description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), plan schedules, or game community sign-in.
+description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), E2E flows, plan schedules, or game community sign-in.
 ---
 
 # MAS Skills
@@ -44,7 +44,9 @@ Use these skills as needed:
 8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
 9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
-11. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
+11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
+12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
+13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 
 ## Global Constraints
 Apply these constraints before selecting or combining sub-skills.
@@ -79,14 +81,18 @@ Use `mas-api-contract`.
 Use `mas-data-model`.
 9. Task mentions adding a new script, script-specific adaptation, task lifecycle, or a specific adapter such as MAA / SRC / MaaEnd / General / Okww / OkNte（异环）/ HSR (M9A is not an adapter: it is a MaaFW flavor, see `app/task/M9A/AGENTS.md`):
 Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, `mas-data-model`, `mas-function-design`, and `mas-api-contract` as needed.
-10. Task mentions commit messages, docstrings, config comments, or project contribution style:
+10. Task mentions E2E, Playwright, real game runs, emulator/account scheduling evidence, PR-specific test selection, screenshot/trace evidence, or a PR is open and awaiting review while the change still needs E2E proof:
+Use `mas-e2e`; combine `mas-script-specialized-adapter` when the flow depends on a particular script line.
+11. Task mentions commit messages, docstrings, config comments, or project contribution style:
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
-11. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
+12. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
 Use `mas-plan-schedule`.
-12. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
+13. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
 Use `mas-game-sign`.
-13. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
+14. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
+14. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
+Use `mas-ci-checks`.
 
 ## Combined Execution Order
 When multiple concerns appear, apply this order:
@@ -99,11 +105,13 @@ When multiple concerns appear, apply this order:
 6. `mas-schema-naming`
 7. `mas-function-design`
 8. `mas-api-contract`
-9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
-10. `mas-plan-schedule`
-11. `mas-game-sign`
+9. `mas-e2e`, when the task requires an E2E flow or evidence.
+10. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
+11. `mas-plan-schedule`
+12. `mas-game-sign`
+13. `mas-ci-checks`, when the work ends by making a PR pass CI.
 
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last because they constrain credential handling and external request behavior inside an already-placed module.
+Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
 
 ## Output Requirements
 When using this hub:
@@ -127,3 +135,4 @@ When using this hub:
 8. Every user-visible feature or fix includes exactly one changelog fragment under `changelog.d/`, and leaves `CHANGELOG.md`, `res/version.json` and the version numbers untouched.
 9. Any cherry-pick to a released branch was verified to touch backend files only.
 10. Every external CI action and container image is pinned to a full commit SHA or digest, with an updater-readable version comment where applicable; no mutable reference remains.
+11. CI failures were diagnosed from the run log first, and reproduced locally with the `uv.lock`-pinned toolchain rather than a system-installed one.

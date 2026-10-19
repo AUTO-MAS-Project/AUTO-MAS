@@ -35,6 +35,7 @@ from typing import (
 )
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
@@ -261,6 +262,53 @@ class BlueArchiveActivityIn(BaseModel):
     page_size: int = Field(default=50, ge=1, le=100, description="每页条数")
 
 
+class GameCalendarActivityInfo(BaseModel):
+    name: str = Field(..., min_length=1, max_length=500, description="活动名称")
+    startTime: AwareDatetime = Field(..., description="活动开始时间，包含时区")
+    endTime: AwareDatetime = Field(..., description="活动结束时间，包含时区")
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if not self.name.strip() or self.endTime <= self.startTime:
+            raise ValueError("活动名称不能为空，结束时间必须晚于开始时间")
+        return self
+
+
+class GameCalendarActivityUpdateIn(GameCalendarActivityInfo):
+    completed: bool = Field(..., description="是否由用户标记为已完成")
+
+
+class GameCalendarActivityScopeIn(BaseModel):
+    game: Literal[
+        "endfield",
+        "starrail",
+        "genshin",
+        "zenless",
+        "wutheringwaves",
+        "nte",
+        "reverse1999",
+        "bluearchive",
+        "arknights",
+        "stellasora",
+        "infinitynikki",
+    ] = Field(..., description="首页游戏标识")
+    server: Literal["cn", "jp", "global"] = Field(
+        default="cn", description="碧蓝档案服务器，其它游戏忽略此字段"
+    )
+
+
+class GameCalendarActivityCompletionIn(
+    GameCalendarActivityScopeIn, GameCalendarActivityUpdateIn
+):
+    pass
+
+
+class GameCalendarActivitiesOut(OutBase):
+    data: list[GameCalendarActivityInfo] = Field(
+        default_factory=list, description="用户已完成且未过期的活动"
+    )
+
+
 class BetterGICustomGroupOut(BaseModel):
     """BetterGI 一条龙自定义配置组（非内置 8 组）"""
 
@@ -458,7 +506,8 @@ class BetterGIScriptDirsOut(OutBase):
         default=None, description="键鼠脚本（录制）目录"
     )
     autoFightDir: Optional[str] = Field(
-        default=None, description="自动战斗策略目录（User/AutoFight，*.txt 即一份策略）"
+        default=None,
+        description="自动战斗策略目录（User/AutoFight，*.txt / *.json 各算一份策略）",
     )
     exePath: Optional[str] = Field(default=None, description="BetterGI 主程序路径")
 
@@ -1091,19 +1140,6 @@ class EmulatorConfig(BaseModel):
     )
 
 
-class ToolsConfig_ArknightsPC(BaseModel):
-    Enabled: bool | None = Field(default=None, description="是否启用 ArknightsPC 工具")
-    PauseKey: str | None = Field(default=None, description="暂停键位")
-    SelectDeployedKey: str | None = Field(
-        default=None, description="选中已部署干员键位"
-    )
-    UseSkillKey: str | None = Field(default=None, description="释放技能键位")
-    RetreatKey: str | None = Field(default=None, description="撤退键位")
-    NextFrameKey: str | None = Field(default=None, description="下一帧键位")
-    AnotherQuitKey: str | None = Field(default=None, description="自定义退出、暂停键位")
-    Status: str | None = Field(default=None, description="工具状态 Tag")
-
-
 class ToolsConfig_GameSign(BaseModel):
     Enabled: bool | None = Field(default=None, description="是否启用游戏社区")
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
@@ -1262,9 +1298,6 @@ class TaygedoLoginIn(BaseModel):
 
 
 class ToolsConfig(BaseModel):
-    ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
-        default=None, description="明日方舟PC工具配置"
-    )
     GameSign: ToolsConfig_GameSign | None = Field(
         default=None, description="游戏社区签到配置"
     )
@@ -1521,13 +1554,6 @@ class GlobalConfig_Update(BaseModel):
     PauseUntil: Optional[str] = Field(
         default=None, description="暂停更新截止日期 YYYY-MM-DD，空字符串表示未暂停"
     )
-    HotUpdateAvoidMinutes: Optional[int] = Field(
-        default=None,
-        ge=0,
-        le=60,
-        strict=True,
-        description="后端热更定时任务避让分钟数，默认 5，0 仍优先执行已到点任务",
-    )
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite", "CNB"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源"
     )
@@ -1725,6 +1751,10 @@ class ScriptIndexItem(BaseModel):
         "WhimboxConfig",
         "MSSConfig",
     ] = Field(..., description="配置类型")
+
+    activityGame: str | None = Field(
+        default=None, description="对应的游戏活动标识，无游戏归属时为空"
+    )
 
 
 class UserIndexItem(BaseModel):
@@ -2080,7 +2110,7 @@ class OkwwUserConfig_Data(GeneralUserConfig_Data):
     """OK-WW 用户数据（复用通用字段）"""
 
     LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
+        default=None, description="上次代理状态（未知/成功/失败/维护中）"
     )
     LastTaskIndex: Optional[int] = Field(
         default=None, description="上次运行的 ok-ww 任务序号（-t N）"
@@ -2133,7 +2163,7 @@ class OkNteUserConfig_Data(GeneralUserConfig_Data):
     """OK-NTE 用户数据（复用通用字段）"""
 
     LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
+        default=None, description="上次代理状态（未知/成功/失败/维护中）"
     )
     LastTaskIndex: Optional[int] = Field(
         default=None, description="上次运行的 ok-nte 任务序号（-t N）"
@@ -2192,30 +2222,6 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     Password: Optional[str] = Field(default=None, description="密码")
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
-    )
-
-
-class OneDragonPlanStep(BaseModel):
-    """一条龙执行计划中的单个步骤（执行层实例）。"""
-
-    uid: str = Field(..., description="步骤实例唯一标识（对应前端 dragonRowSeq）")
-    kind: Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"] = (
-        Field(..., description="步骤来源类型")
-    )
-    name: str = Field(..., description="内置组名 / 脚本目录名 / 配置组名")
-    enabled: bool = Field(default=True, description="是否启用该步骤")
-    settings: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="该步骤的 per-任务执行层参数（camelCase 键，按 kind 白名单校验）",
-    )
-
-
-class OneDragonPlan(BaseModel):
-    """一条龙执行计划（Plan），替代/并列于可视化队列 Queue。"""
-
-    version: int = Field(default=1, description="Plan 结构版本")
-    steps: List[OneDragonPlanStep] = Field(
-        default_factory=list, description="有序步骤列表"
     )
 
 
@@ -5096,6 +5102,9 @@ class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_
     model_config = ConfigDict(extra="forbid")
 
 
+BAAH_PLAN_ROTATE_DAYS_DEFAULT = 3
+
+
 class BAAHPlanConfig_Info(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -5104,7 +5113,7 @@ class BAAHPlanConfig_Info(BaseModel):
         default="ALL", description="计划表模式"
     )
     RotateDays: int = Field(
-        default=PLAN_ROTATE_DAYS_DEFAULT,
+        default=BAAH_PLAN_ROTATE_DAYS_DEFAULT,
         ge=1,
         le=PLAN_ROTATE_DAYS_MAX,
         description="多天轮换的天数，仅 Rotate 模式使用",
@@ -5138,19 +5147,19 @@ BAAH_PLAN_KEY_SLOT_RULES: dict[str, tuple[BAAHSlotRule, ...]] = {
         BAAHSlotRule("活动关卡开关", minimum=0, maximum=1, fallback=1),
     ),
     "Wanted": (
-        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("地区", minimum=1, maximum=3),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
     ),
     "Special": (
-        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("地区", minimum=1, maximum=2),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
     ),
     "Exchange": (
-        BAAHSlotRule("学院", minimum=1),
+        BAAHSlotRule("学院", minimum=1, maximum=3),
         BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
         BAAHSlotRule("扫荡次数", minimum=-1),
         BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
@@ -5229,7 +5238,7 @@ BAAH_PLAN_KEY_MIN_LENGTH = 2
 class BAAHPlanKey(BaseModel):
     """BAAH 计划表某一天要打的关卡。
 
-    六个字段各自有三种状态，缺一不可地区分：
+    五类非活动关卡各自有三种状态，缺一不可地区分：
     缺席（字段不在 key 里）＝今天这一类不干预，BAAH 沿用自己配置文件里的关卡与开关；
     空数组＝今天不打这一类；有值（如 ``[3, -1, 1]``）＝今天按这个参数打这一类。
     因此默认值是 ``None`` 而不是某套具体关卡：补成默认值会把「不干预」静默变成
@@ -5238,6 +5247,7 @@ class BAAHPlanKey(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # 只兼容旧客户端的输入；配置加载和保存时移除，运行期不再从计划表下发活动关卡。
     Event: Optional[list[int]] = Field(
         default=None,
         max_length=3,
@@ -6055,6 +6065,10 @@ class Emulator2InstanceCreateIn(BaseModel):
     cpu: Optional[int] = Field(
         default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
     )
+    fps: Optional[int] = Field(
+        default=None,
+        description="仅魔改 AVD: 帧率 (hw.lcd.vsync), 可选 30 / 60, 留空为 60",
+    )
     dataPartitionGb: Optional[int] = Field(
         default=None,
         description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
@@ -6314,6 +6328,9 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
         default=None, description="内存 MB, 每次开机用 -memory 传"
     )
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    fps: Optional[int] = Field(
+        default=None, description="帧率 (hw.lcd.vsync), 下次开机生效"
+    )
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
     initialized: bool = Field(
         default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
@@ -6867,6 +6884,10 @@ class WSMaaFWProjectUpdateProgressData(BaseModel):
     status: str = Field(..., description="running / success / failed")
     message: str = Field(default="", description="当前阶段的用户可读描述")
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
+    logLevel: Optional[str] = Field(
+        default=None,
+        description="新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null",
+    )
     percent: Optional[float] = Field(
         default=None,
         description="当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null",
@@ -7006,41 +7027,6 @@ class UpdateCheckOut(OutBase):
     update_info: Dict[str, Dict[str, List[str]]] = Field(
         ...,
         description="版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序",
-    )
-
-
-class HotUpdatePrepareIn(BaseModel):
-    """后端热更准备请求"""
-
-    action: Literal["prepare", "cancel", "drain"] = Field(..., description="操作类型")
-    operationId: str = Field(
-        ...,
-        min_length=1,
-        max_length=128,
-        pattern=r"^\S+$",
-        description="本次操作的唯一标识符",
-    )
-    baseCommit: str = Field(
-        ...,
-        pattern=r"^[0-9a-fA-F]{40}$",
-        description="当前后端完整提交 SHA",
-    )
-    targetCommit: str = Field(
-        ...,
-        pattern=r"^[0-9a-fA-F]{40}$",
-        description="目标后端完整提交 SHA",
-    )
-
-
-class HotUpdatePrepareOut(OutBase):
-    """后端热更准备响应"""
-
-    ready: bool = Field(False, description="是否准入")
-    reason: Optional[Literal["busy", "scheduledSoon", "paused", "closing"]] = Field(
-        None, description="未就绪的机读原因"
-    )
-    nextScheduledTime: Optional[str] = Field(
-        None, description="最近的定时任务时刻（ISO 格式）"
     )
 
 

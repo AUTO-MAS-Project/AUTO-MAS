@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   EMPTY_NETWORK_ACTIVITY,
   NETWORK_PROBE_STAGE,

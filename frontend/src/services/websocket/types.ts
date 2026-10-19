@@ -25,7 +25,6 @@ export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
 export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
-export const WS_ID_ARKNIGHTS_PC_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -63,9 +62,8 @@ export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 
-// 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+// 通用错误提示（id=EmulatorManager）
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
-export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
@@ -192,6 +190,8 @@ export interface WSMaaFWProjectUpdateProgressData {
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
+  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
+  logLevel?: string | null
   /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null
@@ -299,7 +299,6 @@ interface WSMessageDataMap {
   [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
-  [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData

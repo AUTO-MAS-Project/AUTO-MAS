@@ -34,10 +34,9 @@
               :saving="saving"
               :save-error="saveError"
               :save-error-reason="saveErrorReason"
-              @update:state="editor.state = $event"
-              @update:values="editor.values = $event"
-              @save="saveEditor"
-              @cancel="closeEditor"
+              @update:state="updateState"
+              @update:values="updateValues"
+              @retry="saveEditor"
               @escape="requestClose"
             />
           </template>
@@ -93,7 +92,7 @@ const { t } = useI18n()
 const props = defineProps<{
   tableData: Record<string, any> | null
   currentMode: PlanMode
-  /** BAAH 六类共用摘要表，不提供转置的简化视图。 */
+  /** BAAH 五类共用摘要表，不提供转置的简化视图。 */
   viewMode: 'config' | 'simple'
   planId?: string
   interactionDisabled?: boolean
@@ -116,10 +115,13 @@ const saveErrorReason = ref('')
 let triggerButton: HTMLElement | null = null
 let clickedButton: HTMLElement | null = null
 
-// 全局和周计划始终保留每天及七个星期列，只有轮换模式改为数字天键。
-const columnKeys = computed(() =>
-  planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays)
-)
+// 只展示当前模式生效的列，周计划不再留下不可编辑的「每天」。
+const columnKeys = computed(() => {
+  if (props.currentMode === 'ALL') return ['ALL']
+  return planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays).filter(
+    key => key !== 'ALL'
+  )
+})
 const columnTitle = (key: string) =>
   key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 const columns = computed(() => [
@@ -165,7 +167,7 @@ const closeEditor = (restoreFocus = true) => {
   if (restoreFocus) triggerButton?.focus()
 }
 
-/** 未保存或正在保存时阻止切格、切模式、切计划和离开页面。取消按钮才明确丢弃草稿。 */
+/** 自动保存未完成或失败时保留输入，避免切格、切模式或离开页面丢失修改。 */
 const beforeLeave = () => {
   if (saving.value || isDirty.value) {
     message.warning(t(saving.value ? 'plan.baah.savingHint' : 'plan.baah.unsavedHint'))
@@ -208,7 +210,7 @@ const saveEditor = async () => {
   saving.value = true
   saveError.value = false
   saveErrorReason.value = ''
-  // 后端按「天 → Key」整份覆写；必须带上其余五类及未编辑的可选尾位。
+  // 后端按「天 → Key」整份覆写；必须带上其余四类及未编辑的可选尾位。
   const nextFields = applyFieldState(dayFields.value[draft.key], draft.field, draft.state)
   if (draft.state === 'on') nextFields[draft.field] = [...draft.values]
   try {
@@ -225,7 +227,21 @@ const saveEditor = async () => {
   } finally {
     saving.value = false
   }
-  if (!saveError.value) closeEditor()
+  if (!saveError.value) {
+    draft.initialState = draft.state
+    draft.initialValues = [...draft.values]
+  }
+}
+
+const updateState = (state: BAAHFieldState) => {
+  if (!editor.value || saving.value) return
+  editor.value.state = state
+  void saveEditor()
+}
+const updateValues = (values: number[]) => {
+  if (!editor.value || saving.value) return
+  editor.value.values = values
+  void saveEditor()
 }
 
 defineExpose({ beforeLeave })

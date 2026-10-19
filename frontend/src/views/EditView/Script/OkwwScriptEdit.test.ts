@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 
 // 运行页面中的实际保存函数，在 node 环境替换 API 和反馈边界，不复制实现。

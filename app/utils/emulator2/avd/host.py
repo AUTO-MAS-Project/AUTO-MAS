@@ -299,10 +299,10 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
 async def prepare_adb_for_close(
     root: str | Path, console: int, *, timeout: float
 ) -> str | None:
-    """关机前让私有 server 能对这台实例发 ``shell sync``，最多 ``timeout`` 秒。可以 sync 返回 ``None``，
-    否则返回不能 sync 的原因。
+    """关机前让私有 server 能对这台实例发 adb 命令（正常关机命令、``shell sync``），最多 ``timeout`` 秒。
+    可以发返回 ``None``，否则返回不能发的原因。
 
-    server 本来就在听：直接返回（server 认不认识这台实例由 sync 的结果说话）。server 不在：起它，
+    server 本来就在听：直接返回（server 认不认识这台实例由后面那条命令的结果说话）。server 不在：起它，
     等它开始监听；新起的 server 不认识模拟器（模拟器只在开机时登记一次），确认 adb 端口确实是这台
     实例自己的 qemu 在听之后直接替它登记，再等它回到 ``device``。不走 :func:`reregister_emulator`：
     那里的开机期保护（qemu 起来不到 60 秒不登记）和 5 秒等待都不适合关机。
@@ -319,8 +319,12 @@ async def prepare_adb_for_close(
     if await asyncio.to_thread(instance_qemu_on_adb_port, console) is None:
         return f"adb 端口 {console + 1} 上不是这台实例的模拟器，不替它登记"
     serial = serial_of(console)
+    # 登记和等上线都从同一个 timeout 里扣，不另给时间
+    remaining = timeout - (time.monotonic() - started)
+    if remaining <= 0:
+        return f"私有 adb server（端口 {port}）{timeout:.0f} 秒内没来得及登记 {serial}"
     try:
-        await register_emulator(port, console + 1)
+        await register_emulator(port, console + 1, timeout=remaining)
     except (OSError, asyncio.TimeoutError, TimeoutError) as e:
         return f"向新起的私有 adb server 登记 {serial} 失败: {e}"
     while True:
@@ -328,7 +332,7 @@ async def prepare_adb_for_close(
         if remaining <= 0:
             return f"新起的私有 adb server 上 {serial} 在 {timeout:.0f} 秒内没有上线"
         code, output = await _run_adb_once(
-            root, "get-state", serial=serial, timeout=max(remaining, 0.5)
+            root, "get-state", serial=serial, timeout=remaining, total_timeout=True
         )
         if code == 0 and output.strip() == "device":
             logger.info(
@@ -406,7 +410,9 @@ def instance_qemu_on_adb_port(console: int) -> psutil.Process | None:
     return None
 
 
-async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
+async def register_emulator(
+    server_port: int, emulator_adb_port: int, *, timeout: float = 5.0
+) -> None:
     """替模拟器向私有 adb server 登记：发 ``host:emulator:<adb 端口>``（4 位十六进制长度 + 内容）。
 
     模拟器只在开机时向 server 登记一次，server 重启（被别人 kill-server、崩溃）后就再也不认识
@@ -416,7 +422,7 @@ async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
     message = f"host:emulator:{emulator_adb_port}"
     payload = f"{len(message):04x}{message}".encode("ascii")
     _, writer = await asyncio.wait_for(
-        asyncio.open_connection("127.0.0.1", server_port), timeout=5
+        asyncio.open_connection("127.0.0.1", server_port), timeout=timeout
     )
     try:
         writer.write(payload)
@@ -487,15 +493,21 @@ async def run_adb(
     serial: str | None = None,
     timeout: float = ADB_TIMEOUT,
     reregister: bool = True,
+    total_timeout: bool = False,
 ) -> tuple[int, str]:
     """跑一条私有 server 上的 adb 命令，返回 ``(返回码, 合并输出)``。**不抛异常。**
 
     轮询会一秒一条，所以这里不像 ``ProcessRunner`` 那样每条都记 info 日志。
     私有 server 上找不到 ``emulator-<控制台端口>`` 时先重新登记（:func:`reregister_emulator`），
     登记回来就重跑一次。``reregister=False`` 不做这一步：开机等待期间模拟器本来就还没登记，
-    关机前的 sync 要守时限，都不该去替它登记。
+    关机前的命令（正常关机、sync）要守时限，都不该去替它登记。
+
+    ``timeout`` 默认只管命令本身，私有 server 不在时先起它的等待另算（最多 20 秒）。
+    ``total_timeout=True`` 时起 server 也算在 ``timeout`` 里，关机前的命令都这样用。
     """
-    code, output = await _run_adb_once(root, *args, serial=serial, timeout=timeout)
+    code, output = await _run_adb_once(
+        root, *args, serial=serial, timeout=timeout, total_timeout=total_timeout
+    )
     if reregister and code != 0 and serial and device_missing(serial, output):
         if await reregister_emulator(root, serial):
             code, output = await _run_adb_once(
@@ -528,9 +540,15 @@ async def _run_adb_once(
     *args: str,
     serial: str | None = None,
     timeout: float = ADB_TIMEOUT,
+    total_timeout: bool = False,
 ) -> tuple[int, str]:
     code, stdout, _ = await _run_adb_raw(
-        root, *args, serial=serial, timeout=timeout, merge_stderr=True
+        root,
+        *args,
+        serial=serial,
+        timeout=timeout,
+        merge_stderr=True,
+        total_timeout=total_timeout,
     )
     return code, decode_bytes(stdout).strip()
 
@@ -541,9 +559,18 @@ async def _run_adb_raw(
     serial: str | None = None,
     timeout: float = ADB_TIMEOUT,
     merge_stderr: bool = False,
+    total_timeout: bool = False,
 ) -> tuple[int, bytes, str]:
+    started = time.monotonic()
     try:
-        await ensure_adb_server(root)
+        if total_timeout:
+            # 私有 server 不在、要先起它的等待也算在 timeout 里。没起来就不跑 adb 客户端：
+            # 它会自己拉起 server，server 继承输出管道，这条命令就一直等到超时
+            if not await ensure_adb_server(root, timeout=timeout):
+                message = f"私有 adb server（端口 {adb_server_port(root)}）{timeout:.0f} 秒内没起来"
+                return -1, message.encode() if merge_stderr else b"", message
+        else:
+            await ensure_adb_server(root)
         command = ["-P", str(adb_server_port(root))]
         if serial:
             command += ["-s", serial]
@@ -560,8 +587,11 @@ async def _run_adb_raw(
     except Exception as e:  # noqa: BLE001 - 见 run_adb 的 docstring
         message = f"{type(e).__name__}: {e}"
         return -1, message.encode() if merge_stderr else b"", message
+    remaining = timeout - (time.monotonic() - started) if total_timeout else timeout
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=max(remaining, 0)
+        )
     except (asyncio.TimeoutError, TimeoutError):
         with suppress(ProcessLookupError):
             process.kill()
@@ -708,6 +738,11 @@ def launch_emulator(
 
     宿主显卡驱动的着色器缓存放 ``<根>\\shader-cache``（``__GL_SHADER_DISK_CACHE_PATH``，
     照启动器 ``-ShaderCache``）：和用户的其它程序分开，需要时我们能自己清。
+
+    ``ANDROID_EMU_VK_HIDE_REBAR=1``（固定开）：宿主 Vulkan 里「显存 + 主机可见」的内存类型（NVIDIA
+    ReBAR）对客体只报成显存。终末地往 ReBAR 显存里写顶点时每帧都要等写合并排空，标题页 14.6 → 60 fps
+    （aemu-lab 修复队列「终末地帧率与稳定性」）；不碰这类内存的游戏不受影响。mas-27 起的内测包才认它，
+    更早的包没人读，无害。
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     env = emulator_env(root)
@@ -718,6 +753,7 @@ def launch_emulator(
             "__GL_SHADER_DISK_CACHE": "1",
             "__GL_SHADER_DISK_CACHE_PATH": str(cache),
             "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP": "1",
+            "ANDROID_EMU_VK_HIDE_REBAR": "1",
         }
     )
     with log_path.open("ab") as log_file:

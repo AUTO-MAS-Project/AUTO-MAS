@@ -34,7 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
-from .managed_fields import M7A_MANAGED_FIELDS, managed_field_keys
+from .managed_fields import managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -63,21 +63,6 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         "weekly_divergent_stable_mode",
     }
 )
-
-
-def managed_modules_for_key(key: str) -> tuple[str, ...]:
-    """Map a native M7A key to the MAS module that may override it.
-
-    以 :data:`M7A_MANAGED_FIELDS` 为准：字段表里没有的键不归任何模块。
-    """
-
-    if key in M7A_MANAGED_STAGE_KEYS:
-        return ()
-    return tuple(
-        module_key
-        for module_key, specs in M7A_MANAGED_FIELDS.items()
-        if any(spec.key == key for spec in specs)
-    )
 
 
 def m7a_managed_keys(module_key: str) -> frozenset[str]:

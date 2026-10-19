@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import {
   AVD_TIERS,
@@ -38,6 +38,7 @@ describe('tiers', () => {
   it('mod AVD tiers follow the backend choices', () => {
     expect(AVD_TIERS.cpu).toEqual([2, 4, 6])
     expect(AVD_TIERS.memoryMb).toEqual([3072, 4096, 5120, 6144])
+    expect(AVD_TIERS.fps).toEqual([30, 60])
   })
 
   it('DPI scales with height so both tiers share the same dp layout', () => {
@@ -199,12 +200,12 @@ describe('align on open (standard)', () => {
 })
 
 describe('align on open (mod AVD)', () => {
-  it('resolution and frame rate are fixed and never written', () => {
+  it('resolution is fixed and never written', () => {
     const current = actual({
       width: 720,
       height: 1280,
       dpi: 240,
-      fps: null,
+      fps: 60,
       cpu: 6,
       memoryMb: 6144,
     })
@@ -212,6 +213,15 @@ describe('align on open (mod AVD)', () => {
     expect(form).toEqual({ resolution: '720p', cpu: 6, memoryMb: 6144, fps: 60 })
     expect(snapped).toEqual({ resolution: null, dpi: null, cpu: null, memoryMb: null, fps: null })
     expect(settingsChanges(current, form, 'avd')).toEqual({})
+  })
+
+  it('frame rate is 30 or 60 and is written when changed', () => {
+    const current = actual({ fps: 60 })
+    const { form } = alignSettings(current, 'avd')
+    expect(settingsChanges(current, { ...form, fps: 30 }, 'avd')).toEqual({ fps: 30 })
+    const odd = alignSettings(actual({ fps: 45 }), 'avd')
+    expect(odd.form.fps).toBe(60)
+    expect(odd.snapped.fps).toBe(45)
   })
 
   it('cpu and memory snap to the AVD tiers', () => {
@@ -252,6 +262,7 @@ describe('batch', () => {
     expect(batchChanges({ resolution: '1080p', cpu: 4, memoryMb: 5120, fps: 30 }, 'avd')).toEqual({
       cpu: 4,
       memoryMb: 5120,
+      fps: 30,
     })
   })
 })

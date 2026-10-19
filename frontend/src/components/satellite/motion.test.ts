@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { ORBIT_RINGS, SATELLITE_COLORS, SATELLITE_CONFIG as C } from './config'
 import {
   createExplosionFragmentMotion,

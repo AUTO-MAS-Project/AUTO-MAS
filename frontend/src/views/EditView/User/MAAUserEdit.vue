@@ -623,7 +623,6 @@ const getDefaultMAAUserData = () => ({
     IfGreenTicketStore: false,
     IfActivityFirst: false,
     ActivityStageIndex: 1,
-    ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
     CultivateAutoRaise: false,
     CultivateSkipDuringActivity: false,

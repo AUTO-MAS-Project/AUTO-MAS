@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import {
   BACKGROUND_IMAGE_PROPERTY,
   INLINE_STYLE_VALUE_MAX,
