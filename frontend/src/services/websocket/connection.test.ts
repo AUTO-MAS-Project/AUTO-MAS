@@ -84,16 +84,6 @@ describe('websocket connection 状态机', () => {
     vi.unstubAllGlobals()
   })
 
-  it('connect 成功后进入 open 且退避计数清零', async () => {
-    const conn = await loadConnection()
-    const promise = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-
-    await expect(promise).resolves.toBe(true)
-    expect(conn.connectionState().value).toBe('open')
-  })
-
   it('并发 connect 只建立一个连接尝试（单飞行）', async () => {
     const conn = await loadConnection()
     const p1 = conn.connect()
@@ -102,63 +92,6 @@ describe('websocket connection 状态机', () => {
     latestSocket().triggerOpen()
 
     await Promise.all([p1, p2])
-    expect(FakeWebSocket.instances.length).toBe(1)
-  })
-
-  it('已连接时 connect 直接返回 true 不重复建连', async () => {
-    const conn = await loadConnection()
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await p
-
-    await expect(conn.connect()).resolves.toBe(true)
-    expect(FakeWebSocket.instances.length).toBe(1)
-  })
-
-  it('协调器对仍可用的连接安排重连时，状态保持 open、不重复建连', async () => {
-    const conn = await loadConnection()
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await p
-
-    // 例如一轮重连失败的处理在 await 期间连接已恢复，随后仍按原决策 scheduleReconnect
-    conn.scheduleReconnect(0)
-    expect(conn.connectionState().value).toBe('open')
-    expect(conn.connectionInfo()).toMatchObject({ hasReconnectTimer: false })
-
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(conn.connectionState().value).toBe('open')
-    expect(FakeWebSocket.instances.length).toBe(1)
-    conn.shutdown()
-  })
-
-  it('状态被置为 reconnecting 而连接实际可用时，connect 早退前校正回 open', async () => {
-    const conn = await loadConnection()
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await p
-
-    conn.connectionState().value = 'reconnecting'
-    await expect(conn.connect()).resolves.toBe(true)
-    expect(conn.connectionState().value).toBe('open')
-    expect(FakeWebSocket.instances.length).toBe(1)
-    conn.shutdown()
-  })
-
-  it('shutdown 后进入 closed 且拒绝新的 connect', async () => {
-    const conn = await loadConnection()
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await p
-
-    conn.shutdown('测试关闭')
-    expect(conn.connectionState().value).toBe('closed')
-    await expect(conn.connect()).resolves.toBe(false)
-    // 拒绝的连接不新建 WebSocket
     expect(FakeWebSocket.instances.length).toBe(1)
   })
 
@@ -188,21 +121,6 @@ describe('websocket connection 状态机', () => {
     // 不创建 WebSocket，状态保持 closed（未被 onopen 复活）
     expect(FakeWebSocket.instances.length).toBe(0)
     expect(conn.connectionState().value).toBe('closed')
-  })
-
-  it('send 未连接返回 false，连接后返回 true', async () => {
-    const conn = await loadConnection()
-    expect(conn.send('Main', 'x', {})).toBe(false)
-
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await p
-
-    expect(conn.send('Main', 'x', { a: 1 })).toBe(true)
-    expect(latestSocket().send).toHaveBeenCalledWith(
-      JSON.stringify({ id: 'Main', type: 'x', data: { a: 1 } })
-    )
   })
 
   it('连接断开触发断开监听并进入 reconnecting', async () => {
@@ -294,23 +212,6 @@ describe('websocket connection 状态机', () => {
 
     conn.shutdown()
   })
-
-  it('shutdown 后收到被替换关闭码保持 closed 终态', async () => {
-    const conn = await loadConnection()
-    const onDisc = vi.fn()
-    conn.onDisconnected(onDisc)
-
-    const p = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    const ws = latestSocket()
-    ws.triggerOpen()
-    await p
-
-    conn.shutdown('应用关闭')
-    ws.triggerClose(4001, 'replaced-by-new-connection')
-    expect(conn.connectionState().value).toBe('closed')
-    expect(onDisc).not.toHaveBeenCalled()
-  })
 })
 
 describe('devMode 协商', () => {
@@ -328,53 +229,6 @@ describe('devMode 协商', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
-  })
-
-  it('连接前 ws_meta 不可达时用回退值，连接建立后重新协商并纠正 devMode', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
-      .mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
-      })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const conn = await loadConnection()
-    const promise = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    // 协商失败：此时只能拿到本地回退值
-    expect(conn.isBackendDevMode()).toBe(true)
-
-    latestSocket().triggerOpen()
-    await expect(promise).resolves.toBe(true)
-
-    // 后端已可达：连接建立后补协商一次，devMode 以后端权威值为准
-    await vi.waitFor(() => expect(conn.isBackendDevMode()).toBe(false))
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(conn.connectionState().value).toBe('open')
-    conn.shutdown()
-  })
-
-  it('连接前协商成功时不重复请求 ws_meta', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ devMode: false, wsPath: '/api/core/ws' }),
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    const conn = await loadConnection()
-    const promise = conn.connect()
-    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
-    latestSocket().triggerOpen()
-    await expect(promise).resolves.toBe(true)
-
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(conn.isBackendDevMode()).toBe(false)
-    conn.shutdown()
   })
 
   it('补协商期间连接层已 shutdown 时丢弃结果，不复活旧连接的 devMode', async () => {

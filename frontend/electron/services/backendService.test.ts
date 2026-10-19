@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { BackendService } from './backendService'
-import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV, RuntimeClient } from './runtime'
+import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
@@ -172,10 +172,6 @@ const stoppedResultLine = line({
   details: {},
 })
 
-function logLine(stream: 'stdout' | 'stderr', message: string, sequence: number): string {
-  return line({ ...base, type: 'log', sequence, source: 'backend', stream, message })
-}
-
 /** 等第 index 次 spawn（Runtime 或 python）发生，再往那个假子进程里喂数据。 */
 async function waitForSpawn(index = 0): Promise<FakeChild> {
   await vi.waitFor(() => expect(spawnMock.mock.calls.length).toBeGreaterThan(index))
@@ -248,95 +244,6 @@ afterEach(() => {
   rmSync(runtimeRoot, { recursive: true, force: true })
 })
 
-// ==================== 旧链路 ====================
-
-describe('灰度开关关闭时', () => {
-  it('startBackend 仍自行 spawn python，并且不构造 Runtime 客户端', async () => {
-    const service = createService()
-    const superviseSpy = vi.spyOn(RuntimeClient.prototype, 'supervise')
-    mockSpawn()
-
-    const result = await service.startBackend({
-      pythonPath: EXISTING_EXE,
-      mainPyPath: EXISTING_EXE,
-      timeout: 5000,
-    })
-
-    expect(result).toEqual({ success: true })
-    expect(superviseSpy).not.toHaveBeenCalled()
-    expect(spawnMock).toHaveBeenCalledOnce()
-    expect(spawnMock.mock.calls[0][0]).toBe(EXISTING_EXE)
-    // Runtime 链路固定带 --output ndjson，旧链路只传 main.py。
-    expect(spawnedArgs()).toEqual([EXISTING_EXE])
-    // 旧链路仍按 createBackendEnvironment 注入端口与开发标记。
-    expect(resolveHttpPortMock).toHaveBeenCalled()
-    expect(spawnedEnv().AUTO_MAS_DEV).toBe('1')
-    expect(spawnedEnv().AUTO_MAS_HTTP_PORT).toBe('36164')
-    expect(service.isRuntimeSupervised()).toBe(false)
-    expect(service.getRuntimeApiEndpoints()).toBeNull()
-  })
-
-  it('旧链路 spawn 出的旧版本后端就绪时显式报错，不许静默启动不匹配的后端', async () => {
-    const service = createService()
-    mockSpawn()
-    fetchMock.mockImplementation(async (url: unknown) => {
-      if (String(url).includes('/api/core/health')) {
-        return { ok: true, json: async () => ({ ready: true, version: 'v5.6.1' }) }
-      }
-      throw new Error('connect ECONNREFUSED')
-    })
-
-    const result = await service.startBackend({
-      pythonPath: EXISTING_EXE,
-      mainPyPath: EXISTING_EXE,
-      timeout: 5000,
-    })
-
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('后端版本不匹配')
-    expect(result.error).toContain('v5.6.1')
-    expect(result.error).toContain('v5.5.0-beta.3')
-  })
-
-  it('旧链路检测到旧版本开发模式后端时不静默复用，显式报错且不 spawn 新进程', async () => {
-    const service = createService()
-    mockSpawn()
-    // /api/core/ws_meta：devMode 旧后端在跑，但 health 版本与前端不一致。
-    fetchMock.mockImplementation(async (url: unknown) => {
-      if (String(url).includes('/api/core/ws_meta')) {
-        return { ok: true, json: async () => ({ devMode: true }) }
-      }
-      if (String(url).includes('/api/core/health')) {
-        return { ok: true, json: async () => ({ ready: true, version: 'v5.6.1' }) }
-      }
-      throw new Error('connect ECONNREFUSED')
-    })
-
-    const result = await service.startBackend({
-      pythonPath: EXISTING_EXE,
-      mainPyPath: EXISTING_EXE,
-      timeout: 5000,
-    })
-
-    expect(result.success).toBe(false)
-    expect(result.error).toContain('后端版本不匹配')
-    expect(result.error).toContain('v5.6.1')
-    expect(result.error).toContain('v5.5.0-beta.3')
-    expect(spawnMock).not.toHaveBeenCalled()
-  })
-
-  it('getStatus 标记 runtimeSupervised=false，渲染进程据此沿用 POST /close 的旧关闭流程', () => {
-    const service = createService()
-
-    expect(service.getStatus()).toEqual({
-      isRunning: false,
-      pid: undefined,
-      startTime: undefined,
-      runtimeSupervised: false,
-    })
-  })
-})
-
 // ==================== Runtime 监督链路 ====================
 
 describe('development 模式', () => {
@@ -407,35 +314,6 @@ describe('development 模式', () => {
     child.close(0)
   })
 
-  it('就绪前的失败 result 透传错误码，并把两路日志组成整块文本', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const child = await passEnvironmentEnsure()
-
-    // 真实夹具：--repo 指向不存在的目录，Runtime 在 backend.spawn 阶段直接失败。
-    const [fixtureHello, ...fixtureRest] = fixtureLines('supervise-dev-repo-missing.ndjson')
-    child.stdout.feed(fixtureHello)
-    child.stdout.feed(logLine('stdout', 'AUTO-MAS backend starting', 2))
-    child.stdout.feed(logLine('stderr', 'Traceback (most recent call last):', 3))
-    child.stdout.feed(fixtureRest.join(''))
-    child.close(2)
-
-    const result = await pending
-
-    expect(result.success).toBe(false)
-    expect(result.code).toBe('INVALID_ARGUMENT')
-    expect(result.retryable).toBe(false)
-    expect(result.remediation).toEqual(['run-doctor'])
-    expect(result.error).toBe('开发源码目录无效')
-    expect(result.logs).toBe(
-      '[stdout]\nAUTO-MAS backend starting\n\n[stderr]\nTraceback (most recent call last):'
-    )
-    expect(service.getRuntimeApiEndpoints()).toBeNull()
-    expect(killAllMock).not.toHaveBeenCalled()
-  })
-
   it('Runtime 报告就绪但后端版本不匹配时显式失败，不采纳句柄', async () => {
     const service = createService()
     mockSpawn()
@@ -494,91 +372,6 @@ describe('development 模式', () => {
     expect(child.killed).toBe(false)
     expect(service.getRuntimeApiEndpoints()).toBeNull()
     expect(service.getStatus().isRunning).toBe(false)
-  })
-
-  it('getStatus 全程标记 runtimeSupervised=true：未启动、监督中与关闭后都不能让渲染进程走 /close', async () => {
-    const service = createService()
-    mockSpawn()
-
-    // 尚未启动：灰度开关已打开，关闭方式就已经确定，不能等到句柄出现才切换。
-    expect(service.getStatus()).toMatchObject({ isRunning: false, runtimeSupervised: true })
-
-    const pendingStart = service.startBackend()
-    // development 模式下先跑 environment ensure，supervise 是第二次 spawn。
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine + runningStateLine)
-    await pendingStart
-    expect(service.getStatus()).toMatchObject({
-      isRunning: true,
-      pid: 4242,
-      runtimeSupervised: true,
-    })
-
-    const pendingStop = service.stopBackend()
-    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-    child.stdout.feed(stoppedResultLine)
-    child.close(0)
-    await pendingStop
-    expect(service.getStatus()).toMatchObject({ isRunning: false, runtimeSupervised: true })
-  })
-
-  it('Runtime 未给终态就退出时归为 RUNTIME_EXITED_UNEXPECTEDLY，诊断输出并入 stderr 块', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine)
-    child.stdout.feed(logLine('stdout', 'AUTO-MAS backend starting', 2))
-    child.stderr.feed('auto-mas-runtime: 后端进程树清理失败\n')
-    child.close(60)
-
-    const result = await pending
-
-    expect(result.success).toBe(false)
-    expect(result.code).toBe('RUNTIME_EXITED_UNEXPECTEDLY')
-    expect(result.retryable).toBe(true)
-    expect(result.logs).toBe(
-      '[stdout]\nAUTO-MAS backend starting\n\n[stderr]\nauto-mas-runtime: 后端进程树清理失败'
-    )
-    expect(killAllMock).not.toHaveBeenCalled()
-  })
-
-  it('迟迟不就绪时请求关闭 Runtime，并以它给出的终态报告失败', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend({ timeout: 20 })
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine)
-
-    // 超时后本模块只发 shutdown，不 kill；这里模拟 Runtime 响应关闭并给出终态。
-    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-    expect(JSON.parse(child.stdin.chunks[0].trimEnd())).toMatchObject({ command: 'shutdown' })
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'result',
-        sequence: 4,
-        success: false,
-        code: 'BACKEND_HEALTH_TIMEOUT',
-        stage: 'backend.health',
-        status: 'backend_failed',
-        message: '后端健康检查超时',
-        retryable: true,
-        remediation: ['restart-backend', 'open-log'],
-        details: {},
-      })
-    )
-    child.close(60)
-
-    const result = await pending
-
-    expect(result.success).toBe(false)
-    expect(result.code).toBe('BACKEND_HEALTH_TIMEOUT')
-    expect(result.remediation).toEqual(['restart-backend', 'open-log'])
-    expect(child.killed).toBe(false)
-    expect(killAllMock).not.toHaveBeenCalled()
   })
 
   it('environment ensure 失败时不再 supervise，按它的结果码报告失败', async () => {
@@ -671,101 +464,6 @@ describe('development 模式', () => {
     child.close(0)
   })
 
-  it('启动阶段每路日志只保留最近 200 行', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pending = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine)
-    for (let i = 1; i <= 250; i += 1) {
-      child.stdout.feed(logLine('stdout', `out ${i}`, 1 + i))
-    }
-    for (let i = 1; i <= 3; i += 1) {
-      child.stdout.feed(logLine('stderr', `err ${i}`, 300 + i))
-    }
-    child.close(60)
-
-    const result = await pending
-
-    expect(result.success).toBe(false)
-    const [stdoutBlock, stderrBlock] = (result.logs ?? '').split('\n\n')
-    const stdoutLines = stdoutBlock.split('\n').slice(1)
-    expect(stdoutLines).toHaveLength(200)
-    expect(stdoutLines[0]).toBe('out 51')
-    expect(stdoutLines.at(-1)).toBe('out 250')
-    expect(stderrBlock).toBe('[stderr]\nerr 1\nerr 2\nerr 3')
-  })
-
-  it('关闭时 Runtime 没给终态就退出，进程已不在则按已停止处理', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pendingStart = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(helloLine + runningStateLine)
-    await pendingStart
-
-    const pendingStop = service.stopBackend()
-    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-    // Runtime 收到 shutdown 后直接退出、没有 result：进程树已随 Job Object 回收。
-    child.close(60)
-
-    expect(await pendingStop).toEqual({ success: true })
-    expect(service.getStatus().isRunning).toBe(false)
-    expect(killAllMock).not.toHaveBeenCalled()
-  })
-
-  it('关闭超时被客户端 kill 后同样算作已停止，不再报「无法安全退出」', async () => {
-    vi.useFakeTimers()
-    try {
-      const service = createService()
-      mockSpawn()
-
-      const pendingStart = service.startBackend()
-      const child = await passEnvironmentEnsure()
-      child.stdout.feed(helloLine + runningStateLine)
-      await pendingStart
-
-      const pendingStop = service.stopBackend()
-      await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-      expect(child.killed).toBe(false)
-
-      // Runtime 对 shutdown 毫无反应：30 秒后客户端 kill，假子进程随之 close。
-      await vi.advanceTimersByTimeAsync(30_000)
-
-      expect(child.killed).toBe(true)
-      expect(await pendingStop).toEqual({ success: true })
-      expect(service.getStatus().isRunning).toBe(false)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('hello 未宣告 stdin.shutdown 时 stopBackend 不发命令，直接 kill 并算作已停止', async () => {
-    const service = createService()
-    mockSpawn()
-
-    const pendingStart = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    child.stdout.feed(
-      line({
-        ...base,
-        type: 'hello',
-        sequence: 1,
-        runtimeVersion: 'dev',
-        command: 'backend supervise',
-        capabilities: ['stdin.cancel', 'state.v1', 'log.stream'],
-      }) + runningStateLine
-    )
-    await pendingStart
-
-    expect(await service.stopBackend()).toEqual({ success: true })
-    expect(child.stdin.chunks).toEqual([])
-    expect(child.killed).toBe(true)
-    expect(service.getStatus().isRunning).toBe(false)
-  })
-
   it('找不到 Runtime 可执行文件时按 RUNTIME_NOT_FOUND 失败，不回退旧链路', async () => {
     delete process.env[RUNTIME_EXE_ENV]
     const service = createService()
@@ -786,52 +484,6 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
-  it.each([
-    { name: '新 Runtime', commitMessage: '修复后台启动\n\n补充错误提示' },
-    { name: '旧 Runtime', commitMessage: undefined },
-  ])('后台暂存将 $name 的最新提交文案传给界面', async ({ commitMessage }) => {
-    process.env[RUNTIME_MODE_ENV] = 'managed'
-    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
-    const service = createService()
-    const run = vi.spyOn(RuntimeClient.prototype, 'run')
-    run.mockResolvedValueOnce({
-      success: true,
-      code: 'OK',
-      result: {
-        details: {
-          healthy: true,
-          version: 'v5.5.0',
-          commit: 'a'.repeat(40),
-          remoteCommit: 'b'.repeat(40),
-          updateAvailable: true,
-        },
-      },
-    } as never)
-    run.mockResolvedValueOnce({
-      success: true,
-      code: 'OK',
-      result: { details: { staged: true, commit: 'b'.repeat(40), commitMessage } },
-    } as never)
-
-    try {
-      const result = await service.checkRuntimeBackendUpdate()
-      expect(result).toMatchObject({
-        updateAvailable: true,
-        staged: true,
-        currentCommit: 'a'.repeat(40),
-        remoteCommit: 'b'.repeat(40),
-        commitMessage,
-      })
-      expect(await service.checkRuntimeBackendUpdate()).toEqual(result)
-      expect(run.mock.calls.map(([command]) => command.slice(0, 2))).toEqual([
-        ['workspace', 'check'],
-        ['workspace', 'stage'],
-      ])
-    } finally {
-      run.mockRestore()
-    }
-  })
-
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE

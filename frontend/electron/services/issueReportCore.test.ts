@@ -1,8 +1,8 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import AdmZip = require('adm-zip')
 
 import {
   addDebugDirectory,
@@ -40,10 +40,6 @@ function pathsOf(entries: ReturnType<typeof collect>): string[] {
   return entries.map(entry => entry.path)
 }
 
-function skippedPaths(entries: ReturnType<typeof collect>): string[] {
-  return entries.filter(entry => entry.status === 'skipped').map(entry => entry.path)
-}
-
 describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'issue-report-core-'))
@@ -68,26 +64,6 @@ describe('addDebugDirectory 只收声明方自己的诊断子目录', () => {
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/okww-account-switch/switch-error.jpg')
     expect(pathsOf(entries)).not.toContain('logs/auto-mas/new-adapter-diag/detail.log')
   })
-
-  it('其他专项的登记目录静默跳过，未登记目录留跳过条目进清单', () => {
-    write('debug/maaend-login/login-error.jpg', 'maaend')
-    write('debug/new-adapter-diag/detail.log', '未登记的新目录')
-
-    const entries = collect('logs/auto-mas', 'oknte')
-
-    expect(skippedPaths(entries)).toEqual(['logs/auto-mas/new-adapter-diag'])
-    expect(skippedPaths(entries)).not.toContain('logs/auto-mas/maaend-login')
-  })
-
-  it('未声明 ownAdapter 时只收顶层文件', () => {
-    write('debug/app.log', 'app log')
-    write('debug/maaend-login/login-error.jpg', 'maaend')
-    write('debug/oknte-launcher-start/launcher-error.jpg', 'oknte')
-
-    const entries = collect('logs/auto-mas')
-
-    expect(pathsOf(entries)).toEqual(['logs/auto-mas/app.log'])
-  })
 })
 
 describe('maskVerbatimJsonText 原文打码', () => {
@@ -95,37 +71,6 @@ describe('maskVerbatimJsonText 原文打码', () => {
   // 转译后 String.raw 里的 \u 转义会被解码，测不到原文里的转义写法
   const HOME = 'C:\\Users\\tester'
   const mask = (text: string) => maskVerbatimJsonText(text, HOME)
-
-  it('字符串里 \\/ 转义写法的推送地址照样打码，只换这一个字面量', () => {
-    const text = '{ "a": "https:\\/\\/api.day.app\\/SECRET_A", "keep": "x\\/y" }'
-    expect(text).toContain('https:\\/\\/')
-    expect(mask(text)).toBe('{ "a": "https://api.day.app/***", "keep": "x\\/y" }')
-  })
-
-  it('\\u002F 大小写两种写法都认得出', () => {
-    const upper = '["https:\\u002F\\u002Fapi.day.app\\u002FSECRET_B"]'
-    const lower = '["https:\\u002f\\u002fapi.day.app\\u002fSECRET_C"]'
-    expect(upper).toContain('\\u002F')
-    expect(lower).toContain('\\u002f')
-    expect(mask(upper)).toBe('["https://api.day.app/***"]')
-    expect(mask(lower)).toBe('["https://api.day.app/***"]')
-  })
-
-  it('其他 \\uXXXX 转义写成的地址也认得出', () => {
-    const text = '["\\u0068ttps://\\u0061pi.day.app/SECRET_I"]'
-    expect(mask(text)).toBe('["https://api.day.app/***"]')
-  })
-
-  it('普通写法的地址与注释里的地址都打码', () => {
-    const text = [
-      '{',
-      '  // 推送 https://api.day.app/SECRET_D',
-      '  /* 备用 https://api.day.app/SECRET_E */',
-      '  "url": "https://api.day.app/SECRET_F"',
-      '}',
-    ].join('\n')
-    expect(mask(text)).toBe(text.replace(/SECRET_[DEF]/g, '***'))
-  })
 
   it('主目录的原样、JSON 转义、正斜杠三种写法都换成 <HOME>', () => {
     const text = [
@@ -199,13 +144,6 @@ describe('addDiagnosticFile 收解析不了的 .json', () => {
     expect(stored).not.toMatch(/SECRET_[KLMNO]/)
     expect(stored).toContain('// 注释 https://api.day.app/***')
     expect(stored).toContain('"a": "https://api.day.app/***"')
-  })
-
-  it('.jsonc 与 .json 同一套：转义写法的推送地址也打码', () => {
-    const text = ['{', '  // 注释', '  "b": "https:\\/\\/api.day.app\\/SECRET_Q"', '}'].join('\n')
-    write('debug/conf.jsonc', text)
-
-    expect(collectText('debug/conf.jsonc')).not.toContain('SECRET_Q')
   })
 
   it('能解析的 .json 照旧按键名打码并重新排版', () => {

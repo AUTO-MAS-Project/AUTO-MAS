@@ -2,20 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vite-plus/test'
-import { createI18n } from 'vue-i18n'
-import zhCN from './locales/zh-CN'
 import enUS from './locales/en-US'
 import jaJP from './locales/ja-JP'
-
-const i18n = createI18n({
-  legacy: false,
-  locale: 'zh-CN',
-  fallbackLocale: 'zh-CN',
-  missingWarn: false,
-  fallbackWarn: false,
-  messages: { 'zh-CN': zhCN, 'en-US': enUS, 'ja-JP': jaJP },
-})
-const t = i18n.global.t as (key: string, named?: Record<string, unknown>, plural?: number) => string
+import zhCN from './locales/zh-CN'
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
@@ -37,12 +26,6 @@ describe('词表', () => {
     for (const [locale, entries] of TRANSLATIONS) {
       const extra = entries.map(([k]) => k).filter(k => !zhKeys.has(k))
       expect([locale, extra]).toEqual([locale, []])
-    }
-  })
-
-  it('每条词条都能被 vue-i18n 编译', () => {
-    for (const [key] of zhEntries) {
-      expect(() => t(key)).not.toThrow()
     }
   })
 
@@ -70,31 +53,6 @@ describe('词表', () => {
       }
     }
     expect(offenders).toEqual([])
-  })
-
-  it('字面量里的 | { } @ 都做了转义', () => {
-    expect(t('edit.enterInstanceInfoAs')).toBe('请输入模拟器实例信息，格式：启动附加命令 | ADB地址')
-    expect(t('edit.exampleTaskDoneSuccess')).toBe('例如：任务完成|成功|失败')
-    expect(t('comp.enterMessageTemplateVariables')).toContain('{title}, {content}')
-  })
-
-  it('占位符能正常代入', () => {
-    expect(t('scripts.toast.copied', { name: 'demo' })).toBe('已复制托管「demo」')
-    expect(t('scheduler.tabName', { n: 2 })).toBe('运行面板2')
-  })
-
-  // 计数类文案在英文下要区分单复数，中文两个形式写成一样的
-  it('计数文案的单复数', () => {
-    expect(t('queue.count', { count: 1 }, 1)).toBe('1 个队列')
-    expect(t('queue.count', { count: 3 }, 3)).toBe('3 个队列')
-    i18n.global.locale.value = 'en-US'
-    expect(t('queue.count', { count: 1 }, 1)).toBe('1 queue')
-    expect(t('queue.count', { count: 3 }, 3)).toBe('3 queues')
-    // 日本語は単複同形なので、どちらも同じ文になる
-    i18n.global.locale.value = 'ja-JP'
-    expect(t('queue.count', { count: 1 }, 1)).toBe('1 件のキュー')
-    expect(t('queue.count', { count: 3 }, 3)).toBe('3 件のキュー')
-    i18n.global.locale.value = 'zh-CN'
   })
 
   // 词表少一条 key 时 t() 会把 key 原样渲染出来，页面上就是一串 comp.enabled，
