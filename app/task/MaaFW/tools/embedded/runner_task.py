@@ -842,10 +842,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         message = self._timed_out_user_summary(result)
                     else:
                         message = _failed_task_user_summary(result, self.run_plan)
-                        total = (
-                            len(self.run_plan.tasks) if self.run_plan is not None else 0
+                        # 重试时本轮已完成的任务会被剔出计划（_skip_tasks_completed_this_run），
+                        # 加回来才是整轮的进度。
+                        retry_skipped = (
+                            sum(
+                                1
+                                for skipped in self.run_plan.skippedTasks
+                                if skipped.reason == _RETRY_SKIP_REASON
+                            )
+                            if self.run_plan is not None
+                            else 0
                         )
-                        done = len(result.completedTasks)
+                        total = (
+                            len(self.run_plan.tasks) + retry_skipped
+                            if self.run_plan is not None
+                            else 0
+                        )
+                        done = len(result.completedTasks) + retry_skipped
                         if total > 1 and done > 0:
                             message += f"（共 {total} 个任务，完成 {done} 个）"
                     if self.cur_user_log is not None:

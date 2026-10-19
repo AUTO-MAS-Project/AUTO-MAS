@@ -1158,6 +1158,22 @@ class MaaFWRunner:
             # 初始化阶段失败时还没有任务，为 None。
             failed_task = self._current_task_name
             self.send_log(f"MaaFW 任务执行失败: {exc}")
+            user_message = exc.user_message if isinstance(exc, MaaFWTaskError) else None
+            if user_message:
+                # 中止本轮之前已经有任务失败过（失败后继续的那些）：一并点名，
+                # 不然报告里只剩最后这一条。
+                labels = {
+                    task.name: _task_display_name(task) for task in self.plan.tasks
+                }
+                earlier = [
+                    labels.get(item.name, item.name)
+                    for item in self._failed_task_errors
+                    if item.name != failed_task
+                ]
+                if earlier:
+                    user_message += (
+                        f"；此前另有 {len(earlier)} 个任务失败：" + "、".join(earlier)
+                    )
             return MaaFWRunResult(
                 success=False,
                 projectName=self.plan.projectName,
@@ -1166,9 +1182,7 @@ class MaaFWRunner:
                 completedTasks=self._completed_task_names(),
                 failedTask=failed_task,
                 errorMessage=str(exc),
-                userMessage=exc.user_message
-                if isinstance(exc, MaaFWTaskError)
-                else None,
+                userMessage=user_message,
                 failureScreenshots=self.failure_screenshots,
                 timedOut=isinstance(exc, MaaFWRunTimeoutError),
             )
@@ -1378,7 +1392,7 @@ class MaaFWRunner:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise MaaFWTaskError(
                 f"{reason}，本轮已结束: {display_name}",
-                user_message=f"{user_reason}，本轮剩余任务已跳过",
+                user_message=f"{user_reason}，{self._round_end_phrase(index)}",
             )
         if not self._wait_task_deadline_stop():
             raise not_settled
@@ -1522,7 +1536,7 @@ class MaaFWRunner:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise MaaFWTaskError(
                 f"{reason}，本轮已结束: {display_name}",
-                user_message=f"{user_reason}，本轮剩余任务已跳过",
+                user_message=f"{user_reason}，{self._round_end_phrase(index)}",
             )
         if has_next and not self._wait_self_stop_settled(
             lambda: self._loop_guard_stop_thread
@@ -1552,9 +1566,13 @@ class MaaFWRunner:
         fatal = sorted(self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS)
         if not fatal:
             return
-        error = RuntimeError(
+        error = MaaFWTaskError(
             f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
-            f"{display_name}: {message}"
+            f"{display_name}: {message}",
+            user_message=(
+                f"{display_name}：游戏未能启动（{'、'.join(fatal)} 失败），"
+                "本轮剩余任务已跳过"
+            ),
         )
         if cause is not None:
             raise error from cause
@@ -1587,9 +1605,13 @@ class MaaFWRunner:
         if exited is None:
             return
         label, exit_code = exited
-        error = RuntimeError(
+        error = MaaFWTaskError(
             f"Agent 进程已退出（{label}, exit={exit_code}），本轮剩余任务已跳过: "
-            f"{display_name}: {message}"
+            f"{display_name}: {message}",
+            user_message=(
+                f"{display_name}：Agent 进程已退出（{label}，退出码 {exit_code}），"
+                "本轮剩余任务已跳过"
+            ),
         )
         if cause is not None:
             raise error from cause
@@ -3338,7 +3360,7 @@ class MaaFWRunner:
                     raise MaaFWTaskError(
                         f"{task.abortRoundMessage}，本轮已结束: {display_name}: {message}",
                         user_message=(
-                            f"{task.abortRoundMessage}，本轮剩余任务已跳过"
+                            f"{task.abortRoundMessage}，{self._round_end_phrase(index)}"
                             + (f"：{reason}" if reason else "")
                         ),
                     ) from exc
@@ -3741,13 +3763,6 @@ class MaaFWRunner:
 
         parts: list[str] = []
         summaries = self._task_failure_summaries
-        focus = next((item.focus for item in reversed(summaries) if item.focus), None)
-        if focus:
-            parts.append(focus)
-        names = self._resolve_node_names(detail)
-        location = f"停在 {names[-1]}" if names else ""
-        if not location and getattr(detail, "entry", None):
-            location = f"入口 {detail.entry} 未能走完"
         # Tasker 只是任务级汇总；节点的最后一条才说明停在哪、画面上有什么。
         last = next(
             (
@@ -3757,22 +3772,34 @@ class MaaFWRunner:
             ),
             summaries[-1] if summaries else None,
         )
+        # focus、失败类型、画面文字都只取最后那条和它同节点的事件：别的节点的失败
+        # 多半已经被 on_error 恢复过，带过来会把旧问题安到最后停下的地方。
+        related: list[_TaskFailureSummary] = []
+        if last is not None:
+            target = last.node_name or last.name
+            related = [
+                event
+                for event in reversed(summaries)
+                if event is last or (target and event.name == target)
+            ]
+        focus = next((item.focus for item in related if item.focus), None)
+        if focus:
+            parts.append(focus)
+        names = self._resolve_node_names(detail)
+        location = f"停在 {names[-1]}" if names else ""
+        if not location and getattr(detail, "entry", None):
+            location = f"入口 {detail.entry} 未能走完"
         if location:
             failure_type = ""
-            if last is not None:
-                target = last.node_name or last.name
-                for event in reversed(summaries):
-                    # 只借同节点的解释，不能把 on_error 恢复过的其他节点失败带过来。
-                    if event is not last and (not target or event.name != target):
-                        continue
-                    if event.event == "Node.NextList.Failed":
-                        failure_type = "没认出接下来的画面"
-                        break
-                    if event.event == "Node.Action.Failed" or (
-                        event.event == "Node.PipelineNode.Failed" and event.has_action
-                    ):
-                        failure_type = "操作没有完成"
-                        break
+            for event in related:
+                if event.event == "Node.NextList.Failed":
+                    failure_type = "没认出接下来的画面"
+                    break
+                if event.event == "Node.Action.Failed" or (
+                    event.event == "Node.PipelineNode.Failed" and event.has_action
+                ):
+                    failure_type = "操作没有完成"
+                    break
             parts.append(location + (f"，{failure_type}" if failure_type else ""))
         if last is not None and last.texts:
             parts.append("画面文字：" + " / ".join(last.texts))
@@ -3814,6 +3841,13 @@ class MaaFWRunner:
             kept.append(summary)
         return "框架失败事件: " + "；".join(kept) if kept else ""
 
+    def _round_end_phrase(self, index: int) -> str:
+        """结束本轮时给人看的结尾：后面确实还有任务才说「剩余任务已跳过」。"""
+
+        if index + 1 < len(self.plan.tasks):
+            return "本轮剩余任务已跳过"
+        return "本轮已结束"
+
     def _build_failed_tasks_user_message(self) -> str:
         labels = {task.name: _task_display_name(task) for task in self.plan.tasks}
         failures = self._failed_task_errors
@@ -3824,9 +3858,13 @@ class MaaFWRunner:
             )
         parts = []
         for failed in failures[:2]:
-            reason = failed.reason.split("；", 1)[0]
-            if reason.startswith("画面文字："):
-                reason = ""
+            # 多任务时每个括号只留 focus 和「停在哪」，画面文字太长不带；
+            # 括号里改用逗号，免得和任务之间的「；」混在一起。
+            reason = "，".join(
+                part
+                for part in failed.reason.split("；")
+                if part and not part.startswith("画面文字：")
+            )
             parts.append(labels[failed.name] + (f"（{reason}）" if reason else ""))
         if len(failures) > 2:
             parts.append(
