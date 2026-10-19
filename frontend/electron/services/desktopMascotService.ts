@@ -1,5 +1,5 @@
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
-import type { NativeImage, Point, WebContents } from 'electron'
+import type { NativeImage, Point, Size, WebContents } from 'electron'
 import * as path from 'path'
 import type {
   DesktopMascotColors,
@@ -8,7 +8,7 @@ import type {
   DesktopMascotUpdate,
   DesktopMascotDragStart,
 } from '../../src/types/desktopMascot'
-import { getMascotLayout, getMascotSize } from './desktopMascotGeometry'
+import { getMascotLayout, getMascotSize, isMascotVisible } from './desktopMascotGeometry'
 import type { DesktopMascotOptions, DesktopMascotRuntime } from './desktopMascotTypes'
 
 const MASCOT_MARGIN = 16
@@ -75,8 +75,11 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   private idleMessage: DesktopMascotIdleMessage | undefined
   private colors: DesktopMascotColors | undefined
   private decodedImage: { imageUrl: string; image: NativeImage } | null = null
-  private frames: NativeImage[] = []
+  private sourceSize: Size = { width: 1, height: 1 }
+  private maskSource: { size: Size; mask: Uint8Array } | null = null
+  private hitMasks = new Map<string, Uint8Array>()
   private preferredWidth = 144
+  private layoutRevision = 0
 
   constructor(private readonly options: DesktopMascotOptions) {}
 
@@ -164,8 +167,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     if (!this.window || sender !== this.window.webContents || !this.data || this.dragOffset)
       return false
     if (!offset || typeof offset !== 'object') return false
-    const { x, y, session } = offset as DesktopMascotDragStart
+    const { x, y, session, revision } = offset as DesktopMascotDragStart
     if (
+      revision !== this.layoutRevision ||
       !Number.isSafeInteger(session) ||
       session <= 0 ||
       !Number.isFinite(x) ||
@@ -179,11 +183,17 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       return false
     // 抓取点来自按下事件，不用延后处理 IPC 时的鼠标位置重新命中。
     this.dragOffset = { x, y }
-    this.setMouseIgnored(false)
-    this.updateData({ dragging: true, dragSession: session })
-    this.updateLook(null)
-    this.moveToCursor()
-    return true
+    try {
+      this.setMouseIgnored(false)
+      this.updateData({ dragging: true, dragSession: session })
+      this.updateLook(null)
+      this.moveToCursor()
+      return true
+    } catch (error) {
+      this.finishDrag(false)
+      this.options.onError(error)
+      return false
+    }
   }
 
   handlePointer(sender: WebContents, action: unknown, session?: unknown): void {
@@ -201,21 +211,20 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       y < this.hitSize.height &&
       this.hitMask[y * this.hitSize.width + x] === 1
     if (action === 'move' && this.dragOffset) {
-      this.moveToCursor()
-    } else if (action === 'end' && this.dragOffset) {
-      this.moveToCursor()
-      this.dragOffset = null
-      this.updateData({ dragging: false, dragSession: this.data?.dragSession })
-      const finalBounds = win.getBounds()
       try {
-        this.options.savePosition({
-          x: finalBounds.x + (this.data?.offsetX ?? 0),
-          y: finalBounds.y + (this.data?.offsetY ?? 0),
-        })
+        this.moveToCursor()
       } catch (error) {
+        this.finishDrag(true)
         this.options.onError(error)
       }
-      this.setMouseIgnored(true)
+    } else if (action === 'end' && this.dragOffset) {
+      try {
+        this.moveToCursor()
+      } catch (error) {
+        this.options.onError(error)
+      } finally {
+        this.finishDrag(true)
+      }
     } else if (action === 'hover' && !this.dragOffset) {
       this.setMouseIgnored(!hit)
     }
@@ -223,10 +232,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
 
   sync(): void {
     if (this.disposed) return
-    if (this.dragOffset) {
-      this.dragOffset = null
-      this.updateData({ dragging: false, dragSession: this.data?.dragSession })
-    }
+    this.layoutRevision++
+    this.finishDrag(true)
+    this.updateData({ revision: this.layoutRevision })
     const preferences = this.options.readPreferences()
     this.animationPaused = preferences.desktopMascotAnimationPaused === true
     this.idleMessagePaused = preferences.desktopMascotIdleMessagePaused === true
@@ -307,13 +315,26 @@ export class DesktopMascotService implements DesktopMascotRuntime {
         ? screen.getDisplayMatching(mainBounds)
         : screen.getPrimaryDisplay()
     const area = display.workArea
-    this.frames = frames
+    this.sourceSize = frames[0]?.getSize() ?? { width: 1, height: 1 }
     this.preferredWidth = appearance.mascot?.width ?? 144
-    const { width, height } = getMascotSize(
-      frames[0]?.getSize() ?? { width: 1, height: 1 },
-      this.preferredWidth,
-      area
+    const { width, height } = getMascotSize(this.sourceSize, this.preferredWidth, area)
+    // 载入时合并一次透明度，并预计算各显示器尺寸；拖动只切换缓存。
+    const areas = screen.getAllDisplays().map(display => display.workArea)
+    const sizes = areas.map(area => getMascotSize(this.sourceSize, this.preferredWidth, area))
+    sizes.push({ width, height })
+    const maskSize = sizes.reduce(
+      (largest, size) =>
+        size.width > largest.width || size.height > largest.height ? size : largest,
+      { width, height }
     )
+    this.hitMasks.clear()
+    this.maskSource = {
+      size: maskSize,
+      mask: frames.length
+        ? createMascotHitMask(frames.map(frame => frame.resize(maskSize)))
+        : new Uint8Array(maskSize.width * maskSize.height),
+    }
+    for (const size of sizes) this.getHitMask(size)
     const position = appearance.mascot?.position ?? 'bottom-right'
     // 保存角色坐标；气泡换边或横向避让时不移动角色。
     const layout = getMascotLayout(
@@ -326,13 +347,12 @@ export class DesktopMascotService implements DesktopMascotRuntime {
           : area.y + area.height - height - MASCOT_MARGIN,
       },
       { width, height },
-      area
+      area,
+      areas
     )
     const { bounds } = layout
     this.hitSize = { width, height }
-    this.hitMask = frames.length
-      ? createMascotHitMask(frames.map(frame => frame.resize({ width, height })))
-      : new Uint8Array(width * height)
+    this.hitMask = this.getHitMask({ width, height })
     this.data = {
       imageUrl: appearance.mascotUrl,
       needsImageDecode,
@@ -346,6 +366,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       offsetX: layout.offset.x,
       offsetY: layout.offset.y,
       noticeBelow: layout.noticeBelow,
+      noticeWidth: layout.noticeWidth,
+      noticeHeight: layout.noticeHeight,
+      revision: this.layoutRevision,
       dragging: false,
       colors: this.colors,
       notice: this.data?.notice,
@@ -395,6 +418,16 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       win.webContents.on('context-menu', () => {
         if (this.window === createdWindow) this.options.onContextMenu(screen.getCursorScreenPoint())
       })
+      const cancelRendererDrag = (): void => {
+        if (this.window !== createdWindow) return
+        this.layoutRevision++
+        this.finishDrag(true)
+        this.updateData({ revision: this.layoutRevision })
+      }
+      win.webContents.on('render-process-gone', cancelRendererDrag)
+      win.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+        if (mainFrame && !inPlace) cancelRendererDrag()
+      })
       win.once('ready-to-show', () => {
         if (this.window === createdWindow && !createdWindow.isDestroyed())
           createdWindow.showInactive()
@@ -403,6 +436,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
         if (this.window === createdWindow) this.close()
       })
       screen.on('display-removed', this.handleDisplayChanged)
+      screen.on('display-added', this.handleDisplayChanged)
       screen.on('display-metrics-changed', this.handleDisplayChanged)
       const devServer = process.env.VITE_DEV_SERVER_URL
       const loading = devServer
@@ -433,12 +467,14 @@ export class DesktopMascotService implements DesktopMascotRuntime {
   }
 
   private close(): void {
+    this.finishDrag(true)
     const win = this.window
     this.window = null
     if (win) this.options.onClosed()
     this.data = null
     this.decodedImage = null
-    this.frames = []
+    this.maskSource = null
+    this.hitMasks.clear()
     this.dragOffset = null
     this.mouseIgnored = null
     if (this.noticeTimer) clearTimeout(this.noticeTimer)
@@ -448,13 +484,14 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     this.lastCursor = null
     if (win) {
       screen.removeListener('display-removed', this.handleDisplayChanged)
+      screen.removeListener('display-added', this.handleDisplayChanged)
       screen.removeListener('display-metrics-changed', this.handleDisplayChanged)
       if (!win.isDestroyed()) win.close()
     }
   }
 
   private setMouseIgnored(ignore: boolean): void {
-    if (!this.window || this.mouseIgnored === ignore) return
+    if (!this.window || this.window.isDestroyed() || this.mouseIgnored === ignore) return
     this.window.setIgnoreMouseEvents(ignore, { forward: true })
     this.mouseIgnored = ignore
   }
@@ -463,25 +500,28 @@ export class DesktopMascotService implements DesktopMascotRuntime {
     if (!this.window || !this.data || !this.dragOffset) return
     const cursor = screen.getCursorScreenPoint()
     const area = screen.getDisplayNearestPoint(cursor).workArea
-    const size = getMascotSize(
-      this.frames[0]?.getSize() ?? { width: 1, height: 1 },
-      this.preferredWidth,
-      area
-    )
-    if (size.width !== this.hitSize.width || size.height !== this.hitSize.height) {
-      this.dragOffset = {
-        x: (this.dragOffset.x / this.hitSize.width) * size.width,
-        y: (this.dragOffset.y / this.hitSize.height) * size.height,
-      }
-      this.hitSize = size
-      this.hitMask = this.frames.length
-        ? createMascotHitMask(this.frames.map(frame => frame.resize(size)))
-        : new Uint8Array(size.width * size.height)
+    const areas = screen.getAllDisplays().map(display => display.workArea)
+    let size = this.hitSize
+    const targetSize = getMascotSize(this.sourceSize, this.preferredWidth, area)
+    const currentPosition = { x: cursor.x - this.dragOffset.x, y: cursor.y - this.dragOffset.y }
+    const targetOffset = {
+      x: (this.dragOffset.x / this.hitSize.width) * targetSize.width,
+      y: (this.dragOffset.y / this.hitSize.height) * targetSize.height,
     }
+    const targetPosition = { x: cursor.x - targetOffset.x, y: cursor.y - targetOffset.y }
+    if (
+      (isMascotVisible(currentPosition, size, [area]) &&
+        isMascotVisible(targetPosition, targetSize, [area])) ||
+      !isMascotVisible(currentPosition, size, areas)
+    )
+      size = targetSize
+    const resized = size.width !== this.hitSize.width || size.height !== this.hitSize.height
+    const offset = resized ? targetOffset : this.dragOffset
     const layout = getMascotLayout(
-      { x: cursor.x - this.dragOffset.x, y: cursor.y - this.dragOffset.y },
+      { x: cursor.x - offset.x, y: cursor.y - offset.y },
       size,
-      area
+      area,
+      areas
     )
     const update = {
       width: size.width,
@@ -489,14 +529,73 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       offsetX: layout.offset.x,
       offsetY: layout.offset.y,
       noticeBelow: layout.noticeBelow,
+      noticeWidth: layout.noticeWidth,
+      noticeHeight: layout.noticeHeight,
     }
     this.window.setBounds(layout.bounds)
+    if (resized) {
+      this.dragOffset = offset
+      this.hitSize = size
+      this.hitMask = this.getHitMask(size)
+    }
     if (
       Object.entries(update).some(
         ([key, value]) => this.data?.[key as keyof DesktopMascotData] !== value
       )
     )
       this.updateData(update)
+  }
+
+  private getHitMask(size: Size): Uint8Array {
+    const key = `${size.width}x${size.height}`
+    const cached = this.hitMasks.get(key)
+    if (cached) return cached
+    const source = this.maskSource
+    if (source && size.width === source.size.width && size.height === source.size.height) {
+      this.hitMasks.set(key, source.mask)
+      return source.mask
+    }
+    const mask = new Uint8Array(size.width * size.height)
+    if (source) {
+      for (let y = 0; y < size.height; y++) {
+        const top = Math.floor((y * source.size.height) / size.height)
+        const bottom = Math.ceil(((y + 1) * source.size.height) / size.height)
+        for (let x = 0; x < size.width; x++) {
+          const left = Math.floor((x * source.size.width) / size.width)
+          const right = Math.ceil(((x + 1) * source.size.width) / size.width)
+          for (let sourceY = top; sourceY < bottom && !mask[y * size.width + x]; sourceY++) {
+            for (let sourceX = left; sourceX < right; sourceX++) {
+              if (source.mask[sourceY * source.size.width + sourceX]) {
+                mask[y * size.width + x] = 1
+                break
+              }
+            }
+          }
+        }
+      }
+    }
+    this.hitMasks.set(key, mask)
+    return mask
+  }
+
+  private finishDrag(savePosition: boolean): void {
+    const wasDragging = Boolean(this.dragOffset)
+    this.dragOffset = null
+    try {
+      if (wasDragging && savePosition && this.window && !this.window.isDestroyed() && this.data) {
+        const bounds = this.window.getBounds()
+        this.options.savePosition({
+          x: bounds.x + this.data.offsetX,
+          y: bounds.y + this.data.offsetY,
+        })
+      }
+    } catch (error) {
+      this.options.onError(error)
+    } finally {
+      this.setMouseIgnored(true)
+      if (wasDragging && this.window && !this.window.isDestroyed())
+        this.updateData({ dragging: false, dragSession: this.data?.dragSession })
+    }
   }
 
   private updateData(update: DesktopMascotUpdate): void {
