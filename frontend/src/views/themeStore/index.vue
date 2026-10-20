@@ -239,7 +239,7 @@ onBeforeUnmount(() => {
 
 .page-title {
   margin: 0;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
   font-size: 32px;
   font-weight: 700;
 }

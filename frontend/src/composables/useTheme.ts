@@ -192,6 +192,13 @@ const updateCSSVariables = () => {
     '--app-appearance-background-size',
     activeAppearance.value?.background?.size ?? 'cover'
   )
+  // 仅覆盖页面大标题；未设置时保留各页原有的渐变或文字色。
+  const pageTitleColor = activeAppearance.value?.tokens.colorPageTitle
+  if (pageTitleColor) {
+    root.style.setProperty('--app-page-title-color', pageTitleColor)
+  } else {
+    root.style.removeProperty('--app-page-title-color')
+  }
   if (!resolvedAntTokens.value) return
   const customTokens = activeAppearance.value?.tokens
   const primaryColor = customTokens?.colorPrimary ?? themeColors[themeColor.value]

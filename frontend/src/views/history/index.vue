@@ -212,7 +212,10 @@ const handleSelectRecord = async (index: number, record: any) => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(
+    --app-page-title-color,
+    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

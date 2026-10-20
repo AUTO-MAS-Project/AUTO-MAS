@@ -46,6 +46,7 @@ interface AppearanceCursor {
 type AppearanceCursors = Partial<Record<AppearanceCursorKey, AppearanceCursor>>
 interface AppearanceTokens {
   colorPrimary: string
+  colorPageTitle?: string
   colorBgLayout?: string
   colorBgContainer?: string
   colorBgElevated?: string
@@ -137,6 +138,7 @@ function normalizeManifest(value: unknown): AppearanceManifest {
 
   const tokens: AppearanceTokens = {
     colorPrimary,
+    colorPageTitle: assertOptionalHex(rawTokens.colorPageTitle, 'tokens.colorPageTitle'),
     colorBgLayout: assertOptionalHex(rawTokens.colorBgLayout, 'tokens.colorBgLayout'),
     colorBgContainer: assertOptionalHex(rawTokens.colorBgContainer, 'tokens.colorBgContainer'),
     colorBgElevated: assertOptionalHex(rawTokens.colorBgElevated, 'tokens.colorBgElevated'),
