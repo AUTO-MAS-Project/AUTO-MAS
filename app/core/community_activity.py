@@ -140,27 +140,28 @@ async def query_configured_community_activity(
     from app.core import Config
 
     selected_ids = tuple(sorted({str(uid).strip() for uid in account_ids or () if uid}))
-    resolved_proxy = proxy if proxy is not None else Config.proxy
-    proxy_config = (
-        httpx.Proxy(resolved_proxy)
-        if isinstance(resolved_proxy, str)
-        else resolved_proxy
-    )
-    # Config.proxy 每次生成新对象；按配置值复用，认证与传输选项仍须隔离。
-    proxy_key: _ActivityProxyKey = (
-        (
-            proxy_config.url,
-            proxy_config.auth,
-            tuple(proxy_config.headers.raw),
-            proxy_config.ssl_context,
-        )
-        if proxy_config is not None
-        else None
-    )
     async with community_activity_flow():
         while True:
             if Config.ToolsConfig.GameSign.ActivityEnabled is False:
                 return ()
+            # 等锁或配置失效后重读默认代理，使缓存键与本轮实际请求保持一致。
+            resolved_proxy = proxy if proxy is not None else Config.proxy
+            proxy_config = (
+                httpx.Proxy(resolved_proxy)
+                if isinstance(resolved_proxy, str)
+                else resolved_proxy
+            )
+            # Config.proxy 每次生成新对象；按配置值复用，认证与传输选项仍须隔离。
+            proxy_key: _ActivityProxyKey = (
+                (
+                    proxy_config.url,
+                    proxy_config.auth,
+                    tuple(proxy_config.headers.raw),
+                    proxy_config.ssl_context,
+                )
+                if proxy_config is not None
+                else None
+            )
             key = (id(Config.ToolsConfig), selected_ids, proxy_key)
             entry = _activity_cache.get(key)
             if entry is not None and monotonic() < entry.expires_at:
