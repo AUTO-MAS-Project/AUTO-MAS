@@ -244,6 +244,23 @@ class MSSFlavor:
 
         ids = list(task_ids)
         options = dict(task_options)
+        # 自动编排也要尊重队列里这一份实例的红灯，尤其不能给未执行的防线记账。
+        raw_snapshot = _get(user_config, "Task", "TaskSnapshot")
+        if isinstance(raw_snapshot, str):
+            try:
+                raw_snapshot = json.loads(raw_snapshot)
+            except (ValueError, TypeError):
+                raw_snapshot = {}
+        skipped_ids: set[str] = set()
+        if isinstance(raw_snapshot, dict) and raw_snapshot.get("keepUnchecked") is True:
+            checked = raw_snapshot.get("taskChecked")
+            order = raw_snapshot.get("taskOrder")
+            if isinstance(checked, dict) and isinstance(order, list):
+                skipped_ids = {
+                    task_id
+                    for task_id in order
+                    if isinstance(task_id, str) and checked.get(task_id) is False
+                }
 
         activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)
@@ -265,7 +282,10 @@ class MSSFlavor:
         if not ids and plan_key is None and defense is None:
             return list(ids), dict(options)
 
-        if plan_key is not None:
+        if plan_key is not None and (
+            tribulation not in skipped_ids
+            or any(name_of(task_id) == tribulation for task_id in ids)
+        ):
             ids, options = _apply_plan(
                 interface_model, ids, options, tribulation, plan_key, name_of, log
             )
@@ -276,6 +296,7 @@ class MSSFlavor:
         added = False
         if (
             activity is not None
+            and activity not in skipped_ids
             and not any(name_of(i) == activity for i in ids)
             and _get(user_config, "Info", "IfActivityFirst") is not False
             and self._activity_probe() is True
@@ -330,6 +351,8 @@ class MSSFlavor:
                 self._defense_period_probe,
                 name_of,
                 log,
+                skip_task=defense in skipped_ids
+                and not any(name_of(task_id) == defense for task_id in ids),
             )
 
         if climb is not None and any(name_of(i) == climb for i in ids):
@@ -445,6 +468,8 @@ def _arrange_defense(
     period_probe: Callable[[], str | None],
     name_of: Callable[[str], str],
     log: Callable[[str], None],
+    *,
+    skip_task: bool = False,
 ) -> list[str]:
     """按「这一期打没打过」决定个人版灾变防线的去留。
 
@@ -475,12 +500,16 @@ def _arrange_defense(
     整轮陪葬；宁可漏打一轮。
     """
 
-    period = period_probe()
+    record = _load_defense_record(user_config)
+    was_armed = bool(record.get("armed"))
+    # 红灯只结算已存的上轮欠账，不依赖本轮官网排期，也不编排新一轮。
+    if skip_task and not was_armed:
+        return ids
+    period = record["period"] if skip_task else period_probe()
     if period is None:
         log(f"[MSS] 取不到「{defense}」这一期的开始时间，本轮按队列原样执行")
         return ids
 
-    record = _load_defense_record(user_config)
     if str(record.get("period") or "") != period:
         ## 换期了：上一期那份整个丢掉
         record = {"period": period, "done": False, "armed": False, "failed_days": []}
@@ -515,6 +544,14 @@ def _arrange_defense(
                         failed_days.append(today)
                     record["failed_days"] = failed_days
             ## now == seen：这一轮没进过 run()，什么都不算，下一轮照常再编排
+
+    if skip_task:
+        # 先结清上轮；即使上轮只建过计划、还没进 run，也清掉 armed，避免本轮
+        # 其它绿灯的成功在下次被误当成防线完成。
+        record["armed"] = False
+        if settled or was_armed:
+            _commit_defense_record(user_config, record, defense, log)
+        return ids
 
     present = any(name_of(task_id) == defense for task_id in ids)
 

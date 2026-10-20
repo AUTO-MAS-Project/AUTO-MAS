@@ -156,7 +156,11 @@ def build_interface_preview_data(
                 "taskCount": len(preset.task or []),
                 "checkedCount": checked_count,
                 # 实例显示名只属于用户自己的队列，项目预设没有；宿主 schema 也不声明它
-                "snapshot": snapshot.model_dump(mode="json", exclude={"taskLabels"}),
+                # 项目预设没有用户队列的跳过标记；不要把内部默认 false
+                # 暴露成预设快照的可选键。
+                "snapshot": snapshot.model_dump(
+                    mode="json", exclude={"taskLabels", "keepUnchecked"}
+                ),
             }
         )
 

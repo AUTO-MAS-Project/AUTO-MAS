@@ -1269,6 +1269,8 @@ export default {
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',
     uploadThisScriptConfiguration: 'Upload this script configuration to the cloud',
     moveTaskUp: 'Move the task up',
+    queueTaskRuns: 'Runs · click to skip',
+    queueTaskSkipped: 'Skipped · click to run',
     moveDailySubtaskUp: 'Move the daily subtask up',
     next: 'Next',
     moveTaskDown: 'Move the task down',

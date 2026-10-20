@@ -136,7 +136,8 @@ export function useMaaFWQueueTemplates({
       queue.templateDraftEntries.value,
       taskSnapshot.value.taskOptions,
       queue.passwordFields.value,
-      taskSnapshot.value.taskLabels
+      taskSnapshot.value.taskLabels,
+      taskSnapshot.value.taskChecked
     )
     if (snapshot.taskOrder.length === 0) return false
     return await writeTemplates(latest =>

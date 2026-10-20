@@ -1222,6 +1222,8 @@ export default {
     uploadFailedCheckYour: '上传失败，请检查网络连接或稍后重试',
     uploadThisScriptConfiguration: '上传脚本配置到云端',
     moveTaskUp: '上移任务',
+    queueTaskRuns: '运行 · 点击改为跳过',
+    queueTaskSkipped: '跳过 · 点击改为运行',
     moveDailySubtaskUp: '上移日常子任务',
     next: '下一步',
     moveTaskDown: '下移任务',

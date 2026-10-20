@@ -43,7 +43,8 @@ export const buildPresetAppliedSnapshot = (
   presetTaskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>,
   currentTaskOrder: readonly string[],
   isPretaskId: (taskId: string) => boolean,
-  taskLabels: Record<string, string> = {}
+  taskLabels: Record<string, string> = {},
+  taskChecked: Record<string, boolean> = {}
 ): MaaFWTaskSnapshot => {
   const candidateIds = [
     ...currentTaskOrder.filter(taskId => isPretaskId(taskId)),
@@ -56,7 +57,10 @@ export const buildPresetAppliedSnapshot = (
   const taskIdSet = new Set(taskOrder)
   return {
     taskOrder,
-    taskChecked: Object.fromEntries(taskOrder.map(taskId => [taskId, true])),
+    taskChecked: Object.fromEntries(
+      taskOrder.map(taskId => [taskId, taskChecked[taskId] !== false])
+    ),
+    keepUnchecked: true,
     // 每个实例的选项表拷一份：之后在队列里改选项是原地改这张表，不能改到预设本身。
     taskOptions: Object.fromEntries(
       Object.entries(presetTaskOptions)
