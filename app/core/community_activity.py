@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import traceback
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -46,6 +47,7 @@ from app.tools.community_activity_transport import (
 from app.tools.community_contract import ActivityState, CommunityActivitySnapshot
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
 
 if TYPE_CHECKING:
     from app.models.config import ToolsConfig
@@ -147,7 +149,21 @@ async def query_configured_community_activity(
             except Exception as error:
                 if revision != _activity_cache_revision:
                     continue
-                logger.warning(f"游戏社区日常查询失败: {type(error).__name__}")
+                logger.warning(
+                    format_exception_reason(
+                        error, stage="游戏社区日常查询失败", include_message=False
+                    )
+                )
+                if error.__traceback__ is not None:
+                    # 仅保留定位信息，避免异常原文、源码或局部变量泄露凭据。
+                    frames = traceback.extract_tb(error.__traceback__)
+                    logger.warning(
+                        "社区调用位置: "
+                        + " -> ".join(
+                            f"{frame.filename}:{frame.lineno} in {frame.name}"
+                            for frame in frames
+                        )
+                    )
                 snapshots = build_configured_community_activity_failures(account_ids)
                 if not snapshots:
                     raise
