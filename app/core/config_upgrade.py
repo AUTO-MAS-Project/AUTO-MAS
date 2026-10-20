@@ -208,7 +208,7 @@ def _digest(path: Path) -> str:
 _BLANK_MARKS = b"\xef\xbb\xbf \t\r\n\x0b\x0c"
 
 
-def _is_blank_file(path: Path) -> bool:
+def is_blank_file(path: Path) -> bool:
     """0 字节或仅剩 BOM 与空白的遗留文件视为无数据，不判损坏。
 
     空文件没有任何可迁移的数据，按默认值重建并照常归档，与「空白或仅
@@ -269,7 +269,7 @@ def upgrade_json_configs(
     embedded_accounts = {}
     if tools_source.exists():
         # 空白工具配置没有内嵌账号可读，不判损坏。
-        tools = {} if _is_blank_file(tools_source) else read_dict_file(tools_source)
+        tools = {} if is_blank_file(tools_source) else read_dict_file(tools_source)
         embedded_accounts = tools.get("SubConfigsInfo", {}).get("GameSign_Accounts", {})
 
     for old_name, new_name, key in CONFIG_FILES:
@@ -309,7 +309,7 @@ def upgrade_json_configs(
         node = nodes[key]
         if key in prepared_documents:
             payload = prepared_documents[key]
-        elif source.exists() and not _is_blank_file(source):
+        elif source.exists() and not is_blank_file(source):
             payload = convert_legacy(read_dict_file(source), node)
         elif key == "GameSignAccounts" and embedded_accounts:
             # 空白的账号文件没有可迁数据，优先沿用 ToolsConfig 内嵌账号。
