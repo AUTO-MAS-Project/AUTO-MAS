@@ -29,7 +29,6 @@ export function useScriptSaveMutation({
     scope: { id: `script-save:${scriptId}` },
     networkMode: 'always',
     retry: false,
-    gcTime: 0,
     mutationFn: async (job: ScriptSave) => {
       // 已开始的请求不能被后续输入替换；后续改动另排一次保存。
       if (job.key !== undefined && pending.get(job.key)?.job === job) pending.delete(job.key)
