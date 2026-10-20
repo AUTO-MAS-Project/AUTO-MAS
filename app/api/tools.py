@@ -30,10 +30,6 @@ from uuid import UUID
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.core.community_scheduler import (
-    CommunityActivityInProgressError,
-    community_activity_flow,
-)
 from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
@@ -280,21 +276,10 @@ async def query_community_activity(
     try:
         from app.core.community_activity import (
             build_configured_community_activity_failures,
-            collect_configured_community_activity,
+            query_configured_community_activity,
         )
 
-        async with community_activity_flow():
-            snapshots = await collect_configured_community_activity(
-                query.accountIds,
-                proxy=Config.proxy,
-            )
-    except CommunityActivityInProgressError as exc:
-        _log_community_api_error("游戏社区日常查询并发冲突", exc)
-        return CommunityActivityOut(
-            code=409,
-            status="error",
-            message="游戏社区日常查询正在执行，请稍后重试",
-        )
+        snapshots = await query_configured_community_activity(query.accountIds)
     except ValueError as exc:
         _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
         return CommunityActivityOut(

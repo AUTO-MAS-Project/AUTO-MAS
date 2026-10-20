@@ -371,6 +371,10 @@ class AppConfig(GlobalConfig):
             self.config_path / "GameSignAccounts.json"
         )
 
+        from app.core.community_activity import connect_community_activity_cache
+
+        await connect_community_activity_cache(self.ToolsConfig)
+
         # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
