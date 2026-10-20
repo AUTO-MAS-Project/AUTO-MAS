@@ -24,9 +24,14 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from time import monotonic
+from typing import TYPE_CHECKING
 
+from app.core.community_scheduler import community_activity_flow
 from app.tools.community_activity_provider import CommunityActivityProvider
 from app.tools.community_activity_roles import (
     ACTIVITY_COMMUNITY_DEFINITIONS,
@@ -42,13 +47,126 @@ from app.tools.community_contract import ActivityState, CommunityActivitySnapsho
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 
+if TYPE_CHECKING:
+    from app.models.config import ToolsConfig
+
 __all__ = [
     "build_configured_community_activity_failures",
     "collect_configured_community_activity",
+    "connect_community_activity_cache",
+    "query_configured_community_activity",
 ]
 
 
 logger = get_logger("游戏社区活动")
+
+_ACTIVITY_CACHE_SECONDS = 300.0
+_ACTIVITY_RETRY_SECONDS = 30.0
+_ACTIVITY_CACHE_MAX_ENTRIES = 32
+
+type _ActivityCacheKey = tuple[int, tuple[str, ...], str | None]
+
+
+@dataclass(frozen=True)
+class _ActivityCacheEntry:
+    snapshots: tuple[CommunityActivitySnapshot, ...]
+    expires_at: float
+
+
+_activity_cache: OrderedDict[_ActivityCacheKey, _ActivityCacheEntry] = OrderedDict()
+_activity_cache_revision = 0
+
+
+def _invalidate_activity_cache(sender: object, event: object) -> None:
+    """配置变动后清除快照，并作废尚未完成的旧查询。"""
+
+    global _activity_cache_revision
+    _activity_cache_revision += 1
+    _activity_cache.clear()
+
+
+def connect_community_activity_cache(tools_config: ToolsConfig) -> None:
+    """订阅账号和便笺开关，覆盖编辑、扫码登录与后台凭据更新。"""
+
+    from app.models.config import GameSignAccountGroup
+
+    # 初始化重试时复用同一接收者，避免重复订阅使启动失败。
+    GameSignAccountGroup.disconnect(
+        _invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+    )
+    GameSignAccountGroup.connect(
+        _invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+    )
+    tools_config.GameSign_Accounts.disconnect(
+        _invalidate_activity_cache, phase="runtime"
+    )
+    tools_config.GameSign_Accounts.connect(_invalidate_activity_cache, phase="runtime")
+    tools_config.disconnect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="GameSign",
+        field="ActivityEnabled",
+    )
+    tools_config.connect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="GameSign",
+        field="ActivityEnabled",
+    )
+    _invalidate_activity_cache(tools_config, None)
+
+
+async def query_configured_community_activity(
+    account_ids: Sequence[str] | None = None,
+    *,
+    proxy: str | None = None,
+) -> tuple[CommunityActivitySnapshot, ...]:
+    """缓存便笺查询；并发调用等待同一查询完成后复用快照。"""
+
+    from app.core import Config
+
+    selected_ids = tuple(sorted({str(uid).strip() for uid in account_ids or () if uid}))
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with community_activity_flow():
+        while True:
+            if Config.ToolsConfig.GameSign.ActivityEnabled is False:
+                return ()
+            key = (id(Config.ToolsConfig), selected_ids, resolved_proxy)
+            entry = _activity_cache.get(key)
+            if entry is not None and monotonic() < entry.expires_at:
+                _activity_cache.move_to_end(key)
+                return entry.snapshots
+
+            revision = _activity_cache_revision
+            try:
+                snapshots = await collect_configured_community_activity(
+                    account_ids, proxy=resolved_proxy
+                )
+            except ValueError:
+                raise
+            except Exception as error:
+                if revision != _activity_cache_revision:
+                    continue
+                logger.warning(f"游戏社区日常查询失败: {type(error).__name__}")
+                snapshots = build_configured_community_activity_failures(account_ids)
+                if not snapshots:
+                    raise
+
+            # 等待上游期间账号可能被删除、修改；旧响应不能进入新配置的缓存。
+            if revision != _activity_cache_revision:
+                continue
+            ttl = (
+                _ACTIVITY_RETRY_SECONDS
+                if any(item.status not in ("success", "empty") for item in snapshots)
+                else _ACTIVITY_CACHE_SECONDS
+            )
+            _activity_cache[key] = _ActivityCacheEntry(
+                snapshots=snapshots, expires_at=monotonic() + ttl
+            )
+            _activity_cache.move_to_end(key)
+            while len(_activity_cache) > _ACTIVITY_CACHE_MAX_ENTRIES:
+                _activity_cache.popitem(last=False)
+            return snapshots
 
 
 def _account_value(account: object, name: str, default: object = "") -> object:
