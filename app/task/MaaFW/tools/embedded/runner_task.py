@@ -293,6 +293,10 @@ class MaaFWAdbControlProfile:
     config: dict[str, Any]
 
 
+class MaaFWPretaskError(RuntimeError):
+    """项目运行前设置失败，文案可直接显示给用户。"""
+
+
 async def _abandon_environment_preparation(
     prepare_task: "asyncio.Future[Any]",
     *,
@@ -787,7 +791,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                     break
                 except Exception as exc:
-                    message = f"MaaFW 运行异常: {exc}"
+                    # 两类异常共用记录、通知与重试；运行前设置已给出完整用户文案。
+                    message = (
+                        str(exc)
+                        if isinstance(exc, MaaFWPretaskError)
+                        else f"MaaFW 运行异常: {exc}"
+                    )
                     self._append_log(message, warning=True)
                     self._record_attempt(index + 1, [], message)
                     unretryable = _is_unretryable_failure(message)
@@ -835,6 +844,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         message = self._timed_out_user_summary(result)
                     else:
                         message = _failed_task_user_summary(result, self.run_plan)
+                        # 重试时本轮已完成的任务会被剔出计划（_skip_tasks_completed_this_run），
+                        # 加回来才是整轮的进度。
+                        retry_skipped = (
+                            sum(
+                                1
+                                for skipped in self.run_plan.skippedTasks
+                                if skipped.reason == _RETRY_SKIP_REASON
+                            )
+                            if self.run_plan is not None
+                            else 0
+                        )
+                        total = (
+                            len(self.run_plan.tasks) + retry_skipped
+                            if self.run_plan is not None
+                            else 0
+                        )
+                        done = len(result.completedTasks) + retry_skipped
+                        if total > 1 and done > 0:
+                            message += f"（共 {total} 个任务，完成 {done} 个）"
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
                     self._append_log(message, warning=True)
@@ -854,7 +882,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             for shot in result.failureScreenshots
                         ],
                     )
-                    if _is_unretryable_failure(message):
+                    if _is_unretryable_failure(result.errorMessage or ""):
                         # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
                         # 不再为它起停模拟器 / 游戏重试。
                         self._append_log(
@@ -2288,10 +2316,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 for line in detail.splitlines():
                     self._append_log(f"[运行前设置] {line}")
             if process.returncode != 0:
-                error_detail = detail.splitlines()[-1] if detail else "没有输出错误详情"
-                raise RuntimeError(
-                    f"运行前设置 {display_name} 执行失败（退出码 {process.returncode}）: "
-                    f"{error_detail}"
+                self._append_log(
+                    f"运行前设置 {display_name} 执行失败（退出码 {process.returncode}）",
+                    warning=True,
+                )
+                raise MaaFWPretaskError(
+                    f"运行前设置「{display_name}」失败：{_pretask_failure_reason(detail)}"
                 )
             self._append_log(f"运行前设置完成: {display_name}")
 
@@ -3528,6 +3558,54 @@ def _clean_framework_output(message: str) -> str:
     return _ANSI_ESCAPE_RE.sub("", str(message or ""))
 
 
+_PRETASK_LOG_HEADER_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?\s+"
+    r"(?:TRC|DBG|INF|WRN|ERR|FTL|PNC|TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+"
+    r"(?:.+?:\d+\s+>\s*)?(?P<body>.+)$"
+)
+_PRETASK_LOG_FIELD_RE = re.compile(
+    r"""(?:^|\s)(?P<key>[A-Za-z_][\w.-]*)=(?P<value>"(?:\\.|[^"\\])*"|'[^']*'|\S+)"""
+)
+
+
+def _pretask_failure_reason(output: str) -> str:
+    """只简化认得出的结构化日志；其余输出去色后原样保留。"""
+
+    line = next(
+        (
+            cleaned
+            for raw in reversed(output.splitlines())
+            if (cleaned := _clean_framework_output(raw).strip())
+        ),
+        "",
+    )
+    if not line:
+        return "没有输出错误详情"
+    match = _PRETASK_LOG_HEADER_RE.fullmatch(line)
+    if match is None:
+        return line
+    body = match["body"]
+    fields = list(_PRETASK_LOG_FIELD_RE.finditer(body))
+    if not fields:
+        return body
+    reason = body[: fields[0].start()].rstrip()
+    for field in fields:
+        if field["key"] != "error":
+            continue
+        value = field["value"]
+        if value.startswith('"'):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                pass
+        elif value.startswith("'"):
+            value = value[1:-1]
+        if value:
+            # 只有字段没有正文时，error 的值本身就是原因，不再套括号
+            reason = f"{reason}（{value}）" if reason else value
+    return reason or line
+
+
 _STREAM_OVERRUN_NOTE = f"（worker 输出有一行超过 {_WORKER_STREAM_LINE_LIMIT // (1024 * 1024)} MB，已丢弃该行）"
 
 
@@ -3583,7 +3661,7 @@ def _parse_worker_protocol_line(
     ``success`` / ``2026`` 或某个任务名时，替换会打坏 JSON 结构、键名、截图路径、完成任务
     列表——成功的运行被判成「worker exited without result」而重试，或通知丢图、周期任务
     不记完成。现在只替换给人读的文本（log / error 的 ``message``、结果里的
-    ``errorMessage``），结构字段（路径、任务名、状态、布尔、数字）一律不动。
+    ``errorMessage`` / ``userMessage``），结构字段（路径、任务名、状态、布尔、数字）一律不动。
     解析不了的行（原生诊断）由调用方照旧整行打码。
     """
 
@@ -3597,11 +3675,10 @@ def _parse_worker_protocol_line(
     if isinstance(message, str):
         event["message"] = redact_secret_text(message, secrets)
     data = event.get("data")
-    if isinstance(data, dict) and isinstance(data.get("errorMessage"), str):
-        event["data"] = {
-            **data,
-            "errorMessage": redact_secret_text(data["errorMessage"], secrets),
-        }
+    if isinstance(data, dict):
+        for key in ("errorMessage", "userMessage"):
+            if isinstance(data.get(key), str):
+                data[key] = redact_secret_text(data[key], secrets)
     return event
 
 
@@ -3879,7 +3956,7 @@ def _is_unretryable_failure(message: str) -> bool:
     return any(marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS)
 
 
-_FAILURE_REASON_MAX_CHARS = 200
+_FAILURE_REASON_MAX_CHARS = 300
 
 
 def _failure_reason_for_user(result: Any) -> str:
@@ -3894,18 +3971,26 @@ def _failure_reason_for_user(result: Any) -> str:
     完整内容仍在本次运行的 ``*.worker.log`` 里。
     """
 
-    raw = str(getattr(result, "errorMessage", "") or "").strip()
+    raw = str(
+        getattr(result, "userMessage", None)
+        or getattr(result, "errorMessage", "")
+        or ""
+    ).strip()
     if not raw:
         return ""
     first_line = next((line.strip() for line in raw.splitlines() if line.strip()), "")
     if not first_line:
         return ""
+    while len(first_line) > _FAILURE_REASON_MAX_CHARS and "；" in first_line:
+        first_line = first_line.rsplit("；", 1)[0]
     if len(first_line) > _FAILURE_REASON_MAX_CHARS:
-        first_line = first_line[:_FAILURE_REASON_MAX_CHARS] + "…"
+        first_line = first_line[: _FAILURE_REASON_MAX_CHARS - 1] + "…"
     return first_line
 
 
 def _failed_task_user_summary(result: Any, plan: Any | None) -> str:
+    if getattr(result, "userMessage", None):
+        return _failure_reason_for_user(result)
     failed_task = str(getattr(result, "failedTask", "") or "").strip()
     reason = _failure_reason_for_user(result)
     if not failed_task:
