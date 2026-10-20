@@ -1621,7 +1621,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 except Exception:
                     pass
                 if i + 1 < run_limit:
-                    if self._all_failures_futile():
+                    if self._all_failures_futile(log):
                         futile_names = "、".join(
                             self._app_display_name(app_id)
                             for app_id in self._failed_app_ids
@@ -1715,15 +1715,20 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         if user_status is not None:
             self.cur_user_item.status = user_status
 
-    def _all_failures_futile(self) -> bool:
-        """本轮失败是否已无重试价值：失败应用全部命中「重试无意义」白名单。
+    def _all_failures_futile(self, log: str) -> bool:
+        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
 
         白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
-        会话启用——多实例切换与原生裸跑一轮覆盖多个用户或实例，个别应用的
-        确定性失败不应剥夺其余目标的补跑机会。
+        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
+        （共享基座本就走既有单槽路径），个别应用的确定性失败不应剥夺其余
+        目标的补跑机会。以「指令[ 一条龙 ] 执行成功」确认整轮走完：启动器
+        提前退出时未跑到的应用不在失败名单里，缺这条证据按可重试处理，
+        守住未尝试应用的补跑机会。
         """
 
         if self._is_multi_account() or self._is_bare_run():
+            return False
+        if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
             return False
         return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
 
