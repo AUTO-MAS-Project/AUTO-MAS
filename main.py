@@ -91,16 +91,26 @@ BACKGROUND_WARNINGS_MAX = 20
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
+        message = record.getMessage()
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        # 过滤 httpcore 正常阶段流水，失败事件提为 WARNING，保留到 app.log
+        if record.levelno == logging.DEBUG and (
+            record.name == "httpcore" or record.name.startswith("httpcore.")
+        ):
+            event = message.partition(" ")[0]
+            if event.endswith((".started", ".complete")):
+                return
+            if event.endswith(".failed"):
+                level = "WARNING"
         # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
         if record.name == "uvicorn.access":
             level = "DEBUG"
         # 过滤敏感信息并转发日志
-        sanitized_message = sanitize_log_message(record.getMessage())
+        sanitized_message = sanitize_log_message(message)
         logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)
 
 
