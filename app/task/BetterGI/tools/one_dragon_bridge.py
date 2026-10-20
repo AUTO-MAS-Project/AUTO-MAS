@@ -102,8 +102,10 @@ def build_combat_project(
     """构造承载战斗 4 项的 MASOneDragon JS 项目（注入 Plan）。
 
     ``default_strategy_path`` 是顶部「通用战斗策略」解析出的**绝对路径**，随 Plan 一起
-    注入：步骤级没配策略时由 main.js 兜底直传。不能只依赖 BGI 全局叶子回退——BGI 的
-    ``SetCombatStrategyPath`` 会把策略名硬拼成 ``.txt``，JSON 行为策略会因此失效。
+    注入：秘境/幽境/首领步骤级没配策略时由 main.js 兜底直传。不能只依赖 BGI 全局叶子
+    回退——BGI 的 ``SetCombatStrategyPath`` 会把策略名硬拼成 ``.txt``，JSON 行为策略会
+    因此失效。地脉花不用它：那条链路只吃「相对 ``User/AutoFight`` 的无扩展名名称」，
+    由 BGI 自己按 ``.json`` → ``.txt`` 解析，绝对路径会被再拼一次后缀。
     """
     project = dict(_load_group_template()["projects"][0])
     project["folderName"] = SCRIPT_FOLDER_NAME

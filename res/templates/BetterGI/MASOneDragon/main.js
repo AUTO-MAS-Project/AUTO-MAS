@@ -153,6 +153,15 @@ function isAbsoluteStrategyPath(value) {
   return /^[A-Za-z]:[\\/]/.test(text) || /^[\\/]{2}/.test(text);
 }
 
+// 地脉花策略名归一：BGI 的 AutoLeyLineOutcropTask 把策略名交给 AutoFightParam 的
+// ResolveStrategyPath，契约是「相对 User/AutoFight 的无扩展名名称」，由 BGI 依次追加
+// .json → .txt。传绝对路径或带扩展名的名字会被查成 "foo.txt.txt" 后报「战斗策略文件
+// 不存在」，故这里只裁掉已知扩展名，子目录名称原样保留。
+function strategyNameOf(value) {
+  const text = String(value || "").trim();
+  return text.replace(/\.(json|txt)$/i, "");
+}
+
 // 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
 // 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
 function domainNameOf(step) {
@@ -303,10 +312,16 @@ async function dispatchCombat(step) {
       // 类型取值与必填校验同口径（见 leyLineTypeOf），避免两处漂移
       const leyLineOutcropType = leyLineTypeOf(step);
       let country, team, strategy;
+      // 地脉花的策略只能传「相对 User/AutoFight 的无扩展名名称」：BGI 的
+      // AutoLeyLineOutcropTask 会把它交给 AutoFightParam.ResolveStrategyPath 依次追加
+      // .json → .txt。绝对路径会被查成 ".../foo.txt.txt" 后报「战斗策略文件不存在」，
+      // 故这里不接 defaultStrategyPath（那是给秘境/幽境/首领直传用的真实路径）。
+      // 留空 = 不设置，由 BGI 回退全局 autoLeyLineOutcropConfig.fightConfig.strategyName，
+      // 该叶子已由 apply_global_battle_strategy 物化成顶部「通用战斗策略」的名称。
       if (daily) {
         country = s.country;
         team = s.team;
-        strategy = s.combatStrategyPath || defaultStrategyPath;
+        strategy = s.combatStrategyPath;
       } else {
         // 当天行未勾选「执行」即不执行：与 gate / 必填校验同口径（weeklyLeyLineRunsToday），
         // 正常已由主循环 combatSkipReason 前置拦下（见上面 skipped 的约定）。
@@ -318,15 +333,18 @@ async function dispatchCombat(step) {
         // 用默认区域，与界面默认行显示的地区不一致。
         country = wdRow.country || def.country || s.country;
         team = wdRow.team || def.team || s.team;
-        strategy =
-          wdRow.strategy ||
-          def.strategy ||
-          s.combatStrategyPath ||
-          defaultStrategyPath;
+        strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
       }
       // 队伍配置表「战斗场景」选队结果优先级最高（压过每日/每周行）
       team = s.masTeamOverride || team;
-      strategy = s.masStrategyOverride || strategy;
+      // 统一归一成无扩展名名称（含队伍覆盖值；后端对地脉花也不做路径转换）
+      strategy = strategyNameOf(s.masStrategyOverride || strategy);
+      if (isAbsoluteStrategyPath(strategy)) {
+        // 只剩手工编辑 Plan 才可能留下路径：按「未填写」处理，交给全局叶子兜底，
+        // 而不是让 BGI 把它当名称拼成 AutoFight\C:\... 后报文件不存在。
+        masLog("MAS_LEYLINE_STRATEGY_IGNORED_PATH: " + strategy);
+        strategy = "";
+      }
       const p = new AutoLeyLineOutcropParam(
         s.count != null ? s.count : 3,
         country || "",
@@ -357,19 +375,15 @@ async function dispatchCombat(step) {
       // 由 MAS 物化的全局叶子保证确定值，见 apply_global_battle_strategy）。
       // 非空则必须真正落到 Param 上，否则右栏单独给地脉花选的策略不生效。
       if (strategy) {
-        // 部分 BGI 版本的 AutoLeyLineOutcropParam 无 setCombatStrategyPath（d.ts 未声明），
-        // 该情况改直接写 Param 上的 FightConfig.StrategyName：地脉花的战斗配置取
-        // _taskParam.FightConfig，其 StrategyName 非空时 BuildLeyLineAutoFightConfig
-        // 就不再回退全局 AutoFightConfig（源码已核实）。
-        if (isAbsoluteStrategyPath(strategy)) {
-          // .json 行为策略的绝对路径不能进 setCombatStrategyPath（BGI 会再拼 .txt），
-          // 直接写 FightConfig.StrategyName，由 BGI 按后缀分派。
-          if (p.fightConfig) setProp(p.fightConfig, "strategyName", strategy);
-          else masLog("MAS_LEYLINE_STRATEGY_PATH_UNSUPPORTED: " + strategy);
-        } else if (typeof p.setCombatStrategyPath === "function") {
-          p.combatStrategyPath = p.setCombatStrategyPath(strategy);
-        } else if (p.fightConfig) {
+        // 地脉花的战斗配置取 _taskParam.FightConfig：其 StrategyName 非空时
+        // BuildLeyLineAutoFightConfig 就不再回退全局 AutoFightConfig，随后 BGI 按
+        // 「相对 User/AutoFight 的无扩展名名称」依次找 .json → .txt（含子目录）。
+        // 因此这里只写名称，不能走 setCombatStrategyPath——那会把名字硬拼成 ".txt"，
+        // JSON 行为策略与子目录策略都会失效（PR #1566 评审）。
+        if (p.fightConfig) {
           setProp(p.fightConfig, "strategyName", strategy);
+        } else if (typeof p.setCombatStrategyPath === "function") {
+          p.setCombatStrategyPath(strategy);
         } else {
           masLog("MAS_LEYLINE_STRATEGY_UNSUPPORTED: " + strategy);
         }

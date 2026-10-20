@@ -1208,14 +1208,21 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     def _walk_plan_strategies(
         self, steps: list[object], root: Path, invalid: set[str], resolve: bool
     ) -> None:
-        """按步骤处理策略字段：失效名降级为内置默认，``resolve`` 为真时换成绝对路径。"""
+        """按步骤处理策略字段：失效名降级为内置默认，``resolve`` 为真时换成绝对路径。
+
+        **地脉花例外**：它的 Param 只吃无扩展名策略名（见 ``_walk_strategy_fields``），
+        即使 ``resolve`` 为真也保留名称，否则 BGI 会拿到 ``.../foo.txt`` 再拼后缀。
+        """
         for step in steps or []:
             if not isinstance(step, dict):
                 continue
             settings = step.get("settings")
             if not isinstance(settings, dict):
                 continue
-            self._walk_strategy_fields(settings, root, invalid, resolve)
+            is_ley_line = resolve_base_name(str(step.get("name", ""))) == "自动地脉花"
+            self._walk_strategy_fields(
+                settings, root, invalid, resolve and not is_ley_line
+            )
 
     @staticmethod
     def _walk_strategy_fields(
@@ -1223,7 +1230,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
     ) -> None:
         """遍历 settings 处理策略字段：失效名降级默认，``resolve`` 为真时换成绝对路径。
 
-        秘境/地脉花/幽境/首领都支持 JSON 行为策略与子目录策略，四组解析口径一致。
+        秘境/幽境/首领由执行层直传真实路径（BGI 会把策略名硬拼 ".txt"）；地脉花不能
+        直传路径——``AutoLeyLineOutcropTask`` 把策略名交给 ``AutoFightParam`` 的
+        ``ResolveStrategyPath``，契约是「相对 ``User/AutoFight`` 的无扩展名名称」，
+        由 BGI 依次追加 ``.json`` / ``.txt``，传路径会被查成 ``foo.txt.txt``。
         """
         if isinstance(node, dict):
             for key, value in node.items():
@@ -1253,13 +1263,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         **必须在 ``team_resolver.apply_teams_to_steps`` 写回 ``masTeamOverride`` /
         ``masStrategyOverride`` 之后调用**：副本是深拷贝，早于写回会让队伍配置的选队与
         策略结果整体丢失。策略名换成绝对路径是为了让 main.js 直传——BGI 的
-        ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。
+        ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。地脉花除
+        外：它的策略仍是无扩展名名称，由 BGI 自己按 ``.json`` → ``.txt`` 解析。
         """
         self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
         self._walk_plan_strategies(
             self.exec_plan_steps, self.script_root_path, set(), True
         )
-        # 顶部「通用战斗策略」同样解析成绝对路径：步骤级留空时由 main.js 兜底直传。
+        # 顶部「通用战斗策略」同样解析成绝对路径：秘境/幽境/首领步骤级留空时由 main.js
+        # 兜底直传；地脉花不吃路径，留空时由 main.js 读全局叶子的名称。
         self.default_strategy_path = (
             one_dragon.resolve_combat_strategy_path(
                 self.script_root_path,
