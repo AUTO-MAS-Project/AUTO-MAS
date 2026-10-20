@@ -36,7 +36,6 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
-from urllib.parse import urlparse
 
 from app.utils import (
     dpapi_decrypt,
@@ -46,12 +45,8 @@ from app.utils import (
 )
 from app.utils.constants import (
     DEFAULT_DATETIME,
-    EMULATOR_PATH_BOOK,
     FORBIDDEN_PATH_EXACT,
     FORBIDDEN_PATH_PREFIXES,
-    ILLEGAL_CHARS,
-    KEYBOARD_KEYS,
-    RESERVED_NAMES,
 )
 from app.utils.io import write_file
 
@@ -162,44 +157,6 @@ class MultipleOptionsValidator(ValidatorBase):
 
     def correct(self, value):
         return value if self.validate(value) else []
-
-
-class StringListValidator(ValidatorBase):
-    """仅允许字符串成员的动态多选列表。
-
-    MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
-    因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
-    allow_none 用于区分“沿用动态默认值”和显式清空列表。
-    """
-
-    def __init__(self, *, allow_none: bool = False):
-        self.allow_none = allow_none
-
-    def validate(self, value):
-        if value is None and self.allow_none:
-            return True
-        return isinstance(value, list) and all(isinstance(item, str) for item in value)
-
-    def correct(self, value):
-        if value is None and self.allow_none:
-            return None
-        if not isinstance(value, list):
-            return []
-        return [item for item in value if isinstance(item, str)]
-
-
-class UUIDValidator(ValidatorBase):
-    """UUID验证器"""
-
-    def validate(self, value):
-        try:
-            uuid.UUID(value)
-            return True
-        except (TypeError, ValueError):
-            return False
-
-    def correct(self, value):
-        return value if self.validate(value) else str(uuid.uuid4())
 
 
 class MultipleUIDValidator(ValidatorBase):
@@ -331,26 +288,6 @@ class EncryptValidator(ValidatorBase):
             return value
         logger.warning("加密配置项无法解密, 已替换为占位值, 请重新设置")
         return dpapi_encrypt(UNREADABLE_SECRET_PLACEHOLDER)
-
-
-class VirtualConfigValidator(ValidatorBase):
-    """虚拟配置验证器"""
-
-    def __init__(self, function: Callable[[], str]):
-        self.function = function
-        self.if_init = False
-
-    def validate(self, value):
-        if not self.if_init:
-            self.if_init = True
-            return True
-        return False
-
-    def correct(self, value):
-        try:
-            return self.function()
-        except Exception as e:
-            return str(e)
 
 
 class BoolValidator(ValidatorBase):
@@ -488,218 +425,12 @@ class FolderValidator(ValidatorBase):
         return resolved.as_posix()
 
 
-class EmulatorPathValidator(FileValidator):
-    """模拟器管理器路径验证器"""
-
-    def __init__(self, emulator_type: ConfigItem) -> None:
-        super().__init__()
-
-        self.emulator_type = emulator_type
-
-    def _resolve_shortcut_target(self, value: str) -> str:
-        """
-        若 value 为 Windows 快捷方式 (.lnk)，尝试解析其 TargetPath 并返回。
-        解析失败则原样返回（由上层决定是否视为非法）。
-        """
-        if not value:
-            return value
-        if Path(value).suffix.lower() != ".lnk":
-            return value
-        try:
-            import win32com.client
-
-            shell = win32com.client.Dispatch("WScript.Shell")
-            shortcut = shell.CreateShortcut(value)
-            target = getattr(shortcut, "TargetPath", "") or ""
-            return target or value
-        except Exception:
-            return value
-
-    def _normalize_input_path(self, value: str) -> str:
-        """统一输入归一化：环境变量展开 -> 绝对路径 -> 快捷方式解析。"""
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_absolute():
-            value = Path(value).resolve().as_posix()
-        return self._resolve_shortcut_target(value)
-
-    def _resolve_manager_exe_path(self, value: str) -> str:
-        """统一管理器 exe 定位入口。"""
-        normalized = self._normalize_input_path(value)
-        if self.emulator_type.getValue() not in EMULATOR_PATH_BOOK:
-            return Path(normalized).resolve().as_posix()
-        try:
-            from app.utils.emulator.tools import find_emulator_manager_path
-
-            return find_emulator_manager_path(normalized, self.emulator_type.getValue())
-        except Exception:
-            return Path(normalized).resolve().as_posix()
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        # 允许空字符串(表示未设置路径)
-        if value == "":
-            return True
-
-        # validate 仅校验最终态：输入统一归一化和定位后，结果必须是主 manager exe
-        corrected = self._resolve_manager_exe_path(value)
-        if not corrected:
-            return False
-        if not Path(corrected).is_absolute():
-            return False
-
-        path = Path(corrected)
-
-        if not path.is_file() or not os.access(path, os.X_OK):
-            return False
-
-        if (
-            self.emulator_type.getValue() in EMULATOR_PATH_BOOK
-            and path.name
-            != EMULATOR_PATH_BOOK[self.emulator_type.getValue()]["executables"][0]
-        ):
-            return False
-
-        return True
-
-    def correct(self, value):
-
-        if not isinstance(value, str):
-            value = ""
-        # 空字符串直接返回
-        if value == "":
-            return ""
-        return self._resolve_manager_exe_path(value)
-
-
-class UserNameValidator(ValidatorBase):
-    """用户名验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-
-        if not value or not value.strip():
-            return False
-
-        if value != value.strip() or value != value.strip("."):
-            return False
-
-        if any(char in ILLEGAL_CHARS for char in value):
-            return False
-
-        if value.upper() in RESERVED_NAMES:
-            return False
-        if len(value) > 255:
-            return False
-
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = "默认用户名"
-
-        value = value.strip().strip(".")
-
-        value = "".join(char for char in value if char not in ILLEGAL_CHARS)
-
-        if value.upper() in RESERVED_NAMES or not value:
-            value = "默认用户名"
-
-        if len(value) > 255:
-            value = value[:255]
-
-        return value
-
-
-class KeyValidator(ValidatorBase):
-    """键盘按键格式验证器"""
-
-    def __init__(self, default: str = ""):
-        self.default = default
-
-    def validate(self, value: Any) -> bool:
-        return value in KEYBOARD_KEYS
-
-    def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else self.default
-
-
-class URLValidator(ValidatorBase):
-    """URL格式验证器"""
-
-    def __init__(
-        self,
-        schemes: list[str] | None = None,
-        require_netloc: bool = True,
-        default: str = "",
-    ):
-        """
-        :param schemes: 允许的协议列表, 若为 None 则允许任意协议
-        :param require_netloc: 是否要求必须包含网络位置, 如域名或IP
-        """
-        self.schemes = [s.lower() for s in schemes] if schemes else None
-        self.require_netloc = require_netloc
-        self.default = default
-
-    def validate(self, value):
-        if value == self.default:
-            return True
-
-        if not isinstance(value, str):
-            return False
-
-        try:
-            parsed = urlparse(value)
-        except Exception:
-            return False
-
-        # 检查协议
-        if self.schemes is not None:
-            if not parsed.scheme or parsed.scheme.lower() not in self.schemes:
-                return False
-        else:
-            # 不限制协议仍要求有 scheme
-            if not parsed.scheme:
-                return False
-
-        # 检查是否包含网络位置
-        if self.require_netloc and not parsed.netloc:
-            return False
-
-        return True
-
-    def correct(self, value):
-        return value if self.validate(value) else self.default
-
-
 class ArgumentValidator(ValidatorBase):
     def validate(self, value):
         if not isinstance(value, str):
             return False
         try:
             shlex.split(value.strip())
-            return True
-        except ValueError:
-            return False
-
-    def correct(self, value):
-
-        return value if self.validate(value) else ""
-
-
-class AdvancedArgumentValidator(ValidatorBase):
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            for segment in value.split("|"):
-                segment = segment.strip()
-                if not segment:
-                    continue
-                param_str = segment.split("%", 1)[-1].strip()
-                shlex.split(param_str)
             return True
         except ValueError:
             return False

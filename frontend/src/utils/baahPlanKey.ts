@@ -85,9 +85,6 @@ export const BAAH_KEY_FIELD_BY_NAME = Object.fromEntries(
   BAAH_PLAN_KEY_FIELDS.map(field => [field.field, field])
 ) as Record<BAAHKeyFieldName, BAAHKeyField>
 
-/** 多类混打要的五类齐全形态 */
-export type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
-
 /**
  * 一格（ALL 或某一天）实际写过的字段。字段不在这里＝缺席：今天这一类不干预，
  * BAAH 沿用自己配置文件里的关卡与开关。空数组则是「今天不打这一类」。
@@ -106,20 +103,8 @@ export const partOptionMax = (hintKey: string, field?: BAAHKeyFieldName): number
   return 15
 }
 
-/** 关卡位：填 0 算不出关卡坐标，上游只认 -1（最高关）或 1 以上 */
-const STAGE_PART_HINT_KEYS = new Set(['plan.baah.partLevelHighest', 'plan.baah.partLevel'])
-
-export const isStagePart = (part: BAAHKeyPart | undefined): boolean =>
-  part !== undefined && STAGE_PART_HINT_KEYS.has(part.hintKey)
-
 const toIntegerArray = (raw: unknown): number[] =>
   Array.isArray(raw) ? raw.map(item => Number(item)).filter(item => Number.isInteger(item)) : []
-
-/** 输入框给回来的值：空字符串与非法值都退回 fallback */
-export const toPlanInt = (raw: number | string | null | undefined, fallback: number): number => {
-  const parsed = typeof raw === 'string' ? Number(raw) : raw
-  return typeof parsed === 'number' && Number.isInteger(parsed) ? parsed : fallback
-}
 
 /**
  * 把一格读成「实际出现过的字段」，缺席的字段不补。
@@ -203,27 +188,4 @@ export const applyFieldState = (
   // 打开时优先沿用原来填过的值，不会把用户改过的关卡重置成默认值
   next[field] = state === 'on' ? readFieldValues(fields, field) : []
   return next
-}
-
-export interface BAAHCellWrite {
-  fields: BAAHDayFields
-  /** 手输的 0 被改成 1 时为 true，界面据此提示用户 */
-  corrected: boolean
-}
-
-/** 多类混打：改某一类的某一位，其余类别原样带过去——界面没展示的类别不补默认值 */
-export const applyMixedPart = (
-  fields: BAAHDayFields | undefined,
-  field: BAAHKeyFieldName,
-  index: number,
-  raw: number | string | null | undefined
-): BAAHCellWrite => {
-  const spec = BAAH_KEY_FIELD_BY_NAME[field]
-  const items = readFieldValues(fields, field)
-  // 同上：清空输入框时保持这一位原来的取值
-  const value = toPlanInt(raw, items[index] ?? spec.defaultValue[index] ?? 1)
-  const corrected = isStagePart(spec.parts[index]) && value === 0
-
-  items[index] = corrected ? 1 : value
-  return { fields: { ...(fields ?? {}), [field]: items }, corrected }
 }

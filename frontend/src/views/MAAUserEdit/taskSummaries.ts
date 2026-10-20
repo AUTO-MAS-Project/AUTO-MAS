@@ -46,19 +46,6 @@ export const summarizeAnnihilation = (
   return parts.join(' · ')
 }
 
-export const summarizeActivity = (options: {
-  enabled: boolean
-  loading: boolean
-  optionCount: number
-  stageLabel?: string
-  medicine: number
-}) => {
-  if (!options.enabled) return ''
-  if (options.loading) return '加载中…'
-  if (!options.optionCount) return '当前无可刷活动关'
-  return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
-}
-
 export const summarizeCultivate = (
   options: { enabled: boolean; targetsJson: string; autoRaise: boolean },
   t: (key: string, values?: { count: number }) => string
