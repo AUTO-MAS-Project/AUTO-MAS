@@ -945,7 +945,8 @@ defineExpose({ syncFromForm })
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
-  color: rgba(0, 0, 0, 0.45);
+  /* 用主题变量而非固定黑色：暗色主题下 rgba(0,0,0,.45) 几乎不可读 */
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
 }
 
