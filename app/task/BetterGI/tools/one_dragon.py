@@ -130,21 +130,73 @@ _ALL_GLOBAL_LEAVES = _GLOBAL_TEAM_LEAVES + _GLOBAL_STRATEGY_LEAVES
 
 
 def list_auto_boss_strategies(root: Path) -> list[str]:
-    """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight/*.txt、*.json 文件名。
+    """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight 下的 *.txt、*.json。
 
-    玩家可自行往该目录放置 .txt 或 .json 战斗脚本（BetterGI 原生按后缀分派：txt 走
-    旧战斗脚本、json 走 JsonCombatStrategy），故每次调用实时扫描以反映最新选项；同一
-    策略同时存在 .txt 与 .json 时按文件名去重，只列一次。
+    BetterGI 原生按后缀分派（txt 走旧战斗脚本、json 走 JsonCombatStrategy），0.62+
+    还允许策略放在子目录、同名时 .json 优先。故这里递归扫描，以「相对路径去掉扩展名」
+    作为选项（子目录里的策略形如 ``子目录/名字``，配置里也按这个形式保存）。同名
+    .txt 与 .json 只列一次；每次调用实时扫描，反映手工放置与订阅更新。
     """
     options = [_AUTO_BOSS_BUILTIN_STRATEGY]
     autofight_dir = root / _AUTO_FIGHT_REL_DIR
     if autofight_dir.is_dir():
-        files = [*autofight_dir.glob("*.txt"), *autofight_dir.glob("*.json")]
-        for p in sorted(files, key=lambda p: p.stem):
-            name = p.stem.strip()
+        files = sorted(
+            (*autofight_dir.rglob("*.txt"), *autofight_dir.rglob("*.json")),
+            key=lambda p: p.relative_to(autofight_dir).as_posix(),
+        )
+        for p in files:
+            name = p.relative_to(autofight_dir).with_suffix("").as_posix().strip()
             if name and name not in options:
                 options.append(name)
     return options
+
+
+def strategy_file_exists(root: Path, name: str) -> bool:
+    """策略名在 ``User/AutoFight`` 下是否有对应文件（支持子目录，.json/.txt 均可）。
+
+    ``name`` 可以是「不带扩展名的相对路径」（同名 .json/.txt 任一存在即算存在），
+    也可以是带显式扩展名的相对路径；分隔符统一按 ``/`` 处理。内置默认策略恒为有效。
+    绝对路径按文件本身是否存在判断，避免把调用方传进来的完整路径误判为失效。
+    """
+    builtin = _AUTO_BOSS_BUILTIN_STRATEGY
+    text = (name or "").strip().replace("\\", "/")
+    if not text or text == builtin:
+        return True
+    rel = Path(text)
+    if rel.is_absolute():
+        return rel.is_file()
+    if ".." in rel.parts:
+        return False
+    if rel.suffix.lower() in {".json", ".txt"}:
+        return (root / _AUTO_FIGHT_REL_DIR / rel).is_file()
+    base = root / _AUTO_FIGHT_REL_DIR / rel
+    return base.with_suffix(".json").is_file() or base.with_suffix(".txt").is_file()
+
+
+def resolve_combat_strategy_path(root: Path, name: str) -> str | None:
+    """把策略名解析成 ``User/AutoFight`` 下真实文件的绝对路径；无法解析返回 None。
+
+    BetterGI 的 ``setCombatStrategyPath`` 一律拼 ``.txt``，JSON 行为策略只有把真实
+    路径直接写进 ``CombatStrategyPath``（AutoDomainParam 双参构造）才会生效，所以执行
+    层注入 Plan 前要在这里解析。同名时 ``.json`` 优先（与 BGI 行为一致），子目录策略
+    原样拼接。空值、内置默认策略、找不到文件时返回 None（交给 BGI 按策略名处理）。
+    """
+    text = (name or "").strip().replace("\\", "/")
+    if not text or text == _AUTO_BOSS_BUILTIN_STRATEGY:
+        return None
+    rel = Path(text)
+    if rel.is_absolute():
+        return str(rel) if rel.is_file() else None
+    if ".." in rel.parts:
+        return None
+    base = root / _AUTO_FIGHT_REL_DIR / rel
+    if base.suffix.lower() in {".json", ".txt"}:
+        return str(base) if base.is_file() else None
+    for suffix in (".json", ".txt"):
+        candidate = base.with_suffix(suffix)
+        if candidate.is_file():
+            return str(candidate)
+    return None
 
 
 def list_js_scripts(root: Path) -> list[tuple[str, str]]:

@@ -16,6 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
+import copy
 import re
 import time
 import uuid
@@ -601,6 +602,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 剔除谁；不能用 plan_mode 代替：全部行都关掉时 plan_mode 为假，战斗项会整体落回
         # 原生副本照跑，与界面「已关」不符（2026-09-12 实机排障）。
         self.plan_combat_bases = plan_combat_bases(_plan_steps)
+        # Plan 里可能残留已改名/删除的策略名，BGI 拿到会直接抛「战斗脚本文件不存在」，
+        # 运行前先按 User/AutoFight 现状清理（支持 .json 与子目录，避免误清有效策略）。
+        self._sanitize_plan_strategies()
         # 路径 B 回退：顶层「通用战斗队伍」(OneDragon.PartyName) 默认填入各战斗步骤的
         # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
@@ -775,8 +779,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     self.script_info.script_id,
                     self.cur_user_item.user_id,
                     self.one_dragon_queue or [],
-                    self.plan_combat_steps,
+                    self.exec_plan_steps,
                     CUSTOM_EXEC_KINDS,
+                    default_strategy_path=self.default_strategy_path,
                 ),
             )
             self.exec_group_names = [
@@ -1170,6 +1175,62 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
+
+    def _sanitize_plan_strategies(self) -> None:
+        """清掉 Plan 里指向已不存在策略文件的策略名（``User/AutoFight`` 下的 .txt/.json）。
+
+        策略下拉是实时扫描该目录得到的，旧配置里可能残留已改名或已删除的策略名；BGI
+        遇到这种名字会抛「战斗脚本文件不存在」，把整步记成失败。这里按「空 = 跟随
+        全局策略」处理（全局叶子已由 ``apply_global_battle_strategy`` 物化为确定值），
+        并逐条打日志说明改掉了哪个名字。
+
+        JSON 行为策略（0.62+，同名时 .json 优先）与子目录里的策略同样算有效——只看
+        ``*.txt`` 会把只有 .json 的策略名误清，这是之前「运行前误清」的来源。
+
+        同时生成执行层专用的 ``exec_plan_steps`` 副本：把有效策略名解析成真实文件的
+        绝对路径。BGI 的 ``setCombatStrategyPath`` 一律拼 ``.txt``，.json 行为策略
+        只有直传路径（``AutoDomainParam`` 双参构造）才会命中文件；原生一条龙路径仍用
+        策略原名，不受影响。
+        """
+        root = self.script_root_path
+        invalid: set[str] = set()
+
+        def _walk(node: object, resolve: bool) -> None:
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    if isinstance(value, str) and "strategy" in str(key).lower():
+                        name = value.strip()
+                        if not name:
+                            continue
+                        if not one_dragon.strategy_file_exists(root, name):
+                            invalid.add(name)
+                            node[key] = ""
+                        elif resolve:
+                            path = one_dragon.resolve_combat_strategy_path(root, name)
+                            if path:
+                                node[key] = path
+                        continue
+                    _walk(value, resolve)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item, resolve)
+
+        _walk(self.plan_combat_steps, False)
+        if invalid:
+            logger.warning(
+                "以下战斗策略在 BGI 的 User/AutoFight 中不存在（.txt/.json 均无），"
+                "本次改为跟随全局策略: " + "、".join(sorted(invalid))
+            )
+        self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
+        _walk(self.exec_plan_steps, True)
+        # 顶部「通用战斗策略」也要解析成绝对路径：步骤级留空时由 main.js 直传，
+        # 不能只靠 BGI 全局叶子回退（SetCombatStrategyPath 会把名字拼成 .txt）。
+        self.default_strategy_path = (
+            one_dragon.resolve_combat_strategy_path(
+                root, str(self.cur_user_config.OneDragon.AutoBossStrategyName or "")
+            )
+            or ""
+        )
 
     async def _run_execution_layer(self) -> bool:
         """路径 B：用**一次** ``--startGroups <段名...>`` 按队列顺序跑完执行层，返回是否成功。

@@ -89,6 +89,11 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 // 周表按「本次启动日」解析，也与通知里「这次运行」的语义一致。
 let runDayKey = DAY_NAMES[new Date().getDay()];
 
+// 顶部「通用战斗策略」解析出的绝对路径（仅 .json/.txt 真实文件才非空）：步骤级没配
+// 策略时兜底直传。不能只依赖 BGI 全局叶子回退——SetCombatStrategyPath 会把策略名
+// 硬拼成 ".txt"，JSON 行为策略在秘境/地脉花/幽境上会因此失效。
+let defaultStrategyPath = "";
+
 // settings 经 JSON 注入/回读，布尔可能以字符串形态出现（见下面 specifyResinUse 的教训：
 // "false" 会被 !! 转成 true，导致「模式=耗尽 / 参数=指定次数」自相矛盾）。所有模式与
 // 星期开关统一经此规范化，避免 gate / 必填校验 / 执行分支各判一套。
@@ -130,6 +135,21 @@ function shouldRunToday(step) {
   return true;
 }
 
+// 取第一个「已填写」的值：空串与 null/undefined 都算未填写，数字 0 视为有效值
+// （右栏周表留空的单元格会以 "" 下发，而奖励档 "0" 是合法取值，不能用 || 判断）。
+function firstFilled(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
+}
+
+// 后端已把 .json 行为策略解析成 AutoFight 下的绝对路径；这类值必须直传 Param 的
+// 路径字段，不能再走 setCombatStrategyPath——BGI 内部会无条件再拼一个 ".txt"。
+function isAbsoluteStrategyPath(value) {
+  return /^[A-Za-z]:[\\/]/.test(String(value || ""));
+}
+
 // 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
 // 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
 function domainNameOf(step) {
@@ -157,7 +177,9 @@ function leyLineTypeOf(step) {
   const wd = s.weeklyLeyLine || {};
   const row = wd[runDayKey] || {};
   const def = wd.default || {};
-  return row.type != null ? row.type : def.type != null ? def.type : s.leyLineOutcropType;
+  // 空串等同「该行未填写」：右栏每周表保存时会把未填的单元格以 "" 下发，
+  // 用 != null 判断会让空串遮住默认行，必填校验据此报「未选择地脉花类型」。
+  return row.type || def.type || s.leyLineOutcropType;
 }
 
 // 执行层内部跳过原因（空串 = 本次真的要跑）：与 gate、必填校验共用上面同一批取值函数，
@@ -197,16 +219,19 @@ async function dispatchCombat(step) {
       const partyName = s.masTeamOverride || todayRow.partyName || defaultRow.partyName || s.partyName;
       // 与必填校验同口径（见 domainNameOf），避免两处漂移
       const domainName = domainNameOf(step);
+      // 与 type/country 同口径：周表留空的单元格是 ""，用 != null 会把空串当成已选，
+      // 默认行的奖励档永远兜不到。
       const reward = useWeekly
-        ? todayRow.reward != null
-          ? todayRow.reward
-          : defaultRow.reward != null
-            ? defaultRow.reward
-            : s.sundaySelectedValue
+        ? firstFilled(todayRow.reward, defaultRow.reward, s.sundaySelectedValue)
         : s.sundaySelectedValue;
       // 战斗策略：优先当天行，其次每周默认行，最后才是步骤级 combatStrategyPath（全局兜底）。
       // 留空则完全不设置，由 BGI 沿用 autoFightConfig 的全局策略。
-      const strategyName = s.masStrategyOverride || todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
+      const strategyName =
+    s.masStrategyOverride ||
+    todayRow.strategy ||
+    defaultRow.strategy ||
+    s.combatStrategyPath ||
+    defaultStrategyPath;
       // 无对应秘境配置：正常已由主循环 combatSkipReason 前置拦下（同一个 domainNameOf）。
       // 这里保留兜底，但返回 "skipped" 而不是静默 return——静默 return 会让主循环接着打
       // MAS_STEP_DONE，把「没跑的步」记成成功。
@@ -235,7 +260,12 @@ async function dispatchCombat(step) {
         // 回退只会让残留它的旧设置被意外截断。
         roundNum = 999;
       }
-      const p = new AutoDomainParam(roundNum);
+      // .json 行为策略：setCombatStrategyPath 只拼 ".txt"，必须用双参构造直传路径
+      // （BGI 的 AutoDomainParam(int, string) 直接赋给 CombatStrategyPath，绕过拼接）。
+      const strategyFilePath = isAbsoluteStrategyPath(strategyName) ? strategyName : null;
+      const p = strategyFilePath
+        ? new AutoDomainParam(roundNum, strategyFilePath)
+        : new AutoDomainParam(roundNum);
       // 队伍无条件赋值：空 = 不切换队伍（BGI AutoDomainTask.SwitchParty 对空串直接 return）。
       // 不能用 `if (partyName)` 守卫跳过赋值——那会留下 Param 构造时 SetDefault() 从全局
       // AutoDomainConfig.PartyName 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
@@ -250,7 +280,7 @@ async function dispatchCombat(step) {
       if (s.condensedResinUseCount != null) p.condensedResinUseCount = s.condensedResinUseCount;
       if (s.transientResinUseCount != null) p.transientResinUseCount = s.transientResinUseCount;
       if (s.fragileResinUseCount != null) p.fragileResinUseCount = s.fragileResinUseCount;
-      if (strategyName) p.combatStrategyPath = p.setCombatStrategyPath(strategyName);
+      if (strategyName && !strategyFilePath) p.combatStrategyPath = p.setCombatStrategyPath(strategyName);
       if (Array.isArray(s.resinPriorityList)) p.setResinPriorityList(...s.resinPriorityList);
       await genshin.returnMainUi();
       try {
@@ -273,7 +303,7 @@ async function dispatchCombat(step) {
       if (daily) {
         country = s.country;
         team = s.team;
-        strategy = s.combatStrategyPath;
+        strategy = s.combatStrategyPath || defaultStrategyPath;
       } else {
         // 当天行未勾选「执行」即不执行：与 gate / 必填校验同口径（weeklyLeyLineRunsToday），
         // 正常已由主循环 combatSkipReason 前置拦下（见上面 skipped 的约定）。
@@ -281,9 +311,15 @@ async function dispatchCombat(step) {
         const weeklyLeyLine = s.weeklyLeyLine || {};
         const wdRow = weeklyLeyLine[runDayKey] || {};
         const def = weeklyLeyLine.default || {};
-        country = wdRow.country != null ? wdRow.country : (def.country != null ? def.country : s.country);
+        // 空串与 type 同口径按「未填写」处理，回退默认行；否则区域为空会让 BGI
+        // 用默认区域，与界面默认行显示的地区不一致。
+        country = wdRow.country || def.country || s.country;
         team = wdRow.team || def.team || s.team;
-        strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
+        strategy =
+          wdRow.strategy ||
+          def.strategy ||
+          s.combatStrategyPath ||
+          defaultStrategyPath;
       }
       // 队伍配置表「战斗场景」选队结果优先级最高（压过每日/每周行）
       team = s.masTeamOverride || team;
@@ -322,7 +358,12 @@ async function dispatchCombat(step) {
         // 该情况改直接写 Param 上的 FightConfig.StrategyName：地脉花的战斗配置取
         // _taskParam.FightConfig，其 StrategyName 非空时 BuildLeyLineAutoFightConfig
         // 就不再回退全局 AutoFightConfig（源码已核实）。
-        if (typeof p.setCombatStrategyPath === "function") {
+        if (isAbsoluteStrategyPath(strategy)) {
+          // .json 行为策略的绝对路径不能进 setCombatStrategyPath（BGI 会再拼 .txt），
+          // 直接写 FightConfig.StrategyName，由 BGI 按后缀分派。
+          if (p.fightConfig) setProp(p.fightConfig, "strategyName", strategy);
+          else masLog("MAS_LEYLINE_STRATEGY_PATH_UNSUPPORTED: " + strategy);
+        } else if (typeof p.setCombatStrategyPath === "function") {
           p.combatStrategyPath = p.setCombatStrategyPath(strategy);
         } else if (p.fightConfig) {
           setProp(p.fightConfig, "strategyName", strategy);
@@ -360,12 +401,15 @@ async function dispatchCombat(step) {
       // 跳过赋值会留下 Param 构造时 SetDefault() 从全局 autoStygianOnslaughtConfig.fightTeamName
       // 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
       setProp(p, "fightTeamName", s.fightTeamName || "");
-      const stygianStrategy = s.strategyName || s.combatStrategyPath;
+      const stygianStrategy =
+    s.strategyName || s.combatStrategyPath || defaultStrategyPath;
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
       // 只调用方法本身即可，不要把返回值赋给属性（会抛 no suitable property 异常）。
       if (stygianStrategy) {
-        if (typeof p.setCombatStrategyPath === "function") {
+        if (isAbsoluteStrategyPath(stygianStrategy)) {
+          setProp(p, "combatStrategyPath", stygianStrategy);
+        } else if (typeof p.setCombatStrategyPath === "function") {
           p.setCombatStrategyPath(stygianStrategy);
         } else {
           masLog("MAS_STYGIAN_STRATEGY_UNSUPPORTED: " + stygianStrategy);
@@ -408,9 +452,17 @@ async function dispatchCombat(step) {
       if (s.timeout != null) setProp(p, "timeout", s.timeout);
       // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
       // 其余组策略走 s.combatStrategyPath。两者取其一经 setCombatStrategyPath 按策略名重算路径。
-      const bossStrategy = s.masStrategyOverride || s.strategyName || s.combatStrategyPath;
-      if (bossStrategy && typeof p.setCombatStrategyPath === "function") {
-        p.setCombatStrategyPath(bossStrategy);
+      const bossStrategy =
+    s.masStrategyOverride ||
+    s.strategyName ||
+    s.combatStrategyPath ||
+    defaultStrategyPath;
+      if (bossStrategy) {
+        if (isAbsoluteStrategyPath(bossStrategy)) {
+          setProp(p, "combatStrategyPath", bossStrategy);
+        } else if (typeof p.setCombatStrategyPath === "function") {
+          p.setCombatStrategyPath(bossStrategy);
+        }
       }
       await genshin.returnMainUi();
       try {
@@ -452,6 +504,9 @@ async function main() {
     steps: [],
   };
   const steps = Array.isArray(plan.steps) ? plan.steps : [];
+  defaultStrategyPath = isAbsoluteStrategyPath(plan.defaultStrategyPath)
+    ? String(plan.defaultStrategyPath)
+    : "";
   masLog("MAS_PLAN_BEGIN " + steps.length);
   // 单步失败计数：识别类异常（如大地图特征点匹配失败）不应中断整个编排，
   // 记录后跳过该步、继续后续步骤，结束时以 MAS_PLAN_DONE_WITH_FAILURES 汇总
