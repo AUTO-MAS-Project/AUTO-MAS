@@ -3389,8 +3389,30 @@ const projectEditorGroupName = computed<string>(() => {
   return sel ? stepNameOf(sel) : ''
 })
 
-// 每周秘境秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）
+// 每周秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）。
+// 右栏「每周秘境表」与「队伍配置-战斗场景」共用同一份：后者是独立功能，不能等用户
+// 先操作过「自动秘境」组才有选项，所以进入编辑页就加载一次（并发调用复用同一请求）。
 const domainCatalog = ref<BetterGIDomainCatalogItem[]>([])
+let domainCatalogPromise: Promise<BetterGIDomainCatalogItem[]> | null = null
+const loadDomainCatalog = async (): Promise<BetterGIDomainCatalogItem[]> => {
+  if (!scriptId) return []
+  if (domainCatalog.value.length) return domainCatalog.value
+  if (!domainCatalogPromise) {
+    domainCatalogPromise = fetchDomainCatalog(scriptId)
+      .then(list => {
+        domainCatalog.value = list
+        return list
+      })
+      .catch(e => {
+        logger.error(e instanceof Error ? e.message : String(e))
+        return [] as BetterGIDomainCatalogItem[]
+      })
+      .finally(() => {
+        domainCatalogPromise = null
+      })
+  }
+  return domainCatalogPromise
+}
 // 当前组是否需要周表秘境目录（仅「自动秘境」的每周秘境表格模式需要）
 const needDomainCatalog = computed<boolean>(() =>
   currentGroupSettingSections.value.some(s => s.kind === 'weekly-table')
@@ -3499,9 +3521,11 @@ const loadDragonGroupSettings = async () => {
       needGlobalStygianSettings.value
         ? fetchGlobalStygianSettings(scriptId, globalUserId, stepNameOf(sel))
         : Promise.resolve<Record<string, unknown>>({}),
-      needDomainCatalog.value
-        ? fetchDomainCatalog(scriptId)
-        : Promise.resolve<BetterGIDomainCatalogItem[]>([]),
+      // 目录已在进入页面时统一加载（与右栏选中组无关），这里只做缺失兜底，
+      // 不再把已有目录覆盖成空数组——否则切到非秘境组会把队伍配置的选项清空。
+      needDomainCatalog.value && !domainCatalog.value.length
+        ? loadDomainCatalog()
+        : Promise.resolve(domainCatalog.value),
     ])
     dragonSettings.value = dragon
     dragonSettingsDirty.value = false
@@ -4953,6 +4977,8 @@ onMounted(async () => {
       loadPathingTree(),
       loadStrategyOptions(),
       loadOneDragonConfigs(),
+      // 秘境目录与右栏选中组无关：队伍配置的「战斗场景」也要用它
+      loadDomainCatalog(),
     ])
     await loadUser()
     // 游戏客户端信息（生效路径 + 渠道标注）：用户数据就绪后按用户路径识别
