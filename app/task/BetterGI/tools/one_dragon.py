@@ -174,9 +174,7 @@ def _autofight_candidate(root: Path, rel: Path) -> Path | None:
     return candidate if candidate.is_relative_to(base_resolved) else None
 
 
-def _strategy_file(
-    root: Path, rel: Path, exts: tuple[str, ...]
-) -> Path | None:
+def _strategy_file(root: Path, rel: Path, exts: tuple[str, ...]) -> Path | None:
     """返回实际存在的策略文件（按 ``exts`` 顺序优先，名称原样追加不替换后缀）。
 
     不能用 ``Path.with_suffix``：策略名本身可能带点（如 ``foo.bar``），那会把 ``.bar``

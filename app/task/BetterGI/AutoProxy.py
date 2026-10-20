@@ -1256,7 +1256,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。
         """
         self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
-        self._walk_plan_strategies(self.exec_plan_steps, self.script_root_path, set(), True)
+        self._walk_plan_strategies(
+            self.exec_plan_steps, self.script_root_path, set(), True
+        )
         # 顶部「通用战斗策略」同样解析成绝对路径：步骤级留空时由 main.js 兜底直传。
         self.default_strategy_path = (
             one_dragon.resolve_combat_strategy_path(
