@@ -41,7 +41,7 @@ from app.task.proxy_helpers import (
 )
 from app.utils import get_logger
 from app.utils.config_archive import archive_files
-from app.utils.constants import ARKNIGHTS_PACKAGE_NAME, TASK_MODE_ZH, game_now
+from app.utils.constants import TASK_MODE_ZH, game_now
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     clear_native_config_snapshot,
@@ -56,6 +56,7 @@ from .AutoProxy import (
     depot_cache_snapshot_dir,
     restore_depot_cache,
 )
+from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification, update_maa
 from .tools.backup_archive import (
@@ -84,6 +85,7 @@ from .tools.software_update import (
     prepare_maa_software_update,
     read_installed_release,
 )
+from .tools.stage_service import maa_stage_service
 from .tools.update_credentials import resolve_takeover_credentials
 from .tools.UpdateMAA import MaaUpdaterRunningError
 
@@ -411,7 +413,7 @@ class MaaManager(ScriptManagerBase):
 
         # 活动关卡信息整个任务只刷新一次, 各用户注入配置时直接用缓存
         if self.task_info.mode == "AutoProxy":
-            await Config.get_stage(refresh=True)
+            await maa_stage_service.get_stage(refresh=True)
 
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的原始配置快照。"""

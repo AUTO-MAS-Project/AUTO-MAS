@@ -364,8 +364,10 @@ def main():
                 await DesktopGuard.start()
 
             async def init_stage_info() -> None:
+                from app.task.MAA.tools.stage_service import maa_stage_service
+
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
-                await Config.get_stage(wait_stale=False)
+                await maa_stage_service.get_stage(wait_stale=False)
 
             app.state.background_status = "running"
             try:

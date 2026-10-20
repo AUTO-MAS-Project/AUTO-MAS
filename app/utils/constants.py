@@ -75,20 +75,6 @@ MSS_TRIBULATION_STAGES = (
 MSS_DEFAULT_TRIBULATION_STAGE = MSS_TRIBULATION_STAGES[0]
 """MSS 悬赏试炼的默认关卡"""
 
-MAA_RUN_MOOD_BOOK = {
-    "GreenTicketStore": "绿票商店",
-    "Annihilation": "剿灭",
-    "Routine": "日常",
-}
-"""MAA运行模式映射表"""
-
-MAA_MODE_TIME_LIMIT_BOOK = {
-    "GreenTicketStore": "RoutineTimeLimit",
-    "Annihilation": "AnnihilationTimeLimit",
-    "Routine": "RoutineTimeLimit",
-}
-"""MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
-
 MAAEND_RUN_MOOD_BOOK = {
     "Delivery": "送货",
     "Routine": "日常",
@@ -108,70 +94,6 @@ MAAEND_DELIVERY_COMMISSION_SOURCES = ("Unlimited", "WulingCity", "TestArea")
 MAAEND_AUTO_COLLECT_MODES = ("Distributed", "Concentrated")
 """MaaEnd 自动采集的三日周期模式"""
 
-MAA_TASKS = [
-    "StartUp",
-    "DepotMaintain",
-    "Fight",
-    "Infrast",
-    "Recruit",
-    "Mall",
-    "Award",
-    "SwitchTheme",
-]
-"""MAS 托管的 MAA 任务类型
-
-只列 MAS 会接管开关与配置的任务。上游还有的类型（自动肉鸽、生息演算、自定义
-任务等）对 MAS 是未知任务：队列里遇到就原样透传，不合成、不接管、不判定。
-"""
-
-MAA_TASKS_ZH = [
-    "开始唤醒",
-    "库存保持与干员养成",
-    "理智任务",
-    "基建换班",
-    "自动公招",
-    "信用收支",
-    "领取奖励",
-    "更换主题",
-]
-"""MAA_TASKS 对应的中文任务名（与 MAA_TASKS 逐位对齐）"""
-
-MAA_DEPOT_EXCLUDED_ITEM_IDS = {
-    "3213",
-    "3223",
-    "3233",
-    "3243",
-    "3253",
-    "3263",
-    "3273",
-    "3283",
-    "7001",
-    "7002",
-    "7003",
-    "7004",
-    "4004",
-    "4005",
-    "3105",
-    "3131",
-    "3132",
-    "3133",
-    "6001",
-    "3141",
-    "4002",
-    "32001",
-    "30115",
-    "30125",
-    "30135",
-    "30145",
-    "30155",
-    "30165",
-    # 无对应可刷关卡：家具零件（基建产出）、合成玉（源石兑换）、声望（战斗经验）
-    "3401",
-    "4003",
-    "5001",
-}
-"""MAA 库存保持不可刷取物品 ID"""
-
 MAA_STAGE_KEY = [
     "MedicineNumb",
     "SeriesNumb",
@@ -181,16 +103,6 @@ MAA_STAGE_KEY = [
     "Stage_3",
 ]
 """MAA关卡键表"""
-
-ARKNIGHTS_PACKAGE_NAME = {
-    "Official": "com.hypergryph.arknights",
-    "Bilibili": "com.hypergryph.arknights.bilibili",
-    "YoStarEN": "com.YoStarEN.Arknights",
-    "YoStarJP": "com.YoStarJP.Arknights",
-    "YoStarKR": "com.YoStarKR.Arknights",
-    "txwy": "tw.txwy.and.arknights",
-}
-"""明日方舟包名映射表"""
 
 ARKNIGHTS_GAME_DAY_TZ = {
     "Official": UTC4,
@@ -221,58 +133,6 @@ def game_now(server: str | None) -> datetime:
 
     return datetime.now(tz=get_game_day_tz(server))
 
-
-ARKNIGHTS_VERSION_API_SERVER = {
-    "Official": "official",
-    "Bilibili": "b",
-}
-"""明日方舟版本接口服务器标识映射表
-
-仅收录已实测可用的服务器；外服与台服未找到稳定的公开版本接口，
-不在此表中的服务器会跳过客户端版本检查。
-"""
-
-ARKNIGHTS_OFFICIAL_APK_URL = "https://ak.hypergryph.com/downloads/android_lastest"
-"""明日方舟官服安卓包下载入口（302 跳转至启动器再跳至 CDN 实际包地址）"""
-
-MAA_TASK_TRANSITION_METHOD_BOOK = {
-    "NoAction": "8",
-    "ExitGame": "9",
-    "ExitEmulator": "9",
-}
-"""MAA任务切换方式映射表"""
-
-MAA_ANNIHILATION_FIGHT_BASE = {
-    "$type": "FightTask",
-    "Name": "剿灭作战",
-    "IsEnable": True,
-    "TaskType": "Fight",
-    "StagePlan": ["Annihilation"],
-    "Series": 0,
-    "IsStageManually": False,
-    "UseMedicine": False,
-    "MedicineCount": 0,
-    "EnableTimesLimit": False,
-    "TimesLimit": 999,
-    "UseCustomAnnihilation": True,
-    "AnnihilationStage": "Annihilation",
-}
-"""MAA剿灭作战托管补丁
-
-**出现在这里的键即 MAS 声明接管，未出现的一律由 MAA 原生配置透传**——
-用户在上游界面里设的临期药、源石、博朗台、周计划、指定材料/次数、隐藏项等
-高级设置原样生效，MAS 不经手。反过来说：只要 MAS 不消费某个字段，就不得写进
-本表，写了既会覆盖用户在原生界面里的选择，又会在上游新增字段时静默失效。
-"""
-
-MAA_GREEN_TICKET_STORE_TASK = {
-    "$type": "CustomTask",
-    "Name": "绿票商店",
-    "IsEnable": True,
-    "TaskType": "Custom",
-    "CustomTaskName": "GreenTicket@Store@Begin",
-}
-"""MAA绿票商店任务配置：牛杂「绿票商店」的任务链，需 MAA v6.3.0 及以上"""
 
 MAAEND_SANITY_TASK_LABELS = {
     "OperatorProgression": "干员养成",
@@ -550,91 +410,6 @@ RESOURCE_STAGE_INFO = [
 ]
 """常规资源关信息"""
 
-
-RESOURCE_STAGE_DATE_TEXT = {
-    "LS-6": "经验-6/5 | 常驻开放",
-    "CE-6": "龙门币-6/5 | 二四六日开放",
-    "AP-5": "红票-5 | 一四六日开放",
-    "CA-5": "技能-5 | 二三五日开放",
-    "SK-5": "碳-5 | 一三五六开放",
-    "PR-A-1": "奶/盾芯片 | 一四五日开放",
-    "PR-A-2": "奶/盾芯片组 | 一四五日开放",
-    "PR-B-1": "术/狙芯片 | 一二五六日开放",
-    "PR-B-2": "术/狙芯片组 | 一二五六日开放",
-    "PR-C-1": "先/辅芯片 | 三四六日开放",
-    "PR-C-2": "先/辅芯片组 | 三四六日开放",
-    "PR-D-1": "近/特芯片 | 二三六日开放",
-    "PR-D-2": "近/特芯片组 | 二三六日开放",
-}
-"""常规资源关开放日文本映射"""
-
-
-RESOURCE_STAGE_DROP_INFO = {
-    "CE-6": {
-        "Display": "CE-6",
-        "Value": "CE-6",
-        "Drop": "4001",
-        "DropName": "龙门币",
-        "Activity": {"Tip": "二四六日", "StageName": "资源关卡"},
-    },
-    "AP-5": {
-        "Display": "AP-5",
-        "Value": "AP-5",
-        "Drop": "4006",
-        "DropName": "采购凭证",
-        "Activity": {"Tip": "一四六日", "StageName": "资源关卡"},
-    },
-    "CA-5": {
-        "Display": "CA-5",
-        "Value": "CA-5",
-        "Drop": "3303",
-        "DropName": "技巧概要",
-        "Activity": {"Tip": "二三五日", "StageName": "资源关卡"},
-    },
-    "LS-6": {
-        "Display": "LS-6",
-        "Value": "LS-6",
-        "Drop": "2004",
-        "DropName": "作战记录",
-        "Activity": {"Tip": "常驻开放", "StageName": "资源关卡"},
-    },
-    "SK-5": {
-        "Display": "SK-5",
-        "Value": "SK-5",
-        "Drop": "3114",
-        "DropName": "碳素组",
-        "Activity": {"Tip": "一三五六", "StageName": "资源关卡"},
-    },
-    "PR-A-1": {
-        "Display": "PR-A",
-        "Value": "PR-A",
-        "Drop": "PR-A",
-        "DropName": "奶/盾芯片",
-        "Activity": {"Tip": "一四五日", "StageName": "资源关卡"},
-    },
-    "PR-B-1": {
-        "Display": "PR-B",
-        "Value": "PR-B",
-        "Drop": "PR-B",
-        "DropName": "术/狙芯片",
-        "Activity": {"Tip": "一二五六", "StageName": "资源关卡"},
-    },
-    "PR-C-1": {
-        "Display": "PR-C",
-        "Value": "PR-C",
-        "Drop": "PR-C",
-        "DropName": "先/辅芯片",
-        "Activity": {"Tip": "三四六日", "StageName": "资源关卡"},
-    },
-    "PR-D-1": {
-        "Display": "PR-D",
-        "Value": "PR-D",
-        "Drop": "PR-D",
-        "DropName": "近/特芯片",
-        "Activity": {"Tip": "二三六日", "StageName": "资源关卡"},
-    },
-}
-"""常规资源关掉落信息"""
 
 MATERIALS_MAP = {
     "3141": "源石碎片",
