@@ -28,7 +28,6 @@ tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全�
 邮件/网页正文（模板 ``general_statistics.html`` 的 ``result_block_body`` 区块）。
 """
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     dispatch,
@@ -38,6 +37,7 @@ from app.models.config import WhimboxUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
+from app.utils.notification_template import get_notification_template
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
@@ -84,7 +84,7 @@ async def push_notification(
             ).strip(),
             "failure_notes_text": failure_notes_text,
         }
-        message_html = Config.notify_env.get_template("general_statistics.html").render(
+        message_html = get_notification_template("general_statistics.html").render(
             render_data
         )
 

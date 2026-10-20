@@ -102,7 +102,7 @@ from .ws import MainConnection, Publisher, protocol
 System = LazyProxy("app.services", "System")
 
 if TYPE_CHECKING:
-    from .notify import TaskCommunitySignNotification
+    from .task_report import TaskCommunitySignNotification
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
@@ -1181,9 +1181,9 @@ class Task(TaskExecuteBase):
             await self._run_cycle_task()
             return
 
-        # 签到在后台并行执行；完成事件由通知层接收，不阻塞脚本初始化与运行。
+        # 签到在后台并行执行；完成事件由报告协调器接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
-            from app.core.notify import TaskCommunitySignNotification
+            from app.core.task_report import TaskCommunitySignNotification
             from app.core.timer import MainTimer
 
             sign_source = {

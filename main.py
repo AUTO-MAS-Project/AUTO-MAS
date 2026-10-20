@@ -475,7 +475,7 @@ def main():
 
             await ObsReplay.stop()
             await RuntimeTasks.shutdown()
-            from app.core.notify import shutdown_community_notifications
+            from app.core.task_report import shutdown_community_notifications
 
             await shutdown_community_notifications()
             from app.services.notification import Notify
