@@ -77,9 +77,12 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     unconditionally, or the later hard indexing of ``Global`` /
     ``Configurations["Default"]`` raises ``KeyError``.
 
-    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    根级 ``Gui`` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
     副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
     MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
+
+    旧版只有 ``GUI`` 时，把 ``GuideStep`` 补进 ``GUI``，仍交给 MAA 的原生迁移复制
+    到 ``Gui``；这样既不提前创建 ``Gui`` 遮蔽旧版设置，也能补上缺失的引导进度。
     """
 
     if not isinstance(gui_set.get("Global"), dict):
@@ -111,8 +114,14 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
         for key, value in preset.items():
             if key in _MAA_ROOT_KEYS_NOT_FILLED:
                 continue
-            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
+            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。GuideStep 是
+            # MAA 后来新增、旧版 GUI 里没有的字段；写进旧版 GUI，MAA 迁移时会
+            # 一起带到 Gui，避免每次都按首次运行弹新手引导。
             if key == "Gui" and "Gui" not in doc and "GUI" in doc:
+                legacy_gui = doc.get("GUI")
+                guide_step = value.get("GuideStep")
+                if isinstance(legacy_gui, dict) and isinstance(guide_step, int):
+                    _fill_missing(legacy_gui, {"GuideStep": guide_step})
                 continue
             _fill_missing(doc, {key: value})
 

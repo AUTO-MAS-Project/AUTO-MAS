@@ -80,6 +80,7 @@ from .base_preset import (
 )
 from .constants import (
     ARKNIGHTS_PACKAGE_NAME,
+    MAA_EMULATOR_CONNECT_CONFIG_BOOK,
     MAA_MODE_TIME_LIMIT_BOOK,
     MAA_RUN_MOOD_BOOK,
     MAA_TASKS,
@@ -2580,9 +2581,27 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         if emulator_info.adb_address != "Unknown":
             default_set["Connect.Address"] = emulator_info.adb_address
-            current_gui.setdefault("ConnectSettings", {})["Address"] = (
-                emulator_info.adb_address
+            connect_settings = current_gui.setdefault("ConnectSettings", {})
+            connect_settings["Address"] = emulator_info.adb_address
+            # MAA 的自动检测默认开启，启动时会尝试重新识别设备并可能弹出
+            # 「选择模拟器 / 连接地址」阻塞无人值守运行。MAS 已经确定设备和端口，
+            # 直接关掉自动检测，改用下面补齐的连接预设与 adb 路径连接指定实例。
+            connect_settings["AutoDetect"] = False
+            connect_settings["AlwaysAutoDetect"] = False
+            device_ref = resolve_device_ref(
+                self.emulator_manager, self.script_config.Emulator.Index
             )
+            # 魔改 AVD 的连接配置由下方 apply_maa_avd_settings 整体写入，这里不按
+            # 普通模拟器补 AdbPath / Config。
+            if device_ref is None or device_ref.emulator_type != "avd":
+                if not str(connect_settings.get("AdbPath") or "").strip():
+                    adb_path = self.emulator_manager.get_adb_path()
+                    if adb_path is not None:
+                        connect_settings["AdbPath"] = str(adb_path)
+                if not connect_settings.get("Config"):
+                    connect_settings["Config"] = MAA_EMULATOR_CONNECT_CONFIG_BOOK.get(
+                        device_ref.emulator_type if device_ref else "", "General"
+                    )
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。

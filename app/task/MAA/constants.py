@@ -36,6 +36,17 @@ MAA_MODE_TIME_LIMIT_BOOK = {
 }
 """MAA运行模式对应的超时配置项：绿票商店只买一次商店，复用日常时限"""
 
+MAA_EMULATOR_CONNECT_CONFIG_BOOK = {
+    "mumu": "MuMuEmulator12",
+    "ldplayer": "LDPlayer",
+    "general": "General",
+}
+"""MAS 模拟器类型到 MAA 连接预设名的映射
+
+MAA 的连接预设决定 MaaCore 走哪套截图 / 触控通道。MAS 运行前已经确定设备，
+按真实模拟器类型写入，避免 MAA 自动检测弹出选择框。
+"""
+
 MAA_TASKS = [
     "StartUp",
     "DepotMaintain",
