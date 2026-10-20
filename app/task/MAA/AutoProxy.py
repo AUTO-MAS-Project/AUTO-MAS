@@ -2584,15 +2584,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             default_set["Connect.Address"] = emulator_info.adb_address
             connect_settings = current_gui.setdefault("ConnectSettings", {})
             connect_settings["Address"] = emulator_info.adb_address
-            # MAA 的自动检测默认开启，启动时会尝试重新识别设备并可能弹出
-            # 「选择模拟器 / 连接地址」阻塞无人值守运行。MAS 已经确定设备和端口，
-            # 直接关掉自动检测，改用下面补齐的连接预设与 adb 路径连接指定实例。
-            connect_settings["AutoDetect"] = False
-            connect_settings["AlwaysAutoDetect"] = False
-            # 旧版 gui.json 也写一份：MAA 的 WPF 配置迁移会从这些键回填
-            # Gui.ConnectSettings；只改 gui.new.json 时旧配置仍可能把自动检测打开。
-            default_set["Connect.AutoDetect"] = "False"
-            default_set["Connect.AlwaysAutoDetect"] = "False"
             device_ref = resolve_device_ref(
                 self.emulator_manager, self.script_config.Emulator.Index
             )
@@ -2605,7 +2596,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if not adb_path:
                     detected_adb_path = self.emulator_manager.get_adb_path()
                     if detected_adb_path is not None:
-                        adb_path = str(detected_adb_path)
+                        adb_path = str(detected_adb_path).strip()
                 if adb_path:
                     connect_settings["AdbPath"] = adb_path
                     default_set["Connect.AdbPath"] = adb_path
@@ -2621,6 +2612,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     )
                 connect_settings["Config"] = connect_config
                 default_set["Connect.ConnectConfig"] = connect_config
+
+                if adb_path:
+                    # 只有拿到可用 adb 路径时才关闭自动检测。自动检测默认开启，
+                    # 会枚举设备并可能弹出「选择模拟器 / 连接地址」；但空路径下
+                    # 关闭检测会让 MAA 直接拿空路径连接，反而丢掉原先的自动发现。
+                    connect_settings["AutoDetect"] = False
+                    connect_settings["AlwaysAutoDetect"] = False
+                    # 旧版 gui.json 也写一份：MAA 的 WPF 配置迁移会从这些键回填
+                    # Gui.ConnectSettings；只改 gui.new.json 时旧配置仍可能把自动检测打开。
+                    default_set["Connect.AutoDetect"] = "False"
+                    default_set["Connect.AlwaysAutoDetect"] = "False"
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
