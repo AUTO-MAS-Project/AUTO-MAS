@@ -82,7 +82,6 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
-import { Service } from '@/api'
 import type { WhimboxOptionCatalogItem, WhimboxTaskCatalogItem } from '@/api'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -92,6 +91,7 @@ import TaskConfigSection from '@/views/WhimboxUserEdit/TaskConfigSection.vue'
 import WhimboxUserEditHeader from '@/views/WhimboxUserEdit/WhimboxUserEditHeader.vue'
 import { WHIMBOX_CONFIG_MODES } from '@/views/WhimboxUserEdit/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -307,21 +307,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensure: ensureConfigBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -370,11 +360,7 @@ const handleRestored = async (target: string) => {
 const ensureBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
+    const resp = await ensureConfigBackup(target)
     if (resp.code !== 200) {
       const detail = resp.message || t('edit.configRestoreEnsureFailed')
       logger.warn(`编辑页归档失败（不阻断编辑）: ${detail}`)
