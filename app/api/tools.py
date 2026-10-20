@@ -442,10 +442,7 @@ async def query_community_activity(
             query_configured_community_activity,
         )
 
-        snapshots = await query_configured_community_activity(
-            query.accountIds,
-            proxy=Config.proxy,
-        )
+        snapshots = await query_configured_community_activity(query.accountIds)
     except ValueError as exc:
         _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
         return CommunityActivityOut(

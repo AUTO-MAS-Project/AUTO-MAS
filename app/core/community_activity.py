@@ -24,9 +24,7 @@
 
 from __future__ import annotations
 
-import ssl
 import traceback
-from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,7 +51,7 @@ from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
 if TYPE_CHECKING:
-    from app.models.config import ToolsConfig
+    from app.models.config import GlobalConfig, ToolsConfig
 
 __all__ = [
     "build_configured_community_activity_failures",
@@ -67,18 +65,7 @@ logger = get_logger("游戏社区活动")
 
 _ACTIVITY_CACHE_SECONDS = 300.0
 _ACTIVITY_RETRY_SECONDS = 30.0
-_ACTIVITY_CACHE_MAX_ENTRIES = 32
-
-type _ActivityProxyKey = (
-    tuple[
-        httpx.URL,
-        tuple[str, str] | None,
-        tuple[tuple[bytes, bytes], ...],
-        ssl.SSLContext | None,
-    ]
-    | None
-)
-type _ActivityCacheKey = tuple[int, tuple[str, ...], _ActivityProxyKey]
+type _ActivityCacheKey = tuple[int, str]
 
 
 @dataclass(frozen=True)
@@ -87,7 +74,7 @@ class _ActivityCacheEntry:
     expires_at: float
 
 
-_activity_cache: OrderedDict[_ActivityCacheKey, _ActivityCacheEntry] = OrderedDict()
+_activity_cache: dict[_ActivityCacheKey, _ActivityCacheEntry] = {}
 _activity_cache_revision = 0
 
 
@@ -99,8 +86,10 @@ def _invalidate_activity_cache(sender: object, event: object) -> None:
     _activity_cache.clear()
 
 
-def connect_community_activity_cache(tools_config: ToolsConfig) -> None:
-    """订阅账号和便笺开关，覆盖编辑、扫码登录与后台凭据更新。"""
+def connect_community_activity_cache(
+    tools_config: ToolsConfig, *, setting: GlobalConfig
+) -> None:
+    """订阅账号、便笺开关和代理设置，覆盖编辑与后台凭据更新。"""
 
     from app.models.config import GameSignAccountGroup
 
@@ -127,6 +116,18 @@ def connect_community_activity_cache(tools_config: ToolsConfig) -> None:
         group="GameSign",
         field="ActivityEnabled",
     )
+    setting.disconnect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="Update",
+        field="ProxyAddress",
+    )
+    setting.connect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="Update",
+        field="ProxyAddress",
+    )
     _invalidate_activity_cache(tools_config, None)
 
 
@@ -135,43 +136,33 @@ async def query_configured_community_activity(
     *,
     proxy: str | httpx.Proxy | None = None,
 ) -> tuple[CommunityActivitySnapshot, ...]:
-    """缓存便笺查询；并发调用等待同一查询完成后复用快照。"""
+    """按账号缓存便笺；并发查询等待后仅补查尚未缓存的账号。"""
 
     from app.core import Config
 
-    selected_ids = tuple(sorted({str(uid).strip() for uid in account_ids or () if uid}))
     async with community_activity_flow():
         while True:
             if Config.ToolsConfig.GameSign.ActivityEnabled is False:
                 return ()
-            # 等锁或配置失效后重读默认代理，使缓存键与本轮实际请求保持一致。
-            resolved_proxy = proxy if proxy is not None else Config.proxy
-            proxy_config = (
-                httpx.Proxy(resolved_proxy)
-                if isinstance(resolved_proxy, str)
-                else resolved_proxy
-            )
-            # Config.proxy 每次生成新对象；按配置值复用，认证与传输选项仍须隔离。
-            proxy_key: _ActivityProxyKey = (
-                (
-                    proxy_config.url,
-                    proxy_config.auth,
-                    tuple(proxy_config.headers.raw),
-                    proxy_config.ssl_context,
-                )
-                if proxy_config is not None
-                else None
-            )
-            key = (id(Config.ToolsConfig), selected_ids, proxy_key)
-            entry = _activity_cache.get(key)
-            if entry is not None and monotonic() < entry.expires_at:
-                _activity_cache.move_to_end(key)
-                return entry.snapshots
+            config_id = id(Config.ToolsConfig)
+            selected_ids = tuple(uid for uid, _ in _selected_accounts(account_ids))
+            results: dict[str, tuple[CommunityActivitySnapshot, ...]] = {}
+            missing_ids: list[str] = []
+            now = monotonic()
+            for uid in selected_ids:
+                entry = _activity_cache.get((config_id, uid))
+                if entry is not None and now < entry.expires_at:
+                    results[uid] = entry.snapshots
+                else:
+                    missing_ids.append(uid)
+            if not missing_ids:
+                return tuple(item for uid in selected_ids for item in results[uid])
 
             revision = _activity_cache_revision
+            resolved_proxy = proxy if proxy is not None else Config.proxy
             try:
                 snapshots = await collect_configured_community_activity(
-                    account_ids, proxy=resolved_proxy
+                    missing_ids, proxy=resolved_proxy
                 )
             except ValueError:
                 raise
@@ -193,25 +184,30 @@ async def query_configured_community_activity(
                             for frame in frames
                         )
                     )
-                snapshots = build_configured_community_activity_failures(account_ids)
+                snapshots = build_configured_community_activity_failures(missing_ids)
                 if not snapshots:
                     raise
 
             # 等待上游期间账号可能被删除、修改；旧响应不能进入新配置的缓存。
             if revision != _activity_cache_revision:
                 continue
-            ttl = (
-                _ACTIVITY_RETRY_SECONDS
-                if any(item.status not in ("success", "empty") for item in snapshots)
-                else _ACTIVITY_CACHE_SECONDS
-            )
-            _activity_cache[key] = _ActivityCacheEntry(
-                snapshots=snapshots, expires_at=monotonic() + ttl
-            )
-            _activity_cache.move_to_end(key)
-            while len(_activity_cache) > _ACTIVITY_CACHE_MAX_ENTRIES:
-                _activity_cache.popitem(last=False)
-            return snapshots
+            by_account: dict[str, list[CommunityActivitySnapshot]] = {
+                uid: [] for uid in missing_ids
+            }
+            for item in snapshots:
+                by_account[item.account_uid].append(item)
+            completed_at = monotonic()
+            for uid, items in by_account.items():
+                ttl = (
+                    _ACTIVITY_RETRY_SECONDS
+                    if any(item.status not in ("success", "empty") for item in items)
+                    else _ACTIVITY_CACHE_SECONDS
+                )
+                results[uid] = tuple(items)
+                _activity_cache[(config_id, uid)] = _ActivityCacheEntry(
+                    snapshots=results[uid], expires_at=completed_at + ttl
+                )
+            return tuple(item for uid in selected_ids for item in results[uid])
 
 
 def _account_value(account: object, name: str, default: object = "") -> object:
