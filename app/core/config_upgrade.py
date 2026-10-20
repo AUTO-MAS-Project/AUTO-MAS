@@ -200,6 +200,18 @@ def convert_legacy(
     return result
 
 
+def _read_legacy_source(path: Path) -> dict[str, Any] | None:
+    """读取旧配置；0 字节或纯空白的占位文件返回 None，按「无旧配置」处理。
+
+    早期版本曾留下空的 JSON 占位文件，严格解析器会把它判为损坏并中断整轮升级，
+    导致后端启动失败。空文件不含任何用户设置，回退到节点默认值即可；非空但解析
+    失败仍照常按损坏上报，不静默吞掉真实损坏。
+    """
+    if not path.read_bytes().strip():
+        return None
+    return read_dict_file(path)
+
+
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -253,10 +265,14 @@ def upgrade_json_configs(
     if not tools_source.exists() and files.get("ToolsConfig.json"):
         # 工具文件已归档但账号文件尚未写入时，重试仍须读取原嵌套账号。
         tools_source = backup_dir / "ToolsConfig.json"
-    embedded_accounts = {}
+    embedded_accounts: dict[str, Any] = {}
     if tools_source.exists():
-        tools = read_dict_file(tools_source)
-        embedded_accounts = tools.get("SubConfigsInfo", {}).get("GameSign_Accounts", {})
+        tools = _read_legacy_source(tools_source)
+        subconfigs = tools.get("SubConfigsInfo") if tools is not None else None
+        if isinstance(subconfigs, dict):
+            accounts = subconfigs.get("GameSign_Accounts")
+            if isinstance(accounts, dict):
+                embedded_accounts = accounts
 
     for old_name, new_name, key in CONFIG_FILES:
         source = config_path / old_name
@@ -295,12 +311,14 @@ def upgrade_json_configs(
         node = nodes[key]
         if key in prepared_documents:
             payload = prepared_documents[key]
-        elif source.exists():
-            payload = convert_legacy(read_dict_file(source), node)
-        elif key == "GameSignAccounts" and embedded_accounts:
-            payload = convert_legacy(embedded_accounts, node)
         else:
-            payload = node.model_dump(context=ExportContext(audience="persist"))
+            legacy = _read_legacy_source(source) if source.exists() else None
+            if legacy is not None:
+                payload = convert_legacy(legacy, node)
+            elif key == "GameSignAccounts" and embedded_accounts:
+                payload = convert_legacy(embedded_accounts, node)
+            else:
+                payload = node.model_dump(context=ExportContext(audience="persist"))
         temporary = target.with_name(target.name + ".migration.tmp")
         write_file(temporary, payload, format=".yaml")
         if read_dict_file(temporary, format=".yaml") != payload:
