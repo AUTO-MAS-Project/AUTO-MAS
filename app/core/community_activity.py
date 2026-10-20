@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import ssl
 import traceback
 from collections import OrderedDict
 from collections.abc import Sequence
@@ -31,6 +32,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from time import monotonic
 from typing import TYPE_CHECKING
+
+import httpx
 
 from app.core.community_scheduler import community_activity_flow
 from app.tools.community_activity_provider import CommunityActivityProvider
@@ -66,7 +69,16 @@ _ACTIVITY_CACHE_SECONDS = 300.0
 _ACTIVITY_RETRY_SECONDS = 30.0
 _ACTIVITY_CACHE_MAX_ENTRIES = 32
 
-type _ActivityCacheKey = tuple[int, tuple[str, ...], str | None]
+type _ActivityProxyKey = (
+    tuple[
+        httpx.URL,
+        tuple[str, str] | None,
+        tuple[tuple[bytes, bytes], ...],
+        ssl.SSLContext | None,
+    ]
+    | None
+)
+type _ActivityCacheKey = tuple[int, tuple[str, ...], _ActivityProxyKey]
 
 
 @dataclass(frozen=True)
@@ -121,7 +133,7 @@ def connect_community_activity_cache(tools_config: ToolsConfig) -> None:
 async def query_configured_community_activity(
     account_ids: Sequence[str] | None = None,
     *,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
 ) -> tuple[CommunityActivitySnapshot, ...]:
     """缓存便笺查询；并发调用等待同一查询完成后复用快照。"""
 
@@ -129,11 +141,27 @@ async def query_configured_community_activity(
 
     selected_ids = tuple(sorted({str(uid).strip() for uid in account_ids or () if uid}))
     resolved_proxy = proxy if proxy is not None else Config.proxy
+    proxy_config = (
+        httpx.Proxy(resolved_proxy)
+        if isinstance(resolved_proxy, str)
+        else resolved_proxy
+    )
+    # Config.proxy 每次生成新对象；按配置值复用，认证与传输选项仍须隔离。
+    proxy_key: _ActivityProxyKey = (
+        (
+            proxy_config.url,
+            proxy_config.auth,
+            tuple(proxy_config.headers.raw),
+            proxy_config.ssl_context,
+        )
+        if proxy_config is not None
+        else None
+    )
     async with community_activity_flow():
         while True:
             if Config.ToolsConfig.GameSign.ActivityEnabled is False:
                 return ()
-            key = (id(Config.ToolsConfig), selected_ids, resolved_proxy)
+            key = (id(Config.ToolsConfig), selected_ids, proxy_key)
             entry = _activity_cache.get(key)
             if entry is not None and monotonic() < entry.expires_at:
                 _activity_cache.move_to_end(key)
@@ -317,7 +345,7 @@ def build_configured_community_activity_failures(
 async def collect_configured_community_activity(
     account_ids: Sequence[str] | None = None,
     *,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     max_concurrency: int = 4,
 ) -> tuple[CommunityActivitySnapshot, ...]:
     """读取已配置账号组并查询已登记社区的日常活动。"""
