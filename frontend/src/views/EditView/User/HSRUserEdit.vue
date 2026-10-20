@@ -402,6 +402,7 @@ import {
   readEowStage,
   resolveStageChannel,
 } from './HSRUserEdit/stageState'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -1178,21 +1179,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 interface HSRPreviewRow {
   key: string
@@ -1219,20 +1210,7 @@ const handleRestored = async (target: string) => {
 
 // 编辑会话归档（进入/退出时机，指纹去重）：进入归档两引擎原生配置当前状态
 // （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
-const ensureHSRBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureHSRBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {

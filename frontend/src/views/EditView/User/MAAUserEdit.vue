@@ -277,6 +277,7 @@ import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 const { parseImport } = useMaaCultivateImportApi()
@@ -1578,31 +1579,27 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const {
+  restoreApi: backupApi,
+  restore: restoreConfigBackup,
+  ensureBackup,
+} = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  ...backupApi,
   restore: (target: string, time: string, force?: boolean) =>
     restoreBackup(target, time, false, force),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 // 一键恢复与详细查看共用恢复事务：旧编辑先完成，恢复和重载期间保持锁定。
 const restoreBackup = async (target: string, time: string, viewOnly = false, force = false) => {
-  let response:
-    | Awaited<ReturnType<typeof Service.restoreConfigBackupApiApiScriptsBackupRestorePost>>
-    | undefined
+  let response: Awaited<ReturnType<typeof restoreConfigBackup>> | undefined
   const restored = await restoreConfiguration(
     async () => {
-      response = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-        scriptId,
-        userId,
-        time,
-        target,
-        force,
-      })
+      response = await restoreConfigBackup(target, time, force)
       if (response.code !== 200) return false
       restoreOpen.value = false
       if (target === 'mas' && !(await loadUserData())) return false
@@ -1690,20 +1687,7 @@ const handleRestoreView = (
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 的 set_maa）配合——进入归档原生配置当前状态
 // （MAS 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
-const ensureMaaBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureMaaBackup = ensureBackup
 
 // 初始化加载
 onMounted(async () => {

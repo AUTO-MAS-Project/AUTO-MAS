@@ -1301,6 +1301,7 @@ import { useZzzodGuiSession } from '@/composables/useZzzodGuiSession'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD用户编辑')
@@ -1641,14 +1642,20 @@ const handleConfigModeChange = async (value: boolean | string) => {
 
 /** 原生来源/独立来源共用的按需归档入口（通用 /backup/ensure 三时机，指纹去重）。
  * onedragon=一条龙原生配置当前状态；mas=绑定槽 MAS 终态（未绑定槽跳过） */
+const {
+  restoreApi: backupApi,
+  restore: restoreConfigBackup,
+  ensure: ensureConfigBackup,
+} = useConfigBackupApi({
+  scriptId,
+  userId: () => userId.value,
+  logger,
+})
+
 const ensurePoolBackup = async (target: string): Promise<void> => {
   if (!userId.value) return
   try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId: userId.value,
-      target,
-    })
+    const resp = await ensureConfigBackup(target)
     if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
   } catch (e) {
     // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）；
@@ -2513,33 +2520,7 @@ const formatPreviewValue = (key: string, raw: string): string => {
 }
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId.value,
-      time,
-      target
-    ),
-  restore: async (target: string, time: string, force?: boolean) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId: userId.value,
-      time,
-      target,
-      force,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
-      scriptId,
-      userId.value,
-      time,
-      target,
-      path
-    ),
-}
+const restoreApi = { ...backupApi, restore: restoreConfigBackup }
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -2603,13 +2584,7 @@ const restoreForDetailView = async (
   isMas: boolean,
   force = false
 ): Promise<boolean> => {
-  const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-    scriptId,
-    userId: userId.value,
-    time: item.time,
-    target,
-    force,
-  })
+  const resp = await restoreConfigBackup(target, item.time, force)
   // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
   // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
   if (resp.code === 409) {
