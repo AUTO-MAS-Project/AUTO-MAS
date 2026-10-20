@@ -1236,7 +1236,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                         # 置空会被 plan_steps_to_native_settings 的「只收非空值」跳过，
                         # 原生配置里的旧策略名会残留、BGI 继续尝试加载已删除文件。改为
                         # 显式写回内置默认（按队伍自动选择），原生与执行层同时覆盖。
-                        node[key] = one_dragon.default_combat_strategy()
+                        node[key] = one_dragon.DEFAULT_COMBAT_STRATEGY
                     elif resolve:
                         path = one_dragon.resolve_combat_strategy_path(root, name)
                         if path:

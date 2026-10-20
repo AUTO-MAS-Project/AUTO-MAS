@@ -129,11 +129,6 @@ _GLOBAL_STRATEGY_LEAVES = (
 _ALL_GLOBAL_LEAVES = _GLOBAL_TEAM_LEAVES + _GLOBAL_STRATEGY_LEAVES
 
 
-def default_combat_strategy() -> str:
-    """内置默认策略名（BGI 语义「根据队伍自动选择」），失效策略的降级目标。"""
-    return _AUTO_BOSS_BUILTIN_STRATEGY
-
-
 def list_auto_boss_strategies(root: Path) -> list[str]:
     """列出可选自动战斗策略：内置默认 + {RootPath}/User/AutoFight 下的 *.txt、*.json。
 
