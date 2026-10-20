@@ -304,8 +304,10 @@ async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
+    from app.task.MAA.tools.stage_service import maa_stage_service
+
     try:
-        raw_data = await Config.get_stage_info(stage.type)
+        raw_data = await maa_stage_service.get_stage_info(stage.type)
         data = (
             [ComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
             if raw_data
@@ -505,11 +507,13 @@ async def confirm_notice() -> OutBase:
 async def get_overview(
     refresh: bool = False,
 ) -> InfoOut:
+    from app.task.MAA.tools.stage_service import maa_stage_service
+
     try:
         if refresh:
-            await Config.get_stage(refresh=True)
+            await maa_stage_service.get_stage(refresh=True)
         stage_by_server = {
-            server: await Config.get_stage_info("Info", server=server)
+            server: await maa_stage_service.get_stage_info("Info", server=server)
             for server in (
                 "Official",
                 "Bilibili",

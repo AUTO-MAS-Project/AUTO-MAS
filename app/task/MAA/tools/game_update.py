@@ -41,10 +41,6 @@ from pathlib import Path
 import httpx
 
 from app.utils import get_logger
-from app.utils.constants import (
-    ARKNIGHTS_OFFICIAL_APK_URL,
-    ARKNIGHTS_VERSION_API_SERVER,
-)
 from app.utils.game_apk import (
     cleanup_apk_leftovers,
     download_apk,
@@ -53,6 +49,8 @@ from app.utils.game_apk import (
     install_apk,
 )
 from app.utils.game_update import GameUpdateResult, is_client_outdated
+
+from ..constants import ARKNIGHTS_OFFICIAL_APK_URL, ARKNIGHTS_VERSION_API_SERVER
 
 logger = get_logger("MAA 游戏更新")
 

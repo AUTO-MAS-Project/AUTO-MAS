@@ -58,7 +58,9 @@ from app.utils.config_archive import (
     restore_dir,
     write_backup_base,
 )
-from app.utils.constants import BASE_SOURCE_LABELS, MAA_TASKS, MAA_TASKS_ZH
+from app.utils.constants import BASE_SOURCE_LABELS
+
+from ..constants import MAA_TASKS, MAA_TASKS_ZH
 
 logger = get_logger("MAA 配置备份")
 

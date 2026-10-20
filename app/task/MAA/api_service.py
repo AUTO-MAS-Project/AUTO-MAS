@@ -37,23 +37,17 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
 from app.core import Config
-from app.models.config import (
-    MaaConfig,
-    infrast_format_problem,
-    infrast_plan_state,
-    load_infrast_plans,
-    maa_scheme_name,
-    maa_task_queue,
-    read_maa_config,
-)
+from app.models.config import MaaConfig
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
 from app.utils import get_logger
-from app.utils.constants import MAA_DEPOT_EXCLUDED_ITEM_IDS, game_now
+from app.utils.constants import game_now
 from app.utils.io import write_file
+
+from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
 logger = get_logger("脚本管理 API")
 
@@ -92,6 +86,8 @@ def _load_item_index(script_config: MaaConfig) -> dict[str, Any]:
 
 
 async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> None:
+    from .tools.native_config import infrast_format_problem
+
     logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
     script_uid = uuid.UUID(script_id)
@@ -165,6 +161,14 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
     空存档误拒; 反过来在原生来源+快速配置下读原生配置, 又会与运行时不一致。
     """
 
+    from .tools.native_config import (
+        infrast_plan_state,
+        load_infrast_plans,
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
+
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
     if (
@@ -224,6 +228,12 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关快速配置时写 MAA
     原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
     """
+
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_uid = uuid.UUID(script_id)
     user_uid = uuid.UUID(user_id)
@@ -292,6 +302,12 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
     原生来源且关快速配置时读 MAA 原生配置。
     """
+
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_uid = uuid.UUID(script_id)
     if script_uid not in Config.ScriptConfig:

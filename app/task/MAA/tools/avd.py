@@ -56,14 +56,15 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
+from app.utils.emulator2.avd.components import adb_exe
 from app.utils.paths import SOURCE_ROOT
-
-from .components import adb_exe
-from .constants import MUMU_SHIM_DIR
 
 logger = get_logger("魔改 AVD MAA 截图")
 
 SHIM_SOURCE = SOURCE_ROOT / "res" / "avdshim" / "external_renderer_ipc.dll"
+
+#: MAA 截图用的假 MuMu 目录（``<根>\mumu-shim\shell\sdk\external_renderer_ipc.dll``）。
+MUMU_SHIM_DIR = "mumu-shim"
 
 #: MAA 的触控模式（``TouchMode`` 枚举名，gui.new.json 存的就是名字）与旧键的取值。
 MAA_TOUCH_MODE = "MaaTouch"
