@@ -409,11 +409,13 @@ async function dispatchCombat(step) {
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
       // 只调用方法本身即可，不要把返回值赋给属性（会抛 no suitable property 异常）。
-      // 幽境 Param 没有可写路径字段（无 CombatStrategyPath，也没有接收路径的构造重载），
-      // 绝对路径无处落地，硬写只会留下「不支持的赋值」日志并静默回退全局。该组只按策略名
-      // 交给 BGI（后端也不会把幽境步骤的策略替换成路径）。
-      if (stygianStrategy && !isAbsoluteStrategyPath(stygianStrategy)) {
-        if (typeof p.setCombatStrategyPath === "function") {
+      // 幽境 Param 的可写路径字段是 CombatScriptBagPath（不是 CombatStrategyPath），
+      // 且单参构造也会用它覆盖 SetDefault 推导出的路径。绝对路径直写该字段即可绕过
+      // setCombatStrategyPath 的 ".txt" 拼接，JSON 行为策略同样生效。
+      if (stygianStrategy) {
+        if (isAbsoluteStrategyPath(stygianStrategy)) {
+          setProp(p, "combatScriptBagPath", stygianStrategy);
+        } else if (typeof p.setCombatStrategyPath === "function") {
           p.setCombatStrategyPath(stygianStrategy);
         } else {
           masLog("MAS_STYGIAN_STRATEGY_UNSUPPORTED: " + stygianStrategy);
