@@ -24,9 +24,16 @@
 
 from __future__ import annotations
 
+import traceback
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from time import monotonic
+from typing import TYPE_CHECKING
 
+import httpx
+
+from app.core.community_scheduler import community_activity_flow
 from app.tools.community_activity_provider import CommunityActivityProvider
 from app.tools.community_activity_roles import (
     ACTIVITY_COMMUNITY_DEFINITIONS,
@@ -41,14 +48,166 @@ from app.tools.community_activity_transport import (
 from app.tools.community_contract import ActivityState, CommunityActivitySnapshot
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
+from app.utils.security import format_exception_reason
+
+if TYPE_CHECKING:
+    from app.models.config import GlobalConfig, ToolsConfig
 
 __all__ = [
     "build_configured_community_activity_failures",
     "collect_configured_community_activity",
+    "connect_community_activity_cache",
+    "query_configured_community_activity",
 ]
 
 
 logger = get_logger("游戏社区活动")
+
+_ACTIVITY_CACHE_SECONDS = 300.0
+_ACTIVITY_RETRY_SECONDS = 30.0
+type _ActivityCacheKey = tuple[int, str]
+
+
+@dataclass(frozen=True)
+class _ActivityCacheEntry:
+    snapshots: tuple[CommunityActivitySnapshot, ...]
+    expires_at: float
+
+
+_activity_cache: dict[_ActivityCacheKey, _ActivityCacheEntry] = {}
+_activity_cache_revision = 0
+
+
+def _invalidate_activity_cache(sender: object, event: object) -> None:
+    """配置变动后清除快照，并作废尚未完成的旧查询。"""
+
+    global _activity_cache_revision
+    _activity_cache_revision += 1
+    _activity_cache.clear()
+
+
+def connect_community_activity_cache(
+    tools_config: ToolsConfig, *, setting: GlobalConfig
+) -> None:
+    """订阅账号、便笺开关和代理设置，覆盖编辑与后台凭据更新。"""
+
+    from app.models.config import GameSignAccountGroup
+
+    # 初始化重试时复用同一接收者，避免重复订阅使启动失败。
+    GameSignAccountGroup.disconnect(
+        _invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+    )
+    GameSignAccountGroup.connect(
+        _invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+    )
+    tools_config.GameSign_Accounts.disconnect(
+        _invalidate_activity_cache, phase="runtime"
+    )
+    tools_config.GameSign_Accounts.connect(_invalidate_activity_cache, phase="runtime")
+    tools_config.disconnect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="GameSign",
+        field="ActivityEnabled",
+    )
+    tools_config.connect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="GameSign",
+        field="ActivityEnabled",
+    )
+    setting.disconnect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="Update",
+        field="ProxyAddress",
+    )
+    setting.connect(
+        _invalidate_activity_cache,
+        phase="runtime",
+        group="Update",
+        field="ProxyAddress",
+    )
+    _invalidate_activity_cache(tools_config, None)
+
+
+async def query_configured_community_activity(
+    account_ids: Sequence[str] | None = None,
+    *,
+    proxy: str | httpx.Proxy | None = None,
+) -> tuple[CommunityActivitySnapshot, ...]:
+    """按账号缓存便笺；并发查询等待后仅补查尚未缓存的账号。"""
+
+    from app.core import Config
+
+    async with community_activity_flow():
+        while True:
+            if Config.ToolsConfig.GameSign.ActivityEnabled is False:
+                return ()
+            config_id = id(Config.ToolsConfig)
+            selected_ids = tuple(uid for uid, _ in _selected_accounts(account_ids))
+            results: dict[str, tuple[CommunityActivitySnapshot, ...]] = {}
+            missing_ids: list[str] = []
+            now = monotonic()
+            for uid in selected_ids:
+                entry = _activity_cache.get((config_id, uid))
+                if entry is not None and now < entry.expires_at:
+                    results[uid] = entry.snapshots
+                else:
+                    missing_ids.append(uid)
+            if not missing_ids:
+                return tuple(item for uid in selected_ids for item in results[uid])
+
+            revision = _activity_cache_revision
+            resolved_proxy = proxy if proxy is not None else Config.proxy
+            try:
+                snapshots = await collect_configured_community_activity(
+                    missing_ids, proxy=resolved_proxy
+                )
+            except ValueError:
+                raise
+            except Exception as error:
+                if revision != _activity_cache_revision:
+                    continue
+                logger.warning(
+                    format_exception_reason(
+                        error, stage="游戏社区日常查询失败", include_message=False
+                    )
+                )
+                if error.__traceback__ is not None:
+                    # 仅保留定位信息，避免异常原文、源码或局部变量泄露凭据。
+                    frames = traceback.extract_tb(error.__traceback__)
+                    logger.warning(
+                        "社区调用位置: "
+                        + " -> ".join(
+                            f"{frame.filename}:{frame.lineno} in {frame.name}"
+                            for frame in frames
+                        )
+                    )
+                snapshots = build_configured_community_activity_failures(missing_ids)
+                if not snapshots:
+                    raise
+
+            # 等待上游期间账号可能被删除、修改；旧响应不能进入新配置的缓存。
+            if revision != _activity_cache_revision:
+                continue
+            by_account: dict[str, list[CommunityActivitySnapshot]] = {
+                uid: [] for uid in missing_ids
+            }
+            for item in snapshots:
+                by_account[item.account_uid].append(item)
+            completed_at = monotonic()
+            for uid, items in by_account.items():
+                ttl = (
+                    _ACTIVITY_RETRY_SECONDS
+                    if any(item.status not in ("success", "empty") for item in items)
+                    else _ACTIVITY_CACHE_SECONDS
+                )
+                results[uid] = tuple(items)
+                _activity_cache[(config_id, uid)] = _ActivityCacheEntry(
+                    snapshots=results[uid], expires_at=completed_at + ttl
+                )
+            return tuple(item for uid in selected_ids for item in results[uid])
 
 
 def _account_value(account: object, name: str, default: object = "") -> object:
@@ -183,7 +342,7 @@ def build_configured_community_activity_failures(
 async def collect_configured_community_activity(
     account_ids: Sequence[str] | None = None,
     *,
-    proxy: str | None = None,
+    proxy: str | httpx.Proxy | None = None,
     max_concurrency: int = 4,
 ) -> tuple[CommunityActivitySnapshot, ...]:
     """读取已配置账号组并查询已登记社区的日常活动。"""
