@@ -243,7 +243,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
 }
 
 .gamesign-content {
