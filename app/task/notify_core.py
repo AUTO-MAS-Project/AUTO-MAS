@@ -37,11 +37,10 @@ from typing import Any
 from app.core.notify import (
     DispatchResult,
     dispatch,
-    dispatch_task_report,
     global_target,
-    should_send_result,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_report, should_send_result
 from app.models.notification import (
     NotificationImage,
     NotificationSummary,
