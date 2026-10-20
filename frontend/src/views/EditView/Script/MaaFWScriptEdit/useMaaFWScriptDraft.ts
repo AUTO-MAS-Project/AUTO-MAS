@@ -1,7 +1,6 @@
 import { reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import {
   getDefaultMaaFWScriptConfig,
   isMaaFWUpdateChannel,
@@ -27,12 +26,11 @@ export type MaaFWScriptChangeHandler = (
 export function useMaaFWScriptDraft(scriptId: string) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-  const { updateScript } = useScriptApi()
 
   const pageLoading = ref(false)
   const isInitializing = ref(true)
   // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-  const { enqueue } = useSaveQueue()
+  const { enqueue, saveField } = useScriptSaveMutation({ scriptId, isInitializing, logger })
 
   const previewLoading = ref(false)
   const previewData = ref<MaaFWInterfacePreviewData | null>(null)
@@ -64,18 +62,7 @@ export function useMaaFWScriptDraft(scriptId: string) {
     if (category === 'Info' && key === 'Name' && typeof value === 'string') {
       maafwConfig.Info.Name = value
     }
-    if (isInitializing.value) return
-    await enqueue(
-      async () => {
-        try {
-          const success = await updateScript(scriptId, { [category]: { [key]: value } })
-          if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-        } catch (error) {
-          logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-        }
-      },
-      `${String(category)}.${key}`
-    )
+    await saveField(category, key, value)
   }
 
   /**

@@ -648,7 +648,7 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -671,6 +671,7 @@ import MaaEndLauncherSection from './components/MaaEndLauncherSection.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
+const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -688,7 +689,20 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+    }
+  },
+})
 // 该脚本的配置是否正被任务锁着：锁着时点「检查更新」只会换来后端一句「已在运行」
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useMaaEndUpdate(
@@ -867,20 +881,6 @@ const showManualEmulatorIndexInput = computed(
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
 const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path', 'Game.Path'])
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    const success = await updateScript(scriptId, {
-      [category]: { [key]: value },
-    })
-    if (success && FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
-    }
-    return success
-  }, `${category}.${key}`)
-}
 
 const handleSetResolutionChange = async (value: unknown) => {
   if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return
