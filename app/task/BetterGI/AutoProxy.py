@@ -671,6 +671,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 f"队伍配置：总开关开启，{len(self.one_dragon_teams)} 个队伍参与匹配，"
                 f"{_hit} 个战斗步骤按场景命中队伍"
             )
+        # 执行层副本必须在此刻（队伍配置写回之后）生成：它决定 main.js 读到的
+        # masTeamOverride/masStrategyOverride，并把策略名解析成绝对路径。
+        self._build_exec_plan_steps()
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -1194,40 +1197,52 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         root = self.script_root_path
         invalid: set[str] = set()
-
-        def _walk(node: object, resolve: bool) -> None:
-            if isinstance(node, dict):
-                for key, value in node.items():
-                    if isinstance(value, str) and "strategy" in str(key).lower():
-                        name = value.strip()
-                        if not name:
-                            continue
-                        if not one_dragon.strategy_file_exists(root, name):
-                            invalid.add(name)
-                            node[key] = ""
-                        elif resolve:
-                            path = one_dragon.resolve_combat_strategy_path(root, name)
-                            if path:
-                                node[key] = path
-                        continue
-                    _walk(value, resolve)
-            elif isinstance(node, list):
-                for item in node:
-                    _walk(item, resolve)
-
-        _walk(self.plan_combat_steps, False)
+        self._walk_strategy_fields(self.plan_combat_steps, root, invalid, False)
         if invalid:
             logger.warning(
                 "以下战斗策略在 BGI 的 User/AutoFight 中不存在（.txt/.json 均无），"
                 "本次改为跟随全局策略: " + "、".join(sorted(invalid))
             )
+
+    @staticmethod
+    def _walk_strategy_fields(
+        node: object, root: Path, invalid: set[str], resolve: bool
+    ) -> None:
+        """遍历 Plan 结构处理策略字段：失效名清空，``resolve`` 为真时换成绝对路径。"""
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, str) and "strategy" in str(key).lower():
+                    name = value.strip()
+                    if not name:
+                        continue
+                    if not one_dragon.strategy_file_exists(root, name):
+                        invalid.add(name)
+                        node[key] = ""
+                    elif resolve:
+                        path = one_dragon.resolve_combat_strategy_path(root, name)
+                        if path:
+                            node[key] = path
+                    continue
+                AutoProxyTask._walk_strategy_fields(value, root, invalid, resolve)
+        elif isinstance(node, list):
+            for item in node:
+                AutoProxyTask._walk_strategy_fields(item, root, invalid, resolve)
+
+    def _build_exec_plan_steps(self) -> None:
+        """生成执行层 Plan 副本：有效策略名解析成绝对路径，并算出通用策略兜底路径。
+
+        **必须在 ``team_resolver.apply_teams_to_steps`` 写回 ``masTeamOverride`` /
+        ``masStrategyOverride`` 之后调用**：副本是深拷贝，早于写回会让队伍配置的选队与
+        策略结果整体丢失。策略名换成绝对路径是为了让 main.js 直传——BGI 的
+        ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。
+        """
         self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
-        _walk(self.exec_plan_steps, True)
-        # 顶部「通用战斗策略」也要解析成绝对路径：步骤级留空时由 main.js 直传，
-        # 不能只靠 BGI 全局叶子回退（SetCombatStrategyPath 会把名字拼成 .txt）。
+        self._walk_strategy_fields(self.exec_plan_steps, self.script_root_path, set(), True)
+        # 顶部「通用战斗策略」同样解析成绝对路径：步骤级留空时由 main.js 兜底直传。
         self.default_strategy_path = (
             one_dragon.resolve_combat_strategy_path(
-                root, str(self.cur_user_config.OneDragon.AutoBossStrategyName or "")
+                self.script_root_path,
+                str(self.cur_user_config.OneDragon.AutoBossStrategyName or ""),
             )
             or ""
         )
