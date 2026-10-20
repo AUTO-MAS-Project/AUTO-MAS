@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 
     from app.config import ConfigEntry
     from app.utils.config_restore import ConfigRestorePool, ConfigRestoreService
-from jinja2 import Environment, FileSystemLoader
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
@@ -104,7 +103,7 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
-from app.utils import get_logger, is_supervised, resource_path
+from app.utils import get_logger, is_supervised
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
     BASE_INDEPENDENT,
@@ -314,10 +313,6 @@ class AppConfig:
         self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
-
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(resource_path("html")))
-        )
 
     @staticmethod
     def _inject_truststore() -> None:

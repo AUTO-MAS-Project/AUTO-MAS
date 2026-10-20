@@ -1,7 +1,6 @@
-from types import SimpleNamespace
-
 import asyncio
 import inspect
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app.core import notify as notify_module
@@ -9,11 +8,11 @@ from app.core.notify import (
     Notifier,
     NotifyPayload,
     dispatch,
-    dispatch_task_report,
     global_target,
     user_target,
 )
 from app.core.notify_channels import get_notify_channels
+from app.core.task_report import dispatch_task_report
 from app.models.notification import NotificationSummary
 
 _UNSET = object()
