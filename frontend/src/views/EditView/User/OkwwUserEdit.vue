@@ -400,7 +400,7 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
-import { Service, type OkwwUserConfig } from '@/api'
+import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOkwwGuiSession } from '@/composables/useOkwwGuiSession'
