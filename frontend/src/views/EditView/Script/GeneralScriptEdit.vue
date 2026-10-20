@@ -994,7 +994,7 @@ import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import { Service, type ComboBoxItem } from '@/api'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import {
   IDLE_SHARE_AUTH,
   useShareApi,
@@ -1491,8 +1491,8 @@ const errorLogRegexError = computed(() => {
 })
 
 // 模拟器相关状态
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions, clearEmulatorOptions } =
+  useEmulatorOptions()
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
 // 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
@@ -1724,24 +1724,6 @@ const handleCancel = () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    if (response && response.code === 200) {
-      emulatorOptions.value = response.data || []
-    } else {
-      message.error(t('edit.couldNotLoadEmulator'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   generalConfig.Game.EmulatorIndex = ''
@@ -1791,7 +1773,7 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.URL = ''
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorOptions.value = []
+    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       URL: '',
@@ -1806,7 +1788,7 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.IfForceClose = false
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorOptions.value = []
+    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       Path: '.',

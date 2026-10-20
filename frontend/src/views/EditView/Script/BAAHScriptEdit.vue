@@ -301,8 +301,8 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
-import { Service, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
@@ -317,8 +317,7 @@ const {
 } = useEmulatorDeviceOptions()
 
 // 模拟器相关状态：模拟器的启动与关闭由本软件调度，BAAH 只负责连接
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -461,20 +460,6 @@ const selectBaahPath = async () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    emulatorOptions.value = response.data || []
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 换模拟器后旧的实例索引不再有效
   baahConfig.Emulator.Index = ''
