@@ -2245,6 +2245,9 @@ export default {
     bettergiTeamSceneAddBoss: 'ボス条件を追加',
     bettergiTeamSceneDialogTip:
       'マッチングは完全一致です。今回の実行対象と完全に同じパーティーだけが選ばれます。',
+    bettergiTeamSceneDomainEmpty:
+      '秘境カタログを読み込めませんでした。「再読み込み」で再試行できます',
+    bettergiTeamSceneDomainRetry: '再読み込み',
     bettergiTeamNameRequired: 'パーティー名を入力してください',
     bettergiTeamNameExists: '同名のパーティーが既に存在します',
     bettergiGroupMail: 'メールを受け取る',

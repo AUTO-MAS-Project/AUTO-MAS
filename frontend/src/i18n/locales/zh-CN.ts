@@ -2223,6 +2223,8 @@ export default {
     bettergiTeamSceneAddLeyline: '添加地脉条件',
     bettergiTeamSceneAddBoss: '添加首领条件',
     bettergiTeamSceneDialogTip: '匹配为精确匹配：只有与本次实际执行目标完全一致的队伍才会被选中。',
+    bettergiTeamSceneDomainEmpty: '秘境目录未能加载，可点「重新加载」重试',
+    bettergiTeamSceneDomainRetry: '重新加载',
     bettergiTeamNameRequired: '请填写队伍名称',
     bettergiTeamNameExists: '已存在同名队伍',
     bettergiGroupMail: '领取邮件',

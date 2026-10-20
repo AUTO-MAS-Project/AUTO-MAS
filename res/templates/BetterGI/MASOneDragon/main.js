@@ -147,7 +147,10 @@ function firstFilled(...values) {
 // 后端已把 .json 行为策略解析成 AutoFight 下的绝对路径；这类值必须直传 Param 的
 // 路径字段，不能再走 setCombatStrategyPath——BGI 内部会无条件再拼一个 ".txt"。
 function isAbsoluteStrategyPath(value) {
-  return /^[A-Za-z]:[\\/]/.test(String(value || ""));
+  const text = String(value || "");
+  // 盘符路径与 UNC（\\server\share）。UNC 只可能来自后端解析出的 AutoFight 真实路径；
+  // 后端对配置里的 UNC 策略名会直接拒绝，这里识别它只是避免路径被当成名字再拼 ".txt"。
+  return /^[A-Za-z]:[\\/]/.test(text) || /^[\\/]{2}/.test(text);
 }
 
 // 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
@@ -406,10 +409,11 @@ async function dispatchCombat(step) {
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
       // 只调用方法本身即可，不要把返回值赋给属性（会抛 no suitable property 异常）。
-      if (stygianStrategy) {
-        if (isAbsoluteStrategyPath(stygianStrategy)) {
-          setProp(p, "combatStrategyPath", stygianStrategy);
-        } else if (typeof p.setCombatStrategyPath === "function") {
+      // 幽境 Param 没有可写路径字段（无 CombatStrategyPath，也没有接收路径的构造重载），
+      // 绝对路径无处落地，硬写只会留下「不支持的赋值」日志并静默回退全局。该组只按策略名
+      // 交给 BGI（后端也不会把幽境步骤的策略替换成路径）。
+      if (stygianStrategy && !isAbsoluteStrategyPath(stygianStrategy)) {
+        if (typeof p.setCombatStrategyPath === "function") {
           p.setCombatStrategyPath(stygianStrategy);
         } else {
           masLog("MAS_STYGIAN_STRATEGY_UNSUPPORTED: " + stygianStrategy);

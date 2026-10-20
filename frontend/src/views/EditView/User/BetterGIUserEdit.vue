@@ -1203,10 +1203,12 @@
             :editable="formData.Info.IfUseMasConfig"
             :strategy-options="strategyOptions"
             :domain-catalog="domainCatalog"
+            :domain-catalog-error="domainCatalogError"
             :boss-catalog="AUTO_BOSS_CATALOG"
             :leyline-country-options="LEY_LINE_COUNTRY_OPTIONS"
             :leyline-type-options="LEY_LINE_TYPE_OPTIONS"
             @save="saveField"
+            @reload-domain-catalog="() => loadDomainCatalog()"
             @open-strategy-dir="openBettergiDir('autoFight')"
           />
         </a-form>
@@ -3393,6 +3395,8 @@ const projectEditorGroupName = computed<string>(() => {
 // 右栏「每周秘境表」与「队伍配置-战斗场景」共用同一份：后者是独立功能，不能等用户
 // 先操作过「自动秘境」组才有选项，所以进入编辑页就加载一次（并发调用复用同一请求）。
 const domainCatalog = ref<BetterGIDomainCatalogItem[]>([])
+// 目录加载失败（请求异常或返回空）：战斗场景下拉会是空的，需要给用户提示与重试入口
+const domainCatalogError = ref(false)
 let domainCatalogPromise: Promise<BetterGIDomainCatalogItem[]> | null = null
 const loadDomainCatalog = async (): Promise<BetterGIDomainCatalogItem[]> => {
   if (!scriptId) return []
@@ -3401,10 +3405,12 @@ const loadDomainCatalog = async (): Promise<BetterGIDomainCatalogItem[]> => {
     domainCatalogPromise = fetchDomainCatalog(scriptId)
       .then(list => {
         domainCatalog.value = list
+        domainCatalogError.value = list.length === 0
         return list
       })
       .catch(e => {
         logger.error(e instanceof Error ? e.message : String(e))
+        domainCatalogError.value = true
         return [] as BetterGIDomainCatalogItem[]
       })
       .finally(() => {

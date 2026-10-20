@@ -1197,36 +1197,67 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         root = self.script_root_path
         invalid: set[str] = set()
-        self._walk_strategy_fields(self.plan_combat_steps, root, invalid, False)
+        self._walk_plan_strategies(self.plan_combat_steps, root, invalid, False)
         if invalid:
             logger.warning(
-                "以下战斗策略在 BGI 的 User/AutoFight 中不存在（.txt/.json 均无），"
-                "本次改为跟随全局策略: " + "、".join(sorted(invalid))
+                "以下战斗策略在 BGI 的 User/AutoFight 中不可用（.txt/.json 均无，"
+                "或该任务只支持 .txt），本次改为跟随全局策略: "
+                + "、".join(sorted(invalid))
             )
+
+    def _walk_plan_strategies(
+        self, steps: list[object], root: Path, invalid: set[str], resolve: bool
+    ) -> None:
+        """按步骤处理策略字段：失效名降级为内置默认，``resolve`` 为真时换成绝对路径。
+
+        幽境危战 Param 没有可写路径字段（无 ``CombatStrategyPath``，也没有接收路径的
+        构造重载），只能把策略名交给 BGI，而 BGI 内部会拼 ``.txt``。因此该组判定时只认
+        ``.txt``：只有 .json 的策略降级为默认，避免传下去后整步报「战斗脚本文件不存在」。
+        """
+        for step in steps or []:
+            if not isinstance(step, dict):
+                continue
+            settings = step.get("settings")
+            if not isinstance(settings, dict):
+                continue
+            base = resolve_base_name(str(step.get("name") or ""))
+            exts = (".txt",) if base == "自动幽境危战" else (".json", ".txt")
+            self._walk_strategy_fields(settings, root, invalid, resolve, exts)
 
     @staticmethod
     def _walk_strategy_fields(
-        node: object, root: Path, invalid: set[str], resolve: bool
+        node: object,
+        root: Path,
+        invalid: set[str],
+        resolve: bool,
+        exts: tuple[str, ...],
     ) -> None:
-        """遍历 Plan 结构处理策略字段：失效名清空，``resolve`` 为真时换成绝对路径。"""
+        """遍历 settings 处理策略字段：失效名降级默认，``resolve`` 为真时换成绝对路径。"""
         if isinstance(node, dict):
             for key, value in node.items():
                 if isinstance(value, str) and "strategy" in str(key).lower():
                     name = value.strip()
                     if not name:
                         continue
-                    if not one_dragon.strategy_file_exists(root, name):
+                    if not one_dragon.strategy_file_exists(root, name, exts=exts):
                         invalid.add(name)
-                        node[key] = ""
+                        # 置空会被 plan_steps_to_native_settings 的「只收非空值」跳过，
+                        # 原生配置里的旧策略名会残留、BGI 继续尝试加载已删除文件。改为
+                        # 显式写回内置默认（按队伍自动选择），原生与执行层同时覆盖。
+                        node[key] = one_dragon.default_combat_strategy()
                     elif resolve:
-                        path = one_dragon.resolve_combat_strategy_path(root, name)
+                        path = one_dragon.resolve_combat_strategy_path(
+                            root, name, exts=exts
+                        )
                         if path:
                             node[key] = path
                     continue
-                AutoProxyTask._walk_strategy_fields(value, root, invalid, resolve)
+                AutoProxyTask._walk_strategy_fields(
+                    value, root, invalid, resolve, exts
+                )
         elif isinstance(node, list):
             for item in node:
-                AutoProxyTask._walk_strategy_fields(item, root, invalid, resolve)
+                AutoProxyTask._walk_strategy_fields(item, root, invalid, resolve, exts)
 
     def _build_exec_plan_steps(self) -> None:
         """生成执行层 Plan 副本：有效策略名解析成绝对路径，并算出通用策略兜底路径。
@@ -1237,7 +1268,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。
         """
         self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
-        self._walk_strategy_fields(self.exec_plan_steps, self.script_root_path, set(), True)
+        self._walk_plan_strategies(self.exec_plan_steps, self.script_root_path, set(), True)
         # 顶部「通用战斗策略」同样解析成绝对路径：步骤级留空时由 main.js 兜底直传。
         self.default_strategy_path = (
             one_dragon.resolve_combat_strategy_path(
