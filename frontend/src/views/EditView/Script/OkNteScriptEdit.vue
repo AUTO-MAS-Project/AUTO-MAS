@@ -375,7 +375,7 @@ import {
   type OkNteConfig_Script,
 } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
 const { t } = useI18n()
 
@@ -387,8 +387,12 @@ const { getScript, updateScript } = useScriptApi()
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({ scriptId, isInitializing, logger })
 
 const formData = reactive({
   name: '',
@@ -468,22 +472,6 @@ const handleCancel = () => router.push('/scripts')
 const handleGameEnabledChange = async (enabled: boolean) => {
   oknteConfig.Game.Enabled = enabled
   await handleChange('Game', 'Enabled', enabled)
-}
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      logger.error(msg)
-    }
-  }, `${category}.${key}`)
 }
 
 // 启动方式取值取自生成的 schema 类型（后端 schema.py 的 Literal["Autoplay","LauncherUi"]）
