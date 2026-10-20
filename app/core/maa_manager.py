@@ -20,7 +20,6 @@
 
 
 import json
-from ctypes import c_void_p
 from pathlib import Path
 from typing import Any
 
@@ -33,9 +32,6 @@ from maa.controller import (
     JobWithResult,
     MaaAdbInputMethodEnum,
     MaaAdbScreencapMethodEnum,
-    MaaWin32InputMethodEnum,
-    MaaWin32ScreencapMethodEnum,
-    Win32Controller,
 )
 from maa.custom_action import CustomAction
 from maa.resource import Resource
@@ -173,46 +169,6 @@ class _MaaFWManager:
         await self.do_job(controller.post_connection())
 
         tasker = Tasker()
-        tasker.bind(self.resource, controller)
-        if not tasker.inited:
-            raise RuntimeError("无法初始化 MaaFW tasker")
-
-        return tasker
-
-    async def reconnect_win32_tasker(
-        self,
-        tasker: Tasker,
-        hwnd: c_void_p | int | None,
-        screencap_method: int = MaaWin32ScreencapMethodEnum.FramePool,
-        mouse_method: int = MaaWin32InputMethodEnum.Seize,
-        keyboard_method: int = MaaWin32InputMethodEnum.Seize,
-    ) -> Tasker:
-        """
-        重新连接一个 Win32 的 MaaFW 任务管理器
-
-        Args:
-            tasker(Tasker): 需要重新连接的 MaaFW 任务管理器实例
-            hwnd(c_void_p | int | None): 窗口句柄，可以是整数或 ctypes 的 c_void_p 类型，如果为 None 则 MaaFW 将尝试自动查找窗口
-            screencap_method(int): 屏幕捕获方法，默认为 MaaWin32ScreencapMethodEnum.FramePool
-            mouse_method(int): 鼠标输入方法，默认为 MaaWin32InputMethodEnum.Seize
-            keyboard_method(int): 键盘输入方法，默认为 MaaWin32InputMethodEnum.Seize
-        Returns:
-            Tasker: 已连接的 MaaFW 任务管理器实例
-        Raises:
-            RuntimeError: 如果无法连接到指定窗口或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
-        """
-
-        logger.info(
-            f"正在重新连接窗口: {hwnd}, 屏幕捕获方法: {screencap_method}, 鼠标输入方法: {mouse_method}, 键盘输入方法: {keyboard_method}"
-        )
-
-        controller = Win32Controller(
-            hwnd, screencap_method, mouse_method, keyboard_method
-        )
-        await self.do_job(controller.post_connection())
-
-        if tasker.inited:
-            await self.do_job(tasker.post_stop())
         tasker.bind(self.resource, controller)
         if not tasker.inited:
             raise RuntimeError("无法初始化 MaaFW tasker")

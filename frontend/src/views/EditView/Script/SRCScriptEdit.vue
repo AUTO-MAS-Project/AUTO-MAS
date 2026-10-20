@@ -367,7 +367,7 @@ import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import { Service, type ComboBoxItem } from '@/api'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -437,8 +437,7 @@ const rules = {
 }
 
 // 模拟器相关状态
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
@@ -541,24 +540,6 @@ const handleCancel = () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    if (response && response.code === 200) {
-      emulatorOptions.value = response.data || []
-    } else {
-      message.error(t('edit.couldNotLoadEmulator'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   srcConfig.Emulator.Index = ''

@@ -301,14 +301,15 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
-import { Service, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -317,13 +318,16 @@ const {
 } = useEmulatorDeviceOptions()
 
 // 模拟器相关状态：模拟器的启动与关闭由本软件调度，BAAH 只负责连接
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
 const isInitializing = ref(true)
+const {
+  isSaving,
+  save,
+  saveField: handleChange,
+} = useScriptSaveMutation({ scriptId, isInitializing, logger })
 
 interface BAAHInfoForm {
   Name: string
@@ -394,24 +398,6 @@ const rules = computed(() => ({
 // 统一使用正斜杠落盘，与后端 FolderValidator/FileValidator 的取值保持一致
 const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/, '')
 
-// 局部更新：只提交变更的那个字段，不整体覆盖脚本配置
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
 const loadScript = async () => {
   pageLoading.value = true
   isInitializing.value = true
@@ -461,20 +447,6 @@ const selectBaahPath = async () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    emulatorOptions.value = response.data || []
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 换模拟器后旧的实例索引不再有效
   baahConfig.Emulator.Index = ''
@@ -484,8 +456,8 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  await handleChange('Emulator', 'Id', emulatorId)
-  await handleChange('Emulator', 'Index', '')
+  // 模拟器和清空实例一起落盘，避免等待期间选的新实例又被清空。
+  await save({ Emulator: { Id: emulatorId, Index: '' } })
 }
 
 onMounted(() => {

@@ -401,6 +401,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -742,21 +743,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -794,20 +785,7 @@ const handleRestored = async (target: string) => {
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档 BAAH 原生配置当前状态
 // （用户可能刚在 BAAH jsoneditor 里改过），退出归档 MAS 编辑页字段终态；
 // 运行前归档挂在 AutoProxy.prepare（托管写入前）
-const ensureBAAHBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureBAAHBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {

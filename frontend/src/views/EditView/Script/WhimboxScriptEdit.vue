@@ -212,7 +212,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
 import { SCRIPT_LABELS } from '@/utils/scriptLogos'
 
@@ -226,8 +226,12 @@ const { data: catalogData, fetchCatalog } = useWhimboxTaskCatalog()
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({ scriptId, isInitializing, logger })
 const upstreamVersion = ref('')
 
 // ══ 奇想盒项目结构常量（需与 app/task/Whimbox/tools/upstream.py 保持同步）══
@@ -285,22 +289,6 @@ const refreshUpstreamVersion = async () => {
   if (ok && catalogData.value) {
     upstreamVersion.value = catalogData.value.upstream_version || ''
   }
-}
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      logger.error(msg)
-    }
-  }, `${category}.${key}`)
 }
 
 const applyRootPathDefaults = async (rootPath: string) => {
