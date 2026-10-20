@@ -31,9 +31,6 @@ from app.core.ws import Publisher, protocol
 from app.models.config import (
     MaaConfig,
     MaaUserConfig,
-    infrast_plan_mode,
-    load_infrast_plans,
-    maa_scheme_name,
 )
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import NotificationImage
@@ -57,25 +54,12 @@ from app.task.proxy_helpers import (
 )
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import (
-    ARKNIGHTS_PACKAGE_NAME,
-    MAA_ANNIHILATION_FIGHT_BASE,
-    MAA_GREEN_TICKET_STORE_TASK,
-    MAA_MODE_TIME_LIMIT_BOOK,
-    MAA_RUN_MOOD_BOOK,
     MAA_STAGE_KEY,
-    MAA_TASK_TRANSITION_METHOD_BOOK,
-    MAA_TASKS,
-    MAA_TASKS_ZH,
     UTC4,
     game_now,
 )
 from app.utils.emulator2.avd.components import root_from_manager_exe
 from app.utils.emulator2.avd.constants import console_port as avd_console_port
-from app.utils.emulator2.avd.maa_shim import (
-    apply_maa_avd_settings,
-    ensure_mumu_shim,
-    screencap_fallback_status,
-)
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     ConfigCorruptedError,
@@ -94,12 +78,24 @@ from .base_preset import (
     maa_task_identity,
     seed_maa_base_config,
 )
+from .constants import (
+    ARKNIGHTS_PACKAGE_NAME,
+    MAA_MODE_TIME_LIMIT_BOOK,
+    MAA_RUN_MOOD_BOOK,
+    MAA_TASKS,
+    MAA_TASKS_ZH,
+)
 from .tools import (
     agree_bilibili,
     log_statistics,
     push_notification,
 )
 from .tools.activity_inventory import resolve_activity_inventory_plans
+from .tools.avd import (
+    apply_maa_avd_settings,
+    ensure_mumu_shim,
+    screencap_fallback_status,
+)
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     read_overlay_values,
@@ -124,6 +120,11 @@ from .tools.cultivate import (
     summarize_achievements,
     takeover_notice_patch_value,
 )
+from .tools.native_config import (
+    infrast_plan_mode,
+    load_infrast_plans,
+    maa_scheme_name,
+)
 from .tools.screenshot import capture_current_screen, collect_maa_failure_image
 from .tools.software_package import read_pending_update, save_deferred_update
 from .tools.software_update import (
@@ -132,6 +133,12 @@ from .tools.software_update import (
     parse_version,
     read_installed_release,
     start_maa_software_update_precheck,
+)
+from .tools.stage_service import maa_stage_service
+from .tools.task_templates import (
+    MAA_ANNIHILATION_FIGHT_BASE,
+    MAA_GREEN_TICKET_STORE_TASK,
+    MAA_TASK_TRANSITION_METHOD_BOOK,
 )
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -2197,7 +2204,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             # 普通库存每次尝试都重新参与，养成消耗与常备目标按当轮数据合并。
             self.task_dict["DepotMaintain"] = self.cur_user_config.Task.IfDepotMaintain
             # 活动关卡信息已在 MaaManager.prepare 里刷新过一次, 这里直接用缓存
-            stage_info = await Config.get_stage_info(
+            stage_info = await maa_stage_service.get_stage_info(
                 "Info", server=self.cur_user_config.Info.Server
             )
             activity_stages = stage_info.get("Activity", [])
