@@ -33,6 +33,7 @@ export type AppearanceCursorKey = (typeof APPEARANCE_CURSOR_KEYS)[number]
 
 export interface AppearanceTokens {
   colorPrimary: string
+  colorPageTitle?: string
   colorBgLayout?: string
   colorBgContainer?: string
   colorBgElevated?: string

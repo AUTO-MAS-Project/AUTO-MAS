@@ -1384,7 +1384,10 @@ const handleBossKeyInputChange = (uuid: string) => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(
+    --app-page-title-color,
+    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1658,17 +1661,6 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* 暗色模式支持 */
-html.dark .config-section,
-html.dark .devices-section {
-  background: #1a1a1a;
-}
-
-html.dark .page-content {
-  background: #0a0a0a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* 响应式 - 移动端适配 */
