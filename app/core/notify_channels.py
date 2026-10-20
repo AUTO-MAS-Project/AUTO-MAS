@@ -186,7 +186,7 @@ def initialize_notification_channels(
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
-    def read_proxy() -> Any:
+    def read_proxy() -> str | None:
         import httpx
 
         # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
@@ -194,7 +194,9 @@ def initialize_notification_channels(
         if not url:
             return None
         try:
-            return httpx.Proxy(url)
+            # 只校验格式，HTTP 与 WebSocket 共用原始代理地址。
+            httpx.Proxy(url)
+            return url
         except Exception as exc:
             get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
             return None
