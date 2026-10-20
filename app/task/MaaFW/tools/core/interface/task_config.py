@@ -55,6 +55,9 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
     # 运行与项目更新匹配仍按实例 id / 任务 name。
     taskLabels: dict[str, str] = Field(default_factory=dict)
+    # ``true`` 表示快照来自新用户队列语义：队列中显式保留的 false 实例是
+    # 用户本轮主动跳过的任务。旧快照缺少此键，前端继续隐藏 false 实例。
+    keepUnchecked: bool = False
 
 
 class MaaFWTaskConfig(BaseModel):
@@ -172,6 +175,8 @@ def normalize_snapshot(
             interface_model,
         ),
         taskLabels=normalized_labels,
+        # 不带 keepUnchecked：这里按 interface 补齐了全部任务（未勾选），已不是用户的
+        # 显式队列；红灯判断与跳过记录只认调用方给的原始快照。
     )
 
 
@@ -612,6 +617,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": _normalize_raw_task_options(snapshot.taskOptions),
             "globalOptions": _normalize_raw_option_values(snapshot.globalOptions),
             "taskLabels": _normalize_raw_task_labels(snapshot.taskLabels),
+            "keepUnchecked": snapshot.keepUnchecked is True,
         }
 
     if not isinstance(snapshot, dict):
@@ -621,6 +627,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": {},
             "globalOptions": {},
             "taskLabels": {},
+            "keepUnchecked": False,
         }
 
     task_order = snapshot.get("taskOrder")
@@ -643,6 +650,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
         "taskOptions": _normalize_raw_task_options(snapshot.get("taskOptions")),
         "globalOptions": _normalize_raw_option_values(snapshot.get("globalOptions")),
         "taskLabels": _normalize_raw_task_labels(snapshot.get("taskLabels")),
+        "keepUnchecked": snapshot.get("keepUnchecked") is True,
     }
 
 

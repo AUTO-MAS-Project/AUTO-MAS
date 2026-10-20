@@ -198,7 +198,10 @@
                     v-else
                     type="button"
                     class="task-row"
-                    :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
+                    :class="{
+                      'task-row-selected': selectedTaskId === queuedTask.id,
+                      'task-row-skipped': taskSnapshot.taskChecked[queuedTask.id] === false,
+                    }"
                     @click="emit('selectTask', queuedTask.id)"
                     @contextmenu="handleRowContextMenu(queuedTask.id)"
                   >
@@ -231,30 +234,40 @@
                         <ExclamationCircleOutlined class="task-option-issue" />
                       </a-tooltip>
                     </div>
-                    <a-space @click.stop>
-                      <a-button
-                        type="text"
-                        size="small"
-                        :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
-                        :aria-label="t('edit.moveTaskUp')"
-                        @click="emit('moveTask', queuedTask.id, -1)"
-                      >
-                        <template #icon>
-                          <ArrowUpOutlined />
-                        </template>
-                      </a-button>
-                      <a-button
-                        type="text"
-                        size="small"
-                        :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
-                        :aria-label="t('edit.moveTaskDown')"
-                        @click="emit('moveTask', queuedTask.id, 1)"
-                      >
-                        <template #icon>
-                          <ArrowDownOutlined />
-                        </template>
-                      </a-button>
-                    </a-space>
+                    <span class="task-row-actions" @click.stop>
+                      <a-tooltip :title="taskCheckedLabel(queuedTask.id)">
+                        <button
+                          type="button"
+                          class="task-lamp-button"
+                          :class="{
+                            'task-lamp-skipped': taskSnapshot.taskChecked[queuedTask.id] === false,
+                          }"
+                          :disabled="interfaceDependentDisabled"
+                          :aria-label="taskCheckedLabel(queuedTask.id)"
+                          @click.stop="emit('toggleTaskChecked', queuedTask.id)"
+                        >
+                          <span class="task-lamp" aria-hidden="true" />
+                        </button>
+                      </a-tooltip>
+                      <span class="task-move-stack">
+                        <button
+                          type="button"
+                          :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
+                          :aria-label="t('edit.moveTaskUp')"
+                          @click.stop="emit('moveTask', queuedTask.id, -1)"
+                        >
+                          <UpOutlined />
+                        </button>
+                        <button
+                          type="button"
+                          :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
+                          :aria-label="t('edit.moveTaskDown')"
+                          @click.stop="emit('moveTask', queuedTask.id, 1)"
+                        >
+                          <DownOutlined />
+                        </button>
+                      </span>
+                    </span>
                   </button>
                 </template>
               </draggable>
@@ -430,8 +443,8 @@ import { computed, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import {
-  ArrowDownOutlined,
-  ArrowUpOutlined,
+  DownOutlined,
+  UpOutlined,
   CloseOutlined,
   DeleteOutlined,
   ExclamationCircleOutlined,
@@ -521,6 +534,13 @@ const showPresetModalModel = computed({
 })
 
 const getDisplayName = (item: DisplayItem) => item.label || item.name
+
+const taskCheckedLabel = (taskId: string) =>
+  t(
+    props.taskSnapshot.taskChecked[taskId] === false
+      ? 'edit.queueTaskSkipped'
+      : 'edit.queueTaskRuns'
+  )
 
 // 右栏标题与队列行一致（虚影也一样）：同一个 maafwQueueEntryTitle
 const selectedTaskTitle = computed<{ name: string; index: number | null }>(() => {
@@ -856,8 +876,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  /* 标签行去掉后行变矮，内距放宽到 14px，别挤成一排细条 */
-  padding: 14px 16px;
+  /* 行尾控件高 32px，配 12px 上下内距维持原来的行高 */
+  padding: 12px 16px;
   border: none;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
@@ -932,6 +952,102 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   font-weight: 600;
 }
 
+.task-row-skipped .task-icon,
+.task-row-skipped .task-title {
+  opacity: 0.45;
+}
+
+.task-row-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+}
+
+.task-lamp-button {
+  --task-lamp-color: var(--ant-color-success);
+  width: 24px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.task-lamp {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    color-mix(in srgb, var(--task-lamp-color) 55%, white),
+    var(--task-lamp-color) 70%
+  );
+  box-shadow:
+    inset 0 0 0 1px var(--ant-color-border),
+    0 0 4px color-mix(in srgb, var(--task-lamp-color) 60%, transparent);
+}
+
+.task-lamp-skipped {
+  --task-lamp-color: var(--ant-color-error);
+}
+
+.task-lamp-skipped .task-lamp {
+  box-shadow:
+    inset 0 0 0 1px var(--ant-color-border),
+    0 0 8px var(--task-lamp-color);
+}
+
+.task-move-stack {
+  width: 24px;
+  height: 32px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.task-move-stack button {
+  width: 24px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ant-color-text-secondary);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.task-lamp-button:hover:not(:disabled),
+.task-move-stack button:hover:not(:disabled) {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.task-move-stack button:hover:not(:disabled) {
+  color: var(--ant-color-text);
+}
+
+.task-lamp-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.task-move-stack button:disabled {
+  color: var(--ant-color-text-quaternary);
+  cursor: not-allowed;
+}
+
+.task-lamp-button:focus-visible,
+.task-move-stack button:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
+}
+
 .task-option-issue {
   margin-left: 6px;
   color: var(--ant-color-warning);
@@ -952,6 +1068,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 
 /* interface 已没有的任务：置灰、删除线，只留删除 */
 .task-row-missing {
+  padding-top: 14px;
+  padding-bottom: 14px;
   background: var(--ant-color-fill-quaternary);
 }
 

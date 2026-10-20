@@ -1202,6 +1202,8 @@ export default {
       'アップロードに失敗しました。接続を確認して、しばらくしてからお試しください',
     uploadThisScriptConfiguration: 'このスクリプト設定をクラウドにアップロード',
     moveTaskUp: 'タスクを上へ',
+    queueTaskRuns: '実行 · クリックでスキップ',
+    queueTaskSkipped: 'スキップ · クリックで実行',
     moveDailySubtaskUp: '日課サブタスクを上へ',
     next: '次へ',
     moveTaskDown: 'タスクを下へ',

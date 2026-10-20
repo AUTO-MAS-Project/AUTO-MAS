@@ -28,6 +28,7 @@ const parseSnapshot = (raw: unknown): MaaFWTaskSnapshot => {
     taskOptions: isRecord(value.taskOptions)
       ? (value.taskOptions as Record<string, Record<string, MaaFWTaskOptionValue>>)
       : {},
+    ...(value.keepUnchecked === true ? { keepUnchecked: true as const } : {}),
     ...taskLabelsField(pickMaaFWTaskLabels(value.taskLabels, taskOrder)),
   }
 }
@@ -78,7 +79,8 @@ export const buildMaaFWQueueTemplateSnapshot = (
   entries: readonly { id: string }[],
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>,
   passwordFields: MaaFWPasswordFields,
-  taskLabels?: Record<string, string>
+  taskLabels?: Record<string, string>,
+  taskChecked: Record<string, boolean> = {}
 ): MaaFWTaskSnapshot => {
   const taskOrder = entries
     .map(entry => entry.id)
@@ -88,7 +90,10 @@ export const buildMaaFWQueueTemplateSnapshot = (
   )
   return {
     taskOrder,
-    taskChecked: Object.fromEntries(taskOrder.map(taskId => [taskId, true])),
+    taskChecked: Object.fromEntries(
+      taskOrder.map(taskId => [taskId, taskChecked[taskId] !== false])
+    ),
+    keepUnchecked: true,
     taskOptions: JSON.parse(JSON.stringify(stripMaaFWPasswordValues(picked, passwordFields))),
     ...taskLabelsField(pickMaaFWTaskLabels(taskLabels, taskOrder)),
   }
