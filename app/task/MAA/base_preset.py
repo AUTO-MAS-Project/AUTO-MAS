@@ -126,6 +126,26 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
             _fill_missing(doc, {key: value})
 
 
+def update_maa_root_gui(gui_new_set: dict, values: dict) -> None:
+    """Update root-level GUI keys without bypassing MAA's legacy ``GUI`` migration.
+
+    MAA copies the whole legacy ``GUI`` object to ``Gui`` only when ``Gui`` is
+    absent. Creating a partial ``Gui`` for an unmigrated configuration makes MAA
+    skip that copy and drop the legacy values (including ``GuideStep``), so keep
+    writing to ``GUI`` until MAA has created the new object.
+    """
+
+    root_gui = gui_new_set.get("Gui")
+    if not isinstance(root_gui, dict):
+        legacy_gui = gui_new_set.get("GUI")
+        if isinstance(legacy_gui, dict):
+            root_gui = legacy_gui
+        else:
+            root_gui = {}
+            gui_new_set["Gui"] = root_gui
+    root_gui.update(values)
+
+
 def maa_task_identity(task: object) -> tuple[str, str] | None:
     """Return the stable business identity of one MAA task.
 

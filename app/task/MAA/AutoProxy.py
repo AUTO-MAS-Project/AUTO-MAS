@@ -77,6 +77,7 @@ from .base_preset import (
     get_maa_base_preset,
     maa_task_identity,
     seed_maa_base_config,
+    update_maa_root_gui,
 )
 from .constants import (
     ARKNIGHTS_PACKAGE_NAME,
@@ -2132,7 +2133,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
-        gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
+        update_maa_root_gui(gui_new_set, {"Localization": "zh-cn"})
 
         # 原生来源的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
         if not self.native_base and self.cur_user_config.Info.IfQuickConfig:
@@ -2588,20 +2589,38 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             # 直接关掉自动检测，改用下面补齐的连接预设与 adb 路径连接指定实例。
             connect_settings["AutoDetect"] = False
             connect_settings["AlwaysAutoDetect"] = False
+            # 旧版 gui.json 也写一份：MAA 的 WPF 配置迁移会从这些键回填
+            # Gui.ConnectSettings；只改 gui.new.json 时旧配置仍可能把自动检测打开。
+            default_set["Connect.AutoDetect"] = "False"
+            default_set["Connect.AlwaysAutoDetect"] = "False"
             device_ref = resolve_device_ref(
                 self.emulator_manager, self.script_config.Emulator.Index
             )
             # 魔改 AVD 的连接配置由下方 apply_maa_avd_settings 整体写入，这里不按
             # 普通模拟器补 AdbPath / Config。
             if device_ref is None or device_ref.emulator_type != "avd":
-                if not str(connect_settings.get("AdbPath") or "").strip():
-                    adb_path = self.emulator_manager.get_adb_path()
-                    if adb_path is not None:
-                        connect_settings["AdbPath"] = str(adb_path)
-                if not connect_settings.get("Config"):
-                    connect_settings["Config"] = MAA_EMULATOR_CONNECT_CONFIG_BOOK.get(
+                adb_path = str(connect_settings.get("AdbPath") or "").strip()
+                if not adb_path:
+                    adb_path = str(default_set.get("Connect.AdbPath") or "").strip()
+                if not adb_path:
+                    detected_adb_path = self.emulator_manager.get_adb_path()
+                    if detected_adb_path is not None:
+                        adb_path = str(detected_adb_path)
+                if adb_path:
+                    connect_settings["AdbPath"] = adb_path
+                    default_set["Connect.AdbPath"] = adb_path
+
+                connect_config = str(connect_settings.get("Config") or "").strip()
+                if not connect_config:
+                    connect_config = str(
+                        default_set.get("Connect.ConnectConfig") or ""
+                    ).strip()
+                if not connect_config:
+                    connect_config = MAA_EMULATOR_CONNECT_CONFIG_BOOK.get(
                         device_ref.emulator_type if device_ref else "", "General"
                     )
+                connect_settings["Config"] = connect_config
+                default_set["Connect.ConnectConfig"] = connect_config
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
@@ -2649,8 +2668,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             global_set["Start.MinimizeDirectly"] = "True"
             # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
             # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
-            gui_new_set.setdefault("Gui", {}).update(
-                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
+            update_maa_root_gui(
+                gui_new_set,
+                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True},
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"

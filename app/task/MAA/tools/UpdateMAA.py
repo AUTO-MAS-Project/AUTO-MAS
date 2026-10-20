@@ -27,7 +27,7 @@ from app.services import System
 from app.utils import ProcessRunner, get_logger
 from app.utils.io import read_file, write_file
 
-from ..base_preset import ensure_maa_default_configuration
+from ..base_preset import ensure_maa_default_configuration, update_maa_root_gui
 from .resource_update import _wait_for_cleanup
 
 logger = get_logger("MAA 更新工具")
@@ -109,9 +109,10 @@ async def update_maa(maa_path: Path):
     global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
     global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
     # NEW:
-    maa_new_set.setdefault("Gui", {})["UseTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
+    update_maa_root_gui(
+        maa_new_set,
+        {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True},
+    )
 
     # 更新配置
     global_set["VersionUpdate.package"] = maa_update_package  # OLD: 即将移除
