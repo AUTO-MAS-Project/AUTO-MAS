@@ -45,8 +45,9 @@ ZZZ-OD 专项作为 log_box 的一个实例：本模块只提供参数（规则�
     汇总模式下按状态归组
 多账号（≥2 个实例段）时节点行加「【账号名】」前缀（报告渲染按前缀区分账号
 归属，见 app/tools/push_log.py）；单账号不加前缀，与通用「状态: 节点」渲染
-一致。同一账号同一应用取最后一次出现的终态（MAS 重试轮以最后一轮为准），
-顺序按首次出现排列。
+一致。同一账号同一应用取最后一次非跳过终态（整体口径）：重试轮的「应用已
+完成」跳过行不覆盖此前成功/失败，只给从未出现的应用补录跳过态；真实重跑
+的应用随最后一次终态移至末尾。
 """
 
 import re
@@ -170,11 +171,21 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
                     pass
                 extra = None
             key = (current, node)
+            if kind == "SKIP":
+                # 跳过行不是执行终态，只是「本轮没跑、已完成」的证据：可能是
+                # MAS 开跑前就已完成（恶名狩猎），也可能是本轮前序重试轮做成
+                # 的（重试轮按运行记录跳过已完成任务）。已有终态的应用不被
+                # 跳过行覆盖也不移位，只给从未出现的应用补录跳过态
+                pending_fails.pop(current, None)
+                if key not in states:
+                    states[key] = (_KIND_STATUS["SKIP"], None, ts)
+                    order.append(key)
+                continue
             if key in states:
-                order.remove(key)  # 移至末尾：保留最后一次出现顺序
+                order.remove(key)  # 移至末尾：保留最后一次非跳过终态的出现顺序
             order.append(key)
-            # 取最后一次出现的终态：MAS 重试轮里 zzz-od 会按运行记录跳过
-            # 已完成任务，最后一轮的状态才代表本次任务的最终结果
+            # 取最后一次非跳过终态（整体口径）：重试轮的「应用已完成」不能
+            # 覆盖此前成功/失败，只有真实重跑（如体力刷本）才更新状态
             states[key] = (_KIND_STATUS[kind], extra, ts)
             # 结算窗口：应用终态行收束本段（自上一应用终态行或段边界起）的
             # 待归因失败。上游流程图会把计划级失败吞成成功收尾（如体力刷本
