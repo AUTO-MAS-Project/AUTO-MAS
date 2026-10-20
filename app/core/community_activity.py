@@ -24,6 +24,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -73,6 +75,7 @@ type _ActivityCacheKey = tuple[int, str]
 class _ActivityCacheEntry:
     snapshots: tuple[CommunityActivitySnapshot, ...]
     expires_at: float
+    account_signature: str
 
 
 _activity_cache: dict[_ActivityCacheKey, _ActivityCacheEntry] = {}
@@ -99,6 +102,14 @@ async def connect_community_activity_cache(tools_config: ToolsConfig) -> None:
     _invalidate_activity_cache()
 
 
+async def _activity_account_signature(account: object) -> str:
+    """比较旧框架的内存配置；使用密文导出，摘要不进入日志。"""
+
+    data = await account.toDict(if_decrypt=False)  # type: ignore[attr-defined]
+    payload = json.dumps(data, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 async def query_configured_community_activity(
     account_ids: Sequence[str] | None = None,
     *,
@@ -118,13 +129,28 @@ async def query_configured_community_activity(
                 _invalidate_activity_cache()
                 _activity_cache_proxy_address = proxy_address
             config_id = id(Config.ToolsConfig)
-            selected_ids = tuple(uid for uid, _ in _selected_accounts(account_ids))
+            live_ids = {
+                str(uid) for uid, _ in Config.ToolsConfig.GameSign_Accounts.items()
+            }
+            for key in tuple(_activity_cache):
+                if key[0] != config_id or key[1] not in live_ids:
+                    del _activity_cache[key]
+            selected = _selected_accounts(account_ids)
+            selected_ids = tuple(uid for uid, _ in selected)
+            signatures = {
+                uid: await _activity_account_signature(account)
+                for uid, account in selected
+            }
             results: dict[str, tuple[CommunityActivitySnapshot, ...]] = {}
             missing_ids: list[str] = []
             now = monotonic()
             for uid in selected_ids:
                 entry = _activity_cache.get((config_id, uid))
-                if entry is not None and now < entry.expires_at:
+                if (
+                    entry is not None
+                    and now < entry.expires_at
+                    and entry.account_signature == signatures[uid]
+                ):
                     results[uid] = entry.snapshots
                 else:
                     missing_ids.append(uid)
@@ -164,9 +190,27 @@ async def query_configured_community_activity(
                     raise
 
             # 等待上游期间账号可能被删除、修改；旧响应不能进入新配置的缓存。
-            if revision != _activity_cache_revision or proxy_address != str(
-                Config.get("Update", "ProxyAddress") or ""
+            if (
+                revision != _activity_cache_revision
+                or proxy_address != str(Config.get("Update", "ProxyAddress") or "")
+                or Config.ToolsConfig.get("GameSign", "ActivityEnabled") is False
             ):
+                continue
+            # 旧框架保存失败也可能已修改内存，不能只依赖成功保存的回调。
+            try:
+                current = _selected_accounts(account_ids)
+            except ValueError:
+                _invalidate_activity_cache()
+                raise
+            current_signatures = {
+                uid: await _activity_account_signature(account)
+                for uid, account in current
+            }
+            if (
+                tuple(uid for uid, _ in current) != selected_ids
+                or current_signatures != signatures
+            ):
+                _invalidate_activity_cache()
                 continue
             by_account: dict[str, list[CommunityActivitySnapshot]] = {
                 uid: [] for uid in missing_ids
@@ -182,7 +226,9 @@ async def query_configured_community_activity(
                 )
                 results[uid] = tuple(items)
                 _activity_cache[(config_id, uid)] = _ActivityCacheEntry(
-                    snapshots=results[uid], expires_at=completed_at + ttl
+                    snapshots=results[uid],
+                    expires_at=completed_at + ttl,
+                    account_signature=signatures[uid],
                 )
             return tuple(item for uid in selected_ids for item in results[uid])
 
