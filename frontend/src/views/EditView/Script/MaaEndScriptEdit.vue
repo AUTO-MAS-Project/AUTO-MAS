@@ -987,7 +987,10 @@ const refreshScript = async () => {
   formData.name = scriptDetail.name
 }
 
+let maaEndOptionsGeneration = 0
 const loadMaaEndOptions = async () => {
+  const generation = ++maaEndOptionsGeneration
+  const requestedPath = maaEndConfig.Info.Path
   launchCapabilitiesReady.value = false
   launchGameControllers.value = []
   gameSettingControllers.value = []
@@ -995,10 +998,14 @@ const loadMaaEndOptions = async () => {
   originalDisplayType.value = null
   controllerOptions.value = []
   controllerProtocols.value = {}
-  if (!maaEndConfig.Info.Path?.trim()) return
+  if (!requestedPath?.trim()) {
+    maaEndOptionsLoading.value = false
+    return
+  }
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)
+    if (generation !== maaEndOptionsGeneration || requestedPath !== maaEndConfig.Info.Path) return
     if (response?.code !== 200) return
 
     launchGameControllers.value = response.launchGameControllers ?? []
@@ -1020,7 +1027,9 @@ const loadMaaEndOptions = async () => {
       }
     }
   } finally {
-    maaEndOptionsLoading.value = false
+    if (generation === maaEndOptionsGeneration && requestedPath === maaEndConfig.Info.Path) {
+      maaEndOptionsLoading.value = false
+    }
   }
 }
 
@@ -1242,6 +1251,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  maaEndOptionsGeneration += 1
   cleanupConfigSession()
 })
 </script>
