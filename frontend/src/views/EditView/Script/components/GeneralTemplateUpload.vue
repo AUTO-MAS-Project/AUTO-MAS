@@ -5,6 +5,10 @@ import { message, type FormInstance } from 'ant-design-vue'
 import { CloudUploadOutlined } from '@ant-design/icons-vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
+  queueGeneralShareAuthAction as queueAuthAction,
+  waitForGeneralShareAuth,
+} from './generalShareAuthQueue'
+import {
   IDLE_SHARE_AUTH,
   useShareApi,
   type ShareAuthState,
@@ -24,180 +28,222 @@ const {
   inspectShare,
   uploadShare,
 } = useShareApi()
-// 上传脚本配置相关
+// 弹窗和授权各自标记代次，关闭后仅让已发出的请求完成，不再更新新的视图。
 const uploadModalVisible = ref(false)
 const uploadLoading = ref(false)
+const dialogLoading = ref(false)
 const shareAuthLoading = ref(false)
 const shareAuth = ref<ShareAuthState>({ ...IDLE_SHARE_AUTH })
 const shareRisks = ref<ShareRiskItem[]>([])
 const riskAcknowledged = ref(false)
-let sharePollTimer: ReturnType<typeof setTimeout> | null = null
-
-const uploadForm = reactive({
-  config_name: '',
-  description: '',
-})
-
-// 上传表单验证规则
+const uploadForm = reactive({ config_name: '', description: '' })
 const uploadRules = {
   config_name: [{ required: true, message: t('edit.enterConfigurationName'), trigger: 'blur' }],
   description: [{ required: true, message: t('edit.enterDescription'), trigger: 'blur' }],
 }
-
-// 显示上传弹窗：带出当前脚本名称，并同步一次配置中心授权状态与隐私检查
-const showUploadModal = async () => {
-  uploadModalVisible.value = true
-  if (!uploadForm.config_name) {
-    uploadForm.config_name = props.scriptName || ''
-  }
-
-  const status = await getShareAuthStatus()
-  if (status) shareAuth.value = status
-  if (status?.status === 'pending') startSharePolling(status.interval)
-
-  await refreshShareRisks()
-}
-
-// 隐藏上传弹窗：停止轮询，并撤销尚未完成的授权等待
-const handleUploadCancel = async () => {
-  uploadModalVisible.value = false
-  stopSharePolling()
-  if (shareAuth.value.status === 'pending') {
-    const status = await cancelShareAuth()
-    if (status) shareAuth.value = status
-  }
-}
-
-const refreshShareRisks = async () => {
-  const risks = await inspectShare(scriptId, uploadForm.config_name || '未命名配置')
-  if (risks === null) {
-    logger.warn(`分享前检查失败: ${shareError.value ?? ''}`)
-    return
-  }
-  const knownFields = new Set(shareRisks.value.map(risk => risk.field))
-  const hasNewRisk = risks.some(risk => !knownFields.has(risk.field))
-  shareRisks.value = risks
-  // 只有冒出新的风险项才要求重新确认；风险变少不该把用户刚勾的框清掉
-  if (hasNewRisk) riskAcknowledged.value = false
-}
-
+let alive = true
+let dialogOpen = false
+let dialogVersion = 0
+let authVersion = 0
+let riskVersion = 0
+let sharePollTimer: ReturnType<typeof setTimeout> | null = null
+const currentDialog = (version: number) =>
+  alive && uploadModalVisible.value && version === dialogVersion
 const stopSharePolling = () => {
-  if (sharePollTimer !== null) {
-    clearTimeout(sharePollTimer)
-    sharePollTimer = null
-  }
+  if (sharePollTimer !== null) clearTimeout(sharePollTimer)
+  sharePollTimer = null
 }
-
-// 按配置中心给的间隔轮询授权结果，弹窗关闭或拿到终态就停
-const startSharePolling = (interval: number) => {
+const startSharePolling = (interval: number, dialog: number, authorization: number) => {
   stopSharePolling()
+  const current = () => currentDialog(dialog) && authorization === authVersion
+  if (!current()) return
   sharePollTimer = setTimeout(
     async () => {
       sharePollTimer = null
-      if (!uploadModalVisible.value) return
-
+      if (!current()) return
       const status = await pollShareAuth()
+      if (!current()) return
       if (!status) {
-        startSharePolling(interval)
+        startSharePolling(interval, dialog, authorization)
         return
       }
-
       shareAuth.value = status
-      if (status.status === 'pending') {
-        startSharePolling(status.interval || interval)
-        return
-      }
-      if (status.status === 'authorized') {
+      if (status.status === 'pending')
+        startSharePolling(status.interval || interval, dialog, authorization)
+      else if (status.status === 'authorized')
         message.success(t('edit.share.authorized', { name: status.displayName || status.username }))
-      }
     },
     Math.max(interval, 1) * 1000
   )
 }
-
+const refreshShareRisks = async (name: string, dialog: number): Promise<boolean> => {
+  const request = ++riskVersion
+  const risks = await inspectShare(scriptId, name || '未命名配置')
+  if (!currentDialog(dialog) || request !== riskVersion || name !== uploadForm.config_name)
+    return false
+  if (risks === null) {
+    logger.warn(`分享前检查失败: ${shareError.value ?? ''}`)
+    return false
+  }
+  const knownFields = new Set(shareRisks.value.map(risk => risk.field))
+  if (risks.some(risk => !knownFields.has(risk.field))) riskAcknowledged.value = false
+  shareRisks.value = risks
+  return true
+}
+const showUploadModal = async () => {
+  dialogOpen = true
+  const dialog = ++dialogVersion
+  const authorization = ++authVersion
+  stopSharePolling()
+  uploadModalVisible.value = true
+  uploadLoading.value = false
+  dialogLoading.value = true
+  shareAuthLoading.value = false
+  if (!uploadForm.config_name) uploadForm.config_name = props.scriptName || ''
+  // 开启新弹窗前完成上次撤销，避免迟到的撤销把新授权一并取消。
+  try {
+    await waitForGeneralShareAuth()
+    if (!currentDialog(dialog)) return
+    const status = await getShareAuthStatus()
+    if (!currentDialog(dialog) || authorization !== authVersion) return
+    if (status) shareAuth.value = status
+    if (status?.status === 'pending') startSharePolling(status.interval, dialog, authorization)
+    await refreshShareRisks(uploadForm.config_name, dialog)
+  } finally {
+    if (dialog === dialogVersion) dialogLoading.value = false
+  }
+}
+const closeUploadModal = async () => {
+  if (!dialogOpen) return
+  dialogOpen = false
+  uploadModalVisible.value = false
+  dialogVersion++
+  authVersion++
+  riskVersion++
+  stopSharePolling()
+  // cancel 仅撤销等待中的设备授权，不登出已授权账号；状态读取未完成也要清理。
+  await queueAuthAction(() => cancelShareAuth())
+}
+const handleUploadCancel = () => closeUploadModal()
 const openShareVerificationPage = () => {
   const uri = shareAuth.value.verificationUri
-  // 地址由配置中心下发，只放行普通网页链接
   if (/^https?:\/\//i.test(uri)) {
     openExternalUrl(uri)
     return
   }
   if (uri) logger.warn(`配置中心返回了无法打开的授权地址: ${uri}`)
 }
-
 const handleStartShareAuth = async () => {
+  if (
+    !uploadModalVisible.value ||
+    dialogLoading.value ||
+    uploadLoading.value ||
+    shareAuthLoading.value
+  )
+    return
+  const dialog = dialogVersion
+  const authorization = ++authVersion
+  const current = () => currentDialog(dialog) && authorization === authVersion
+  stopSharePolling()
   shareAuthLoading.value = true
   try {
-    const status = await startShareAuth()
-    if (!status) {
-      message.error(shareError.value ?? t('edit.share.startFailed'))
-      return
-    }
-    shareAuth.value = status
-    openShareVerificationPage()
-    startSharePolling(status.interval)
+    await queueAuthAction(async () => {
+      const status = await startShareAuth()
+      if (!current()) return
+      if (!status) {
+        message.error(shareError.value ?? t('edit.share.startFailed'))
+        return
+      }
+      shareAuth.value = status
+      openShareVerificationPage()
+      if (status.status === 'pending') startSharePolling(status.interval, dialog, authorization)
+    })
   } finally {
+    if (current()) shareAuthLoading.value = false
+  }
+}
+const handleCancelShareAuth = async () => {
+  const dialog = dialogVersion
+  const authorization = ++authVersion
+  stopSharePolling()
+  const status = await queueAuthAction(() => cancelShareAuth())
+  if (currentDialog(dialog) && authorization === authVersion) {
+    shareAuth.value = status ?? { ...IDLE_SHARE_AUTH }
     shareAuthLoading.value = false
   }
 }
-
-const handleCancelShareAuth = async () => {
-  stopSharePolling()
-  const status = await cancelShareAuth()
-  shareAuth.value = status ?? { ...IDLE_SHARE_AUTH }
-}
-
-// 处理上传脚本配置
 const handleUpload = async () => {
-  try {
-    await uploadFormRef.value?.validate()
-  } catch {
+  if (
+    !uploadModalVisible.value ||
+    dialogLoading.value ||
+    shareAuthLoading.value ||
+    uploadLoading.value
+  )
     return
-  }
-
-  if (shareAuth.value.status !== 'authorized') {
-    message.warning(t('edit.share.loginRequired'))
-    return
-  }
-
-  // 配置名会写进 Info.Name 并参与隐私检查，按提交时的名字重新查一遍
-  await refreshShareRisks()
-  if (shareRisks.value.length > 0 && !riskAcknowledged.value) {
-    message.warning(t('edit.share.riskConfirm'))
-    return
-  }
-
+  const dialog = dialogVersion
+  const snapshot = { configName: uploadForm.config_name, description: uploadForm.description }
+  const authorization = authVersion
+  const current = () =>
+    currentDialog(dialog) &&
+    !shareAuthLoading.value &&
+    authorization === authVersion &&
+    snapshot.configName === uploadForm.config_name &&
+    snapshot.description === uploadForm.description
   uploadLoading.value = true
   try {
+    try {
+      await uploadFormRef.value?.validate()
+    } catch {
+      return
+    }
+    if (!current()) return
+    if (shareAuth.value.status !== 'authorized') {
+      message.warning(t('edit.share.loginRequired'))
+      return
+    }
+    if (!(await refreshShareRisks(snapshot.configName, dialog))) {
+      if (current()) message.error(shareError.value ?? t('edit.uploadFailedCheckYour'))
+      return
+    }
+    if (!current()) return
+    if (shareRisks.value.length > 0 && !riskAcknowledged.value) {
+      message.warning(t('edit.share.riskConfirm'))
+      return
+    }
     const uploaded = await uploadShare({
       scriptId,
-      configName: uploadForm.config_name,
-      description: uploadForm.description,
+      ...snapshot,
       acknowledged: riskAcknowledged.value,
     })
-
+    if (!currentDialog(dialog)) return
     if (!uploaded) {
       const errorMsg = shareError.value ?? t('edit.uploadFailedCheckYour')
       logger.error(`上传失败: ${errorMsg}`)
       message.error(errorMsg)
-      // 令牌可能已过期，重新同步一次授权状态，让用户知道要重新登录
+      const authorization = authVersion
       const status = await getShareAuthStatus()
-      if (status) shareAuth.value = status
+      if (currentDialog(dialog) && authorization === authVersion && status) shareAuth.value = status
       return
     }
-
     message.success(t('edit.configurationUploadedItWill'))
-    uploadModalVisible.value = false
-    uploadForm.config_name = ''
-    uploadForm.description = ''
-    shareRisks.value = []
-    riskAcknowledged.value = false
+    if (current()) {
+      dialogOpen = false
+      uploadModalVisible.value = false
+      dialogVersion++
+      stopSharePolling()
+      uploadForm.config_name = ''
+      uploadForm.description = ''
+      shareRisks.value = []
+      riskAcknowledged.value = false
+    }
   } finally {
-    uploadLoading.value = false
+    if (dialog === dialogVersion) uploadLoading.value = false
   }
 }
-
-onUnmounted(stopSharePolling)
+onUnmounted(() => {
+  alive = false
+  void closeUploadModal()
+})
 </script>
 <template>
   <a-button size="large" type="primary" class="upload-button" @click="showUploadModal">
@@ -210,7 +256,7 @@ onUnmounted(stopSharePolling)
   <a-modal
     v-model:open="uploadModalVisible"
     :title="t('edit.uploadThisScriptConfiguration')"
-    :confirm-loading="uploadLoading"
+    :confirm-loading="uploadLoading || dialogLoading || shareAuthLoading"
     width="600px"
     :mask-closable="false"
     @ok="handleUpload"
