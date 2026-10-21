@@ -17,6 +17,7 @@
 import uuid
 from pathlib import Path
 from typing import (
+    Annotated,
     Any,
     Dict,
     List,
@@ -1549,8 +1550,8 @@ class ScriptDeleteIn(BaseModel):
 
 class MaaDepotStageCandidatesBatchIn(BaseModel):
     script: ScriptDeleteIn
-    itemIds: List[str] = Field(
-        ..., min_length=1, description="需要查询候选关卡的物品ID"
+    itemIds: List[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        ..., min_length=1, max_length=256, description="需要查询候选关卡的物品ID"
     )
 
 

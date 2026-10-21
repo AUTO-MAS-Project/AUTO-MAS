@@ -335,6 +335,7 @@ const {
   candidates: depotStageCandidates,
   loading: depotStageCandidatesLoading,
   load: loadDepotStageCandidateBatch,
+  cancelPending: cancelDepotStageCandidates,
 } = useMaaDepotStageCandidates(scriptId)
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
@@ -1353,6 +1354,8 @@ const {
   pageRef,
   canStart: () => !configLocked.value && !isInitializing.value && !!userId,
   flushEdits: async () => {
+    // 结清纯读取的候选等待，让换材料或导入预设的编辑按当前结果保存。
+    cancelDepotStageCandidates()
     if (isInitializing.value) return fieldSave.waitForPending()
     await depotPlanEditor.flushPendingEdits()
     await eventDepotPlanEditor.flushPendingEdits()

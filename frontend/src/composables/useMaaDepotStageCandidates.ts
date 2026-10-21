@@ -4,6 +4,9 @@ import { Service, type CancelablePromise, type MaaDepotStageCandidatesBatchOut }
 type StageOption = { label: string; value: string }
 type PendingLoad = { promise: Promise<void>; resolve: () => void }
 
+const BATCH_SIZE = 256
+const REQUEST_TIMEOUT_MS = 10_000
+
 /** 页面内共用批量候选查询，后台预取只占用一个 HTTP 连接。 */
 export function useMaaDepotStageCandidates(scriptId: string) {
   const logger = window.electronAPI.getLogger('MAA库存关卡候选')
@@ -14,22 +17,41 @@ export function useMaaDepotStageCandidates(scriptId: string) {
   let request: CancelablePromise<MaaDepotStageCandidatesBatchOut> | undefined
   let running = false
   let disposed = false
+  let generation = 0
+
+  const cancelPending = () => {
+    generation++
+    request?.cancel()
+    queued.clear()
+    for (const entry of pending.values()) entry.resolve()
+    pending.clear()
+    loading.value = []
+  }
 
   const drain = async () => {
     if (running || disposed) return
     running = true
     try {
       while (queued.size > 0 && !disposed) {
-        const itemIds = [...queued]
-        queued.clear()
+        const version = generation
+        const itemIds = [...queued].slice(0, BATCH_SIZE)
+        const entries = itemIds.map(itemId => [itemId, pending.get(itemId)!] as const)
+        for (const itemId of itemIds) queued.delete(itemId)
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        let timedOut = false
         try {
-          request =
+          const batchRequest =
             Service.getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost({
               script: { scriptId },
               itemIds,
             })
-          const response = await request
-          if (disposed) return
+          request = batchRequest
+          timeout = setTimeout(() => {
+            timedOut = true
+            batchRequest.cancel()
+          }, REQUEST_TIMEOUT_MS)
+          const response = await batchRequest
+          if (disposed || version !== generation) continue
           const data = response.data
           if (response.code !== 200 || !data) throw new Error(response.message || '候选查询失败')
           for (const itemId of itemIds) {
@@ -39,22 +61,29 @@ export function useMaaDepotStageCandidates(scriptId: string) {
           }
         } catch (error) {
           // 失败不缓存为空结果；下次展开或编辑时仍可重试。
-          if (!disposed) {
-            logger.error(
-              `加载库存保持关卡候选失败: ${error instanceof Error ? error.message : String(error)}`
-            )
+          if (!disposed && version === generation) {
+            const reason = timedOut
+              ? '候选查询超时'
+              : error instanceof Error
+                ? error.message
+                : String(error)
+            logger.error(`加载库存保持关卡候选失败: ${reason}`)
           }
         } finally {
+          clearTimeout(timeout)
           request = undefined
-          for (const itemId of itemIds) {
-            pending.get(itemId)?.resolve()
+          for (const [itemId, entry] of entries) {
+            // 取消后的重试可能已经排队，旧请求不能结清新一代的等待。
+            if (pending.get(itemId) !== entry) continue
+            entry.resolve()
             pending.delete(itemId)
           }
-          loading.value = loading.value.filter(itemId => !itemIds.includes(itemId))
+          loading.value = loading.value.filter(itemId => pending.has(itemId))
         }
       }
     } finally {
       running = false
+      if (queued.size > 0 && !disposed) queueMicrotask(() => void drain())
     }
   }
 
@@ -83,12 +112,8 @@ export function useMaaDepotStageCandidates(scriptId: string) {
 
   onBeforeUnmount(() => {
     disposed = true
-    request?.cancel()
-    queued.clear()
-    for (const entry of pending.values()) entry.resolve()
-    pending.clear()
-    loading.value = []
+    cancelPending()
   })
 
-  return { candidates, loading, load }
+  return { candidates, loading, load, cancelPending }
 }
