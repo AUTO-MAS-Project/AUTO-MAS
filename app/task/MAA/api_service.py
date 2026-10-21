@@ -416,6 +416,20 @@ async def get_depot_stage_candidates(
     )
 
 
+async def get_depot_stage_candidates_batch(
+    *, script_id: str, item_ids: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """一次返回编辑页所需材料的关卡候选。"""
+
+    _maa_script_config(script_id)
+
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+    return await depot_cultivate_service.stage_candidates_batch(
+        config_path=Config.config_path, item_ids=item_ids, proxy=Config.proxy
+    )
+
+
 async def get_depot_inventory(
     script_id: str, user_id: str
 ) -> tuple[list[dict[str, str]], str | None]:

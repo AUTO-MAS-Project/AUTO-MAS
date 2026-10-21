@@ -242,6 +242,7 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
 import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
+import { useMaaDepotStageCandidates } from '@/composables/useMaaDepotStageCandidates'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
@@ -330,9 +331,11 @@ const depotItemOptionsLoading = ref(false)
 const depotItemOptionsError = ref('')
 
 // 库存保持关卡候选（按物品缓存，含每理智效率）与仓库库存
-const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
-const depotStageCandidatesLoading = ref<string[]>([])
-const depotStageCandidatePromises = new Map<string, Promise<void>>()
+const {
+  candidates: depotStageCandidates,
+  loading: depotStageCandidatesLoading,
+  load: loadDepotStageCandidateBatch,
+} = useMaaDepotStageCandidates(scriptId)
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
 
@@ -1033,51 +1036,15 @@ const loadDepotItemOptions = async () => {
   }
 }
 
-const loadDepotStageCandidates = async (itemId: string) => {
-  if (!itemId || depotStageCandidates.value[itemId]) return
-  const pending = depotStageCandidatePromises.get(itemId)
-  if (pending) return pending
-  depotStageCandidatesLoading.value.push(itemId)
-  const loadingCandidates = (async () => {
-    try {
-      const response =
-        await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
-          script: { scriptId },
-          itemId,
-        })
-      // 空数组表示已完成但无候选，编辑器保留原选项，同时避免无限重试。
-      depotStageCandidates.value[itemId] =
-        response.code === 200
-          ? response.data
-              .filter(option => option.value)
-              .map(option => ({ label: option.label, value: option.value as string }))
-          : []
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
-      depotStageCandidates.value[itemId] = []
-    } finally {
-      depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
-        id => id !== itemId
-      )
-      depotStageCandidatePromises.delete(itemId)
-    }
-  })()
-  // 预取与编辑共享同一个请求，冲刷编辑时也要等正在预取的候选。
-  depotStageCandidatePromises.set(itemId, loadingCandidates)
-  await loadingCandidates
-}
+const loadDepotStageCandidates = (itemId: string) => loadDepotStageCandidateBatch([itemId])
 
-// 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
-// 返回肉眼可见地逐个刷新。改在进页后台预取（折叠状态下面板未挂载，响应
-// 到达零渲染），展开时编辑器的预加载全命中缓存不再发请求。单条失败写入
-// 空数组由 loadDepotStageCandidates 自身的兜底语义处理
+// 进页一次预取所有已配置材料，展开时复用缓存；慢数据源不会挤满保存请求的连接。
 const preloadDepotStageCandidates = () => {
   try {
     const plans: Array<{ DropId?: string }> = JSON.parse(formData.Task.DepotMaintainPlans || '[]')
-    for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
-      void loadDepotStageCandidates(itemId as string)
-    }
+    void loadDepotStageCandidateBatch(
+      plans.map(plan => plan?.DropId).filter((itemId): itemId is string => !!itemId)
+    )
   } catch {
     logger.warn('库存保持候选预取失败，展开时按需加载')
   }

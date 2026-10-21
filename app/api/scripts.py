@@ -1547,6 +1547,19 @@ class ScriptDeleteIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
 
 
+class MaaDepotStageCandidatesBatchIn(BaseModel):
+    script: ScriptDeleteIn
+    itemIds: List[str] = Field(
+        ..., min_length=1, description="需要查询候选关卡的物品ID"
+    )
+
+
+class MaaDepotStageCandidatesBatchOut(OutBase):
+    data: Dict[str, List[ComboBoxItem]] = Field(
+        default_factory=dict, description="按物品ID分组的候选关卡，未找到候选时为空列表"
+    )
+
+
 class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
@@ -2627,6 +2640,29 @@ async def get_maa_depot_stage_candidates(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
     return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/depot/stage/candidates/batch",
+    tags=["Get"],
+    summary="批量获取 MAA 库存保持关卡候选",
+    response_model=MaaDepotStageCandidatesBatchOut,
+    status_code=200,
+)
+async def get_maa_depot_stage_candidates_batch(
+    request: MaaDepotStageCandidatesBatchIn,
+) -> MaaDepotStageCandidatesBatchOut:
+    try:
+        from app.task.MAA import api_service as maa_api
+
+        data = await maa_api.get_depot_stage_candidates_batch(
+            script_id=request.script.scriptId, item_ids=request.itemIds
+        )
+        return MaaDepotStageCandidatesBatchOut(data=data)
+    except Exception as e:
+        return MaaDepotStageCandidatesBatchOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
 
 
 @router.post(
