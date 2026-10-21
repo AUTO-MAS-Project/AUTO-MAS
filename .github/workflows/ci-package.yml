@@ -43,11 +43,10 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$version"
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "short_sha=$shortSha"
           Write-Host "版本 $version，提交 $shortSha；本产物包含本次提交的前端、Electron 与后端源码"
+          Write-Host '本验证包不含 Runtime；首次初始化时自动下载并校验'
 
       - name: 构建并准备 Windows 解压包
         uses: ./.github/actions/build-windows-unpacked
-        with:
-          github-token: ${{ github.event_name == 'push' && github.token || '' }}
 
       - name: 预置本次提交的后端仓库
         env:
