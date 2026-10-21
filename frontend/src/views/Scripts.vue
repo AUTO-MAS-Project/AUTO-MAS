@@ -165,7 +165,7 @@ import {
   SettingOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
-import ScriptTable from '@/components/ScriptTable.vue'
+import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { ScriptType } from '@/types/script'
