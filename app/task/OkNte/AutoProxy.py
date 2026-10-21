@@ -19,7 +19,6 @@ import ast
 import asyncio
 import json
 import re
-import shlex
 import shutil
 import time
 import uuid
@@ -83,6 +82,7 @@ from .tools.launcher_start import (
     async_wait_autoplay_game,
     detect_game_maintenance_text,
 )
+from .tools.runtime import OkNteProcessManager, runtime_dir
 
 logger = get_logger("OK-NTE 自动代理")
 
@@ -366,7 +366,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         return "Pass"
 
     async def prepare(self):
-        self.oknte_process_manager = ProcessManager()
+        self.oknte_process_manager = OkNteProcessManager(self.script_config)
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
@@ -380,23 +380,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if script_exe_path is None:
             raise ValueError("ScriptPath未配置，请检查路径设置")
         self.script_exe_path = script_exe_path
-        self.script_target_process_info: ProcessInfo | None = None
-        if self.script_config.Script.IfTrackProcess:
-            track_name = self.script_config.Script.TrackProcessName or "pythonw.exe"
-            track_exe = self.script_config.Script.TrackProcessExe or ""
-            if not track_exe:
-                track_exe = str(
-                    self.script_root_path / "data/apps/ok-nte/python/pythonw.exe"
-                )
-            track_cmdline = (
-                shlex.split(self.script_config.Script.TrackProcessCmdline, posix=False)
-                or None
-            )
-            self.script_target_process_info = ProcessInfo(
-                name=track_name or None,
-                exe=track_exe or None,
-                cmdline=track_cmdline,
-            )
 
         script_log_path = self.script_config.Script.LogPath
         if script_log_path is None:
@@ -518,7 +501,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self._oknte_legacy_mas_config_dir(),
             Path.cwd() / "data" / self.script_info.script_id / "Temp",
             self.script_config_path,
-            self.script_root_path / "data" / "apps" / "ok-nte" / "working" / "configs",
+            runtime_dir(self.script_root_path) / "configs",
             self.script_root_path / "configs",
         ]
         for config_dir in candidates:
@@ -1006,10 +989,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"启动 OK-NTE 进程: {self.script_exe_path} {' '.join(self.oknte_args)}"
             )
 
-            await self.oknte_process_manager.open_process(
+            await self.oknte_process_manager.open_oknte(
                 self.script_exe_path,
                 *self.oknte_args,
-                target_process=self.script_target_process_info,
             )
 
             # 启动日志监控（文件日志）
@@ -1410,20 +1392,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             logger.opt(exception=True).warning(
                 f"通过进程管理器中止 OK-NTE 进程失败: {e}"
             )
-        try:
-            await System.kill_process(self.script_exe_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"中止 OK-NTE 主进程失败: {e}")
-        track_exe = str(self.script_config.Script.TrackProcessExe or "").strip()
-        if not track_exe:
-            track_exe = str(
-                self.script_root_path / "data/apps/ok-nte/python/pythonw.exe"
-            )
-        if track_exe:
+        # 更新前后的两种本体都清理，防止冻结 EXE 脱离启动器后继续占用配置。
+        for exe in self.oknte_process_manager.cleanup_executables():
             try:
-                await System.kill_process(Path(track_exe))
+                await System.kill_process(exe)
             except Exception as e:
-                logger.opt(exception=True).warning(f"中止 OK-NTE 追踪进程失败: {e}")
+                logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
         try:
             launcher_path = _load_nte_launcher_path(self.script_config_path)
             if launcher_path is None:
