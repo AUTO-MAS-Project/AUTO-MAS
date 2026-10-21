@@ -160,7 +160,7 @@ const loadGameClientInfo = async () => {
   if (gamePathInput.value === inputAtStart) syncGamePathInput()
 }
 
-const handleGamePathSaved = async () => {
+const saveGamePath = async () => {
   if (props.locked || !active) return
   const version = ++saveVersion
   const config = props.config
@@ -190,6 +190,22 @@ const handleGamePathSaved = async () => {
   if (!active || version !== saveVersion || config !== props.config) return
   await syncResourceWithChannel()
 }
+
+// 路径写入后还需识别渠道并保存服务器；父页离开/恢复前等待整个关联流程。
+const pendingPathSaves = new Set<Promise<void>>()
+const handleGamePathSaved = () => {
+  const pending = saveGamePath()
+  pendingPathSaves.add(pending)
+  void pending.then(
+    () => pendingPathSaves.delete(pending),
+    () => pendingPathSaves.delete(pending)
+  )
+  return pending
+}
+const waitForPendingSaves = async () => {
+  while (pendingPathSaves.size) await Promise.all([...pendingPathSaves])
+}
+const hasPendingSaves = () => pendingPathSaves.size > 0
 
 /** 弹出文件选择并校验为原神主程序，取消/选错返回 null */
 const pickGenshinExe = async (): Promise<string | null> => {
@@ -236,7 +252,7 @@ const handleResourceChange = async (value: string) => {
   )
 }
 
-defineExpose({ reload: loadGameClientInfo })
+defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves })
 </script>
 
 <template>

@@ -1255,7 +1255,7 @@ const {
   globalStygianSettingsDirty,
   updateSettingField,
   saveDragonGroupSettings,
-  flushPending,
+  flushPending: flushGroupSettings,
   invalidateReads: invalidateGroupReads,
 } = useBettergiGroupSettings({
   scriptId,
@@ -1266,6 +1266,16 @@ const {
   configName: () => formData.Task.OneDragonConfigName,
   stepName: stepNameOf,
 })
+
+const flushPending = async (allDirty = false): Promise<boolean> => {
+  do {
+    await gameClientSection.value?.waitForPendingSaves()
+    if (!(await flushGroupSettings(allDirty))) return false
+    await enqueue(() => Promise.resolve(true))
+    // 等待组设置/队列期间可能又改了路径，下一轮仍需完成其渠道联动。
+  } while (gameClientSection.value?.hasPendingSaves())
+  return true
+}
 
 // ---- 配置组/脚本/路径：右栏项目编辑面板 ----
 // scriptgroup=读取该配置组 json 的 projects；js/pathing=当作单项目配置组展示（双击可弹设置）
@@ -1511,7 +1521,6 @@ const BETTERGI_DISPLAY_NAME = 'bettergi'
 const restoreOpen = ref(false)
 const openRestore = async () => {
   if (!(await flushPending(true))) return
-  await enqueue(() => Promise.resolve(true))
   restoreOpen.value = true
 }
 
@@ -1708,10 +1717,7 @@ onUnmounted(() => {
   })()
 })
 
-onBeforeRouteLeave(async () => {
-  if (!(await flushPending(true))) return false
-  await enqueue(() => Promise.resolve(true))
-})
+onBeforeRouteLeave(() => flushPending(true))
 
 const addGroupModal = ref<InstanceType<typeof BettergiAddGroupModal> | null>(null)
 const openAddToDragonModal = () => addGroupModal.value?.open()
