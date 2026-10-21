@@ -1933,7 +1933,13 @@ export default {
       '请先选择有效的 MaaEnd 路径并等待资源加载，才能确认 MaaEnd 启动是否可用。',
     maaEndNativeLaunchUnsupported:
       '当前 MaaEnd 或控制器没有原生启动入口，MaaEnd 启动不可选；可使用启动器启动或 MAS 启动。',
-    maaEndNativeLauncherHint: 'MaaEnd 启动使用其自身的启动器定位方式，不使用此处路径。',
+    maaEndNativeLauncherHint:
+      '当前 MaaEnd 或控制器没有原生启动入口，请改用 MAS 启动 / 启动器启动。',
+    maaEndNativeManualLauncherHint:
+      '原生配置沿用 MaaEnd 中的自动定位或手动路径；MAS 手动指定仅覆盖本轮启动，限官方启动器区服。',
+    maaEndNativeLauncherHelp: '沿用 MaaEnd 中的启动器设置。',
+    maaEndManualLauncherHelp: '本轮启动使用指定路径。',
+    maaEndLauncherSourceNative: '使用 MaaEnd 原生配置',
     maaEndArgumentsUnsupported: '此处启动参数仅用于 MAS 启动；其他方式请使用官方启动器支持的设置。',
     maaEndResolutionUnsupported:
       '当前 MaaEnd 和启动方式不支持独立设置分辨率，使用游戏现有设置；已保存的设置仍保留。',

@@ -853,7 +853,11 @@ const {
   game: maaEndConfig.Game,
   getScriptId: () => scriptId,
   enabled: () =>
-    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
+    !isInitializing.value &&
+    launchCapabilitiesReady.value &&
+    isWinController.value &&
+    (effectiveLaunchMode.value !== 'MaaEnd' || maaEndLaunchSupported.value),
+  autoDetect: () => effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
