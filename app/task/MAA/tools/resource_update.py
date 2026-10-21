@@ -92,7 +92,7 @@ logger = get_logger("MAA 资源更新")
 _CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 _QUERY_TIMEOUT = 10  # 秒
-_DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次下载总上限
+_DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次网络操作上限（无下载总时限，停滞由操作超时兜底）
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔（只作用于刷新检查）
 _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
@@ -383,14 +383,16 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         await _report(progress, _download_line(downloaded, total, speed))
 
     try:
-        async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
-            await download_file(
-                url,
-                _STAGE_ZIP,
-                timeout=_DOWNLOAD_TIMEOUT,
-                proxy=Config.proxy,
-                progress=report_progress,
-            )
+        # Mirror 酱临时授权 URL 显式走内置 httpx，不进 FluxDown；
+        # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
+        await download_file(
+            url,
+            _STAGE_ZIP,
+            timeout=_DOWNLOAD_TIMEOUT,
+            proxy=Config.proxy,
+            progress=report_progress,
+            downloader="builtin",
+        )
     except TimeoutError as e:
         raise _DownloadError("下载超时") from e
     except Exception as e:

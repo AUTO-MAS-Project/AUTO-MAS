@@ -5191,7 +5191,7 @@ export default {
       downloaderBuiltin: '内置 (httpx)',
       downloaderFluxdown: 'FluxDown CLI 多线程',
       downloaderTip:
-        '选择更新包下载器；FluxDown 失败会自动回退内置下载器，便携包需放在 res/fluxdown-cli/ 或配置 FluxdownPath',
+        '选择更新包下载器；FluxDown 中断后重试会断点续传，连续失败时提示可切换内置下载器，Mirror 酱源固定使用内置下载器。便携包需放在 res/fluxdown-cli/ 或配置 FluxdownPath',
       fluxdownSegments: '多线程分段数',
       fluxdownSegmentsTip: '值越大并发越高，实际效果取决于目标服务器是否支持 Range 请求',
       fluxdownTakeover: '接管所有脚本更新',

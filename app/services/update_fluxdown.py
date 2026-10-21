@@ -37,6 +37,7 @@ Mirror 酱源（临时授权 URL + 短期 token）在本文件里一律跳过 Fl
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import httpx
@@ -198,6 +199,20 @@ async def _download_via_fluxdown(
                 logger.warning(
                     f"下载中断（第 {count} 次）,任务已保留,重试将断点续传: {msg}"
                 )
+                # 中断也记入历史（status=interrupted），成功续传后会有对应 success 记录
+                await _append_history(
+                    FluxdownDownloadRecord(
+                        url=url,
+                        destination=str(destination),
+                        size=0,
+                        duration_ms=0,
+                        segments=segments,
+                        proxy=proxy_str,
+                        checksum=None,
+                        status="interrupted",
+                        error=f"下载中断（第 {count} 次）,任务已保留可续传: {msg}",
+                    )
+                )
                 raise FluxdownResumableError(f"{msg}{hint}") from exc
     elif not server_on:
         logger.info("FluxDown 断点续传服务已关闭,使用 --local 一次性下载")
@@ -236,17 +251,25 @@ def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
         return None
 
 
+_HISTORY_LOCK = threading.Lock()
+
+
 async def _append_history(record: FluxdownDownloadRecord) -> None:
-    """把下载记录追加到 Update.LastUpdateHistory，保留最近 50 条。"""
+    """把下载记录追加到 Update.LastUpdateHistory，保留最近 50 条。
+
+    配置模型返回内部列表引用：必须先复制再追加，否则原地 append 后
+    提交时可能因值未变化跳过落盘，重启后历史丢失。
+    """
     try:
-        existing = list(Config.setting.Update.LastUpdateHistory or [])
-        existing.append(FluxdownRecord(**record.to_dict()))
-        await Config.setting.update(
-            type(Config.setting).model_validate(
-                {"Update": {"LastUpdateHistory": existing[-50:]}}
-            ),
-            check_visibility=False,
-        )
+        with _HISTORY_LOCK:
+            history = list(Config.setting.Update.LastUpdateHistory or [])
+            history.append(FluxdownRecord(**record.to_dict()))
+            await Config.setting.update(
+                type(Config.setting).model_validate(
+                    {"Update": {"LastUpdateHistory": history[-50:]}}
+                ),
+                check_visibility=False,
+            )
     except Exception:
         # 历史写入失败不能阻塞主流程
         pass

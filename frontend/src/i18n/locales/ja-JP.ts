@@ -1,4 +1,4 @@
-﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -4616,6 +4616,38 @@ export default {
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
       cdkHint:
         'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
+      downloader: 'ダウンローダー',
+      downloaderBuiltin: '内蔵 (httpx)',
+      downloaderFluxdown: 'FluxDown CLI（マルチスレッド）',
+      downloaderTip:
+        '更新パッケージのダウンローダーを選択します。FluxDown が中断された場合は再試行時に完了済みセグメントから再開し、繰り返し失敗した場合は内蔵ダウンローダーへの切り替えを案内します。MirrorChyan ソースでは常に内蔵ダウンローダーを使用します。ポータブル版は res/fluxdown-cli/ に置くか FluxdownPath を設定してください',
+      fluxdownSegments: 'スレッド分割数',
+      fluxdownSegmentsTip:
+        '大きいほど並列数が増えますが、実際の効果はサーバーが Range リクエストに対応しているか次第です',
+      fluxdownTakeover: '全スクリプト更新を引き継ぐ',
+      fluxdownTakeoverTip:
+        'オンにすると、すべての自動化スクリプトの更新ダウンロードも FluxDown 経由になります（予定）',
+      fluxdownServerMode: 'FluxDown レジュームサービス',
+      fluxdownServerModeTip:
+        'オンにすると常駐する FluxDown サービスがダウンロードを担当し、中断後も完了済みセグメントから再開します。オフの場合は毎回最初から再ダウンロードします。ユーザー自身の FluxDown 本体には影響しません',
+      fluxdownPath: 'FluxDown のパス',
+      fluxdownPathTip:
+        'FluxDown CLI のあるフォルダー。空欄の場合は MAS 同梱ポータブル版とシステム PATH を自動検索します',
+      fluxdownPathPlaceholder: '空欄で res/fluxdown-cli/ を自動検索',
+      fluxdownBrowse: 'フォルダーを選択',
+      fluxdownDetect: '自動検出',
+      fluxdownDetectFound: 'FluxDown を検出しました：{path}',
+      fluxdownDetectNotFound: 'この端末では使用可能な FluxDown が見つかりませんでした',
+      fluxdownOnlyFullWarning:
+        'この FluxDown はこの端末で唯一のプログラムです。使用すると、ダウンロードした更新が FluxDown のキューに記録されます。',
+      lastUpdateHistoryTip:
+        'FluxDown で完了した最近のダウンロード記録を表示します（最大 50 件）',
+      lastUpdateHistory: 'ダウンロード履歴',
+      viewHistory: '履歴を表示',
+      noHistory: 'ダウンロード履歴はまだありません',
+      historyExport: 'ログをエクスポート',
+      historyExportSuccess: 'ダウンロードログをエクスポートしました',
+      historyExportFailed: 'ダウンロードログのエクスポートに失敗しました',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

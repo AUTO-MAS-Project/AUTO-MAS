@@ -311,15 +311,11 @@ class _UpdateHandler:
                 self.is_locked = False
 
     def _cleanup_download(self) -> None:
-        temp_file = Path.cwd() / "download.temp"
-        try:
-            if temp_file.exists():
-                temp_file.unlink()
-        except OSError as error:
-            logger.exception(f"清理更新下载临时文件失败: {error}")
-        finally:
-            if not self.is_switching_source:
-                self.is_locked = False
+        # 不删 download.temp：取消/中断时保留它作为断点续传状态（httpx 追加、
+        # FluxDown server resume 都依赖它），仅在彻底放弃（重试耗尽）与成功
+        # 改名两条路径处理该文件
+        if not self.is_switching_source:
+            self.is_locked = False
 
     def _create_download_job(
         self, *, download_version: Optional[str] = None, downloader: Optional[str] = None
@@ -562,9 +558,8 @@ class _UpdateHandler:
         check_times = 3
         while check_times != 0:
             try:
-                # 清理可能存在的临时文件（server 续传时下载器自己管理分段，不依赖它）
-                if (Path.cwd() / "download.temp").exists():
-                    (Path.cwd() / "download.temp").unlink()
+                # 注意：这里不能删 download.temp —— httpx（ab+Range 追加）与
+                # FluxDown server 的断点续传都以它为续传状态，删掉会让重试从头下载
 
                 start_time = time.time()
 

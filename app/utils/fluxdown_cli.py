@@ -75,7 +75,7 @@ class FluxdownDownloadRecord:
     segments: int = 0
     proxy: str | None = None
     checksum: str | None = None
-    status: str = ""  # success | failed | checksum_fail | fluxdown_fallback
+    status: str = ""  # success | failed | checksum_fail | interrupted | fluxdown_fallback
     error: str | None = None
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -200,13 +200,15 @@ async def fluxdown_download(
     t0 = time.monotonic()
     buf = bytearray()
     last_report = 0.0
+    last_output = t0  # 最近一次收到 CLI 输出的时刻（停滞超时基准）
 
     async def _parse_stream():
-        nonlocal last_report
+        nonlocal last_report, last_output
         downloaded = 0
         total = 0
         async for raw in proc.stdout:
             buf.extend(raw)
+            last_output = time.monotonic()
             # CLI --local 输出是纯文本进度行，尝试解析 "...X/Y..." 和 "...Z MB/s..."
             text = raw.decode("utf-8", errors="replace")
             # 尝试提取进度百分比/字节数
@@ -246,18 +248,28 @@ async def fluxdown_download(
     )
     assert proc.stdout is not None
 
+    # 停滞超时：timeout 语义 = 持续无 CLI 输出的秒数上限，不是整包总时限，
+    # 正常慢速下载只要持续有进度输出就永不超时
+    parse_task = asyncio.ensure_future(_parse_stream())
+    stalled = False
     try:
-        try:
-            await asyncio.wait_for(_parse_stream(), timeout=timeout)
-        except asyncio.TimeoutError:
+        while not parse_task.done():
+            remaining = timeout - (time.monotonic() - last_output)
+            if remaining <= 0:
+                stalled = True
+                break
+            await asyncio.wait({parse_task}, timeout=remaining)
+        if stalled:
+            # 进程已无输出：杀掉后 stdout 关闭，parse_task 随之自行结束
             proc.kill()
             await proc.wait()
             record.status = "failed"
-            record.error = f"CLI 超时 ({timeout}s)"
+            record.error = f"CLI 输出停滞超时 ({timeout:.0f}s 无输出)"
             record.duration_ms = int((time.monotonic() - t0) * 1000)
-            logger.warning(f"[--local] 下载超时 ({timeout}s): {url}")
-            raise RuntimeError(f"FluxDown CLI 超时: {timeout}s") from None
+            logger.warning(f"[--local] 输出停滞 {timeout:.0f}s, 判定中断: {url}")
+            raise RuntimeError(f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出") from None
 
+        await parse_task
         exit_code = await proc.wait()
     except asyncio.CancelledError:
         # 用户取消：必须杀掉 CLI 子进程，否则它在后台继续下载
@@ -630,23 +642,31 @@ def _run_cli(cli_exe: Path, env: dict[str, str], args: list[str], timeout: float
 
 
 def _parse_cli_json(text: str):
-    """从 CLI 输出提取首个 JSON 值（对象/数组/字符串），失败返回 None。"""
+    """从 CLI 输出提取首个可解析的 JSON 值（优先对象/数组，其次字符串）。
+
+    CLI 可能把日志混进 stdout：逐个候选起点尝试解析，首个起点失败不会
+    挡住后面真正的 JSON（日志里的孤立括号/引号也会被跳过）。
+    """
     text = text.strip()
     if not text:
         return None
-    # CLI 可能把日志混进 stdout：从首个 { [ " 开始尝试
-    for i, ch in enumerate(text):
-        if ch in "{[\"":
+
+    def _try_from(start: int):
+        # 从最长到最短截断尝试，兼容 JSON 后还跟着日志尾缀的情况
+        for end in range(len(text), start, -1):
             try:
-                return json.loads(text[i:])
+                return json.loads(text[start:end])
             except (ValueError, json.JSONDecodeError):
-                # 截断到行尾找完整 JSON
-                for end in range(len(text), i, -1):
-                    try:
-                        return json.loads(text[i:end])
-                    except (ValueError, json.JSONDecodeError):
-                        continue
-                return None
+                continue
+        return None
+
+    # 先只认 { [（对象/数组才是调用方真正要的），再兜底认 "（JSON 字符串）
+    for quote_pass in (False, True):
+        for i, ch in enumerate(text):
+            if ch in "{[\"" and (ch == "\"") == quote_pass:
+                value = _try_from(i)
+                if value is not None:
+                    return value
     return None
 
 
@@ -703,6 +723,16 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
 
     with _server.lock:
         h = _server.handle
+        if h is not None and os.path.normcase(os.path.abspath(str(h.cli_exe))) != os.path.normcase(
+            os.path.abspath(str(cli_exe))
+        ):
+            # CLI 路径变了（用户改配置/检测到新目录）：旧句柄的端口与数据目录
+            # 不再适用，不复用；由我们 spawn 的旧套件按 PID 清理
+            if _server.spawned_by_us:
+                _kill_pid(h.agent_pid)
+            _server.handle = None
+            _server.spawned_by_us = False
+            h = None
         if h and _ping_ok(h.cli_exe, h.gateway_port, h.token) and _mgmt_ready(h.cli_exe, h.gateway_port, h.token):
             logger.debug(f"[server] 复用已就绪套件: gateway={h.gateway_port}")
             return h
@@ -811,20 +841,49 @@ def _load_task_map(cli_exe: Path) -> dict:
     return {}
 
 
+_TASK_MAP_LOCK = threading.Lock()  # 映射读-改-写全程持锁，防并发丢条目
+
+
 def _save_task_map(cli_exe: Path, m: dict) -> None:
+    """原子写映射文件：先写临时文件再 os.replace，避免读到半截 JSON。
+
+    仅限已持有 _TASK_MAP_LOCK 的调用方使用（配合 _load_task_map 做读改写）。
+    """
     p = _server_map_path(cli_exe)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, p)
     except OSError:
         pass
 
 
+def _map_pop(cli_exe: Path, key: str) -> None:
+    """带锁删除一个映射条目。"""
+    with _TASK_MAP_LOCK:
+        m = _load_task_map(cli_exe)
+        if m.pop(key, None) is not None:
+            _save_task_map(cli_exe, m)
+
+
+def _map_put(cli_exe: Path, key: str, task_id: str, url: str, destination: Path) -> None:
+    """带锁写入/更新一个映射条目（重读全表，fail_count 跨写入保留）。"""
+    with _TASK_MAP_LOCK:
+        m = _load_task_map(cli_exe)
+        m[key] = {
+            "task_id": task_id,
+            "url": url,
+            "save_path": str(destination),
+            "updated": time.time(),
+            "fail_count": int((m.get(key) or {}).get("fail_count") or 0),
+        }
+        _save_task_map(cli_exe, m)
+
+
 def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     """任务完成（MAS 二次校验通过）后删除映射条目。"""
-    m = _load_task_map(cli_exe)
-    if m.pop(_map_key(url, Path(destination)), None) is not None:
-        _save_task_map(cli_exe, m)
+    _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:
@@ -834,21 +893,54 @@ def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> 
     任务完成（fluxdown_server_forget）后计数随映射一起清零。
     """
     key = _map_key(url, Path(destination))
-    task_map = _load_task_map(cli_exe)
-    entry = task_map.get(key) or {}
-    count = int(entry.get("fail_count") or 0) + 1
-    task_map[key] = {
-        "task_id": entry.get("task_id"),
-        "url": url,
-        "save_path": str(destination),
-        "updated": time.time(),
-        "fail_count": count,
-    }
-    _save_task_map(cli_exe, task_map)
+    with _TASK_MAP_LOCK:
+        task_map = _load_task_map(cli_exe)
+        entry = task_map.get(key) or {}
+        count = int(entry.get("fail_count") or 0) + 1
+        task_map[key] = {
+            "task_id": entry.get("task_id"),
+            "url": url,
+            "save_path": str(destination),
+            "updated": time.time(),
+            "fail_count": count,
+        }
+        _save_task_map(cli_exe, task_map)
     return count
 
 
 # --- server 模式下载 -------------------------------------------------------
+
+
+async def _wait_thread_done(task: "asyncio.Task"):
+    """等待线程任务结束并返回其结果；等待期间协程被取消也继续等。
+
+    add/resume 这类子进程调用的结果（task_id、退出码）丢了会导致后台残留
+    下载或映射未持久化，故取消时不能直接放弃线程。
+    """
+    while True:
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if task.done():
+                return task.result()  # 线程异常/被取消时原样抛出
+            continue
+
+
+async def _to_thread_strong(func, /, *args):
+    """to_thread 的取消安全版：外层协程被取消也等线程跑完再退出。"""
+    return await _wait_thread_done(asyncio.ensure_future(asyncio.to_thread(func, *args)))
+
+
+def _extract_task_id(out: str) -> str | None:
+    """从 add 输出提取 task_id：优先 JSON（数组/对象），其次 'added <uuid>' 文本。"""
+    data = _parse_cli_json(out)
+    if isinstance(data, list) and data and isinstance(data[0], str):
+        return data[0]
+    if isinstance(data, dict):
+        v = data.get("taskId") or data.get("task_id") or data.get("id")
+        return str(v) if v else None
+    m = re.search(r"added\s+([0-9a-fA-F-]{36})", out)
+    return m.group(1) if m else None
 
 
 async def fluxdown_server_download(
@@ -874,6 +966,8 @@ async def fluxdown_server_download(
     )
     t0 = time.monotonic()
 
+    # ensure 的结果缓存于 _ServerState 单例（线程内完成写入），取消时即使放弃
+    # 等待也不丢状态，故此处无需强等待
     handle = await asyncio.to_thread(fluxdown_server_ensure, cli_exe)
     if handle is None:
         record.status = "failed"
@@ -883,8 +977,7 @@ async def fluxdown_server_download(
 
     env = _cli_env(handle.gateway_port, handle.token)
     key = _map_key(url, destination)
-    task_map = _load_task_map(cli_exe)
-    task_id: str | None = (task_map.get(key) or {}).get("task_id")
+    task_id: str | None = (_load_task_map(cli_exe).get(key) or {}).get("task_id")
 
     def _status(tid: str) -> dict | None:
         code, out = _run_cli(cli_exe, env, ["status", tid, "--json"], timeout=15)
@@ -896,20 +989,32 @@ async def fluxdown_server_download(
     # 既有 task：先确认服务端还在（可能被用户清理过 DB）
     if task_id and await asyncio.to_thread(_status, task_id) is None:
         task_id = None
-        task_map.pop(key, None)
+        await asyncio.to_thread(_map_pop, cli_exe, key)
 
     resumed = False
     if task_id:
-        code, out = await asyncio.to_thread(
-            _run_cli, cli_exe, env, ["resume", task_id], 30
+        resume_task = asyncio.ensure_future(
+            asyncio.to_thread(_run_cli, cli_exe, env, ["resume", task_id], 30)
         )
+        try:
+            code, out = await asyncio.shield(resume_task)
+        except asyncio.CancelledError:
+            # 取消安全：等 resume 线程跑完；若已生效则暂停服务端任务，
+            # 否则 daemon 会在无人等待的情况下继续下载
+            try:
+                code, _ = await _wait_thread_done(resume_task)
+            except Exception:
+                code = 1
+            if code == 0:
+                await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
+            raise
         if code == 0:
             resumed = True
             logger.info(f"[server] 续传任务: {task_id} ({url})")
         else:
             # resume 失败（可能任务状态不可恢复）→ 重新 add
             task_id = None
-            task_map.pop(key, None)
+            await asyncio.to_thread(_map_pop, cli_exe, key)
 
     if task_id is None:
         args = [
@@ -921,29 +1026,38 @@ async def fluxdown_server_download(
         ]
         if proxy:
             args += ["--proxy", proxy]
-        code, out = await asyncio.to_thread(_run_cli, cli_exe, env, args, 60)
-        data = _parse_cli_json(out)
-        new_id: str | None = None
-        if isinstance(data, list) and data and isinstance(data[0], str):
-            new_id = data[0]
-        elif isinstance(data, dict):
-            new_id = data.get("taskId") or data.get("task_id") or data.get("id")
+        add_task = asyncio.ensure_future(
+            asyncio.to_thread(_run_cli, cli_exe, env, args, 60)
+        )
+        try:
+            code, out = await asyncio.shield(add_task)
+        except asyncio.CancelledError:
+            # 取消安全：add 线程必须等它跑完——CLI 可能已建出任务，取回
+            # task_id 持久化映射并暂停，否则结果丢失、daemon 后台继续下载
+            try:
+                _, out = await _wait_thread_done(add_task)
+                salvaged = _extract_task_id(out or "")
+                if salvaged:
+                    await _to_thread_strong(_map_put, cli_exe, key, salvaged, url, destination)
+                    await _to_thread_strong(_run_cli, cli_exe, env, ["pause", salvaged], 10)
+                    logger.info(f"[server] 取消时补救 add: 已持久化并暂停 task {salvaged}")
+            except Exception:
+                pass
+            raise
+        new_id: str | None = _extract_task_id(out)
         if code != 0 or not new_id:
             # add 失败：若服务端已把任务建出来了（"added <id>" 后 probe 失败），
-            # 取出该 id 并持久化映射 —— 重试时 resume 续传，不重新 add。
+            # 取出该 id 并持久化映射 —— 重试时 resume 续传，不重新 add；
+            # 同时尽力暂停该任务，防止 daemon 后台继续下载。
             # 若连 id 都没有（add 完全没成功），抛错但**不视为进程异常**：
             # 让上层以可续传语义重试（同 url 会再次尝试 add，已有分段由服务端保留）。
-            m = re.search(r"added\s+([0-9a-fA-F-]{36})", out)
-            if m:
-                task_id = m.group(1)
-                task_map[key] = {
-                    "task_id": task_id,
-                    "url": url,
-                    "save_path": str(destination),
-                    "updated": time.time(),
-                    "fail_count": int((task_map.get(key) or {}).get("fail_count") or 0),
-                }
-                await asyncio.to_thread(_save_task_map, cli_exe, task_map)
+            if new_id:
+                task_id = new_id
+                await asyncio.to_thread(_map_put, cli_exe, key, task_id, url, destination)
+                try:
+                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                except Exception:
+                    pass
             record.status = "failed"
             record.error = f"add 失败 exit={code}: {out[:200]}"
             record.duration_ms = int((time.monotonic() - t0) * 1000)
@@ -953,14 +1067,7 @@ async def fluxdown_server_download(
         logger.info(f"[server] 新建任务: {url} -> task {task_id}")
 
     # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）
-    task_map[key] = {
-        "task_id": task_id,
-        "url": url,
-        "save_path": str(destination),
-        "updated": time.time(),
-        "fail_count": int((task_map.get(key) or {}).get("fail_count") or 0),
-    }
-    await asyncio.to_thread(_save_task_map, cli_exe, task_map)
+    await asyncio.to_thread(_map_put, cli_exe, key, task_id, url, destination)
 
     # 轮询进度至终态。timeout 语义 = 停滞上限（持续无新字节的秒数），不是总时长：
     # 正常下载永不超时；速率持续为 0 超过 timeout 才判定中断（断网即属此类）。
@@ -974,6 +1081,12 @@ async def fluxdown_server_download(
         while True:
             st = await asyncio.to_thread(_status, task_id)
             if st is None:
+                # 尽力暂停旧任务再抛错：防止 server 恢复后 daemon 后台继续下载，
+                # 分发层降 --local 时双写同一文件
+                try:
+                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                except Exception:
+                    pass
                 record.status = "failed"
                 record.error = "status 查询失败（server 可能已退出）"
                 record.duration_ms = int((time.monotonic() - t0) * 1000)
@@ -1001,7 +1114,14 @@ async def fluxdown_server_download(
                 last_change = now
             else:
                 speed = 0.0
-                if status == 2 and now - last_change > timeout:
+                # 等待中(1)/下载中(2) 都纳入停滞计时：排队卡死同样能被判定
+                if status in (1, 2) and now - last_change > timeout:
+                    # 尽力暂停旧任务再抛错：防止 daemon 后台继续下载，
+                    # 分发层降 --local 时双写同一文件
+                    try:
+                        await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                    except Exception:
+                        pass
                     record.status = "failed"
                     record.error = f"下载停滞（{timeout:.0f}s 无新字节），task 已保留可续传"
                     record.duration_ms = int((time.monotonic() - t0) * 1000)
@@ -1020,6 +1140,11 @@ async def fluxdown_server_download(
             if status == _TASK_STATUS_DONE:
                 break
             if status == _TASK_STATUS_FAILED:
+                # 尽力暂停（任务已 failed,多为兜底）：防止重试语义下残留活动任务
+                try:
+                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                except Exception:
+                    pass
                 record.status = "failed"
                 record.error = (st.get("errorMessage") or "任务失败")[:300]
                 record.duration_ms = int((time.monotonic() - t0) * 1000)
@@ -1029,9 +1154,12 @@ async def fluxdown_server_download(
             await asyncio.sleep(0.8)
     except asyncio.CancelledError:
         # 用户取消：暂停 server 任务（分段保留,下次重试 resume 续传），
-        # 否则 daemon 会在后台继续下载
+        # 否则 daemon 会在后台继续下载。强等待确保暂停不被二次取消打断
         logger.info(f"[server] 用户取消,暂停任务 {task_id}")
-        await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+        try:
+            await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
+        except Exception:
+            pass
         record.status = "failed"
         record.error = "用户取消"
         raise

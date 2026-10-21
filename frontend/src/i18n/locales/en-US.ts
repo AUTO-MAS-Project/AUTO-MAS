@@ -5265,7 +5265,7 @@ export default {
       downloaderBuiltin: 'Builtin (httpx)',
       downloaderFluxdown: 'FluxDown CLI (multi-thread)',
       downloaderTip:
-        'Choose the update downloader; FluxDown falls back to builtin on failure. Put the portable build in res/fluxdown-cli/ or set FluxdownPath',
+        'Choose the update downloader; interrupted FluxDown downloads resume from completed segments on retry, and after repeated failures you can switch to the builtin downloader. MirrorChyan always uses the builtin downloader. Put the portable build in res/fluxdown-cli/ or set FluxdownPath',
       fluxdownSegments: 'Thread segments',
       fluxdownSegmentsTip: 'Higher values mean more parallel requests, if the server supports Range',
       fluxdownTakeover: 'Take over all script updates',
