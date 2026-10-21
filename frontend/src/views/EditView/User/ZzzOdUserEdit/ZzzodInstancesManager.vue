@@ -17,6 +17,7 @@ const props = defineProps<{
   deleted: (idx: number) => void
   instances: ZzzOdInstanceOut[]
   updateInstances: (instances: ZzzOdInstanceOut[]) => void
+  trackWrite: <T>(operation: () => Promise<T>) => Promise<T>
 }>()
 const { scriptId } = props
 const configLocked = computed(() => props.locked)
@@ -49,10 +50,12 @@ const confirmAddInstance = async () => {
   }
   instanceOpLoading.value = true
   try {
-    const resp = await Service.addZzzodInstanceApiApiScriptsZzzodInstancesAddPost({
-      scriptId,
-      name,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.addZzzodInstanceApiApiScriptsZzzodInstancesAddPost({
+        scriptId,
+        name,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodAddInstanceFailed'))
     }
@@ -88,11 +91,13 @@ const confirmRenameInstance = async () => {
   }
   instanceOpLoading.value = true
   try {
-    const resp = await Service.renameZzzodInstanceApiApiScriptsZzzodInstancesRenamePost({
-      scriptId,
-      instanceIdx: target.idx,
-      name,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.renameZzzodInstanceApiApiScriptsZzzodInstancesRenamePost({
+        scriptId,
+        instanceIdx: target.idx,
+        name,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodRenameInstanceFailed'))
     }
@@ -127,10 +132,12 @@ const deleteInstance = async (inst: ZzzOdInstanceOut) => {
   if (configLocked.value) return
   instanceOpLoading.value = true
   try {
-    const resp = await Service.deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost({
-      scriptId,
-      instanceIdx: inst.idx,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost({
+        scriptId,
+        instanceIdx: inst.idx,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodDeleteInstanceFailed'))
     }
@@ -147,11 +154,13 @@ const deleteInstance = async (inst: ZzzOdInstanceOut) => {
 const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) => {
   if (configLocked.value) return
   try {
-    const resp = await Service.setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost({
-      scriptId,
-      instanceIdx: inst.idx,
-      activeInOd: value,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost({
+        scriptId,
+        instanceIdx: inst.idx,
+        activeInOd: value,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodInstanceFlagFailed'))
     }
@@ -165,11 +174,13 @@ const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) 
 const toggleInstanceForceLogin = async (inst: ZzzOdInstanceOut, value: boolean) => {
   if (configLocked.value) return
   try {
-    const resp = await Service.setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost({
-      scriptId,
-      instanceIdx: inst.idx,
-      forceLogin: value,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost({
+        scriptId,
+        instanceIdx: inst.idx,
+        forceLogin: value,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodInstanceForceLoginFailed'))
     }
@@ -184,10 +195,12 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   if (configLocked.value) return
   instanceOpLoading.value = true
   try {
-    const resp = await Service.setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost({
-      scriptId,
-      instanceIdx: inst.idx,
-    })
+    const resp = await props.trackWrite(() =>
+      Service.setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost({
+        scriptId,
+        instanceIdx: inst.idx,
+      })
+    )
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.zzzodSetActiveInstanceFailed'))
     }

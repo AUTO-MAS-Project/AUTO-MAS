@@ -31,7 +31,7 @@
             ghost
             size="large"
             :loading="zzzodConfigLoading"
-            :disabled="pageLoading || !userId || configLocked"
+            :disabled="pageLoading || nativeLoading || !userId || configLocked"
             @click="handleZzzodConfig"
           >
             <template #icon>
@@ -98,6 +98,7 @@
     </GuiSessionMask>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+      <a-config-provider :component-disabled="configLocked || nativeLoading">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -268,6 +269,7 @@
                 :selected="nativeInstanceIdx"
                 :select="selectManagedInstance"
                 :deleted="clearDeletedInstance"
+                :track-write="trackInstanceWrite"
               />
 
               <!-- 原生来源：选择配置实例（选完即编辑下方账号字段与任务配置） -->
@@ -283,13 +285,13 @@
                       </span>
                     </template>
                     <a-select
-                      v-model:value="nativeInstanceIdx"
+                      :value="nativeInstanceIdx"
                       :options="instanceOptions"
                       :placeholder="t('edit.zzzodDirectPickInstance')"
                       :loading="instancesLoading"
                       size="large"
                       class="modern-select"
-                      @change="handleNativeInstanceChange"
+                      @change="selectManagedInstance"
                     />
                   </a-form-item>
                 </a-col>
@@ -819,7 +821,7 @@
           <div class="form-section">
             <ZzzodTaskBoard
               :cards="formData.Info.Base === 'native' ? nativeTasks : taskCards"
-              :editable="!isInitializing && !pageLoading"
+              :editable="!isInitializing && !pageLoading && !nativeLoading"
               :saving="nativeSaving"
               :editor="taskEditor"
               :commit="commitTaskBoard"
@@ -846,6 +848,7 @@
           </div>
         </a-form>
       </a-card>
+      </a-config-provider>
 
       <a-card class="config-card" style="margin-top: 24px">
         <a-form :model="formData" layout="vertical" class="config-form">
@@ -868,7 +871,7 @@
       <!-- ══ 配置恢复（通用组件：列表 / 预览 / 查看详细 / 一键恢复）══ -->
       <ConfigRestoreSection
         v-model:open="restoreOpen"
-        :disabled="configLocked"
+        :disabled="configLocked || nativeLoading"
         :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
@@ -898,7 +901,7 @@ import { useZzzodInstances } from './ZzzOdUserEdit/useZzzodInstances'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -1224,6 +1227,7 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['independent', 'native'].includes(value)) return
   const prev = formData.Info.Base
+  await flushPendingSaves()
   if (value === 'native' && prev !== 'native') {
     // 每脚本仅允许一个原生来源用户：原生来源是脚本级全局视图（实例/活跃/运行实例
     // 都是一份 one_dragon.yml），多原生来源用户共享状态互相干扰
@@ -1243,8 +1247,8 @@ const handleConfigModeChange = async (value: boolean | string) => {
       logger.warn(e instanceof Error ? e.message : String(e))
     }
   }
+  if (!(await saveField('Info.Base', value))) return
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  await saveField('Info.Base', formData.Info.Base)
   if (value === 'native') {
     // 进入原生来源：公共初始化（备份 + 默认实例 + 加载原生配置）
     await enterDirectMode()
@@ -1346,6 +1350,7 @@ const importFromInstance = async () => {
   if (sourceIdx === null || !userId.value) return
   importLoading.value = true
   try {
+    await flushPendingSaves()
     const resp = await Service.importZzzodConfigApiApiScriptsZzzodImportPost({
       scriptId,
       userId: userId.value,
@@ -1408,14 +1413,15 @@ const {
   nativeTasks,
   nativeLaunchArgs,
   loadNativeConfig,
-  handleNativeInstanceChange,
   runModeSaving,
   handleNativeInstanceRunChange,
   toNativeTaskIn,
   saveNativeConfig,
   saveNativeLaunchArgsField,
   saveNativeAccount,
-} = useZzzodNativeConfig(scriptId, configLocked)
+  flushNativeSaves,
+  hasPendingNativeSaves,
+} = useZzzodNativeConfig(scriptId, configLocked, () => formData.Info.Base === 'native')
 
 // 启动参数折叠区：总开关开 → 自动展开，关 → 自动收起；手动展开/收起保持到
 // 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
@@ -1459,6 +1465,24 @@ const taskEditor = useZzzodTaskConfig({
   nativeMode: () => formData.Info.Base === 'native',
   instanceIdx: nativeInstanceIdx,
   locked: configLocked,
+})
+const instanceWrites = new Set<Promise<unknown>>()
+const trackInstanceWrite = <T,>(operation: () => Promise<T>): Promise<T> => {
+  const run = operation()
+  instanceWrites.add(run)
+  const done = () => { instanceWrites.delete(run) }
+  void run.then(done, done)
+  return run
+}
+const flushPendingSaves = async () => {
+  let tail: Promise<boolean>
+  do {
+    tail = saveChain
+    await Promise.all([tail, flushNativeSaves(), taskEditor.flushAllTaskConfigSaves(), ...instanceWrites].map(run => run.catch(() => undefined)))
+  } while (tail !== saveChain || hasPendingNativeSaves() || taskEditor.hasPendingSaves() || instanceWrites.size)
+}
+onBeforeRouteLeave(async () => {
+  await flushPendingSaves()
 })
 
 // ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
@@ -1524,9 +1548,14 @@ const formatPreviewValue = (key: string, raw: string): string => {
 }
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = { ...backupApi, restore: restoreConfigBackup }
+const restoreAfterSaves: typeof restoreConfigBackup = async (...args) => {
+  await flushPendingSaves()
+  return restoreConfigBackup(...args)
+}
+const restoreApi = { ...backupApi, restore: restoreAfterSaves }
 
-const openRestoreModal = () => {
+const openRestoreModal = async () => {
+  await flushPendingSaves()
   restoreOpen.value = true
 }
 
@@ -1588,7 +1617,7 @@ const restoreForDetailView = async (
   isMas: boolean,
   force = false
 ): Promise<boolean> => {
-  const resp = await restoreConfigBackup(target, item.time, force)
+  const resp = await restoreAfterSaves(target, item.time, force)
   // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
   // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
   if (resp.code === 409) {
@@ -1711,8 +1740,9 @@ const {
   stopSession,
 } = useZzzodGuiSession()
 
-const handleZzzodConfig = () => {
+const handleZzzodConfig = async () => {
   if (configLocked.value) return
+  await flushPendingSaves()
   if (formData.Info.Base === 'native') {
     // 原生来源：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。
@@ -1733,6 +1763,7 @@ const handleCloseZzzodView = () => {
 }
 
 const handleCancel = async () => {
+  await flushPendingSaves()
   await stopSession()
   await router.push('/scripts')
 }
@@ -1842,12 +1873,12 @@ const refreshAfterSession = () => {
 
 onUnmounted(() => {
   // 卸载前把防抖中的数值变更立即落盘，避免「改完步进直接离开」丢改动
-  taskEditor.flushAllTaskConfigSaves()
   // 编辑会话退出时机：原生来源归档一条龙终态（进入时的 ensureDirectBackup 与之
   // 配对）；独立来源归档绑定槽 MAS 终态 + 一条龙终态（与进入时的
   // ensureDirectBackup 配对）。指纹去重，内容无变化不产生新条目。
   // 先停会话再归档——并行会与回写撞车，归档到半程状态
   void (async () => {
+    await flushPendingSaves()
     await stopSession()
     if (formData.Info.Base === 'native') {
       await ensureDirectBackup()
@@ -1858,6 +1889,7 @@ onUnmounted(() => {
 })
 
 const selectManagedInstance = async (idx: number) => {
+  await flushPendingSaves()
   nativeInstanceIdx.value = idx
   await loadNativeConfig(idx)
 }

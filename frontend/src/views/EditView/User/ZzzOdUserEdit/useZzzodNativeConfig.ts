@@ -1,4 +1,13 @@
-import { ref, reactive, type Ref } from 'vue'
+import {
+  computed,
+  ref,
+  reactive,
+  watch,
+  toValue,
+  onScopeDispose,
+  type Ref,
+  type MaybeRefOrGetter,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
@@ -8,7 +17,11 @@ import {
   ZzzOdNativeLaunchArgs,
 } from '@/api'
 import type { TaskCard, AfterDoneValue } from './zzzodTypes'
-export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean>) {
+export function useZzzodNativeConfig(
+  scriptId: string,
+  configLocked: Ref<boolean>,
+  active: MaybeRefOrGetter<boolean> = true
+) {
   const { t } = useI18n()
   // ══ 原生来源：所选实例的原生配置（强绑定一条龙原始 YAML，页面即改原生）══
   const nativeInstanceIdx = ref<number | null>(null)
@@ -28,7 +41,32 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
 
   const nativeLoading = ref(false)
 
-  const nativeSaving = ref(false)
+  const pendingCount = ref(0)
+  const nativeSaving = computed(() => pendingCount.value > 0)
+  let contextVersion = 0
+  let readVersion = 0
+  let saveChain: Promise<boolean> = Promise.resolve(true)
+  const runModeWrites = new Set<Promise<void>>()
+  watch(
+    () => [nativeInstanceIdx.value, toValue(active)],
+    () => {
+      contextVersion++
+      readVersion++
+      nativeLoading.value = false
+    },
+    { flush: 'sync' }
+  )
+  onScopeDispose(() => {
+    contextVersion++
+    readVersion++
+  })
+  const flushNativeSaves = async () => {
+    let tail: Promise<boolean>
+    do {
+      tail = saveChain
+      await Promise.all([tail, ...runModeWrites])
+    } while (tail !== saveChain || runModeWrites.size)
+  }
 
   const nativeAccountFields = ref<ZzzOdNativeAccountField[]>([])
 
@@ -64,6 +102,12 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
   }
 
   const loadNativeConfig = async (instanceIdx: number) => {
+    const context = contextVersion
+    const request = ++readVersion
+    const current = () =>
+      context === contextVersion &&
+      request === readVersion &&
+      instanceIdx === nativeInstanceIdx.value
     nativeLoading.value = true
     try {
       const resp = await Service.getZzzodNativeConfigApiApiScriptsZzzodNativeConfigGet(
@@ -73,14 +117,15 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
       if (resp.code !== 200) {
         throw new Error(resp.message || t('edit.zzzodNativeLoadFailed'))
       }
-      applyNativeConfig(resp)
+      if (current()) applyNativeConfig(resp)
     } catch (e) {
+      if (!current()) return
       message.error(e instanceof Error ? e.message : t('edit.zzzodNativeLoadFailed'))
       nativeAccountFields.value = []
       nativeTasks.value = []
       nativeAfterDone.value = '无'
     } finally {
-      nativeLoading.value = false
+      if (current()) nativeLoading.value = false
     }
   }
 
@@ -95,11 +140,12 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
 
   /** 运行实例（仅运行当前/全部启用实例）是 one_dragon.yml 全局设置，
    * 与原生来源页当前编辑哪个实例无关，独立保存 */
-  const runModeSaving = ref(false)
+  const runModeCount = ref(0)
+  const runModeSaving = computed(() => runModeCount.value > 0)
 
-  const handleNativeInstanceRunChange = async () => {
+  const persistNativeInstanceRun = async () => {
     if (configLocked.value) return
-    runModeSaving.value = true
+    runModeCount.value++
     try {
       const resp = await Service.setZzzodInstanceRunModeApiApiScriptsZzzodInstancesRunModePost({
         scriptId,
@@ -111,8 +157,14 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
     } catch (e) {
       message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
     } finally {
-      runModeSaving.value = false
+      runModeCount.value--
     }
+  }
+  const handleNativeInstanceRunChange = () => {
+    const run = persistNativeInstanceRun()
+    runModeWrites.add(run)
+    void run.finally(() => runModeWrites.delete(run))
+    return run
   }
 
   /** 原生来源按需保存：只提交指定区块并只回读该区块。
@@ -140,7 +192,7 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
         }) as TaskCard
     )
 
-  const saveNativeConfig = async (
+  const saveNativeConfig = (
     payload: {
       account?: Record<string, string>
       tasks?: { app_id: string; enabled: boolean }[]
@@ -153,36 +205,74 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
   ): Promise<boolean> => {
     if (configLocked.value) {
       message.error(t('edit.configLocked'))
-      return false
+      return Promise.resolve(false)
     }
-    if (nativeInstanceIdx.value === null) return false
-    nativeSaving.value = true
-    try {
-      const resp = await Service.saveZzzodNativeConfigApiApiScriptsZzzodNativeConfigSavePost({
-        scriptId,
-        instanceIdx: nativeInstanceIdx.value,
-        ...payload,
-      })
-      if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
-      }
-      if (section === 'tasks') {
-        nativeTasks.value = toTaskCards(resp.tasks ?? [])
-      } else if (section === 'launchArgs') {
-        Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), resp.launchArgs ?? {})
-      } else if (section === 'afterDone') {
-        nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
-      } else {
-        applyNativeConfig(resp)
-      }
-      if (!silent) message.success(t('edit.zzzodNativeSaved'))
-      return true
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
-      return false
-    } finally {
-      nativeSaving.value = false
+    if (nativeInstanceIdx.value === null) return Promise.resolve(false)
+    // 新实例尚未加载时不能把上个实例残留的区块提交到新目标。
+    if (nativeLoading.value) return Promise.resolve(false)
+    const instanceIdx = nativeInstanceIdx.value
+    const context = contextVersion
+    const snapshot = {
+      account: { ...nativeAccountValues },
+      tasks: JSON.stringify(nativeTasks.value),
+      launchArgs: { ...nativeLaunchArgs },
+      afterDone: nativeAfterDone.value,
+      instanceRun: nativeInstanceRun.value,
     }
+    readVersion++
+    nativeLoading.value = false
+    pendingCount.value++
+    const persist = async (): Promise<boolean> => {
+      try {
+        const resp = await Service.saveZzzodNativeConfigApiApiScriptsZzzodNativeConfigSavePost({
+          scriptId,
+          instanceIdx,
+          ...payload,
+        })
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
+        }
+        if (context === contextVersion) {
+          if (section === 'all') {
+            nativeAccountFields.value = resp.account ?? []
+            for (const field of resp.account ?? []) {
+              if (nativeAccountValues[field.key] === snapshot.account[field.key]) {
+                nativeAccountValues[field.key] = field.value == null ? '' : String(field.value)
+              }
+            }
+            if (nativeInstanceRun.value === snapshot.instanceRun)
+              nativeInstanceRun.value = resp.instanceRun || '全部实例'
+          }
+          if (
+            (section === 'all' || section === 'tasks') &&
+            JSON.stringify(nativeTasks.value) === snapshot.tasks
+          )
+            nativeTasks.value = toTaskCards(resp.tasks ?? [])
+          if (section === 'all' || section === 'launchArgs') {
+            const updated = { ...getDefaultLaunchArgs(), ...resp.launchArgs }
+            for (const key of Object.keys(updated) as (keyof ZzzOdNativeLaunchArgs)[]) {
+              if (nativeLaunchArgs[key] === snapshot.launchArgs[key])
+                Object.assign(nativeLaunchArgs, { [key]: updated[key] })
+            }
+          }
+          if (
+            (section === 'all' || section === 'afterDone') &&
+            nativeAfterDone.value === snapshot.afterDone
+          )
+            nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
+        }
+        if (!silent) message.success(t('edit.zzzodNativeSaved'))
+        return true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
+        return false
+      } finally {
+        pendingCount.value--
+      }
+    }
+    const run = saveChain.then(persist, persist)
+    saveChain = run
+    return run
   }
 
   /** 原生来源启动参数：单字段即时提交（只发变更字段，读-改-写由后端持锁完成）。
@@ -212,6 +302,8 @@ export function useZzzodNativeConfig(scriptId: string, configLocked: Ref<boolean
       'all'
     )
   return {
+    hasPendingNativeSaves: () => pendingCount.value > 0 || runModeWrites.size > 0,
+    flushNativeSaves,
     nativeInstanceIdx,
     nativeInstanceRun,
     nativeAfterDone,
