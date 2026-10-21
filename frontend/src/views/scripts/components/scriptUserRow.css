@@ -57,6 +57,7 @@
 
 .user-name-section {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
@@ -76,15 +77,17 @@
 
 .user-config-summary {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   line-height: 18px;
   color: var(--ant-color-text-secondary);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .user-config-summary__label {
+  overflow-wrap: anywhere;
   color: var(--ant-color-text-tertiary);
 }
 
