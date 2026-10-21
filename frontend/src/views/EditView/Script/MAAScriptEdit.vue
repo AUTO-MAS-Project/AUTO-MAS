@@ -414,6 +414,7 @@
 </template>
 
 <script setup lang="ts">
+import { createMaaScriptDraft } from './maaScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
@@ -462,32 +463,7 @@ const formData = reactive({
 })
 
 // MAA配置
-const maaConfig = reactive<MAAScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '.',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    TaskTransitionMethod: 'ExitEmulator',
-    ProxyTimesLimit: 0,
-    ADBSearchRange: 0,
-    RunTimesLimit: 3,
-    AnnihilationTimeLimit: 40,
-    RoutineTimeLimit: 10,
-    IfCheckGameUpdate: false,
-    IfAutoInstallGameApk: false,
-    GameUpdateTimeLimit: 60,
-  },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
-  Update: {
-    TakeoverEnabled: false,
-    MirrorChyanCDK: '',
-  },
-})
+const maaConfig = reactive(createMaaScriptDraft())
 
 const rules = {
   name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],

@@ -330,6 +330,7 @@
 </template>
 
 <script setup lang="ts">
+import { createSrcScriptDraft } from './srcScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -380,26 +381,7 @@ const formData = reactive({
 })
 
 // SRC配置
-const srcConfig = reactive<SRCScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '.',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    TaskTransitionMethod: 'ExitEmulator',
-    ProxyTimesLimit: 0,
-    RunTimesLimit: 3,
-    RunTimeLimit: 40,
-    IfCheckGameUpdate: false,
-    IfAutoInstallGameApk: false,
-    GameUpdateTimeLimit: 60,
-  },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
-})
+const srcConfig = reactive(createSrcScriptDraft())
 
 const rules = {
   name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],

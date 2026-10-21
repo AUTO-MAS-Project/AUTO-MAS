@@ -28,73 +28,17 @@
                 </span>
                 <div class="script-logo-container">
                   <img
-                    v-if="script.type === 'MAA'"
-                    src="@/assets/MAA.png"
-                    alt="MAA"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'SRC'"
-                    src="@/assets/SRC.png"
-                    alt="SRC"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaEnd'"
-                    src="@/assets/MaaEnd.png"
-                    alt="MaaEnd"
-                    class="script-logo"
-                  />
-                  <!-- MaaFW 与各特调的图标取自特调注册表 -->
-                  <img
-                    v-else-if="isMaaFWFamily(script.type)"
+                    v-if="isMaaFWFamily(script.type)"
                     :src="resolveMaaFWFlavor(script.type).logo"
                     :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
                     class="script-logo"
                   />
                   <img
-                    v-else-if="script.type === 'Okww'"
-                    src="@/assets/ok-ww.ico"
-                    alt="ok-ww"
+                    v-else
+                    :src="getScriptLogo(script.type)"
+                    :alt="getScriptLogoAlt(script.type)"
                     class="script-logo"
                   />
-                  <img
-                    v-else-if="script.type === 'OkNte'"
-                    src="@/assets/ok-nte.ico"
-                    alt="ok-nte"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'HSR'"
-                    src="@/assets/hsr.png"
-                    alt="HSR"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'BetterGI'"
-                    src="@/assets/bettergi.ico"
-                    alt="BetterGI"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'ZzzOd'"
-                    src="@/assets/zzz-od.ico"
-                    alt="ZZZ-OD"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'BAAH'"
-                    src="@/assets/baah.png"
-                    alt="BAAH"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'Whimbox'"
-                    src="@/assets/whimbox.png"
-                    alt="Whimbox"
-                    class="script-logo"
-                  />
-                  <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
@@ -570,6 +514,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { SCRIPT_LOGOS, SCRIPT_LABELS } from '@/utils/scriptLogos'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
 import {
   CopyOutlined,
@@ -594,6 +539,10 @@ import {
 } from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
+
+const getScriptLogo = (type: ScriptListItem['type']) => SCRIPT_LOGOS[type]
+const getScriptLogoAlt = (type: ScriptListItem['type']) =>
+  type === 'OkNte' ? 'ok-nte' : SCRIPT_LABELS[type]
 
 const CONFIG_SOURCE_KEYS: Record<string, string> = {
   shared: 'comp.configSourceShared',

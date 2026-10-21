@@ -9,7 +9,7 @@ import {
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
   type MaaFWAgentEnvPrepareOut,
-  ScriptCreateIn,
+  type ScriptCreateIn,
   type ScriptReorderIn,
   HsrService,
   MaaFwService,
@@ -31,23 +31,6 @@ interface ScriptListRequest {
 let scriptListRequest: ScriptListRequest | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
-const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
-  MAA: ScriptCreateIn.type.MAA,
-  SRC: ScriptCreateIn.type.SRC,
-  MaaEnd: ScriptCreateIn.type.MAA_END,
-  M9A: ScriptCreateIn.type.M9A,
-  MaaFW: ScriptCreateIn.type.MAA_FW,
-  Okww: ScriptCreateIn.type.OKWW,
-  OkNte: ScriptCreateIn.type.OK_NTE,
-  HSR: ScriptCreateIn.type.HSR,
-  BetterGI: ScriptCreateIn.type.BETTER_GI,
-  ZzzOd: ScriptCreateIn.type.ZZZ_OD,
-  BAAH: ScriptCreateIn.type.BAAH,
-  Whimbox: ScriptCreateIn.type.WHIMBOX,
-  MSS: ScriptCreateIn.type.MSS,
-  General: ScriptCreateIn.type.GENERAL,
-}
-
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaConfig: 'MAA',
   SrcConfig: 'SRC',
@@ -78,7 +61,7 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type: SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE[type],
+        type: type as ScriptCreateIn['type'],
         scriptId: scriptId || null,
       }
 

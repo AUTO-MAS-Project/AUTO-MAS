@@ -960,6 +960,7 @@
 </template>
 
 <script setup lang="ts">
+import { createGeneralScriptDraft } from './generalScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
@@ -1350,49 +1351,7 @@ const formData = reactive({
 })
 
 // General配置
-const generalConfig = reactive<GeneralScriptConfig>({
-  Game: {
-    Arguments: '',
-    Enabled: false,
-    IfForceClose: false,
-    Path: '.',
-    Type: 'Emulator',
-    WaitTime: 0,
-    EmulatorId: '',
-    EmulatorIndex: '',
-    URL: '',
-    ProcessName: '',
-  },
-  Info: {
-    Name: '',
-    RootPath: '.',
-  },
-  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimeLimit: 10, RunTimesLimit: 3 },
-  Script: {
-    Arguments: '',
-    ConfigPath: '.',
-    ConfigPathMode: 'File',
-    ErrorLog: '',
-    IfTrackProcess: false,
-    TrackProcessName: '',
-    TrackProcessExe: '',
-    TrackProcessCmdline: '',
-    LogPath: '.',
-    LogPathFormat: '%Y-%m-%d',
-    LogTimeEnd: 1,
-    LogTimeStart: 1,
-    LogTimeFormat: '%Y-%m-%d %H:%M:%S',
-    LogHookEnabled: false,
-    LogHookRules: '',
-    ScriptPath: '.',
-    SuccessLog: '',
-    SuccessLogMode: 'Split',
-    ErrorLogMode: 'Split',
-    PushLogEnabled: false,
-    PushLogPatterns: '',
-    UpdateConfigMode: 'Never',
-  },
-})
+const generalConfig = reactive(createGeneralScriptDraft())
 
 // ==================== 表单校验规则 ====================
 const rules = {
