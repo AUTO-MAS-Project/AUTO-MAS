@@ -347,7 +347,7 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   </a-modal>
 </template>
 <style scoped>
-@import './zzzodFormLabels.css';
+@import './zzzodFormControls.css';
 .instance-manage {
   margin-bottom: 16px;
 }
