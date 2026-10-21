@@ -204,6 +204,19 @@ def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+# BOM 与 ASCII 空白（含 VT/FF）；strip 后不剩字节的遗留文件视为无数据。
+_BLANK_MARKS = b"\xef\xbb\xbf \t\r\n\x0b\x0c"
+
+
+def is_blank_file(path: Path) -> bool:
+    """0 字节或仅剩 BOM 与空白的遗留文件视为无数据，不判损坏。
+
+    空文件没有任何可迁移的数据，按默认值重建并照常归档，与「空白或仅
+    注释的配置按默认值处理」的既有口径一致；非空但解析失败仍报损坏。
+    """
+    return not path.read_bytes().strip(_BLANK_MARKS)
+
+
 def preserve_pre_upgrade(config_path: Path) -> None:
     """按固定 JSON 白名单留存升级原件，重试不覆盖已有备份。"""
     backup = config_path / "legacy-json" / "pre-upgrade"
@@ -255,7 +268,8 @@ def upgrade_json_configs(
         tools_source = backup_dir / "ToolsConfig.json"
     embedded_accounts = {}
     if tools_source.exists():
-        tools = read_dict_file(tools_source)
+        # 空白工具配置没有内嵌账号可读，不判损坏。
+        tools = {} if is_blank_file(tools_source) else read_dict_file(tools_source)
         embedded_accounts = tools.get("SubConfigsInfo", {}).get("GameSign_Accounts", {})
 
     for old_name, new_name, key in CONFIG_FILES:
@@ -295,11 +309,13 @@ def upgrade_json_configs(
         node = nodes[key]
         if key in prepared_documents:
             payload = prepared_documents[key]
-        elif source.exists():
+        elif source.exists() and not is_blank_file(source):
             payload = convert_legacy(read_dict_file(source), node)
         elif key == "GameSignAccounts" and embedded_accounts:
+            # 空白的账号文件没有可迁数据，优先沿用 ToolsConfig 内嵌账号。
             payload = convert_legacy(embedded_accounts, node)
         else:
+            # 空白遗留文件按默认配置生成目标，源文件仍照常记录摘要并归档。
             payload = node.model_dump(context=ExportContext(audience="persist"))
         temporary = target.with_name(target.name + ".migration.tmp")
         write_file(temporary, payload, format=".yaml")

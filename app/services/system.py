@@ -357,6 +357,12 @@ class _SystemHandler:
 
         return bool((await self._scan_processes_by_path(path)).pids)
 
+    async def is_process_stopped(self, path: Path | str) -> bool:
+        """确认目标路径没有存活进程；扫描不完整或同名进程路径不可读时返回 False。"""
+
+        scan = await self._scan_processes_by_path(path)
+        return scan.complete and not scan.pids and not scan.uncertain_pids
+
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
         """根据路径中止进程。
 
