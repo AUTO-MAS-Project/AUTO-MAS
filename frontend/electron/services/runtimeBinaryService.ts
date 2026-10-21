@@ -737,6 +737,8 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
   const verified = await readVersion(runtimePath, appRoot)
   if (verified === null) {
     logger.error(`下载到的 Runtime ${target.version} 无法运行${backedUp ? '，恢复原文件' : ''}`)
+    // 首次安装没有旧文件可恢复，清掉本次未验收的文件，让重试重新下载和校验。
+    if (!backedUp) removeQuietly(runtimePath)
     const backup: BackupOutcome = !backedUp
       ? 'none'
       : restoreBackup(runtimePath, backupPath)
@@ -755,6 +757,7 @@ async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinary
     logger.error(
       `Runtime ${target.version} 的可执行文件自报版本为 ${verified}，与 Release 标签不一致`
     )
+    if (!backedUp) removeQuietly(runtimePath)
     const backup: BackupOutcome = !backedUp
       ? 'none'
       : restoreBackup(runtimePath, backupPath)
@@ -812,7 +815,9 @@ function describeBackupOutcome(backup: BackupOutcome, runtimePath: string): stri
   return {
     restored: '已恢复原来的文件。',
     kept: `原来的文件仍保留在 ${runtimePath}${BACKUP_SUFFIX}，下次启动会自动换回。`,
-    none: `本机没有可回退的旧版本，${path.basename(runtimePath)} 暂时是新下载的那份。`,
+    none: fs.existsSync(runtimePath)
+      ? `本机没有可回退的旧版本，未通过验收的文件 ${runtimePath} 无法清理，请解除占用并手动删除后重试。`
+      : '本机没有可回退的旧版本，已清理本次未通过验收的文件，重试时会重新下载。',
   }[backup]
 }
 
