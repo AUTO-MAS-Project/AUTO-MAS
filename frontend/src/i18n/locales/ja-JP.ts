@@ -1,4 +1,4 @@
-//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -350,6 +350,7 @@ export default {
     resetEverything: 'すべてリセット',
     resetThisColor: 'この色をリセット',
     retryDownload: 'ダウンロードを再試行',
+    retryWithBuiltin: '内蔵 (httpx) でダウンロード',
     preview: 'プレビュー',
     estimatedTimeLeft: '残り時間の目安',
     colors: '色の設定',

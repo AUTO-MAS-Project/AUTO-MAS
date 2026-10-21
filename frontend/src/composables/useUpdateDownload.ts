@@ -281,8 +281,8 @@ export function disposeUpdateDownloadSubscriptions(): void {
   stopRuntimeMonitoring()
 }
 
-const start = async (version: string, data: ChangelogData) => {
-  logger.info(`开始下载: ${version}`)
+const start = async (version: string, data: ChangelogData, downloader?: 'builtin' | 'fluxdown') => {
+  logger.info(`开始下载: ${version}${downloader ? ` (指定下载器: ${downloader})` : ''}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
   latestVersion.value = version
@@ -294,7 +294,10 @@ const start = async (version: string, data: ChangelogData) => {
   startRuntimeMonitoring()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    const response = await Service.downloadUpdateApiUpdateDownloadPost(
+      version || undefined,
+      downloader
+    )
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
       receiveFailed(response.message || '下载请求失败')
@@ -376,6 +379,11 @@ const retry = async () => {
   await start(latestVersion.value, updateData.value)
 }
 
+/** 多次失败后在失败弹窗里给用户的显式选择：改用内置 httpx 重新下载 */
+const retryWithBuiltin = async () => {
+  await start(latestVersion.value, updateData.value, 'builtin')
+}
+
 const install = async () => {
   try {
     const response = await Service.installUpdateApiUpdateInstallPost()
@@ -425,6 +433,7 @@ export function useUpdateDownload() {
     open,
     switchToCnb,
     retry,
+    retryWithBuiltin,
     install,
     installLater,
     reset,

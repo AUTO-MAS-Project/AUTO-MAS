@@ -44,7 +44,8 @@ from app.utils import LazyProxy, ProcessRunner, get_logger
 from app.utils.platform.process import platform_process
 
 from .system import System
-from .update_transport import download_file, request_mirror_resource
+from .update_fluxdown import FluxdownResumableError, download_file
+from .update_transport import request_mirror_resource
 
 logger = get_logger("更新服务")
 
@@ -60,6 +61,8 @@ class _DownloadJob:
     source: str
     mirror_chyan_download_url: Optional[str]
     download_url: Optional[str]
+    # 显式下载器覆盖（"builtin"/"fluxdown"）；None = 按 Update.Downloader 配置
+    downloader: Optional[str] = None
 
 
 def _describe_version_section_error(section: object) -> Optional[str]:
@@ -199,7 +202,9 @@ class _UpdateHandler:
             data=WSUpdateCompletedData(file=file_path),
         )
 
-    async def start_download(self, *, target_version: Optional[str] = None) -> bool:
+    async def start_download(
+        self, *, target_version: Optional[str] = None, downloader: Optional[str] = None
+    ) -> bool:
         if self.is_switching_source or self.is_locked:
             return False
 
@@ -208,7 +213,9 @@ class _UpdateHandler:
             await self._refresh_mirror_download_url()
 
         return self._start_download_task(
-            job=self._create_download_job(download_version=target_version)
+            job=self._create_download_job(
+                download_version=target_version, downloader=downloader
+            )
         )
 
     def _start_download_task(self, *, job: Optional[_DownloadJob] = None) -> bool:
@@ -315,7 +322,7 @@ class _UpdateHandler:
                 self.is_locked = False
 
     def _create_download_job(
-        self, *, download_version: Optional[str] = None
+        self, *, download_version: Optional[str] = None, downloader: Optional[str] = None
     ) -> _DownloadJob:
         frozen_version = (
             download_version if download_version is not None else self.remote_version
@@ -336,6 +343,7 @@ class _UpdateHandler:
             source=frozen_source,
             mirror_chyan_download_url=frozen_mirror_url,
             download_url=frozen_download_url,
+            downloader=downloader,
         )
 
     def _get_download_source(self) -> str:
@@ -554,7 +562,7 @@ class _UpdateHandler:
         check_times = 3
         while check_times != 0:
             try:
-                # 清理可能存在的临时文件
+                # 清理可能存在的临时文件（server 续传时下载器自己管理分段，不依赖它）
                 if (Path.cwd() / "download.temp").exists():
                     (Path.cwd() / "download.temp").unlink()
 
@@ -565,6 +573,7 @@ class _UpdateHandler:
                     Path.cwd() / "download.temp",
                     timeout=30,
                     progress=report_progress,
+                    downloader=download_job.downloader,
                 )
 
                 # 重命名临时文件为最终包
@@ -577,6 +586,16 @@ class _UpdateHandler:
                 await self._publish_completed(final_path)
                 self.is_locked = False
                 break
+
+            except FluxdownResumableError as e:
+                # 中断类失败不自动重试：立即弹出失败，由用户点击重试发起下一次尝试
+                # （同一 url+destination 走 resume 断点续传，不消耗 check_times）。
+                # 用户多次重试仍失败时，错误信息内已附带改用内置 httpx 的提示
+                # （由 update_fluxdown 按任务累计中断次数追加）。
+                logger.warning(f"下载中断: {download_url}, 错误信息: {e}")
+                await self._publish_failed(f"下载中断: {e}")
+                self.is_locked = False
+                return
 
             except Exception as e:
                 if check_times != -1:

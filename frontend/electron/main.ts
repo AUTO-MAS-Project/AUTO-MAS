@@ -1917,6 +1917,28 @@ ipcMain.handle('select-file', async (event, filters = []) => {
   return result.canceled ? [] : result.filePaths
 })
 
+// 保存文本内容到用户选择的位置（用于导出下载日志等小体积文本）
+ipcMain.handle(
+  'save-text-file',
+  async (_event, defaultName: string, content: string, filters = []) => {
+    if (!mainWindow) return { success: false, error: '窗口未就绪' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出日志',
+      defaultPath: defaultName,
+      filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+    try {
+      await fs.promises.writeFile(result.filePath, content, 'utf-8')
+      return { success: true, filePath: result.filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+)
+
 // 在系统默认浏览器中打开URL
 ipcMain.handle('open-url', async (_event, url: string) => {
   try {

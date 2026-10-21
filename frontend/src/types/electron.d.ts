@@ -231,6 +231,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
   selectFile: (filters?: unknown[]) => Promise<string[]>
+  saveTextFile: (
+    defaultName: string,
+    content: string,
+    filters?: unknown[]
+  ) => Promise<{ success: boolean; filePath?: string; error?: string }>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>

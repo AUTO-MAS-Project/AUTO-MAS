@@ -8,7 +8,8 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, ref } from 'vue'
-import type { GlobalConfig, VersionOut } from '@/api'
+import { ApiError, GetService } from '@/api'
+import type { GlobalConfig, FluxdownRecord, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
@@ -59,8 +60,77 @@ const handlePauseUntilChange = (value: string | null) => {
   )
 }
 
+// 下载历史：后端按追加顺序保存，展示时倒序（最新在上）
+const updateHistory = computed(() => [...(settings.Update?.LastUpdateHistory ?? [])].reverse())
+
+const formatHistorySize = (size?: number | null) =>
+  size ? `${(size / 1024 / 1024).toFixed(1)} MB` : '-'
+
+const formatHistoryDuration = (ms?: number | null) =>
+  ms ? `${(ms / 1000).toFixed(1)}s` : '-'
+
+// FluxDown 路径：文件夹选择 + 全盘自动检测（CLI 便携版优先，无 CLI 只有全量版时警告）
+const fluxdownDetecting = ref(false)
+const fluxdownOnlyFull = ref(false)
+
+const handleFluxdownBrowse = async () => {
+  const dir = await window.electronAPI.selectFolder()
+  if (dir) {
+    fluxdownOnlyFull.value = false
+    await handleSettingChange('Update', 'FluxdownPath', dir)
+  }
+}
+
+const handleFluxdownDetect = async () => {
+  fluxdownDetecting.value = true
+  try {
+    const result = await GetService.detectFluxdownApiUpdateFluxdownDetectGet()
+    if (result.path) {
+      fluxdownOnlyFull.value = result.only_full_warning ?? false
+      await handleSettingChange('Update', 'FluxdownPath', result.path)
+      message.success(t('setting.others.fluxdownDetectFound', { path: result.path }))
+    } else {
+      fluxdownOnlyFull.value = false
+      message.warning(t('setting.others.fluxdownDetectNotFound'))
+    }
+  } catch (error) {
+    const errorMsg =
+      error instanceof ApiError && typeof error.body?.message === 'string'
+        ? error.body.message
+        : error instanceof Error
+          ? error.message
+          : String(error)
+    logger.error(`FluxDown 自动检测失败: ${errorMsg}`)
+    message.error(errorMsg)
+  } finally {
+    fluxdownDetecting.value = false
+  }
+}
+
+// 失败/回退记录可导出：把这条下载记录存成 JSON 文件
+const handleExportHistory = async (item: FluxdownRecord) => {
+  try {
+    const fileName = `fluxdown-download-${(item.timestamp ?? '').replace(/[: ]/g, '-')}.json`
+    const result = await window.electronAPI.saveTextFile(
+      fileName,
+      JSON.stringify(item, null, 2),
+      [{ name: 'JSON', extensions: ['json'] }],
+    )
+    if (result.success) {
+      message.success(t('setting.others.historyExportSuccess'))
+    } else if (result.error && result.error !== '用户取消') {
+      message.error(result.error)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`导出下载日志失败: ${errorMsg}`)
+    message.error(t('setting.others.historyExportFailed'))
+  }
+}
+
 // 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
 const changelogVisible = ref(false)
+const showUpdateHistory = ref(false)
 const unreleasedChangelog = import.meta.env.VITE_APP_CHANGELOG_UNRELEASED ?? {}
 const currentChangelog: ChangelogData = {
   [version]: import.meta.env.VITE_APP_CHANGELOG ?? {},
@@ -280,6 +350,138 @@ const copyAllInfo = async () => {
           </div>
         </a-col>
       </a-row>
+
+      <!-- FluxDown 下载器配置 -->
+      <a-row :gutter="24">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.downloader') }}</span>
+              <a-tooltip :title="t('setting.others.downloaderTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.Update?.Downloader ?? 'builtin'"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'Downloader', value)"
+            >
+              <a-select-option value="builtin">{{ t('setting.others.downloaderBuiltin') }}</a-select-option>
+              <a-select-option value="fluxdown">{{ t('setting.others.downloaderFluxdown') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.fluxdownSegments') }}</span>
+              <a-tooltip :title="t('setting.others.fluxdownSegmentsTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input-number
+              :value="settings.Update?.FluxdownSegments ?? 8"
+              :min="1"
+              :max="32"
+              size="large"
+              style="width: 100%"
+              :disabled="settings.Update?.Downloader !== 'fluxdown'"
+              @change="(value: any) => handleSettingChange('Update', 'FluxdownSegments', value)"
+            />
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.fluxdownTakeover') }}</span>
+              <a-tooltip :title="t('setting.others.fluxdownTakeoverTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="!!settings.Update?.FluxdownTakeoverAll"
+              size="large"
+              style="width: 100%"
+              :disabled="settings.Update?.Downloader !== 'fluxdown'"
+              @change="(checked: any) => handleSettingChange('Update', 'FluxdownTakeoverAll', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="16">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.fluxdownPath') }}</span>
+              <a-tooltip :title="t('setting.others.fluxdownPathTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <div class="fluxdown-path-row">
+              <a-input
+                :value="settings.Update?.FluxdownPath ?? ''"
+                :placeholder="t('setting.others.fluxdownPathPlaceholder')"
+                size="large"
+                style="flex: 1"
+                @blur="(e: any) => handleSettingChange('Update', 'FluxdownPath', e.target.value)"
+              />
+              <a-button size="large" @click="handleFluxdownBrowse">
+                {{ t('setting.others.fluxdownBrowse') }}
+              </a-button>
+              <a-button size="large" :loading="fluxdownDetecting" @click="handleFluxdownDetect">
+                {{ t('setting.others.fluxdownDetect') }}
+              </a-button>
+            </div>
+            <div v-if="fluxdownOnlyFull" class="fluxdown-only-full-warning">
+              {{ t('setting.others.fluxdownOnlyFullWarning') }}
+            </div>
+          </div>
+        </a-col>
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.fluxdownServerMode') }}</span>
+              <a-tooltip :title="t('setting.others.fluxdownServerModeTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.Update?.FluxdownServerMode ?? true"
+              size="large"
+              style="width: 100%"
+              :disabled="settings.Update?.Downloader !== 'fluxdown'"
+              @change="(checked: any) => handleSettingChange('Update', 'FluxdownServerMode', checked)"
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.lastUpdateHistory') }}</span>
+              <a-tooltip :title="t('setting.others.lastUpdateHistoryTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-button
+              block
+              size="large"
+              :disabled="!settings.Update?.LastUpdateHistory?.length"
+              @click="showUpdateHistory = true"
+            >
+              {{ t('setting.others.viewHistory') }} ({{ settings.Update?.LastUpdateHistory?.length ?? 0 }})
+            </a-button>
+          </div>
+        </a-col>
+      </a-row>
     </div>
 
     <div class="form-section">
@@ -395,6 +597,48 @@ const copyAllInfo = async () => {
       <ChangelogView :data="currentChangelog" />
     </div>
   </a-modal>
+
+  <a-modal
+    v-model:open="showUpdateHistory"
+    :title="t('setting.others.lastUpdateHistory')"
+    :width="700"
+    :footer="null"
+    class="update-history-modal"
+  >
+    <a-timeline v-if="updateHistory.length">
+      <a-timeline-item
+        v-for="(item, idx) in updateHistory"
+        :key="idx"
+        :color="
+          item.status === 'success'
+            ? 'green'
+            : item.status === 'checksum_fail'
+              ? 'red'
+              : item.status === 'fluxdown_fallback'
+                ? 'orange'
+                : 'red'
+        "
+      >
+        <div class="history-item-title">{{ item.timestamp }} — {{ item.status }}</div>
+        <div class="history-item-path">{{ item.destination || item.url?.slice(0, 80) }}</div>
+        <div class="history-item-meta">
+          {{ formatHistorySize(item.size) }} ·
+          {{ formatHistoryDuration(item.duration_ms) }}
+          <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
+          <a-button
+            v-if="item.status && item.status !== 'success'"
+            type="link"
+            size="small"
+            class="history-export-button"
+            @click="handleExportHistory(item)"
+          >
+            {{ t('setting.others.historyExport') }}
+          </a-button>
+        </div>
+      </a-timeline-item>
+    </a-timeline>
+    <a-empty v-else :description="t('setting.others.noHistory')" />
+  </a-modal>
 </template>
 
 <style scoped>
@@ -421,6 +665,50 @@ const copyAllInfo = async () => {
 
 .pause-status-alert {
   margin-bottom: 16px;
+}
+
+.fluxdown-path-row {
+  display: flex;
+  gap: 8px;
+}
+
+.fluxdown-only-full-warning {
+  margin-top: 6px;
+  color: var(--ant-color-error);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.update-history-modal :deep(.ant-modal-body) {
+  padding: 24px;
+}
+
+.history-item-title {
+  font-weight: 500;
+  color: var(--ant-color-text);
+}
+
+.history-item-path {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  word-break: break-all;
+}
+
+.history-item-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.history-item-error {
+  color: var(--ant-color-error);
+}
+
+.history-export-button {
+  padding: 0 0 0 8px;
+  height: auto;
+  font-size: 12px;
 }
 
 .form-hint {

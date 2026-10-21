@@ -25,6 +25,7 @@ import asyncio
 from typing import (
     Dict,
     List,
+    Optional,
 )
 
 from fastapi import APIRouter, Body, Query
@@ -37,6 +38,7 @@ from app.core import Config
 from app.models.schema import OutBase, UpdateDownloadSnapshot
 from app.services import Updater
 from app.utils import get_logger
+from app.utils.fluxdown_cli import fluxdown_detect
 
 
 class UpdateCheckIn(BaseModel):
@@ -50,6 +52,28 @@ class UpdateCheckOut(OutBase):
     update_info: Dict[str, Dict[str, List[str]]] = Field(
         ...,
         description="版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序",
+    )
+
+
+class FluxdownCandidateOut(BaseModel):
+    """一个候选 FluxDown 可执行文件。"""
+
+    path: str = Field(..., description="可执行文件完整路径")
+    is_portable_cli: bool = Field(..., description="是否为带 portable 标记的 CLI 便携版")
+
+
+class FluxdownDetectOut(OutBase):
+    """FluxDown 全盘检测结果。"""
+
+    path: Optional[str] = Field(None, description="择优后的 FluxDown 路径；未找到为 None")
+    is_portable_cli: bool = Field(False, description="选中项是否为 CLI 便携版")
+    only_full_warning: bool = Field(
+        False,
+        description="设备上没有任何 CLI 便携版、选中项是全量版时为 True（前端显示污染风险警告）",
+    )
+    scanned_drives: List[str] = Field(default_factory=list, description="扫描过的盘符")
+    candidates: List[FluxdownCandidateOut] = Field(
+        default_factory=list, description="全部候选，按择优顺序，最多 8 条"
     )
 
 
@@ -107,10 +131,13 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
 )
 async def download_update(
     target_version: str | None = Query(default=None, alias="version"),
+    downloader: str | None = Query(default=None),
 ) -> OutBase:
 
     try:
-        if not await Updater.start_download(target_version=target_version):
+        if not await Updater.start_download(
+            target_version=target_version, downloader=downloader
+        ):
             return OutBase(
                 code=409,
                 status="error",
@@ -201,3 +228,24 @@ async def install_update() -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.get(
+    "/fluxdown/detect",
+    tags=["Get"],
+    summary="全盘检测 FluxDown 并择优推荐",
+    response_model=FluxdownDetectOut,
+    status_code=200,
+)
+async def detect_fluxdown() -> FluxdownDetectOut:
+    """CLI 便携版优先，其次同盘、就近、新目录；无 CLI 只有全量版时提示污染风险。"""
+
+    try:
+        configured = str(Config.setting.Update.FluxdownPath or "")
+        result = await asyncio.to_thread(fluxdown_detect, configured)
+        return FluxdownDetectOut(**result)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"detect_fluxdown失败: {type(e).__name__}: {e}")
+        return FluxdownDetectOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
