@@ -416,6 +416,8 @@ export { MaaCultivateImportSkippedItem } from './models/MaaCultivateImportSkippe
 export type { MaaCultivateOperatorOptionItem } from './models/MaaCultivateOperatorOptionItem';
 export type { MaaCultivateOperatorsOut } from './models/MaaCultivateOperatorsOut';
 export type { MaaDepotInventoryOut } from './models/MaaDepotInventoryOut';
+export type { MaaDepotStageCandidatesBatchIn } from './models/MaaDepotStageCandidatesBatchIn';
+export type { MaaDepotStageCandidatesBatchOut } from './models/MaaDepotStageCandidatesBatchOut';
 export { MaaEndAutoCollectGroup } from './models/MaaEndAutoCollectGroup';
 export type { MaaEndAutoEssencePlanKey } from './models/MaaEndAutoEssencePlanKey';
 export type { MaaEndConfig } from './models/MaaEndConfig';

@@ -1,0 +1,119 @@
+import { onBeforeUnmount, ref } from 'vue'
+import { Service, type CancelablePromise, type MaaDepotStageCandidatesBatchOut } from '@/api'
+
+type StageOption = { label: string; value: string }
+type PendingLoad = { promise: Promise<void>; resolve: () => void }
+
+const BATCH_SIZE = 256
+const REQUEST_TIMEOUT_MS = 10_000
+
+/** 页面内共用批量候选查询，后台预取只占用一个 HTTP 连接。 */
+export function useMaaDepotStageCandidates(scriptId: string) {
+  const logger = window.electronAPI.getLogger('MAA库存关卡候选')
+  const candidates = ref<Record<string, StageOption[]>>({})
+  const loading = ref<string[]>([])
+  const pending = new Map<string, PendingLoad>()
+  const queued = new Set<string>()
+  let request: CancelablePromise<MaaDepotStageCandidatesBatchOut> | undefined
+  let running = false
+  let disposed = false
+  let generation = 0
+
+  const cancelPending = () => {
+    generation++
+    request?.cancel()
+    queued.clear()
+    for (const entry of pending.values()) entry.resolve()
+    pending.clear()
+    loading.value = []
+  }
+
+  const drain = async () => {
+    if (running || disposed) return
+    running = true
+    try {
+      while (queued.size > 0 && !disposed) {
+        const version = generation
+        const itemIds = [...queued].slice(0, BATCH_SIZE)
+        const entries = itemIds.map(itemId => [itemId, pending.get(itemId)!] as const)
+        for (const itemId of itemIds) queued.delete(itemId)
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        let timedOut = false
+        try {
+          const batchRequest =
+            Service.getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost({
+              script: { scriptId },
+              itemIds,
+            })
+          request = batchRequest
+          timeout = setTimeout(() => {
+            timedOut = true
+            batchRequest.cancel()
+          }, REQUEST_TIMEOUT_MS)
+          const response = await batchRequest
+          if (disposed || version !== generation) continue
+          const data = response.data
+          if (response.code !== 200 || !data) throw new Error(response.message || '候选查询失败')
+          for (const itemId of itemIds) {
+            candidates.value[itemId] = data[itemId]
+              .filter(option => option.value)
+              .map(option => ({ label: option.label, value: option.value as string }))
+          }
+        } catch (error) {
+          // 失败不缓存为空结果；下次展开或编辑时仍可重试。
+          if (!disposed && version === generation) {
+            const reason = timedOut
+              ? '候选查询超时'
+              : error instanceof Error
+                ? error.message
+                : String(error)
+            logger.error(`加载库存保持关卡候选失败: ${reason}`)
+          }
+        } finally {
+          clearTimeout(timeout)
+          request = undefined
+          for (const [itemId, entry] of entries) {
+            // 取消后的重试可能已经排队，旧请求不能结清新一代的等待。
+            if (pending.get(itemId) !== entry) continue
+            entry.resolve()
+            pending.delete(itemId)
+          }
+          loading.value = loading.value.filter(itemId => pending.has(itemId))
+        }
+      }
+    } finally {
+      running = false
+      if (queued.size > 0 && !disposed) queueMicrotask(() => void drain())
+    }
+  }
+
+  const load = async (itemIds: string[]): Promise<void> => {
+    if (disposed) return
+    const waits: Promise<void>[] = []
+    for (const itemId of new Set(itemIds.filter(Boolean))) {
+      if (candidates.value[itemId] !== undefined) continue
+      let entry = pending.get(itemId)
+      if (!entry) {
+        let resolve!: () => void
+        const promise = new Promise<void>(settle => {
+          resolve = settle
+        })
+        entry = { promise, resolve }
+        pending.set(itemId, entry)
+        queued.add(itemId)
+        loading.value.push(itemId)
+      }
+      waits.push(entry.promise)
+    }
+    // 同一轮的预取、展开与编辑合并后再发请求；在途期间的新材料留给下一批。
+    if (queued.size > 0) queueMicrotask(() => void drain())
+    await Promise.all(waits)
+  }
+
+  onBeforeUnmount(() => {
+    disposed = true
+    cancelPending()
+  })
+
+  return { candidates, loading, load, cancelPending }
+}

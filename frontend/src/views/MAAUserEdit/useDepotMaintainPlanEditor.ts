@@ -242,6 +242,7 @@ export function useDepotMaintainPlanEditor(options: DepotMaintainPlanEditorOptio
     selectedRowKeys,
     savePlans,
     queueSave,
+    loadStageCandidates: options.loadStageCandidates,
     onItemChange,
     onStageChange,
     importPreset,
