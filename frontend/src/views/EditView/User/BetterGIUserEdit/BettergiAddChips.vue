@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, nextTick, onUnmounted } from 'vue'
+import { ref, nextTick } from 'vue'
+import { useEventListener, useTimeoutFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { kindTagClass } from './bettergiQueueIdentity'
@@ -11,7 +12,6 @@ const items = defineModel<AddChipItem[]>('items', { required: true })
 const draft = defineModel<string>('draft', { required: true })
 const emit = defineEmits<{ commit: [] }>()
 const { t } = useI18n()
-let stopChipDrag: (() => void) | undefined
 const addDraftInputRef = ref<HTMLInputElement | null>(null)
 
 const addDraftFocused = ref(false)
@@ -113,31 +113,35 @@ const handleChipClick = (chip: AddChipItem, event: MouseEvent) => {
   focusAddDraftInput()
 }
 
-// 气泡按下左键：进入拖动框选；注册一次 document mouseup 结束拖动
+const { start: resetDragFinished } = useTimeoutFn(
+  () => {
+    chipDragJustFinished = false
+  },
+  0,
+  { immediate: false }
+)
+
+const finishChipDrag = () => {
+  if (!chipDragging.value) return
+  chipDragging.value = false
+  chipDragAnchorUid.value = -1
+  // 仅拖动后忽略随后的 click；下一轮事件恢复单击选择。
+  if (chipDragMoved) {
+    chipDragJustFinished = true
+    resetDragFinished()
+  }
+  focusAddDraftInput()
+}
+// 在 setup 注册，监听和短定时器随组件作用域卸载；空闲时忽略 mouseup。
+useEventListener(window, 'mouseup', finishChipDrag)
+
+// 气泡按下左键：进入拖动框选。
 const handleChipMouseDown = (chip: AddChipItem, event: MouseEvent) => {
   if (event.button !== 0) return
   chipDragJustFinished = false
   chipDragMoved = false
   chipDragging.value = true
   chipDragAnchorUid.value = chip.chipUid
-  const stop = () => {
-    chipDragging.value = false
-    chipDragAnchorUid.value = -1
-    // 仅当确实拖动（经过其它气泡）时忽略随后的 click；单击选择不受影响
-    if (chipDragMoved) {
-      chipDragJustFinished = true
-      window.setTimeout(() => {
-        chipDragJustFinished = false
-      }, 0)
-    }
-    window.removeEventListener('mouseup', stop)
-    stopChipDrag = undefined
-    // 松开后回到输入框焦点，保证随后的 Backspace/Delete 能删除选中气泡
-    focusAddDraftInput()
-  }
-  stopChipDrag?.()
-  stopChipDrag = stop
-  window.addEventListener('mouseup', stop)
 }
 
 // 拖动经过其它气泡：实时区间选择（从按下起点到当前气泡）
@@ -179,7 +183,6 @@ const handleAddDraftKeydown = (e: KeyboardEvent) => {
     }
   }
 }
-onUnmounted(() => stopChipDrag?.())
 defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
 </script>
 <template>

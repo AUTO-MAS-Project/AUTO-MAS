@@ -102,14 +102,6 @@ export interface MaaEndScriptConfig {
   }
 }
 
-// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
-// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
-export type M9AScriptConfig = MaaFWScriptConfig
-
-// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
-// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
-export type MSSScriptConfig = MaaFWScriptConfig
-
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
 

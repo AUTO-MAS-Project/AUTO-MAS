@@ -129,15 +129,6 @@ export function useZzzodNativeConfig(
     }
   }
 
-  const handleNativeInstanceChange = async (instanceIdx: number) => {
-    if (instanceIdx == null) {
-      nativeAccountFields.value = []
-      nativeTasks.value = []
-      return
-    }
-    await loadNativeConfig(instanceIdx)
-  }
-
   /** 运行实例（仅运行当前/全部启用实例）是 one_dragon.yml 全局设置，
    * 与原生来源页当前编辑哪个实例无关，独立保存 */
   const runModeCount = ref(0)
@@ -314,13 +305,10 @@ export function useZzzodNativeConfig(
     nativeAccountValues,
     nativeTasks,
     nativeLaunchArgs,
-    applyNativeConfig,
     loadNativeConfig,
-    handleNativeInstanceChange,
     runModeSaving,
     handleNativeInstanceRunChange,
     toNativeTaskIn,
-    toTaskCards,
     saveNativeConfig,
     saveNativeLaunchArgsField,
     saveNativeAccount,

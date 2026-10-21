@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { parseStatusTagList } from '@/composables/useStatusTag'
-import { isMaaFWFamily } from '@/composables/useMaaFWFlavor'
 import type { ScriptListItem, ScriptListUser } from '../scriptListModel'
 import {
   getConfigSource,
@@ -181,54 +180,14 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
           </div>
         </div>
 
-        <!-- 用户详细信息 - MAA和SRC脚本用户 -->
-        <div
-          v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
-          class="user-info-tags"
-        >
+        <!-- 所有已登记专项共用后端状态标签的显示规则 -->
+        <div class="user-info-tags">
           <!-- 直接使用后端提供的Tag字段 -->
           <a-tag
             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
             :key="index"
             :title="tag.text"
             :class="['info-tag']"
-            :color="tag.color"
-          >
-            {{ tag.text }}
-          </a-tag>
-        </div>
-        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
-        <div
-          v-if="
-            script.type === 'General' ||
-            script.type === 'Okww' ||
-            script.type === 'OkNte' ||
-            script.type === 'BetterGI' ||
-            isMaaFWFamily(script.type) ||
-            script.type === 'ZzzOd' ||
-            script.type === 'BAAH' ||
-            script.type === 'Whimbox'
-          "
-          class="user-info-tags"
-        >
-          <!-- 直接使用后端提供的Tag字段 -->
-          <a-tag
-            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-            :key="index"
-            :title="tag.text"
-            class="info-tag"
-            :color="tag.color"
-          >
-            {{ tag.text }}
-          </a-tag>
-        </div>
-        <!-- 用户详细信息 - HSR脚本用户 -->
-        <div v-if="script.type === 'HSR'" class="user-info-tags">
-          <a-tag
-            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-            :key="index"
-            :title="tag.text"
-            class="info-tag"
             :color="tag.color"
           >
             {{ tag.text }}

@@ -99,6 +99,7 @@ import ScriptCardHeader, {
 } from '@/views/scripts/components/ScriptCardHeader.vue'
 import ScriptUserRow from '@/views/scripts/components/ScriptUserRow.vue'
 import { ref, watch } from 'vue'
+import { useStorage } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
@@ -155,29 +156,27 @@ const localScripts = ref<ScriptListItem[]>([])
 // 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
 const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
 
-const loadCollapsedScriptIds = (): Set<string> => {
-  try {
-    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
-    if (!raw) return new Set()
-    const parsed = JSON.parse(raw)
-    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
-  } catch {
-    return new Set()
+const collapsedScriptIds = useStorage<Set<string>>(
+  COLLAPSED_SCRIPTS_STORAGE_KEY,
+  new Set(),
+  undefined,
+  {
+    serializer: {
+      read: raw => {
+        const parsed: unknown = JSON.parse(raw)
+        return new Set(
+          Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+        )
+      },
+      write: ids => JSON.stringify([...ids]),
+    },
+    writeDefaults: false,
+    listenToStorageChanges: false,
+    flush: 'sync',
+    // 存储不可用时仍保持当前会话内的展开/折叠。
+    onError: () => {},
   }
-}
-
-const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
-
-const saveCollapsedScriptIds = () => {
-  try {
-    localStorage.setItem(
-      COLLAPSED_SCRIPTS_STORAGE_KEY,
-      JSON.stringify([...collapsedScriptIds.value])
-    )
-  } catch {
-    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
-  }
-}
+)
 
 const isUsersCollapsed = (scriptId: string) =>
   !props.searching && collapsedScriptIds.value.has(scriptId)
@@ -210,17 +209,14 @@ const toggleUsersCollapsed = (scriptId: string) => {
     next.add(scriptId)
   }
   collapsedScriptIds.value = next
-  saveCollapsedScriptIds()
 }
 
 const collapseAllUsers = () => {
   collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
-  saveCollapsedScriptIds()
 }
 
 const expandAllUsers = () => {
   collapsedScriptIds.value = new Set()
-  saveCollapsedScriptIds()
 }
 
 const onScriptDragEnd = async () => {

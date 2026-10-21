@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import draggable from 'vuedraggable'
 import {
@@ -37,16 +37,13 @@ const {
   planModalOtherFields,
   savePlanModal,
 } = props.editor
-const taskCards = computed(() => props.cards)
 
 const openRestoreModal = () => props.restore()
 const { t } = useI18n()
-/** 当前模式展示的任务卡片：独立来源=MAS 字段编排；原生来源=所选实例的原生编排 */
-const activeTaskCards = taskCards
 /** 拖拽排序的渲染数据源：跟随当前模式任务列表，拖拽过程由 vuedraggable 就地更新 */
 const taskDragCards = ref<TaskCard[]>([])
 watch(
-  activeTaskCards,
+  () => props.cards,
   cards => {
     taskDragCards.value = cards
   },
