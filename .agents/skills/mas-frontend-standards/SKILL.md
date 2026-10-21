@@ -6,7 +6,8 @@ description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electr
 # MAS Frontend Standards
 
 ## Objective
-Keep AUTO-MAS frontend changes aligned with the current Vue 3, TypeScript, Vite, Electron, Ant Design Vue, Vue Router, OpenAPI, ESLint, Prettier, and Yarn 4 project conventions.
+
+Keep AUTO-MAS frontend changes aligned with Vue 3, TypeScript, Vite Plus (Vite, oxlint, oxfmt, and tests), Electron, Ant Design Vue, Vue Router, OpenAPI, and Yarn 4.
 
 ## Dependency Installation
 
@@ -15,9 +16,11 @@ Keep AUTO-MAS frontend changes aligned with the current Vue 3, TypeScript, Vite,
 3. If the Electron binary download is slow or fails, use the one-shot mirror command: `yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install`.
 
 ## Authority
+
 This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here.
 
 ## Mandatory Intake
+
 Before editing frontend code:
 
 1. Confirm branch, remote, and working tree status.
@@ -50,9 +53,11 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 2. Order code as imports, types, props/emits, composables, state, computed, watchers, lifecycle, functions.
 3. Type props and emits explicitly.
 4. Keep computed values for derived state; keep watchers for side effects only.
-5. Split components that exceed 500 lines or contain multiple independent business regions.
-6. Extract repeated logic into composables or module logic files instead of growing templates.
+5. Choose boundaries by responsibility, state ownership, and lifecycle. File length is a review signal, not a mandatory extraction threshold; a cohesive component can stay together.
+6. Extract substantial independent UI or stateful workflows when the boundary hides useful complexity, even with one consumer. Keep simple local state local and pure calculations in ordinary functions. Moving an entire page script into `useXxx()` or forwarding most of its refs and callbacks does not establish a useful boundary.
 7. Do not introduce a new UI, state, request, or routing library for a small task.
+
+When changing component boundaries, reactive inputs, component models, async watchers, or lifecycle handling, read [Vue state and lifecycle](references/vue-state-and-lifecycle.md). It covers state scope, Vue 3.5 props, Pinia destructuring, typed component contracts, stale reads, cleanup, and route reuse. Apply only the relevant sections; preserve existing working contracts during local fixes.
 
 ## API And Data Flow
 
@@ -91,6 +96,7 @@ Config integration follows [the configuration framework reference](../mas-data-m
 9. Never place tokens, credentials, permissions, secrets, large business datasets, or server-authoritative data in `localStorage`.
 10. API and WebSocket endpoints come from Electron config helpers; do not hardcode backend addresses in business pages.
 11. Vite-exposed environment variables use the `VITE_` prefix.
+12. Same-component navigation can reuse the instance when params or query change. Watch the specific input or use `onBeforeRouteUpdate` when data must follow it; `onMounted` alone does not cover that transition. Keep draft and pending-save behavior explicit rather than forcing global remounts with `route.fullPath`.
 
 ## Style And Code Quality
 
@@ -110,27 +116,23 @@ Config integration follows [the configuration framework reference](../mas-data-m
 
 All commands run from `frontend/`.
 
-**The repo-wide baseline is clean.** On untouched `dev` (verified 2026-08-30), `yarn lint` reports 0 errors and exactly 1 warning (`vue/no-v-html` in `LogPatternDocsModal.vue`, which arrived with #399 on 2026-08-27), `yarn typecheck` reports 0 errors, and `yarn test` is fully green. `weekly-format.yml` re-runs `ruff format`, `yarn lint:fix` and `yarn format` on `dev` every Monday, so formatting drift does not accumulate.
-
-**Therefore any lint or typecheck error you see is almost certainly yours.** Do not dismiss it as pre-existing noise without first checking the same command on an untouched checkout — the repository runs no lint, typecheck or test CI, so this baseline is held by convention alone and can drift.
-
-Maintenance note: the warning budget of 1 exists only because that single `vue/no-v-html` is unfixed. Once it is suppressed or resolved, tighten the gate to `--max-warnings 0`; leaving the budget at 1 silently permits one arbitrary new warning.
+Resolve commands from the current `frontend/package.json` and CI configuration. `yarn lint` uses oxlint, `yarn format:check` uses oxfmt, and `yarn typecheck` uses vue-tsc. The `dev` PR format workflow runs these three checks; see [MAS CI checks](../mas-ci-checks/SKILL.md) for the full gate map. Do not carry a dated clean-baseline claim or a warning allowance from a retired toolchain into a new task.
 
 | Touched surface | Command | Passing criterion |
 | --- | --- | --- |
-| Any business code | `yarn lint --max-warnings 1` | exit 0. The budget of 1 covers the single known warning (`vue/no-v-html`, introduced with #399), so any additional warning fails the gate. Plain `yarn lint` prints warnings but does not fail on them. |
-| Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | 0 errors |
-| A module with a sibling `*.test.ts`, or shared logic under test | `yarn test` | fully green |
+| Frontend code | `yarn lint`, `yarn typecheck`, `yarn format:check` | All exit 0; inspect diagnostics and leave no new warnings |
+| Electron main/preload code | Also `node node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit` | 0 errors; renderer typecheck does not cover `electron/` |
+| Behavior covered by existing tests | `yarn test <test-file>`; use `yarn test` for changes spanning shared infrastructure or multiple tested flows | Relevant checks pass; report which scope ran |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
-| Documentation only | file existence, headings, sections, `git status --short` | — |
+| Documentation only | Markdown checks, relative links, `git diff --check`, `git status --short`; validate Skill frontmatter when editing Skills | Changed documents are valid; no app build or test run solely for prose |
 | UI | also follow `mas-frontend-ui` verification | — |
 
 Rules:
 
-1. Run all three gates whole — `yarn lint --max-warnings 1`, `yarn typecheck`, `yarn test`. They can and should pass; there is no baseline to subtract. Use the `--max-warnings` form, not plain `yarn lint`, or new warnings slip through.
-2. Lint and typecheck are still orthogonal — they check different things, so passing one says nothing about the other. Run both.
-3. `yarn lint:fix` resolves `prettier/prettier` findings; use it rather than hand-formatting. Warnings are part of the gate — do not leave a new one behind.
-4. A failure in any of the three is yours until proven otherwise. If you believe it pre-exists, verify on an untouched checkout and say so explicitly in your result.
+1. For frontend code changes, run the lint, renderer typecheck, and format checks in full. Lint, types, formatting, and behavior tests prove different things; one does not replace another.
+2. Use oxlint fixes for lint findings and oxfmt for formatting, scoped to touched files. Inspect the diff afterward; do not run repository-wide auto-fixes for a local change.
+3. Investigate failures instead of assuming the baseline is clean or dirty. Before calling a failure pre-existing, reproduce the same command on an untouched checkout of the task's base commit with matching dependencies and configuration. Report that evidence separately from change validation.
+4. Select behavior tests by the affected flow and shared boundaries. Keep the permanent-suite policy below; a prose-only change does not require frontend runtime tests.
 
 Prefer `yarn typecheck` over a full `yarn build` for type validation; it is much faster and covers the renderer via `tsconfig.app.json`.
 
@@ -173,7 +175,7 @@ When an existing source-text test fails because you refactored the code it greps
 | "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language); `en-US.ts` is partial by design and missing keys fall back. |
 | "This Chinese literal is untranslated; I'll translate it." | **Chinese literals that drive logic must stay verbatim** — e.g. `tab.status === '运行'`, `result.includes('异常')`, `SchedulerStatus` values. Translating them breaks behaviour silently, with no error. Leave them and add a comment saying why. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
-| "`yarn lint` is failing, but the repo baseline is dirty anyway." | It is not. Clean `dev` passes lint, typecheck and tests. A failure is yours until you verify otherwise on an untouched checkout. |
+| "`yarn lint` is failing, but the repo baseline is dirty anyway." | Reproduce the same check on the untouched base commit before calling it pre-existing; never assume a historical baseline still holds. |
 | "Lint passed, so the types are fine." | The two are orthogonal and check different things. Run both. |
 | "I'll fix the surrounding lint noise while I'm here." | `weekly-format.yml` already formats `dev` every Monday. Unrelated cleanup buries your real diff. |
 | "I need jsdom to test this component." | Tests run in node with no DOM. Extract logic to a sibling `.ts`, or render with `@vue/server-renderer`. |
@@ -181,6 +183,7 @@ When an existing source-text test fails because you refactored the code it greps
 | "The generated client throws `ApiError`, so I'll call axios directly to read the error message." | Read it from `ApiError.body`. Business requests always go through the generated client. |
 
 ## Final Response
+
 For frontend tasks, report:
 
 1. Changed files.
