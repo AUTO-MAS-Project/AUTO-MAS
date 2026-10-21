@@ -603,26 +603,6 @@ export function resolveTaskMappingValue(
   return undefined
 }
 
-// 脚本基础信息
-export interface Script {
-  id: string
-  type: ScriptType
-  name: string
-  config:
-    | MaaConfig
-    | GeneralConfig
-    | OkwwConfig
-    | OkNteConfig
-    | SrcConfig
-    | MaaEndConfig
-    | MaaFWScriptConfig
-    | HSRConfig
-    | BetterGIConfig
-    | BAAHConfig
-    | WhimboxConfig
-  users: User[]
-}
-
 // 用户配置
 export interface User {
   id: string

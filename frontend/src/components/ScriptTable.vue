@@ -489,7 +489,7 @@
                     <div class="user-controls">
                       <div class="user-status">
                         <a-switch
-                          :checked="user.Info.Status"
+                          :checked="Boolean(user.Info.Status)"
                           :checked-children="t('comp.enabled')"
                           :un-checked-children="t('comp.disabled')"
                           class="status-switch"
@@ -549,8 +549,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { MaaFWScriptConfig, Script, User } from '../types/script'
-import type { MaaEndConfig } from '@/api'
+import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -592,45 +591,45 @@ const OVERLAY_SCRIPT_TYPES = new Set([
 ])
 
 interface Props {
-  scripts: Script[]
+  scripts: ScriptListItem[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   searching?: boolean
 }
 
 interface Emits {
-  (e: 'edit', script: Script): void
+  (e: 'edit', script: ScriptListItem): void
 
-  (e: 'delete', script: Script): void
+  (e: 'delete', script: ScriptListItem): void
 
-  (e: 'copy', script: Script): void
+  (e: 'copy', script: ScriptListItem): void
 
-  (e: 'addUser', script: Script): void
+  (e: 'addUser', script: ScriptListItem): void
 
-  (e: 'editUser', user: User): void
+  (e: 'editUser', user: ScriptListUser): void
 
-  (e: 'deleteUser', user: User): void
+  (e: 'deleteUser', user: ScriptListUser): void
 
-  (e: 'startMaaConfig', script: Script): void
+  (e: 'startMaaConfig', script: ScriptListItem): void
 
-  (e: 'startSrcConfig', script: Script): void
+  (e: 'startSrcConfig', script: ScriptListItem): void
 
-  (e: 'startMaaEndConfig', script: Script): void
+  (e: 'startMaaEndConfig', script: ScriptListItem): void
 
-  (e: 'startOkwwConfig', script: Script): void
+  (e: 'startOkwwConfig', script: ScriptListItem): void
 
-  (e: 'startWhimboxConfig', script: Script): void
+  (e: 'startWhimboxConfig', script: ScriptListItem): void
 
-  (e: 'toggleUserStatus', user: User): void
+  (e: 'toggleUserStatus', user: ScriptListUser): void
 
-  (e: 'scriptsReordered', scripts: Script[]): void
+  (e: 'scriptsReordered', scripts: ScriptListItem[]): void
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
-const localScripts = ref<Script[]>([])
+const localScripts = ref<ScriptListItem[]>([])
 // 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
 const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
 
@@ -675,19 +674,19 @@ watch(
   { immediate: true }
 )
 
-const handleEdit = (script: Script) => {
+const handleEdit = (script: ScriptListItem) => {
   emit('edit', script)
 }
 
-const handleDelete = (script: Script) => {
+const handleDelete = (script: ScriptListItem) => {
   emit('delete', script)
 }
 
-const handleCopy = (script: Script) => {
+const handleCopy = (script: ScriptListItem) => {
   emit('copy', script)
 }
 
-const handleDeleteConfirm = (script: Script) => {
+const handleDeleteConfirm = (script: ScriptListItem) => {
   Modal.confirm({
     title: t('comp.deleteThisScript'),
     content: t('comp.thisCannotBeUndone2'),
@@ -721,37 +720,36 @@ const expandAllUsers = () => {
 
 defineExpose({ collapseAllUsers, expandAllUsers })
 
-const handleAddUser = (script: Script) => {
+const handleAddUser = (script: ScriptListItem) => {
   emit('addUser', script)
 }
 
-const handleEditUser = (user: User) => {
+const handleEditUser = (user: ScriptListUser) => {
   emit('editUser', user)
 }
 
-const handleDeleteUser = (user: User) => {
+const handleDeleteUser = (user: ScriptListUser) => {
   emit('deleteUser', user)
 }
 
-const handleStartMAAConfig = (script: Script) => {
+const handleStartMAAConfig = (script: ScriptListItem) => {
   emit('startMaaConfig', script)
 }
 
-const handleStartSRCConfig = (script: Script) => {
+const handleStartSRCConfig = (script: ScriptListItem) => {
   emit('startSrcConfig', script)
 }
 
-const handleStartMaaEndConfig = (script: Script) => {
+const handleStartMaaEndConfig = (script: ScriptListItem) => {
   emit('startMaaEndConfig', script)
 }
 
-const isMaaEndPresetSupported = (script: Script) => {
-  const controllerType =
-    script.type === 'MaaEnd' ? (script.config as MaaEndConfig).Game?.ControllerType : null
+const isMaaEndPresetSupported = (script: ScriptListItem) => {
+  const controllerType = script.type === 'MaaEnd' ? script.controllerType : null
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
-const getConfigSource = (script: Script, user: User): string => {
+const getConfigSource = (script: ScriptListItem, user: ScriptListUser): string => {
   let mode = user.Info.Base
   // MaaFW 始终使用账号配置；BAAH 始终使用账号绑定的脚本原生配置。
   if (isMaaFWFamily(script.type)) mode = 'independent'
@@ -759,45 +757,42 @@ const getConfigSource = (script: Script, user: User): string => {
   // 这些专项没有共享配置来源，共享来源一律按账号配置运行。
   else if (['General', 'ZzzOd', 'Whimbox'].includes(script.type) && mode === 'shared')
     mode = 'independent'
-  const sourceKey = CONFIG_SOURCE_KEYS[mode]
+  const sourceKey = mode ? CONFIG_SOURCE_KEYS[mode] : undefined
   return sourceKey ? t(sourceKey) : ''
 }
 
 // null 表示该专项没有覆写层或状态未知，此时不显示覆写段。
-const getOverlayState = (script: Script, user: User): boolean | null =>
+const getOverlayState = (script: ScriptListItem, user: ScriptListUser): boolean | null =>
   OVERLAY_SCRIPT_TYPES.has(script.type) && user.Info.IfQuickConfig !== undefined
     ? user.Info.IfQuickConfig
     : null
 
-const handleStartOkwwConfig = (script: Script) => {
+const handleStartOkwwConfig = (script: ScriptListItem) => {
   emit('startOkwwConfig', script)
 }
 
-const handleStartWhimboxConfig = (script: Script) => {
+const handleStartWhimboxConfig = (script: ScriptListItem) => {
   emit('startWhimboxConfig', script)
 }
 
-const handleToggleUserStatus = (user: User) => {
+const handleToggleUserStatus = (user: ScriptListUser) => {
   emit('toggleUserStatus', user)
 }
 
-const getScriptTypeLabel = (script: Script) => {
+const getScriptTypeLabel = (script: ScriptListItem) => {
   const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
   // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示
   // 类型标签（MFW / M9A …，不是内部类型名 MaaFW）
   if (isMaaFWFamily(type)) {
-    return (
-      (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() ||
-      resolveMaaFWFlavor(type).typeTagLabel
-    )
+    return script.projectLabel?.trim() || resolveMaaFWFlavor(type).typeTagLabel
   }
   return type
 }
 
 // MaaFW 与各特调的标签颜色取自特调注册表
-const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, string> = {
+const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<ScriptListItem['type'], MaaFWFlavorType>, string> = {
   MAA: 'blue',
   SRC: 'purple',
   MaaEnd: 'blue',
@@ -811,7 +806,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, s
   General: 'green',
 }
 
-const getScriptTypeTagColor = (type: Script['type']) =>
+const getScriptTypeTagColor = (type: ScriptListItem['type']) =>
   isMaaFWFamily(type)
     ? resolveMaaFWFlavor(type).typeTagColor
     : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
@@ -822,7 +817,7 @@ const truncateText = (text: string, maxLength: number = 10): string => {
 }
 
 // 处理账号ID点击
-const handleUserIdClick = async (user: User) => {
+const handleUserIdClick = async (user: ScriptListUser) => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -845,7 +840,7 @@ const handleUserIdClick = async (user: User) => {
 }
 
 // 处理密码点击
-const handlePasswordClick = async (user: User) => {
+const handlePasswordClick = async (user: ScriptListUser) => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -868,7 +863,7 @@ const handlePasswordClick = async (user: User) => {
 }
 
 // 获取账号ID显示文本
-const getUserIdDisplayText = (user: User): string => {
+const getUserIdDisplayText = (user: ScriptListUser): string => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
@@ -882,7 +877,7 @@ const getUserIdDisplayText = (user: User): string => {
 }
 
 // 获取密码显示文本
-const getPasswordDisplayText = (user: User): string => {
+const getPasswordDisplayText = (user: ScriptListUser): string => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
@@ -895,11 +890,11 @@ const getPasswordDisplayText = (user: User): string => {
   }
 }
 
-const getMaaEndResourceLabel = (user: User): string => {
+const getMaaEndResourceLabel = (user: ScriptListUser): string => {
   return user.Info?.Resource || '官服'
 }
 
-const getMaaEndResourceTagColor = (user: User): string => {
+const getMaaEndResourceTagColor = (user: ScriptListUser): string => {
   switch (getMaaEndResourceLabel(user)) {
     case '官服':
     default:
@@ -908,7 +903,7 @@ const getMaaEndResourceTagColor = (user: User): string => {
 }
 
 // 获取服务器标签颜色
-const getServerTagColor = (server: string): string => {
+const getServerTagColor = (server: string | null | undefined): string => {
   switch (server) {
     // MAA服务器
     case 'Official':
@@ -944,7 +939,7 @@ const getServerTagColor = (server: string): string => {
 }
 
 // 获取服务器显示名称
-const getServerDisplayName = (server: string): string => {
+const getServerDisplayName = (server: string | null | undefined): string => {
   switch (server) {
     // MAA服务器
     case 'Official':
@@ -980,17 +975,18 @@ const getServerDisplayName = (server: string): string => {
 }
 
 // ZzzOd：配置来源标签（独立模式/原生模式）
-const getZzzOdModeLabel = (user: User): string =>
+const getZzzOdModeLabel = (user: ScriptListUser): string =>
   user.Info.Base === 'native' ? '原生模式' : '独立模式'
 
-const getZzzOdModeTagColor = (user: User): string => (user.Info.Base === 'native' ? 'gold' : 'blue')
+const getZzzOdModeTagColor = (user: ScriptListUser): string =>
+  user.Info.Base === 'native' ? 'gold' : 'blue'
 
 // ZzzOd：字段类标签仅在独立来源展示（原生来源的事实源是一条龙原生配置）
-const isZzzOdUserMode = (user: User): boolean => user.Info.Base !== 'native'
+const isZzzOdUserMode = (user: ScriptListUser): boolean => user.Info.Base !== 'native'
 
-const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
+const getZzzOdRegion = (user: ScriptListUser): string => user.Game?.GameRegion || 'cn'
 
-const getZzzOdRegionLabel = (user: User): string => {
+const getZzzOdRegionLabel = (user: ScriptListUser): string => {
   // 区服文案复用编辑页的 i18n 键，避免英文界面下标签显示中文
   const labels: Record<string, string> = {
     cn: t('edit.zzzodRegionCn'),
@@ -1004,11 +1000,11 @@ const getZzzOdRegionLabel = (user: User): string => {
 }
 
 // ZzzOd：B服账号名存 BilibiliAccountName，其余区服存 Account
-const getZzzOdAccountValue = (user: User): string =>
+const getZzzOdAccountValue = (user: ScriptListUser): string =>
   getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Game?.Account || ''
 
 // 处理 ZzzOd 账号点击（展开并复制）
-const handleZzzOdAccountClick = async (user: User) => {
+const handleZzzOdAccountClick = async (user: ScriptListUser) => {
   const userId = user.id
   if (expandedUserIds.value.has(userId)) {
     expandedUserIds.value.delete(userId)
@@ -1027,7 +1023,7 @@ const handleZzzOdAccountClick = async (user: User) => {
   }
 }
 
-const getZzzOdAccountText = (user: User): string => {
+const getZzzOdAccountText = (user: ScriptListUser): string => {
   const accountValue = getZzzOdAccountValue(user)
   if (expandedUserIds.value.has(user.id)) {
     // 展开状态：显示完整账号或未设置
@@ -1041,6 +1037,7 @@ const { reorderScript } = useScriptApi()
 const { reorderUser } = useUserApi()
 
 const onScriptDragEnd = async () => {
+  if (props.searching) return
   const scriptIds = localScripts.value.map(s => s.id)
   const success = await reorderScript(scriptIds)
   if (success) {
@@ -1048,7 +1045,8 @@ const onScriptDragEnd = async () => {
   }
 }
 
-const onUserDragEnd = async (script: Script) => {
+const onUserDragEnd = async (script: ScriptListItem) => {
+  if (props.searching) return
   const userIds = script.users.map(u => u.id)
   await reorderUser(script.id, userIds)
 }
