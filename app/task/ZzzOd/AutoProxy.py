@@ -175,7 +175,8 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 )
 
 # 应用最终失败触发有界重跑，内部操作的失败不直接判负；重试保留运行记录，
-# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。
+# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。白名单应用
+# （_RETRY_FUTILE_APPS）的失败不触发重试，详见其注释。
 
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
@@ -187,6 +188,14 @@ _ZZZOD_ONE_DRAGON_SUCCESS = "指令[ 一条龙 ] 执行成功"
 # 汇总信号应用：上游「通知」应用在本轮存在失败任务时会把自己标失败
 # （通知消息本身已发出，fire-and-forget），从失败名单剔除避免误导
 _SUMMARY_APP_IDS = frozenset({"notify"})
+
+# 「重试无意义」应用白名单（2026-10 维护者决策，条目为应用中文名，prepare
+# 时经应用目录解析为 app_id、失配在启动时告警）：这些应用的最终失败重试也不
+# 会改变结果（如限时活动关闭后入口消失，上游 app 内部已重试多次），失败不再
+# 因它们消耗重试轮次，也不拦其余应用的重试——仅当本轮失败的应用全部在白名单
+# 内（没有可恢复对象）时才跳过剩余重试。上游尚无「活动已结束」等专门状态前
+# 的调度域临时补位，上游补齐后移除。
+_RETRY_FUTILE_APPS: frozenset[str] = frozenset({"丽都城募", "情报板"})
 
 
 def _match_fatal(log: str) -> str | None:
@@ -244,6 +253,20 @@ def _failed_apps(
     failed.difference_update(observed)
     failed.update(app_id for (_, app_id), is_failed in results.items() if is_failed)
     return sorted(failed)
+
+
+def _failures_all_futile(
+    failed_app_ids: list[str], futile_app_ids: frozenset[str]
+) -> bool:
+    """失败的应用是否全部命中「重试无意义」白名单（没有可恢复对象）。
+
+    白名单应用的失败不触发重试，也不拦其余应用的重试；空失败名单（致命
+    错误 / 超时等运行级失败，未做应用级判定）按可重试处理。
+    """
+
+    return bool(failed_app_ids) and all(
+        app_id in futile_app_ids for app_id in failed_app_ids
+    )
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -917,6 +940,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
+        # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
+        self._failed_app_ids: list[str] = []
+        # 白名单解析结果（app_id 集，prepare 经应用目录解析）
+        self._futile_app_ids: frozenset[str] = frozenset()
 
     def _enabled_app_list(self) -> list[dict]:
         """当前用户的一条龙任务编排 enabled 项列表。"""
@@ -1311,6 +1338,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not self._app_name_book:
             raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
+        # 白名单条目按应用目录解析为 app_id：上游更名后条目失配在启动时告警，
+        # 而不是在重试判定里静默失配（失配条目按可重试处理）
+        self._futile_app_ids = frozenset(
+            app_id
+            for app_id, name in self._app_name_book.items()
+            if name in _RETRY_FUTILE_APPS
+        )
+        missing = _RETRY_FUTILE_APPS - set(self._app_name_book.values())
+        if missing:
+            logger.warning(
+                f"「重试无意义」白名单条目 {'、'.join(sorted(missing))} "
+                f"不在应用目录中, 可能已更名, 失配条目按可重试处理"
+            )
+
         # 用户级节点详情推送模式（build_user_result_text 按此渲染）
         self.cur_user_item.push_log_mode = str(
             self.cur_user_config.get("Notify", "PushLogMode") or "汇总"
@@ -1445,6 +1486,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.log_start_time = datetime.now()
                 self.cur_user_item.log_record[self.log_start_time] = LogRecord()
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
+                self._failed_app_ids = []
                 self.script_info.log = ""
 
                 # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
@@ -1577,6 +1619,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 except Exception:
                     pass
                 if i + 1 < run_limit:
+                    if self._all_failures_futile(log):
+                        futile_names = "、".join(
+                            self._app_display_name(app_id)
+                            for app_id in self._failed_app_ids
+                        )
+                        self.script_info.log += f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
+                        logger.info(
+                            f"用户 {self.cur_user_item.name} - "
+                            f"失败应用均无重试价值({futile_names}), 跳过剩余重试"
+                        )
+                        await self._push_dispatch_log(
+                            f"失败的应用均无重试价值（{futile_names}），跳过剩余重试"
+                        )
+                        break
                     self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                     await asyncio.sleep(10)
         finally:
@@ -1617,6 +1673,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book)
+            self._failed_app_ids = failed_apps
             if failed_apps:
                 failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
@@ -1655,6 +1712,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
+
+    def _all_failures_futile(self, log: str) -> bool:
+        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
+
+        白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
+        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
+        （共享基座本就走既有单槽路径），个别应用的确定性失败不应剥夺其余
+        目标的补跑机会。以「指令[ 一条龙 ] 执行成功」确认整轮走完：启动器
+        提前退出时未跑到的应用不在失败名单里，缺这条证据按可重试处理，
+        守住未尝试应用的补跑机会。
+        """
+
+        if self._is_multi_account() or self._is_bare_run():
+            return False
+        if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
+            return False
+        return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
 
     def _launch_evidence(self, log: str, records_changed: bool) -> bool:
         """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
