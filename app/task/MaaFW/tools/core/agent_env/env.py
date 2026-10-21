@@ -16,9 +16,15 @@ from typing import Callable
 
 from packaging.version import InvalidVersion, Version
 
+from ..interface.agent_entry import describe_uv_agent, is_uv_launcher
 from ..log_redact import mask_home_path
+from ..offline_dependencies import describe_self_install_materials
 from ..runtime_pool import runtime_managed_uv_executable
-from ..runtime_pool._shared import output_tail, remove_tree_best_effort
+from ..runtime_pool._shared import (
+    mask_url_credentials,
+    output_tail,
+    remove_tree_best_effort,
+)
 from ..runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
@@ -27,6 +33,10 @@ from ..runtime_pool.host_environment import (
 from ..runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
+)
+from ..runtime_pool.requirements_file import (
+    RequirementsFileError,
+    read_requirements_file,
 )
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
@@ -47,6 +57,13 @@ PIP_INSTALL_PER_INDEX_TIMEOUT = 300
 DETAIL_LOG_PREFIX = "[MaaFW 详情] "
 # 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
 DETAIL_OUTPUT_LIMIT = 20000
+#: Agent 程序文件不见了时给用户的处理建议。准备运行环境（声明的程序不存在）与 runner 起
+#: agent 时的 WinError 2（``runner._agent_spawn_error_hint``）共用：运行期先准备环境再
+#: Popen，杀软刚隔离掉 agent.exe 时用户先看到的是准备环境这一句。
+AGENT_PROGRAM_MISSING_HINT = (
+    "常见原因是被杀毒软件隔离或删除；请检查杀毒软件的隔离区并把项目目录加入信任，"
+    "确认无误后在脚本页重新导入项目"
+)
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
@@ -63,11 +80,27 @@ def prepare_agent_envs(
     bootstrap_python: str | None = None,
     install_dependencies: bool = True,
     progress: Callable[[dict[str, object]], None] | None = None,
+    runner_maafw_version: str | None = None,
+    lenient_health_check: bool = False,
 ) -> MaaFWAgentEnvPrepareResult:
+    """备好各 agent 的运行环境。
+
+    ``runner_maafw_version``：runner 这次实际用的 maafw 版本（宿主备完 runner 环境后、worker
+    从 job 的 ``PI_CLIENT_MAAFW_VERSION`` 取）。项目没自带原生库时隔离 venv 里的 maafw 钉成它
+    （见 ``runner.environment.resolve_project_maafw_requirement``），两侧才不会落到协议不同的
+    版本上；自带原生库的项目钉的本来就是确切版本，不受影响。
+
+    ``lenient_health_check``：项目自带 Python 的健康检查「报错照跑」，只给运行时传（worker 起
+    agent 前、宿主运行前 / 运行后的环境确认），见 :func:`_prepare_project_python_env`。缺省严格：
+    更新预检、编辑页手动准备、手动更新与同组传播后的确认都不传，漏改的调用点也不会被放宽。
+    放行的原因记在结果的 ``healthWarnings``。
+    """
+
     resolved_project_path = Path(project_path).resolve()
     messages: list[str] = []
     prepared_venvs: list[str] = []
     skipped: list[str] = []
+    health_warnings: list[str] = []
 
     def log(message: str) -> None:
         messages.append(message)
@@ -99,6 +132,9 @@ def prepare_agent_envs(
         )
 
     for index, plan in enumerate(plans):
+        if is_uv_launcher(plan.childExec):
+            # 导入时已经拒绝；这里兜住导入早于这条规则的老副本，别等到连接超时。
+            raise MaaFWAgentEnvError(describe_uv_agent(f"Agent {plan.childExec}"))
         _report_agent_progress(
             progress,
             status="running",
@@ -133,6 +169,7 @@ def prepare_agent_envs(
                     log,
                     bootstrap_python=bootstrap_python,
                     install_dependencies=install_dependencies,
+                    runner_maafw_version=runner_maafw_version,
                 )
             prepared_venvs.append(str(prepared_path))
             checked_python.add(resolved_python)
@@ -140,7 +177,14 @@ def prepare_agent_envs(
             continue
 
         if runtime_kind == "project_python":
-            _prepare_project_python_env(python_exe, resolved_project_path, log)
+            warning = _prepare_project_python_env(
+                python_exe,
+                resolved_project_path,
+                log,
+                lenient=lenient_health_check,
+            )
+            if warning:
+                health_warnings.append(warning)
             checked_python.add(resolved_python)
             report_plan_complete(index, plan)
             continue
@@ -155,6 +199,20 @@ def prepare_agent_envs(
             report_plan_complete(index, plan)
             continue
 
+        if (
+            runtime_kind == "external"
+            and plan.executableExists is False
+            and not Path(plan.executable).is_file()
+        ):
+            # 带路径的 child_exec 解析到项目里却没有这个文件（发行包漏带、被杀软隔离）：
+            # 跳过的话这里报「已就绪」、更新预检也放行，之后每次运行都死在起 agent 那一步。
+            # 只看写了路径的（exists=False）；命令名形式（exists=None）交给 PATH，照旧跳过。
+            # 再 stat 一次：计划可能是之前建的，文件后来补上了就不拦。
+            raise MaaFWAgentEnvError(
+                "声明的 Agent 程序不存在："
+                f"{_project_relative_text(str(plan.executable), resolved_project_path)}"
+                f"（interface 写的是 {plan.childExec}）。{AGENT_PROGRAM_MISSING_HINT}"
+            )
         skipped.append(plan.childExec)
         log(f"[Python环境] 跳过外部或非 Python 环境检测: {python_exe}")
 
@@ -175,17 +233,24 @@ def prepare_agent_envs(
         preparedVenvs=prepared_venvs,
         skipped=skipped,
         messages=messages,
+        healthWarnings=health_warnings,
     )
 
 
-def build_agent_env_manifest(project_path: str | Path) -> dict[str, object]:
+def build_agent_env_manifest(
+    project_path: str | Path, *, runner_maafw_version: str | None = None
+) -> dict[str, object]:
     resolved_project_path = Path(project_path).resolve()
     return {
         "schemaVersion": 1,
         "projectPath": str(resolved_project_path),
         "interfaceHash": _project_interface_hash(resolved_project_path),
-        "requirementsHash": _project_agent_requirements_hash(resolved_project_path),
-        "requirements": _load_project_agent_requirements(resolved_project_path),
+        "requirementsHash": _project_agent_requirements_hash(
+            resolved_project_path, runner_maafw_version=runner_maafw_version
+        ),
+        "requirements": _load_project_agent_requirements(
+            resolved_project_path, runner_maafw_version=runner_maafw_version
+        ),
     }
 
 
@@ -228,7 +293,24 @@ def _prepare_project_python_env(
     python_exe: str,
     project_path: Path,
     log: Callable[[str], None],
-) -> None:
+    *,
+    lenient: bool = False,
+) -> str | None:
+    """检查项目自带 Python 能不能起 MaaFW Agent；返回宽松放行时的原因，其余返回 None。
+
+    三个调用方三种口径（``lenient`` 缺省严格，漏改的调用点不会被放宽）：
+
+    - **运行时**（worker 起 agent 前、宿主运行前 / 运行后的环境确认）传 ``lenient=True``：
+      「报错照跑」。检查不管因为什么失败（缺模块、超时、DLL 加载失败、解释器坏了），先照常
+      尝试补装 binding，复检仍失败就写一行醒目的警告（原因照原文）、照常起 agent。原因记进
+      ``healthWarnings``：这次结果不当「运行环境已就绪」写缓存；agent 随后退出时 worker 把它
+      带进最终报错，用户不用翻前面的日志。
+    - **更新预检**严格：它决定新版本换不换上来，放宽就会让缺模块的坏版本顶掉能用的旧版本、
+      之后每次运行都失败。只有「缺模块、项目带自装材料、补装前完全没有 binding」三条同时满足
+      才放行（首次启动自己装依赖的项目），其余照旧拦。
+    - **编辑页手动准备**严格（同一套规则）：失败照旧报出来。
+    """
+
     log(f"[Python环境] 检测项目 Python: {python_exe}")
     test_env = _build_project_python_probe_env(python_exe, project_path)
     healthy, reason = _check_project_python_health(
@@ -239,20 +321,110 @@ def _prepare_project_python_env(
     )
     if healthy:
         _repin_project_python_binding(python_exe, project_path, test_env, log)
-        return
+        return None
 
     # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
     # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
     reason = _project_relative_text(reason, project_path)
-    raise MaaFWAgentEnvError(
-        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
-        f"  Python 路径: {python_exe}\n"
-        "  处理建议:\n"
-        "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
-        "    方法2: 检查项目自带 Python 是否能导入 maa.agent.agent_server\n"
-        "  项目 Python 属于 release 内容，AUTO-MAS 不要求其提供 pip；"
-        "只在自己的内嵌副本里修它的 maafw binding 版本。"
+    # 放行判据之一：补装之前 site-packages 里根本没有 binding。补装失败后可能留下半装的
+    # 东西，不能拿那时的状态判。
+    binding_absent = _project_python_binding_absent(python_exe)
+    if (lenient or _is_missing_module_failure(reason)) and (
+        _repin_project_python_binding(
+            python_exe, project_path, test_env, log, install_missing=True
+        )
+    ):
+        # 缺的正是 binding（换版本后视图不带它，见 _repin_project_python_binding）：按原生库
+        # 版本补装上了，再检查一次。补装没做成（不是副本、没有原生库、装不上）与钉回失败
+        # 一样只记日志，接着走下面的放行判据。宽松模式不管失败原因都先试这一步。
+        healthy, reason = _check_project_python_health(
+            python_exe,
+            cwd=str(project_path),
+            env=test_env,
+            log=log,
+        )
+        if healthy:
+            return None
+        reason = _project_relative_text(reason, project_path)
+    materials = (
+        describe_self_install_materials(project_path)
+        if binding_absent and _is_missing_module_failure(reason)
+        else None
     )
+    if materials is not None:
+        # 「agent 第一次启动时自己装依赖」的项目（MaaDuDuL、MaaTOT 的 pip install -r
+        # requirements.txt，MaaStarResonance 的 get-pip.py + deps/*.whl）：依赖还没装，探针
+        # 必然导入失败，拦下来 agent 就永远没机会装。照常起 agent，由已有的连接预算兜底；
+        # MFAA / MXU 对这类项目也是这样。三个条件同时满足才放行：
+        # - 失败是「缺模块」（依赖没装的样子）：原生库加载失败、协议对不上之类照旧拦，别让它们
+        #   拖到连接超时才暴露；
+        # - 项目带自装材料（requirements.txt / pyproject.toml、*.whl、get-pip.py）；
+        # - 补装之前自带解释器的 site-packages 里根本没有 binding（没有 maafw-*.dist-info，也
+        #   没有 maa/）。这几个项目第一次运行和换版本后（视图不带 binding）都是这个样子；出厂
+        #   就带 binding 的（M9A、MaaStellaSora、MaaFgo、MaaNTE 也都有 requirements.txt）缺
+        #   别的模块是真坏了，照旧拦，更新预检（走同一个函数）也照旧拦下坏版本。
+        #
+        # 装包不写穿共用载荷（2026-10-13 用 import_embedded_project / audit_view 在合成项目上
+        # 核实）：视图里的目录都是真目录，≥ 64 KB 的出厂文件才是载荷 / 共用库的硬链接。新建
+        # 文件是新 inode；先写临时文件再改名替换（pip 写 RECORD、编 pyc）只换视图里的目录项；
+        # pip 装 wheel 时 File.save() 对已存在的目标先 unlink 再写、卸载是改名挪走再删，同样
+        # 碰不到载荷。只有不先 unlink 的原地覆盖会写穿，pip 不这么做，运行收尾的写穿巡检
+        # 照旧兜底。换版本后：agent 新装的包作为视图私有文件带过去，被它替换过的出厂文件以
+        # 新版本为准；site-packages 里的 maa / maafw-*.dist-info 按既有规则不带，下次准备先按
+        # 原生库版本补装 binding（上面），补装不成才落到这里放行，agent 自己按它的判据重装。
+        log(
+            "[Python环境] 项目自带 Python 现在还导入不了 MaaFW Agent 模块"
+            f"（{reason}）；项目带着自己的依赖安装材料（{materials}），按项目的写法由 "
+            "Agent 第一次启动时自己安装依赖，照常启动 Agent"
+        )
+        return reason if lenient else None
+    if lenient:
+        # 运行时「报错照跑」（见函数说明）：原因照原文，只加一行醒目的警告，不拦。
+        log(
+            "[Python环境] 【警告】项目自带 Python 运行前检查没通过："
+            f"{reason}；照常启动 Agent，如果 Agent 随后退出，多半就是这个原因"
+        )
+        return reason
+    # 排障说明只进详情日志：面板与 toast 整段显示报错（pre-wrap），用户照着做不了的
+    # 步骤与写给开发者的说明会把失败原因挤掉。
+    log(
+        f"{DETAIL_LOG_PREFIX}[Python环境] 项目自带 Python 健康检查失败；检查项是该解释器"
+        "能否导入 maa.agent.agent_server。项目 Python 属于 release 内容，AUTO-MAS 不要求"
+        "其提供 pip；只在自己的内嵌副本里修它的 maafw binding 版本。"
+    )
+    # 处理建议按两种情况写：导入后目录锁定，「重新下载解压」照着做不了。本机副本这边，
+    # 严格检查只在缺模块时补装 binding（上面），所以重试能修好的是补装没做成的那种；视图
+    # 只在 interface.json 不在时按载荷重建，其余文件坏了要等换版本时整棵重建。
+    raise MaaFWAgentEnvError(
+        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}）\n"
+        f"  Python 路径: {python_exe}\n"
+        "  处理建议: 本机这份副本的问题（如补装 maafw 时没联网）检查网络后重试即可；"
+        "项目包本身就缺这个模块时，等项目发布新版本后更新，或反馈给项目作者"
+    )
+
+
+def _project_python_binding_absent(python_exe: str | Path) -> bool:
+    """自带解释器的 site-packages 里既没有 ``maafw-*.dist-info``，也没有 ``maa/``。"""
+
+    if any(True for _ in _iter_maafw_dist_info_groups(python_exe)):
+        return False
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        try:
+            if (site / "maa").exists():
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _is_missing_module_failure(reason: str) -> bool:
+    """健康检查失败的那一行是不是「缺模块」（依赖还没装的样子）。"""
+
+    return reason.startswith("ModuleNotFoundError") or "No module named" in reason
 
 
 def project_python_maafw_version(python_exe: str | Path) -> str | None:
@@ -345,7 +517,9 @@ def _repin_project_python_binding(
     project_path: Path,
     env: dict[str, str],
     log: Callable[[str], None],
-) -> None:
+    *,
+    install_missing: bool = False,
+) -> bool:
     """自带解释器里的 maafw binding 与自带原生库版本不一致时，在副本里把它钉回去。
 
     runner 加载的是项目自带的原生库（``project_maafw_runtime_path``），agent 侧的 binding
@@ -353,6 +527,14 @@ def _repin_project_python_binding(
     部署脚本会把 binding ``pip install --upgrade`` 到 PyPI 最新（Maa_bbb v1.12.8 实测升到
     5.13.1/协议 8，原生库还是 5.11.1/协议 7）。**只动内嵌副本**：那是 AUTO-MAS 自己铺的；
     用户手上的项目目录仍然一个字节不碰，只把原因说清。任何一步失败只记日志，不拦准备。
+
+    ``install_missing``：自带解释器里压根没装 binding 时也按原生库版本补装（目标版本只看
+    原生库，与已装版本无关）。换版本时视图不带 site-packages 里的 binding（见
+    ``embedded_project._is_maafw_binding_path``），而「首次启动自己装依赖」的项目常有自己的
+    「已装过」标记（MaaTOT 的 ``config/pip_config.json``），不会再装，agent 一 import maa 就退出。
+    只由健康检查报缺模块的那条路传：健康时 maa 导得进来，没有 dist-info 也不去动它。
+
+    返回装完之后 binding 是否与原生库同版本（没动手、动手失败都是 False）。
     """
 
     from app.task.MaaFW.tools.core.runner.environment import (
@@ -361,22 +543,33 @@ def _repin_project_python_binding(
 
     installed = project_python_maafw_version(python_exe)
     native = probe_bundled_maafw_version(project_path)
-    if not installed or not native:
-        return
-    try:
-        same = Version(installed) == Version(native)
-    except InvalidVersion:
-        same = installed == native
-    if same:
-        return
-    mismatch = f"项目自带 Python 里的 maafw 是 {installed}，项目自带的 MaaFramework 原生库是 {native}"
-    if not _is_embedded_copy(Path(project_path)):
-        log(
-            f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
-            "请更新项目或自行把 binding 版本对齐"
+    if not native or (not installed and not install_missing):
+        return False
+    if installed:
+        try:
+            same = Version(installed) == Version(native)
+        except InvalidVersion:
+            same = installed == native
+        if same:
+            return False
+        mismatch = (
+            f"项目自带 Python 里的 maafw 是 {installed}，"
+            f"项目自带的 MaaFramework 原生库是 {native}"
         )
-        return
-    log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+        action = f"把副本里的 binding 钉回 {native}"
+    else:
+        mismatch = f"项目自带 Python 里没有装 maafw binding，项目自带的 MaaFramework 原生库是 {native}"
+        action = f"在副本里按原生库版本补装 binding {native}"
+    if not _is_embedded_copy(Path(project_path)):
+        if installed:
+            log(
+                f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
+                "请更新项目或自行把 binding 版本对齐"
+            )
+        else:
+            log(f"[Python环境] {mismatch}；这是项目目录，AUTO-MAS 不往里装")
+        return False
+    log(f"[Python环境] {mismatch}，{action}")
     # 残留的旧安装记录先挪开（不删）：钉回成功才丢，失败就原样放回。dist-info 集合是
     # 环境指纹的输入，失败时若集合变了、版本又没对上，准备会被当成并发改动拒绝缓存——
     # 离线时本来能过的项目（M9A v4.9.0 出厂形态）会因此每次都失败。
@@ -398,7 +591,7 @@ def _repin_project_python_binding(
     if ok and pinned_ok:
         if stash is not None and not remove_tree_best_effort(stash):
             log(f"[Python环境] 挪开的旧 maafw 安装记录没删干净，留在 {stash}")
-        return
+        return True
     if moved:
         _restore_stashed_dist_infos(moved, log)
     if stash is not None and not remove_tree_best_effort(stash):
@@ -412,6 +605,7 @@ def _repin_project_python_binding(
             f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
             "不一致，agent 可能连不上"
         )
+    return False
 
 
 #: 钉回期间暂放旧 maafw 安装记录的目录（副本根下，钉回结束即删）
@@ -504,6 +698,7 @@ def _prepare_isolated_venv_env(
     *,
     bootstrap_python: str | None,
     install_dependencies: bool,
+    runner_maafw_version: str | None = None,
 ) -> Path:
     if not agent_plan.isolatedVenvPath:
         raise MaaFWAgentEnvError("隔离 venv 路径未提供，无法创建隔离环境")
@@ -515,7 +710,9 @@ def _prepare_isolated_venv_env(
 
     log(f"[Python环境] 准备隔离 venv: {venv_path}")
     had_valid_venv = _is_valid_venv_path(venv_path)
-    if _should_rebuild_isolated_venv(venv_path, project_path, log):
+    if _should_rebuild_isolated_venv(
+        venv_path, project_path, log, runner_maafw_version=runner_maafw_version
+    ):
         _reset_isolated_venv(venv_path, log)
         had_valid_venv = False
     _ensure_isolated_venv(venv_path, log, bootstrap_python=bootstrap_python)
@@ -529,12 +726,23 @@ def _prepare_isolated_venv_env(
         if not _try_ensurepip(python_exe, cwd=str(project_path), env=test_env, log=log):
             raise MaaFWAgentEnvError(f"隔离 venv pip 无法自动修复: {python_exe}")
 
-    if had_valid_venv and _is_isolated_venv_manifest_current(venv_path, project_path):
+    if had_valid_venv and _is_isolated_venv_manifest_current(
+        venv_path, project_path, runner_maafw_version=runner_maafw_version
+    ):
         log("[Python环境] 隔离 venv 依赖清单未变化，跳过 pip install")
         return venv_path
 
     if install_dependencies:
-        packages = _load_project_agent_requirements(project_path)
+        packages = _load_project_agent_requirements(
+            project_path, runner_maafw_version=runner_maafw_version
+        )
+        parsed_requirements = read_requirements_file(project_path / "requirements.txt")
+        if parsed_requirements is not None and parsed_requirements.ignored_options:
+            log(
+                "[Python环境] requirements.txt 里的选项行不传给 pip（索引由 AUTO-MAS 的"
+                "镜像候选决定），已忽略: "
+                + ", ".join(parsed_requirements.ignored_options)
+            )
         log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
         installed, failure_detail = _pip_install(
             python_exe, packages, cwd=str(project_path), env=test_env, log=log
@@ -548,7 +756,9 @@ def _prepare_isolated_venv_env(
     else:
         log("[Python环境] 当前调用禁用依赖安装，仅写入隔离 venv manifest")
 
-    _write_isolated_venv_manifest(venv_path, project_path)
+    _write_isolated_venv_manifest(
+        venv_path, project_path, runner_maafw_version=runner_maafw_version
+    )
     return venv_path
 
 
@@ -648,6 +858,8 @@ def _should_rebuild_isolated_venv(
     venv_path: Path,
     project_path: Path,
     log: Callable[[str], None],
+    *,
+    runner_maafw_version: str | None = None,
 ) -> bool:
     if venv_path.exists() and venv_base_python_missing(venv_path):
         log(
@@ -671,7 +883,9 @@ def _should_rebuild_isolated_venv(
         log(f"[Python环境] 隔离 venv 依赖清单异常，将重建: {exc}")
         return True
 
-    expected = build_agent_env_manifest(project_path)
+    expected = build_agent_env_manifest(
+        project_path, runner_maafw_version=runner_maafw_version
+    )
     if manifest.get("projectPath") != expected["projectPath"]:
         log("[Python环境] 隔离 venv 项目路径已变化，将重建")
         return True
@@ -693,13 +907,17 @@ def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
     log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
 
 
-def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> bool:
+def _is_isolated_venv_manifest_current(
+    venv_path: Path, project_path: Path, *, runner_maafw_version: str | None = None
+) -> bool:
     manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except Exception:
         return False
-    expected = build_agent_env_manifest(project_path)
+    expected = build_agent_env_manifest(
+        project_path, runner_maafw_version=runner_maafw_version
+    )
     return (
         manifest.get("projectPath") == expected["projectPath"]
         and manifest.get("interfaceHash") == expected["interfaceHash"]
@@ -707,35 +925,25 @@ def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> b
     )
 
 
-def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
+def _write_isolated_venv_manifest(
+    venv_path: Path, project_path: Path, *, runner_maafw_version: str | None = None
+) -> None:
     manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
     manifest_path.write_text(
         json.dumps(
-            build_agent_env_manifest(project_path), ensure_ascii=False, indent=2
+            build_agent_env_manifest(
+                project_path, runner_maafw_version=runner_maafw_version
+            ),
+            ensure_ascii=False,
+            indent=2,
         ),
         encoding="utf-8",
     )
 
 
-def _load_project_agent_requirements(project_path: Path) -> list[str]:
-    requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
-    declared = True
-    try:
-        with requirements_path.open("r", encoding="utf-8") as file:
-            for raw_line in file:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                packages.append(line)
-    except FileNotFoundError:
-        declared = False
-
-    normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
-    if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
-        packages.append(AGENT_BOOTSTRAP_PACKAGE)
-    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
-    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+def _load_project_agent_requirements(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> list[str]:
     # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
     # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
     from app.task.MaaFW.tools.core.runner.environment import (
@@ -743,22 +951,46 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
         resolve_project_maafw_requirement,
     )
 
-    pinned = pin_agent_maafw_requirement(project_path, packages)
+    # 清单逐条当独立参数交给 pip / uv（没有 -r 那一层），所以按 pip 的规则先洗一遍：
+    # BOM、行内注释、续行、整行选项与 --hash 都会让原样照抄的那一条装不上。
+    try:
+        parsed = read_requirements_file(project_path / "requirements.txt")
+    except RequirementsFileError as exc:
+        # -r 引用的子清单读不了 / 越界、用了不支持的 -c / -e：报错，不能少装了依赖还报就绪
+        raise MaaFWAgentEnvError(str(exc)) from exc
+    declared = parsed is not None
+    packages: list[str] = list(parsed.requirements) if parsed is not None else []
+
+    normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
+    if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
+        packages.append(AGENT_BOOTSTRAP_PACKAGE)
+    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
+    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+
+    pinned = pin_agent_maafw_requirement(
+        project_path, packages, runner_maafw_version=runner_maafw_version
+    )
     if not declared:
         # 压根没有 requirements.txt 的 Python agent：MFW-PyQt6 的「嵌入式 Agent」
         # 模式（FOS 这类，CFA_setting.json 里 embedded=true）把 maa 与 numpy 冻进了
         # 外壳自己的程序里，发行包不写依赖。这份 venv 只会给 Python agent 用，里面
         # 至少得有跟项目自带原生库同版本的 binding，否则 agent import maa 当场退出。
-        # 项目没自带原生库时拿不到版本，就还是原样。
-        requirement = resolve_project_maafw_requirement(project_path)
+        # 项目没自带原生库时用 runner 这次实际用的版本；两样都拿不到才原样。
+        requirement = resolve_project_maafw_requirement(
+            project_path, runner_maafw_version=runner_maafw_version
+        )
         if requirement is not None:
             pinned.append(requirement)
     return pinned
 
 
-def _project_agent_requirements_hash(project_path: Path) -> str:
+def _project_agent_requirements_hash(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> str:
     payload = json.dumps(
-        _load_project_agent_requirements(project_path),
+        _load_project_agent_requirements(
+            project_path, runner_maafw_version=runner_maafw_version
+        ),
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -1038,11 +1270,14 @@ def _pip_index_arg_candidates() -> list[tuple[str, list[str]]]:
         return [("离线", ["--no-index"])]
     user_index = str(os.environ.get("PIP_INDEX_URL") or "").strip()
     if user_index:
-        return [(f"PIP_INDEX_URL={user_index}", [])]
+        return [(mask_url_credentials(f"PIP_INDEX_URL={user_index}"), [])]
     candidates = resolve_package_index_candidates()
     if not candidates:
         return [("PyPI 默认索引", [])]
-    return [(candidate, ["--index-url", candidate]) for candidate in candidates]
+    return [
+        (mask_url_credentials(candidate), ["--index-url", candidate])
+        for candidate in candidates
+    ]
 
 
 def _pip_install(
@@ -1107,7 +1342,9 @@ def _pip_install(
                 if result.returncode == 0:
                     log(f"[Python环境] {tool} 完成 ({label}): {', '.join(packages)}")
                     return True, ""
-                last_detail = (result.stderr or result.stdout or "").strip()
+                last_detail = mask_url_credentials(
+                    (result.stderr or result.stdout or "").strip()
+                )
                 if uv_exe is None and "No module named pip" in last_detail:
                     uv_exe = _find_uv_executable()
                     if uv_exe is None:
@@ -1130,12 +1367,14 @@ def _pip_install(
                 )
             except OSError as exc:
                 # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
-                last_detail = f"无法启动 {command[0]}: {exc}"
-                log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
+                last_detail = mask_url_credentials(f"无法启动 {command[0]}: {exc}")
+                log(
+                    f"[Python环境] {tool} 无法启动 ({label}): {mask_url_credentials(exc)}"
+                )
                 return False, output_tail(last_detail, 300)
             except Exception as exc:
-                last_detail = f"{label}: {exc}"
-                log(f"[Python环境] {tool} 异常 ({label}): {exc}")
+                last_detail = mask_url_credentials(f"{label}: {exc}")
+                log(f"[Python环境] {tool} 异常 ({label}): {mask_url_credentials(exc)}")
             break
     return False, output_tail(last_detail, 300)
 

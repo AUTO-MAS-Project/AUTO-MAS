@@ -248,10 +248,11 @@
                       </a-tooltip>
                     </span>
                     <a-radio-group
-                      v-model:value="okwwConfig.Game.Type"
+                      :value="okwwConfig.Game.Type"
                       class="launch-type-toggle"
                       size="small"
                       button-style="solid"
+                      @change="handleLaunchTypeChange($event.target.value)"
                       :disabled="!okwwConfig.Game.Enabled"
                     >
                       <a-radio-button value="Client">
@@ -304,8 +305,16 @@
                   show-icon
                   class="path-validation-alert"
                 />
-                <div v-if="okwwConfig.Game.Type === 'Client'" class="derived-client-row">
-                  <span class="label-hint">{{ t('edit.gameClientPathLabel') }}</span>
+                <div class="derived-client-row">
+                  <span class="label-hint">
+                    {{ t('edit.gameClientPathLabel') }}
+                    <a-tooltip
+                      v-if="okwwConfig.Game.Type === 'Launcher'"
+                      :title="t('edit.clientPathOptionalHint')"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
                   <a-input-group compact class="path-input-group">
                     <a-input
                       :value="okwwConfig.Game.ClientPath || derivedClientPath"
@@ -515,7 +524,7 @@ import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -648,8 +657,12 @@ const derivedClientPath = ref('')
 
 // 已持久化的启动方式：保存失败时回滚到它
 let persistedLaunchType: 'Launcher' | 'Client' | null = null
-// 最近一次主动发起/接受的目标值：抑制回滚恢复与重复赋值触发的重复提交
-let requestedLaunchType: 'Launcher' | 'Client' | null = null
+// 已持久化的路径字段：保存失败时回滚到它。锚在「最近一次保存成功的值」上而不是
+// 调用时的快照——同字段并发保存时，早先请求的快照可能正是另一个尚未落盘的中间值，
+// 两次都失败会把界面留在从未持久化的值上
+let persistedRootPath = ''
+let persistedGamePath = ''
+let persistedClientPath = ''
 
 interface UpdateUserOption {
   uid: string
@@ -887,9 +900,31 @@ const validateGamePath = async (launcherPath: string) => {
   }
 
   gamePathValidation.status = 'valid'
-  gamePathValidation.message = `当前游戏路径合法：已找到 ${executable}`
+  // 只说明启动器文件本身在；客户端能否定位由下方「游戏客户端」行单独反馈，
+  // 别在这里给「路径合法」的全局保证，两个结论会打架
+  gamePathValidation.message = `已找到 ${executable}`
   return true
 }
+
+const saveField = (
+  data: Record<string, Record<string, unknown>>,
+  restore: () => void | Promise<unknown>,
+  successMessage?: string
+) =>
+  enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, data)
+      if (success) {
+        if (successMessage) message.success(successMessage)
+      } else {
+        await restore()
+      }
+      return success
+    } catch (error) {
+      await restore()
+      throw error
+    }
+  })
 
 const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww 根目录已保存') => {
   if (!rootPath || rootPath === '.') {
@@ -897,52 +932,34 @@ const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww �
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  const previousPath = okwwConfig.Info.RootPath
   okwwConfig.Info.RootPath = norm
 
-  return enqueue(async () => {
-    try {
-      const success = await updateScript(scriptId, {
-        Info: { RootPath: norm },
-      })
-      if (success) {
-        message.success(successMessage)
-        return true
-      }
-      okwwConfig.Info.RootPath = previousPath
-      return false
-    } catch (error) {
-      okwwConfig.Info.RootPath = previousPath
-      throw error
-    }
-  })
+  const success = await saveField(
+    { Info: { RootPath: norm } },
+    () => {
+      okwwConfig.Info.RootPath = persistedRootPath
+    },
+    successMessage
+  )
+  if (success) persistedRootPath = norm
+  return success
 }
 
 const saveGamePath = async (launcherPath: string, successMessage: string) => {
   const normalized = launcherPath.replace(/\\/g, '/')
   if (!(await validateGamePath(normalized))) return false
-  const previousPath = okwwConfig.Game.Path
   okwwConfig.Game.Path = normalized
-  const success = await enqueue(async () => {
-    try {
-      const ok = await updateScript(scriptId, {
-        Game: { Path: normalized },
-      })
-      if (ok) {
-        message.success(successMessage)
-      } else {
-        okwwConfig.Game.Path = previousPath
-        await validateGamePath(previousPath)
-      }
-      return ok
-    } catch (error) {
-      okwwConfig.Game.Path = previousPath
-      await validateGamePath(previousPath)
-      throw error
-    }
-  })
-  if (success && okwwConfig.Game.Type === 'Client') {
-    // 启动器路径变了，直启模式的客户端路径展示需要重新解码
+  const success = await saveField(
+    { Game: { Path: normalized } },
+    async () => {
+      okwwConfig.Game.Path = persistedGamePath
+      await validateGamePath(persistedGamePath)
+    },
+    successMessage
+  )
+  if (success) {
+    persistedGamePath = normalized
+    // 启动器路径变了，客户端路径展示需要重新解码（两种启动方式都展示该行）
     await refreshDerivedClientPath()
   }
   return success
@@ -971,11 +988,12 @@ const loadScript = async () => {
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {
       await validateGamePath(okwwConfig.Game.Path)
     }
-    if (okwwConfig.Game.Type === 'Client') {
-      await refreshDerivedClientPath()
-    }
+    // 两种启动方式都展示客户端路径：启动器态它是可选项，解不出时也在此提示
+    await refreshDerivedClientPath()
     persistedLaunchType = okwwConfig.Game.Type
-    requestedLaunchType = okwwConfig.Game.Type
+    persistedRootPath = okwwConfig.Info.RootPath
+    persistedGamePath = okwwConfig.Game.Path
+    persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
     message.error(t('edit.couldNotLoadScript'))
   } finally {
@@ -1107,8 +1125,9 @@ const selectGameRootPath = async () => {
   )
 }
 
-// 直启模式的客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正启动的
-// exe 由后端自行解码，不落盘配置。
+// 客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正要用的 exe 由后端
+// 自行解码，不落盘配置。两种启动方式都拉取：启动器态它是可选项，且解不出时
+// 这条提示是用户唯一的知情渠道（后端会在收尾时退回按进程名匹配）
 // 已手动指定 ClientPath 时展示值不来自解码，跳过调用避免无谓的失败提示
 const refreshDerivedClientPath = async () => {
   if (okwwConfig.Game.ClientPath) return
@@ -1131,24 +1150,23 @@ const refreshDerivedClientPath = async () => {
   }
 }
 
-// 切换启动方式：Game.Path 恒为启动器路径，两种方式都由它定位游戏，切换只
-// 影响 MAS 的拉起方式，路径无需改动；直启模式刷新客户端路径展示
+// 切换只改变拉起方式。回滚赋值不触发 change，不会产生二次保存。
 const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
-  // 先更新哨兵再回滚赋值：让 watch 认定这是自己接受的目标值，不再重复提交；
-  // 回滚目标读当前已持久化值而非入队快照——队列中更早的请求可能已落库
+  if (isInitializing.value) return
+  okwwConfig.Game.Type = value
   const rollback = () => {
     if (persistedLaunchType === null) return
-    requestedLaunchType = persistedLaunchType
     okwwConfig.Game.Type = persistedLaunchType
   }
-  // enqueue 会把更新失败透成拒绝，这里收掉：watch 里的 void 调用漏出去会变成
-  // 未处理的 promise 拒绝（失败回滚与提示已在本函数内处理）
+  // 队列内更新持久值；上一请求失败后，下一请求仍应显示并保存自己的目标。
   const success = await enqueue(async () => {
+    okwwConfig.Game.Type = value
     try {
       const ok = await updateScript(scriptId, {
         Game: { Type: value },
       })
-      if (!ok) rollback()
+      if (ok) persistedLaunchType = value
+      else rollback()
       return ok
     } catch (error) {
       rollback()
@@ -1159,35 +1177,26 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
     message.error(t('edit.launchTypeSaveFailed'))
     return
   }
-  persistedLaunchType = value
-  if (value === 'Client') {
-    await refreshDerivedClientPath()
-  }
+  await refreshDerivedClientPath()
 }
 
-// 手动指定直启客户端：留空（恢复自动）时由启动器路径解码定位
+// 手动指定客户端：留空（恢复自动）时由启动器路径解码定位；两种启动方式都可用，
+// 启动器态指定后已运行检测与收尾按精确路径进行
 const saveClientPath = async (clientPath: string) => {
-  const previousPath = okwwConfig.Game.ClientPath
   okwwConfig.Game.ClientPath = clientPath
-  const success = await enqueue(async () => {
-    try {
-      const ok = await updateScript(scriptId, {
-        Game: { ClientPath: clientPath },
-      })
-      if (ok) {
-        message.success(t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset'))
-      } else {
-        okwwConfig.Game.ClientPath = previousPath
-      }
-      return ok
-    } catch (error) {
-      okwwConfig.Game.ClientPath = previousPath
-      throw error
+  const success = await saveField(
+    { Game: { ClientPath: clientPath } },
+    () => {
+      okwwConfig.Game.ClientPath = persistedClientPath
+    },
+    t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset')
+  )
+  if (success) {
+    persistedClientPath = clientPath
+    if (!clientPath) {
+      // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
+      await refreshDerivedClientPath()
     }
-  })
-  if (success && !clientPath && okwwConfig.Game.Type === 'Client') {
-    // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
-    await refreshDerivedClientPath()
   }
   return success
 }
@@ -1213,18 +1222,6 @@ const selectClientPath = async () => {
 const resetClientPath = async () => {
   await saveClientPath('')
 }
-
-watch(
-  () => okwwConfig.Game.Type,
-  value => {
-    // 初始化载入配置不保存；与最近一次发起/接受的目标值相同则无需重复提交。
-    // 用「目标值」而非「已持久化值」：保存未返回期间切回原值也必须照常保存，
-    // 否则后端的值与界面显示会分叉
-    if (isInitializing.value || value === requestedLaunchType) return
-    requestedLaunchType = value
-    void handleLaunchTypeChange(value)
-  }
-)
 
 onMounted(loadScript)
 

@@ -8,9 +8,9 @@
  *    （backendService 的 `stopBackend()` 已封装）——`workspace sync` 发现后端仍在跑会
  *    直接返回 `BACKEND_STILL_RUNNING`，所以这一步必须真的等到退出；
  * 2. `bootstrap --version v<新版本>`：临时目录浅克隆 `release/<新版本>`、校验通过后整体
- *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先按目标版本的发布分支
- *    把 `auto-mas-runtime.exe` 换成配套的那一版（第 0 步，见 `runtimeBinaryService`），
- *    这时旧监督进程已退出、新的还没起来，是唯一能安全替换 exe 的窗口；
+ *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先把 `auto-mas-runtime.exe`
+ *    对齐到线上最新版（第 0 步，见 `runtimeBinaryService`），这时旧监督进程已退出、新的还没
+ *    起来，是唯一能安全替换 exe 的窗口；
  * 3. 重新 `backend supervise`（backendService 的 `startBackend()`）。
  *
  * 三步各自的失败后果完全不同，所以失败结果里带 `phase`，界面据此给出不同的处置入口，
@@ -26,7 +26,7 @@ import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
 } from './runtimeBinaryService'
 import {
   InitializationRunStage,
@@ -95,9 +95,9 @@ const RETRY_ACTION_MAP: Readonly<
   repair: { stage: 'python', mode: 'rebuild' },
 }
 
-/** 第 0 步（Runtime 对齐）的失败码：它们发生在源码被动之前。 */
+/** 第 0 步（Runtime 对齐到线上最新版）的失败码：它们发生在源码被动之前。 */
 const RUNTIME_BINARY_FAILURE_CODES: ReadonlySet<string> = new Set([
-  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_LATEST_UNAVAILABLE,
   RUNTIME_BINARY_DOWNLOAD_FAILED,
   RUNTIME_BINARY_REPLACE_FAILED,
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -573,8 +573,8 @@ function buildBootstrapFailure(
 /**
  * 失败段到重试入口。
  *
- * 第 0 步（Runtime 对齐）失败时什么都还没动，整条重来即可；仓库段失败时旧 `repo/` 仍在，
- * 只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
+ * 第 0 步（Runtime 对齐到线上最新版）失败时什么都还没动，整条重来即可；仓库段失败时旧
+ * `repo/` 仍在，只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
  * `environment_broken`，退不回去，只能重试同步、重建依赖或整体修复。
  */
 export function resolveRetryActions(

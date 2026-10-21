@@ -13,3 +13,20 @@ export function patchConfigFile(
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
   return config
 }
+
+/** 清理旧外观前同步确认磁盘仍选中它，不覆盖其他窗口刚保存的选择。 */
+export function clearAppearanceConfigIfCurrent(
+  configPath: string,
+  expectedId: string,
+  isInvalid: () => boolean
+): { cleared: boolean; config: Record<string, unknown> } {
+  const current: Record<string, unknown> = fs.existsSync(configPath)
+    ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+    : {}
+  if (current.appearanceId !== expectedId || !isInvalid()) {
+    return { cleared: false, config: current }
+  }
+  const config = { ...current, appearanceId: null }
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+  return { cleared: true, config }
+}

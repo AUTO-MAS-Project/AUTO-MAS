@@ -20,7 +20,7 @@
 
 """模拟器层面的游戏客户端 APK 更新公共原语。
 
-模块只提供与具体游戏无关的能力：通过 adb 读取/安装客户端、版本比较、
+模块只提供与具体游戏无关的能力：通过 adb 读取/安装客户端、
 流式下载安装包、按 HTTP Range 读取远端安装包的版本号。各专项（MAA / SRC 等）
 与 MaaFW 特调（M9A）自行对接各自游戏的版本接口与下载入口后调用本模块完成
 "检查版本 → 下载 → 安装"的编排。
@@ -34,9 +34,10 @@ import shutil
 import struct
 import zlib
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import aiofiles
 import httpx
@@ -77,18 +78,50 @@ _ANDROID_ATTR_NAMES = {
 }
 
 
-@dataclass
-class GameUpdateResult:
-    """游戏更新检查与接管的结果"""
+#: 当前任务上下文里接管 adb 的通道（``await runner(*args, timeout=…)`` → ``(返回码, 输出)``）。
+#: 魔改 AVD 实例上由调用方用 :func:`adb_runner_scope` 设成 MAS 私有 server 的通道：脚本用的
+#: 5037 会和雷电 / MuMu 自带的旧版 adb 互杀。没设时（雷电 / MuMu）照旧按 ``adb_path`` +
+#: ``adb_address`` 执行。ContextVar 按 asyncio 任务隔离，不会串到别的任务。
+_ADB_RUNNER: ContextVar[Callable[..., Awaitable[tuple[int, str]]] | None] = ContextVar(
+    "game_apk_adb_runner", default=None
+)
 
-    status: Literal["Skipped", "UpToDate", "Updated", "NeedManualUpdate"]
-    """``Skipped`` 未执行检查；``UpToDate`` 无需更新；``Updated`` 已由 MAS 完成更新；
-    ``NeedManualUpdate`` 需要用户手动更新，本次不应继续代理"""
-    message: str
-    """面向用户的说明文本"""
-    resource_version: str = ""
-    """可选的服务端资源版本号；仅部分游戏提供（如明日方舟用于识别待下载的资源热更新），
-    未提供时为空字符串"""
+
+@contextmanager
+def adb_runner_scope(runner: Callable[..., Awaitable[tuple[int, str]]] | None):
+    """在这段上下文里让本模块的 adb 命令改走 ``runner``；``None`` 等于不接管。"""
+    token = _ADB_RUNNER.set(runner)
+    try:
+        yield
+    finally:
+        _ADB_RUNNER.reset(token)
+
+
+_apk_update_locks: dict[str, asyncio.Lock] = {}
+
+
+def get_apk_update_lock(package_name: str) -> asyncio.Lock:
+    """按游戏包名取进程内更新锁，串行化并行任务对同一游戏客户端的下载与安装。
+
+    按包名而不是按安装包路径加锁：路径含版本号，两个任务前后脚取到不同版本时
+    会拿到不同的锁，指向同一模拟器的两次安装就可能并发。按包名加锁同时保住
+    跨设备的下载互斥（同一个 ``.downloading`` 只有一个写者）与同设备的安装互斥。
+    """
+    return _apk_update_locks.setdefault(package_name, asyncio.Lock())
+
+
+def cleanup_apk_leftovers(apk_dir: Path, stem: str) -> None:
+    """清理某游戏残留的安装包与下载临时文件，句柄被占删不掉的留给下次。
+
+    在更新锁内调用：更新被取消或清理失败时，多 GB 的残留包不能无限期占盘，
+    趁下次持锁把本游戏所有版本的残留一并清掉。
+    """
+    for leftover in apk_dir.glob(f"{stem}*.apk*"):
+        try:
+            leftover.unlink(missing_ok=True)
+        except OSError as e:
+            # 一个被占的文件不能挡住其余残留的清理
+            logger.warning(f"清理残留安装包失败，留给下次覆盖: {leftover} ({e})")
 
 
 async def _run_adb(
@@ -100,7 +133,12 @@ async def _run_adb(
     """执行一条 adb 命令，返回 (返回码, 合并后的输出)。
 
     进程无法启动时返回 ``(-1, 错误文本)``，让调用方按 adb 返回失败处理。
+    上下文里有接管的通道（:func:`adb_runner_scope`）时交给它，``adb_path`` / ``adb_address`` 不用。
     """
+
+    runner = _ADB_RUNNER.get()
+    if runner is not None:
+        return await runner(*args, timeout=timeout)
 
     program: Path | str = adb_path if adb_path is not None else "adb"
     try:
@@ -144,8 +182,8 @@ async def get_installed_client_info(
         游戏未安装或读取失败时整体返回 ``None``。
     """
 
-    if ":" in adb_address:
-        # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备
+    if ":" in adb_address and _ADB_RUNNER.get() is None:
+        # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备（接管的通道自己认设备）
         await _run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
 
     returncode, output = await _run_adb(
@@ -173,38 +211,6 @@ async def get_installed_client_info(
         f"模拟器内 {package_name} 已安装版本: {version}（versionCode={version_code}）"
     )
     return version, version_code
-
-
-def _parse_version(version: str) -> tuple[int, ...]:
-    """把形如 ``2.7.61`` 的版本号解析为可比较的整数元组，无法解析的段落按 0 处理。
-
-    只比较主版本号：开头的 ``v`` / ``V`` 去掉，第一个 ``-`` / ``+`` 之后的构建后缀
-    不参与比较（``3.9.0-112.0.1361`` 按 ``3.9.0`` 算）。否则后缀里的数字会被当成
-    更低位的版本段，同一主版本、一边带构建号一边不带时就会误判成落后，触发一次
-    白下的安装包。
-    """
-
-    core = re.split(r"[-+]", version.strip().lstrip("vV"), maxsplit=1)[0]
-    parts: list[int] = []
-    for segment in core.split("."):
-        digits = re.match(r"\d+", segment.strip())
-        parts.append(int(digits.group()) if digits else 0)
-    return tuple(parts)
-
-
-def is_client_outdated(installed: str, remote: str) -> bool:
-    """判断已安装客户端是否落后于服务端版本。"""
-
-    installed_parts = _parse_version(installed)
-    remote_parts = _parse_version(remote)
-    if not any(installed_parts) or not any(remote_parts):
-        # 任一侧完全解析不出数字时不敢下判断，按未落后处理，交给上游原有流程
-        logger.warning(f"版本号无法比较: 已安装 {installed}, 服务端 {remote}")
-        return False
-    length = max(len(installed_parts), len(remote_parts))
-    installed_parts += (0,) * (length - len(installed_parts))
-    remote_parts += (0,) * (length - len(remote_parts))
-    return installed_parts < remote_parts
 
 
 @dataclass
@@ -569,7 +575,11 @@ async def download_apk(
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = target_path.with_name(f"{target_path.name}.downloading")
-    temp_path.unlink(missing_ok=True)
+    try:
+        temp_path.unlink(missing_ok=True)
+    except OSError as e:
+        # 上次任务或杀软可能还占着残留文件：删不掉不碍事，open("wb") 会截断重写
+        logger.warning(f"清理残留下载临时文件失败，尝试直接覆盖: {e}")
 
     try:
         async with asyncio.timeout(timeout):
@@ -621,12 +631,20 @@ async def download_apk(
     except TimeoutError:
         # asyncio.timeout 在总时长耗尽时抛出内置 TimeoutError；
         # httpx 自身的单次操作超时是 httpx.TimeoutException，不会被这里误捕
-        temp_path.unlink(missing_ok=True)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise RuntimeError(
             f"下载安装包超时（超过 {timeout / 60:.0f} 分钟），请检查网络后重试"
         ) from None
     except BaseException:
-        temp_path.unlink(missing_ok=True)
+        # 取消时残留文件可能还被别的进程占着：删不掉就留给下次覆盖，
+        # 不能让清理异常替换正在传播的 CancelledError
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"清理下载临时文件失败（被占用），留给下次覆盖: {e}")
         raise
 
 

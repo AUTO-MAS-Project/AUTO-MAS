@@ -44,26 +44,31 @@
           v-if="currentPlanDescriptor"
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
+          :rotate-days="currentRotateDays"
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
-          :supports-layout-mode="currentPlanDescriptor.supportsLayoutMode"
-          :baah-layout="baahLayout"
           :is-editing-plan-name="isEditingPlanName"
+          :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
+          :disabled="planOperationPending"
           @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event"
+          @update:current-mode="onModeChange"
+          @update:rotate-days="handleRotateDaysChange"
           @update:view-mode="viewMode = $event"
-          @update:baah-layout="baahLayout = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange"
         >
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"
+            ref="planTable"
+            v-bind="
+              currentPlan?.type === PLAN_CONFIG_TYPES.BAAH
+                ? { interactionDisabled: planOperationPending }
+                : {}
+            "
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
-            :baah-layout="baahLayout"
             :plan-id="activePlanId"
             :handle-plan-change="handlePlanChange"
           />
@@ -76,7 +81,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
 import type { PlanIndexItem } from '@/api'
@@ -88,11 +93,13 @@ import {
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
+  PLAN_CONFIG_TYPES,
   isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
@@ -119,16 +126,23 @@ const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
 
 const currentPlanName = ref<string>('')
-const currentMode = ref<'ALL' | 'Weekly'>('ALL')
+const currentMode = ref<PlanMode>('ALL')
+const currentRotateDays = ref<number>(PLAN_ROTATE_DAYS_DEFAULT)
 const viewMode = ref<'config' | 'simple'>('config')
-// BAAH 计划表的关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
-// 与 viewMode 一样只是当前页面的显示状态，各计划表共用同一个选择
-const baahLayout = ref<'mixed' | 'single'>('single')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
+const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
+const planOperationPending = ref(false)
+const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+
+onBeforeRouteLeave(() => canLeaveTable())
+onBeforeRouteUpdate(
+  (to, from) =>
+    to.query.planId === from.query.planId || (!planOperationPending.value && canLeaveTable())
+)
 
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
@@ -167,6 +181,7 @@ const syncCurrentPlan = (planId: string, forceCustomStages = false) => {
   }
 
   currentMode.value = planData.Info?.Mode || 'ALL'
+  currentRotateDays.value = clampRotateDays(planData.Info?.RotateDays)
   tableData.value = { ...clonePlanData(planData), _isInitialLoad: forceCustomStages }
   return true
 }
@@ -195,6 +210,8 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
 }
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -231,10 +248,14 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 const handleRemovePlan = async (planId: string) => {
+  if (planOperationPending.value || !canLeaveTable()) return
+  planOperationPending.value = true
   try {
     await deletePlan(planId)
     const nextPlanData = { ...planDataMap.value }
@@ -257,11 +278,17 @@ const handleRemovePlan = async (planId: string) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除计划失败: ${errorMsg}`)
+  } finally {
+    planOperationPending.value = false
   }
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (planId: string, changes: Record<string, any>): Promise<boolean> => {
+const savePlanField = async (
+  planId: string,
+  changes: Record<string, any>,
+  onError?: PlanChangeOptions['onError']
+): Promise<boolean> => {
   if (!planId) {
     return false
   }
@@ -273,6 +300,7 @@ const savePlanField = async (planId: string, changes: Record<string, any>): Prom
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存计划字段失败: ${errorMsg}`)
+    onError?.(errorMsg)
     return false
   }
 }
@@ -310,7 +338,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes)
+  const success = await savePlanField(planId, changes, options?.onError)
 
   if (!success) {
     return false
@@ -352,6 +380,7 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
+  if (planOperationPending.value || !canLeaveTable()) return
 
   try {
     // 立即切换到新计划
@@ -455,9 +484,32 @@ const finishEditPlanName = async () => {
   }
 }
 
-const onModeChange = async () => {
-  // 只发送修改的字段
-  await handlePlanChange('Info.Mode', currentMode.value)
+const onModeChange = async (mode: PlanMode) => {
+  if (mode === currentMode.value || planOperationPending.value || !canLeaveTable()) return
+  const previous = currentMode.value
+  planOperationPending.value = true
+  currentMode.value = mode
+  try {
+    const saved = await handlePlanChange('Info.Mode', mode)
+    if (!saved) currentMode.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
+}
+
+/** 改轮换天数：先落到界面让列数立刻跟着变，保存失败再退回原来的天数 */
+const handleRotateDaysChange = async (days: number) => {
+  if (days === currentRotateDays.value || planOperationPending.value || !canLeaveTable()) return
+  const previous = currentRotateDays.value
+  planOperationPending.value = true
+  currentRotateDays.value = days
+
+  try {
+    const saved = await handlePlanChange('Info.RotateDays', days)
+    if (!saved) currentRotateDays.value = previous
+  } finally {
+    planOperationPending.value = false
+  }
 }
 
 const loadPlanData = async (planId: string, force = false, forceCustomStages = false) => {
@@ -566,8 +618,7 @@ watch(
     if (!newPlanId) return
     const target = planList.value.find(p => p.id === newPlanId)
     if (target && target.id !== activePlanId.value) {
-      activePlanId.value = target.id
-      await loadPlanData(activePlanId.value)
+      await onPlanChange(target.id)
     }
   }
 )

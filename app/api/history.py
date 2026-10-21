@@ -34,6 +34,24 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
 logger = get_logger("历史记录 API")
 
 
+@router.get(
+    "/replays",
+    tags=["Get"],
+    response_model=ReplayListOut,
+    operation_id="get_obs_replays_api_history_replays_get",
+    summary="查询保留的失败回放",
+)
+async def get_obs_replays() -> ReplayListOut:
+    from app.services.obs_replay import ObsReplay
+
+    try:
+        return ReplayListOut(
+            replays=await ObsReplay.list_replays(), directory=str(ObsReplay.directory)
+        )
+    except Exception as error:
+        return ReplayListOut(code=500, status="error", message=str(error))
+
+
 @router.post(
     "/search",
     tags=["Get"],
@@ -85,6 +103,12 @@ async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryData
         data = await Config.merge_statistic_info([path])
         data.pop("index", None)
         data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
+        from app.services.obs_replay import ObsReplay
+
+        try:
+            data["replays"] = await ObsReplay.list_replays(history_path=str(path))
+        except Exception:
+            logger.warning("无法读取关联回放，仍返回历史日志")
         data = HistoryData(**data)
     except Exception as e:
         logger.opt(exception=True).warning(

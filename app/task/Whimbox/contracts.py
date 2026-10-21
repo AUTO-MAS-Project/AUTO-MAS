@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""奇想盒（Whimbox）专项的模块内契约：PC 前台直控家族共性的四个边界。
+"""奇想盒（Whimbox）专项的模块内契约：PC 前台原生来源家族共性的四个边界。
 
 抽象严格限定在本模块内部（L1，构造注入 + 实现侧就地兜底构造，零容器）；
 命名按家族语义而非 Whimbox 字面，第二个同线专项立项时整体上提（L2）。
@@ -54,6 +54,12 @@ class WhimboxRunEvent:
 
     timestamp: datetime | None = None
     """行时间戳（取自日志行时间列；无时间戳的续行为 None）"""
+
+    log_delta: tuple[str, ...] | None = None
+    """本批日志增量：首个事件携带整批，后续为空；None 沿用 feed 累计快照。"""
+
+    log_offset: int = 0
+    """log_delta 在 feed 行列表中的起始游标，重发时保持不变。"""
 
 
 # ── 任务目录（上游三件套的机械转换，非自建声明） ───────────────────────────

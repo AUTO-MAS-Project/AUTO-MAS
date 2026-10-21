@@ -17,15 +17,29 @@ export const CAROUSEL_ERA_MODULE_KEYS: HomeModuleKey[] = [
   'wutheringwaves',
   'nte',
   'reverse1999',
-  'bluearchive',
   'arknights',
 ]
 
 /** 进入轮播的游戏活动卡；这里的相对顺序就是轮播的切换顺序 */
 export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
-  ...CAROUSEL_ERA_MODULE_KEYS,
+  'endfield',
+  'starrail',
+  'genshin',
+  'zenless',
+  'wutheringwaves',
+  'nte',
+  'reverse1999',
+  'bluearchive',
+  'arknights',
   'stellasora',
+  'infinitynikki',
 ]
+
+// 直接使用后端的游戏归属，新活动卡无需另补脚本类型映射。
+export const managedHomeActivityKeys = (
+  scripts: { activityGame?: string | null }[]
+): HomeModuleKey[] =>
+  HOME_ACTIVITY_MODULE_KEYS.filter(key => scripts.some(script => script.activityGame === key))
 
 /** 已接入日常便笺的游戏，提供首页社区信息的独立开关。 */
 export const HOME_ACTIVITY_NOTE_KEYS: HomeModuleKey[] = [
@@ -88,6 +102,9 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   return {
     moduleOrder: isMigration ? placeCarousel(mergedOrder) : mergedOrder,
     hiddenModules,
+    shownActivityModules: normalizeModuleKeys(config.shownActivityModules).filter(
+      isHomeActivityModuleKey
+    ),
     hideScrollHint: config.hideScrollHint === true,
     // 新装及缺少该字段的旧配置统一默认关闭，避免阅读时自动切换；保留显式开启的选择。
     carouselAutoplay: config.carouselAutoplay === true,

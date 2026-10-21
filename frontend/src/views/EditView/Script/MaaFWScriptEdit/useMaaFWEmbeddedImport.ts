@@ -38,7 +38,7 @@ export function useMaaFWEmbeddedImport({
 }: MaaFWEmbeddedImportOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-  const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
+  const { getEmbeddedStatus, reimportEmbedded, syncEmbedded } = useMaaFWEmbeddedApi()
   const { ensureEnvSubscription } = channel
 
   // ---- 内嵌副本 ----
@@ -48,6 +48,9 @@ export function useMaaFWEmbeddedImport({
   // 导入进度：后端按投影的文件数推百分比与阶段文案，导入几百 MB 时进度条顶在目录字段下面
   const importPercent = ref<number | null>(null)
   const importMessage = ref('')
+  // 最近一次导入 / 同步失败的原因：常驻在目录字段（或引导卡片）下面，下次导入开始时清掉。
+  // 选错目录时用户最需要它，一闪而过的提示错过了就只能盲选
+  const importError = ref('')
 
   channel.onImportProgress(data => {
     if (typeof data.percent === 'number') importPercent.value = data.percent
@@ -63,12 +66,13 @@ export function useMaaFWEmbeddedImport({
     }
   }
 
-  /** 跑一个内嵌动作：成功回填状态并提示后端文案，失败提示原因；返回是否成功。 */
+  /** 跑一个内嵌动作：成功回填状态并提示后端文案，失败把原因记进 importError；返回是否成功。 */
   const runEmbeddedAction = async (
     action: () => Promise<{ status: MaaFWEmbeddedStatus; message: string }>
   ): Promise<boolean> => {
     if (embeddedBusy.value) return false
     embeddedBusy.value = true
+    importError.value = ''
     try {
       const { status, message: text } = await action()
       embeddedStatus.value = status
@@ -78,7 +82,7 @@ export function useMaaFWEmbeddedImport({
       await refreshScriptType()
       return true
     } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error))
+      importError.value = error instanceof Error ? error.message : String(error)
       return false
     } finally {
       embeddedBusy.value = false
@@ -113,12 +117,28 @@ export function useMaaFWEmbeddedImport({
     }
   }
 
+  /**
+   * 「立即同步」：跟随来源目录时按当前来源目录强制重导。结果（变了哪些文件 / 内容未变化）是后端
+   * 那句话，失败原因（运行中、被占用、来源不在、投影失败）同样记进 importError；成功后状态行的同步时间
+   * 随返回的状态刷新，interface 可能变了，重新读一遍。
+   */
+  const syncFromSource = async () => {
+    ensureEnvSubscription()
+    importPercent.value = 0
+    importMessage.value = ''
+    const ok = await runEmbeddedAction(() => syncEmbedded(scriptId))
+    if (!ok || isPageUnmounted()) return
+    await runPreviewOnNewRoot()
+  }
+
   return {
     embeddedStatus,
     embeddedBusy,
     importPercent,
     importMessage,
+    importError,
     refreshEmbeddedStatus,
     selectMaaFWPath,
+    syncFromSource,
   }
 }

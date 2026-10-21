@@ -1,6 +1,30 @@
 <template>
-  <div class="cultivate-editor">
-    <!-- 接管提示：后端注入时写入，非空表示养成接管中、库存保持暂停 -->
+  <PipelineRow
+    class="cultivate-editor"
+    :name="t('edit.maaCultivate')"
+    :summary="summary"
+    :checked="formData.Task?.IfCultivate ?? false"
+    :disabled="editorLoading"
+    :hint="t('edit.maaCultivateHint')"
+    @change="emit('save', 'Task.IfCultivate', $event)"
+  >
+    <template #actions>
+      <a-tooltip :title="t('edit.maaCultivateSettings')">
+        <a-button
+          class="cultivate-settings-button"
+          type="text"
+          shape="circle"
+          :aria-label="t('edit.maaCultivateSettings')"
+          aria-haspopup="dialog"
+          :disabled="editorLoading"
+          :loading="openingEditor"
+          @click="openEditor"
+        >
+          <template #icon><SettingOutlined /></template>
+        </a-button>
+      </a-tooltip>
+    </template>
+    <!-- 本轮养成状态由后端写入，其他来源仍按各自条件执行。 -->
     <a-alert
       v-if="formData.Data?.CultivateNotice"
       :message="formData.Data.CultivateNotice"
@@ -9,7 +33,7 @@
       class="cultivate-alert"
     />
     <a-alert
-      :message="t('edit.maaCultivateRecognitionHint')"
+      :message="t('edit.maaCultivateTakeoverHint')"
       type="info"
       show-icon
       class="cultivate-alert"
@@ -22,284 +46,335 @@
       class="cultivate-alert"
     />
 
-    <!-- 跳过开关：作用于整个养成计划，置顶展示（绑定面板上方） -->
+    <!-- 养成选项：置顶展示（绑定面板上方） -->
     <div class="cultivate-skips">
       <a-checkbox
+        :checked="formData.Task?.CultivateAutoRaise ?? false"
+        :disabled="editorLoading"
+        @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
+      >
+        {{ t('edit.maaCultivateAutoRaise') }}
+      </a-checkbox>
+      <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringActivity"
-        :disabled="loading"
+        :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
       >
         {{ t('edit.maaCultivateSkipActivity') }}
       </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringResourceCollection"
-        :disabled="loading"
+        :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)"
       >
         {{ t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
     </div>
+    <div class="skland-feedback skland-hint">{{ t('edit.maaCultivateSkipHint') }}</div>
+    <div class="skland-feedback skland-hint">
+      {{ t('edit.maaCultivateAutoRaiseVersionHint') }}
+    </div>
+  </PipelineRow>
 
-    <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
+  <a-modal
+    v-model:open="editorOpen"
+    :title="t('edit.maaCultivateSettings')"
+    :width="1100"
+    wrap-class-name="maa-plan-settings-modal cultivate-settings-modal"
+    centered
+    destroy-on-close
+    :closable="!editorLoading"
+    :mask-closable="!editorLoading"
+    :keyboard="!editorLoading"
+  >
+    <div class="cultivate-editor">
+      <a-alert
+        :message="t('edit.maaCultivateRecognitionHint')"
+        type="info"
+        show-icon
+        class="cultivate-alert"
+      />
+      <div class="skland-feedback skland-hint cultivate-mastery-hint">
+        <div>{{ t('edit.maaCultivateAutoRaiseHint') }}</div>
+        <div>{{ t('edit.maaCultivateMasterySkillHint') }}</div>
+      </div>
+      <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
          森空岛（决策 37/38） -->
-    <div class="cultivate-top">
-      <div class="cultivate-skland">
-        <a-form-item class="cultivate-skland-item">
+      <div class="cultivate-top">
+        <div class="cultivate-skland">
+          <a-form-item class="cultivate-skland-item">
+            <template #label>
+              <LabelWithHint
+                :text="t('edit.maaCultivateSklandTitle')"
+                :hint="t('edit.maaCultivateSklandHint')"
+              />
+            </template>
+            <a-select
+              :value="sklandBoundComposite"
+              :options="sklandRoleOptionsWithBound"
+              :loading="sklandRoleLoading"
+              :placeholder="t('edit.maaCultivateSklandRole')"
+              :disabled="editorLoading"
+              allow-clear
+              :get-popup-container="getPopupContainer"
+              :list-height="popupListHeight"
+              @dropdown-visible-change="onRoleDropdownVisible"
+              @change="handleSklandRoleChange"
+            />
+            <div v-if="sklandRoleError" class="skland-feedback skland-error">
+              {{ sklandRoleError }}
+            </div>
+            <div v-if="!sklandBound" class="skland-feedback skland-hint">
+              {{ t('edit.maaCultivateSklandUnboundHint') }}
+            </div>
+          </a-form-item>
+        </div>
+
+        <a-form-item class="cultivate-picker">
           <template #label>
             <LabelWithHint
-              :text="t('edit.maaCultivateSklandTitle')"
-              :hint="t('edit.maaCultivateSklandHint')"
+              :text="t('edit.maaCultivatePickOperators')"
+              :hint="t('edit.maaCultivatePickOperatorsHint')"
             />
           </template>
-          <a-select
-            :value="sklandBoundComposite"
-            :options="sklandRoleOptionsWithBound"
-            :loading="sklandRoleLoading"
-            :placeholder="t('edit.maaCultivateSklandRole')"
-            :disabled="loading"
-            allow-clear
-            :get-popup-container="getPopupContainer"
-            @dropdown-visible-change="onRoleDropdownVisible"
-            @change="handleSklandRoleChange"
-          />
-          <div v-if="sklandRoleError" class="skland-feedback skland-error">
-            {{ sklandRoleError }}
-          </div>
-          <div v-if="!sklandBound" class="skland-feedback skland-hint">
-            {{ t('edit.maaCultivateSklandUnboundHint') }}
+          <div class="cultivate-picker-actions">
+            <a-select
+              :value="null"
+              :options="pickerOptions"
+              :loading="operatorOptionsLoading"
+              :disabled="
+                editorLoading || operatorOptionsLoading || availableOperatorOptions.length === 0
+              "
+              :placeholder="operatorPlaceholder"
+              show-search
+              :filter-option="false"
+              :virtual="false"
+              :get-popup-container="getPopupContainer"
+              :list-height="popupListHeight"
+              @search="handleOperatorSearch"
+              @change="handleAddOperator"
+            />
+            <CultivateClipboardImport
+              :disabled="loading"
+              :import-targets="importCultivateTargets"
+              @busy="importing = $event"
+              @imported="expandImportedOperators"
+            />
           </div>
         </a-form-item>
       </div>
 
-      <a-form-item class="cultivate-picker">
-        <template #label>
-          <LabelWithHint
-            :text="t('edit.maaCultivatePickOperators')"
-            :hint="t('edit.maaCultivatePickOperatorsHint')"
+      <div class="cultivate-target-actions">
+        <a-input
+          v-model:value="operatorFilter"
+          class="cultivate-target-search"
+          :placeholder="t('edit.maaCultivateSearchOperators')"
+          :aria-label="t('edit.maaCultivateSearchOperators')"
+          allow-clear
+        >
+          <template #prefix><SearchOutlined /></template>
+        </a-input>
+        <a-space wrap>
+          <a-checkbox
+            :checked="allOperatorsSelected"
+            :indeterminate="selectedVisibleCount > 0 && !allOperatorsSelected"
+            :disabled="editorLoading || !filteredRows.length"
+            @change="selectAllOperators($event.target.checked)"
+          >
+            {{
+              t(
+                operatorFilter.trim()
+                  ? 'edit.maaCultivateSelectMatches'
+                  : 'edit.maaCultivateSelectAll'
+              )
+            }}
+          </a-checkbox>
+          <a-button
+            danger
+            :disabled="editorLoading || !operatorSelection.size"
+            @click="removeSelectedOperators"
+          >
+            {{ t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
+          </a-button>
+        </a-space>
+        <a-space class="cultivate-module-toggle">
+          <a-switch
+            v-model:checked="showModules"
+            :disabled="editorLoading"
+            :aria-label="t('edit.maaCultivateShowModules')"
           />
-        </template>
-        <a-select
-          :value="null"
-          :options="pickerOptions"
-          :loading="operatorOptionsLoading"
-          :disabled="loading || operatorOptionsLoading || availableOperatorOptions.length === 0"
-          :placeholder="operatorPlaceholder"
-          show-search
-          :filter-option="false"
-          :virtual="false"
-          :get-popup-container="getPopupContainer"
-          @search="handleOperatorSearch"
-          @change="handleAddOperator"
-        />
-      </a-form-item>
-    </div>
+          <span>{{ t('edit.maaCultivateShowModules') }}</span>
+        </a-space>
+      </div>
 
-    <div class="cultivate-body">
-      <div class="cultivate-main">
-        <div v-if="rows.length" class="cultivate-rows">
-          <div v-for="row in rows" :key="row.operatorId" class="cultivate-group">
-            <div class="group-head">
-              <a-button
-                class="group-toggle"
-                type="text"
-                size="small"
-                :aria-label="t('edit.maaCultivateToggleGoals')"
-                :aria-expanded="!isGroupCollapsed(row)"
-                @click="toggleGroup(row.operatorId)"
-              >
-                {{ isGroupCollapsed(row) ? '▸' : '▾' }}
-              </a-button>
-              <span
-                class="cultivate-name"
-                :title="operatorName(row.operatorId)"
-                @click="toggleGroup(row.operatorId)"
-                >{{ operatorName(row.operatorId) }}</span
-              >
-              <a-select
-                v-if="!eliteLineOf(row).achieved"
-                :value="eliteLineOf(row).savedLevel || undefined"
-                :options="eliteLineOf(row).options"
-                :placeholder="t('edit.maaCultivateGoalNone')"
-                allow-clear
-                :disabled="eliteLineOf(row).disabled"
-                class="goal-level"
-                :aria-label="t('edit.maaCultivateGoalElite')"
-                @change="(v: unknown) => handleGoalChange(row, 'elite', '', v)"
-              />
-              <span v-else class="goal-level goal-achieved-level">
-                {{ eliteLineOf(row).levelLabel }}
-              </span>
-              <a-tag v-if="eliteLineOf(row).overLimit" color="warning">
-                {{ t('edit.maaCultivateOverLimit') }}
-              </a-tag>
-              <a-button
-                size="small"
-                danger
-                :disabled="loading"
-                @click="handleRemoveOperator(row.operatorId)"
-              >
-                {{ t('edit.maaCultivateRemove') }}
-              </a-button>
-            </div>
-            <div class="group-elite-current">
-              <span
-                class="goal-current"
-                :title="
-                  eliteLineOf(row).currentUnknown
-                    ? t('edit.maaCultivateCurrentUnknownHint')
-                    : undefined
-                "
-                >{{ eliteLineOf(row).current }}</span
-              >
-            </div>
-            <!-- 目标列表：选中干员即列出全部专精+全部模组（精英化在标题行），
+      <div class="cultivate-body">
+        <div class="cultivate-main">
+          <a-pagination
+            v-if="filteredRows.length > OPERATOR_PAGE_SIZE"
+            v-model:current="operatorPage"
+            class="cultivate-pagination"
+            size="small"
+            :page-size="OPERATOR_PAGE_SIZE"
+            :total="filteredRows.length"
+            :show-size-changer="false"
+            :disabled="editorLoading"
+          />
+          <div v-if="filteredRows.length" class="cultivate-rows">
+            <div v-for="row in visibleRows" :key="row.operatorId" class="cultivate-group">
+              <div class="group-head">
+                <a-checkbox
+                  :checked="operatorSelection.has(row.operatorId)"
+                  :disabled="editorLoading"
+                  :aria-label="
+                    t('edit.maaCultivateSelectOperator', { name: operatorName(row.operatorId) })
+                  "
+                  @change="toggleOperatorSelection(row.operatorId, $event.target.checked)"
+                />
+                <a-button
+                  class="group-toggle"
+                  type="text"
+                  size="small"
+                  :aria-label="t('edit.maaCultivateToggleGoals')"
+                  :aria-expanded="!isGroupCollapsed(row)"
+                  @click="toggleGroup(row.operatorId)"
+                >
+                  {{ isGroupCollapsed(row) ? '▸' : '▾' }}
+                </a-button>
+                <span
+                  class="cultivate-name"
+                  :title="operatorName(row.operatorId)"
+                  @click="toggleGroup(row.operatorId)"
+                  >{{ operatorName(row.operatorId) }}</span
+                >
+                <a-select
+                  v-if="!row.elite.achieved"
+                  :value="row.elite.savedLevel || undefined"
+                  :options="row.elite.options"
+                  :placeholder="t('edit.maaCultivateGoalNone')"
+                  allow-clear
+                  :disabled="row.elite.disabled"
+                  :get-popup-container="getPopupContainer"
+                  :list-height="popupListHeight"
+                  class="goal-level"
+                  :aria-label="t('edit.maaCultivateGoalElite')"
+                  @change="(v: unknown) => handleGoalChange(row, 'elite', '', v)"
+                />
+                <span v-else class="goal-level goal-achieved-level">
+                  {{ row.elite.levelLabel }}
+                </span>
+                <a-tag v-if="row.elite.overLimit" color="warning">
+                  {{ t('edit.maaCultivateOverLimit') }}
+                </a-tag>
+                <a-button
+                  size="small"
+                  danger
+                  :disabled="editorLoading"
+                  @click="handleRemoveOperator(row.operatorId)"
+                >
+                  {{ t('edit.maaCultivateRemove') }}
+                </a-button>
+              </div>
+              <div class="group-elite-current">
+                <span
+                  class="goal-current"
+                  :title="
+                    row.elite.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
+                  "
+                  >{{ row.elite.current }}</span
+                >
+              </div>
+              <!-- 目标列表：技能等级、全部专精和全部模组（精英化在标题行），
                  每个目标一行：名称 → 当前 → 超限/状态标签 → 档位选择器（最右成列）；
                  未设目标=空选项（清空即移除），没有添加/删除流程。未绑定时只读：配置
                  里的目标不因绑定失效而在界面上消失，仍可见可清，避免留下
                  看不见又清不掉的条目 -->
-            <div v-show="!isGroupCollapsed(row)">
-              <div v-for="group in goalGridsOf(row)" :key="group.kind" class="goal-list">
-                <div v-for="line in group.lines" :key="line.key" class="goal-row">
-                  <span class="goal-kind" :title="line.label">{{ line.label }}</span>
-                  <span
-                    class="goal-current"
-                    :title="
-                      line.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
-                    "
-                    >{{ line.current }}</span
-                  >
-                  <a-tag v-if="line.overLimit" color="warning">
-                    {{ t('edit.maaCultivateOverLimitShort') }}
-                  </a-tag>
-                  <a-tag v-if="line.state" :color="line.state.color">
-                    {{ t(line.state.i18n) }}
-                  </a-tag>
-                  <a-select
-                    :value="line.savedLevel || undefined"
-                    :options="line.options"
-                    :placeholder="t('edit.maaCultivateGoalNone')"
-                    allow-clear
-                    :disabled="line.disabled"
-                    class="goal-level"
-                    @change="(v: unknown) => handleGoalChange(row, group.kind, line.targetId, v)"
-                  />
+              <div v-if="!isGroupCollapsed(row)">
+                <div v-for="group in goalGridsOf(row)" :key="group.kind" class="goal-list">
+                  <div v-for="line in group.lines" :key="line.key" class="goal-row">
+                    <span class="goal-kind" :title="line.label">{{ line.label }}</span>
+                    <span
+                      class="goal-current"
+                      :title="
+                        line.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
+                      "
+                      >{{ line.current }}</span
+                    >
+                    <a-tag v-if="line.overLimit" color="warning">
+                      {{ t('edit.maaCultivateOverLimitShort') }}
+                    </a-tag>
+                    <a-tag v-if="line.state" :color="line.state.color">
+                      {{ t(line.state.i18n) }}
+                    </a-tag>
+                    <a-select
+                      :value="line.savedLevel || undefined"
+                      :options="line.options"
+                      :placeholder="t('edit.maaCultivateGoalNone')"
+                      allow-clear
+                      :disabled="line.disabled"
+                      :get-popup-container="getPopupContainer"
+                      :list-height="popupListHeight"
+                      class="goal-level"
+                      @change="(v: unknown) => handleGoalChange(row, group.kind, line.targetId, v)"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
+            <div v-if="!sklandBound" class="skland-feedback skland-hint">
+              {{ t('edit.maaCultivateSklandLockedHint') }}
+            </div>
+            <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
+              {{ t('edit.maaCultivateSklandDegradedHint') }}
+            </div>
           </div>
-          <div v-if="!sklandBound" class="skland-feedback skland-hint">
-            {{ t('edit.maaCultivateSklandLockedHint') }}
-          </div>
-          <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
-            {{ t('edit.maaCultivateSklandDegradedHint') }}
-          </div>
-        </div>
-        <a-empty
-          v-else
-          :description="t('edit.maaCultivateEmpty')"
-          :image-style="{ height: '48px' }"
-        />
-      </div>
-      <div class="cultivate-side">
-        <div v-if="rows.length" class="cultivate-preview">
-          <div class="preview-header">
-            <span class="preview-title">{{ t('edit.maaCultivatePreviewTitle') }}</span>
-            <a-tag v-if="cultivatePreviewLoading" color="processing">
-              {{ t('edit.maaCultivatePreviewComputing') }}
-            </a-tag>
-          </div>
-          <a-alert
-            v-if="cultivatePreviewError"
-            :message="cultivatePreviewError"
-            type="error"
-            show-icon
-            class="cultivate-alert"
-          />
-          <a-alert
-            v-if="
-              cultivatePreview &&
-              (!cultivatePreview.hasProgression || !cultivatePreview.hasInventory)
+          <a-empty
+            v-else
+            :description="
+              t(operatorFilter.trim() ? 'edit.maaCultivateSearchEmpty' : 'edit.maaCultivateEmpty')
             "
-            :message="availabilityNotice"
-            type="info"
-            show-icon
-            class="cultivate-alert"
+            :image-style="{ height: '48px' }"
           />
-          <template v-if="cultivatePreview">
-            <div v-if="unobtainableText" class="preview-unobtainable">
-              {{ t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
-            </div>
-            <div class="preview-heading">{{ t('edit.maaCultivatePreviewStageHeading') }}</div>
-            <!-- 刷取计划四列：材料名称 → 关卡 → 数量 → 理智（固定列宽对齐） -->
-            <div
-              v-for="entry in cultivatePreview.stages"
-              :key="`s-${entry.itemId}-${entry.stage}`"
-              class="preview-line"
-            >
-              <span class="preview-stage">{{ entry.stage }}</span>
-              <span class="preview-item" :title="entry.name || itemName(entry.itemId)">
-                {{ entry.name || itemName(entry.itemId) }}
-              </span>
-              <span class="preview-count">× {{ entry.count }}</span>
-              <template v-if="entry.expectedSanity != null">
-                <span class="preview-sanity-sym">≈</span>
-                <span class="preview-sanity">
-                  {{ entry.expectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
-                </span>
-              </template>
-              <template v-else>
-                <span class="preview-sanity-sym" />
-                <span class="preview-sanity" />
-              </template>
-            </div>
-            <div v-if="!cultivatePreview.stages.length" class="preview-empty">
-              {{ t('edit.maaCultivatePreviewNone') }}
-            </div>
-            <div
-              v-if="cultivatePreview.totalExpectedSanity != null"
-              class="preview-line preview-total"
-            >
-              <span class="preview-item">
-                {{ t('edit.maaCultivatePreviewSanityTotal') }}
-              </span>
-              <span class="preview-sanity">
-                ≈ {{ cultivatePreview.totalExpectedSanity }}
-                {{ t('edit.maaCultivateSanityUnit') }}
-              </span>
-            </div>
-            <div class="preview-heading">{{ t('edit.maaCultivatePreviewDemandHeading') }}</div>
-            <div
-              v-for="item in cultivatePreview.demands"
-              :key="`d-${item.itemId}`"
-              class="preview-line"
-            >
-              <span class="preview-item" :title="item.name || itemName(item.itemId)">
-                {{ item.name || itemName(item.itemId) }}
-              </span>
-              <span class="preview-count">× {{ item.count }}</span>
-            </div>
-          </template>
+        </div>
+        <div class="cultivate-side">
+          <CultivatePreviewPanel
+            v-if="rows.length"
+            :preview="cultivatePreview"
+            :loading="cultivatePreviewLoading"
+            :error="cultivatePreviewError"
+            :item-options="itemOptions"
+          />
         </div>
       </div>
+      <a-typography-link
+        class="data-source-note"
+        href="https://ark.yituliu.cn"
+        target="_blank"
+        rel="noreferrer"
+        @click="handleExternalLink"
+      >
+        {{ t('edit.maaDataSourceYituliu') }}
+      </a-typography-link>
     </div>
-    <a-typography-link
-      class="data-source-note"
-      href="https://ark.yituliu.cn"
-      target="_blank"
-      rel="noreferrer"
-      @click="handleExternalLink"
-    >
-      {{ t('edit.maaDataSourceYituliu') }}
-    </a-typography-link>
-  </div>
+    <template #footer>
+      <a-button :disabled="editorLoading" @click="editorOpen = false">
+        {{ t('common.close') }}
+      </a-button>
+    </template>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { Modal } from 'ant-design-vue'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import LabelWithHint from './LabelWithHint.vue'
+import PipelineRow from './PipelineRow.vue'
+import CultivatePreviewPanel from './CultivatePreviewPanel.vue'
+import CultivateClipboardImport from './CultivateClipboardImport.vue'
+import { usePlanSelectPopup } from './usePlanSelectPopup'
 import {
   appendOperator,
   levelOptionsWithSaved,
@@ -309,11 +384,13 @@ import {
   removeOperator,
   serializeCultivateTargets,
   setEliteLevel,
+  setMasteryLevel,
   upsertGoal,
   type CultivateGoalKind,
   type CultivateGoalOption as GoalOption,
   type CultivateOperatorCatalogEntry as OperatorCatalogEntry,
   type CultivateTargetRow,
+  type CultivateImportResult,
 } from './cultivateTargets'
 
 const { t } = useI18n()
@@ -322,6 +399,7 @@ type SelectOption = { label: string; value: string }
 
 const props = defineProps<{
   formData: any
+  summary?: string
   loading: boolean
   /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
   operatorCatalog: OperatorCatalogEntry[]
@@ -341,11 +419,33 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
+  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
 }>()
 
 const emit = defineEmits<{ save: [key: string, value: any] }>()
 
-const rows = ref<CultivateTargetRow[]>([])
+const editorOpen = ref(false)
+const openingEditor = ref(false)
+let disposed = false
+onScopeDispose(() => {
+  disposed = true
+})
+const showModules = ref(false)
+const operatorFilter = ref('')
+// 目标编辑统一替换数组；不为全量目标创建深层代理，避免保存/预览序列化遍历代理。
+const rows = shallowRef<CultivateTargetRow[]>([])
+const operatorSelection = ref(new Set<string>())
+const allOperatorsSelected = computed(
+  () => filteredRows.value.length > 0 && selectedVisibleCount.value === filteredRows.value.length
+)
+const selectedVisibleCount = computed(
+  () => filteredRows.value.filter(row => operatorSelection.value.has(row.operatorId)).length
+)
+// 分页只限制渲染，保存与需求预览始终使用全量目标。
+const OPERATOR_PAGE_SIZE = 4
+const operatorPage = ref(1)
+const importing = ref(false)
+const editorLoading = computed(() => props.loading || importing.value)
 // 本组件刚序列化写回的 JSON：watch 回声时跳过重建，避免下拉与行列表闪变
 let lastEmitted: string | null = null
 
@@ -359,6 +459,11 @@ watch(
   { immediate: true }
 )
 
+watch(rows, nextRows => {
+  const remainingIds = new Set(nextRows.map(row => row.operatorId))
+  operatorSelection.value = new Set([...operatorSelection.value].filter(id => remainingIds.has(id)))
+})
+
 const persist = (next: CultivateTargetRow[]) => {
   rows.value = next
   lastEmitted = serializeCultivateTargets(next)
@@ -368,6 +473,7 @@ const persist = (next: CultivateTargetRow[]) => {
 const handleAddOperator = (operatorId: string) => {
   if (!operatorId) return
   operatorSearch.value = ''
+  operatorFilter.value = ''
   persist(
     appendOperator(
       rows.value,
@@ -376,6 +482,7 @@ const handleAddOperator = (operatorId: string) => {
       catalogEntryById.value.get(operatorId)?.maxElite ?? 2
     )
   )
+  operatorPage.value = Math.ceil(rows.value.length / OPERATOR_PAGE_SIZE)
 }
 
 // 搜索驱动 + 截断：427 条全量目录参与搜索，列表只显示前 10 条（对齐关卡候选的
@@ -397,6 +504,34 @@ const pickerOptions = computed(() => {
 
 const handleRemoveOperator = (operatorId: string) => {
   persist(removeOperator(rows.value, operatorId))
+}
+
+const toggleOperatorSelection = (operatorId: string, checked: boolean) => {
+  const next = new Set(operatorSelection.value)
+  if (checked) next.add(operatorId)
+  else next.delete(operatorId)
+  operatorSelection.value = next
+}
+
+const selectAllOperators = (checked: boolean) => {
+  const next = new Set(operatorSelection.value)
+  for (const row of filteredRows.value) {
+    if (checked) next.add(row.operatorId)
+    else next.delete(row.operatorId)
+  }
+  operatorSelection.value = next
+}
+
+const removeSelectedOperators = () => {
+  const selected = new Set(operatorSelection.value)
+  Modal.confirm({
+    title: t('edit.maaCultivateDeleteSelected', { count: selected.size }),
+    content: t('edit.maaCultivateDeleteSelectedConfirm', { count: selected.size }),
+    okText: t('common.confirm'),
+    cancelText: t('common.cancel'),
+    okType: 'danger',
+    onOk: () => persist(rows.value.filter(row => !selected.has(row.operatorId))),
+  })
 }
 
 // ── 森空岛绑定 ──
@@ -474,17 +609,17 @@ const handleGoalChange = (
   event: unknown
 ) => {
   const level = Number(event)
-  mutateRow(row.operatorId, raw =>
-    kind === 'elite'
-      ? setEliteLevel(raw, level || null)
-      : level
-        ? upsertGoal(raw, { kind, targetId, toLevel: level })
-        : removeGoal(raw, kind, targetId)
-  )
+  mutateRow(row.operatorId, raw => {
+    if (kind === 'elite') return setEliteLevel(raw, level || null)
+    if (kind === 'mastery') return setMasteryLevel(raw, targetId, level || null)
+    return level
+      ? upsertGoal(raw, { kind, targetId, toLevel: level })
+      : removeGoal(raw, kind, targetId)
+  })
 }
 
 // 已添加的干员不再出现在选择器里（Set 查找，目录 427 条 × 目标行）；
-// 无任何可达目标的干员（1/2/3★ 与上游缺数据者）列出但不可选并说明原因——
+// 无任何可达目标的干员列出但不可选并说明原因——
 // 直接隐藏会让用户以为目录缺人（决策 40）
 const selectedOperatorIds = computed(() => new Set(rows.value.map(row => row.operatorId)))
 const noGoalReason = (entry: OperatorCatalogEntry): string =>
@@ -493,7 +628,10 @@ const availableOperatorOptions = computed(() =>
   props.operatorCatalog
     .filter(option => !selectedOperatorIds.value.has(option.value))
     .map(option =>
-      option.maxElite > 0 || option.skills.length || option.modules.length
+      option.maxElite > 0 ||
+      option.maxSkillLevel > 1 ||
+      option.skills.length ||
+      option.modules.length
         ? { label: option.label, value: option.value }
         : {
             label: `${option.label}（${noGoalReason(option)}）`,
@@ -514,8 +652,47 @@ const operatorLabelById = computed(
 )
 const operatorName = (operatorId: string) => operatorLabelById.value.get(operatorId) ?? operatorId
 
+const filteredRows = computed(() => {
+  const query = operatorFilter.value.trim().toLowerCase()
+  return query
+    ? rows.value.filter(
+        row =>
+          operatorName(row.operatorId).toLowerCase().includes(query) ||
+          row.operatorId.toLowerCase().includes(query)
+      )
+    : rows.value
+})
+
+watch(
+  operatorFilter,
+  () => {
+    operatorPage.value = 1
+  },
+  { flush: 'sync' }
+)
+watch(
+  () => filteredRows.value.length,
+  length => {
+    operatorPage.value = Math.min(
+      operatorPage.value,
+      Math.max(1, Math.ceil(length / OPERATOR_PAGE_SIZE))
+    )
+  }
+)
+
 // 每个干员组独立折叠（默认展开）：标题行保留精英化信息，专精/模组逐行列表可收起
 const collapsedGroups = ref<Set<string>>(new Set())
+const expandImportedOperators = (operatorIds: string[]) => {
+  operatorFilter.value = ''
+  const next = new Set(collapsedGroups.value)
+  for (const id of operatorIds) next.delete(id)
+  collapsedGroups.value = next
+  const importedIds = new Set(operatorIds)
+  const firstImported = rows.value.findIndex(row => importedIds.has(row.operatorId))
+  if (firstImported >= 0) {
+    operatorPage.value = Math.floor(firstImported / OPERATOR_PAGE_SIZE) + 1
+  }
+}
 const isGroupCollapsed = (row: CultivateTargetRow) => collapsedGroups.value.has(row.operatorId)
 const toggleGroup = (operatorId: string) => {
   const next = new Set(collapsedGroups.value)
@@ -532,6 +709,11 @@ const ELITE_LABEL_KEYS: Record<number, string> = {
   0: 'edit.maaCultivateElite0',
   1: 'edit.maaCultivateElite1',
   2: 'edit.maaCultivateElite2',
+}
+const SKILL_LABEL_KEYS: Record<number, string> = {
+  1: 'edit.maaCultivateSkill1',
+  2: 'edit.maaCultivateSkill2',
+  3: 'edit.maaCultivateSkill3',
 }
 const maxEliteOf = (row: CultivateTargetRow) =>
   catalogEntryById.value.get(row.operatorId)?.maxElite ?? 2
@@ -571,10 +753,10 @@ const goalOverLimit = (row: CultivateTargetRow, kind: CultivateGoalKind, targetI
   return savedGoalLevel(row, kind, targetId) > max
 }
 
-// ── 平铺目标行：目录全量（精英化+专精+模组），无需"添加目标" ──
+// ── 平铺目标行：目录全量（精英化+技能等级+专精+模组），无需"添加目标" ──
 // 已存目标不在目录里（目录缺失/上游未收录）时合成孤儿行兜底，
 // 保证不留看不见又清不掉的配置
-const itemsOf = (row: CultivateTargetRow, kind: 'mastery' | 'module') => {
+const itemsOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): GoalOption[] => {
   const entry = catalogEntryById.value.get(row.operatorId)
   const options = kind === 'mastery' ? (entry?.skills ?? []) : (entry?.modules ?? [])
   const known = new Set(options.map(option => option.value))
@@ -585,8 +767,10 @@ const itemsOf = (row: CultivateTargetRow, kind: 'mastery' | 'module') => {
 }
 
 // 预览带回的目标干员当前练度；source=default 表示无实测数据（按 0 估算）
-const progressionOf = (operatorId: string) =>
-  props.cultivatePreview?.progressions?.find(item => item.operatorId === operatorId)
+const progressionById = computed(
+  () => new Map((props.cultivatePreview?.progressions ?? []).map(item => [item.operatorId, item]))
+)
+const progressionOf = (operatorId: string) => progressionById.value.get(operatorId)
 
 interface FlatGoalLine {
   key: string
@@ -618,7 +802,9 @@ const currentUnknownOf = (prog: ProgressionInfo) => !prog || prog.source === 'de
 
 // 专精/模组维度的未知判定：与后端 build_requirements 的暂停口径一致
 const dimensionUnknownOf = (prog: ProgressionInfo, kind: CultivateGoalKind) =>
-  kind !== 'elite' && !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default')
+  kind === 'skill'
+    ? !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default') || prog?.skillLevel == null
+    : kind !== 'elite' && !MASTERY_MODULE_SOURCES.has(prog?.source ?? 'default')
 
 const currentTextOf = (
   prog: ProgressionInfo,
@@ -633,6 +819,7 @@ const currentTextOf = (
     const eliteLabel = ELITE_LABEL_KEYS[prog!.elite]
     return `${t('edit.maaCultivateCurrent')} ${eliteLabel ? t(eliteLabel) : prog!.elite}`
   }
+  if (kind === 'skill') return `${t('edit.maaCultivateCurrent')} ${prog!.skillLevel}`
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return `${t('edit.maaCultivateCurrent')} ${levels?.[targetId] ?? 0}`
 }
@@ -645,6 +832,7 @@ const currentLevelOf = (
 ): number | null => {
   if (kind === 'elite' ? currentUnknownOf(prog) : dimensionUnknownOf(prog, kind)) return null
   if (kind === 'elite') return prog!.elite
+  if (kind === 'skill') return prog!.skillLevel ?? null
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
   return levels?.[targetId] ?? 0
 }
@@ -684,16 +872,24 @@ const eliteLineOf = (row: CultivateTargetRow): FlatGoalLine => {
     current: currentTextOf(prog, 'elite', ''),
     currentUnknown: currentUnknownOf(prog),
     state: null,
-    disabled: props.loading || achieved,
+    disabled: editorLoading.value || achieved,
     achieved,
     maxed: currentElite !== null && maxElite >= 1 && currentElite >= maxElite,
   }
 }
 
+// 同一标题多处展示精英化信息，每页只计算一次，避免为每个绑定重复创建选项。
+const visibleRows = computed(() =>
+  filteredRows.value
+    .slice((operatorPage.value - 1) * OPERATOR_PAGE_SIZE, operatorPage.value * OPERATOR_PAGE_SIZE)
+    .map(row => ({ ...row, elite: eliteLineOf(row) }))
+)
+
 const itemLinesOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): FlatGoalLine[] => {
   const prog = progressionOf(row.operatorId)
   const unknown = dimensionUnknownOf(prog, kind)
   return itemsOf(row, kind).map(item => {
+    const skillLabel = kind === 'mastery' ? SKILL_LABEL_KEYS[item.skillIndex ?? 0] : null
     const saved = savedGoalOf(row, kind, item.value)
     const savedLevel = saved?.toLevel ?? 0
     const achieved = achievedOf(prog, kind, item.value, savedLevel, saved?.state ?? null)
@@ -711,60 +907,118 @@ const itemLinesOf = (row: CultivateTargetRow, kind: 'mastery' | 'module'): FlatG
           ? t(`edit.maaCultivateGoalLevel${savedLevel}`)
           : String(savedLevel),
       overLimit: goalOverLimit(row, kind, item.value),
-      label: item.label,
+      label: skillLabel
+        ? t('edit.maaCultivateSkillName', { name: item.label, skill: t(skillLabel) })
+        : item.label,
       current: currentTextOf(prog, kind, item.value),
       currentUnknown: unknown,
       // 后端未及时打标时按当前练度即时补「已达成」徽标
       state: saved
         ? (goalStateBadge(saved.state) ?? (achieved ? GOAL_STATE_BADGE.achieved : null))
         : null,
-      disabled: props.loading || !sklandBound.value || achieved,
+      disabled: editorLoading.value || !sklandBound.value || achieved,
       achieved,
       maxed: !unknown && current !== null && maxLevel >= 1 && current >= maxLevel,
     }
   })
 }
 
-// 专精/模组各自成列表；空组（该干员无模组等）不渲染。
+// 技能等级、专精与模组各自成列表；空组不渲染。
 // 已达成行直接隐藏：后端会在下次注入时自动移除该目标，不必占界面；
 // 满级行（当前已达档位上限）同样隐藏——设任何目标都会被立即达成，没有可做的事
-const goalGridsOf = (row: CultivateTargetRow) =>
-  (['mastery', 'module'] as const)
-    .map(kind => ({
-      kind,
-      lines: itemLinesOf(row, kind).filter(line => !line.achieved && !line.maxed),
-    }))
+const skillLineOf = (row: CultivateTargetRow): FlatGoalLine | null => {
+  const maxLevel = catalogEntryById.value.get(row.operatorId)?.maxSkillLevel ?? 0
+  const saved = savedGoalOf(row, 'skill', '')
+  if (maxLevel <= 1 && !saved) return null
+  const savedLevel = saved?.toLevel ?? 0
+  const prog = progressionOf(row.operatorId)
+  const unknown = dimensionUnknownOf(prog, 'skill')
+  const current = currentLevelOf(prog, 'skill', '')
+  const achieved = achievedOf(prog, 'skill', '', savedLevel, saved?.state ?? null)
+  return {
+    key: 'skill',
+    kind: 'skill',
+    targetId: '',
+    options: levelOptionsWithSaved(maxLevel, savedLevel)
+      .filter(level => level >= 2)
+      .map(level => ({ value: level, label: t('edit.maaCultivateSkillLevel', { level }) })),
+    savedLevel,
+    levelLabel: savedLevel ? t('edit.maaCultivateSkillLevel', { level: savedLevel }) : '',
+    overLimit: savedLevel > maxLevel,
+    label: t('edit.maaCultivateGoalSkill'),
+    current: currentTextOf(prog, 'skill', ''),
+    currentUnknown: unknown,
+    state: saved
+      ? (goalStateBadge(saved.state) ?? (achieved ? GOAL_STATE_BADGE.achieved : null))
+      : null,
+    disabled: editorLoading.value || !sklandBound.value || achieved,
+    achieved,
+    maxed: !unknown && current !== null && maxLevel > 1 && current >= maxLevel,
+  }
+}
+
+const goalGridsOf = (row: CultivateTargetRow) => {
+  const skill = skillLineOf(row)
+  return [
+    { kind: 'skill' as const, lines: skill ? [skill] : [] },
+    { kind: 'mastery' as const, lines: itemLinesOf(row, 'mastery') },
+    ...(showModules.value ? [{ kind: 'module' as const, lines: itemLinesOf(row, 'module') }] : []),
+  ]
+    .map(grid => ({ ...grid, lines: grid.lines.filter(line => !line.achieved && !line.maxed) }))
     .filter(grid => grid.lines.length)
+}
 
 // 已绑定但本次快照未携带专精/模组观测（森空岛拉取失败降级本地档案）：
 // 目标保留、暂停刷取，须明确提示用户，而不是让「当前 ？」默默出现
 const sklandDegraded = computed(
   () =>
     sklandBound.value &&
-    rows.value.some(
-      row =>
-        (goalsOf(row, 'mastery').length > 0 || goalsOf(row, 'module').length > 0) &&
-        dimensionUnknownOf(progressionOf(row.operatorId), 'mastery')
+    rows.value.some(row =>
+      (['skill', 'mastery', 'module'] as const).some(
+        kind =>
+          goalsOf(row, kind).length > 0 && dimensionUnknownOf(progressionOf(row.operatorId), kind)
+      )
     )
 )
 
 // 目标行变化 → 防抖后请求需求预览（竞态守卫在父级加载器里）。
-// 组件随 PipelineRow 展开销毁重建：重进页面/重新展开时 rows 不再变化，
-// 不会触发 watch，须在挂载时对已保存的目标主动拉一次预览
-let previewTimer: number | undefined
-watch(rows, nextRows => {
-  if (previewTimer) window.clearTimeout(previewTimer)
-  previewTimer = window.setTimeout(() => {
-    if (!nextRows.length) return
+watch(rows, (nextRows, _previousRows, onCleanup) => {
+  if (!editorOpen.value) return
+  const previewTimer = window.setTimeout(() => {
+    if (!editorOpen.value || !nextRows.length) return
     props.loadCultivatePreview(serializeCultivateTargets(nextRows))
   }, 600)
+  onCleanup(() => window.clearTimeout(previewTimer))
 })
 
-onMounted(() => {
-  // 挂载即拉预览（空目标也拉；本编辑器随任务行展开才挂载）：后端
-  // progressions 返回识别档案全量名册，新选干员的第一帧就有真实练度，
-  // 不再出现「？」→ 填充的二段刷新
-  props.loadCultivatePreview(serializeCultivateTargets(rows.value))
+const openEditor = async () => {
+  if (editorLoading.value || openingEditor.value) return
+  const preparePreview = !props.cultivatePreview
+  openingEditor.value = preparePreview
+  if (!preparePreview) editorOpen.value = true
+  try {
+    while (true) {
+      const requestedTargets = serializeCultivateTargets(rows.value)
+      await props.loadCultivatePreview(requestedTargets)
+      if (!preparePreview) return
+      await nextTick()
+      if (disposed || editorLoading.value) return
+      // 等待中恢复了配置，或原请求被父级的新请求替代：用当前目标重算。
+      if (
+        requestedTargets !== serializeCultivateTargets(rows.value) ||
+        (!props.cultivatePreview && !props.cultivatePreviewError)
+      )
+        continue
+      editorOpen.value = true
+      return
+    }
+  } finally {
+    openingEditor.value = false
+  }
+}
+
+watch(editorOpen, open => {
+  if (!open) return
   // 已绑定时拉一次角色列表以回显角色名（未绑定不请求；已加载过则复用，
   // 仅下拉为空时由展开触发加载，要刷新须重进编辑页）
   if (sklandBound.value) {
@@ -772,47 +1026,42 @@ onMounted(() => {
   }
 })
 
-const unobtainableText = computed(() =>
-  (props.cultivatePreview?.unobtainable ?? [])
-    .map((item: { itemId: string; name?: string }) => item.name || itemName(item.itemId))
-    .join('、')
-)
-
-const itemLabelById = computed(
-  () => new Map(props.itemOptions.map(option => [option.value, option.label]))
-)
-const itemName = (itemId: string) => itemLabelById.value.get(itemId) ?? itemId
-
-// 干员/仓库识别档案缺失时预览按精0+空库存估算：明示估算口径，避免把偏大
-// 的需求数字当成精确值（方案 §4.3 预览须注明"以识别后为准"）
-const availabilityNotice = computed(() => {
-  if (!props.cultivatePreview) return ''
-  const missing: string[] = []
-  if (!props.cultivatePreview.hasProgression) missing.push(t('edit.maaCultivateMissingProgression'))
-  if (!props.cultivatePreview.hasInventory) missing.push(t('edit.maaCultivateMissingInventory'))
-  if (!missing.length) return ''
-  return `${t('edit.maaCultivateEstimatePrefix')}${missing.join(
-    t('edit.maaCultivateEstimateJoin')
-  )}${t('edit.maaCultivateEstimateSuffix')}`
-})
-
-// 下拉浮层挂编辑器根容器：挂 body 时页面滚动浮层驻留原地不跟随（与
-// DepotMaintainPlanEditor 同款，PR1 下拉污染三根因的①）
-const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
-  trigger.closest<HTMLElement>('.cultivate-editor') ?? document.body
+const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 </script>
 
 <style scoped>
-/* 绑定面板与干员选择器并排一行（窄屏自动换行堆叠）；
-   与上方跳过开关之间加分隔线过渡 */
+.cultivate-settings-button {
+  flex-shrink: 0;
+}
+
+.cultivate-mastery-hint {
+  margin-bottom: 12px;
+}
+
+.cultivate-target-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+.cultivate-target-search {
+  flex: 1 1 240px;
+  min-width: 160px;
+  max-width: 320px;
+}
+
+.cultivate-module-toggle {
+  margin-left: auto;
+}
+
+/* 绑定面板与干员选择器并排一行（窄屏自动换行堆叠）。 */
 .cultivate-top {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
   align-items: flex-start;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ant-color-border-secondary, #f0f0f0);
   margin-bottom: 12px;
 }
 
@@ -828,6 +1077,18 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   margin-bottom: 0;
 }
 
+.cultivate-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cultivate-picker-actions > .ant-select {
+  flex: 1 1 180px;
+  min-width: 120px;
+}
+
 .cultivate-skland {
   margin-bottom: 8px;
 }
@@ -839,16 +1100,19 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
 .cultivate-skland .cultivate-skland-item :deep(.ant-form-item-label),
 .cultivate-editor .cultivate-picker :deep(.ant-form-item-label) {
-  flex-shrink: 0;
+  /* 标签按单行控件高度居中，避免导入按钮或提示换行后下沉 */
+  display: flex;
+  align-items: center;
+  min-height: 32px;
   padding: 0;
-  /* 统一标签宽度：两行控件左边缘对齐（取「绑定森空岛」+问号图标的最长宽度） */
-  width: 96px;
+  /* 固定标签列宽，覆盖 antd 窄屏下的整行占位，让两行控件左边缘对齐 */
+  flex: 0 0 96px;
 }
 
 .cultivate-skland .cultivate-skland-item :deep(.ant-form-item-control),
@@ -912,8 +1176,8 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
 
 /* 当前精英等级：独立一行，与「精英化」标签左对齐（箭头 22px + 间距 8px） */
 .group-elite-current {
-  /* 紧跟标题行（当前精英等级），下方留白交给分组内边距 */
-  margin: 0 0 0 30px;
+  /* 对齐复选框、折叠箭头之后的干员名称。 */
+  margin: 0 0 0 54px;
 }
 
 .goal-kind {
@@ -932,12 +1196,12 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
 }
 
 /* 目标列表：每个目标一行 名称 → 当前 → 超限/状态标签 → 档位选择器（最右）；
-   左缩进与标题行的「精英化」标签对齐（箭头 22 + 间距 8） */
+   左缩进与标题行的干员名称对齐（勾选框 16 + 箭头 22 + 两个间距 8） */
 .goal-list {
   display: flex;
   flex-direction: column;
   margin: 2px 0 0;
-  padding-left: 30px;
+  padding-left: 54px;
 }
 
 .goal-row {
@@ -981,6 +1245,12 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   gap: 8px;
 }
 
+.cultivate-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
 .cultivate-name {
   flex: 1;
   min-width: 0;
@@ -1006,7 +1276,7 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   margin-top: 12px;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
+  gap: 8px 16px;
 }
 
 /* 左：干员与目标列表；右：预计需要材料预览（窄屏自动换行堆叠）。
@@ -1029,99 +1299,5 @@ const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
 .cultivate-side {
   flex: 1 1 420px;
   min-width: 0;
-}
-
-.cultivate-preview {
-  padding: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-}
-
-.preview-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.preview-title {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.preview-heading {
-  margin: 8px 0 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ant-color-text-secondary);
-}
-
-.preview-line {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 2px 0;
-  font-size: 13px;
-  color: var(--ant-color-text);
-}
-
-/* 刷取计划四列固定宽：名称占余量，关卡/数量/理智成列（含空理智占位保持对齐） */
-.preview-stage {
-  width: 64px;
-  flex-shrink: 0;
-  color: var(--ant-color-text-secondary);
-}
-
-.preview-line .preview-count {
-  width: 64px;
-  flex-shrink: 0;
-  text-align: left;
-}
-
-/* ≈ 符号与理智值各自成列（空值行留空占位保持对齐） */
-.preview-sanity-sym {
-  width: 20px;
-  flex-shrink: 0;
-  text-align: left;
-  color: var(--ant-color-text-secondary);
-}
-
-.preview-line .preview-sanity {
-  width: 96px;
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.preview-item {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview-count {
-  color: var(--ant-color-text-secondary);
-}
-
-.preview-sanity {
-  color: var(--ant-color-text-secondary);
-  white-space: nowrap;
-}
-
-.preview-total {
-  margin-top: 4px;
-  font-weight: 600;
-}
-
-.preview-unobtainable {
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: var(--ant-color-warning);
-}
-
-.preview-empty {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
 }
 </style>

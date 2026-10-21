@@ -8,11 +8,12 @@ const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
 export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
-const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
-  general: '通用模拟器',
-  mumu: 'MuMu 模拟器',
-  ldplayer: '雷电模拟器',
-  emulator2: 'Emulator 2.0',
+// 词表 key：显示时再取，界面语言变了跟着变
+const EMULATOR_TYPE_LABEL_KEYS: Record<EmulatorType, string> = {
+  general: 'edit.maafwEmulatorTypeGeneral',
+  mumu: 'edit.maafwEmulatorTypeMumu',
+  ldplayer: 'edit.maafwEmulatorTypeLdplayer',
+  emulator2: 'edit.maafwEmulatorTypeEmulator2',
 }
 
 // Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
@@ -36,22 +37,30 @@ export const isDirectControllerType = (
  * CDK 不可用时后端明确报错而不是悄悄换成 GitHub。两项须与后端
  * MaaFWConfig.Update.Source 的 OptionsValidator 一致。
  */
-export const updateSourceOptions = [
-  { label: 'Mirror 酱', value: 'MirrorChyan' },
-  { label: 'GitHub', value: 'GitHub' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateSource }>
+const UPDATE_SOURCES = [
+  'MirrorChyan',
+  'GitHub',
+] as const satisfies readonly MaaFWProjectUpdateSource[]
 
 /** 项目更新通道只有稳定版 / 测试版，没有「跟随全局」，也故意不开放 alpha。 */
-export const updateChannelOptions = [
-  { label: '稳定版', value: 'stable' },
-  { label: '测试版', value: 'beta' },
-] satisfies Array<{ label: string; value: MaaFWProjectUpdateChannel }>
+const UPDATE_CHANNELS = ['stable', 'beta'] as const satisfies readonly MaaFWProjectUpdateChannel[]
+
+// 下拉选项的文案随界面语言变，所以是 computed
+export const updateSourceOptions = computed(() => [
+  { label: t('edit.sourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('edit.sourceGithub'), value: 'GitHub' },
+])
+
+export const updateChannelOptions = computed(() => [
+  { label: t('edit.maafwUpdateChannelStable'), value: 'stable' },
+  { label: t('edit.maafwUpdateChannelBeta'), value: 'beta' },
+])
 
 export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
-  updateSourceOptions.some(option => option.value === value)
+  (UPDATE_SOURCES as readonly unknown[]).includes(value)
 
 export const isMaaFWUpdateChannel = (value: unknown): value is MaaFWProjectUpdateChannel =>
-  updateChannelOptions.some(option => option.value === value)
+  (UPDATE_CHANNELS as readonly unknown[]).includes(value)
 
 /**
  * MaaFW 脚本配置的默认形态。后端未返回某段时用它兜底，保证编辑页所有
@@ -87,7 +96,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     LaunchPath: '',
     PackageName: '',
     Arguments: '',
-    WaitTime: 60,
+    WaitTime: 120,
     UnityResolution: 'Off',
     Hotkeys: '{}',
   },
@@ -102,6 +111,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     SourceVersion: '',
     ImportedAt: '',
     Report: '{ }',
+    FollowSource: false,
   },
   Run: {
     ProxyTimesLimit: 0,
@@ -112,6 +122,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     MonthlyOnceTasks: '[ ]',
     TaskTimeLimit: 45,
     TaskTimeLimitOverrides: '{ }',
+    LoopGuard: false,
     GameUpdateMode: 'Off',
   },
 })
@@ -128,6 +139,8 @@ type PersistFn = (
  * 从 mfwa 的 useMaaFWScriptConfig.ts 摘取控制器解析、资源过滤、模拟器选项
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
+ *
+ * 魔改 AVD 对所有 MFW 脚本（通用项目与各特调）放行，设备下拉原样列出它的实例。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
@@ -252,9 +265,13 @@ export function useMaaFWControlConfig(
   const selectedEmulatorType = computed(() => emulatorTypeById.value[maafwConfig.Emulator.Id])
 
   const selectedEmulatorLabel = computed(() => {
-    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') return '未选择模拟器'
+    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
+      return t('edit.maafwEmulatorNotSelected')
+    }
     const emulatorType = selectedEmulatorType.value
-    return emulatorType ? EMULATOR_TYPE_LABELS[emulatorType] : '模拟器类型加载中'
+    return emulatorType
+      ? t(EMULATOR_TYPE_LABEL_KEYS[emulatorType])
+      : t('edit.maafwEmulatorTypeLoading')
   })
 
   // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
@@ -270,10 +287,12 @@ export function useMaaFWControlConfig(
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
 
+  const selectedCapabilityType = computed(() =>
+    isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
+  )
+
   const selectedEmulatorCapability = computed(() => {
-    const emulatorType = isMultiEmulatorConfig.value
-      ? selectedDeviceRealType.value
-      : selectedEmulatorType.value
+    const emulatorType = selectedCapabilityType.value
     if (!emulatorType) return null
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
@@ -285,11 +304,16 @@ export function useMaaFWControlConfig(
     const inputWithExtras = Boolean(capability?.input)
 
     // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
+    // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
+    const extrasText =
+      selectedCapabilityType.value === 'avd'
+        ? t('edit.adbStrategyAvdExtras')
+        : t('edit.adbStrategyEmulatorExtras')
     const pick = (withExtras: boolean) =>
       perDevice
         ? t('edit.adbStrategyPerDevice')
         : withExtras
-          ? t('edit.adbStrategyEmulatorExtras')
+          ? extrasText
           : t('edit.adbStrategyDefault')
     return [
       { label: t('misc.screenshot'), value: pick(screencapWithExtras) },

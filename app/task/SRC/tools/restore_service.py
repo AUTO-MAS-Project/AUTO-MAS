@@ -26,10 +26,10 @@
 备份文件级原语见同目录 ``backup_archive``。
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 整目录 + 页面核心
-字段侧车（Stage 段 + Info 的 Server/Mode，运行时才注入 src.json）。池恒
-按用户分桶（侧车是用户级的）；owner（脚本=Default 共享目录、用户=独立
+字段侧车（Stage 段 + Info 的 Server/Base，运行时才注入 src.json）。池恒
+按用户分桶（侧车是用户级的）；owner（shared=Default 共享目录、independent=独立
 目录）只决定归档/恢复目标路径，与运行下发（AutoProxy ``set_src``）和
-会话（ScriptConfigTask）同一套来源规则；直控用户无 MAS 配置目录，mas 池
+会话（ScriptConfigTask）同一套来源规则；native 来源用户无 MAS 配置目录，mas 池
 对其为空（``files`` 回调返回 ``None``，快照报无变化）。
 """
 
@@ -39,9 +39,10 @@ import uuid
 from pathlib import Path
 
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
-    CONFIG_SOURCE_SCRIPT,
-    read_config_source,
+    CONFIG_BASE_INDEPENDENT,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
 )
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
@@ -73,34 +74,34 @@ def _user_guard(ctx: RestoreContext) -> None:
         raise ValueError("SRC 用户不存在，请刷新后重试")
 
 
-async def _set_mode(ctx: RestoreContext, mode: str) -> None:
-    """跨来源恢复确认后把 ``Info.Mode`` 写回备份时点（tri_state 必须）。
+async def _set_base(ctx: RestoreContext, base: str) -> None:
+    """跨来源恢复确认后把 ``Info.Base`` 写回备份时点（tri_state 必须）。
 
-    基座校验到备份 Mode ≠ 当前 Mode 时回调；写回后 restore 按当前 Mode
-    解析 owner，恢复目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
+    基座校验到备份 Base ≠ 当前 Base 时回调；写回后 restore 按当前 Base
+    解析 owner，恢复目标自然就是备份 Base 的目录（跨来源恢复 = 目录
     重定向 + 状态切回）。
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Mode": mode}})
+    await user.update({"Info": {"Base": base}})
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
-    """当前用户的 MAS 配置目录 owner；直控/无法解析时返回 ``None``。
+    """当前用户的 MAS 配置目录 owner；原生来源/无法解析时返回 ``None``。
 
     与运行下发（AutoProxy ``set_src``）和会话（ScriptConfigTask）同一套
-    来源规则：脚本态共享 ``Default``、用户态用当前用户目录；用户不存在时
+    来源规则：shared 来源共享 ``Default``、independent 来源用当前用户目录；用户不存在时
     无法判态，返回 ``None`` 让列表/预览为空（恢复/归档另有用户守卫）。
     """
 
     try:
         uid = uuid.UUID(ctx.user_id)
-        mode = read_config_source(ctx.script_config.UserData[uid], CONFIG_SOURCE_SCRIPT)
+        base = read_config_base(ctx.script_config.UserData[uid], CONFIG_BASE_SHARED)
     except (ValueError, KeyError, TypeError):
         return None
-    if mode == CONFIG_SOURCE_DIRECT:
+    if base == CONFIG_BASE_NATIVE:
         return None
-    return ctx.user_id if mode == "用户" else "Default"
+    return ctx.user_id if base == CONFIG_BASE_INDEPENDENT else "Default"
 
 
 def _native_config_path(ctx: RestoreContext) -> Path | None:
@@ -142,7 +143,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, Path | str] | None:
     """归档内容 = ConfigFile 整目录 + 页面核心字段侧车（内存 JSON）。
 
     守卫与 owner 解析沿用原快照语义：用户不存在时抛 ``ValueError``；
-    直控用户无 MAS 配置目录，返回 ``None``（快照报无变化）；目录缺失时
+    原生来源用户无 MAS 配置目录，返回 ``None``（快照报无变化）；目录缺失时
     从 SRC 安装目录 config/ 播种。
     """
 
@@ -177,7 +178,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     owner = _mas_owner(ctx)
     if owner is None:
-        raise ValueError("直控用户不使用 MAS 独立配置，无可恢复内容")
+        raise ValueError("原生来源用户不使用 MAS 独立配置，无可恢复内容")
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
         ctx.script_id,
@@ -185,8 +186,8 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
-        # force 存底标注恢复时点来源（跨来源时 set_mode 已切回备份来源）
-        mode=str(user.get("Info", "Mode") or "").strip() or None,
+        # force 存底标注恢复时点来源（跨来源时 set_base 已切回备份来源）
+        base=str(user.get("Info", "Base") or "").strip() or None,
     )
     if restored_overlay:
         # 页面核心字段回填（对齐 ok-ww 模式）：文件回滚的同时把页面关卡
@@ -226,8 +227,8 @@ RESTORE_POOLS = [
     ConfigRestorePool(
         key="mas",
         kind="user",
-        mas_mode="tri_state",
-        set_mode=_set_mode,
+        mas_base="tri_state",
+        set_base=_set_base,
         files=_mas_files,
         backup_root=_mas_root,
         preview=_preview_mas,

@@ -47,6 +47,7 @@ from app.task.MaaFW.tools.core.runtime_pool.binding import (
     binding_index_candidates,
     ensure_binding,
     exact_version_of,
+    mask_url_credentials,
     release_binding,
     resolve_binding_version,
     retain_binding,
@@ -63,6 +64,11 @@ from app.task.MaaFW.tools.core.runtime_pool.installer import (
     install_cancel_scope,
     is_package_index_offline,
     raise_if_install_cancelled,
+)
+from app.task.MaaFW.tools.core.runtime_pool.requirements_file import (
+    RequirementsFileError,
+    read_requirements_file,
+    scan_top_level_requirements,
 )
 
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
@@ -426,7 +432,8 @@ def prepare_runner_environment(
 def _describe_binding_source(binding: BindingInfo) -> str:
     source = binding.source
     if source.startswith("pypi:"):
-        return f"PyPI/镜像 {source[len('pypi:') :]}"
+        # 已装好的 binding 清单里可能还记着带 user:pw@ 的索引地址（打码之前装的）
+        return f"PyPI/镜像 {mask_url_credentials(source[len('pypi:') :])}"
     if source.startswith("github-source:"):
         return f"GitHub 源码 {source[len('github-source:') :]}"
     if source.startswith("harvest"):
@@ -631,21 +638,6 @@ def release_runner_environment(
     if not runtime_id or not lease_id or pool is None:
         return None
     return pool.release_lease(runtime_id, lease_id)
-
-
-def build_runner_packages(
-    project_path: str | Path | None = None,
-    *,
-    maafw_requirement: str | None = None,
-) -> list[str]:
-    """base venv 的包集合：常量，与项目无关。
-
-    ``project_path`` / ``maafw_requirement`` 保留在签名里给旧调用方对齐：maafw 不再
-    进 venv，按版本存在 ``<pool>/bindings/``（见 runtime_pool/binding.py）。
-    """
-
-    del project_path, maafw_requirement
-    return list(BASE_RUNTIME_PACKAGES)
 
 
 def _select_project_maafw_requirement(
@@ -1213,7 +1205,9 @@ def _declared_project_maafw_requirement(project_path: Path) -> str | None:
     return matches[0] if matches else None
 
 
-def resolve_project_maafw_requirement(project_path: Path) -> str | None:
+def resolve_project_maafw_requirement(
+    project_path: Path, *, runner_maafw_version: str | None = None
+) -> str | None:
     """普通项目（非 Managed）会用到的 MaaFW requirement。
 
     与 ``prepare_runner_environment`` 内的解析顺序一致：项目自带原生库的实测
@@ -1221,20 +1215,35 @@ def resolve_project_maafw_requirement(project_path: Path) -> str | None:
 
     供运行前自检复用——它只需要知道「这个项目会用哪个 runtime」，不需要真的去
     准备环境，因此不联网、不建 venv。
+
+    ``runner_maafw_version``：runner 这次实际用的 binding 版本（调用方已经备好 runner 环境）。
+    项目没自带原生库、只声明了范围（源码仓的 ``MaaFw>=5.12.0``）或什么都没声明时，runner 按
+    D14 把它解析成某个确切版本（本地记住的 / 本地满足的最高 / 索引最高），agent 这边照抄范围
+    让 pip 自己挑，两边就可能落在协议不同的两个版本上（5.13 起协议 7 → 8）。给了就钉成它；
+    已经是确切版本（自带原生库、声明写死）的不受影响。
     """
 
     project = Path(project_path)
     requirement = _bundled_project_maafw_requirement(
         project
     ) or _declared_project_maafw_requirement(project)
-    if requirement is None:
-        return None
-    return _normalize_maafw_requirement(requirement, allow_unconstrained=True)
+    if requirement is not None:
+        requirement = _normalize_maafw_requirement(
+            requirement, allow_unconstrained=True
+        )
+    runner_version = str(runner_maafw_version or "").strip().lstrip("vV")
+    if runner_version and (
+        requirement is None or exact_version_of(requirement) is None
+    ):
+        return f"maafw=={runner_version}"
+    return requirement
 
 
 def pin_agent_maafw_requirement(
     project_path: Path,
     packages: Sequence[str],
+    *,
+    runner_maafw_version: str | None = None,
 ) -> list[str]:
     """把 agent 依赖清单里的 maafw 钉成与 runner 加载的原生库同一个版本。
 
@@ -1253,9 +1262,14 @@ def pin_agent_maafw_requirement(
 
     **只替换已有的声明，不凭空追加**：没在 requirements.txt 里声明 maafw 的项目，
     agent 多半不是 Python 的或不用 binding，给它装一个用不上的包没有意义。
+
+    ``runner_maafw_version`` 见 :func:`resolve_project_maafw_requirement`：项目没自带原生库时
+    钉成 runner 实际用的版本，而不是照抄范围。
     """
 
-    requirement = resolve_project_maafw_requirement(Path(project_path))
+    requirement = resolve_project_maafw_requirement(
+        Path(project_path), runner_maafw_version=runner_maafw_version
+    )
     if requirement is None:
         return list(packages)
 
@@ -1392,17 +1406,20 @@ def prefer_active_venv_site_packages(
 
 
 def _load_requirements(project_path: Path) -> list[str]:
+    # 与 agent 隔离 venv 同一套解析（BOM、行内注释、续行、选项行），maafw 声明后面跟着
+    # 「  # via ...」时也认得出来。
+    # 这里只用来找 maafw 版本声明：清单展开不了（-c / -e、-r 越界或找不到）时退回只扫顶层
+    # 依赖行（跳过指令），顶层写着的声明照样认得出，记一行告警，不拦运行环境准备；
+    # agent 隔离 venv 真要装这份清单时仍会照常报错。
     requirements_path = project_path / "requirements.txt"
-    packages: list[str] = []
     try:
-        for raw_line in requirements_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            packages.append(line)
-    except FileNotFoundError:
-        pass
-    return packages
+        parsed = read_requirements_file(requirements_path)
+    except RequirementsFileError as exc:
+        logger.warning(
+            "项目 requirements.txt 展开不了，找 maafw 版本声明时只看顶层依赖行：%s", exc
+        )
+        return scan_top_level_requirements(requirements_path)
+    return list(parsed.requirements) if parsed is not None else []
 
 
 def _normalized_sys_path(path: str) -> str:

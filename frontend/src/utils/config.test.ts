@@ -1,5 +1,5 @@
 import { setImmediate as nextTurn } from 'node:timers/promises'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 function deferred() {
   let resolve!: () => void
@@ -60,6 +60,48 @@ function delayFirstRead() {
 }
 
 describe('共享前端配置读写', () => {
+  it('迁移 useTheme 的两个独立旧键，覆盖旧配置里的未使用默认值', async () => {
+    disk = { language: 'en-US', themeMode: 'system', themeColor: 'blue' }
+    legacy.set('theme-mode', 'dark')
+    legacy.set('theme-color', 'green')
+    const config = await import('./config')
+
+    await expect(config.getConfig()).resolves.toMatchObject({
+      themeMode: 'dark',
+      themeColor: 'green',
+    })
+    expect(disk).toMatchObject({ language: 'en-US', themeMode: 'dark', themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
+  it('迁移保存失败时保留旧键，下一次读取仍能重试', async () => {
+    disk = { language: 'zh-CN' }
+    legacy.set('theme-mode', 'dark')
+    legacy.set('theme-color', 'green')
+    saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
+    const config = await import('./config')
+
+    expect((await config.getConfig()).themeMode).toBe('dark')
+    expect(legacy.size).toBe(2)
+    await config.getConfig()
+    expect(disk).toMatchObject({ themeMode: 'dark', themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
+  it('迁移失败后用户显式保存的主题，不会被下次迁移用旧键覆盖', async () => {
+    disk = { language: 'zh-CN' }
+    legacy.set('theme-mode', 'dark')
+    legacy.set('theme-color', 'green')
+    saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
+    const config = await import('./config')
+
+    await config.getConfig()
+    await config.saveConfig({ themeMode: 'light' })
+    await config.getConfig()
+    expect(disk).toMatchObject({ themeMode: 'light', themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
   it('前端读取后主进程更新窗口设置，保存偏好不会回写旧窗口设置', async () => {
     disk = { themeMode: 'light', UI: { location: '100,100', size: '1600,1000' } }
     const config = await import('./config')
@@ -87,6 +129,23 @@ describe('共享前端配置读写', () => {
     await loading
 
     expect(disk).toMatchObject({ UI: { location: '200,300' }, themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
+  it('文件配置缺少主题字段时，会迁移旧主题偏好并落盘', async () => {
+    disk = { language: 'en-US' }
+    legacy.set('theme-settings', JSON.stringify({ themeMode: 'dark', themeColor: 'green' }))
+    const config = await import('./config')
+
+    await expect(config.getConfig()).resolves.toMatchObject({
+      themeMode: 'dark',
+      themeColor: 'green',
+    })
+    expect(disk).toMatchObject({
+      language: 'en-US',
+      themeMode: 'dark',
+      themeColor: 'green',
+    })
     expect(legacy.size).toBe(0)
   })
 
@@ -133,11 +192,9 @@ describe('共享前端配置读写', () => {
   it('一次写入失败会通知调用方，后续写入仍能执行', async () => {
     const config = await import('./config')
     saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
-    const failed = expect(config.saveConfig({ language: 'en-US' })).rejects.toThrow(
-      'disk unavailable'
-    )
+    const failed = config.saveConfig({ language: 'en-US' })
     const next = config.saveConfig({ themeColor: 'green' })
-    await failed
+    await expect(failed).rejects.toThrow('disk unavailable')
     await next
 
     expect(disk).toMatchObject({ themeColor: 'green', mysteryUnlockedDate: '2026-10-02' })

@@ -21,10 +21,12 @@ from ._shared import (
     assert_existing_chain_has_no_reparse,
     assert_not_reparse,
     format_time,
+    is_active_staging,
     parse_time,
     pool_lock,
     remove_tree_best_effort,
     utc_now,
+    venv_base_python_missing,
     write_json_atomic,
 )
 from .cache import clean_uv_cache
@@ -101,11 +103,16 @@ class MaaFWRuntimePool:
         self.installer = installer
         self._lock = pool_lock(self.root)
         self._root_identity: dict[str, Any] = {}
-        with self._lock:
-            self._initialize()
+        # 池早就建好时只读地核一遍、不拿池锁：别的线程可能正持锁装 runtime（几分钟），
+        # 构造一个服务对象不该跟着排队。要写（首次建池、旧标记升级、补目录）才持锁。
+        if not self._initialize_without_writes():
+            with self._lock:
+                self._initialize()
 
     @property
     def root_identity(self) -> dict[str, Any]:
+        if self._initialize_without_writes():
+            return copy.deepcopy(self._root_identity)
         with self._lock:
             self._initialize()
             return copy.deepcopy(self._root_identity)
@@ -865,6 +872,7 @@ class MaaFWRuntimePool:
                     self._sweep_staging()
                 )
                 account(staging_footprint)
+                account(self._sweep_pycache_mirrors())
             return {
                 "dryRun": bool(dry_run),
                 "graceSeconds": float(grace_seconds),
@@ -1005,10 +1013,12 @@ class MaaFWRuntimePool:
         """清掉 ``.staging`` 里遗留的半成品 / 隔离目录。
 
         返回 ``(本轮清空的条目名, 仍有残留的条目名, (释放的独占字节, 与缓存共用的字节))``。
-        只在持有池锁时调用：``ensure`` 的安装与 binding 的换入全程也持有同一把锁，所以
-        这里看到的每个 ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目
-        都不再有人用（安装失败没删干净的、隔离后 rmtree 半途而废的、下载到一半的 wheel）。
-        仍删不掉的（DLL 还被映射着）留到下次。
+        只在持有池锁时调用。``ensure`` 的 runtime 安装与 binding 的换入持有同一把锁，但
+        binding 的下载 / 铺目录 / 自检在池锁外跑（``binding.ensure_binding``），那些暂存
+        条目在建之前登记成在用（``_shared.register_active_staging``），这里跳过。其余的
+        ``maafw-runtime-*`` / ``binding-*`` / ``native-*`` / ``trash-*`` 条目都不再有人用（安装
+        失败没删干净的、隔离后 rmtree 半途而废的、上次进程下载到一半的 wheel）。仍删不掉的
+        （DLL 还被映射着）留到下次。
         """
 
         swept: list[str] = []
@@ -1021,6 +1031,8 @@ class MaaFWRuntimePool:
             if path.is_symlink():
                 continue
             if not path.name.startswith(_STAGING_PREFIXES):
+                continue
+            if is_active_staging(path):
                 continue
             if path.is_file():
                 # binding 下载到一半的 .whl
@@ -1043,6 +1055,105 @@ class MaaFWRuntimePool:
                 freed += max(0, exclusive - left_exclusive)
                 shared += max(0, linked - left_linked)
         return swept, residue, (freed, shared)
+
+    def _sweep_pycache_mirrors(self) -> tuple[int, int]:
+        """清掉 ``<pool>/.pycache`` 里源目录已经不在的那几支，返回释放的字节。
+
+        worker 与 binding 自检设了 ``PYTHONPYCACHEPREFIX=<pool>/.pycache``（见
+        ``binding.pool_pycache_prefix``），前缀树按源码绝对路径（去掉盘符）镜像：base runtime、
+        各版本 binding 和自检用过的暂存目录都在里面各有一支。回收删掉源目录之后它们没人
+        再用，原来一直堆着。只在持池锁时调用：runtime 安装与 binding 换入都持这把锁，源目录
+        还在（或暂存条目还在册）的一律不碰。
+        """
+
+        from . import binding as binding_module
+
+        freed = 0
+        shared = 0
+        prefix_root = binding_module.pycache_directory(self.root)
+        if not prefix_root.is_dir() or prefix_root.is_symlink():
+            return freed, shared
+        for name in (
+            RUNTIME_DIRECTORY_NAME,
+            binding_module.BINDINGS_DIRECTORY_NAME,
+            binding_module.NATIVE_DIRECTORY_NAME,
+            STAGING_DIRECTORY_NAME,
+        ):
+            source_dir = self.root / name
+            relative = os.path.splitdrive(str(source_dir))[1].lstrip("\\/")
+            mirror_dir = prefix_root / relative
+            try:
+                assert_existing_chain_has_no_reparse(mirror_dir)
+            except MaaFWRuntimePoolError:
+                continue
+            if not mirror_dir.is_dir():
+                continue
+            try:
+                children = sorted(mirror_dir.iterdir())
+            except OSError:
+                # 前缀树只是缓存：读不了这一支就跳过，别让整轮回收报错
+                continue
+            for child in children:
+                if child.is_symlink():
+                    continue
+                source = source_dir / child.name
+                if source.exists() or source.is_symlink() or is_active_staging(source):
+                    continue
+                exclusive, linked = _directory_footprint(child)
+                if child.is_file():
+                    try:
+                        child.unlink()
+                    except OSError:
+                        continue
+                    freed += exclusive
+                    shared += linked
+                    continue
+                if remove_tree_best_effort(child):
+                    freed += exclusive
+                    shared += linked
+                else:
+                    left_exclusive, left_linked = _directory_footprint(child)
+                    freed += max(0, exclusive - left_exclusive)
+                    shared += max(0, linked - left_linked)
+        return freed, shared
+
+    def _initialize_without_writes(self) -> bool:
+        """``_initialize`` 的只读快路径：池已建好（标记是当前格式、受管目录都在）时做同样
+        的校验、不写任何东西，因而不需要池锁。
+
+        需要写的情形（没有标记、旧格式标记要升级、受管目录缺了要补）或任何一项对不上都
+        返回 False，由调用方持锁走 ``_initialize``——报错与修补仍只在那条路上。标记只经
+        ``write_json_atomic`` 整体替换，读到半份的可能性没有；替换瞬间读失败也只是回落到锁。
+        """
+
+        try:
+            for managed_path in (
+                self.runtime_root,
+                self.staging_root,
+                self.root / "cache",
+                self.python_root,
+                self.root / "bindings",
+                self.root / "native",
+            ):
+                assert_existing_chain_has_no_reparse(managed_path)
+            marker_path = self.root / POOL_MARKER_NAME
+            assert_not_reparse(marker_path)
+            if not marker_path.is_file():
+                return False
+            identity = _validate_pool_marker(
+                json.loads(marker_path.read_text(encoding="utf-8"))
+            )
+            for managed_dir in (self.runtime_root, self.staging_root, self.python_root):
+                assert_not_reparse(managed_dir)
+                if not managed_dir.is_dir():
+                    return False
+        except (OSError, ValueError, MaaFWRuntimePoolError):
+            return False
+        if self._root_identity and self._root_identity != identity:
+            # 身份变了要报错，交给持锁的那条路
+            return False
+        self._root_identity = identity
+        return True
 
     def _initialize(self) -> None:
         # Validate every managed child before reading or upgrading the marker so
@@ -1326,6 +1437,14 @@ class MaaFWRuntimePool:
             if not isinstance(identity, Mapping):  # pragma: no cover - manifest guard
                 raise MaaFWRuntimePoolError(
                     f"runtime manifest identity is invalid: {runtime_id}"
+                )
+            # base venv 的基解释器不在了（pyvenv.cfg 的 home 失效：整体搬了安装目录、
+            # 池托管解释器目录被删后装到了别处）：venv 启动器起不来，探针只会报 exit 103。
+            # 身份与 runtime_id 都不含路径，不当成可恢复的话这个 id 永远命中这份坏条目、
+            # 所有 MFW 脚本都不能运行。与上面「文件不在」同一档：隔离后照常重建。
+            if venv_base_python_missing(environment_path):
+                raise _MaaFWRuntimeEntryStaleError(
+                    f"runtime base interpreter is gone (pyvenv.cfg home): {runtime_id}"
                 )
             # A missing executable is recoverable above, but a present Python
             # whose probed ABI disagrees with its selector is an identity

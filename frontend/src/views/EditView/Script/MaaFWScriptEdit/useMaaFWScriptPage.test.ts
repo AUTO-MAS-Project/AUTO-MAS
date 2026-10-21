@@ -1,5 +1,5 @@
 import { effectScope, ref } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 // 调用记录：按发生顺序记下每个后端请求，最后对顺序下断言
 const mocks = vi.hoisted(() => {

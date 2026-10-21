@@ -173,6 +173,32 @@
                 </a-select>
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.bettergiAccountSwitchMethod') }}
+                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleAccountSwitchMethodChange"
+                >
+                  <a-select-option value="BGI">
+                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                  </a-select-option>
+                  <a-select-option value="MAS">
+                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                  </a-select-option>
+                </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
+              </a-form-item>
+            </a-col>
           </a-row>
         </div>
 
@@ -243,34 +269,6 @@
                   style="width: 100%"
                   @blur="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
                 />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiAccountSwitchMethod') }}
-                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="bettergiConfig.Run.AccountSwitchMethod"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleAccountSwitchMethodChange"
-                >
-                  <a-select-option value="BGI">
-                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
-                  </a-select-option>
-                  <a-select-option value="MAS">
-                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
-                  </a-select-option>
-                </a-select>
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>

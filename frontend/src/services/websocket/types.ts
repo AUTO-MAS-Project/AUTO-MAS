@@ -25,7 +25,6 @@ export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
 export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
-export const WS_ID_ARKNIGHTS_PC_TOOLKIT = 'ArknightsPCToolkit'
 
 // ==================== 消息类别 ====================
 
@@ -34,6 +33,8 @@ export const WS_TASK_INFO_UPDATED = 'task.info.updated'
 export const WS_TASK_LOG_UPDATED = 'task.log.updated'
 export const WS_TASK_NOTICE = 'task.notice'
 export const WS_TASK_COMPLETED = 'task.completed'
+/** 配置会话结束、本次改动被丢弃（id 为任务 UUID） */
+export const WS_TASK_CONFIG_DISCARDED = 'task.config.discarded'
 
 // 任务创建通知（id=TaskManager）
 export const WS_TASK_CREATED = 'task.created'
@@ -41,6 +42,8 @@ export const WS_TASK_CREATED = 'task.created'
 // 应用生命周期与电源（id=Main）
 export const WS_BACKEND_SHUTDOWN_READY = 'backend.shutdown.ready'
 export const WS_FRONTEND_CLOSE_REQUESTED = 'frontend.close.requested'
+// 与上一条同理，只是收尾后由 Electron 重新拉起：队列的「完成后操作」选了重启软件
+export const WS_FRONTEND_RESTART_REQUESTED = 'frontend.restart.requested'
 export const WS_POWER_COUNTDOWN_UPDATED = 'power.countdown.updated'
 export const WS_POWER_COUNTDOWN_CANCELLED = 'power.countdown.cancelled'
 export const WS_POWER_SIGN_UPDATED = 'power.sign.updated'
@@ -59,9 +62,8 @@ export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
 
-// 通用错误提示（id=EmulatorManager / ArknightsPCToolkit）
+// 通用错误提示（id=EmulatorManager）
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
-export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
@@ -79,6 +81,12 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 export interface WSTaskNoticeData {
   level: 'info' | 'warning' | 'error'
   message: string
+  messageKey?: string | null
+}
+
+/** 配置会话改动被丢弃的数据 (type=task.config.discarded)：正文由前端按语言本地化 */
+export interface WSTaskConfigDiscardedData {
+  reason: 'structure' | 'unreadable' | 'not_written'
 }
 
 export interface WSTaskUserInfoData {
@@ -182,6 +190,8 @@ export interface WSMaaFWProjectUpdateProgressData {
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
+  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
+  logLevel?: string | null
   /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null
@@ -273,9 +283,11 @@ interface WSMessageDataMap {
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData
   [WS_TASK_COMPLETED]: WSTaskCompletedData
+  [WS_TASK_CONFIG_DISCARDED]: WSTaskConfigDiscardedData
   [WS_TASK_CREATED]: WSTaskCreatedData
   [WS_BACKEND_SHUTDOWN_READY]: WSEmptyData
   [WS_FRONTEND_CLOSE_REQUESTED]: WSEmptyData
+  [WS_FRONTEND_RESTART_REQUESTED]: WSEmptyData
   [WS_POWER_COUNTDOWN_UPDATED]: WSPowerCountdownData
   [WS_POWER_COUNTDOWN_CANCELLED]: WSEmptyData
   [WS_POWER_SIGN_UPDATED]: WSPowerSignData
@@ -287,7 +299,6 @@ interface WSMessageDataMap {
   [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
-  [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData

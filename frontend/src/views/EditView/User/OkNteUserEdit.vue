@@ -142,7 +142,7 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <GeneralConfigModeSelector
-                  :model-value="formData.Info.Mode"
+                  :model-value="formData.Info.Base"
                   :options="oknteConfigModeOptions"
                   :disabled="pageLoading"
                   :quick-config="formData.Info.IfQuickConfig"
@@ -418,28 +418,28 @@ const resourceOptions = [{ label: '官服', value: '官服' }]
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const oknteConfigModeOptions: Array<{
   label: string
-  value: '脚本' | '用户' | '直控'
+  value: 'shared' | 'independent' | 'native'
   title: string
   description: string
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
     label: t('edit.script'),
-    value: '脚本',
+    value: 'shared',
     title: t('edit.script'),
     description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     label: t('edit.user'),
-    value: '用户',
+    value: 'independent',
     title: t('edit.user'),
     description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
-    value: '直控',
+    value: 'native',
     title: t('edit.directControl'),
     description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
@@ -492,7 +492,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Status: true,
     Id: '',
     Password: '',
-    Mode: '脚本',
+    Base: 'shared',
     IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
@@ -570,8 +570,8 @@ const handleQuickConfigChange = async (value: boolean) => {
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value))
     return
-  formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await saveField('Info.Mode', formData.Info.Mode)
+  formData.Info.Base = value as 'shared' | 'independent' | 'native'
+  await saveField('Info.Base', formData.Info.Base)
 }
 
 const saveField = async (key: string, value: unknown) => {

@@ -79,8 +79,11 @@ export const managedMaaFWQueueState = <T extends TaskWithOptions>(
     taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>
     options: readonly MaaFWOptionInfo[]
     displayName: (task: T) => string
+    /** 账号 / 任务名之间的分隔符，随界面语言（中文「、」，英文「, 」） */
+    separator?: string
   }
 ): ManagedMaaFWQueueState => {
+  const separator = params.separator ?? '、'
   const managed = queued.filter(item => isManagedMaaFWTask(item.task, params.managedEntries))
   if (managed.length === 0) return null
   const accountTask = params.accountTask
@@ -90,11 +93,11 @@ export const managedMaaFWQueueState = <T extends TaskWithOptions>(
       .map(item => maafwAccountOf(item.task, params.taskOptions[item.id], params.options))
       .filter(Boolean)
     if (accounts.length >= 2) {
-      return { kind: 'split', count: accounts.length, accounts: accounts.join('、') }
+      return { kind: 'split', count: accounts.length, accounts: accounts.join(separator) }
     }
   }
   return {
     kind: 'notice',
-    tasks: [...new Set(managed.map(item => params.displayName(item.task)))].join('、'),
+    tasks: [...new Set(managed.map(item => params.displayName(item.task)))].join(separator),
   }
 }

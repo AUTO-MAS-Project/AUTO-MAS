@@ -1,5 +1,5 @@
 // 系统级通知常驻订阅
-// 模拟器管理与明日方舟工具箱的错误提示不属于任何任务或页面，由应用级常驻
+// 模拟器管理的错误提示不属于任何任务或页面，由应用级常驻
 // 订阅统一弹出通知（v1.1 由全量 Message 订阅承担，v2 精确路由后需显式订阅）。
 // 后端启动期攒下的系统通知（如 M9A 配置迁移结果）也走这里：主连接建立后发一次，
 // 正文是多行，逐行显示。
@@ -9,11 +9,9 @@ import { notification } from 'ant-design-vue'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_EMULATOR_NOTICE,
-  WS_ID_ARKNIGHTS_PC_TOOLKIT,
   WS_ID_EMULATOR_MANAGER,
   WS_ID_MAIN,
   WS_SYSTEM_NOTICE,
-  WS_TOOLKIT_NOTICE,
   type WSSystemNoticeData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
@@ -64,9 +62,6 @@ export function bootstrapSystemNotices(): void {
   subscriptionIds = [
     subscribe({ id: WS_ID_EMULATOR_MANAGER, type: WS_EMULATOR_NOTICE }, message =>
       showNotice('模拟器管理', message.data)
-    ),
-    subscribe({ id: WS_ID_ARKNIGHTS_PC_TOOLKIT, type: WS_TOOLKIT_NOTICE }, message =>
-      showNotice('明日方舟工具箱', message.data)
     ),
     subscribe({ id: WS_ID_MAIN, type: WS_SYSTEM_NOTICE }, message =>
       showSystemNotice(message.data)

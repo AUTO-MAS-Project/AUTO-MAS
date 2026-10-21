@@ -25,6 +25,10 @@ export type MaaCultivateOperatorOptionItem = {
      */
     maxElite?: number;
     /**
+     * 普通技能可达等级上限；0 表示无消耗数据
+     */
+    maxSkillLevel?: number;
+    /**
      * 有精英化体系但需求数据缺失（区别于 1/2/3★ 结构上不设精英化）
      */
     dataMissing?: boolean;

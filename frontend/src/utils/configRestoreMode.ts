@@ -1,5 +1,5 @@
 /**
- * 配置来源（脚本级/用户级/直控）与恢复确认弹窗的前端共用判定与提示文案。
+ * 配置来源（共享/独立/原生）与恢复确认弹窗的前端共用判定与提示文案。
  *
  * 备份列表标签、跨来源恢复（备份来源 ≠ 当前来源）提示、源配置损坏的强制
  * 恢复确认在通用恢复组件与各专项编辑页复用，统一在此维护，避免各页各写
@@ -8,17 +8,17 @@
 
 import { h, type VNode } from 'vue'
 
-/** 来源标签色（脚本级蓝 / 用户级绿 / 直控橙；未知值按用户级） */
-export const sourceTagColor = (mode: string): string => {
-  if (mode === '脚本') return 'blue'
-  if (mode === '直控') return 'orange'
+/** 来源标签色（共享蓝 / 独立绿 / 原生橙；未知值按独立） */
+export const sourceTagColor = (base: string): string => {
+  if (base === 'shared') return 'blue'
+  if (base === 'native') return 'orange'
   return 'green'
 }
 
-/** 来源 → 展示词条 key（未知值按用户级兜底） */
-export const sourceLabelKey = (mode: string): string => {
-  if (mode === '脚本') return 'edit.configRestoreModeScript'
-  if (mode === '直控') return 'edit.configRestoreModeDirect'
+/** 来源 → 展示词条 key（未知值按独立兜底） */
+export const sourceLabelKey = (base: string): string => {
+  if (base === 'shared') return 'edit.configRestoreModeScript'
+  if (base === 'native') return 'edit.configRestoreModeDirect'
   return 'edit.configRestoreModeUser'
 }
 
@@ -44,7 +44,7 @@ export const buildRestoreConfirm = (
       current: t(sourceLabelKey(currentMode as string)),
     }),
   ]
-  if (backupMode === '脚本') {
+  if (backupMode === 'shared') {
     paragraphs.push(t('edit.configRestoreCrossSourceShared'))
   }
   return { title: t('edit.configRestoreCrossSourceTitle'), paragraphs: [base.desc, ...paragraphs] }

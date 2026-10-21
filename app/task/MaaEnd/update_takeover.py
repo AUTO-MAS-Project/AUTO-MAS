@@ -193,7 +193,7 @@ def _mxu_log_files(root_path: Path) -> list[Path]:
 
 
 def snapshot_mxu_logs(root_path: Path) -> dict[Path, int]:
-    """启动首阶段前记录日志位置，避免历史下载记录触发更新。"""
+    """启动前记录日志位置，避免读取历史运行和下载记录。"""
     offsets: dict[Path, int] = {}
     for path in _mxu_log_files(root_path):
         with suppress(FileNotFoundError):
@@ -201,7 +201,7 @@ def snapshot_mxu_logs(root_path: Path) -> dict[Path, int]:
     return offsets
 
 
-def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> list[str]:
+def read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> list[str]:
     """读取本轮新增完整行，保留重启前日志和跨次写入的半行。"""
     lines: list[str] = []
     for path in _mxu_log_files(root_path):
@@ -255,7 +255,7 @@ async def _run_update_session(
                 await process_manager.hide_window()
                 # 安装结果写在旧进程日志中，必须从启动起持续读取，不能只读重启后的最新文件。
                 lines = await asyncio.to_thread(
-                    _read_new_mxu_logs, root_path, log_offsets
+                    read_new_mxu_logs, root_path, log_offsets
                 )
                 progress.read(lines)
                 if progress.state == "install_failed":
@@ -328,7 +328,7 @@ async def update_maaend_after_stage(
     未下载完成时返回 ``None``，由调用方关闭原进程并继续任务；
     仅已下载的更新包继续沿用 MXU 原生安装和重启流程。
     """
-    lines = await asyncio.to_thread(_read_new_mxu_logs, root_path, log_offsets)
+    lines = await asyncio.to_thread(read_new_mxu_logs, root_path, log_offsets)
     if not any(
         message in line
         for line in lines
@@ -387,5 +387,5 @@ async def update_maaend_after_stage(
             raise MaaEndUpdateError("等待 MaaEnd 原进程完成安装超时")
         await asyncio.sleep(0.5)
         progress.read(
-            await asyncio.to_thread(_read_new_mxu_logs, root_path, log_offsets)
+            await asyncio.to_thread(read_new_mxu_logs, root_path, log_offsets)
         )

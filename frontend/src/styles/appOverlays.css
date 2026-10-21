@@ -1,0 +1,69 @@
+/* 只在标题栏实际存在时预留窗口控制区；独立窗口沿用组件布局。
+   弹窗上下各留 16px，嵌套弹窗的层级只影响内容区内的覆盖顺序。 */
+body:has(.title-bar) .ant-modal-root .ant-modal-wrap {
+  top: 32px;
+  box-sizing: border-box;
+  padding-block: 16px;
+  overflow: hidden;
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-mask {
+  top: 32px;
+  height: calc(100% - 32px);
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal {
+  top: 0;
+  margin-block: 0;
+  padding-bottom: 0;
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 64px);
+}
+
+body:has(.title-bar) .ant-modal-root .ant-modal-header,
+body:has(.title-bar) .ant-modal-root .ant-modal-footer {
+  flex-shrink: 0;
+}
+
+/* 默认由弹窗体滚动，模块自己的独立滚动区域可以覆盖此规则。 */
+:where(body:has(.title-bar)) .ant-modal-root :where(.ant-modal-body) {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* MAA 养成与库存编辑共用：无标题栏窗口也限制高度，正文独立滚动。
+   上面的标题栏规则优先级更高，仍保留窗口控制区和上下间距。 */
+.ant-modal-root .ant-modal-wrap.maa-plan-settings-modal {
+  padding-block: 16px;
+  overflow: hidden;
+}
+
+.ant-modal-root .maa-plan-settings-modal .ant-modal {
+  top: 0;
+  padding-bottom: 0;
+}
+
+.ant-modal-root .maa-plan-settings-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+}
+
+.ant-modal-root .maa-plan-settings-modal .ant-modal-header,
+.ant-modal-root .maa-plan-settings-modal .ant-modal-footer {
+  flex-shrink: 0;
+}
+
+.ant-modal-root .maa-plan-settings-modal .ant-modal-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 固定养成编辑区高度，避免材料页签切换时弹窗伸缩；小窗口沿用上面的高度上限。 */
+.ant-modal-root .cultivate-settings-modal .ant-modal-content {
+  height: 720px;
+}

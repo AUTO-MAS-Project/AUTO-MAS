@@ -858,17 +858,25 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     controller_name,
                 )
 
+    # 任务上的同类笔误同一口径：告警、原样保留（删空了反而变成「适用于所有」），这个任务
+    # 只在写对了的那些 controller / resource 下可用，全写错就哪儿都不可用，其余任务照常
     for task in interface_model.task:
         task_ref = f"{task.name}({task.entry})"
         for controller_name in task.controller or []:
             if controller_name not in controller_names:
-                raise MaaFWInterfaceLoadError(
-                    f"任务 {task_ref} 引用了不存在的 controller: {controller_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface 任务 %s 引用了不存在的 controller"
+                    "（不会匹配任何控制器）：%s",
+                    task_ref,
+                    controller_name,
                 )
         for resource_name in task.resource or []:
             if resource_name not in resource_names:
-                raise MaaFWInterfaceLoadError(
-                    f"任务 {task_ref} 引用了不存在的 resource: {resource_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface 任务 %s 引用了不存在的 resource"
+                    "（不会匹配任何资源）：%s",
+                    task_ref,
+                    resource_name,
                 )
 
 

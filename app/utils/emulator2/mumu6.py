@@ -484,26 +484,61 @@ class MuMu6Manager(AppLaunchMixin, MumuManager):
                     + ", ".join(str(item) for item in allowed)
                 )
 
-        if expected:
+        touched = {
+            mode_key: owned
+            for mode_key, owned in _MODE_GATES.items()
+            if any(name in cleaned for name in owned)
+        }
+        partial = any(
+            name not in cleaned for owned in touched.values() for name in owned
+        )
+
+        current: InstanceSettings | None = None
+        if expected or partial:
             current = await self.read_instance_settings(idx)
+
+        if expected and current is not None:
             conflicts = detect_conflicts(current, expected, list(cleaned))
             if conflicts:
                 raise SettingsConflictError(conflicts)
 
+        # 切到 custom 后整组都按 .custom 键生效，而非 custom 模式下那几个键里是陈旧值：
+        # 本次没给的同组字段用当前生效值补齐，一起写进去。读不到就不切 mode，直接拒绝
+        filled: dict[str, int] = {}
+        if partial and current is not None:
+            values = current.values()
+            missing: list[str] = []
+            for owned in touched.values():
+                for name in owned:
+                    if name in cleaned:
+                        continue
+                    value = values.get(name)
+                    if value is None:
+                        missing.append(name)
+                    else:
+                        filled[name] = value
+            if missing:
+                raise RuntimeError(
+                    f"MuMu 实例 {idx} 读不到当前的 {', '.join(missing)}，"
+                    "补不齐同组设置，拒绝写入"
+                )
+
         pairs: dict[str, str] = {}
-        for name, value in cleaned.items():
+        for name, value in {**filled, **cleaned}.items():
             if name == "memoryMb":
                 pairs[_WRITE_KEYS[name]] = f"{value / _MB_PER_GB:.6f}"
             else:
                 pairs[_WRITE_KEYS[name]] = str(value)
 
         # 关键一步：不切 mode 的话，上面写进去的自定义值一个都不会生效
-        for mode_key, owned in _MODE_GATES.items():
-            if any(name in cleaned for name in owned):
-                pairs[mode_key] = "custom"
+        for mode_key in touched:
+            pairs[mode_key] = "custom"
 
         await self._setting_set(idx, pairs)
-        logger.info(f"已写入 MuMu 实例 {idx} 的设置: {cleaned}")
+        logger.info(
+            f"已写入 MuMu 实例 {idx} 的设置: {cleaned}"
+            + (f"（同组按当前值补齐: {filled}）" if filled else "")
+        )
         return cleaned
 
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:

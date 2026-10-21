@@ -182,6 +182,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.cur_user_config: HSRUserConfig = self.user_config[self.cur_user_uid]
         self.runtime = runtime
         self._log_lines: list[str] = runtime.log_lines
+        # 用户级任务前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
+        self._extra_scripts_started = False
         self._completion_writebacks: list[CompletionWriteback] = (
             runtime.completion_writebacks
         )
@@ -1019,7 +1021,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not plan.get("TaskSwitch", module.key):
                 continue
 
-            # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
+            # shared 来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
             # 自然落到脚本级 TaskMapping。
             assigned = resolve_script_assignment(
                 module,
@@ -1415,7 +1417,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[HSRRunItem]:
         """按用户构建本轮 HSR 执行队列。
 
-        ``plan`` 是该用户生效的任务计划（脚本来源为脚本配置，用户来源为
+        ``plan`` 是该用户生效的任务计划（shared 来源为脚本配置，independent 来源为
         ``user_cfg`` 本身）；``Data`` / ``Info`` 恒读 ``user_cfg``。
         """
 
@@ -1845,10 +1847,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
-        # 直控用户由 HSRManager._run_direct_user 执行，不会进这里。
+        # 原生来源用户由 HSRManager._run_direct_user 执行，不会进这里。
         plan = resolve_plan(user_cfg, self.script_config)
         if plan is None:
-            raise RuntimeError(f"用户「{user_name}」为直控来源，不能进入 MAS 托管队列")
+            raise RuntimeError(f"用户「{user_name}」为原生来源，不能进入 MAS 托管队列")
         m7a_path = resolve_script_path(self.script_config, "M7A")
         sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id
@@ -1918,6 +1920,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return
 
         # 执行任务前脚本（每用户仅一次，补跑不重复执行）
+        self._extra_scripts_started = True
         await run_script_before_task(user_cfg)
 
         failed_items: list[HSRRunItem] = []
@@ -1976,8 +1979,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
             # 用户状态必须在这一次里定好，否则后续补写全部失效。
             if not failed_items:
                 self._finish_current_user_log(status)
-                # 执行任务后脚本（每用户仅一次）
-                await run_script_after_task(user_cfg)
                 return
 
             # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
@@ -2020,8 +2021,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         status="failed",
                         reason=failed_item.last_error or "重试后仍未完成",
                     )
-                # 执行任务后脚本（每用户仅一次）
-                await run_script_after_task(user_cfg)
                 raise RuntimeError(
                     self._format_queue_failures(failed_items, retry_limit)
                 )
@@ -2029,11 +2028,17 @@ class HSRAutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """用户任务结束后清理临时配置；异常时停止外部脚本。"""
 
-        if self.crashed:
-            await self._stop_external_processes()
-        await self._push_user_statistics_notification()
-        for tp in self.temp_files:
-            cleanup_sra_temp_config(tp)
+        try:
+            if self.crashed:
+                await self._stop_external_processes()
+            await self._push_user_statistics_notification()
+            for tp in self.temp_files:
+                cleanup_sra_temp_config(tp)
+        finally:
+            # 任务后脚本每用户只收尾一次；前置被中止或清理异常时也尝试执行。
+            if self._extra_scripts_started:
+                self._extra_scripts_started = False
+                await run_script_after_task(self.cur_user_config)
 
     async def on_crash(self, e: Exception):
         self.crashed = True

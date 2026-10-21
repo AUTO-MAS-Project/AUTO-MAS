@@ -34,12 +34,13 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
-    CONFIG_SOURCE_SCRIPT,
-    read_config_source,
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
 )
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -78,7 +79,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
-class SrcManager(TaskExecuteBase):
+class SrcManager(ScriptManagerBase):
     """SRC控制器"""
 
     wait_for_finalizer_on_cancel = True
@@ -153,7 +154,7 @@ class SrcManager(TaskExecuteBase):
         )
         if not src_config_available and not temp_config_available:
             return "SRC配置文件不存在或已损坏, 请检查SRC路径设置或检查配置文件情况！"
-        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 SRC 安装目录的原生配置
+        # 脚本级存档仅在存在非原生来源用户时需要: 原生来源直接使用 SRC 安装目录的原生配置
         if (
             self.task_info.mode != "ScriptConfig"
             and self._has_mas_config_user()
@@ -165,7 +166,7 @@ class SrcManager(TaskExecuteBase):
         return "Pass"
 
     def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+        """目标用户里是否存在非原生来源（shared/independent）配置来源的用户。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
         还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
@@ -173,13 +174,11 @@ class SrcManager(TaskExecuteBase):
         """
 
         return any(
-            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            read_config_base(config, CONFIG_BASE_SHARED) != CONFIG_BASE_NATIVE
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-            and self.task_info.is_target_user(str(uid))
+            if self.is_user_selected(uid, config)
         )
 
     async def prepare(self):
@@ -204,15 +203,9 @@ class SrcManager(TaskExecuteBase):
                 )
             ]
         else:
-            self.script_info.user_list = [
-                UserItem(
-                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
-                )
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-                and self.task_info.is_target_user(str(uid))
-            ]
+            self.script_info.user_list = self.build_proxy_user_list(
+                self.user_config.items()
+            )
         logger.info(
             f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
         )
@@ -514,12 +507,12 @@ class SrcManager(TaskExecuteBase):
         )
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+        """原生来源配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
 
-        直控会话 MAS 零写入（ScriptConfig 直控分支直接 return），安装
+        原生来源会话 MAS 零写入（ScriptConfig 原生来源分支直接 return），安装
         config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
         用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
-        用户脚本态会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
+        用户shared 来源会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
         MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
         任何现场改动，结束后也还原任务前快照。
         """
@@ -535,12 +528,12 @@ class SrcManager(TaskExecuteBase):
         if user_id == "Default":
             return False
         try:
-            mode = str(
-                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            base = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Base") or ""
             ).strip()
         except (KeyError, ValueError, TypeError):
             return False
-        return mode == "直控"
+        return base == CONFIG_BASE_NATIVE
 
     def _backup_src_config_to_temp(self) -> None:
         """完整复制配置后，再提交为可恢复的 Temp 快照。"""
@@ -812,6 +805,14 @@ class SrcManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            current_user = self.script_info.user_list[self.script_info.current_index]
+            if (
+                self.task_info.mode == "AutoProxy"
+                and not await self.check_user_before_run(
+                    current_user, self.user_config[uuid.UUID(current_user.user_id)]
+                )
+            ):
+                continue
             task_kwargs: dict = {"src_installation_id": self.src_installation_id}
             # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
             if self.task_info.mode == "ScriptConfig":
@@ -824,7 +825,7 @@ class SrcManager(TaskExecuteBase):
                 **task_kwargs,
             )
             try:
-                await self.spawn(task)
+                await self.run_user_task(current_user, task)
             finally:
                 if isinstance(task, (AutoProxyTask, ScriptConfigTask)):
                     self.process_cleanup_success = task.process_cleanup_success
@@ -865,7 +866,7 @@ class SrcManager(TaskExecuteBase):
                     raise RuntimeError(
                         f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
                     )
-                # 直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                # 原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
                 if not self._keep_script_config_changes():
                     self._restore_src_config_from_temp(
                         expected_installation_id=self.src_installation_id,
@@ -910,20 +911,8 @@ class SrcManager(TaskExecuteBase):
     async def _send_final_notification(self) -> None:
         """解锁配置后限时发送任务完成通知。"""
 
-        error_count = sum(1 for u in self.script_info.user_list if u.status == "异常")
-        over_count = sum(1 for u in self.script_info.user_list if u.status == "完成")
-        wait_count = sum(1 for u in self.script_info.user_list if u.status == "等待")
-
         title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
-        result = {
-            "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
-            "script_name": self.script_info.name or "空白",
-            "start_time": self.begin_time,
-            "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "completed_count": over_count,
-            "uncompleted_count": error_count + wait_count,
-            "result": self.script_info.result,
-        }
+        result = self.build_proxy_report()
 
         completion_title = (
             title.replace("报告", "已完成！")

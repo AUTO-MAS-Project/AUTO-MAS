@@ -168,7 +168,7 @@ jobs:
       - name: 设置 Node.js 环境
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "22.18.0"
 
       - name: 构建应用程序
         env:
@@ -178,7 +178,7 @@ jobs:
         run: |
           cd frontend
           corepack enable
-          corepack prepare yarn@4.9.1 --activate
+          corepack prepare yarn@4.18.1 --activate
           yarn install
           yarn build
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"

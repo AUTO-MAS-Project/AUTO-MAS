@@ -3,7 +3,11 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
-import { decideFailureActions, filterRuntimeMirrors } from '@/utils/initializationDecision'
+import {
+  canRestoreWorkspace,
+  decideFailureActions,
+  filterRuntimeMirrors,
+} from '@/utils/initializationDecision'
 import {
   getInitializationStageKey,
   getInitializationStageStatus,
@@ -215,6 +219,7 @@ export function useInitializationFlow() {
       selectedMirror: state.selectedMirror,
       doctorChecks: state.doctorChecks,
       doctorRunning: state.doctorRunning,
+      runtimeMode: runtimeMode.value,
       showSkipButton: step.canSkip,
     }
   })
@@ -505,6 +510,19 @@ export function useInitializationFlow() {
     if (await executeStep(step.key, rebuild)) await continueAfterCurrentStep()
   }
 
+  async function handleRuntimeUpdated() {
+    // 新 Runtime 从完整 bootstrap 开始，不能沿用失败前的步骤完成标记。
+    currentStepIndex.value = 0
+    if (flowKind.value === 'startup') flowKind.value = 'update'
+    for (const step of steps) stepStates.value[step.key] = createStepState()
+    for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
+    networkActivity.value = EMPTY_NETWORK_ACTIVITY
+    stepStates.value.python.status = 'processing'
+    stepStates.value.python.message = t('init.failure.runtimeRestarting')
+    await loadMirrorConfigs()
+    await startInitialization(0)
+  }
+
   function handleBackendStatusChange(
     status: 'waiting' | 'starting' | 'running' | 'success' | 'failed'
   ) {
@@ -530,7 +548,9 @@ export function useInitializationFlow() {
 
     if (
       runtimeMode.value !== 'off' &&
-      (failure.code === 'DEPENDENCY_SYNC_FAILED' || failure.code === 'ENVIRONMENT_BROKEN')
+      (failure.code === 'DEPENDENCY_SYNC_FAILED' ||
+        failure.code === 'ENVIRONMENT_BROKEN' ||
+        (runtimeMode.value === 'managed' && canRestoreWorkspace(failure.code)))
     ) {
       // 启动时应用后台更新也可能需要修复依赖，复用安装阶段的失败处置。
       state.status = 'waiting'
@@ -544,6 +564,13 @@ export function useInitializationFlow() {
     const state = currentState.value
 
     switch (kind) {
+      case 'restore-workspace':
+        resetFailureState(state)
+        currentStepIndex.value = 0
+        stepStates.value[steps[0].key].status = 'processing'
+        stepStates.value[steps[0].key].message = t('init.failure.restoringWorkspace')
+        await executeRuntimeInitialization()
+        return
       case 'open-log':
         await openFailureLog(state)
         return
@@ -749,9 +776,11 @@ export function useInitializationFlow() {
     handleBackendStatusChange,
     handleFailureAction,
     handleMirrorSelect,
+    handleRuntimeUpdated,
     handleSkip,
     hasFailed,
     isBackendStep,
+    runtimeMode,
     launchSteps,
     statusDetails,
     statusHint,

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createSSRApp, defineComponent, h, type SetupContext } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
@@ -151,10 +151,10 @@ describe('MaaFWSourceStep 项目来源默认分节', () => {
     expect(html).not.toContain('choice-placeholder')
   })
 
-  it('列表为空：按入口类型提示没有可复用的项目', async () => {
+  it('列表为空：按入口类型的类型标签（MFW，不是内部名 MaaFW）提示没有可复用的项目', async () => {
     const html = await render({ type: 'MaaFW' })
     expect(html).toContain(
-      `<div class="choice-placeholder">${zhCN.scripts.create.mfwReuseEmpty.replace('{type}', 'MaaFW')}</div>`
+      `<div class="choice-placeholder">${zhCN.scripts.create.mfwReuseEmpty.replace('{type}', 'MFW')}</div>`
     )
   })
 

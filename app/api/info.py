@@ -33,10 +33,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
+from PIL import Image
 
 from app.core import Config
+from app.core.game_calendar import GameCalendar
 from app.models.schema import *
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
@@ -44,6 +46,61 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 logger = get_logger("信息获取 API")
+
+
+@router.get(
+    "/activity/completions",
+    tags=["Get"],
+    summary="获取游戏已完成活动",
+    response_model=GameCalendarActivitiesOut,
+)
+async def get_activity_completions(
+    scope: GameCalendarActivityScopeIn = Depends(),
+) -> GameCalendarActivitiesOut:
+    try:
+        activities = await GameCalendar.completed_activities(
+            game=scope.game, server=scope.server
+        )
+        return GameCalendarActivitiesOut(
+            data=[
+                GameCalendarActivityInfo(
+                    name=item.name, startTime=item.start_at, endTime=item.end_at
+                )
+                for item in activities
+            ]
+        )
+    except (OSError, ValueError, TypeError):
+        logger.exception("读取游戏活动完成状态失败")
+        return GameCalendarActivitiesOut(
+            code=500, status="error", message="读取活动完成状态失败"
+        )
+
+
+@router.post(
+    "/activity/completions",
+    tags=["Set"],
+    summary="设置游戏活动完成状态",
+    response_model=OutBase,
+)
+async def set_activity_completion(
+    payload: GameCalendarActivityCompletionIn,
+) -> OutBase:
+    try:
+        await GameCalendar.set_activity_completed(
+            game=payload.game,
+            server=payload.server,
+            name=payload.name,
+            start=payload.startTime,
+            end=payload.endTime,
+            completed=payload.completed,
+        )
+        return OutBase()
+    except ValueError as error:
+        return OutBase(code=400, status="error", message=str(error))
+    except (OSError, TypeError):
+        logger.exception("保存游戏活动完成状态失败")
+        return OutBase(code=500, status="error", message="保存活动完成状态失败")
+
 
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，
 ## 少了会返回 {"code": 403, "msg": "缺少游戏信息"}；它同时给三个服，
@@ -337,8 +394,12 @@ async def confirm_notice() -> OutBase:
     response_model=InfoOut,
     status_code=200,
 )
-async def get_overview() -> InfoOut:
+async def get_overview(
+    refresh: bool = False,
+) -> InfoOut:
     try:
+        if refresh:
+            await Config.get_stage(refresh=True)
         stage_by_server = {
             server: await Config.get_stage_info("Info", server=server)
             for server in (
@@ -525,6 +586,8 @@ ENDFIELD_IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / "auto-mas-image-cache"
 ENDFIELD_IMAGE_CACHE_TTL = 6 * 3600
 ## 缓存只按地址新增、从不回收的话会一直涨：超过这个数量就按修改时间删掉最旧的一批
 ENDFIELD_IMAGE_CACHE_MAX_FILES = 200
+## 单张图的下载超时：原生素材动辄十几兆，给太久会把请求一直挂着，前端反而整块空着
+ENDFIELD_IMAGE_FETCH_TIMEOUT = 30
 
 ## 终末地的版本大图就是 AKEData 首页顶部那张（打开网站第一眼看到的就是它），
 ## 比活动自带的背景图更稳定：每个版本都会换，且不依赖某个活动是否在跑
@@ -610,8 +673,6 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
     中途失败不会留下半截图片被当成有效缓存，并发请求也不会互相覆盖。
     """
 
-    from PIL import Image
-
     with Image.open(io.BytesIO(payload)) as image:
         picture = image.convert("RGB")
         if picture.width > ENDFIELD_IMAGE_WIDTH:
@@ -630,6 +691,80 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
             raise
 
 
+## 同一张图正在下载时就复用那个任务：预热与图片接口只隔几毫秒，各下一份纯属浪费流量
+_image_download_tasks: dict[str, asyncio.Task[None]] = {}
+
+
+async def _download_image(url: str, cache_file: Path) -> None:
+    """下载 url、缩到横幅宽度再原子落盘。
+
+    整段流程套一个总期限：httpx 的 timeout 只管各阶段，持续慢速传输能一直拖下去，
+    到点就断，前端才好立刻降级。
+    """
+
+    async with asyncio.timeout(ENDFIELD_IMAGE_FETCH_TIMEOUT):
+        async with httpx.AsyncClient(timeout=ENDFIELD_IMAGE_FETCH_TIMEOUT) as client:
+            response = await client.get(url)
+        response.raise_for_status()
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+    ## 真写了新文件才需要回收；两条路径共用这里，也就只扫一次目录
+    await asyncio.to_thread(_prune_image_cache)
+
+
+def _drop_download_task(task: asyncio.Task[None], url: str) -> None:
+    """下载结束后把表项摘掉；期间已被新任务顶替的就别动。"""
+
+    if _image_download_tasks.get(url) is task:
+        _image_download_tasks.pop(url, None)
+
+
+def _ensure_image_downloaded(url: str, cache_file: Path) -> asyncio.Task[None]:
+    """拿到该地址正在跑的下载任务，没有就起一个。"""
+
+    task = _image_download_tasks.get(url)
+    if task is not None and not task.done():
+        return task
+    task = asyncio.get_running_loop().create_task(_download_image(url, cache_file))
+    _image_download_tasks[url] = task
+    task.add_done_callback(lambda done: _drop_download_task(done, url))
+    return task
+
+
+## 后台任务要留住引用，否则可能被 GC 掉（asyncio 的已知行为）
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    """把协程丢到后台跑，并把引用留住。"""
+
+    task = asyncio.get_running_loop().create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+async def _warm_version_art_cache() -> None:
+    """把版本大图先拉进磁盘缓存。
+
+    那张图 5MB 级，等前端拿着地址来取、后端才现下载的话，横幅要空着等好几秒。
+    这里在给出地址的时候顺手热一下，前端请求图片时通常已经命中缓存。
+    """
+
+    digest = hashlib.sha256(ENDFIELD_VERSION_ART_URL.encode("utf-8")).hexdigest()[:20]
+    cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
+    if _cache_is_fresh(cache_file):
+        return
+    try:
+        ## 前端这会儿正好来取同一张图的话，等的就是同一个任务
+        await asyncio.shield(
+            _ensure_image_downloaded(ENDFIELD_VERSION_ART_URL, cache_file)
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"预热终末地版本图失败: {type(e).__name__}: {e}"
+        )
+
+
 @router.get(
     "/endfield/version-art",
     tags=["Get"],
@@ -638,8 +773,13 @@ def _write_thumbnail(payload: bytes, target: Path) -> None:
     status_code=200,
 )
 async def get_endfield_version_art() -> InfoOut:
-    """终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。"""
+    """终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
 
+    给出地址的同时顺手把那张图热进缓存：它有 5MB 级，前端拿到地址才现下载的话，
+    横幅要空着等好几秒。
+    """
+
+    _spawn_background(_warm_version_art_cache())
     return InfoOut(
         data={"url": ENDFIELD_VERSION_ART_URL, "name": await _endfield_version_name()}
     )
@@ -662,13 +802,8 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
     cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
     if not _cache_is_fresh(cache_file):
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
-                response = await client.get(url)
-            response.raise_for_status()
-            ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
-            await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
-            ## 只在新增文件时回收一次，别让每次请求都去扫一遍目录
-            await asyncio.to_thread(_prune_image_cache)
+            ## 预热可能正在下同一张图，等它就好；请求被取消时别把那个任务一起带走
+            await asyncio.shield(_ensure_image_downloaded(url, cache_file))
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"获取终末地活动图片失败: {type(e).__name__}: {e}"

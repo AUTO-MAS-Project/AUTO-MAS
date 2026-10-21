@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import type { MaaFWPageKind } from '@/composables/maafwFlavorTypes'
 import {

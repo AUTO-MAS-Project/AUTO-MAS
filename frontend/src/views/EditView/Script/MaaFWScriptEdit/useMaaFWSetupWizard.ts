@@ -62,12 +62,13 @@ export function useMaaFWSetupWizard({
   const isWizard = computed(() => mode === 'setup')
   // 步骤放在宿主里：导入后类型变了、宿主换成特调自己的页面时，新页面接着这一步走
   const currentStep = host?.wizardStep ?? ref(0)
-  const stepItems = [
+  // computed：页面打开后切换界面语言，步骤条标题跟着变
+  const stepItems = computed(() => [
     { title: t('edit.basicInfo') },
     { title: t('edit.controlConfiguration') },
     { title: t('edit.projectUpdate') },
     { title: t('edit.runConfiguration') },
-  ]
+  ])
   // 第一步没读到 interface 就往下走，后面几步全是空的，先拦住。
   // 运行环境同理：没装完就往下配，配完了也跑不起来——首次要下载 MaaFramework，
   // 失败时（离线、镜像不通、解释器坏）后面每一步都是白填。失败不是死路，
@@ -111,7 +112,7 @@ export function useMaaFWSetupWizard({
   }
 
   watch(
-    () => isWizard.value && currentStep.value === stepItems.length - 1,
+    () => isWizard.value && currentStep.value === stepItems.value.length - 1,
     onLastStep => {
       if (onLastStep) void loadShellInstances()
     }

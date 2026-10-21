@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -189,6 +190,7 @@ class RuntimeBlobStore:
                 f"{blob.name}{_TEMP_SUFFIX}{uuid.uuid4().hex[:8]}"
             )
             shutil.copy2(source, temporary)
+            make_writable(temporary)
             os.replace(temporary, blob)
             return True
         except OSError:
@@ -207,15 +209,16 @@ class RuntimeBlobStore:
                 try:
                     if not entry.is_file():
                         continue
-                    stat = entry.stat()
+                    info = entry.stat()
                     if _TEMP_SUFFIX in entry.name or ".corrupt-" in entry.name:
-                        entry.unlink()
+                        unlink_forced(entry)
                         report.removed_temps += 1
                         continue
-                    if stat.st_nlink <= 1:
-                        entry.unlink()
+                    if info.st_nlink <= 1:
+                        # 老版本入库的 blob 可能带着来源文件的只读位，不清就永远删不掉。
+                        unlink_forced(entry)
                         report.removed_blobs += 1
-                        report.removed_bytes += stat.st_size
+                        report.removed_bytes += info.st_size
                 except OSError:
                     continue
             try:
@@ -225,9 +228,39 @@ class RuntimeBlobStore:
         return report
 
 
+def make_writable(path: Path | str) -> None:
+    """清掉只读位（Windows 的 FILE_ATTRIBUTE_READONLY）。
+
+    载荷、staging、blob 里的文件都是 MAS 自己新建的 inode，没有理由保留来源文件的只读
+    属性：7-Zip / Bandizip 解压会还原 zip 里的 DOS 只读位，``CopyFile2`` / ``copy2``
+    又原样带过来，之后覆盖同名文件的更新在 staging 里 unlink 就被拒（WinError 5）、
+    启动期回收也删不掉这些 blob。硬链接共用属性，清一处就是清整个 inode——这正是要的。
+    """
+
+    try:
+        mode = os.stat(path).st_mode
+    except OSError:
+        return
+    if not mode & stat.S_IWRITE:
+        try:
+            os.chmod(path, mode | stat.S_IWRITE)
+        except OSError:
+            pass
+
+
+def unlink_forced(path: Path | str) -> None:
+    """删一个目录项；因只读位被拒时清掉只读位再删一次（老载荷里可能留着只读文件）。"""
+
+    try:
+        os.unlink(path)
+    except PermissionError:
+        make_writable(path)
+        os.unlink(path)
+
+
 def _unlink(path: Path) -> None:
     if path.exists() or path.is_symlink():
-        path.unlink()
+        unlink_forced(path)
 
 
 def _unlink_quiet(path: Path) -> None:
@@ -243,6 +276,7 @@ def _copy_fresh(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     _unlink(destination)
     shutil.copy2(source, destination)
+    make_writable(destination)
 
 
 # --------------------------------------------------------------------------
@@ -265,18 +299,20 @@ def _copy_exclusive(source: Path, destination: Path) -> None:
         )
         try:
             _winapi.CopyFile2(str(source), str(destination), flags)
+            make_writable(destination)
             return
         except OSError as exc:
             if getattr(exc, "winerror", None) in _ERROR_FILE_EXISTS:
                 raise FileExistsError(str(destination)) from exc
             # 其它失败（只读源、权限……）：目标若已被它建出一半，那是我们自己刚建的，删掉重来。
             try:
-                os.unlink(destination)
+                unlink_forced(destination)
             except OSError:
                 pass
     with source.open("rb") as reader, destination.open("xb") as writer:
         shutil.copyfileobj(reader, writer, _COPY_CHUNK)
     shutil.copystat(source, destination)
+    make_writable(destination)
 
 
 def place_fresh(
@@ -307,7 +343,7 @@ def place_fresh(
         except FileExistsError:
             if attempt:
                 raise
-            os.unlink(destination)
+            unlink_forced(destination)
     raise AssertionError("unreachable")
 
 
@@ -317,6 +353,8 @@ __all__ = [
     "LINK_MIN_BYTES",
     "PlaceResult",
     "RuntimeBlobStore",
+    "make_writable",
     "place_fresh",
     "sha256_file",
+    "unlink_forced",
 ]

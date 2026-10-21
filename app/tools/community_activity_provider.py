@@ -51,6 +51,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.services.community_http import create_community_client
 from app.utils.logger import get_logger
 
 from .community_activity_roles import (
@@ -473,7 +474,7 @@ class CommunityActivityProvider:
             signature_profile="skland_widget",
         )
         try:
-            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
+            async with create_community_client(proxy=self.proxy) as client:
                 credential, device_id = await self._prepare_skland(
                     None,
                     client,
@@ -530,7 +531,7 @@ class CommunityActivityProvider:
             signature_profile="miyoushe_params",
         )
         try:
-            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
+            async with create_community_client(proxy=self.proxy) as client:
                 cookies, device_id, _ = await self._prepare_miyoushe(
                     request,
                     client,
@@ -588,7 +589,7 @@ class CommunityActivityProvider:
         self, request: CommunityActivityRequest
     ) -> Mapping[str, object]:
         try:
-            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
+            async with create_community_client(proxy=self.proxy) as client:
                 credential, device_id = await self._prepare_skland(
                     request.target,
                     client,
@@ -631,6 +632,7 @@ class CommunityActivityProvider:
         client: httpx.AsyncClient,
     ) -> tuple[dict[str, str], str]:
         from .skland import (
+            SklandAuthenticationError,
             get_cached_device_id,
             prepare_skland_session_credential,
             refresh_skland_session_credential,
@@ -664,6 +666,7 @@ class CommunityActivityProvider:
                         )
                     except (
                         CommunityActivityTransportError,
+                        SklandAuthenticationError,
                         httpx.HTTPError,
                         OSError,
                         ValueError,
@@ -733,7 +736,7 @@ class CommunityActivityProvider:
                     status="limited",
                 )
         try:
-            async with httpx.AsyncClient(proxy=self.proxy, trust_env=False) as client:
+            async with create_community_client(proxy=self.proxy) as client:
                 cookies, device_id, device_fp = await self._prepare_miyoushe(
                     request,
                     client,

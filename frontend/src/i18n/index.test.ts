@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 
 import { SUPPORTED_LOCALES, UNRECOGNIZED_LOCALE, normalizeLocale } from './index'
 

@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 
-/** 一条龙任务卡片（用户模式 AppList 与直控原生编排通用结构） */
+/** 一条龙任务卡片（独立来源 AppList 与原生来源编排通用结构） */
 export interface ZzzOdTaskCard {
   app_id: string
   app_name: string
@@ -10,10 +10,10 @@ export interface ZzzOdTaskCard {
 }
 
 /**
- * 一条龙任务看板的共用操作（用户模式与直控模式通用）。
+ * 一条龙任务看板的共用操作（独立来源与原生来源通用）。
  *
- * 两种模式只是配置对象不同（用户=MAS `OneDragon.AppList` 字段、
- * 直控=实例原生 `_group.yml`），开关 / 拖拽排序 / 一键整理的列表
+ * 两种模式只是配置对象不同（独立来源=MAS `OneDragon.AppList` 字段、
+ * 原生来源=实例原生 `_group.yml`），开关 / 拖拽排序 / 一键整理的列表
  * 语义完全一致：未启用项原位保留（对齐一条龙原生队列语义），
  * 「启用在前、禁用在后」只在用户显式点一键整理时触发；改动先写回
  * 本地渲染状态，再由 commit 按当前模式各自落盘。

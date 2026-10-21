@@ -15,6 +15,7 @@
 """
 
 import asyncio
+from html import unescape
 from unittest.mock import AsyncMock, patch
 
 from app.task.Whimbox.tools import notify as notify_mod
@@ -50,7 +51,7 @@ def test_failure_notes_render_to_text_and_html():
     payload = _payload_of(BASE_MESSAGE)
     for body in (payload.text, payload.html):
         assert "未完成原因（上游提示原文）" in body
-        assert '路线"朝夕心愿_采集"' in body
+        assert '路线"朝夕心愿_采集"' in unescape(body)
     # 结果块仍按原文透传（块头在文本版保留、在 HTML 版由模板标题承载）
     assert "任务结果如下：" in payload.text
     assert "任务结果如下：" not in payload.html

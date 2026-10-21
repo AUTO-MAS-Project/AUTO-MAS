@@ -3,7 +3,7 @@
     <!-- 配置视图 -->
     <div v-show="viewMode === 'config'" class="config-table-wrapper">
       <a-table
-        :key="`config-table-${currentMode}`"
+        :key="`config-table-${currentMode}-${columnKeys.length}`"
         :columns="configColumns"
         :data-source="coordinator.configViewData.value"
         :pagination="false"
@@ -27,7 +27,7 @@
               :controls="false"
               :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
+              @update:value="updateConfigValue(record.key, column.key as string, $event)"
             />
           </template>
 
@@ -44,7 +44,7 @@
               :allow-clear="false"
               :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
-              @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)"
+              @update:value="updateConfigValue(record.key, column.key as string, $event)"
             >
               <a-select-option
                 v-for="option in getSelectOptions(
@@ -75,7 +75,7 @@
     <!-- 简化视图 -->
     <div v-show="viewMode === 'simple'" class="simple-table-wrapper">
       <a-table
-        :key="`simple-table-${currentMode}`"
+        :key="`simple-table-${currentMode}-${columnKeys.length}`"
         :columns="simpleColumns"
         :data-source="coordinator.simpleViewData.value"
         :pagination="false"
@@ -111,7 +111,7 @@
               v-if="isStageAvailable(record.key, column.key as string)"
               :checked="record[column.key]"
               :disabled="isSwitchDisabled(column.key as string, record)"
-              @change="handleStageToggle(record.key, column.key as TimeKey, $event)"
+              @change="handleStageToggle(record.key, column.key as string, $event)"
             />
           </template>
         </template>
@@ -154,16 +154,24 @@ import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
-  type TimeKey,
   preloadAllStageOptions,
   getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
+import {
+  mergePlanData,
+  planAllDayKeys,
+  planColumnKeys,
+  planColumnPath,
+  planDayLabel,
+  readPlanColumn,
+  type PlanMode,
+} from '@/utils/planDays'
 
 const { t } = useI18n()
 
 interface Props {
   tableData: Record<string, any> | null
-  currentMode: 'ALL' | 'Weekly'
+  currentMode: PlanMode
   viewMode: 'config' | 'simple'
   planId?: string
   handlePlanChange: import('@/utils/planTypeRegistry').PlanChangeHandler
@@ -207,6 +215,14 @@ const currentCustomStages = computed(() => {
   )
 })
 
+/** 列键：ALL 加当天的天键；周计划是星期名，多天轮换是 "1"~"N" */
+const columnKeys = computed(() =>
+  planColumnKeys(props.currentMode, props.tableData?.Info?.RotateDays)
+)
+
+const columnTitle = (key: string) =>
+  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+
 // 配置视图列定义
 const configColumns = computed(() => [
   {
@@ -217,38 +233,13 @@ const configColumns = computed(() => [
     fixed: 'left',
     align: 'center',
   },
-  { title: t('plan.week.ALL'), dataIndex: 'ALL', key: 'ALL', width: 120, align: 'center' },
-  { title: t('plan.week.Monday'), dataIndex: 'Monday', key: 'Monday', width: 120, align: 'center' },
-  {
-    title: t('plan.week.Tuesday'),
-    dataIndex: 'Tuesday',
-    key: 'Tuesday',
+  ...columnKeys.value.map(key => ({
+    title: columnTitle(key),
+    dataIndex: key,
+    key,
     width: 120,
     align: 'center',
-  },
-  {
-    title: t('plan.week.Wednesday'),
-    dataIndex: 'Wednesday',
-    key: 'Wednesday',
-    width: 120,
-    align: 'center',
-  },
-  {
-    title: t('plan.week.Thursday'),
-    dataIndex: 'Thursday',
-    key: 'Thursday',
-    width: 120,
-    align: 'center',
-  },
-  { title: t('plan.week.Friday'), dataIndex: 'Friday', key: 'Friday', width: 120, align: 'center' },
-  {
-    title: t('plan.week.Saturday'),
-    dataIndex: 'Saturday',
-    key: 'Saturday',
-    width: 120,
-    align: 'center',
-  },
-  { title: t('plan.week.Sunday'), dataIndex: 'Sunday', key: 'Sunday', width: 120, align: 'center' },
+  })),
 ])
 
 // 简化视图列定义
@@ -271,13 +262,19 @@ const simpleColumns = computed(() => [
   ...configColumns.value.filter(col => col.key !== 'taskName'),
 ])
 
+/**
+ * 整份天配置的写入路径：ALL 仍在顶层，其余天整体挂在 Days 下。
+ * 契约里的 planColumnPath 拼的是「某一天的某个字段」，整份配置没有字段名，所以在外面拼这一段。
+ */
+const dayConfigPath = (key: string) => (key === 'ALL' ? 'ALL' : `Days.${key}`)
+
 // 更新配置数据 - 直接调用父组件的保存函数
-const updateConfigValue = async (rowKey: string, timeKey: TimeKey, value: any) => {
+const updateConfigValue = async (rowKey: string, timeKey: string, value: any) => {
   // 更新本地状态
   coordinator.updateConfig(timeKey, rowKey, value)
 
-  // 构建后端 API 路径，例如 "Monday.Stage" 或 "Monday.MedicineNumb"
-  const apiPath = `${timeKey}.${rowKey}`
+  // 构建后端 API 路径，例如 "ALL.Stage" 或 "Days.Monday.MedicineNumb"
+  const apiPath = planColumnPath(timeKey, rowKey)
   await props.handlePlanChange(apiPath, value)
 }
 
@@ -295,41 +292,39 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   // 更新自定义关卡定义
   coordinator.updateCustomStageDefinition(index, newValue)
 
-  // 保存自定义关卡涉及更新所有使用它的时间配置
-  // 需要将所有关卡配置一起保存
-  const planConfig = coordinator.toApiData()
+  // 改名要覆盖所有引用这一关卡的槽位：协调器只持有当前显示的那几天（轮换模式下就是
+  // 第 1~N 天），所以拿后端返回的完整配置打底，再用协调器里的最新编辑值覆盖一遍。
+  const planConfig = mergePlanData(props.tableData, coordinator.toApiData())
+  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
+  const pending: { path: string; config: Record<string, any> }[] = []
 
-  // 找出哪些时间配置使用了旧的自定义关卡，更新为新值
-  const timeKeys: TimeKey[] = [
-    'ALL',
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ]
-  let allSaved = true
-  for (let i = 0; i < timeKeys.length; i++) {
-    const timeKey = timeKeys[i]
-    const timeConfig = planConfig[timeKey] as Record<string, any>
-    if (timeConfig) {
-      // 检查每个关卡字段是否使用了旧的自定义关卡
-      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
-      for (const field of stageFields) {
-        if (timeConfig[field] === oldValue && oldValue !== '') {
-          // 更新为新值
-          timeConfig[field] = newValue
-        }
-      }
-      // 保存更新后的时间配置
-      const saved = await props.handlePlanChange(timeKey, timeConfig, {
-        refresh: i === timeKeys.length - 1,
-        forceCustomStages: false,
-      })
-      allSaved = allSaved && saved
+  for (const timeKey of planAllDayKeys(planConfig)) {
+    const timeConfig = readPlanColumn(planConfig, timeKey) as Record<string, any> | undefined
+    if (!timeConfig) {
+      continue
     }
+
+    const before = stageFields.map(field => timeConfig[field])
+    for (const field of stageFields) {
+      if (timeConfig[field] === oldValue && oldValue !== '') {
+        // 更新为新值
+        timeConfig[field] = newValue
+      }
+    }
+
+    // 只发真的改到的槽位：轮换 31 天时一共三十多个槽位，多数用不到这个自定义关卡
+    if (stageFields.some((field, position) => timeConfig[field] !== before[position])) {
+      pending.push({ path: dayConfigPath(timeKey), config: timeConfig })
+    }
+  }
+
+  let allSaved = true
+  for (let i = 0; i < pending.length; i += 1) {
+    const saved = await props.handlePlanChange(pending[i].path, pending[i].config, {
+      refresh: i === pending.length - 1,
+      forceCustomStages: false,
+    })
+    allSaved = allSaved && saved
   }
 
   if (allSaved) {
@@ -382,7 +377,7 @@ const getSelectOptions = (
   }
 
   // 关卡选择选项 - 从 API 缓存获取
-  const cachedOptions = getCachedStageOptions(columnKey as TimeKey)
+  const cachedOptions = getCachedStageOptions(columnKey)
   const baseOptions: SelectOption[] = cachedOptions.map(option => ({
     label: option.label,
     value: option.value || '-',
@@ -407,7 +402,7 @@ const getSelectOptions = (
 
 // 获取已使用的关卡
 const getUsedStagesInColumn = (columnKey: string): string[] => {
-  const config = coordinator.planData.timeConfigs[columnKey as TimeKey]
+  const config = coordinator.planData.timeConfigs[columnKey]
   if (!config) return []
 
   return Object.values(config.stages).filter(stage => stage && stage !== '-')
@@ -415,16 +410,16 @@ const getUsedStagesInColumn = (columnKey: string): string[] => {
 
 // 工具函数
 const isColumnDisabled = (columnKey: string): boolean => {
+  // ALL 模式只打 ALL 这一列；周计划与多天轮换都按当天取值，ALL 列不参与，禁用免得改了个不生效的值
   if (props.currentMode === 'ALL') return columnKey !== 'ALL'
-  if (props.currentMode === 'Weekly') return columnKey === 'ALL'
-  return false
+  return columnKey === 'ALL'
 }
 
 const isStageAvailable = (stageKey: string, columnKey: string) => {
   if (columnKey === 'ALL') return true
 
   // 从 API 缓存中检查关卡是否在该时间维度可用
-  const cachedOptions = getCachedStageOptions(columnKey as TimeKey)
+  const cachedOptions = getCachedStageOptions(columnKey)
   const isInCache = cachedOptions.some(option => option.value === stageKey)
 
   if (isInCache) {
@@ -437,7 +432,7 @@ const isStageAvailable = (stageKey: string, columnKey: string) => {
 
 // 计算已启用关卡数量
 const getEnabledStageCount = (timeKey: string): number => {
-  const config = coordinator.planData.timeConfigs[timeKey as TimeKey]
+  const config = coordinator.planData.timeConfigs[timeKey]
   if (!config) return 0
 
   return Object.values(config.stages).filter(stage => stage && stage !== '-').length
@@ -480,20 +475,10 @@ const getStageTagColor = (taskName: string, isCustom?: boolean) => {
   return STAGE_COLOR_MAP[taskName as keyof typeof STAGE_COLOR_MAP] || 'default'
 }
 
-// TIME_KEYS 常量用于简化视图批量操作
-const TIME_KEYS: TimeKey[] = [
-  'ALL',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-]
+// 批量操作与整份保存都按当前的天键走：周计划是七天，多天轮换是前 N 天，两种都含 ALL
 
 const enableAllStages = async (stageKey: string) => {
-  for (const timeKey of TIME_KEYS) {
+  for (const timeKey of columnKeys.value) {
     if (isStageAvailable(stageKey, timeKey)) {
       const enabledCount = getEnabledStageCount(timeKey)
       if (enabledCount < 4) {
@@ -505,32 +490,32 @@ const enableAllStages = async (stageKey: string) => {
 }
 
 const disableAllStages = async (stageKey: string) => {
-  for (const timeKey of TIME_KEYS) {
+  for (const timeKey of columnKeys.value) {
     coordinator.toggleStage(stageKey, timeKey, false)
   }
   await saveAllTimeConfigs()
 }
 
-// 逐个时间键保存整份时间配置，只在最后一次回读，避免 8 次 update 各带一次 get
+// 逐个天保存整份天配置，只在最后一次回读，避免每个天各带一次 get
 const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
-  const timeKeys = TIME_KEYS.filter(timeKey => planConfig[timeKey])
+  const timeKeys = columnKeys.value.filter(timeKey => readPlanColumn(planConfig, timeKey))
   for (const [i, timeKey] of timeKeys.entries()) {
-    await props.handlePlanChange(timeKey, planConfig[timeKey], {
+    await props.handlePlanChange(dayConfigPath(timeKey), readPlanColumn(planConfig, timeKey), {
       refresh: i === timeKeys.length - 1,
     })
   }
 }
 
 // 处理关卡切换 - 直接保存修改的字段
-const handleStageToggle = async (stageKey: string, timeKey: TimeKey, enabled: boolean) => {
+const handleStageToggle = async (stageKey: string, timeKey: string, enabled: boolean) => {
   coordinator.toggleStage(stageKey, timeKey, enabled)
 
-  // 获取当前时间配置并保存
+  // 获取当前天的整份配置并保存
   const planConfig = coordinator.toApiData()
-  const timeConfig = planConfig[timeKey]
+  const timeConfig = readPlanColumn(planConfig, timeKey)
   if (timeConfig) {
-    await props.handlePlanChange(timeKey, timeConfig)
+    await props.handlePlanChange(dayConfigPath(timeKey), timeConfig)
   }
 }
 
@@ -545,10 +530,11 @@ watch(
   { immediate: true }
 )
 
-// 监听外部数据变化 - 这是数据的唯一来源
+// 监听外部数据变化 - 这是数据的唯一来源。
+// 列键同时取决于模式与轮换天数，所以这三个来源任一变化都要把本地数据重新解析一遍。
 watch(
-  () => props.tableData,
-  async newData => {
+  () => [props.tableData, props.currentMode, props.tableData?.Info?.RotateDays] as const,
+  async ([newData]) => {
     const loadVersion = ++tableDataLoadVersion
     if (newData) {
       // 检查是否是初始加载
@@ -562,7 +548,7 @@ watch(
       if (isInitialLoad) {
         coordinator.fromApiData(cleanData, false, false)
         try {
-          await preloadAllStageOptions()
+          await preloadAllStageOptions(columnKeys.value)
         } catch {
           // 预加载失败时保留已渲染的配置
           return
@@ -576,6 +562,9 @@ watch(
 
       // 从后端数据加载到协调器
       coordinator.fromApiData(cleanData)
+      // 切模式或改轮换天数之后，当前列要的池可能还没拉过（例如从轮换切回周计划要七天池），
+      // 这里补一轮；已经齐全的池会被跳过，不重复请求。
+      void preloadAllStageOptions(columnKeys.value).catch(() => undefined)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
       // 非初始刷新可能保留了 fromApiData(false) 续住的未保存输入，

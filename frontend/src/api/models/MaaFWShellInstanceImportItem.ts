@@ -12,15 +12,15 @@ export type MaaFWShellInstanceImportItem = {
      */
     instanceName?: string;
     /**
-     * 是否建成了用户
+     * 是否导入成功
      */
     success?: boolean;
     /**
-     * 新用户 ID（失败时为空）
+     * 用户 ID：建成新用户时就是它，覆盖已有用户时是那个用户
      */
     userId?: string;
     /**
-     * 新用户名
+     * 用户名
      */
     name?: string;
     /**
