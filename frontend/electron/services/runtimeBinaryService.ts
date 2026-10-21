@@ -41,6 +41,7 @@ import { SmartDownloader } from './downloadService'
 import { getLogger } from './logger'
 import {
   RUNTIME_BACKUP_SUFFIX,
+  RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   createRuntimeClient,
   recoverRuntimeBackup,
@@ -583,7 +584,17 @@ export function syncRuntimeBinary(
 /** 开发者用 `AUTO_MAS_RUNTIME_EXE` 指到自己编译的那份时，绝不跟着线上最新版换。 */
 export function isDeveloperRuntime(runtimePath: string): boolean {
   const configured = process.env[RUNTIME_EXE_ENV]?.trim()
-  return Boolean(configured) && path.resolve(configured as string) === path.resolve(runtimePath)
+  if (!configured || path.resolve(configured) !== path.resolve(runtimePath)) return false
+
+  // 缺失的内置文件仍由受管初始化补齐，不能仅因环境变量指向它就跳过下载。
+  if (
+    process.resourcesPath &&
+    path.resolve(runtimePath) === path.resolve(process.resourcesPath, RUNTIME_EXECUTABLE_NAME) &&
+    !fs.existsSync(runtimePath)
+  ) {
+    return false
+  }
+  return true
 }
 
 async function runSync(options: RuntimeBinarySyncOptions): Promise<RuntimeBinarySyncResult> {
