@@ -3,6 +3,8 @@
 从 `frontend/` 使用项目 Yarn 4 执行，先 `yarn install --immutable`。工具版本由
 `package.json` 和 `yarn.lock` 固定。报告用于定位候选，不是 CI 门槛，不自动删除文件。
 
+本轮逐批结果、同口径指标、验证范围和保留原因见 [治理执行记录](GOVERNANCE_RESULTS.md)。
+
 ```powershell
 yarn audit:baseline
 yarn audit:baseline <基线提交>
