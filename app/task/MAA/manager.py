@@ -293,10 +293,7 @@ class MaaManager(ScriptManagerBase):
         root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
         if root_path is None or not (root_path / "MAA.exe").exists():
             return "MAA.exe文件不存在, 请检查MAA路径设置！"
-        if (
-            not (root_path / "config/gui.json").exists()
-            or not (root_path / "config/gui.new.json").exists()
-        ):
+        if not (root_path / "config/gui.new.json").exists():
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
         # 脚本级存档仅在确实有用户选择共享来源时需要；独立来源使用各自的
         # 用户目录，原生来源则直接使用 MAA 安装目录的原生配置。

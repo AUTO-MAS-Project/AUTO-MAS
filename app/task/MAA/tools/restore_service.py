@@ -25,7 +25,7 @@
 
 mas 池 = 「MAS 为该用户维护的全部配置」：ConfigFile 目录副本 + 页面核心
 字段侧车（Info/Task 两段，覆盖 MAS 编辑页全部可配置核心内容）。这些字段
-运行时注入 gui.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
+运行时注入 gui.new.json、不落盘在 ConfigFile——备份/恢复两端都带上侧车（恢复
 后按段分组回填表单，对齐 ZzzOd / ok-ww 字段回填模式），预览与页面认知才
 一致。池恒按用户分桶（侧车是用户级的，shared 来源多用户共享 Default 目录时
 各自快照仍需隔离）；两态 owner（脚本=Default 共享目录、用户=独立目录）

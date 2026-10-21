@@ -92,7 +92,7 @@ from .tools import (
 )
 from .tools.activity_inventory import resolve_activity_inventory_plans
 from .tools.avd import (
-    apply_maa_avd_settings,
+    build_maa_connect_settings,
     ensure_mumu_shim,
     screencap_fallback_status,
 )
@@ -315,7 +315,7 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
-_MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
+_MAA_CONFIG_FILES = ("gui.new.json",)
 
 
 # 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
@@ -326,11 +326,6 @@ _MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect", "PlanList"})
 
 
 _MAA_UPDATE_CONFIG_KEYS = {
-    "gui.json": (
-        ("Global", "VersionUpdate.ScheduledUpdateCheck"),
-        ("Global", "VersionUpdate.AutoDownloadUpdatePackage"),
-        ("Global", "VersionUpdate.AutoInstallUpdatePackage"),
-    ),
     "gui.new.json": (
         ("Update", "CheckOnSchedule"),
         ("Update", "AutoDownloadUpdatePackage"),
@@ -361,8 +356,8 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
     return current
 
 
-def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
-    """读 MAA 配置文件；缺失或损坏时退回随包预设。
+def read_maa_config_with_fallback(maa_set_path: Path) -> dict:
+    """读 MAA 的 gui.new.json；缺失或损坏时退回随包预设。
 
     损坏但存在 ``.bak`` 时优先用 MAA 自己的备份——那是 MAA 上一次成功落盘的
     完整现场，比预设少丢用户数据。都没有时用随包预设（结构完整、含根级
@@ -370,11 +365,11 @@ def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
     会把这次启动当首次运行，直接弹新手引导。返回的 dict 由调用方独立持有，改动不落盘。
     """
 
-    path = maa_set_path / name
+    path = maa_set_path / "gui.new.json"
     try:
         doc = read_file(path)
     except (OSError, ValueError) as e:
-        logger.opt(exception=True).warning(f"读取 MAA 配置失败({name}): {e}")
+        logger.opt(exception=True).warning(f"读取 MAA 配置失败(gui.new.json): {e}")
         doc = {}
     if doc:
         return doc
@@ -384,10 +379,10 @@ def read_maa_config_with_fallback(maa_set_path: Path, name: str) -> dict:
         # read_file 的编解码器表里，须显式指定 .json 解析）
         bak = read_file(path.with_suffix(path.suffix + ".bak"), format=".json")
         if isinstance(bak, dict) and bak:
-            logger.warning(f"MAA 配置损坏, 采用 MAA 自带备份({name}.bak)")
+            logger.warning("MAA 配置损坏, 采用 MAA 自带备份(gui.new.json.bak)")
             return bak
-    logger.warning(f"MAA 配置缺失, 以随包预设下发({name})")
-    return get_maa_base_preset(name)
+    logger.warning("MAA 配置缺失, 以随包预设下发(gui.new.json)")
+    return get_maa_base_preset()
 
 
 def _merge_task_queue(
@@ -498,18 +493,14 @@ def _merge_maa_changes(
     current: dict | list,
     *,
     drop_missing: bool = True,
-    drop_missing_keys: bool = False,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的变更原地合并进来源存档。
 
-    只透传运行期(相对基线)真正发生的变更。字典键默认只增改; gui.json 迁移
-    回写同时启用 drop_missing 与 drop_missing_keys 时, 仅删除存档值仍与基线
-    相同的键, 保留来源独有或被 MAS 临时覆盖的配置。任务队列仍按 drop_missing
-    处理条目删除。MAS 注入自己改写的键(baseline 与 current 相同、仅与存档不同)
-    不能被带回存档,
-    否则运行一次就会把用户自己的配置抹成注入值。顶层结构不匹配(如写盘半截被
-    截断)整体跳过。
+    只透传运行期(相对基线)真正发生的变更。字典键只增改, 任务队列按
+    drop_missing 处理条目删除。MAS 注入自己改写的键(baseline 与 current 相同、
+    仅与存档不同)不能被带回存档, 否则运行一次就会把用户自己的配置抹成注入值。
+    顶层结构不匹配(如写盘半截被截断)整体跳过。
     """
 
     if type(archive) is not type(baseline) or type(baseline) is not type(current):
@@ -533,7 +524,6 @@ def _merge_maa_changes(
                         base_value,
                         value,
                         drop_missing=drop_missing,
-                        drop_missing_keys=drop_missing_keys,
                         ignore_keys=ignore_keys,
                     )
                     or changed
@@ -552,11 +542,6 @@ def _merge_maa_changes(
             elif base_value != value and archive.get(key) != value:
                 archive[key] = deepcopy(value)
                 changed = True
-        if drop_missing and drop_missing_keys:
-            for key in baseline.keys() - current.keys():
-                if key in archive and archive[key] == baseline[key]:
-                    del archive[key]
-                    changed = True
     return changed
 
 
@@ -567,16 +552,13 @@ def _merge_maa_config_file(
     scheme: str,
     *,
     drop_missing: bool = True,
-    drop_missing_keys: bool = False,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
     set_maa 会把存档 Current 方案的内容复制进运行目录的 Default 再运行, 运行期
     的变更因此都记在 Default 键上; 存档生效方案不是 Default 时, 把合并目标临时
-    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。运行期
-    删除整个 Default 方案且启用键删除时, 同步删除对应来源方案并还原来源原有的
-    Default。
+    指向该方案键, 免得班次推进等原生状态落进未被运行的 Default 方案。
     """
 
     if scheme == "Default":
@@ -585,7 +567,6 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
-            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
 
@@ -598,7 +579,6 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
-            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
 
@@ -610,7 +590,6 @@ def _merge_maa_config_file(
             baseline,
             current,
             drop_missing=drop_missing,
-            drop_missing_keys=drop_missing_keys,
             ignore_keys=ignore_keys,
         )
     finally:
@@ -2108,18 +2087,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     ignore=shutil.ignore_patterns(MAA_STAMINA_LEGACY_FILENAME),
                 )
 
-        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；运行期任务队列本来就从
-        # MAS 用户配置整体装配，骨架只承载 MAS 托管键的容器路径。
-        gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
-        gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
+        # base 缺失/损坏时退回 MAA 自带 .bak 或随包预设；预设含完整根级 Gui
+        # 与 Timers，缺根级 Gui 时 MAA 会把这次启动当首次运行并弹新手引导。
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path)
         self._remember_pending_update()
 
-        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
-        # Default 本身也可能缺失——原生来源/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
-        ensure_maa_default_configuration(gui_set, gui_new_set)
-
-        # 各配置部分的引用
-        global_set = gui_set["Global"]
+        # Default 本身可能缺失——原生来源/沿用安装目录配置时该文件不由 MAS 生成，
+        # 兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_new_set)
 
         # 非原生来源才由 MAS 修正队列条目；原生来源的 TaskQueue 完全由用户维护。
         if not self.native_base:
@@ -2130,8 +2105,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         configurations["TaskQueue"] = _repair_maa_task_queue(queue)
 
         # 使用简体中文
-        global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
-        gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
+        gui_new_set["Gui"]["Localization"] = "zh-cn"
 
         # 原生来源的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
         if not self.native_base and self.cur_user_config.Info.IfQuickConfig:
@@ -2148,16 +2122,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             config=self.script_config,
         )
         self._configure_maa_runtime(
-            gui_set=gui_set,
             gui_new_set=gui_new_set,
             emulator_info=emulator_info,
             takeover_ready=takeover_ready,
         )
         # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
-        gui_set["Global"]["VersionUpdate.package"] = ""
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
-        write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         self._snapshot_maa_config()
         mark_native_config_injected(
@@ -2194,9 +2165,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             source_queue = []
         # 存档队列里缺的任务（用户在 MAA 原生界面删掉过它）由随包预设补齐，
         # 见下方 MAA_TASKS 装配循环
-        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
-            "TaskQueue"
-        ]
+        preset_queue = get_maa_base_preset()["Configurations"]["Default"]["TaskQueue"]
         # 活动目标每轮解析；旧活动优先已在配置加载时迁入这一逻辑阶段。
         self.task_dict["EventDepotMaintain"] = False
         activity_stages = []
@@ -2559,7 +2528,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
     def _configure_maa_runtime(
         self,
-        gui_set: dict,
         gui_new_set: dict,
         emulator_info: DeviceInfo,
         *,
@@ -2567,22 +2535,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     ) -> None:
         """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
-        global_set = gui_set["Global"]
-        default_set = gui_set["Configurations"]["Default"]
-        current_gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
+        current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
 
         # 关闭定时，避免与 MAS 调度重叠。
-        for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"
         for timer in gui_new_set.setdefault("Timers", {}).setdefault("List", []):
             if isinstance(timer, dict):
                 timer["IsEnabled"] = False
 
         if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address
-            current_gui.setdefault("ConnectSettings", {})["Address"] = (
-                emulator_info.adb_address
-            )
+            current_gui["ConnectSettings"]["Address"] = emulator_info.adb_address
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
@@ -2591,8 +2552,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if avd is not None:
             avd_root, avd_console = avd
             ensure_mumu_shim(avd_root)
-            current_gui["ConnectSettings"] = apply_maa_avd_settings(
-                avd_root, avd_console, default_set, current_gui.get("ConnectSettings")
+            current_gui["ConnectSettings"] = build_maa_connect_settings(
+                avd_root, avd_console, current_gui.get("ConnectSettings")
             )
             logger.info(
                 f"魔改 AVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
@@ -2601,19 +2562,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
             self.script_config.Run.TaskTransitionMethod
         ]
-        default_set["MainFunction.PostActions"] = post_actions
         current_gui["PostActions"] = int(post_actions)
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "True"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
-        current_gui.setdefault("RuntimeSettings", {})["StartGame"] = True
-        current_gui.setdefault("StartUpSettings", {}).update(
+        current_gui["RuntimeSettings"]["StartGame"] = True
+        current_gui["StartUpSettings"].update(
             {"RunDirectly": True, "StartEmulator": False}
         )
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
-        gui_new_set.setdefault("Update", {}).update(
+        update_settings = gui_new_set.setdefault("Update", {})
+        update_settings.update(
             {
                 "CheckOnSchedule": False,
                 "AutoDownloadUpdatePackage": True,
@@ -2622,26 +2577,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         # 完整包已缓存才压制原生下载；CDK 错误、下载失败或尚未完成时保留原生更新。
         if takeover_ready:
-            global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-            gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+            update_settings["AutoDownloadUpdatePackage"] = False
         if Config.setting.Function.IfSilence:
-            global_set["GUI.UseTray"] = "True"
-            global_set["GUI.MinimizeToTray"] = "True"
-            global_set["Start.MinimizeDirectly"] = "True"
-            # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
-            # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
-            gui_new_set.setdefault("Gui", {}).update(
+            # 启动即最小化是同一开关的新键，新 MAA 只读 gui.new.json。
+            gui_new_set["Gui"].update(
                 {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
-            global_set["Announcement.DoNotShowAnnouncement"] = "True"
-            global_set["VersionUpdate.doNotShowUpdate"] = "True"
             gui_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
-            gui_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+            update_settings["DoNotShowUpdate"] = True
 
         server = self.cur_user_config.Info.Server
         account = self.cur_user_config.Info.Id
-        default_set["Start.ClientType"] = server
         current_gui["RuntimeSettings"]["ClientType"] = _MAA_CLIENT_TYPE_TO_INT.get(
             server, 0
         )
@@ -2751,8 +2698,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 archive_new,
                 baseline[name],
                 current,
-                maa_scheme_name(archive_dir, archive),
-                drop_missing_keys=name == "gui.json",
+                maa_scheme_name(archive),
                 ignore_keys=_MAA_TASK_KEYS_NOT_MERGED
                 if self.cur_user_config.Info.IfQuickConfig
                 else frozenset(),

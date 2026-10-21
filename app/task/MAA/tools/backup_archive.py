@@ -31,7 +31,7 @@
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Info / Task
-两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.json、
+两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.new.json、
   不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，恢复时
   随文件一起回滚并按段分组回填表单（对齐 ZzzOd / ok-ww 字段回填模式）。
   池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
@@ -120,7 +120,7 @@ _OVERLAY_INFO_KEYS = (
     "Base",
     "IfQuickConfig",
 )
-"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.json）"""
+"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.new.json）"""
 
 _OVERLAY_STAGE_KEYS = (
     "StageMode",
@@ -131,7 +131,7 @@ _OVERLAY_STAGE_KEYS = (
     "Stage_2",
     "Stage_3",
 )
-"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.json）"""
+"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.new.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -159,7 +159,7 @@ _OVERLAY_TASK_KEYS = (
     "InfrastMode",
     "InfrastName",
 )
-"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
+"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.new.json）"""
 
 _OVERLAY_KEY_GROUPS = {
     "Info": _OVERLAY_INFO_KEYS,
