@@ -80,10 +80,6 @@ async def update_maa(maa_path: Path):
     for i in range(1, 9):
         global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
     # NEW: Timers.List[*].IsEnabled = false
-    if "Timers" not in maa_new_set:
-        maa_new_set["Timers"] = {}
-    if "List" not in maa_new_set["Timers"]:
-        maa_new_set["Timers"]["List"] = []
     for timer in maa_new_set["Timers"].get("List", []):
         if isinstance(timer, dict):
             timer["IsEnabled"] = False
@@ -91,27 +87,25 @@ async def update_maa(maa_path: Path):
     # 不直接运行任务
     default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
     # NEW: PostActions [Flags] 枚举 None=0
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    )["PostActions"] = 0
+    maa_new_set["Configurations"]["Default"]["Gui"]["PostActions"] = 0
     default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
     default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
     # NEW:
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["RunDirectly"] = False
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["StartEmulator"] = False
+    maa_new_set["Configurations"]["Default"]["Gui"]["StartUpSettings"][
+        "RunDirectly"
+    ] = False
+    maa_new_set["Configurations"]["Default"]["Gui"]["StartUpSettings"][
+        "StartEmulator"
+    ] = False
 
     # 静默模式相关配置
     global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
     global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
     global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
     # NEW:
-    maa_new_set.setdefault("Gui", {})["UseTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
+    maa_new_set["Gui"]["UseTray"] = True
+    maa_new_set["Gui"]["MinimizeToTray"] = True
+    maa_new_set["Gui"]["MinimizeOnStartup"] = True
 
     # 更新配置
     global_set["VersionUpdate.package"] = maa_update_package  # OLD: 即将移除
@@ -119,17 +113,17 @@ async def update_maa(maa_path: Path):
     global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
     global_set["VersionUpdate.AutoInstallUpdatePackage"] = "True"  # OLD: 即将移除
     # NEW:
-    maa_new_set.setdefault("Update", {})["UpdatePackage"] = maa_update_package
-    maa_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
-    maa_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
-    maa_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = True
+    maa_new_set["Update"]["UpdatePackage"] = maa_update_package
+    maa_new_set["Update"]["CheckOnSchedule"] = False
+    maa_new_set["Update"]["AutoDownloadUpdatePackage"] = False
+    maa_new_set["Update"]["AutoInstallUpdatePackage"] = True
 
     # 无人值守拉起装更新，公告与更新后首启的版本说明弹窗一并关闭
     global_set["Announcement.DoNotShowAnnouncement"] = "True"  # OLD: 即将移除
     global_set["VersionUpdate.doNotShowUpdate"] = "True"  # OLD: 即将移除
     # NEW:
-    maa_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
-    maa_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+    maa_new_set["AnnouncementInfo"]["DoNotShow"] = True
+    maa_new_set["Update"]["DoNotShowUpdate"] = True
 
     (maa_path / "config/gui.json").write_text(  # OLD: 即将移除
         json.dumps(maa_set, ensure_ascii=False, indent=4),

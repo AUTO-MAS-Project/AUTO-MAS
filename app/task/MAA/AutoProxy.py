@@ -2131,7 +2131,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
-        gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
+        gui_new_set["Gui"]["Localization"] = "zh-cn"
 
         # 原生来源的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
         if not self.native_base and self.cur_user_config.Info.IfQuickConfig:
@@ -2155,7 +2155,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
         gui_set["Global"]["VersionUpdate.package"] = ""
-        gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
+        gui_new_set["Update"]["UpdatePackage"] = ""
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -2569,20 +2569,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
-        current_gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
+        current_gui = gui_new_set["Configurations"]["Default"]["Gui"]
 
         # 关闭定时，避免与 MAS 调度重叠。
         for i in range(1, 9):
             global_set[f"Timer.Timer{i}"] = "False"
-        for timer in gui_new_set.setdefault("Timers", {}).setdefault("List", []):
+        for timer in gui_new_set["Timers"].get("List", []):
             if isinstance(timer, dict):
                 timer["IsEnabled"] = False
 
         if emulator_info.adb_address != "Unknown":
             default_set["Connect.Address"] = emulator_info.adb_address
-            current_gui.setdefault("ConnectSettings", {})["Address"] = (
-                emulator_info.adb_address
-            )
+            current_gui["ConnectSettings"]["Address"] = emulator_info.adb_address
 
         # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
@@ -2606,14 +2604,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         default_set["Start.StartGame"] = "True"
         default_set["Start.RunDirectly"] = "True"
         default_set["Start.OpenEmulatorAfterLaunch"] = "False"
-        current_gui.setdefault("RuntimeSettings", {})["StartGame"] = True
-        current_gui.setdefault("StartUpSettings", {}).update(
+        current_gui["RuntimeSettings"]["StartGame"] = True
+        current_gui["StartUpSettings"].update(
             {"RunDirectly": True, "StartEmulator": False}
         )
         global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
         global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "True"
         global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
-        gui_new_set.setdefault("Update", {}).update(
+        gui_new_set["Update"].update(
             {
                 "CheckOnSchedule": False,
                 "AutoDownloadUpdatePackage": True,
@@ -2623,21 +2621,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 完整包已缓存才压制原生下载；CDK 错误、下载失败或尚未完成时保留原生更新。
         if takeover_ready:
             global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-            gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
+            gui_new_set["Update"]["AutoDownloadUpdatePackage"] = False
         if Config.setting.Function.IfSilence:
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
-            # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
-            # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
-            gui_new_set.setdefault("Gui", {}).update(
+            # 启动即最小化是同一开关的新旧两通道,两个文件都要写:新版 MAA 读
+            # gui.new.json,只写 gui.json 那一半时它启动后仍会弹窗。
+            gui_new_set["Gui"].update(
                 {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"
             global_set["VersionUpdate.doNotShowUpdate"] = "True"
-            gui_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
-            gui_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+            gui_new_set["AnnouncementInfo"]["DoNotShow"] = True
+            gui_new_set["Update"]["DoNotShowUpdate"] = True
 
         server = self.cur_user_config.Info.Server
         account = self.cur_user_config.Info.Id

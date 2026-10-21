@@ -62,6 +62,38 @@ def _fill_missing(target: dict, defaults: dict) -> None:
             _fill_missing(target[key], value)
 
 
+def _migrate_legacy_root_gui(gui_new_set: dict, base_gui: dict) -> None:
+    """
+    一次性将根级 GUI（旧格式）迁移到 Gui（新格式）
+
+    检测到根级 ``GUI`` 时立即升级为 ``Gui`` 并删除旧键，避免后续代码需要处理兼容。
+    迁移时会补充缺失的字段（如 ``GuideStep``），确保 MAA 不会弹新手引导。
+
+    Args:
+        gui_new_set: gui.new.json 配置对象
+        base_gui: base_preset.json 中的 Gui 默认值
+    """
+
+    if "GUI" not in gui_new_set:
+        return
+
+    # 情况 1: 同时有 GUI 和 Gui（理论上不应该出现）
+    # 优先保留 Gui（新格式），直接删除 GUI
+    if "Gui" in gui_new_set:
+        del gui_new_set["GUI"]
+        return
+
+    # 情况 2: 只有 GUI（旧格式），执行一次性迁移
+    legacy_gui = gui_new_set["GUI"]
+    gui_new_set["Gui"] = legacy_gui.copy()
+
+    # 补充缺失的字段（如 GuideStep = 7）
+    _fill_missing(gui_new_set["Gui"], base_gui)
+
+    # 删除旧的根级 GUI
+    del gui_new_set["GUI"]
+
+
 # 随包预设里由 MAA 自己维护、MAS 不该代填的根级键：配置版本与迁移元数据一旦写错
 # 会触发 MAA 的旧格式迁移器，反而把整份配置判成不可解析。
 _MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
@@ -106,13 +138,14 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
             configurations["Default"] = configurations[current]
         gui_set["Current"] = "Default"
 
+    # 一次性迁移：将根级 GUI（旧格式）升级到 Gui（新格式）
+    # 检测到旧格式立即升级并清理，后续代码只处理新格式
+    _migrate_legacy_root_gui(gui_new_set, get_maa_base_preset("gui.new.json").get("Gui", {}))
+
     for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
         preset = get_maa_base_preset(name)
         for key, value in preset.items():
             if key in _MAA_ROOT_KEYS_NOT_FILLED:
-                continue
-            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
-            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
                 continue
             _fill_missing(doc, {key: value})
 

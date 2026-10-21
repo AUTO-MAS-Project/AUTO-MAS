@@ -435,6 +435,21 @@
           "YituliuOpenApiToken": "",
           "OperBoxUseYituliuApi": false
         },
+        "ConnectSettings": {
+          "Address": "",
+          "AdbPath": "",
+          "Config": "General",
+          "AutoDetect": false,
+          "AlwaysAutoDetect": false
+        },
+        "RuntimeSettings": {
+          "StartGame": false
+        },
+        "PostActions": 0,
+        "StartUpSettings": {
+          "RunDirectly": false,
+          "OpenEmulatorAfterLaunch": false
+        },
         "WindowTitlePrefix": "",
         "PostActions": "None",
         "AchievementPopupDisabled": false,
@@ -572,6 +587,13 @@
   },
   "ConfigVersion": 1,
   "Current": "Default",
+  "Update": {
+    "CheckOnSchedule": false,
+    "AutoDownloadUpdatePackage": true,
+    "AutoInstallUpdatePackage": false,
+    "DoNotShowUpdate": false,
+    "UpdatePackage": ""
+  },
   "AnnouncementInfo": {
     "DoNotShowAgain": true,
     "DoNotShow": false
@@ -651,6 +673,21 @@
       }
     },
     "GuideStep": 7,
+    "ConnectSettings": {
+      "Address": "",
+      "AdbPath": "",
+      "Config": "General",
+      "AutoDetect": false,
+      "AlwaysAutoDetect": false
+    },
+    "RuntimeSettings": {
+      "StartGame": false
+    },
+    "PostActions": 0,
+    "StartUpSettings": {
+      "RunDirectly": false,
+      "OpenEmulatorAfterLaunch": false
+    },
     "Background": {
       "ImagePath": "",
       "StretchMode": "Fill",
