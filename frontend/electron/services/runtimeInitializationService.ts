@@ -31,7 +31,6 @@ import { resolveRuntimeReleaseChannel, type RuntimeReleaseChannel } from './runt
 import {
   CreateRuntimeClientOptions,
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
-  RUNTIME_EXECUTABLE_NAME,
   RuntimeClient,
   RuntimeMirrorSelection,
   RuntimeRemediation,
@@ -797,7 +796,6 @@ export class RuntimeInitializationService {
     const reuseEnvironment =
       !aligned.success &&
       aligned.networkUnavailable === true &&
-      this.options.launchConfig.runtimePath !== null &&
       this.options.targetVersion === undefined &&
       !this.cancelRequested
     if (!aligned.success && !reuseEnvironment) {
@@ -1021,7 +1019,7 @@ export class RuntimeInitializationService {
    * 第 0 步：把 Runtime 可执行文件对齐到线上最新版。
    *
    * 只在 managed 模式做：development 模式监督的是开发者的检出，不归版本对齐管；找不到 exe 时
-   * 下载到安装包的 resources 目录，通过校验后再交给 {@link execute}。进度挂在
+   * 交给随后的 {@link execute} 按 `RUNTIME_NOT_FOUND` 失败，这里不重复报。进度挂在
    * 「运行环境」段上，字节进度只进网络细节行（见 {@link RUNTIME_BINARY_DOWNLOAD_STAGE}）。
    *
    * 失败转成与 Runtime 命令同一种失败形状，界面不用区分是谁失败的：`retryable` 一律为真
@@ -1039,12 +1037,8 @@ export class RuntimeInitializationService {
   }
 
   private async runAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
-    const { mode, appRoot } = this.options.launchConfig
-    if (mode !== 'managed') return { success: true }
-    const runtimePath =
-      this.options.launchConfig.runtimePath ??
-      (process.resourcesPath ? join(process.resourcesPath, RUNTIME_EXECUTABLE_NAME) : null)
-    if (!runtimePath) return { success: true }
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) return { success: true }
 
     const channel = this.releaseChannel
     this.aligning = true
@@ -1089,12 +1083,10 @@ export class RuntimeInitializationService {
 
     switch (result.status) {
       case 'upgraded':
-        this.options.launchConfig.runtimePath = runtimePath
         logger.info(`Runtime 已更新到线上最新 ${result.target?.version}`)
         bridge.observe(RUNTIME_BINARY_CHECK_STAGE, `Runtime 已更新到 ${result.target?.version}`)
         return { success: true }
       case 'current':
-        this.options.launchConfig.runtimePath = runtimePath
         logger.info(`Runtime 已是线上最新 ${result.target?.version}`)
         return { success: true }
       case 'skipped':
