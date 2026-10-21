@@ -62,6 +62,14 @@ def _fill_missing(target: dict, defaults: dict) -> None:
             _fill_missing(target[key], value)
 
 
+def _ensure_guide_step(target: dict, guide_step: int) -> None:
+    """把未初始化（null/0）的引导进度补成预设值，保留已开始的进度。"""
+
+    current = target.get("GuideStep")
+    if not isinstance(current, int) or isinstance(current, bool) or current <= 0:
+        target["GuideStep"] = guide_step
+
+
 # 随包预设里由 MAA 自己维护、MAS 不该代填的根级键：配置版本与迁移元数据一旦写错
 # 会触发 MAA 的旧格式迁移器，反而把整份配置判成不可解析。
 _MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
@@ -79,7 +87,8 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
 
     根级 ``Gui`` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
     副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
-    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。普通字段只补缺失键；
+    ``GuideStep`` 为 ``null`` / ``0`` 时视为未初始化，补成完成态。
 
     旧版只有 ``GUI`` 时，把 ``GuideStep`` 补进 ``GUI``，仍交给 MAA 的原生迁移复制
     到 ``Gui``；这样既不提前创建 ``Gui`` 遮蔽旧版设置，也能补上缺失的引导进度。
@@ -116,12 +125,21 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
                 continue
             # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。GuideStep 是
             # MAA 后来新增、旧版 GUI 里没有的字段；写进旧版 GUI，MAA 迁移时会
-            # 一起带到 Gui，避免每次都按首次运行弹新手引导。
-            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
-                legacy_gui = doc.get("GUI")
+            # 一起带到 Gui，避免每次都按首次运行弹新手引导。null/0 也要视为未初始化。
+            if key == "Gui":
                 guide_step = value.get("GuideStep")
+                if "Gui" not in doc and "GUI" in doc:
+                    legacy_gui = doc.get("GUI")
+                    if isinstance(legacy_gui, dict) and isinstance(guide_step, int):
+                        _ensure_guide_step(legacy_gui, guide_step)
+                    continue
+                _fill_missing(doc, {key: value})
+                root_gui = doc.get("Gui")
+                if isinstance(root_gui, dict) and isinstance(guide_step, int):
+                    _ensure_guide_step(root_gui, guide_step)
+                legacy_gui = doc.get("GUI")
                 if isinstance(legacy_gui, dict) and isinstance(guide_step, int):
-                    _fill_missing(legacy_gui, {"GuideStep": guide_step})
+                    _ensure_guide_step(legacy_gui, guide_step)
                 continue
             _fill_missing(doc, {key: value})
 
