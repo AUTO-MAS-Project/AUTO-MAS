@@ -67,6 +67,35 @@ def _fill_missing(target: dict, defaults: dict) -> None:
 _MAA_ROOT_KEYS_NOT_FILLED = frozenset({"Configurations", "Current", "ConfigVersion"})
 
 
+def _ensure_mapping(parent: dict, key: str) -> dict:
+    value = parent.get(key)
+    if not isinstance(value, dict):
+        value = parent[key] = {}
+    return value
+
+
+def _normalize_root_gui(doc: dict) -> None:
+    """把旧版根级 ``GUI`` 合并进 ``Gui``，之后只写 ``Gui``。
+
+    旧版 MAA 的根级 ``GUI`` 只应出现一次。MAS 自己完成这次重命名，
+    不再依赖 MAA 的迁移器，也不在废弃字段上写运行期配置。
+    """
+
+    legacy = doc.pop("GUI", None)
+    gui = _ensure_mapping(doc, "Gui")
+    if isinstance(legacy, dict):
+        # 已有 Gui 优先，旧 GUI 只补缺键，避免反过来覆盖新配置。
+        _fill_missing(gui, legacy)
+
+    guide_step = gui.get("GuideStep")
+    if (
+        isinstance(guide_step, bool)
+        or not isinstance(guide_step, int)
+        or guide_step <= 0
+    ):
+        gui["GuideStep"] = 7
+
+
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     """Fold the current configuration into ``Default`` and guarantee both sides.
 
@@ -77,10 +106,14 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
     unconditionally, or the later hard indexing of ``Global`` /
     ``Configurations["Default"]`` raises ``KeyError``.
 
-    根级 ``Gui` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
+    根级 ``Gui`` / ``Timers`` 也按随包预设补齐缺键：存档是用户自己那份 MAA 配置的
     副本，MAA 后来新增的字段（尤其 ``Gui.GuideStep``）在里面根本不存在，下发后
-    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值。
+    MAA 每次都按首次运行处理，直接把新手引导弹出来。只补缺失键，不覆盖用户值；
+    旧版根级 ``GUI`` 先合并进 ``Gui`` 并删除，后续只认 ``Gui``；折叠方案后
+    再补 ``Default.Gui`` 的运行期容器，直接索引不会落空。
     """
+
+    _normalize_root_gui(gui_new_set)
 
     if not isinstance(gui_set.get("Global"), dict):
         gui_set["Global"] = {}
@@ -106,13 +139,15 @@ def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
             configurations["Default"] = configurations[current]
         gui_set["Current"] = "Default"
 
+    # 折叠当前方案后再补 Default.Gui 的容器，避免刚补好的 Default 被覆盖。
+    default_gui = _ensure_mapping(_ensure_mapping(configurations, "Default"), "Gui")
+    for key in ("ConnectSettings", "RuntimeSettings", "StartUpSettings"):
+        _ensure_mapping(default_gui, key)
+
     for name, doc in (("gui.json", gui_set), ("gui.new.json", gui_new_set)):
         preset = get_maa_base_preset(name)
         for key, value in preset.items():
             if key in _MAA_ROOT_KEYS_NOT_FILLED:
-                continue
-            # 旧版 GUI 由 MAA 迁移，提前补入 Gui 会遮蔽用户设置。
-            if key == "Gui" and "Gui" not in doc and "GUI" in doc:
                 continue
             _fill_missing(doc, {key: value})
 
