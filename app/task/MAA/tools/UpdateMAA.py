@@ -28,6 +28,7 @@ from app.utils import ProcessRunner, get_logger
 from app.utils.io import read_file, write_file
 
 from ..base_preset import ensure_maa_default_configuration
+from .native_config import maa_scheme_name
 from .resource_update import _wait_for_cleanup
 
 logger = get_logger("MAA 更新工具")
@@ -65,21 +66,19 @@ async def update_maa(maa_path: Path):
             "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
         )
 
-    maa_set = read_file(maa_path / "config/gui.json")
     maa_new_set = read_file(maa_path / "config/gui.new.json")
+    active_scheme = maa_scheme_name(maa_new_set)
+    original_default = None
+    if active_scheme != "Default":
+        configurations = maa_new_set.get("Configurations")
+        if isinstance(configurations, dict):
+            original_default = configurations.get("Default")
 
-    # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
-    # Default 本身也可能缺失——沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
-    ensure_maa_default_configuration(maa_set, maa_new_set)
-
-    # 各配置部分的引用
-    global_set = maa_set["Global"]
-    default_set = maa_set["Configurations"]["Default"]
+    # 把生效方案归一为 Default；Default 本身也可能缺失——沿用安装目录配置时
+    # 该文件不由 MAS 生成，兜底必须无条件执行。
+    ensure_maa_default_configuration(maa_new_set)
 
     # 关闭所有定时
-    for i in range(1, 9):
-        global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
-    # NEW: Timers.List[*].IsEnabled = false
     if "Timers" not in maa_new_set:
         maa_new_set["Timers"] = {}
     if "List" not in maa_new_set["Timers"]:
@@ -88,53 +87,41 @@ async def update_maa(maa_path: Path):
         if isinstance(timer, dict):
             timer["IsEnabled"] = False
 
-    # 不直接运行任务
-    default_set["MainFunction.PostActions"] = "0"  # OLD: 即将移除
-    # NEW: PostActions [Flags] 枚举 None=0
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    )["PostActions"] = 0
-    default_set["Start.RunDirectly"] = "False"  # OLD: 即将移除
-    default_set["Start.OpenEmulatorAfterLaunch"] = "False"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["RunDirectly"] = False
-    maa_new_set.setdefault("Configurations", {}).setdefault("Default", {}).setdefault(
-        "Gui", {}
-    ).setdefault("StartUpSettings", {})["StartEmulator"] = False
+    # 不直接运行任务；PostActions [Flags] 枚举 None=0
+    default_gui = maa_new_set["Configurations"]["Default"]["Gui"]
+    default_gui["PostActions"] = 0
+    default_gui["StartUpSettings"].update(
+        {"RunDirectly": False, "StartEmulator": False}
+    )
 
     # 静默模式相关配置
-    global_set["GUI.UseTray"] = "True"  # OLD: 即将移除
-    global_set["GUI.MinimizeToTray"] = "True"  # OLD: 即将移除
-    global_set["Start.MinimizeDirectly"] = "True"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Gui", {})["UseTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeToTray"] = True
-    maa_new_set.setdefault("Gui", {})["MinimizeOnStartup"] = True
+    root_gui = maa_new_set.setdefault("Gui", {})
+    root_gui["UseTray"] = True
+    root_gui["MinimizeToTray"] = True
+    root_gui["MinimizeOnStartup"] = True
 
     # 更新配置
-    global_set["VersionUpdate.package"] = maa_update_package  # OLD: 即将移除
-    global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
-    global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
-    global_set["VersionUpdate.AutoInstallUpdatePackage"] = "True"  # OLD: 即将移除
-    # NEW:
-    maa_new_set.setdefault("Update", {})["UpdatePackage"] = maa_update_package
-    maa_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
-    maa_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
-    maa_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = True
+    update_set = maa_new_set.setdefault("Update", {})
+    update_set["UpdatePackage"] = maa_update_package
+    update_set["CheckOnSchedule"] = False
+    update_set["AutoDownloadUpdatePackage"] = False
+    update_set["AutoInstallUpdatePackage"] = True
 
     # 无人值守拉起装更新，公告与更新后首启的版本说明弹窗一并关闭
-    global_set["Announcement.DoNotShowAnnouncement"] = "True"  # OLD: 即将移除
-    global_set["VersionUpdate.doNotShowUpdate"] = "True"  # OLD: 即将移除
-    # NEW:
     maa_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
-    maa_new_set.setdefault("Update", {})["DoNotShowUpdate"] = True
+    update_set["DoNotShowUpdate"] = True
 
-    (maa_path / "config/gui.json").write_text(  # OLD: 即将移除
-        json.dumps(maa_set, ensure_ascii=False, indent=4),
-        encoding="utf-8",  # OLD: 即将移除
-    )  # OLD: 即将移除
+    # ensure 会把活动方案折叠成 Default；更新安装目录配置时只改活动方案，
+    # 再把原来的 Default 和 Current 放回去，别动用户其它方案的设置。
+    if active_scheme != "Default":
+        configurations = maa_new_set["Configurations"]
+        configurations[active_scheme] = configurations["Default"]
+        if original_default is None:
+            configurations.pop("Default", None)
+        else:
+            configurations["Default"] = original_default
+        maa_new_set["Current"] = active_scheme
+
     write_file(maa_path / "config/gui.new.json", maa_new_set)
 
     try:
