@@ -510,8 +510,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
     async def handle_pre_okww_error(
         self, error_message: str, e: Exception | None = None
-    ) -> None:
-        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 MaaEnd）。"""
+    ) -> bool:
+        """处理前置步骤失败，返回是否已确认旧 OK-WW 进程退出。"""
 
         if e is None:
             logger.warning(f"用户: {self.cur_user_uid} - {error_message}")
@@ -529,10 +529,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
-        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
-        self.cur_user_log.status = error_message
+        error_detail = f"{error_message}: {e}" if e is not None else error_message
+        self.cur_user_log.content = [f"{error_detail}, 无日志记录"]
+        self.cur_user_log.status = error_detail
 
-        await self.kill_managed_process(kill_game=self._game_management_enabled())
+        okww_stopped = await self.kill_managed_process(
+            kill_game=self._game_management_enabled()
+        )
 
         try:
             await Notify.push_plyer(
@@ -543,6 +546,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
         except Exception:
             pass
+        return okww_stopped
 
     def _game_launch_type(self) -> str:
         """游戏启动方式（缺省回落直启态）：Client=直启客户端，Launcher=经官方启动器。"""
@@ -865,11 +869,32 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
             )
 
-            await self.okww_process_manager.open_process(
-                self.script_exe_path,
-                *self.okww_args,
-                target_process=self.script_target_process_info,
-            )
+            try:
+                await self.okww_process_manager.open_process(
+                    self.script_exe_path,
+                    *self.okww_args,
+                    target_process=self.script_target_process_info,
+                )
+            except (OSError, RuntimeError) as e:
+                # 启动器可能已拉起进程；清理后再重试，避免下一轮重复启动。
+                if not await self.handle_pre_okww_error("OK-WW 启动失败", e=e):
+                    message = (
+                        "无法确认旧 OK-WW 进程已退出，停止重试，"
+                        "请检查残留进程及结束进程的权限"
+                    )
+                    self.cur_user_log.status += f"\n{message}"
+                    self.cur_user_log.content.append(message)
+                    self.cur_user_item.status = "异常"
+                    await self._push_dispatch_log(message)
+                    break
+                if attempt < run_limit:
+                    await self._push_dispatch_log(
+                        f"OK-WW 启动失败，将在稍后重试 ({attempt}/{run_limit})"
+                    )
+                    await asyncio.sleep(10)
+                else:
+                    self.cur_user_item.status = "异常"
+                continue
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
@@ -1156,7 +1181,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
         await self._kill_okww_process()
 
-    async def _kill_okww_process(self) -> None:
+    async def _kill_okww_process(self) -> bool:
         if self.okww_process_manager is not None:
             try:
                 await self.okww_process_manager.kill()
@@ -1166,15 +1191,34 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.script_exe_path is not None:
             try:
-                await System.kill_process(self.script_exe_path)
+                if not await System.kill_process(self.script_exe_path):
+                    logger.warning("未能完整清理 OK-WW 主进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 主进程失败: {e}")
         if self.script_root_path is not None:
             track_exe = self.script_root_path / _OKWW_REL_PYTHONW
             try:
-                await System.kill_process(track_exe)
+                if not await System.kill_process(track_exe):
+                    logger.warning("未能完整清理 OK-WW 追踪进程，将复核退出状态")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
+
+        # 清理返回成功也可能仍有残留；管理器丢失句柄时仍须按路径复核。
+        paths = []
+        if self.script_exe_path is not None:
+            paths.append(self.script_exe_path)
+        if self.script_root_path is not None:
+            paths.append(self.script_root_path / _OKWW_REL_PYTHONW)
+        stopped = True
+        for path in paths:
+            try:
+                if not await System.is_process_stopped(path):
+                    stopped = False
+                    logger.warning(f"无法确认进程已退出: {path}")
+            except Exception as e:
+                stopped = False
+                logger.opt(exception=True).warning(f"复核进程退出状态失败: {path}: {e}")
+        return stopped
 
     async def _kill_game_process(self) -> None:
         """结束游戏与官方启动器：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
@@ -1213,16 +1257,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
             # 有没杀掉的（多为提权进程）要提示用户，不能静默。
             # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            failed = await kill_pids(
-                await asyncio.to_thread(find_game_pids, self.launcher_path)
-            )
-            if failed:
-                message = (
-                    f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
-                    "MAS 无权结束），请人工确认关闭"
+            try:
+                failed = await kill_pids(
+                    await asyncio.to_thread(find_game_pids, self.launcher_path)
                 )
-                logger.warning(message)
-                await self._push_dispatch_log(message)
+                if failed:
+                    message = (
+                        f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
+                        "MAS 无权结束），请人工确认关闭"
+                    )
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"清理鸣潮客户端进程失败: {e}")
         if self.launcher_path is not None and self._game_launch_type() == "Launcher":
             try:
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
@@ -1248,11 +1295,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 
-    async def kill_managed_process(self, *, kill_game: bool = True) -> None:
-        """中止 ok-ww；kill_game 为真时结束游戏"""
-        await self._kill_okww_process()
+    async def kill_managed_process(self, *, kill_game: bool = True) -> bool:
+        """中止相关程序，返回是否已确认 OK-WW 退出；游戏清理失败单独记录。"""
+        okww_stopped = await self._kill_okww_process()
         if kill_game:
-            await self._kill_game_process()
+            try:
+                await self._kill_game_process()
+            except Exception as e:
+                logger.opt(exception=True).warning(f"清理鸣潮进程失败: {e}")
+        return okww_stopped
 
     async def _wait_game_exit_before_next_user(self) -> None:
         """多用户切换：等上一用户的游戏完全退出后再进下个用户。
