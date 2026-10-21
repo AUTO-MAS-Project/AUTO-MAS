@@ -1,0 +1,155 @@
+.script-drag .script-drag-handle {
+  cursor: grabbing !important;
+}
+
+.script-drag .script-drag-handle * {
+  cursor: grabbing !important;
+}
+.script-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.script-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.script-drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: move;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.script-drag-handle:active {
+  cursor: move;
+}
+
+.script-logo-container {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ant-color-bg-layout);
+  border: 1px solid var(--ant-color-border);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.script-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.script-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.script-name {
+  margin: 0 0 6px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.script-type {
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.action-button {
+  border-radius: 8px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.add-button {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
+.add-button:hover {
+  background: var(--ant-color-primary-bg);
+  border-color: var(--ant-color-primary-hover);
+  color: var(--ant-color-primary-hover);
+}
+@media (max-width: 768px) {
+  .script-header {
+    padding: 16px 16px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .script-name {
+    font-size: 16px;
+  }
+
+  .header-actions {
+    gap: 8px;
+  }
+
+  .action-button {
+    font-size: 12px;
+    height: 28px;
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 576px) {
+  .script-info {
+    gap: 8px;
+  }
+
+  .script-logo-container {
+    width: 40px;
+    height: 40px;
+  }
+
+  .script-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .script-name {
+    font-size: 15px;
+  }
+
+  .header-actions {
+    gap: 6px;
+  }
+
+  .action-button {
+    font-size: 11px;
+    height: 26px;
+    padding: 0 6px;
+  }
+}
