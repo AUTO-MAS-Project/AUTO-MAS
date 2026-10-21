@@ -185,6 +185,9 @@
                 :popup-match-select-width="false"
                 :placeholder="t('edit.pickStage')"
                 @change="onStageChange(record)"
+                @dropdown-visible-change="
+                  (open: boolean) => open && record.DropId && loadStageCandidates(record.DropId)
+                "
               />
               <a-select
                 v-model:value="record.DropId"
@@ -271,7 +274,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
@@ -355,6 +358,7 @@ const {
   selectedRowKeys,
   savePlans,
   queueSave,
+  loadStageCandidates,
   onItemChange,
   onStageChange,
   importPreset,
@@ -364,6 +368,14 @@ const {
   removePlan,
   removeSelectedPlans,
 } = props.editor
+
+onMounted(() => {
+  if (eventMode.value) return
+  // 面板重开时补查失败项；缓存与在途请求由页面统一复用。
+  for (const itemId of new Set(plans.value.map(plan => plan.DropId).filter(Boolean))) {
+    void loadStageCandidates(itemId)
+  }
+})
 
 /** 当期关卡逐行常驻：未保存的行按预设默认值展示（默认全开）。 */
 const eventRows = computed<EventRow[]>(() => {
