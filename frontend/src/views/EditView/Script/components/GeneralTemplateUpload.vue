@@ -5,10 +5,6 @@ import { message, type FormInstance } from 'ant-design-vue'
 import { CloudUploadOutlined } from '@ant-design/icons-vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
-  queueGeneralShareAuthAction as queueAuthAction,
-  waitForGeneralShareAuth,
-} from './generalShareAuthQueue'
-import {
   IDLE_SHARE_AUTH,
   useShareApi,
   type ShareAuthState,
@@ -102,8 +98,6 @@ const showUploadModal = async () => {
   if (!uploadForm.config_name) uploadForm.config_name = props.scriptName || ''
   // 开启新弹窗前完成上次撤销，避免迟到的撤销把新授权一并取消。
   try {
-    await waitForGeneralShareAuth()
-    if (!currentDialog(dialog)) return
     const status = await getShareAuthStatus()
     if (!currentDialog(dialog) || authorization !== authVersion) return
     if (status) shareAuth.value = status
@@ -122,7 +116,7 @@ const closeUploadModal = async () => {
   riskVersion++
   stopSharePolling()
   // cancel 仅撤销等待中的设备授权，不登出已授权账号；状态读取未完成也要清理。
-  await queueAuthAction(() => cancelShareAuth())
+  await cancelShareAuth()
 }
 const handleUploadCancel = () => closeUploadModal()
 const openShareVerificationPage = () => {
@@ -147,17 +141,15 @@ const handleStartShareAuth = async () => {
   stopSharePolling()
   shareAuthLoading.value = true
   try {
-    await queueAuthAction(async () => {
-      const status = await startShareAuth()
-      if (!current()) return
-      if (!status) {
-        message.error(shareError.value ?? t('edit.share.startFailed'))
-        return
-      }
-      shareAuth.value = status
-      openShareVerificationPage()
-      if (status.status === 'pending') startSharePolling(status.interval, dialog, authorization)
-    })
+    const status = await startShareAuth()
+    if (!current()) return
+    if (!status) {
+      message.error(shareError.value ?? t('edit.share.startFailed'))
+      return
+    }
+    shareAuth.value = status
+    openShareVerificationPage()
+    if (status.status === 'pending') startSharePolling(status.interval, dialog, authorization)
   } finally {
     if (current()) shareAuthLoading.value = false
   }
@@ -166,7 +158,7 @@ const handleCancelShareAuth = async () => {
   const dialog = dialogVersion
   const authorization = ++authVersion
   stopSharePolling()
-  const status = await queueAuthAction(() => cancelShareAuth())
+  const status = await cancelShareAuth()
   if (currentDialog(dialog) && authorization === authVersion) {
     shareAuth.value = status ?? { ...IDLE_SHARE_AUTH }
     shareAuthLoading.value = false
