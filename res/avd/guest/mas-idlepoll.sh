@@ -22,7 +22,6 @@
 ON=400
 OFF=200
 TAG=mas-idlepoll
-SPIN="while :; do :; done # $TAG-spin"
 
 say() { echo "$TAG: $*"; /system/bin/log -t $TAG "$*" 2>/dev/null; }
 
@@ -45,12 +44,23 @@ daemon)
     disk=$(data_disk)
     [ -r /sys/class/block/$disk/stat ] || { say "no stat for the data disk '$disk', not watching"; exit 1; }
     pgrep -f "$TAG.sh watch" >/dev/null || { nohup setsid sh "$0" watch >/dev/null 2>&1 & }
+    # return once the watcher is visible, so a status right after this sees it
+    i=0
+    while [ $i -lt 10 ] && ! pgrep -f "$TAG.sh watch" >/dev/null; do sleep 0.1; i=$((i + 1)); done
     ;;
 watch)
     disk=$(data_disk)
     [ -r /sys/class/block/$disk/stat ] || { say "no stat for the data disk '$disk', not watching"; exit 1; }
-    # loops left behind by a watcher that was killed without its trap running
+    # two daemon calls racing can start two watchers: the lowest pid stays
+    for p in $(pgrep -f "$TAG.sh watch"); do
+        [ "$p" -lt $$ ] && exit 0
+    done
+    # loops left behind by an older watcher (they also stop by themselves
+    # within a moment once their watcher is gone, see SPIN)
     pkill -f "$TAG-spin"
+    # each loop checks that this watcher still exists, so a watcher killed
+    # without its trap running (SIGKILL) does not leave them spinning
+    SPIN="while [ -d /proc/$$ ]; do :; done # $TAG-spin"
     cpus=$(grep -c ^processor /proc/cpuinfo)
     say "watch start pid $$ disk $disk cpus $cpus on $ON/s off $OFF/s"
     loops=""
