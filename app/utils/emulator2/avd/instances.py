@@ -59,6 +59,8 @@ from .constants import (
 #: 设备外框与设备型号——型号只影响窗口外框，外框也关了。显示固定 720p（1280×720 / DPI 240），
 #: 每次开机前再核对一次。客体不带声卡（用户 10-04 定），声卡两项都写 no；真正去掉声卡的是启动参数
 #: ``-feature -VirtioSndCard``（本镜像的客体声卡是 virtio-snd，模拟器不看这两项，10-04 实测）。
+#: ``hw.mainKeys=yes`` 不显示屏幕导航栏，返回、回桌面用侧边工具栏：手势横条的上滑和最近任务由
+#: 系统桌面里的 Quickstep 处理，装 µLauncher 时卸掉了它，横条上滑没有反应（ModAVD #1）。
 _CONFIG_TEMPLATE: tuple[tuple[str, str], ...] = (
     ("PlayStore.enabled", "no"),
     ("abi.type", "x86_64"),
@@ -86,7 +88,7 @@ _CONFIG_TEMPLATE: tuple[tuple[str, str], ...] = (
     ("hw.keyboard.lid", "yes"),
     ("hw.lcd.depth", "32"),
     ("hw.lcd.vsync", "60"),
-    ("hw.mainKeys", "no"),
+    ("hw.mainKeys", "yes"),
     ("hw.sdCard", "no"),
     ("hw.sensors.orientation", "yes"),
     ("hw.sensors.proximity", "no"),
@@ -238,7 +240,8 @@ def remove_instance_meta(root: str | Path, native_index: int | str) -> None:
 
 
 def display_changes(config: dict[str, str]) -> dict[str, str]:
-    """固定 720p 的 ``hw.lcd.*``，保持现有横竖屏（照启动器 ``-Resolution`` 的写法）。"""
+    """固定 720p 的 ``hw.lcd.*``，保持现有横竖屏（照启动器 ``-Resolution`` 的写法）；
+    不显示屏幕导航栏（``hw.mainKeys=yes``，见 :data:`_CONFIG_TEMPLATE`）。"""
     width = _int_or_none(config.get("hw.lcd.width")) or 0
     height = _int_or_none(config.get("hw.lcd.height")) or 0
     if height > width:
@@ -249,11 +252,13 @@ def display_changes(config: dict[str, str]) -> dict[str, str]:
         "hw.lcd.width": str(width),
         "hw.lcd.height": str(height),
         "hw.lcd.density": str(SCREEN_DENSITY),
+        "hw.mainKeys": "yes",
     }
 
 
 def apply_display(root: str | Path, native_index: int | str) -> bool:
-    """开机前把显示改回固定的 720p（以前选过 1080p 的旧实例），返回是否改了文件。只在停机时调用。"""
+    """开机前把显示改回固定的 720p（以前选过 1080p 的旧实例）、关掉屏幕导航栏（以前建的实例），
+    返回是否改了文件。只在停机时调用。"""
     path = config_path(root, native_index)
     config = read_ini(path)
     if not config:

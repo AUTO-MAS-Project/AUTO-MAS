@@ -875,7 +875,7 @@ class _AvdCore(DeviceBase):
 
         await host.ensure_adb_server(self.root)
         if await asyncio.to_thread(apply_display, self.root, idx):
-            logger.info(f"实例 {idx} 显示改回 720p（已写入 config.ini）")
+            logger.info(f"实例 {idx} 显示改回 720p、不显示导航栏（已写入 config.ini）")
         headless = not self._open_window
         args = build_launch_args(
             instance.name,
