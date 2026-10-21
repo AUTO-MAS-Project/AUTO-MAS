@@ -66,9 +66,29 @@
     </div>
   </div>
 
+  <a-alert
+    v-if="scriptListError"
+    type="error"
+    show-icon
+    :message="scriptListError"
+    class="script-list-error"
+  >
+    <template #action>
+      <a-button :loading="listLoading" @click="loadScripts">{{ t('apiErrors.retry') }}</a-button>
+    </template>
+  </a-alert>
+
   <!-- 空状态 -->
   <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
-  <div v-if="!addLoading && loadedOnce && scripts.length === 0" class="empty-state">
+  <div v-if="listLoading && !scriptListError && scripts.length === 0" class="scripts-loading">
+    <a-spin size="large" />
+  </div>
+  <div
+    v-else-if="
+      !scriptListError && !listLoading && !addLoading && loadedOnce && scripts.length === 0
+    "
+    class="empty-state"
+  >
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
@@ -80,7 +100,12 @@
     </div>
   </div>
 
-  <div v-else-if="!addLoading && loadedOnce && filteredScripts.length === 0" class="empty-state">
+  <div
+    v-else-if="
+      !scriptListError && !listLoading && !addLoading && loadedOnce && filteredScripts.length === 0
+    "
+    class="empty-state"
+  >
     <a-empty :description="t('scripts.empty.noMatch')">
       <a-button @click="scriptSearchKeyword = ''">{{ t('scripts.clearSearch') }}</a-button>
     </a-empty>
@@ -93,6 +118,8 @@
     :searching="isSearching"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
+    :retrying-users="retryingUsers"
+    @retry-users="retryScriptUsers"
     @edit="handleEditScript"
     @copy="handleCopyScript"
     @delete="handleDeleteScript"
@@ -139,6 +166,7 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
+import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { ScriptType } from '@/types/script'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
@@ -184,7 +212,13 @@ const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript } = useScriptApi()
-const { getScriptsWithUsers } = useScriptList()
+const {
+  getScriptsWithUsers,
+  getScriptUsers,
+  loading: listLoading,
+  error: scriptListError,
+} = useScriptList()
+const retryingUsers = ref(new Set<string>())
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
@@ -343,14 +377,30 @@ onUnmounted(() => {
 
 const loadScripts = async () => {
   try {
-    scripts.value = await getScriptsWithUsers()
+    const result = await getScriptsWithUsers()
+    if (!scriptListError.value) scripts.value = result
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
+    const errorMsg = getApiErrorMessage(error, t('apiErrors.scriptListFailed'))
     logger.error(`加载脚本列表失败: ${errorMsg}`)
-    message.error(t('scripts.toast.loadListFailed', { error: errorMsg }))
+    scriptListError.value = errorMsg
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
+  }
+}
+
+const retryScriptUsers = async (scriptId: string) => {
+  const script = scripts.value.find(item => item.id === scriptId)
+  if (!script || retryingUsers.value.has(scriptId)) return
+  retryingUsers.value.add(scriptId)
+  try {
+    const result = await getScriptUsers(scriptId)
+    // 整体刷新或删除后，旧的重试结果不再属于当前列表。
+    if (!scripts.value.includes(script)) return
+    script.users = result.users
+    script.usersLoadError = result.error
+  } finally {
+    retryingUsers.value.delete(scriptId)
   }
 }
 
@@ -875,6 +925,10 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
 </script>
 
 <style scoped>
+.script-list-error {
+  margin-bottom: 16px;
+}
+
 .maa-config-mask {
   position: fixed;
   top: 0;
@@ -934,6 +988,7 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   margin-right: 8px;
 }
 
+.scripts-loading,
 .empty-state {
   display: flex;
   align-items: center;

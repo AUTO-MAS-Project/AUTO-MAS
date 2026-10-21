@@ -8,6 +8,32 @@
  * フォールバックします（i18n/index.ts の fallbackLocale を参照）。
  */
 export default {
+  apiErrors: {
+    scriptAddFailed: '管理対象スクリプトの追加に失敗しました',
+    scriptListFailed: '管理対象スクリプト一覧の取得に失敗しました',
+    scriptLoadFailed: '管理対象スクリプトの取得に失敗しました',
+    scriptDeleteFailed: '管理対象スクリプトの削除に失敗しました',
+    scriptSaveFailed: '管理対象スクリプトの保存に失敗しました',
+    scriptOrderFailed: '管理対象スクリプトの並べ替えに失敗しました',
+    scriptAdded: '管理対象スクリプトを追加しました',
+    userAddFailed: 'アカウントの追加に失敗しました',
+    userSaveFailed: 'アカウントの保存に失敗しました',
+    userListFailed: 'アカウント一覧の取得に失敗しました',
+    userDeleteFailed: 'アカウントの削除に失敗しました',
+    userOrderFailed: 'アカウントの並べ替えに失敗しました',
+    userConfigPathFailed: 'アカウント設定フォルダーの取得に失敗しました',
+    userConfigOpenFailed: 'アカウント設定フォルダーを開けませんでした',
+    settingsLoadFailed: '設定の取得に失敗しました',
+    settingsSaveFailed: '設定の保存に失敗しました',
+    hsrStagesFailed: 'HSR の開拓力ステージ候補の取得に失敗しました',
+    maaEndOptionsFailed: 'MaaEnd の選択肢の取得に失敗しました',
+    maafwPreviewFailed: 'プロジェクトインターフェースの読み込みに失敗しました',
+    maafwEnvFailed: 'スクリプトの実行環境の準備に失敗しました',
+    invalidResponse: 'サーバーから予期しない応答が返されました',
+    requestFailed: 'リクエストに失敗しました。再試行してください',
+    userLoadRetry: 'アカウントの読み込みに失敗しました：{reason}',
+    retry: '再試行',
+  },
   eventDepotPreview: {
     runtimeUnresolved:
       '一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。',

@@ -282,7 +282,7 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BAAH脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -377,7 +377,7 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
@@ -398,7 +398,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false

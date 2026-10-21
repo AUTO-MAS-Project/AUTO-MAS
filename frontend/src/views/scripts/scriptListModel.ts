@@ -26,8 +26,8 @@ export interface ScriptListItem {
   projectLabel?: string | null
   controllerType?: string | null
   users: ScriptListUser[]
-  /** 保留局部读取失败的事实；本批沿用现有空列表呈现。 */
-  usersLoadFailed: boolean
+  /** null 表示读取成功；失败原因与真正的空账号列表分开。 */
+  usersLoadError: string | null
 }
 
 const ACCOUNT_CONFIG_TYPES = new Set([
@@ -127,7 +127,7 @@ export function toScriptListUser(
 export function toScriptListItem(
   script: ScriptDetail,
   users: ScriptListUser[],
-  usersLoadFailed = false
+  usersLoadError: string | null = null
 ): ScriptListItem {
   const config = script.config
   return {
@@ -147,6 +147,6 @@ export function toScriptListItem(
         ? config.Game.ControllerType
         : undefined,
     users,
-    usersLoadFailed,
+    usersLoadError,
   }
 }

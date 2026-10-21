@@ -6,6 +6,32 @@
  * Keep the key structure identical to zh-CN.ts.
  */
 export default {
+  apiErrors: {
+    scriptAddFailed: 'Failed to add the managed script',
+    scriptListFailed: 'Failed to load managed scripts',
+    scriptLoadFailed: 'Failed to load the managed script',
+    scriptDeleteFailed: 'Failed to delete the managed script',
+    scriptSaveFailed: 'Failed to save the managed script',
+    scriptOrderFailed: 'Failed to reorder managed scripts',
+    scriptAdded: 'Managed script added',
+    userAddFailed: 'Failed to add the account',
+    userSaveFailed: 'Failed to save the account',
+    userListFailed: 'Failed to load accounts',
+    userDeleteFailed: 'Failed to delete the account',
+    userOrderFailed: 'Failed to reorder accounts',
+    userConfigPathFailed: 'Failed to find the account configuration folder',
+    userConfigOpenFailed: 'Failed to open the account configuration folder',
+    settingsLoadFailed: 'Failed to load settings',
+    settingsSaveFailed: 'Failed to save settings',
+    hsrStagesFailed: 'Failed to load HSR stamina stages',
+    maaEndOptionsFailed: 'Failed to load MaaEnd options',
+    maafwPreviewFailed: 'Failed to read the project interface',
+    maafwEnvFailed: 'Failed to prepare the script environment',
+    invalidResponse: 'The server returned an unexpected response',
+    requestFailed: 'Request failed. Please retry.',
+    userLoadRetry: 'Could not load accounts: {reason}',
+    retry: 'Retry',
+  },
   eventDepotPreview: {
     runtimeUnresolved:
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',

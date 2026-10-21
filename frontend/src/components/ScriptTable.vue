@@ -294,6 +294,24 @@
               </div>
             </div>
 
+            <a-alert
+              v-if="script.usersLoadError"
+              class="users-load-error"
+              type="error"
+              show-icon
+              :message="t('apiErrors.userLoadRetry', { reason: script.usersLoadError })"
+            >
+              <template #action>
+                <a-button
+                  size="small"
+                  :loading="props.retryingUsers?.has(script.id)"
+                  @click="emit('retryUsers', script.id)"
+                >
+                  {{ t('apiErrors.retry') }}
+                </a-button>
+              </template>
+            </a-alert>
+
             <!-- 用户列表 -->
             <div
               v-if="!isUsersCollapsed(script.id) && script.users && script.users.length > 0"
@@ -535,7 +553,10 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else-if="!isUsersCollapsed(script.id)" class="empty-users">
+            <div
+              v-else-if="!script.usersLoadError && !isUsersCollapsed(script.id)"
+              class="empty-users"
+            >
               <div class="empty-content">
                 <img src="@/assets/NoData.png" :alt="t('comp.noData')" class="empty-image" />
               </div>
@@ -595,9 +616,11 @@ interface Props {
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   searching?: boolean
+  retryingUsers?: ReadonlySet<string>
 }
 
 interface Emits {
+  (e: 'retryUsers', scriptId: string): void
   (e: 'edit', script: ScriptListItem): void
 
   (e: 'delete', script: ScriptListItem): void
@@ -1053,6 +1076,10 @@ const onUserDragEnd = async (script: ScriptListItem) => {
 </script>
 
 <style scoped>
+.users-load-error {
+  margin: 16px 24px;
+}
+
 .scripts-grid {
   width: 100%;
 }

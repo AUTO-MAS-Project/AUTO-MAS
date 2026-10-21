@@ -1,3 +1,4 @@
+import { getApiErrorCode, getApiErrorMessage } from '@/utils/apiError'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
@@ -53,7 +54,7 @@ export function useUserApi() {
 
       if (response.code !== 200) {
         addUserErrorCode.value = response.code ?? null
-        const errorMsg = response.message || '添加用户失败'
+        const errorMsg = response.message || t('apiErrors.userAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -63,9 +64,10 @@ export function useUserApi() {
 
       return response
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '添加用户失败'
+      addUserErrorCode.value ??= getApiErrorCode(err)
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userAddFailed'))
       error.value = errorMsg
-      if (showError && err instanceof Error && !err.message.includes('HTTP error')) {
+      if (showError) {
         message.error(errorMsg)
       }
       return null
@@ -102,19 +104,16 @@ export function useUserApi() {
       logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '更新用户失败'
+        const errorMsg = response.message || t('apiErrors.userSaveFailed')
         logger.error(`更新用户失败: ${errorMsg}`)
-        message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '更新用户失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -135,18 +134,15 @@ export function useUserApi() {
       const response = await Service.getUserApiScriptsUserGetPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取用户列表失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.userListFailed')
         throw new Error(errorMsg)
       }
 
       return response
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取用户列表失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userListFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -174,8 +170,7 @@ export function useUserApi() {
       const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '删除用户失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.userDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -185,11 +180,9 @@ export function useUserApi() {
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '删除用户失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userDeleteFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -217,18 +210,15 @@ export function useUserApi() {
       const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '用户排序失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.userOrderFailed')
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '用户排序失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userOrderFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       // loading.value = false
@@ -249,28 +239,26 @@ export function useUserApi() {
       const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取用户配置目录失败'
+        const errorMsg = response.message || t('apiErrors.userConfigPathFailed')
         throw new Error(errorMsg)
       }
 
       if (!response.path) {
-        throw new Error('获取用户配置目录失败')
+        throw new Error(t('apiErrors.userConfigPathFailed'))
       }
 
       const result = await window.electronAPI.openFile(response.path)
       if (!result.success) {
-        const openError = result.error || '打开用户配置目录失败'
+        const openError = result.error || t('apiErrors.userConfigOpenFailed')
         logger.error(`打开用户配置目录失败: ${openError}`)
         throw new Error(openError)
       }
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '打开用户配置目录失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.userConfigOpenFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false

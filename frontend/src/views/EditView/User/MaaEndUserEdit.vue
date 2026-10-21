@@ -442,7 +442,7 @@ const restoreFailedFieldSaves = (changes: Array<[string, any]>) => {
 
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
-  if (!errorMsg || errorMsg.includes('HTTP error')) {
+  if (!errorMsg) {
     message.error(t('edit.couldNotSaveUser'))
   }
   logger.error(`保存用户字段失败: ${errorMsg || '用户 API 未返回成功'}`)
@@ -698,7 +698,8 @@ const loadUserData = async () => {
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '加载用户失败')
+    if (!userError.value)
+      message.error(error instanceof Error ? error.message : t('apiErrors.userListFailed'))
     router.push('/scripts')
   }
 }
@@ -879,7 +880,7 @@ onMounted(async () => {
       isEdit.value = true
       await normalizeQuickConfig()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }

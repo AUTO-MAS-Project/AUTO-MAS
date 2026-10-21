@@ -1369,7 +1369,7 @@ const {
   openUserConfigFolder,
   loading: folderLoading,
 } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
 
@@ -4840,7 +4840,7 @@ const ensureBettergiBackup = ensureBackup
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'BetterGI') {
-    message.error(t('edit.bettergiScriptNotFound'))
+    if (!scriptApiError.value) message.error(t('edit.bettergiScriptNotFound'))
     handleCancel()
     return false
   }
@@ -4894,7 +4894,7 @@ const loadUser = async () => {
     initDragonList()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false

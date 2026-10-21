@@ -90,9 +90,8 @@ test.describe('@settings persistence', () => {
     await failed
 
     // 等待用户可见的错误提示
-    await expect(
-      page.locator('.ant-message-error').filter({ hasText: 'Could not save the setting' })
-    ).toBeVisible()
+    await expect(page.locator('.ant-message-error')).toHaveCount(1)
+    await expect(page.locator('.ant-message-error')).toContainText('Internal server error')
 
     // 界面不假装成功：控件保持原值
     await expect(closeButtonValue(page)).toHaveText(initialState)

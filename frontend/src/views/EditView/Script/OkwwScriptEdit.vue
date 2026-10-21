@@ -528,8 +528,8 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
-const { getUsers } = useUserApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getUsers, error: userApiError } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
@@ -699,6 +699,7 @@ const handleCheckUpdate = async () => {
   if (updateModal.running) return
   try {
     const resp = await getUsers(scriptId)
+    if (!resp) return
     const data = (resp?.data || {}) as Record<string, any>
     const users: UpdateUserOption[] = Object.entries(data)
       .filter(([, user]) => user?.Info?.Status !== false)
@@ -718,7 +719,7 @@ const handleCheckUpdate = async () => {
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
   }
 }
 
@@ -933,7 +934,7 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
@@ -957,7 +958,7 @@ const loadScript = async () => {
     persistedGamePath = okwwConfig.Game.Path
     persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false

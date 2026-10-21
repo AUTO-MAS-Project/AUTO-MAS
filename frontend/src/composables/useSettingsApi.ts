@@ -1,3 +1,5 @@
+import { getApiErrorMessage } from '@/utils/apiError'
+import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { GetService, UpdateService, type GlobalConfig } from '@/api'
@@ -16,18 +18,15 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取设置失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.settingsLoadFailed')
         throw new Error(errorMsg)
       }
 
       return response.data
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取设置失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.settingsLoadFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -46,18 +45,15 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || '设置修改失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.settingsSaveFailed')
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '设置修改失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.settingsSaveFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false

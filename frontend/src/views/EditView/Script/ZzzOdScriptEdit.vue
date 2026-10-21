@@ -348,7 +348,7 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -476,7 +476,7 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
@@ -491,7 +491,7 @@ const loadScript = async () => {
     Object.assign(zzzodConfig.Run, config.Run || {})
     Object.assign(zzzodConfig.Game, config.Game || {})
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false

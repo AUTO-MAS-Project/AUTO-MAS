@@ -674,7 +674,7 @@ const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -1024,7 +1024,7 @@ const loadScript = async () => {
 
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }

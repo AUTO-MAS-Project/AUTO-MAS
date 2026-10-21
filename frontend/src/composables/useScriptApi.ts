@@ -1,3 +1,4 @@
+import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -23,7 +24,11 @@ import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
 const logger = window.electronAPI.getLogger('脚本API')
 
 // 首页卫星与活动区共用在途的列表请求，完成后释放，后续读取仍取最新数据。
-let scriptListRequest: Promise<ScriptGetOut> | null = null
+interface ScriptListRequest {
+  promise: Promise<ScriptGetOut>
+  errorNotified: boolean
+}
+let scriptListRequest: ScriptListRequest | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
 const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
@@ -80,8 +85,7 @@ export function useScriptApi() {
       const response = await Service.addScriptApiScriptsAddPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '添加脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -92,15 +96,13 @@ export function useScriptApi() {
 
       return {
         scriptId: response.scriptId,
-        message: response.message || '脚本添加成功',
+        message: response.message || t('apiErrors.scriptAdded'),
         data: response.data,
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptAddFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -108,7 +110,10 @@ export function useScriptApi() {
   }
 
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
-  const getScripts = async (manageLoading: boolean = true): Promise<ScriptDetail[]> => {
+  const getScripts = async (
+    manageLoading: boolean = true,
+    options: { showError?: boolean } = {}
+  ): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
       error.value = null
@@ -117,18 +122,23 @@ export function useScriptApi() {
       error.value = null
     }
 
+    let sharedRequest: ScriptListRequest | null = null
     try {
       if (!scriptListRequest) {
-        const request = Service.getScriptApiScriptsGetPost({}).finally(() => {
+        const request: ScriptListRequest = {
+          promise: Service.getScriptApiScriptsGetPost({}),
+          errorNotified: false,
+        }
+        request.promise = request.promise.finally(() => {
           if (scriptListRequest === request) scriptListRequest = null
         })
         scriptListRequest = request
       }
-      const response = await scriptListRequest
+      sharedRequest = scriptListRequest
+      const response = await sharedRequest.promise
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取脚本列表失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptListFailed')
         throw new Error(errorMsg)
       }
 
@@ -141,9 +151,11 @@ export function useScriptApi() {
         config: response.data[indexItem.uid],
       }))
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptListFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
+      // 共享同一在途请求的多个消费者只弹一次；显式重试仍有自己的提示。
+      if ((options.showError ?? true) && !sharedRequest?.errorNotified) {
+        if (sharedRequest) sharedRequest.errorNotified = true
         message.error(errorMsg)
       }
       return []
@@ -163,14 +175,13 @@ export function useScriptApi() {
       const response = await Service.getScriptApiScriptsGetPost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取脚本详情失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptLoadFailed')
         throw new Error(errorMsg)
       }
 
       // 检查是否有数据返回
       if (response.index.length === 0) {
-        throw new Error('脚本不存在')
+        throw new Error(t('edit.scriptDoesNotExist'))
       }
 
       const item = response.index[0]
@@ -185,11 +196,9 @@ export function useScriptApi() {
         config,
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptLoadFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -206,11 +215,11 @@ export function useScriptApi() {
         engine
       )
       if (payload?.code !== 200) {
-        throw new Error(payload?.message || '接口返回异常')
+        throw new Error(payload?.message || t('apiErrors.invalidResponse'))
       }
       return payload.data ?? null
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取 HSR 体力副本选项失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.hsrStagesFailed'))
       error.value = errorMsg
       logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
       return null
@@ -222,11 +231,13 @@ export function useScriptApi() {
     path: string,
     scriptId?: string
   ): Promise<MaaFWInterfacePreviewOut | null> => {
+    error.value = null
     try {
       // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
       return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
+      error.value = errorMsg
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
       return null
     }
@@ -237,6 +248,7 @@ export function useScriptApi() {
     scriptId?: string,
     force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    error.value = null
     try {
       return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
         path,
@@ -244,7 +256,8 @@ export function useScriptApi() {
         force,
       })
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwEnvFailed'))
+      error.value = errorMsg
       logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
       return null
     }
@@ -253,13 +266,14 @@ export function useScriptApi() {
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
-      if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
+      if (response?.code !== 200)
+        throw new Error(response?.message || t('apiErrors.invalidResponse'))
       return response
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maaEndOptionsFailed'))
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error(t('misc.maaendIncompleteUninstallIt'))
+      message.error(errorMsg)
       return null
     }
   }
@@ -273,8 +287,7 @@ export function useScriptApi() {
       const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '删除脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -285,11 +298,9 @@ export function useScriptApi() {
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '删除脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptDeleteFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -324,19 +335,16 @@ export function useScriptApi() {
       })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '更新脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptSaveFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptSaveFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -356,19 +364,16 @@ export function useScriptApi() {
       const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '脚本排序失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptOrderFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptOrderFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       // loading.value = false

@@ -197,7 +197,7 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('奇想盒脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 const { data: catalogData, fetchCatalog } = useWhimboxTaskCatalog()
 
 const scriptId = route.params.id as string
@@ -303,7 +303,7 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
@@ -319,7 +319,7 @@ const loadScript = async () => {
     // 目录已配置时顺带拉一次目录接口，展示上游版本（refreshUpstreamVersion 自带空目录守卫）
     void refreshUpstreamVersion()
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false

@@ -8,6 +8,32 @@
  * en-US.ts 缺失的 key 会自动回退到这里。
  */
 export default {
+  apiErrors: {
+    scriptAddFailed: '添加脚本失败',
+    scriptListFailed: '获取脚本列表失败',
+    scriptLoadFailed: '获取脚本详情失败',
+    scriptDeleteFailed: '删除脚本失败',
+    scriptSaveFailed: '更新脚本失败',
+    scriptOrderFailed: '脚本排序失败',
+    scriptAdded: '脚本添加成功',
+    userAddFailed: '添加账号失败',
+    userSaveFailed: '更新账号失败',
+    userListFailed: '获取账号列表失败',
+    userDeleteFailed: '删除账号失败',
+    userOrderFailed: '账号排序失败',
+    userConfigPathFailed: '获取账号配置目录失败',
+    userConfigOpenFailed: '打开账号配置目录失败',
+    settingsLoadFailed: '获取设置失败',
+    settingsSaveFailed: '设置修改失败',
+    hsrStagesFailed: '获取 HSR 体力副本选项失败',
+    maaEndOptionsFailed: '获取 MaaEnd 动态选项失败',
+    maafwPreviewFailed: '读取项目接口失败',
+    maafwEnvFailed: '准备脚本运行环境失败',
+    invalidResponse: '接口返回异常',
+    requestFailed: '请求失败，请重试',
+    userLoadRetry: '账号读取失败：{reason}',
+    retry: '重试',
+  },
   eventDepotPreview: {
     runtimeUnresolved: '部分活动选关、材料或目标暂不可用，本轮跳过；原配置已保留。',
     legacyFallback: '旧活动选关序号超出当期范围，本轮沿用旧版第一关回退；原选择已保留。',

@@ -384,7 +384,7 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('OK-NTE用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser } = useUserApi()
+const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
 const { getScript } = useScriptApi()
 const {
   oknteConfigLoading,
@@ -672,7 +672,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
