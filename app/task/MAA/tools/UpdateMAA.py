@@ -28,6 +28,7 @@ from app.utils import ProcessRunner, get_logger
 from app.utils.io import read_file, write_file
 
 from ..base_preset import ensure_maa_default_configuration
+from .native_config import maa_scheme_name
 from .resource_update import _wait_for_cleanup
 
 logger = get_logger("MAA 更新工具")
@@ -66,6 +67,12 @@ async def update_maa(maa_path: Path):
         )
 
     maa_new_set = read_file(maa_path / "config/gui.new.json")
+    active_scheme = maa_scheme_name(maa_new_set)
+    original_default = None
+    if active_scheme != "Default":
+        configurations = maa_new_set.get("Configurations")
+        if isinstance(configurations, dict):
+            original_default = configurations.get("Default")
 
     # 把生效方案归一为 Default；Default 本身也可能缺失——沿用安装目录配置时
     # 该文件不由 MAS 生成，兜底必须无条件执行。
@@ -103,6 +110,17 @@ async def update_maa(maa_path: Path):
     # 无人值守拉起装更新，公告与更新后首启的版本说明弹窗一并关闭
     maa_new_set.setdefault("AnnouncementInfo", {})["DoNotShow"] = True
     update_set["DoNotShowUpdate"] = True
+
+    # ensure 会把活动方案折叠成 Default；更新安装目录配置时只改活动方案，
+    # 再把原来的 Default 和 Current 放回去，别动用户其它方案的设置。
+    if active_scheme != "Default":
+        configurations = maa_new_set["Configurations"]
+        configurations[active_scheme] = configurations["Default"]
+        if original_default is None:
+            configurations.pop("Default", None)
+        else:
+            configurations["Default"] = original_default
+        maa_new_set["Current"] = active_scheme
 
     write_file(maa_path / "config/gui.new.json", maa_new_set)
 
