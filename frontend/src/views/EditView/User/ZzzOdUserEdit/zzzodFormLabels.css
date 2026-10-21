@@ -1,0 +1,11 @@
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+}
