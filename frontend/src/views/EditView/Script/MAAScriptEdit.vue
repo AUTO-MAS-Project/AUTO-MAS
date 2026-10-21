@@ -651,6 +651,8 @@ const selectMAAPath = async () => {
 }
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped src="@/styles/scriptEdit.css"></style>
 
 <style scoped>

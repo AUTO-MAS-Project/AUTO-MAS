@@ -566,4 +566,6 @@ const selectSRCPath = async () => {
 }
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped src="@/styles/scriptEdit.css"></style>

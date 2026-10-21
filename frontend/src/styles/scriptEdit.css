@@ -1,8 +1,5 @@
-/* MAA / SRC 的公共编辑表单；通过 scoped 样式引入，不向其他页面广播。 */
+/* MAA / SRC / General 的编辑表单增强样式；通过 scoped 样式引入，不向其他页面广播。 */
 /* 内容区域 */
-.script-edit-content {
-  flex: 1;
-}
 
 .config-card {
   border-radius: 16px;
@@ -10,13 +7,10 @@
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
 }
 
 .config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
   border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
 }
 
 .config-card :deep(.ant-card-head-title) {
@@ -26,15 +20,10 @@
 }
 
 .config-card :deep(.ant-card-body) {
-  padding: 32px;
   background: var(--ant-color-bg-container);
 }
 
 .type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
   border: none;
 }
 
@@ -43,33 +32,18 @@
   max-width: none;
 }
 
-.form-section {
-  margin-bottom: 12px;
-}
-
 .form-section:last-child {
   margin-bottom: 0;
 }
 
-/* 紧凑脚本表单沿用 6px 标题间距，其余标题规则来自 formSection.css。 */
-.section-header {
-  margin-bottom: 6px;
-}
-
 /* 表单标签 */
 .form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
   color: var(--ant-color-text);
   font-size: 14px;
 }
 
 .help-icon {
-  color: var(--ant-color-text-tertiary);
   font-size: 14px;
-  cursor: help;
   transition: color 0.3s ease;
 }
 
@@ -132,9 +106,7 @@
 
 /* 路径输入组 */
 .path-input-group {
-  display: flex;
   border-radius: 8px;
-  overflow: hidden;
   border: 2px solid var(--ant-color-border);
   transition: all 0.3s ease;
 }
@@ -149,9 +121,6 @@
 }
 
 .path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
   background: var(--ant-color-bg-container) !important;
 }
 
@@ -160,14 +129,7 @@
 }
 
 .path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
   transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
 }
 
 .path-button:hover {
@@ -177,9 +139,6 @@
 }
 
 /* 表单项间距 */
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
 
 .config-form :deep(.ant-form-item-label) {
   padding-bottom: 8px;
@@ -226,16 +185,17 @@ html.dark .modern-number-input :deep(.ant-input-number-focused) {
 }
 
 @media (max-width: 768px) {
+  /* 继续覆盖上面的 1200px 留白规则；公共表单中的窄屏规则先于本文件加载。 */
+  .config-card :deep(.ant-card-body) {
+    padding: 20px;
+  }
+
   .config-card :deep(.ant-card-head) {
     padding: 16px 20px;
   }
 
   .config-card :deep(.ant-card-head-title) {
     font-size: 20px;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
   }
 
   .section-header h3 {

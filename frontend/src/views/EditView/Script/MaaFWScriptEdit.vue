@@ -1,29 +1,13 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img :src="flavor.logo" :alt="flavor.typeTagLabel" class="breadcrumb-logo" />
-            {{ pageTitle }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="flavor.docUrl" />
-      <a-button size="large" class="cancel-button" :disabled="shellImporting" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader
+    :script-type="flavor.type"
+    :title="pageTitle"
+    :doc-url="flavor.docUrl"
+    :logo-src="flavor.logo"
+    :logo-alt="flavor.typeTagLabel"
+    :cancel-disabled="shellImporting"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
@@ -231,12 +215,11 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import DocLink from '@/components/DocLink.vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
 import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
@@ -352,44 +335,6 @@ const hasBesidePackageName = computed(
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
 .script-edit-content {
   flex: 1;
 }
@@ -415,9 +360,5 @@ const hasBesidePackageName = computed(
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 20px;
-}
-
-.cancel-button {
-  height: 40px;
 }
 </style>
