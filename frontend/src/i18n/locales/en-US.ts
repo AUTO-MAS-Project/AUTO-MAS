@@ -7,6 +7,7 @@
  */
 export default {
   apiErrors: {
+    emulatorDevicesFailed: 'Could not load emulator instances',
     scriptAddFailed: 'Failed to add the managed script',
     scriptListFailed: 'Failed to load managed scripts',
     scriptLoadFailed: 'Failed to load the managed script',

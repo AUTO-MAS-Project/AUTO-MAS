@@ -22,6 +22,7 @@ import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
+import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -335,7 +336,7 @@ const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
-      void invalidateEmulatorOptions()
+      await invalidateEmulatorOptions()
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
@@ -442,7 +443,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
 
     if (response.code === 200) {
       logger.info(`配置已保存: ${key}`)
-      if (key === 'name' || key === 'type') void invalidateEmulatorOptions()
+      if (key === 'name' || key === 'type') await invalidateEmulatorOptions()
+      if (key === 'path' || key === 'type') await invalidateEmulatorDeviceOptions(uuid)
       // 保存成功后重新获取最新配置
       await refreshEmulatorConfig(uuid)
     } else {
@@ -464,7 +466,8 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
-      void invalidateEmulatorOptions()
+      await invalidateEmulatorOptions()
+      await invalidateEmulatorDeviceOptions(uuid)
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
         const currentIndex = emulatorIndex.value.findIndex(e => e.uid === uuid)
@@ -552,7 +555,7 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
     message.error(t('emulator.toast.importEmulatorFailed'))
   } finally {
     // 添加已成功时，即使后续配置失败，列表也需要反映新建的模拟器。
-    if (added) void invalidateEmulatorOptions()
+    if (added) await invalidateEmulatorOptions()
   }
 }
 

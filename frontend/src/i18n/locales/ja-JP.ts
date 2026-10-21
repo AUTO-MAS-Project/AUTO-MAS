@@ -9,6 +9,7 @@
  */
 export default {
   apiErrors: {
+    emulatorDevicesFailed: 'エミュレーターのインスタンスを取得できませんでした',
     scriptAddFailed: '管理対象スクリプトの追加に失敗しました',
     scriptListFailed: '管理対象スクリプト一覧の取得に失敗しました',
     scriptLoadFailed: '管理対象スクリプトの取得に失敗しました',

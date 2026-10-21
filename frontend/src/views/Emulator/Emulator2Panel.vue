@@ -25,6 +25,7 @@ import {
 import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { useAvdApi } from '@/composables/useAvdApi'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
@@ -267,13 +268,17 @@ const confirmAdd = async () => {
         )
       }
     }
+  } catch (error) {
+    const detail = getApiErrorMessage(error, t('emulator.toast.addFailed'))
+    logger.error(`添加模拟器路径失败: ${detail}`)
+    message.error(detail)
   } finally {
     adding.value = false
   }
   if (added > 0) {
     message.success(t('emulator2.toast.addOk', { count: added }))
     searchOpen.value = false
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   }
 }
@@ -312,7 +317,7 @@ const confirmRemove = async () => {
     }
     message.success(t('emulator2.toast.removeOk'))
     removeOpen.value = false
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -340,7 +345,7 @@ const avdRoots = computed(() =>
 )
 
 const onAvdAdded = async () => {
-  invalidateEmulatorDeviceOptions()
+  await invalidateEmulatorDeviceOptions()
   await loadDevices({ silent: true })
 }
 
@@ -409,7 +414,7 @@ const confirmCreate = async () => {
       return
     }
     message.success(t('emulator2.toast.createOk', { slot: response.slot }))
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     await loadDevices({ silent: true })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -461,7 +466,7 @@ const confirmDelete = async () => {
       return
     }
     message.success(t('emulator2.toast.deleteOk'))
-    invalidateEmulatorDeviceOptions()
+    await invalidateEmulatorDeviceOptions()
     // 确认没了才从列表里去掉；后端已经给该设备号写了墓碑，重新拉也不会再出现
     devices.value = devices.value.filter(item => item.slot !== slot)
   } catch (error) {

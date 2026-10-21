@@ -9,6 +9,7 @@
  */
 export default {
   apiErrors: {
+    emulatorDevicesFailed: '加载模拟器实例选项失败',
     scriptAddFailed: '添加脚本失败',
     scriptListFailed: '获取脚本列表失败',
     scriptLoadFailed: '获取脚本详情失败',
