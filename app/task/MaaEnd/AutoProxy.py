@@ -569,15 +569,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         task_name = self._game_setting_pretask()
         if task_name is None:
             raise RuntimeError("当前 MaaEnd 不支持所选启动方式的游戏设置入口")
-        if (
-            not preserve_running_game
-            and self.mode == self.first_run_mode
-            and self.script_config.Game.SetResolution
-        ):
-            self._read_original_game_settings()
-            # 新版检测游戏已运行会直接返回，应用设置前须先关闭游戏。
-            # 调用方持有启动器锁；此处不能再次获取同一把锁。
-            await self._kill_game_process_unlocked()
         interface = load_interface_model(self.maaend_root_path)
         controller_name = str(self.script_config.Game.ControllerType)
         controller = next(
@@ -598,6 +589,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         ):
             launcher_path = self._launcher_path()
             if launcher_path is not None:
+                await asyncio.to_thread(verify_launcher_signature, launcher_path)
                 # 仅覆盖传给上游的本轮参数，不固化到原生或 MAS 配置来源。
                 setting_options["LaunchGamePCLauncherPath"] = {
                     "type": "select",
@@ -638,6 +630,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             raise RuntimeError(
                 "当前 MaaEnd 不支持此控制器的游戏启动设置，请更新 MaaEnd"
             )
+        if (
+            not preserve_running_game
+            and self.mode == self.first_run_mode
+            and self.script_config.Game.SetResolution
+        ):
+            self._read_original_game_settings()
+            # 路径、签名与预任务参数全部就绪后再关闭游戏，校验失败不打断现有游戏。
+            # 新版检测游戏已运行会直接返回；调用方持有启动器锁，此处不能再次获取。
+            await self._kill_game_process_unlocked()
         await push_dispatch_log(
             self.script_info,
             "正在由 MaaEnd 启动游戏..."
