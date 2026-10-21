@@ -51,6 +51,7 @@ from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
     CONFIG_FILES,
     convert_legacy,
+    is_blank_file,
     preserve_pre_upgrade,
     upgrade_json_configs,
 )
@@ -445,7 +446,9 @@ class AppConfig:
             await self._upgrade_legacy_data()
             if self.setting.activation_state == NodeState.INACTIVE:
                 source = self.config_path / "Config.json"
-                if source.exists():
+                if source.exists() and not is_blank_file(source):
+                    # 空白主配置没有可迁数据，跳过转换；随后统一升级会按默认
+                    # 配置生成 setting.yaml 并照常归档，激活走下方统一分支。
                     from app.utils.io import read_dict_file
 
                     self.setting = GlobalConfig.build(
