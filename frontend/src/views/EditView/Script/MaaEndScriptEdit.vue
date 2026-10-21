@@ -270,7 +270,15 @@
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
-                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+                :help="
+                  !canSetResolution
+                    ? t(
+                        maaEndLaunchSupported
+                          ? 'edit.maaEndResolutionRequiresNative'
+                          : 'edit.maaEndResolutionUnsupported'
+                      )
+                    : undefined
+                "
               >
                 <a-select
                   :value="canSetResolution && maaEndConfig.Game.SetResolution"

@@ -145,15 +145,26 @@ const nativeLauncherHelp = computed(() =>
 const canConfigureLauncher = computed(
   () => props.capabilitiesReady && (usesMasLauncher.value || props.maaEndLaunchSupported)
 )
-const launchModeOptions = computed(() => [
-  { value: 'Launcher', label: t('edit.launchViaLauncher') },
-  { value: 'MAS', label: t('edit.maaEndLaunchViaMas') },
-  {
-    value: 'MaaEnd',
-    label: t('edit.maaEndLaunchViaMaaEnd'),
-    disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
-  },
-])
+const recommendedLabel = (name: string, native: boolean) =>
+  props.capabilitiesReady && props.maaEndLaunchSupported === native
+    ? t('edit.maaEndRecommendedLaunch', { name })
+    : name
+const launchModeOptions = computed(() => {
+  const options = [
+    { value: 'Launcher', label: t('edit.launchViaLauncher') },
+    { value: 'MAS', label: recommendedLabel(t('edit.maaEndLaunchViaMas'), false) },
+    {
+      value: 'MaaEnd',
+      label: recommendedLabel(t('edit.maaEndLaunchViaMaaEnd'), true),
+      disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
+    },
+  ]
+  if (!props.capabilitiesReady) return options
+  const recommended = props.maaEndLaunchSupported ? 'MaaEnd' : 'MAS'
+  return options.sort(
+    (left, right) => Number(right.value === recommended) - Number(left.value === recommended)
+  )
+})
 const launchHint = computed(() => {
   const description = t(
     props.launchMode === 'MaaEnd'

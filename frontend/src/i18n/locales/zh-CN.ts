@@ -1926,6 +1926,7 @@ export default {
       '启动器启动：MAS 操作官方启动器；MAS 启动：MAS 创建游戏进程；MaaEnd 启动：调用 MaaEnd 自带启动入口。支持情况按当前安装和控制器识别。',
     maaEndLaunchViaMas: 'MAS 启动',
     maaEndLaunchViaMaaEnd: 'MaaEnd 启动',
+    maaEndRecommendedLaunch: '{name}（推荐）',
     maaEndLauncherModeHint: '由 MAS 操作官方启动器，兼容新旧 MaaEnd。',
     maaEndMasModeHint: '由 MAS 直接创建游戏进程，仍需官方启动器。',
     maaEndNativeModeHint: '由 MaaEnd 自带入口启动游戏并应用其支持的游戏设置。',
@@ -1943,6 +1944,8 @@ export default {
     maaEndArgumentsUnsupported: '此处启动参数仅用于 MAS 启动；其他方式请使用官方启动器支持的设置。',
     maaEndResolutionUnsupported:
       '当前 MaaEnd 和启动方式不支持独立设置分辨率，使用游戏现有设置；已保存的设置仍保留。',
+    maaEndResolutionRequiresNative:
+      '当前版本仅 MaaEnd 启动支持设置分辨率，请切换启动方式；已保存的设置仍保留。',
     maaEndLauncherPath: '终末地官方启动器',
     maaEndLauncherPathSource: '启动器路径来源',
     maaEndLauncherSourceAuto: '自动识别',
