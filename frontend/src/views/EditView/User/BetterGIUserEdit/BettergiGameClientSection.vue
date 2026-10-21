@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
@@ -20,6 +20,18 @@ const props = defineProps<{
   saveField: (key: 'Switch.GamePath' | 'Switch.Resource', value: string) => Promise<boolean>
 }>()
 const { t } = useI18n()
+let active = true
+let readVersion = 0
+let saveVersion = 0
+let failedPath: string | null = null
+let failedResource: string | null = null
+let pendingPathSave: { config: GameClientDraft; path: string; result: Promise<boolean> } | null =
+  null
+onScopeDispose(() => {
+  active = false
+  readVersion += 1
+  saveVersion += 1
+})
 const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useBetterGIUpdate(
   () => props.userId
 )
@@ -104,9 +116,11 @@ const syncResourceWithChannel = async () => {
     }
     return
   }
-  if (props.config.Resource !== channel) {
+  if (props.config.Resource !== channel || failedResource === channel) {
     props.config.Resource = channel
-    await props.saveField('Switch.Resource', channel)
+    const saved = await props.saveField('Switch.Resource', channel)
+    failedResource = saved ? null : channel
+    if (!saved || !active) return
     message.success(
       t('edit.bettergiGameClientSynced', {
         server: channel === '官服' ? t('edit.bettergiServerCn') : t('edit.bettergiServerBili'),
@@ -116,11 +130,18 @@ const syncResourceWithChannel = async () => {
 }
 
 const loadGameClientInfo = async () => {
+  const version = ++readVersion
+  const config = props.config
+  const path = config.GamePath
+  const inputAtStart = gamePathInput.value
+  const current = () =>
+    active && version === readVersion && config === props.config && path === props.config.GamePath
   try {
     const resp = await BetterGiService.getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
       props.scriptId,
       props.config.GamePath || ''
     )
+    if (!current()) return
     if (resp.status === 'success') {
       gameClientInfo.value = {
         installPath: resp.installPath || '',
@@ -131,24 +152,42 @@ const loadGameClientInfo = async () => {
       gameClientInfo.value = null
     }
   } catch {
+    if (!current()) return
     // 展示旁路：识别失败不影响配置编辑
     gameClientInfo.value = null
   }
   // 输入框默认值：用户配置优先，否则直接显示 BGI 维护的路径（可编辑）
-  syncGamePathInput()
+  if (gamePathInput.value === inputAtStart) syncGamePathInput()
 }
 
 const handleGamePathSaved = async () => {
+  if (props.locked || !active) return
+  const version = ++saveVersion
+  const config = props.config
   const input = (gamePathInput.value || '').trim()
   const globalPath = gameClientInfo.value?.globalPath || ''
   // 输入值与 BGI 当前路径一致 → 存空（跟随），否则存显式覆盖
   const followsGlobal = !!globalPath && normalizePath(input) === normalizePath(globalPath)
   const next = followsGlobal ? '' : input
-  if (next !== props.config.GamePath) {
+  const existingSave =
+    pendingPathSave?.config === config && pendingPathSave.path === next ? pendingPathSave : null
+  if (next !== props.config.GamePath || failedPath === next || existingSave) {
     props.config.GamePath = next
-    await props.saveField('Switch.GamePath', next)
+    const pending = existingSave ?? {
+      config,
+      path: next,
+      result: props.saveField('Switch.GamePath', next),
+    }
+    pendingPathSave = pending
+    const saved = await pending.result
+    if (pendingPathSave === pending) pendingPathSave = null
+    if (!active || version !== saveVersion || config !== props.config) return
+    failedPath = saved ? null : next
+    if (!saved) return
   }
+  if (!active || version !== saveVersion || config !== props.config) return
   await loadGameClientInfo()
+  if (!active || version !== saveVersion || config !== props.config) return
   await syncResourceWithChannel()
 }
 
@@ -183,7 +222,9 @@ const clearGameClient = async () => {
 }
 
 const handleResourceChange = async (value: string) => {
-  await props.saveField('Switch.Resource', value)
+  const saved = await props.saveField('Switch.Resource', value)
+  failedResource = saved ? null : value
+  if (!saved || !active) return
   const channel = gameClientInfo.value?.channel
   const expected = RESOURCE_EXPECTED_CHANNEL[value]
   if (!channel || !expected || expected === channel) return

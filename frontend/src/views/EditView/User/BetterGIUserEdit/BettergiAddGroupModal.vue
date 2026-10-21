@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, nextTick, reactive } from 'vue'
+import { computed, ref, nextTick, reactive, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FolderOpenOutlined, GlobalOutlined, PlayCircleOutlined } from '@ant-design/icons-vue'
@@ -49,6 +49,10 @@ const configLocked = computed(() => props.locked)
 const groupsEditable = computed(() => props.editable)
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
+let loadVersion = 0
+onScopeDispose(() => {
+  loadVersion += 1
+})
 const chipEditor = ref<InstanceType<typeof BettergiAddChips> | null>(null)
 const sourcePicker = ref<InstanceType<typeof BettergiAddSources> | null>(null)
 const clearChipSelection = () => chipEditor.value?.clearSelection()
@@ -194,6 +198,8 @@ const openAddScriptToGroup = async () => {
 }
 
 const openAddModalCommon = async (defaultTab: 'scriptgroup' | 'js' | 'pathing' | 'keymouse') => {
+  const version = ++loadVersion
+  const current = () => version === loadVersion && addModal.open
   addModal.items = []
   addModal.draft = ''
   addModal.activeTab = defaultTab
@@ -202,6 +208,7 @@ const openAddModalCommon = async (defaultTab: 'scriptgroup' | 'js' | 'pathing' |
   addModal.open = true
   // 仅读取 BetterGI 现有自定义组作为弹窗候选；不再合并进管理表，避免打开弹窗即自动入队
   const bgiGroups = await props.listCustomGroups()
+  if (!current()) return
   bgiCustomCandidates.value = bgiGroups
     .map(r => r.name)
     .filter(n => resolveStoredRowKind(n) === 'custom')
@@ -212,11 +219,13 @@ const openAddModalCommon = async (defaultTab: 'scriptgroup' | 'js' | 'pathing' |
     loadBettergiDirs(),
     loadPathingTree(),
   ])
+  if (!current()) return
   buildCandidates()
 }
 
 // 关闭弹窗（两模式共用）
 const cancelAddModal = () => {
+  loadVersion += 1
   addModal.addToGroupMode = false
   clearChipSelection()
   addModal.open = false

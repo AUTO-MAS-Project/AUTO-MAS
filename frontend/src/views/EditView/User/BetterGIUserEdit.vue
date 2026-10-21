@@ -337,7 +337,7 @@
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </h3>
-              <a-button size="small" @click="restoreOpen = true">
+              <a-button size="small" @click="openRestore">
                 <template #icon>
                   <HistoryOutlined />
                 </template>
@@ -858,7 +858,7 @@ import { useBettergiCatalogs } from './BetterGIUserEdit/useBettergiCatalogs'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -1256,6 +1256,7 @@ const {
   updateSettingField,
   saveDragonGroupSettings,
   flushPending,
+  invalidateReads: invalidateGroupReads,
 } = useBettergiGroupSettings({
   scriptId,
   userId,
@@ -1499,6 +1500,7 @@ const handleSaveBettergiConfig = async () => {
 }
 
 const handleCancel = async () => {
+  if (!(await flushPending(true))) return
   await stopSession()
   await router.push('/scripts')
 }
@@ -1507,6 +1509,11 @@ const handleCancel = async () => {
 // 专项统一名（文案参数化用）：BetterGI 统一叫「bettergi」
 const BETTERGI_DISPLAY_NAME = 'bettergi'
 const restoreOpen = ref(false)
+const openRestore = async () => {
+  if (!(await flushPending(true))) return
+  await enqueue(() => Promise.resolve(true))
+  restoreOpen.value = true
+}
 
 // 目标池顺序 = segmented 展示顺序：MAS 用户配置（在前）、BetterGI 原生配置（在后）
 const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
@@ -1612,6 +1619,10 @@ const loadScriptInfo = async (): Promise<boolean> => {
 }
 
 const loadUser = async () => {
+  isInitializing.value = true
+  invalidateGroupReads()
+  catalogs.invalidateReads()
+  selectedGroupIdentity.value = null
   pageLoading.value = true
   try {
     if (!userId.value) {
@@ -1636,6 +1647,7 @@ const loadUser = async () => {
     // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「原生来源 + 开」），
     // 以 Mode 为准归一，与保存路径（handleConfigModeChange）及后端 BetterGIUserConfig.load 一致。
     formData.Info.IfQuickConfig = formData.Info.Base !== 'native'
+    await loadScriptGroups()
     // 一条龙名称为必填：历史空值归一为「默认配置」
     if (!formData.Task.OneDragonConfigName) {
       formData.Task.OneDragonConfigName = '默认配置'
@@ -1690,9 +1702,15 @@ onUnmounted(() => {
   // 退出编辑页：先停会话再归档 MAS 用户配置终态——并行会与 final_task 的
   // 收尾撞车、归档到半程状态；会话未开时 dispose 立即返回，不影响归档时机
   void (async () => {
+    await flushPending(true)
     await disposeGuiSession()
     await ensureBettergiBackup('mas')
   })()
+})
+
+onBeforeRouteLeave(async () => {
+  if (!(await flushPending(true))) return false
+  await enqueue(() => Promise.resolve(true))
 })
 
 const addGroupModal = ref<InstanceType<typeof BettergiAddGroupModal> | null>(null)

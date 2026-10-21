@@ -1,4 +1,4 @@
-import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, ref, toValue, onScopeDispose, type MaybeRefOrGetter } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { BetterGiService, type BetterGIPathingNode, type ComboBoxItem } from '@/api'
@@ -8,6 +8,19 @@ import { openExternalUrl } from '@/utils/openExternal'
 export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<string>) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('BetterGI用户编辑')
+  let active = true
+  let sequence = 0
+  const versions = new Map<string, number>()
+  const trackRead = (key: string) => {
+    const version = ++sequence
+    versions.set(key, version)
+    return () => active && versions.get(key) === version
+  }
+  const invalidateReads = () => versions.clear()
+  onScopeDispose(() => {
+    active = false
+    invalidateReads()
+  })
   // 可加入一条龙的 BetterGI 自定义 JS 脚本候选。
   // value=脚本目录名（BetterGI 按目录名定位任务，落库/执行用它）；label=manifest 中文显示名（展示用）。
   const jsScriptOptions = ref<{ label: string; value: string }[]>([])
@@ -79,9 +92,11 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
 
   // 加载可加入一条龙的 BetterGI 自定义 JS 脚本（实时扫描，反映玩家手工放置/订阅的脚本）
   const loadJsScripts = async () => {
+    const current = trackRead('js')
     try {
       const resp =
         await BetterGiService.getBettergiJsScriptsApiApiScriptsBettergiJsScriptsGet(scriptId)
+      if (!current()) return
       jsScriptOptions.value = (resp.data || [])
         .filter(
           (item): item is ComboBoxItem & { label: string; value: string } =>
@@ -96,12 +111,15 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
   // 加载 BetterGI「配置组」候选（BGI User/ScriptGroup + 该用户 per-user 副本的文件名并集）。
   // userId 非空时后端把 MAS 独立配置下用户自建的副本名一并返回，复制出的新组才能被识别为可编辑 scriptgroup。
   const loadScriptGroups = async () => {
+    const current = trackRead('groups')
+    const contextUserId = toValue(userId)
     try {
       const resp =
         await BetterGiService.getBettergiScriptGroupsApiApiScriptsBettergiScriptGroupsGet(
           scriptId,
-          toValue(userId) || undefined
+          contextUserId || undefined
         )
+      if (!current() || contextUserId !== toValue(userId)) return
       scriptGroupOptions.value = (resp.data || [])
         .filter(
           (item): item is ComboBoxItem & { label: string; value: string } =>
@@ -115,11 +133,13 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
 
   // 加载 BetterGI「录制」候选（BGI User/KeyMouseScript 下的键鼠脚本文件名）。
   const loadKeyMouseScripts = async () => {
+    const current = trackRead('recordings')
     try {
       const resp =
         await BetterGiService.getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
           scriptId
         )
+      if (!current()) return
       keyMouseOptions.value = (resp.data || [])
         .filter(
           (item): item is ComboBoxItem & { label: string; value: string } =>
@@ -142,9 +162,10 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
 
   // 加载三个常用目录（打开按钮用）与 AutoPathing 目录树
   const loadBettergiDirs = async () => {
+    const current = trackRead('directories')
     try {
       const resp = await BetterGiService.getBettergiScriptDirsApiApiScriptsBettergiDirsGet(scriptId)
-      if (resp && resp.repoDir != null) {
+      if (current() && resp && resp.repoDir != null) {
         bettergiDirs.value = {
           repoDir: resp.repoDir,
           jsScriptDir: resp.jsScriptDir ?? undefined,
@@ -212,11 +233,13 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
 
   // 加载 AutoPathing 目录树
   const loadPathingTree = async () => {
+    const current = trackRead('pathing')
     try {
       const resp =
         await BetterGiService.getBettergiAutoPathingTreeApiApiScriptsBettergiAutoPathingTreeGet(
           scriptId
         )
+      if (!current()) return
       pathingTreeRoot.value = resp.root || ''
       pathingTreeDirs.value = resp.dirs || []
       // 默认选中第一个顶层目录，让右表立刻有内容
@@ -267,6 +290,7 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
     return collect(selectedPathingNode.value)
   })
   return {
+    invalidateReads,
     jsScriptOptions,
     isJsScriptName,
     scriptGroupOptions,

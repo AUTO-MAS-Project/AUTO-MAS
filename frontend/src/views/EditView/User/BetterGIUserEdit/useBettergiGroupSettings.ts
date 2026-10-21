@@ -1,4 +1,4 @@
-import { computed, ref, watch, toValue, type Ref, type MaybeRefOrGetter } from 'vue'
+import { computed, ref, watch, toValue, onScopeDispose, type Ref, type MaybeRefOrGetter } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { BetterGIDomainCatalogItem } from '@/api'
@@ -36,6 +36,21 @@ export function useBettergiGroupSettings(options: {
   } = options
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('BetterGI用户编辑')
+  let active = true
+  let readVersion = 0
+  let selectionVersion = 0
+  let editVersion = 0
+  const invalidateReads = () => {
+    readVersion += 1
+    selectionVersion += 1
+    dragonSettingsLoading.value = false
+  }
+  onScopeDispose(() => {
+    active = false
+    invalidateReads()
+    if (dragonGroupAutoSaveTimer) clearTimeout(dragonGroupAutoSaveTimer)
+    dragonGroupAutoSaveTimer = null
+  })
   // 当前选中内置组的设置分组（无字段返回空）
   const currentGroupSettingSections = computed<DragonSettingSection[]>(() => {
     const sel = selectedGroupIdentity.value
@@ -128,6 +143,7 @@ export function useBettergiGroupSettings(options: {
   // 编辑字段：本地即时更新并自动落库（无需点「保存设置」）；按数据来源分流到对应 store，
   // 再经 debounce 写回。字段来源必须与 DragonSettingField.source 对齐。
   const updateSettingField = (field: DragonSettingField, value: unknown) => {
+    editVersion += 1
     if (field.source === 'globalDomain') {
       globalDomainSettings.value = { ...globalDomainSettings.value, [field.key]: value }
       globalDomainSettingsDirty.value = true
@@ -144,6 +160,16 @@ export function useBettergiGroupSettings(options: {
   // 读取该用户一条龙配置设置项 + （如需要）全局秘境/幽境段（切换选中行时刷新）
   const loadDragonGroupSettings = async () => {
     const sel = selectedGroupIdentity.value
+    const version = ++readVersion
+    const revision = editVersion
+    const contextUserId = userId.value
+    const current = () =>
+      active &&
+      version === readVersion &&
+      revision === editVersion &&
+      contextUserId === userId.value &&
+      sel?.uid === selectedGroupIdentity.value?.uid &&
+      sel?.key === selectedGroupIdentity.value?.key
     dragonGroupSaveSel = sel ?? null
     if (!sel || sel.kind !== 'builtin' || !userId.value) {
       dragonSettings.value = {}
@@ -171,6 +197,7 @@ export function useBettergiGroupSettings(options: {
           ? fetchDomainCatalog(scriptId)
           : Promise.resolve<BetterGIDomainCatalogItem[]>([]),
       ])
+      if (!current()) return
       dragonSettings.value = dragon
       dragonSettingsDirty.value = false
       globalDomainSettings.value = globalDomain
@@ -179,10 +206,11 @@ export function useBettergiGroupSettings(options: {
       globalStygianSettingsDirty.value = false
       domainCatalog.value = catalog
     } catch (e) {
+      if (!current()) return
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsLoadFailed'))
     } finally {
-      dragonSettingsLoading.value = false
+      if (version === readVersion) dragonSettingsLoading.value = false
     }
   }
 
@@ -194,6 +222,10 @@ export function useBettergiGroupSettings(options: {
     selOverride?: ConfigGroupIdentity | null
   ): Promise<boolean> => {
     const sel = selOverride ?? selectedGroupIdentity.value
+    const contextUserId = userId.value
+    const contextConfigName = dragonConfigName.value
+    const contextGlobalUserId = masConfigEnabled.value ? contextUserId : undefined
+    const contextStep = sel ? stepNameOf(sel) : ''
     const run = dragonGroupSaveChain.then(async () => {
       if (configLocked.value) {
         if (hasDragonGroupSettingsDirty.value) {
@@ -202,17 +234,17 @@ export function useBettergiGroupSettings(options: {
         }
         return true
       }
-      if (!sel || sel.kind !== 'builtin' || !userId.value) return false
+      if (!sel || sel.kind !== 'builtin' || !contextUserId) return false
       const tasks: Promise<unknown>[] = []
       if (dragonSettingsDirty.value) {
         const settings = dragonSettings.value
         tasks.push(
           saveOneDragonSettings(
             scriptId,
-            userId.value,
-            dragonConfigName.value,
+            contextUserId,
+            contextConfigName,
             settings,
-            stepNameOf(sel)
+            contextStep
           ).then(() => {
             if (dragonSettings.value === settings) dragonSettingsDirty.value = false
           })
@@ -221,27 +253,21 @@ export function useBettergiGroupSettings(options: {
       if (globalDomainSettingsDirty.value) {
         const settings = globalDomainSettings.value
         tasks.push(
-          saveGlobalDomainSettings(
-            scriptId,
-            masConfigEnabled.value ? userId.value : undefined,
-            settings,
-            stepNameOf(sel)
-          ).then(() => {
-            if (globalDomainSettings.value === settings) globalDomainSettingsDirty.value = false
-          })
+          saveGlobalDomainSettings(scriptId, contextGlobalUserId, settings, contextStep).then(
+            () => {
+              if (globalDomainSettings.value === settings) globalDomainSettingsDirty.value = false
+            }
+          )
         )
       }
       if (globalStygianSettingsDirty.value) {
         const settings = globalStygianSettings.value
         tasks.push(
-          saveGlobalStygianSettings(
-            scriptId,
-            masConfigEnabled.value ? userId.value : undefined,
-            settings,
-            stepNameOf(sel)
-          ).then(() => {
-            if (globalStygianSettings.value === settings) globalStygianSettingsDirty.value = false
-          })
+          saveGlobalStygianSettings(scriptId, contextGlobalUserId, settings, contextStep).then(
+            () => {
+              if (globalStygianSettings.value === settings) globalStygianSettingsDirty.value = false
+            }
+          )
         )
       }
       if (tasks.length === 0) return true
@@ -262,8 +288,16 @@ export function useBettergiGroupSettings(options: {
   watch(
     () => selectedGroupIdentity.value?.uid,
     async () => {
+      const version = ++selectionVersion
+      const previous = dragonGroupSaveSel
       // 切换组前先冲刷未决的自动保存，避免 debounce 未触发时编辑被跳过而丢失
-      if (dragonGroupAutoSaveTimer && !(await flushPending())) return
+      const saved = await flushPending()
+      if (!active || version !== selectionVersion) return
+      if (!saved) {
+        // 保留失败草稿所属的组，避免用新组的字段编辑旧组的值。
+        selectedGroupIdentity.value = previous
+        return
+      }
       await loadDragonGroupSettings()
     }
   )
@@ -278,7 +312,7 @@ export function useBettergiGroupSettings(options: {
         if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return false
       }
     } else if (pending) return saveDragonGroupSettings(true, dragonGroupSaveSel)
-    return true
+    return dragonGroupSaveChain
   }
   return {
     MAS_ONE_DRAGON_SLOT_NAME,
@@ -297,5 +331,6 @@ export function useBettergiGroupSettings(options: {
     updateSettingField,
     saveDragonGroupSettings,
     flushPending,
+    invalidateReads,
   }
 }
