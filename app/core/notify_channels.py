@@ -164,6 +164,25 @@ def get_notify_channel_failures() -> tuple[str, ...]:
     return tuple(f"通知渠道目录未确认（{key}）" for key in _get_registry().unresolved)
 
 
+def read_notification_proxy() -> str | None:
+    import httpx
+
+    from app.core.config import Config
+    from app.utils import get_logger
+
+    # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
+    url = Config.proxy_url
+    if not url:
+        return None
+    try:
+        # 只校验格式，HTTP 与 WebSocket 共用原始代理地址。
+        httpx.Proxy(url)
+        return url
+    except Exception as exc:
+        get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
+        return None
+
+
 def initialize_notification_channels(
     *, command_executor: CommandExecutor | None = None
 ) -> None:
@@ -189,21 +208,6 @@ def initialize_notification_channels(
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
-    def read_proxy() -> str | None:
-        import httpx
-
-        # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
-        url = Config.proxy_url
-        if not url:
-            return None
-        try:
-            # 只校验格式，HTTP 与 WebSocket 共用原始代理地址。
-            httpx.Proxy(url)
-            return url
-        except Exception as exc:
-            get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
-            return None
-
     def http_client(**kwargs: Any) -> Any:
         import httpx
 
@@ -221,7 +225,7 @@ def initialize_notification_channels(
 
     dependencies = ChannelDependencies(
         config=RuntimeConfigView(Config.setting),
-        read_proxy=read_proxy,
+        read_proxy=read_notification_proxy,
         smtp_factory=smtplib.SMTP_SSL,
         http_factory=http_client,
         websocket_connect=websocket_connect,

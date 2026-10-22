@@ -34,10 +34,12 @@ from app.core.notify_channels import (
     TargetConfigView,
     get_notify_channel_failures,
     get_notify_channels,
+    read_notification_proxy,
 )
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import (
     ChannelTarget,
+    NotificationTransportSnapshot,
     NotifyChannel,
 )
 from app.models.notification_channel import (
@@ -102,6 +104,18 @@ def _resolve_target(
                 if target.is_local and system_timeout_seconds is not None:
                     target = replace(target, timeout_seconds=system_timeout_seconds)
                 resolved.append((channel, target))
+            if resolved and channel.transport_fields is not None:
+                transport = NotificationTransportSnapshot(
+                    values=tuple(
+                        (name, getattr(Config.setting.Notify, name))
+                        for name in channel.transport_fields
+                    ),
+                    proxy=read_notification_proxy(),
+                )
+                resolved = [
+                    (channel, replace(target, transport=transport))
+                    for channel, target in resolved
+                ]
             pairs.extend(resolved)
         except Exception as exc:
             prefix = "全局" if scope == "global" else "用户"

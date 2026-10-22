@@ -100,4 +100,5 @@ def register() -> NotifyChannel:
         target_builder=_serverchan_targets,
         send_adapter=_serverchan_send,
         sender_factory=Sender,
+        transport_fields=(),
     )

@@ -113,7 +113,7 @@ class Sender:
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
-        config = self.dependencies.config
+        config = self.dependencies.transport or self.dependencies.config
         transport = MailTransport(
             smtp_server=config.get("SMTPServerAddress"),
             from_address=config.get("FromAddress"),

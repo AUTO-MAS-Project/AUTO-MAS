@@ -31,7 +31,11 @@ from app.models.notification import (
     RenderedNotification,
     WebhookTargetSnapshot,
 )
-from app.models.notification_channel import ChannelTarget, NotifyChannel
+from app.models.notification_channel import (
+    ChannelTarget,
+    NotificationTransportSnapshot,
+    NotifyChannel,
+)
 from app.notification_channels.registry import BoundChannels
 
 
@@ -50,10 +54,12 @@ class Notification:
             raise RuntimeError("通知渠道已装配")
         self._channels = channels
 
-    def channel_sender(self, key: str) -> Any:
+    def channel_sender(
+        self, key: str, *, transport: NotificationTransportSnapshot | None = None
+    ) -> Any:
         if self._channels is None:
             raise RuntimeError("通知渠道尚未装配")
-        return self._channels.sender(key)
+        return self._channels.sender(key, transport=transport)
 
     async def start(self) -> None:
         if self._channels is None:
@@ -70,7 +76,11 @@ class Notification:
         target: ChannelTarget,
         rendered: RenderedNotification,
     ) -> bool | None:
-        return await channel.send(self.channel_sender(channel.key), target, rendered)
+        return await channel.send(
+            self.channel_sender(channel.key, transport=target.transport),
+            target,
+            rendered,
+        )
 
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         return await self.channel_sender("system").push_plyer(

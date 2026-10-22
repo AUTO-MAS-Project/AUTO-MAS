@@ -129,4 +129,5 @@ def register() -> NotifyChannel:
         target_builder=_mail_targets,
         send_adapter=_mail_send,
         sender_factory=Sender,
+        transport_fields=("SMTPServerAddress", "FromAddress", "AuthorizationCode"),
     )

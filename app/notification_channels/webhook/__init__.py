@@ -143,4 +143,5 @@ def register() -> NotifyChannel:
         target_builder=_webhook_targets,
         send_adapter=_webhook_send,
         sender_factory=Sender,
+        transport_fields=(),
     )

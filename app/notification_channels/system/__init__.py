@@ -85,4 +85,5 @@ def register() -> NotifyChannel:
         target_builder=_system_targets,
         send_adapter=_system_send,
         sender_factory=Sender,
+        transport_fields=("IfPushPlyer",),
     )

@@ -96,4 +96,5 @@ def register() -> NotifyChannel:
         target_builder=_cmcc_targets,
         send_adapter=_cmcc_send,
         sender_factory=Sender,
+        transport_fields=(),
     )

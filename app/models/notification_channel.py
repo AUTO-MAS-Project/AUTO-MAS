@@ -41,8 +41,19 @@ CommandExecutor = Callable[[str, dict[str, Any] | None], Awaitable[dict[str, Any
 
 
 @dataclass(frozen=True)
+class NotificationTransportSnapshot:
+    """单次无会话传输的数据；凭据和代理仅保存在内存中。"""
+
+    values: tuple[tuple[str, str | bool], ...] = field(default=(), repr=False)
+    proxy: str | None = field(default=None, repr=False)
+
+    def get(self, name: str) -> Any:
+        return dict(self.values)[name]
+
+
+@dataclass(frozen=True)
 class ChannelDependencies:
-    """宿主装配的传输能力；读取器在每次尝试开始时返回当前配置。"""
+    """宿主装配的传输能力；会话读实时配置，无会话投递使用固定数据。"""
 
     config: ChannelRuntimeConfig
     read_proxy: Callable[[], str | None]
@@ -54,6 +65,7 @@ class ChannelDependencies:
     system_icon: str
     logger: Any
     command_executor: CommandExecutor | None = None
+    transport: NotificationTransportSnapshot | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -82,6 +94,7 @@ class ChannelTarget:
     capabilities: NotificationCapabilities = NotificationCapabilities()
     is_local: bool = False
     compact_summary_policy: SummaryPolicy | None = None
+    transport: NotificationTransportSnapshot | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -108,6 +121,8 @@ class NotifyChannel:
     start_adapter: Callable[[Any], Awaitable[None]] | None = None
     stop_adapter: Callable[[Any], Awaitable[None]] | None = None
     lifecycle_order: int = 0
+    # None 保留渠道会话；元组声明无会话传输需要从全局配置固定的字段。
+    transport_fields: tuple[str, ...] | None = None
 
     def targets(
         self, config: ChannelConfig, *, scope: str
