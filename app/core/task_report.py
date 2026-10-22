@@ -413,9 +413,7 @@ async def _dispatch_task_report(
             setattr(task_info, "game_sign_summary_pending", with_summary.failed)
             if delivered & channels and not with_summary.failed:
                 mark_task_community_summary_consumed(task_info)
-        catalog_failures = {
-            failure for target in targets for failure in target.unresolved
-        }
+        unresolved = {failure for target in targets for failure in target.unresolved}
         result = DispatchResult(
             attempted=with_summary.attempted + without_summary.attempted,
             succeeded=with_summary.succeeded + without_summary.succeeded,
@@ -423,7 +421,7 @@ async def _dispatch_task_report(
             + tuple(
                 failure
                 for failure in without_summary.failed
-                if failure not in catalog_failures
+                if failure not in unresolved
             ),
             succeeded_ids=with_summary.succeeded_ids + without_summary.succeeded_ids,
         )

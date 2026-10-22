@@ -165,6 +165,7 @@ def get_notify_channel_failures() -> tuple[str, ...]:
 
 
 def read_notification_proxy() -> str | None:
+    """读取并校验当前通知代理，不记录含凭据的代理地址。"""
     import httpx
 
     from app.core.config import Config
