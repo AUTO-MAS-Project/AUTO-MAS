@@ -80,7 +80,7 @@ def _spawn_community_notification(
 async def _report_supplement_failure(
     result: DispatchResult, *, results_saved: bool
 ) -> None:
-    from app.tools.community_notify import report_community_notification_failure
+    from app.core.community_notification import report_community_notification_failure
 
     await report_community_notification_failure(
         list(result.failed), results_saved=results_saved

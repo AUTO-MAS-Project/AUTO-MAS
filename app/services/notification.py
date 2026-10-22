@@ -23,11 +23,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from app.models.config import Webhook
 from app.models.notification import (
     NotificationImage,
+    NotifyPayload,
     RenderedNotification,
     WebhookTargetSnapshot,
 )
@@ -36,6 +38,7 @@ from app.models.notification_channel import (
     NotificationTransportSnapshot,
     NotifyChannel,
 )
+from app.models.notification_ports import LocalNotice
 from app.notification_channels.registry import BoundChannels
 
 
@@ -85,6 +88,24 @@ class Notification:
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         return await self.channel_sender("system").push_plyer(
             title=title, message=message, ticker=ticker, t=t
+        )
+
+    async def send_notice(self, notice: LocalNotice) -> None:
+        await self.push_plyer(
+            title=notice.title,
+            message=notice.message,
+            ticker=notice.ticker,
+            t=notice.duration_seconds,
+        )
+
+    async def test_webhook(
+        self, payload: NotifyPayload, webhook: WebhookTargetSnapshot
+    ) -> None:
+        await self.WebhookPush(
+            title=payload.title,
+            content=payload.text,
+            webhook=replace(webhook, enabled=True),
+            images=payload.images,
         )
 
     async def WebhookPush(

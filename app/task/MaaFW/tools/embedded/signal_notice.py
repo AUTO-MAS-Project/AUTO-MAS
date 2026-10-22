@@ -18,12 +18,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     NotifyTarget,
     dispatch,
-    global_target,
+    failure_targets,
     user_statistic_targets,
 )
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
@@ -134,9 +133,7 @@ def signal_global_targets() -> list[NotifyTarget]:
     ``push_signal_notices``。
     """
 
-    if Config.setting.Notify.SendTaskResultTime != "不推送":
-        return [global_target(include_system=True, system_timeout_seconds=10)]
-    return []
+    return failure_targets()
 
 
 def build_signal_payload(

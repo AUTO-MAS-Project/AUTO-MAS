@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -101,12 +102,21 @@ def _webhook_targets(config: ChannelConfig, *, scope: str) -> tuple[ChannelTarge
         )
         if not snapshot.enabled:
             continue
+        capabilities = _webhook_capabilities(snapshot)
         targets.append(
             ChannelTarget(
                 id=f"{prefix} Webhook {uid}",
                 label=f"{prefix} Webhook {snapshot.name}",
                 value=snapshot,
-                capabilities=_webhook_capabilities(snapshot),
+                capabilities=capabilities,
+                announcement_capabilities=replace(
+                    capabilities,
+                    formats=("text",),
+                    double_text_newlines=(
+                        "markdown" in capabilities.formats
+                        or capabilities.double_text_newlines
+                    ),
+                ),
                 compact_summary_policy="preferred",
             )
         )

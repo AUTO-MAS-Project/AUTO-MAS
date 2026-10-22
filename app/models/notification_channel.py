@@ -95,6 +95,7 @@ class ChannelTarget:
     is_local: bool = False
     compact_summary_policy: SummaryPolicy | None = None
     transport: NotificationTransportSnapshot | None = field(default=None, repr=False)
+    announcement_capabilities: NotificationCapabilities | None = None
 
 
 @dataclass(frozen=True)

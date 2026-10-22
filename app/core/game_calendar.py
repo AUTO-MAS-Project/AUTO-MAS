@@ -7,7 +7,7 @@
 import asyncio
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
@@ -17,6 +17,8 @@ from app.core.config import Config
 from app.core.notify import dispatch, global_target
 from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
+from app.models.notification_channel import NotifyTarget
+from app.models.notification_report import NotificationDispatcher
 from app.tools.game_calendar import (
     BLUEARCHIVE_SERVERS,
     CALENDAR_GAMES,
@@ -152,7 +154,18 @@ def calendar_reminders(
 
 
 class _GameCalendar:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        dispatcher: NotificationDispatcher | None = None,
+        prepare_target: Callable[[], NotifyTarget] | None = None,
+    ) -> None:
+        self._dispatcher = dispatch if dispatcher is None else dispatcher
+        self._prepare_target = (
+            (lambda: global_target(include_system=True, empty_policy="skip"))
+            if prepare_target is None
+            else prepare_target
+        )
         self._lock = asyncio.Lock()
         self._loaded = False
         self._reminders: dict[str, CalendarReminder] = {}
@@ -331,7 +344,7 @@ class _GameCalendar:
             if self._dirty:
                 self._save_schedule()
             games = self._notification_games()
-            target = global_target(include_system=True, empty_policy="skip")
+            target = self._prepare_target()
             target_ids = {channel_target.id for _, channel_target in target.channels}
             now = datetime.now(tz=UTC8)
             reminders: list[CalendarReminder] = []
@@ -389,7 +402,7 @@ class _GameCalendar:
                     ),
                 )
                 try:
-                    result = await dispatch(
+                    result = await self._dispatcher(
                         payload,
                         [target],
                         skip_channel_ids=target_ids - channel_ids,

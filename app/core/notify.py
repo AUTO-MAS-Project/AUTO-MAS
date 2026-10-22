@@ -37,7 +37,8 @@ from app.core.notify_channels import (
     get_notify_channels,
     read_notification_proxy,
 )
-from app.models.notification import NotifyPayload
+from app.models.config import Webhook
+from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_channel import (
     ChannelTarget,
     NotificationTransportSnapshot,
@@ -55,11 +56,29 @@ from app.models.notification_channel import (
 from app.models.notification_channel import (
     NotifyTarget as NotifyTarget,
 )
+from app.models.notification_ports import WebhookTester
 from app.services.notification import Notify
 from app.services.notification_dispatch import dispatch as dispatch_notification
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
+
+
+def get_webhook_tester() -> WebhookTester:
+    return Notify
+
+
+def webhook_test_snapshot(webhook: Webhook) -> WebhookTargetSnapshot:
+    """草稿测试固定输入，不按正式目标的启用状态过滤。"""
+
+    return WebhookTargetSnapshot(
+        name=str(webhook.Info.Name),
+        enabled=bool(webhook.Info.Enabled),
+        url=webhook.Data.Url,
+        template=webhook.Data.Template,
+        headers=webhook.Data.Headers,
+        method=webhook.Data.Method,
+    )
 
 
 def global_target(
@@ -141,6 +160,29 @@ def user_statistic_targets(user_config: Any | None) -> list[NotifyTarget]:
     ):
         return []
     return [user_target(user_config)]
+
+
+def recruitment_targets(user_config: Any | None) -> list[NotifyTarget]:
+    """按全局和个人订阅准备喜报目标，不识别具体传输渠道。"""
+
+    targets = []
+    if Config.setting.Notify.IfSendSixStar:
+        targets.append(global_target())
+    if (
+        user_config is not None
+        and user_config.Notify.Enabled
+        and user_config.Notify.IfSendSixStar
+    ):
+        targets.append(user_target(user_config))
+    return targets
+
+
+def failure_targets() -> list[NotifyTarget]:
+    """任务失败信号沿用任务结果开关，包含受自身开关约束的本地提示。"""
+
+    if Config.setting.Notify.SendTaskResultTime == "不推送":
+        return []
+    return [global_target(include_system=True, system_timeout_seconds=10)]
 
 
 def statistic_targets(

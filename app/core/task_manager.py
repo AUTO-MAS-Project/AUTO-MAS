@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
+from app.models.notification_ports import LocalNotifier
 from app.models.schema import (
     ReplayRecord,
     TaskRuntimeSnapshot,
@@ -328,8 +329,17 @@ class _ReplayRequest:
     history_paths: list[str]
 
 
+def _default_local_notifier() -> LocalNotifier:
+    from app.services.notification import Notify
+
+    return Notify
+
+
 @dataclass
 class TaskInfo(TaskItem):
+    _local_notifier: LocalNotifier | None = field(
+        default_factory=_default_local_notifier, init=False, repr=False, compare=False
+    )
     community_sign_notification: "TaskReportCoordinator | None" = field(
         default=None, init=False, repr=False
     )

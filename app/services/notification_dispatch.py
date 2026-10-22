@@ -114,7 +114,12 @@ async def dispatch(
         try:
             rendered = render_for_target(
                 payload,
-                target.capabilities,
+                (
+                    target.announcement_capabilities
+                    if payload.presentation == "announcement"
+                    and target.announcement_capabilities is not None
+                    else target.capabilities
+                ),
                 summary_policy=target.summary_policy,
                 use_summary_title=target.use_summary_title,
             )

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from app.models.notification_ports import LocalNotifier
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils.logger import get_logger
@@ -165,6 +166,9 @@ class TaskItem(ABC):
     notification_state: TaskNotificationState = field(
         default_factory=TaskNotificationState, init=False, repr=False
     )
+    _local_notifier: LocalNotifier | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -175,6 +179,12 @@ class TaskItem(ABC):
         default=1, init=False, repr=False, compare=False
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
+
+    @property
+    def local_notifier(self) -> LocalNotifier:
+        if self._local_notifier is None:
+            raise RuntimeError("任务的本地通知依赖尚未装配")
+        return self._local_notifier
 
     @property
     def game_sign_results(self) -> list[dict[str, object]]:

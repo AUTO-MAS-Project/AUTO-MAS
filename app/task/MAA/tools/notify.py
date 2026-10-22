@@ -20,17 +20,13 @@
 #   Contact: DLmaster_361@163.com
 
 from collections.abc import Sequence
-from dataclasses import replace
 from functools import cache
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyTarget,
     dispatch,
-    global_target,
+    recruitment_targets,
     statistic_targets,
-    user_target,
 )
 from app.models.config import MaaUserConfig
 from app.models.notification import (
@@ -104,48 +100,6 @@ def _statistic_text(message: dict) -> str:
     )
 
 
-def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
-    """公招六星喜报的推送目标, 全局与用户各有独立开关。"""
-
-    targets = []
-    if Config.setting.Notify.IfSendSixStar:
-        targets.append(global_target())
-    if (
-        user_config is not None
-        and user_config.Notify.Enabled
-        and user_config.Notify.IfSendSixStar
-    ):
-        targets.append(user_target(user_config))
-    # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。
-    return [
-        replace(
-            target,
-            channels=tuple(
-                (
-                    (
-                        channel,
-                        replace(
-                            channel_target,
-                            capabilities=replace(
-                                channel_target.capabilities,
-                                formats=("text",),
-                                double_text_newlines=(
-                                    "markdown" in channel_target.capabilities.formats
-                                    or channel_target.capabilities.double_text_newlines
-                                ),
-                            ),
-                        ),
-                    )
-                    if channel.key == "webhook"
-                    else (channel, channel_target)
-                )
-                for channel, channel_target in target.channels
-            ),
-        )
-        for target in targets
-    ]
-
-
 async def push_notification(
     mode: str,
     title: str,
@@ -208,8 +162,9 @@ async def push_notification(
                         alt="喜报",
                     ),
                 ),
+                presentation="announcement",
             ),
-            _six_star_targets(user_config),
+            recruitment_targets(user_config),
         )
 
     return DispatchResult()

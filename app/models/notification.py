@@ -93,6 +93,7 @@ class NotifyPayload:
     signature_sep: str = "\n\n"
     # 用于正文需要独立标题、但目标协议没有单独标题字段的通知。
     body_title: str | None = None
+    presentation: Literal["default", "announcement"] = "default"
 
     def __post_init__(self) -> None:
         image_ids = [image.id for image in self.images]

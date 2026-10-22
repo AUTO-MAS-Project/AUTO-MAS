@@ -23,9 +23,9 @@ import psutil
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services import Notify
 from app.services.platform.power import power
 from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.general.tools import execute_script_task
@@ -783,11 +783,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         data=WSTaskNoticeData(level="error", message=message),
                     )
                     with suppress(Exception):
-                        await Notify.push_plyer(
-                            "游戏需要手动更新！",
-                            message,
-                            f"{self.cur_user_item.name}的游戏需要手动更新",
-                            3,
+                        await self.task_info.local_notifier.send_notice(
+                            LocalNotice(
+                                title="游戏需要手动更新！",
+                                message=message,
+                                ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
+                                duration_seconds=3,
+                            )
                         )
                     break
                 except Exception as exc:
@@ -3284,19 +3286,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         try:
             if self.missing_task_names:
                 names = "、".join(self.missing_task_names)
-                await Notify.push_plyer(
-                    "MaaFW 自动代理任务完成，但有失效任务",
-                    f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
-                    f"已跳过：{names}",
-                    f"{self.cur_user_item.name} 有失效任务：{names}",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="MaaFW 自动代理任务完成，但有失效任务",
+                        message=f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
+                        f"已跳过：{names}",
+                        ticker=f"{self.cur_user_item.name} 有失效任务：{names}",
+                        duration_seconds=3,
+                    )
                 )
                 return
-            await Notify.push_plyer(
-                "MaaFW 自动代理任务完成",
-                f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="MaaFW 自动代理任务完成",
+                    message=f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
+                    ticker=f"已完成 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
+                    duration_seconds=3,
+                )
             )
         except Exception as exc:
             logger.warning(f"MaaFW 插件用户通知发送失败: {exc}")
