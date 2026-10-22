@@ -1,40 +1,68 @@
 <template>
-  <PipelineRow
-    class="cultivate-editor"
-    :name="t('edit.maaCultivate')"
-    :summary="summary"
-    :checked="formData.Task?.IfCultivate ?? false"
-    :disabled="editorLoading"
-    :hint="t('edit.maaCultivateHint')"
-    @change="emit('save', 'Task.IfCultivate', $event)"
-  >
-    <template #actions>
-      <a-tooltip :title="t('edit.maaCultivateSettings')">
-        <a-button
-          class="cultivate-settings-button"
-          type="text"
-          shape="circle"
-          :aria-label="t('edit.maaCultivateSettings')"
-          aria-haspopup="dialog"
+  <div class="cultivate-page-editor">
+    <div class="cultivate-toolbar">
+      <div class="cultivate-toggle">
+        <a-switch
+          :aria-label="t('edit.maaCultivate')"
+          :checked="formData.Task?.IfCultivate ?? false"
           :disabled="editorLoading"
-          :loading="openingEditor"
-          @click="openEditor"
-        >
-          <template #icon><SettingOutlined /></template>
+          @change="emit('save', 'Task.IfCultivate', $event)"
+        />
+        <span>{{ t('edit.maaCultivate') }}</span>
+      </div>
+      <div class="cultivate-account cultivate-skland">
+        <span class="cultivate-account-label">{{ t('edit.maaCultivateSklandTitle') }}</span>
+        <a-select
+          :aria-label="t('edit.maaCultivateSklandTitle')"
+          :value="sklandBoundComposite"
+          :options="sklandRoleOptionsWithBound"
+          :loading="sklandRoleLoading"
+          :placeholder="t('edit.maaCultivateSklandRole')"
+          :disabled="editorLoading"
+          allow-clear
+          :get-popup-container="getPopupContainer"
+          :list-height="popupListHeight"
+          @dropdown-visible-change="onRoleDropdownVisible"
+          @change="handleSklandRoleChange"
+        />
+      </div>
+      <a-popover :title="t('maaCopilot.executionSettings')" trigger="click" placement="bottomRight">
+        <template #content>
+          <div class="cultivate-execution-settings">
+            <a-checkbox
+              :checked="formData.Task?.CultivateAutoRaise ?? false"
+              :disabled="editorLoading"
+              @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
+              >{{ t('edit.maaCultivateAutoRaise') }}</a-checkbox
+            >
+            <a-checkbox
+              :checked="formData.Task?.CultivateSkipDuringActivity"
+              :disabled="editorLoading"
+              @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
+              >{{ t('edit.maaCultivateSkipActivity') }}</a-checkbox
+            >
+            <a-checkbox
+              :checked="formData.Task?.CultivateSkipDuringResourceCollection"
+              :disabled="editorLoading"
+              @change="
+                emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)
+              "
+              >{{ t('edit.maaCultivateSkipResource') }}</a-checkbox
+            >
+            <p class="skland-hint">{{ t('edit.maaCultivateAutoRaiseVersionHint') }}</p>
+          </div>
+        </template>
+        <a-button class="cultivate-settings-button">
+          <template #icon><SettingOutlined aria-hidden="true" /></template>
+          {{ t('maaCopilot.executionSettings') }}
         </a-button>
-      </a-tooltip>
-    </template>
-    <!-- 本轮养成状态由后端写入，其他来源仍按各自条件执行。 -->
+      </a-popover>
+    </div>
+    <div v-if="sklandRoleError" class="skland-feedback skland-error">{{ sklandRoleError }}</div>
     <a-alert
       v-if="formData.Data?.CultivateNotice"
       :message="formData.Data.CultivateNotice"
       type="warning"
-      show-icon
-      class="cultivate-alert"
-    />
-    <a-alert
-      :message="t('edit.maaCultivateTakeoverHint')"
-      type="info"
       show-icon
       class="cultivate-alert"
     />
@@ -45,333 +73,283 @@
       show-icon
       class="cultivate-alert"
     />
-
-    <!-- 养成选项：置顶展示（绑定面板上方） -->
-    <div class="cultivate-skips">
-      <a-checkbox
-        :checked="formData.Task?.CultivateAutoRaise ?? false"
-        :disabled="editorLoading"
-        @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
-      >
-        {{ t('edit.maaCultivateAutoRaise') }}
-      </a-checkbox>
-      <a-checkbox
-        :checked="formData.Task?.CultivateSkipDuringActivity"
-        :disabled="editorLoading"
-        @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
-      >
-        {{ t('edit.maaCultivateSkipActivity') }}
-      </a-checkbox>
-      <a-checkbox
-        :checked="formData.Task?.CultivateSkipDuringResourceCollection"
-        :disabled="editorLoading"
-        @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)"
-      >
-        {{ t('edit.maaCultivateSkipResource') }}
-      </a-checkbox>
-    </div>
-    <div class="skland-feedback skland-hint">{{ t('edit.maaCultivateSkipHint') }}</div>
-    <div class="skland-feedback skland-hint">
-      {{ t('edit.maaCultivateAutoRaiseVersionHint') }}
-    </div>
-  </PipelineRow>
-
-  <a-modal
-    v-model:open="editorOpen"
-    :title="t('edit.maaCultivateSettings')"
-    :width="1100"
-    wrap-class-name="maa-plan-settings-modal cultivate-settings-modal"
-    centered
-    destroy-on-close
-    :closable="!editorLoading"
-    :mask-closable="!editorLoading"
-    :keyboard="!editorLoading"
-  >
-    <div class="cultivate-editor">
-      <a-alert
-        :message="t('edit.maaCultivateRecognitionHint')"
-        type="info"
-        show-icon
-        class="cultivate-alert"
-      />
-      <div class="skland-feedback skland-hint cultivate-mastery-hint">
-        <div>{{ t('edit.maaCultivateAutoRaiseHint') }}</div>
-        <div>{{ t('edit.maaCultivateMasterySkillHint') }}</div>
-      </div>
-      <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
-         森空岛（决策 37/38） -->
-      <div class="cultivate-top">
-        <div class="cultivate-skland">
-          <a-form-item class="cultivate-skland-item">
-            <template #label>
-              <LabelWithHint
-                :text="t('edit.maaCultivateSklandTitle')"
-                :hint="t('edit.maaCultivateSklandHint')"
-              />
-            </template>
-            <a-select
-              :value="sklandBoundComposite"
-              :options="sklandRoleOptionsWithBound"
-              :loading="sklandRoleLoading"
-              :placeholder="t('edit.maaCultivateSklandRole')"
-              :disabled="editorLoading"
-              allow-clear
-              :get-popup-container="getPopupContainer"
-              :list-height="popupListHeight"
-              @dropdown-visible-change="onRoleDropdownVisible"
-              @change="handleSklandRoleChange"
-            />
-            <div v-if="sklandRoleError" class="skland-feedback skland-error">
-              {{ sklandRoleError }}
-            </div>
+    <a-tabs v-model:active-key="activeTab">
+      <a-tab-pane key="targets" :tab="t('maaCopilot.targetsTab')">
+        <div class="cultivate-editor">
+          <a-alert
+            :message="t('edit.maaCultivateRecognitionHint')"
+            type="info"
+            show-icon
+            class="cultivate-alert"
+          />
+          <div class="skland-feedback skland-hint cultivate-mastery-hint">
+            <div>{{ t('edit.maaCultivateAutoRaiseHint') }}</div>
+            <div>{{ t('edit.maaCultivateMasterySkillHint') }}</div>
+          </div>
+          <div class="cultivate-top">
             <div v-if="!sklandBound" class="skland-feedback skland-hint">
               {{ t('edit.maaCultivateSklandUnboundHint') }}
             </div>
-          </a-form-item>
-        </div>
-
-        <a-form-item class="cultivate-picker">
-          <template #label>
-            <LabelWithHint
-              :text="t('edit.maaCultivatePickOperators')"
-              :hint="t('edit.maaCultivatePickOperatorsHint')"
-            />
-          </template>
-          <div class="cultivate-picker-actions">
-            <a-select
-              :value="null"
-              :options="pickerOptions"
-              :loading="operatorOptionsLoading"
-              :disabled="
-                editorLoading || operatorOptionsLoading || availableOperatorOptions.length === 0
-              "
-              :placeholder="operatorPlaceholder"
-              show-search
-              :filter-option="false"
-              :virtual="false"
-              :get-popup-container="getPopupContainer"
-              :list-height="popupListHeight"
-              @search="handleOperatorSearch"
-              @change="handleAddOperator"
-            />
-            <CultivateClipboardImport
-              :disabled="loading"
-              :import-targets="importCultivateTargets"
-              @busy="importing = $event"
-              @imported="expandImportedOperators"
-            />
-          </div>
-        </a-form-item>
-      </div>
-
-      <div class="cultivate-target-actions">
-        <a-input
-          v-model:value="operatorFilter"
-          class="cultivate-target-search"
-          :placeholder="t('edit.maaCultivateSearchOperators')"
-          :aria-label="t('edit.maaCultivateSearchOperators')"
-          allow-clear
-        >
-          <template #prefix><SearchOutlined /></template>
-        </a-input>
-        <a-space wrap>
-          <a-checkbox
-            :checked="allOperatorsSelected"
-            :indeterminate="selectedVisibleCount > 0 && !allOperatorsSelected"
-            :disabled="editorLoading || !filteredRows.length"
-            @change="selectAllOperators($event.target.checked)"
-          >
-            {{
-              t(
-                operatorFilter.trim()
-                  ? 'edit.maaCultivateSelectMatches'
-                  : 'edit.maaCultivateSelectAll'
-              )
-            }}
-          </a-checkbox>
-          <a-button
-            danger
-            :disabled="editorLoading || !operatorSelection.size"
-            @click="removeSelectedOperators"
-          >
-            {{ t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
-          </a-button>
-        </a-space>
-        <a-space class="cultivate-module-toggle">
-          <a-switch
-            v-model:checked="showModules"
-            :disabled="editorLoading"
-            :aria-label="t('edit.maaCultivateShowModules')"
-          />
-          <span>{{ t('edit.maaCultivateShowModules') }}</span>
-        </a-space>
-      </div>
-
-      <div class="cultivate-body">
-        <div class="cultivate-main">
-          <a-pagination
-            v-if="filteredRows.length > OPERATOR_PAGE_SIZE"
-            v-model:current="operatorPage"
-            class="cultivate-pagination"
-            size="small"
-            :page-size="OPERATOR_PAGE_SIZE"
-            :total="filteredRows.length"
-            :show-size-changer="false"
-            :disabled="editorLoading"
-          />
-          <div v-if="filteredRows.length" class="cultivate-rows">
-            <div v-for="row in visibleRows" :key="row.operatorId" class="cultivate-group">
-              <div class="group-head">
-                <a-checkbox
-                  :checked="operatorSelection.has(row.operatorId)"
-                  :disabled="editorLoading"
-                  :aria-label="
-                    t('edit.maaCultivateSelectOperator', { name: operatorName(row.operatorId) })
-                  "
-                  @change="toggleOperatorSelection(row.operatorId, $event.target.checked)"
+            <a-form-item class="cultivate-picker">
+              <template #label>
+                <LabelWithHint
+                  :text="t('edit.maaCultivatePickOperators')"
+                  :hint="t('edit.maaCultivatePickOperatorsHint')"
                 />
-                <a-button
-                  class="group-toggle"
-                  type="text"
-                  size="small"
-                  :aria-label="t('edit.maaCultivateToggleGoals')"
-                  :aria-expanded="!isGroupCollapsed(row)"
-                  @click="toggleGroup(row.operatorId)"
-                >
-                  {{ isGroupCollapsed(row) ? '▸' : '▾' }}
-                </a-button>
-                <span
-                  class="cultivate-name"
-                  :title="operatorName(row.operatorId)"
-                  @click="toggleGroup(row.operatorId)"
-                  >{{ operatorName(row.operatorId) }}</span
-                >
+              </template>
+              <div class="cultivate-picker-actions">
                 <a-select
-                  v-if="!row.elite.achieved"
-                  :value="row.elite.savedLevel || undefined"
-                  :options="row.elite.options"
-                  :placeholder="t('edit.maaCultivateGoalNone')"
-                  allow-clear
-                  :disabled="row.elite.disabled"
+                  :value="null"
+                  :options="pickerOptions"
+                  :loading="operatorOptionsLoading"
+                  :disabled="
+                    editorLoading || operatorOptionsLoading || availableOperatorOptions.length === 0
+                  "
+                  :placeholder="operatorPlaceholder"
+                  show-search
+                  :filter-option="false"
+                  :virtual="false"
                   :get-popup-container="getPopupContainer"
                   :list-height="popupListHeight"
-                  class="goal-level"
-                  :aria-label="t('edit.maaCultivateGoalElite')"
-                  @change="(v: unknown) => handleGoalChange(row, 'elite', '', v)"
+                  @search="handleOperatorSearch"
+                  @change="handleAddOperator"
                 />
-                <span v-else class="goal-level goal-achieved-level">
-                  {{ row.elite.levelLabel }}
-                </span>
-                <a-tag v-if="row.elite.overLimit" color="warning">
-                  {{ t('edit.maaCultivateOverLimit') }}
-                </a-tag>
-                <a-button
-                  size="small"
-                  danger
-                  :disabled="editorLoading"
-                  @click="handleRemoveOperator(row.operatorId)"
-                >
-                  {{ t('edit.maaCultivateRemove') }}
-                </a-button>
+                <CultivateClipboardImport
+                  :disabled="loading"
+                  :import-targets="importCultivateTargets"
+                  @busy="importing = $event"
+                  @imported="expandImportedOperators"
+                />
               </div>
-              <div class="group-elite-current">
-                <span
-                  class="goal-current"
-                  :title="
-                    row.elite.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
-                  "
-                  >{{ row.elite.current }}</span
-                >
-              </div>
-              <!-- 目标列表：技能等级、全部专精和全部模组（精英化在标题行），
+            </a-form-item>
+          </div>
+
+          <div class="cultivate-target-actions">
+            <a-input
+              v-model:value="operatorFilter"
+              class="cultivate-target-search"
+              :placeholder="t('edit.maaCultivateSearchOperators')"
+              :aria-label="t('edit.maaCultivateSearchOperators')"
+              allow-clear
+            >
+              <template #prefix><SearchOutlined aria-hidden="true" /></template>
+            </a-input>
+            <a-space wrap>
+              <a-checkbox
+                :checked="allOperatorsSelected"
+                :indeterminate="selectedVisibleCount > 0 && !allOperatorsSelected"
+                :disabled="editorLoading || !filteredRows.length"
+                @change="selectAllOperators($event.target.checked)"
+              >
+                {{
+                  t(
+                    operatorFilter.trim()
+                      ? 'edit.maaCultivateSelectMatches'
+                      : 'edit.maaCultivateSelectAll'
+                  )
+                }}
+              </a-checkbox>
+              <a-button
+                danger
+                :disabled="editorLoading || !operatorSelection.size"
+                @click="removeSelectedOperators"
+              >
+                {{ t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
+              </a-button>
+            </a-space>
+            <a-space class="cultivate-module-toggle">
+              <a-switch
+                v-model:checked="showModules"
+                :disabled="editorLoading"
+                :aria-label="t('edit.maaCultivateShowModules')"
+              />
+              <span>{{ t('edit.maaCultivateShowModules') }}</span>
+            </a-space>
+          </div>
+
+          <div class="cultivate-body">
+            <div class="cultivate-main">
+              <a-pagination
+                v-if="filteredRows.length > OPERATOR_PAGE_SIZE"
+                v-model:current="operatorPage"
+                class="cultivate-pagination"
+                size="small"
+                :page-size="OPERATOR_PAGE_SIZE"
+                :total="filteredRows.length"
+                :show-size-changer="false"
+                :disabled="editorLoading"
+              />
+              <div v-if="filteredRows.length" class="cultivate-rows">
+                <div v-for="row in visibleRows" :key="row.operatorId" class="cultivate-group">
+                  <div class="group-head">
+                    <a-checkbox
+                      :checked="operatorSelection.has(row.operatorId)"
+                      :disabled="editorLoading"
+                      :aria-label="
+                        t('edit.maaCultivateSelectOperator', { name: operatorName(row.operatorId) })
+                      "
+                      @change="toggleOperatorSelection(row.operatorId, $event.target.checked)"
+                    />
+                    <a-button
+                      class="group-toggle"
+                      type="text"
+                      size="small"
+                      :aria-label="t('edit.maaCultivateToggleGoals')"
+                      :aria-expanded="!isGroupCollapsed(row)"
+                      @click="toggleGroup(row.operatorId)"
+                    >
+                      {{ isGroupCollapsed(row) ? '▸' : '▾' }}
+                    </a-button>
+                    <span
+                      class="cultivate-name"
+                      :title="operatorName(row.operatorId)"
+                      @click="toggleGroup(row.operatorId)"
+                      >{{ operatorName(row.operatorId) }}</span
+                    >
+                    <a-select
+                      v-if="!row.elite.achieved"
+                      :value="row.elite.savedLevel || undefined"
+                      :options="row.elite.options"
+                      :placeholder="t('edit.maaCultivateGoalNone')"
+                      allow-clear
+                      :disabled="row.elite.disabled"
+                      :get-popup-container="getPopupContainer"
+                      :list-height="popupListHeight"
+                      class="goal-level"
+                      :aria-label="t('edit.maaCultivateGoalElite')"
+                      @change="(v: unknown) => handleGoalChange(row, 'elite', '', v)"
+                    />
+                    <span v-else class="goal-level goal-achieved-level">
+                      {{ row.elite.levelLabel }}
+                    </span>
+                    <a-tag v-if="row.elite.overLimit" color="warning">
+                      {{ t('edit.maaCultivateOverLimit') }}
+                    </a-tag>
+                    <a-button
+                      size="small"
+                      danger
+                      :disabled="editorLoading"
+                      @click="handleRemoveOperator(row.operatorId)"
+                    >
+                      {{ t('edit.maaCultivateRemove') }}
+                    </a-button>
+                  </div>
+                  <div class="group-elite-current">
+                    <span
+                      class="goal-current"
+                      :title="
+                        row.elite.currentUnknown
+                          ? t('edit.maaCultivateCurrentUnknownHint')
+                          : undefined
+                      "
+                      >{{ row.elite.current }}</span
+                    >
+                  </div>
+                  <!-- 目标列表：技能等级、全部专精和全部模组（精英化在标题行），
                  每个目标一行：名称 → 当前 → 超限/状态标签 → 档位选择器（最右成列）；
                  未设目标=空选项（清空即移除），没有添加/删除流程。未绑定时只读：配置
                  里的目标不因绑定失效而在界面上消失，仍可见可清，避免留下
                  看不见又清不掉的条目 -->
-              <div v-if="!isGroupCollapsed(row)">
-                <div v-for="group in goalGridsOf(row)" :key="group.kind" class="goal-list">
-                  <div v-for="line in group.lines" :key="line.key" class="goal-row">
-                    <span class="goal-kind" :title="line.label">{{ line.label }}</span>
-                    <span
-                      class="goal-current"
-                      :title="
-                        line.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
-                      "
-                      >{{ line.current }}</span
-                    >
-                    <a-tag v-if="line.overLimit" color="warning">
-                      {{ t('edit.maaCultivateOverLimitShort') }}
-                    </a-tag>
-                    <a-tag v-if="line.state" :color="line.state.color">
-                      {{ t(line.state.i18n) }}
-                    </a-tag>
-                    <a-select
-                      :value="line.savedLevel || undefined"
-                      :options="line.options"
-                      :placeholder="t('edit.maaCultivateGoalNone')"
-                      allow-clear
-                      :disabled="line.disabled"
-                      :get-popup-container="getPopupContainer"
-                      :list-height="popupListHeight"
-                      class="goal-level"
-                      @change="(v: unknown) => handleGoalChange(row, group.kind, line.targetId, v)"
-                    />
+                  <div v-if="!isGroupCollapsed(row)">
+                    <div v-for="group in goalGridsOf(row)" :key="group.kind" class="goal-list">
+                      <div v-for="line in group.lines" :key="line.key" class="goal-row">
+                        <span class="goal-kind" :title="line.label">{{ line.label }}</span>
+                        <span
+                          class="goal-current"
+                          :title="
+                            line.currentUnknown
+                              ? t('edit.maaCultivateCurrentUnknownHint')
+                              : undefined
+                          "
+                          >{{ line.current }}</span
+                        >
+                        <a-tag v-if="line.overLimit" color="warning">
+                          {{ t('edit.maaCultivateOverLimitShort') }}
+                        </a-tag>
+                        <a-tag v-if="line.state" :color="line.state.color">
+                          {{ t(line.state.i18n) }}
+                        </a-tag>
+                        <a-select
+                          :value="line.savedLevel || undefined"
+                          :options="line.options"
+                          :placeholder="t('edit.maaCultivateGoalNone')"
+                          allow-clear
+                          :disabled="line.disabled"
+                          :get-popup-container="getPopupContainer"
+                          :list-height="popupListHeight"
+                          class="goal-level"
+                          @change="
+                            (v: unknown) => handleGoalChange(row, group.kind, line.targetId, v)
+                          "
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
+                <div v-if="!sklandBound" class="skland-feedback skland-hint">
+                  {{ t('edit.maaCultivateSklandLockedHint') }}
+                </div>
+                <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
+                  {{ t('edit.maaCultivateSklandDegradedHint') }}
+                </div>
               </div>
+              <a-empty
+                v-else
+                :description="
+                  t(
+                    operatorFilter.trim()
+                      ? 'edit.maaCultivateSearchEmpty'
+                      : 'edit.maaCultivateEmpty'
+                  )
+                "
+                :image-style="{ height: '48px' }"
+              />
             </div>
-            <div v-if="!sklandBound" class="skland-feedback skland-hint">
-              {{ t('edit.maaCultivateSklandLockedHint') }}
-            </div>
-            <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
-              {{ t('edit.maaCultivateSklandDegradedHint') }}
+            <div class="cultivate-side">
+              <CultivatePreviewPanel
+                v-if="rows.length"
+                :preview="cultivatePreview"
+                :loading="cultivatePreviewLoading"
+                :error="cultivatePreviewError"
+                :item-options="itemOptions"
+              />
             </div>
           </div>
-          <a-empty
-            v-else
-            :description="
-              t(operatorFilter.trim() ? 'edit.maaCultivateSearchEmpty' : 'edit.maaCultivateEmpty')
-            "
-            :image-style="{ height: '48px' }"
-          />
+          <a-typography-link
+            class="data-source-note"
+            href="https://ark.yituliu.cn"
+            target="_blank"
+            rel="noreferrer"
+            @click="handleExternalLink"
+          >
+            {{ t('edit.maaDataSourceYituliu') }}
+          </a-typography-link>
         </div>
-        <div class="cultivate-side">
-          <CultivatePreviewPanel
-            v-if="rows.length"
-            :preview="cultivatePreview"
-            :loading="cultivatePreviewLoading"
-            :error="cultivatePreviewError"
-            :item-options="itemOptions"
-          />
-        </div>
-      </div>
-      <a-typography-link
-        class="data-source-note"
-        href="https://ark.yituliu.cn"
-        target="_blank"
-        rel="noreferrer"
-        @click="handleExternalLink"
-      >
-        {{ t('edit.maaDataSourceYituliu') }}
-      </a-typography-link>
-    </div>
-    <template #footer>
-      <a-button :disabled="editorLoading" @click="editorOpen = false">
-        {{ t('common.close') }}
-      </a-button>
-    </template>
-  </a-modal>
+      </a-tab-pane>
+      <a-tab-pane key="copilot" :tab="t('maaCopilot.analysisTab')">
+        <CopilotCultivatePlanner
+          :disabled="editorLoading"
+          :bound="sklandBound"
+          :binding-key="sklandBoundComposite ?? ''"
+          :catalog="operatorCatalog"
+          :import-targets="importCultivateTargets"
+          :prepare-analysis="prepareCopilotAnalysis"
+          @imported="handleCopilotImported"
+          @busy="importing = $event"
+        />
+      </a-tab-pane>
+    </a-tabs>
+  </div>
 </template>
-
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, nextTick, onScopeDispose, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import LabelWithHint from './LabelWithHint.vue'
-import PipelineRow from './PipelineRow.vue'
+import CopilotCultivatePlanner from './CopilotCultivatePlanner.vue'
 import CultivatePreviewPanel from './CultivatePreviewPanel.vue'
 import CultivateClipboardImport from './CultivateClipboardImport.vue'
 import { usePlanSelectPopup } from './usePlanSelectPopup'
@@ -399,7 +377,6 @@ type SelectOption = { label: string; value: string }
 
 const props = defineProps<{
   formData: any
-  summary?: string
   loading: boolean
   /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
   operatorCatalog: OperatorCatalogEntry[]
@@ -419,17 +396,20 @@ const props = defineProps<{
   cultivatePreviewError: string
   /** 目标行变化时触发（父级负责请求与竞态守卫） */
   loadCultivatePreview: (targetsJson: string) => Promise<void>
-  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
+  importCultivateTargets: (
+    content: string,
+    format?: 'clipboard' | 'targets'
+  ) => Promise<CultivateImportResult>
+  prepareCopilotAnalysis: () => Promise<void>
 }>()
 
 const emit = defineEmits<{ save: [key: string, value: any] }>()
 
-const editorOpen = ref(false)
-const openingEditor = ref(false)
-let disposed = false
-onScopeDispose(() => {
-  disposed = true
-})
+const activeTab = ref('targets')
+const handleCopilotImported = (operatorIds: string[]) => {
+  expandImportedOperators(operatorIds)
+  activeTab.value = 'targets'
+}
 const showModules = ref(false)
 const operatorFilter = ref('')
 // 目标编辑统一替换数组；不为全量目标创建深层代理，避免保存/预览序列化遍历代理。
@@ -983,53 +963,63 @@ const sklandDegraded = computed(
 
 // 目标行变化 → 防抖后请求需求预览（竞态守卫在父级加载器里）。
 watch(rows, (nextRows, _previousRows, onCleanup) => {
-  if (!editorOpen.value) return
   const previewTimer = window.setTimeout(() => {
-    if (!editorOpen.value || !nextRows.length) return
+    if (!nextRows.length) return
     props.loadCultivatePreview(serializeCultivateTargets(nextRows))
   }, 600)
   onCleanup(() => window.clearTimeout(previewTimer))
 })
 
-const openEditor = async () => {
-  if (editorLoading.value || openingEditor.value) return
-  const preparePreview = !props.cultivatePreview
-  openingEditor.value = preparePreview
-  if (!preparePreview) editorOpen.value = true
-  try {
-    while (true) {
-      const requestedTargets = serializeCultivateTargets(rows.value)
-      await props.loadCultivatePreview(requestedTargets)
-      if (!preparePreview) return
-      await nextTick()
-      if (disposed || editorLoading.value) return
-      // 等待中恢复了配置，或原请求被父级的新请求替代：用当前目标重算。
-      if (
-        requestedTargets !== serializeCultivateTargets(rows.value) ||
-        (!props.cultivatePreview && !props.cultivatePreviewError)
-      )
-        continue
-      editorOpen.value = true
-      return
-    }
-  } finally {
-    openingEditor.value = false
-  }
-}
-
-watch(editorOpen, open => {
-  if (!open) return
-  // 已绑定时拉一次角色列表以回显角色名（未绑定不请求；已加载过则复用，
-  // 仅下拉为空时由展开触发加载，要刷新须重进编辑页）
-  if (sklandBound.value) {
-    props.loadSklandRoleOptions()
-  }
+onMounted(() => {
+  void props.loadCultivatePreview(serializeCultivateTargets(rows.value))
+  if (sklandBound.value) void props.loadSklandRoleOptions()
 })
 
 const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 </script>
 
 <style scoped>
+.cultivate-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding-bottom: 8px;
+}
+.cultivate-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cultivate-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 260px;
+}
+.cultivate-account-label {
+  flex-shrink: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+.cultivate-account .ant-select {
+  width: 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cultivate-execution-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 360px;
+}
+.cultivate-execution-settings .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+}
+.cultivate-execution-settings p {
+  margin: 0;
+}
 .cultivate-settings-button {
   flex-shrink: 0;
 }
@@ -1056,7 +1046,6 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
   margin-left: auto;
 }
 
-/* 绑定面板与干员选择器并排一行（窄屏自动换行堆叠）。 */
 .cultivate-top {
   display: flex;
   flex-wrap: wrap;
@@ -1065,12 +1054,6 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
   margin-bottom: 12px;
 }
 
-/* 表单元素默认带 24px 底边距，会顶出双倍间隙（与跳过计划-分隔线的间距不一致），清零 */
-.cultivate-top .cultivate-skland-item {
-  margin-bottom: 0;
-}
-
-.cultivate-top > .cultivate-skland,
 .cultivate-top > .cultivate-picker {
   flex: 1 1 380px;
   min-width: 0;
@@ -1089,13 +1072,8 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
   min-width: 120px;
 }
 
-.cultivate-skland {
-  margin-bottom: 8px;
-}
-
-/* 绑定面板与干员选择器单行化：标签在左，控件在右侧展开（默认是上下两行）。
+/* 干员选择器单行化：标签在左，控件在右侧展开（默认是上下两行）。
    antd 竖排表单会用更高优先级把行方向写成 column，这里前缀 + 显式 row 压回 */
-.cultivate-skland .cultivate-skland-item :deep(.ant-form-item-row),
 .cultivate-editor .cultivate-picker :deep(.ant-form-item-row) {
   display: flex;
   flex-direction: row;
@@ -1104,7 +1082,6 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
   gap: 8px;
 }
 
-.cultivate-skland .cultivate-skland-item :deep(.ant-form-item-label),
 .cultivate-editor .cultivate-picker :deep(.ant-form-item-label) {
   /* 标签按单行控件高度居中，避免导入按钮或提示换行后下沉 */
   display: flex;
@@ -1115,7 +1092,6 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
   flex: 0 0 96px;
 }
 
-.cultivate-skland .cultivate-skland-item :deep(.ant-form-item-control),
 .cultivate-editor .cultivate-picker :deep(.ant-form-item-control) {
   flex: 1;
   min-width: 0;
@@ -1127,7 +1103,7 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 }
 
 .skland-error {
-  color: var(--ant-error-color, #cf1322);
+  color: var(--ant-color-error);
 }
 
 .skland-hint {
@@ -1135,7 +1111,7 @@ const { getPopupContainer, listHeight: popupListHeight } = usePlanSelectPopup()
 }
 
 .cultivate-group {
-  border: 1px solid var(--ant-border-color-split, #f0f0f0);
+  border: 1px solid var(--ant-color-border-secondary);
   border-radius: 6px;
   padding: 6px 8px;
   margin-bottom: 8px;

@@ -33,6 +33,7 @@
     </GuiSessionMask>
     <!-- 头部组件 -->
     <MAAUserEditHeader
+      v-if="!cultivationPage"
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
@@ -43,6 +44,25 @@
       @handle-cancel="handleCancel"
     />
 
+    <div v-else class="cultivation-page-header">
+      <div>
+        <a-breadcrumb>
+          <a-breadcrumb-item
+            ><router-link to="/scripts">{{ t('edit.scripts') }}</router-link></a-breadcrumb-item
+          >
+          <a-breadcrumb-item
+            ><router-link :to="{ name: 'MAAUserEdit', params: { scriptId, userId } }">{{
+              formData.Info.Name || scriptName
+            }}</router-link></a-breadcrumb-item
+          >
+          <a-breadcrumb-item>{{ t('maaCopilot.pageTitle') }}</a-breadcrumb-item>
+        </a-breadcrumb>
+        <h2>{{ t('maaCopilot.pageTitle') }}</h2>
+        <p>{{ t('maaCopilot.saveHint') }}</p>
+      </div>
+      <a-button :loading="leavingPage" @click="handleCancel">{{ t('edit.back') }}</a-button>
+    </div>
+
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :inert="editorBusy">
         <a-form
@@ -52,147 +72,170 @@
           layout="vertical"
           class="config-form"
         >
-          <!-- 基本信息组件 -->
-          <BasicInfoSection
-            v-model:form-data="formData"
+          <CultivateTargetEditor
+            v-if="cultivationPage && !isInitializing"
+            :form-data="formData"
             :loading="loading"
-            :server-options="serverOptions"
-            @save="handleFieldSave"
-          />
-
-          <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
-          <a-flex class="section-header" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.configurationSource') }}</h3>
-          </a-flex>
-          <GeneralConfigModeSelector
-            :model-value="formData.Info.Base"
-            :options="maaConfigModeOptions"
-            :disabled="loading"
-            :quick-config="formData.Info.IfQuickConfig"
-            :quick-config-disabled="loading || isInitializing"
-            :alert-message="t('edit.configSourceHintBase')"
-            :show-gui-hint="false"
-            @change="handleConfigModeChange"
-            @quick-config-change="handleQuickConfigChange"
-          />
-          <!-- MAA 不提供配置导入 -->
-          <ConfigActionsSection
-            :base="formData.Info.Base"
-            script-label="MAA"
-            :disabled="loading || showMaaConfigMask || configLocked"
-            :config-loading="preparingSession || maaConfigLoading"
-            :configuring="showMaaConfigMask"
-            :show-import="false"
-            @configure="handleMAAConfig"
-            @script-config="handleScriptConfig"
-          />
-
-          <a-flex
-            class="section-header"
-            justify="space-between"
-            align="center"
-            wrap="wrap"
-            gap="small"
-          >
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
-            <a-space>
-              <a-button size="small" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
-            </a-space>
-          </a-flex>
-          <TaskPipelineSection
-            v-if="formData.Info.IfQuickConfig"
-            v-model:form-data="formData"
-            :loading="loading"
-            :stage-options="stageOptions"
-            :activity-stages="activityStages"
-            :activity-stage-loading="activityStageLoading"
-            :activity-stage-error="activityStageError"
-            :depot-item-options="depotItemOptions"
-            :depot-item-options-loading="depotItemOptionsLoading"
-            :depot-item-options-error="depotItemOptionsError"
-            :depot-stage-candidates="depotStageCandidates"
-            :depot-stage-candidates-loading="depotStageCandidatesLoading"
-            :depot-inventory="depotInventory"
-            :depot-inventory-time="depotInventoryTime"
+            :operator-catalog="cultivateOperatorCatalog"
+            :operator-options-loading="cultivateOperatorOptionsLoading"
+            :operator-options-error="cultivateOperatorOptionsError"
             :skland-role-options="sklandRoleOptions"
-            :load-skland-role-options="loadSklandRoleOptions"
             :skland-role-loading="sklandRoleLoading"
             :skland-role-error="sklandRoleError"
-            :depot-plan-editor="depotPlanEditor"
-            :event-depot-plan-editor="eventDepotPlanEditor"
-            :cultivate-operator-catalog="cultivateOperatorCatalog"
-            :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
-            :cultivate-operator-options-error="cultivateOperatorOptionsError"
+            :load-skland-role-options="loadSklandRoleOptions"
+            :item-options="depotItemOptions"
             :cultivate-preview="cultivatePreview"
             :cultivate-preview-loading="cultivatePreviewLoading"
             :cultivate-preview-error="cultivatePreviewError"
             :load-cultivate-preview="loadCultivatePreview"
             :import-cultivate-targets="importCultivateTargets"
-            :fight-summary="fightSummary"
-            :is-edit="isEdit"
-            :infrastructure-importing="infrastructureImporting"
-            :infrastructure-options="infrastructureOptions"
-            :infrastructure-options-loading="infrastructureOptionsLoading"
-            :infrast-plan-select="infrastPlanSelect"
-            :infrast-plan-state="infrastPlanState"
-            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
-            @select-infrast-plan="handleInfrastPlanSelectChange"
-            @save="handleFieldSave"
-            @retry-activity="loadActivityStageOptions(true)"
-          >
-            <template #fight-detail>
-              <StageConfigSection
-                v-model:form-data="formData"
-                :loading="loading"
-                :stage-mode-options="stageModeOptions"
-                :stage-options="stageOptions"
-                :is-plan-mode="isPlanMode"
-                :display-medicine-numb="displayMedicineNumb"
-                :display-series-numb="displaySeriesNumb"
-                :display-stage="displayStage"
-                :display-stage1="displayStage1"
-                :display-stage2="displayStage2"
-                :display-stage3="displayStage3"
-                :medicine-numb-tooltip="medicineNumbTooltip"
-                :series-numb-tooltip="seriesNumbTooltip"
-                :stage-tooltip="stageTooltip"
-                :stage1-tooltip="stage1Tooltip"
-                :stage2-tooltip="stage2Tooltip"
-                :stage3-tooltip="stage3Tooltip"
-                @update-medicine-numb="updateMedicineNumb"
-                @update-series-numb="updateSeriesNumb"
-                @update-stage="updateStage"
-                @update-stage1="updateStage1"
-                @update-stage2="updateStage2"
-                @update-stage3="updateStage3"
-                @handle-add-custom-stage="addCustomStage"
-                @handle-add-custom-stage1="addCustomStage1"
-                @handle-add-custom-stage2="addCustomStage2"
-                @handle-add-custom-stage3="addCustomStage3"
-                @save="handleFieldSave"
-              />
-            </template>
-          </TaskPipelineSection>
-
-          <!-- 额外脚本组件 -->
-          <ExtraScriptSection
-            v-model:form-data="formData"
-            :loading="loading"
+            :prepare-copilot-analysis="prepareCopilotAnalysis"
             @save="handleFieldSave"
           />
+          <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
+          <template v-else>
+            <!-- 基本信息组件 -->
+            <BasicInfoSection
+              v-model:form-data="formData"
+              :loading="loading"
+              :server-options="serverOptions"
+              @save="handleFieldSave"
+            />
 
-          <!-- 通知配置组件 -->
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="loading"
-            :script-id="scriptId"
-            :user-id="userId"
-            show-six-star
-            @save="handleFieldSave"
-          />
+            <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
+            <a-flex class="section-header" align="center" wrap="wrap" gap="small">
+              <h3>{{ t('edit.configurationSource') }}</h3>
+            </a-flex>
+            <GeneralConfigModeSelector
+              :model-value="formData.Info.Base"
+              :options="maaConfigModeOptions"
+              :disabled="loading"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="loading || isInitializing"
+              :alert-message="t('edit.configSourceHintBase')"
+              :show-gui-hint="false"
+              @change="handleConfigModeChange"
+              @quick-config-change="handleQuickConfigChange"
+            />
+            <!-- MAA 不提供配置导入 -->
+            <ConfigActionsSection
+              :base="formData.Info.Base"
+              script-label="MAA"
+              :disabled="loading || showMaaConfigMask || configLocked"
+              :config-loading="preparingSession || maaConfigLoading"
+              :configuring="showMaaConfigMask"
+              :show-import="false"
+              @configure="handleMAAConfig"
+              @script-config="handleScriptConfig"
+            />
+
+            <a-flex
+              class="section-header"
+              justify="space-between"
+              align="center"
+              wrap="wrap"
+              gap="small"
+            >
+              <h3>{{ t('edit.taskConfiguration') }}</h3>
+              <a-space>
+                <a-button size="small" @click="openRestoreModal">
+                  <template #icon><HistoryOutlined /></template>
+                  {{ t('edit.configRestoreTitle') }}
+                </a-button>
+              </a-space>
+            </a-flex>
+            <TaskPipelineSection
+              v-if="formData.Info.IfQuickConfig"
+              v-model:form-data="formData"
+              :loading="loading"
+              :stage-options="stageOptions"
+              :activity-stages="activityStages"
+              :activity-stage-loading="activityStageLoading"
+              :activity-stage-error="activityStageError"
+              :depot-item-options="depotItemOptions"
+              :depot-item-options-loading="depotItemOptionsLoading"
+              :depot-item-options-error="depotItemOptionsError"
+              :depot-stage-candidates="depotStageCandidates"
+              :depot-stage-candidates-loading="depotStageCandidatesLoading"
+              :depot-inventory="depotInventory"
+              :depot-inventory-time="depotInventoryTime"
+              :skland-role-options="sklandRoleOptions"
+              :load-skland-role-options="loadSklandRoleOptions"
+              :skland-role-loading="sklandRoleLoading"
+              :skland-role-error="sklandRoleError"
+              :depot-plan-editor="depotPlanEditor"
+              :event-depot-plan-editor="eventDepotPlanEditor"
+              :cultivate-operator-catalog="cultivateOperatorCatalog"
+              :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
+              :cultivate-operator-options-error="cultivateOperatorOptionsError"
+              :cultivate-preview="cultivatePreview"
+              :cultivate-preview-loading="cultivatePreviewLoading"
+              :cultivate-preview-error="cultivatePreviewError"
+              :load-cultivate-preview="loadCultivatePreview"
+              :import-cultivate-targets="importCultivateTargets"
+              :fight-summary="fightSummary"
+              :is-edit="isEdit"
+              :infrastructure-importing="infrastructureImporting"
+              :infrastructure-options="infrastructureOptions"
+              :infrastructure-options-loading="infrastructureOptionsLoading"
+              :infrast-plan-select="infrastPlanSelect"
+              :infrast-plan-state="infrastPlanState"
+              @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
+              @select-infrast-plan="handleInfrastPlanSelectChange"
+              @save="handleFieldSave"
+              @retry-activity="loadActivityStageOptions(true)"
+            >
+              <template #fight-detail>
+                <StageConfigSection
+                  v-model:form-data="formData"
+                  :loading="loading"
+                  :stage-mode-options="stageModeOptions"
+                  :stage-options="stageOptions"
+                  :is-plan-mode="isPlanMode"
+                  :display-medicine-numb="displayMedicineNumb"
+                  :display-series-numb="displaySeriesNumb"
+                  :display-stage="displayStage"
+                  :display-stage1="displayStage1"
+                  :display-stage2="displayStage2"
+                  :display-stage3="displayStage3"
+                  :medicine-numb-tooltip="medicineNumbTooltip"
+                  :series-numb-tooltip="seriesNumbTooltip"
+                  :stage-tooltip="stageTooltip"
+                  :stage1-tooltip="stage1Tooltip"
+                  :stage2-tooltip="stage2Tooltip"
+                  :stage3-tooltip="stage3Tooltip"
+                  @update-medicine-numb="updateMedicineNumb"
+                  @update-series-numb="updateSeriesNumb"
+                  @update-stage="updateStage"
+                  @update-stage1="updateStage1"
+                  @update-stage2="updateStage2"
+                  @update-stage3="updateStage3"
+                  @handle-add-custom-stage="addCustomStage"
+                  @handle-add-custom-stage1="addCustomStage1"
+                  @handle-add-custom-stage2="addCustomStage2"
+                  @handle-add-custom-stage3="addCustomStage3"
+                  @save="handleFieldSave"
+                />
+              </template>
+            </TaskPipelineSection>
+
+            <!-- 额外脚本组件 -->
+            <ExtraScriptSection
+              v-model:form-data="formData"
+              :loading="loading"
+              @save="handleFieldSave"
+            />
+
+            <!-- 通知配置组件 -->
+            <UserNotifyConfig
+              v-model="formData.Notify"
+              :loading="loading"
+              :script-id="scriptId"
+              :user-id="userId"
+              show-six-star
+              @save="handleFieldSave"
+            />
+          </template>
         </a-form>
       </a-card>
     </ConfigLockPanel>
@@ -230,6 +273,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import CultivateTargetEditor from '@/views/MAAUserEdit/CultivateTargetEditor.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -241,10 +285,8 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
-import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
 import { useMaaDepotStageCandidates } from '@/composables/useMaaDepotStageCandidates'
 import { Service } from '@/api'
-import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 import type { HomeOverviewResponse } from '@/types/home.ts'
@@ -265,14 +307,7 @@ import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintain
 import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
 import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
 import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
-import {
-  mergeCultivateTargets,
-  normalizeCultivateCatalog,
-  parseCultivateTargets,
-  serializeCultivateTargets,
-  type CultivateImportResult,
-  type CultivateOperatorCatalogEntry,
-} from '@/views/MAAUserEdit/cultivateTargets'
+import { useMaaCultivation } from '@/views/MAAUserEdit/useMaaCultivation'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -281,7 +316,7 @@ import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
-const { parseImport } = useMaaCultivateImportApi()
+const { cultivationPage = false } = defineProps<{ cultivationPage?: boolean }>()
 
 const router = useRouter()
 const route = useRoute()
@@ -339,26 +374,6 @@ const {
 } = useMaaDepotStageCandidates(scriptId)
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
-
-// 干员养成选择器目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存）
-const cultivateOperatorCatalog = ref<CultivateOperatorCatalogEntry[]>([])
-
-// 森空岛绑定下拉：合并所有已配置凭据账号组的角色（下拉展开时按需加载）
-const sklandRoleOptions = ref<Array<{ label: string; value: string }>>([])
-const sklandRoleLoading = ref(false)
-const sklandRoleError = ref('')
-const cultivateOperatorOptionsLoading = ref(false)
-const cultivateOperatorOptionsError = ref('')
-
-// 干员目录（一图流全量表，含技能/模组名称目录与可达档位，随快照缓存；
-// 序列号守卫防绑定变更连发两次加载时的乱序覆盖）
-let cultivateOperatorCatalogSeq = 0
-
-// 养成需求预览（纯计算不落库；序列号守卫防快速编辑时的乱序覆盖）
-const cultivatePreview = ref<CultivatePreviewOut | null>(null)
-const cultivatePreviewLoading = ref(false)
-const cultivatePreviewError = ref('')
-let cultivatePreviewSeq = 0
 
 // 服务器选项
 const serverOptions = [
@@ -777,6 +792,10 @@ const fieldSave = useMAAFieldSave({
 })
 const { isSaving, saveField: handleFieldSave } = fieldSave
 
+const prepareCopilotAnalysis = async () => {
+  if (!(await fieldSave.flush())) throw new Error(t('edit.couldNotSaveUser'))
+}
+
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
   await handleFieldSave('Info.IfQuickConfig', value)
@@ -876,10 +895,7 @@ const createUserImmediately = async () => {
 const loadUserData = async (): Promise<boolean> => {
   isInitializing.value = true
   // 恢复/重载配置后，旧目标或旧绑定的预览不能再回写。
-  cultivatePreviewSeq++
-  cultivatePreview.value = null
-  cultivatePreviewLoading.value = false
-  cultivatePreviewError.value = ''
+  resetCultivatePreview()
   try {
     const userResponse = await getUsers(scriptId, userId)
 
@@ -1070,127 +1086,30 @@ const loadDepotInventory = async () => {
   }
 }
 
-const loadCultivateOperatorOptions = async () => {
-  // 绑定变更的两字段保存分属两个 await 周期，watch 会以半绑定/完整状态各
-  // 触发一次加载；seq 守卫丢弃乱序返回的过期响应（与预览加载同款）
-  const seq = ++cultivateOperatorCatalogSeq
-  cultivateOperatorOptionsLoading.value = true
-  cultivateOperatorOptionsError.value = ''
-  try {
-    const response = await Service.getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost({
-      script: { scriptId },
-      userId,
-    })
-    if (seq !== cultivateOperatorCatalogSeq) return
-    if (response.code !== 200) {
-      cultivateOperatorOptionsError.value = response.message || '加载干员目录失败'
-      return
-    }
-    cultivateOperatorCatalog.value = normalizeCultivateCatalog(response.data ?? [])
-  } catch (error) {
-    if (seq !== cultivateOperatorCatalogSeq) return
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载干员目录失败: ${errorMsg}`)
-    cultivateOperatorOptionsError.value = '加载干员目录失败'
-  } finally {
-    if (seq === cultivateOperatorCatalogSeq) cultivateOperatorOptionsLoading.value = false
-  }
-}
-
-const importCultivateTargets = (content: string): Promise<CultivateImportResult> =>
-  trackEdit(async () => {
-    if (!userId || configLocked.value) throw new Error(t('edit.maaCultivateImportUnavailable'))
-    const imported = await parseImport(scriptId, content)
-    const merged = mergeCultivateTargets(
-      parseCultivateTargets(formData.Task.CultivateTargets),
-      parseCultivateTargets(imported.targets)
-    )
-    const result = { ...merged.result, skipped: imported.skippedMessages }
-    if (!result.operatorIds.length) return result
-    const saved = await handleFieldSave(
-      'Task.CultivateTargets',
-      serializeCultivateTargets(merged.rows)
-    )
-    if (!saved) throw new Error(t('edit.couldNotSaveUser'))
-    // 导入可包含已满级、被选择器过滤的干员，补回其名称和技能目录。
-    const additions = normalizeCultivateCatalog(imported.data ?? [])
-    const importedIds = new Set(additions.map(item => item.value))
-    cultivateOperatorCatalog.value = [
-      ...cultivateOperatorCatalog.value.filter(item => !importedIds.has(item.value)),
-      ...additions,
-    ]
-    await loadCultivateOperatorOptions()
-    return result
-  })
-
-const loadSklandRoleOptions = async () => {
-  // 该端点要遍历所有已配置森空岛凭据的账号组做凭据刷新+角色拉取，代价高；
-  // 每次展开任务行都会重新挂载编辑器并触发回显请求，故已加载过就直接复用
-  // （要刷新列表：离开编辑页重进，或下拉为空时由展开下拉触发）
-  if (sklandRoleOptions.value.length) return
-  sklandRoleLoading.value = true
-  sklandRoleError.value = ''
-  try {
-    const response =
-      await Service.getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost()
-    if (response.code !== 200) {
-      sklandRoleError.value = response.message || '加载绑定角色失败'
-      sklandRoleOptions.value = []
-      return
-    }
-    sklandRoleOptions.value = response.data.map(option => ({
-      label: option.label,
-      value: option.value as string,
-    }))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载森空岛绑定角色失败: ${errorMsg}`)
-    sklandRoleError.value = '加载绑定角色失败'
-    sklandRoleOptions.value = []
-  } finally {
-    sklandRoleLoading.value = false
-  }
-}
-
-// 绑定变化（绑定↔解绑、或换绑到另一角色）后：选择器目录需按森空岛快照
-// 重新过滤（精 2 干员绑定后恢复可见，解除绑定回到剔精 2 口径），预览也要
-// 按新练度重算——故比较账号|角色的复合值而不只是绑定与否
-watch(
-  () => `${formData.Task?.CultivateSklandAccount ?? ''}|${formData.Task?.CultivateSklandUid ?? ''}`,
-  (next, prev) => {
-    if (isInitializing.value || !userId || next === prev) return
-    loadCultivateOperatorOptions()
-    if (formData.Task?.CultivateTargets) {
-      loadCultivatePreview(formData.Task.CultivateTargets)
-    }
-  }
-)
-
-const loadCultivatePreview = async (targetsJson: string) => {
-  const seq = ++cultivatePreviewSeq
-  cultivatePreviewLoading.value = true
-  cultivatePreviewError.value = ''
-  try {
-    const response = await Service.getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost({
-      scriptId,
-      userId,
-      targets: targetsJson,
-    })
-    if (seq !== cultivatePreviewSeq) return
-    if (response.code !== 200) {
-      cultivatePreviewError.value = response.message || '需求计算失败'
-      return
-    }
-    cultivatePreview.value = response
-  } catch (error) {
-    if (seq !== cultivatePreviewSeq) return
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`养成需求计算失败: ${errorMsg}`)
-    cultivatePreviewError.value = '需求计算失败'
-  } finally {
-    if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
-  }
-}
+const {
+  cultivateOperatorCatalog,
+  cultivateOperatorOptionsLoading,
+  cultivateOperatorOptionsError,
+  sklandRoleOptions,
+  sklandRoleLoading,
+  sklandRoleError,
+  cultivatePreview,
+  cultivatePreviewLoading,
+  cultivatePreviewError,
+  loadCultivateOperatorOptions,
+  loadSklandRoleOptions,
+  loadCultivatePreview,
+  importCultivateTargets,
+  resetCultivatePreview,
+} = useMaaCultivation({
+  scriptId,
+  getUserId: () => userId,
+  task: () => formData.Task,
+  isInitializing: () => isInitializing.value,
+  isLocked: () => configLocked.value,
+  saveTargets: targets => handleFieldSave('Task.CultivateTargets', targets),
+  trackEdit: edit => trackEdit(edit),
+})
 
 const loadStageModeOptions = async () => {
   try {
@@ -1397,7 +1316,9 @@ const handleScriptConfig = () => {
 }
 
 const handleCancel = async () => {
-  await router.push('/scripts')
+  await router.push(
+    cultivationPage ? { name: 'MAAUserEdit', params: { scriptId, userId } } : '/scripts'
+  )
 }
 
 const handleSaveMAAConfig = () => {
@@ -1745,6 +1666,26 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.cultivation-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto 24px;
+  gap: 16px;
+}
+.cultivation-page-header h2 {
+  margin: 12px 0 8px;
+}
+.cultivation-page-header p {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+}
+.cultivation-page-loading {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+}
 .user-edit-container {
   padding: 32px;
   min-height: 100vh;

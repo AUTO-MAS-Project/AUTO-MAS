@@ -36,26 +36,21 @@
       :toggleable="false"
       :hint="inventoryCultivateHint"
     >
+      <template #actions>
+        <a-button :disabled="loading || !route.params.userId" @click="openCultivation">
+          {{ t('maaCopilot.openPage') }}
+        </a-button>
+      </template>
       <!-- 两个来源分别保留原开关与设置，按本轮适用条件共同规划。 -->
-      <CultivateTargetEditor
+      <PipelineRow
+        :name="t('edit.maaCultivate')"
         :summary="cultivateSummary"
-        :form-data="formData"
-        :loading="loading"
-        :operator-catalog="cultivateOperatorCatalog"
-        :operator-options-loading="cultivateOperatorOptionsLoading"
-        :operator-options-error="cultivateOperatorOptionsError"
-        :skland-role-options="sklandRoleOptions"
-        :skland-role-loading="sklandRoleLoading"
-        :skland-role-error="sklandRoleError"
-        :load-skland-role-options="loadSklandRoleOptions"
-        :item-options="depotItemOptions"
-        :cultivate-preview="cultivatePreview"
-        :cultivate-preview-loading="cultivatePreviewLoading"
-        :cultivate-preview-error="cultivatePreviewError"
-        :load-cultivate-preview="loadCultivatePreview"
-        :import-cultivate-targets="importCultivateTargets"
-        @save="emitSave"
-      />
+        :checked="formData.Task.IfCultivate"
+        :disabled="loading"
+        :has-detail="false"
+        @change="emitSave('Task.IfCultivate', $event)"
+      >
+      </PipelineRow>
       <!-- 固定与计划表仅控制第三段，库存目标仍独立保存。 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
@@ -133,7 +128,7 @@ import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import PipelineRow from './PipelineRow.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
-import CultivateTargetEditor from './CultivateTargetEditor.vue'
+import { useRoute, useRouter } from 'vue-router'
 import {
   eventDepotPlanIdentity,
   eventStageIdentity,
@@ -183,6 +178,13 @@ const emit = defineEmits<{
   retryActivity: []
 }>()
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const openCultivation = () =>
+  router.push({
+    name: 'MAACultivate',
+    params: { scriptId: route.params.scriptId, userId: route.params.userId },
+  })
 const depotSettingsOpen = ref(false)
 const emitSave = (key: string, value: any) => emit('save', key, value)
 /* 长说明只留一行摘要，细读内容收进行尾 ? 的 tooltip（见 PipelineRow） */
