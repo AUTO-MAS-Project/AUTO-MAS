@@ -91,6 +91,7 @@ export function registerDesktopMascotHandlers(
     | 'setDecodedImage'
     | 'setActivity'
     | 'showNotice'
+    | 'finishReaction'
   > & {
     setReady(ready: boolean, labels?: DesktopMascotMenuLabels, colors?: DesktopMascotColors): void
   },
@@ -209,6 +210,9 @@ export function registerDesktopMascotHandlers(
   const onPointer = (event: Electron.IpcMainEvent, action: unknown, session: unknown): void =>
     service.handlePointer(event.sender, action, session)
   ipcMain.on('desktop-mascot:pointer', onPointer)
+  const onReactionEnded = (event: Electron.IpcMainEvent, id: unknown): void =>
+    service.finishReaction(event.sender, id)
+  ipcMain.on('desktop-mascot:reaction-ended', onReactionEnded)
   const onImageDecoded = (
     event: Electron.IpcMainEvent,
     imageUrl: unknown,
@@ -232,15 +236,19 @@ export function registerDesktopMascotHandlers(
       return
     service.setActivity(working, animate)
   })
-  ipcMain.handle('desktop-mascot:notice', (event, text: unknown, reaction: unknown) => {
-    if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
-    service.showNotice(
-      text,
-      reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
-        ? reaction
-        : undefined
-    )
-  })
+  ipcMain.handle(
+    'desktop-mascot:notice',
+    (event, text: unknown, reaction: unknown, key: unknown) => {
+      if (event.sender !== getMainWindow()?.webContents || typeof text !== 'string') return
+      service.showNotice(
+        text,
+        reaction === 'success' || reaction === 'failure' || reaction === 'stopped'
+          ? reaction
+          : undefined,
+        typeof key === 'string' ? key.slice(0, 120) : undefined
+      )
+    }
+  )
 
   return () => {
     for (const channel of [
@@ -255,6 +263,7 @@ export function registerDesktopMascotHandlers(
     ])
       ipcMain.removeHandler(channel)
     ipcMain.removeListener('desktop-mascot:pointer', onPointer)
+    ipcMain.removeListener('desktop-mascot:reaction-ended', onReactionEnded)
     ipcMain.removeListener('desktop-mascot:image-decoded', onImageDecoded)
   }
 }

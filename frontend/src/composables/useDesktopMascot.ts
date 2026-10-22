@@ -90,7 +90,7 @@ export function useDesktopMascot(
               ? 'stopped'
               : 'failure'
       }
-      void api.showDesktopMascotNotice?.(text, reaction).catch(error => {
+      void api.showDesktopMascotNotice?.(text, reaction, task.taskId).catch(error => {
         reportError('显示桌宠提醒失败:', error)
       })
     }

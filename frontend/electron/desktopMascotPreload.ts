@@ -10,6 +10,7 @@ const api: DesktopMascotAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot:get'),
   pointer: (...args) => ipcRenderer.send('desktop-mascot:pointer', ...args),
   startDrag: offset => ipcRenderer.invoke('desktop-mascot:drag-start', offset),
+  reactionEnded: id => ipcRenderer.send('desktop-mascot:reaction-ended', id),
   imageDecoded: (imageUrl, pngDataUrl) =>
     ipcRenderer.send('desktop-mascot:image-decoded', imageUrl, pngDataUrl),
   onLookChanged: callback => {
