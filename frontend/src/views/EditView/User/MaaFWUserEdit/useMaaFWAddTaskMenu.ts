@@ -7,7 +7,7 @@ import type {
   MaaFWTaskInfo,
   MaaFWTaskSnapshot,
 } from '@/types/script'
-import { markMaaFWTasksSeen, resolveMaaFWNewTaskNames } from '../maafwTaskChanges'
+import { resolveMaaFWNewTaskNames } from '../maafwTaskChanges'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import type { MaaFWTaskQueue } from './useMaaFWTaskQueue'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
@@ -125,7 +125,7 @@ export function useMaaFWAddTaskMenu({
 
     return Array.from(groupMap.values()).filter(group => group.taskCount > 0)
   })
-  // 用户没见过的任务（项目更新新增或改了 name）：在「添加任务」里标 NEW，加进队列后消掉
+  // 用户没见过的任务（项目更新新增或改了 name）：在「添加任务」里标 NEW，只标这一次（加进队列的当场消掉）
   const newTaskNames = ref<ReadonlySet<string>>(new Set())
   watch(previewData, data => {
     if (!data) return
@@ -222,7 +222,6 @@ export function useMaaFWAddTaskMenu({
     selectedTaskId.value = taskIds[0]
     addTaskCascaderValue.value = []
     if (newTaskNames.value.has(taskName)) {
-      markMaaFWTasksSeen(scriptId, [taskName])
       newTaskNames.value = new Set([...newTaskNames.value].filter(name => name !== taskName))
     }
     await persistQueuedSnapshot()
