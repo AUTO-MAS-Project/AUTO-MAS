@@ -16,6 +16,32 @@ SCOPE_GLOBAL = "global"
 SCOPE_USER = "user"
 CHANNEL_INTERFACE_VERSION = 1
 EmptyPolicy = Literal["send", "warn", "skip"]
+DeliveryErrorKind = Literal[
+    "configuration", "transport", "rate_limited", "rejected", "unavailable", "unknown"
+]
+DeliveryStage = Literal["catalog", "preparation", "recipient", "render", "send"]
+
+
+class NotificationDeliveryError(RuntimeError):
+    """渠道声明失败类别及是否可重试；执行器不解释协议状态码或文案。"""
+
+    def __init__(
+        self, message: str, *, kind: DeliveryErrorKind, retryable: bool
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.retryable = retryable
+
+
+@dataclass(frozen=True)
+class DeliveryFailure:
+    label: str
+    stage: DeliveryStage
+    kind: DeliveryErrorKind
+    retryable: bool
+    target_id: str | None = None
+    attempts: int = 0
+    error_type: str | None = None
 
 
 class NotificationSourceConfig(Protocol):
@@ -284,6 +310,13 @@ class DispatchResult:
     succeeded: tuple[str, ...] = ()
     failed: tuple[str, ...] = ()
     succeeded_ids: tuple[str, ...] = ()
+    failures: tuple[DeliveryFailure, ...] = ()
+
+    @property
+    def failed_ids(self) -> tuple[str, ...]:
+        """只有已解析目标才有稳定 ID，目录错误不伪造目标。"""
+
+        return tuple(f.target_id for f in self.failures if f.target_id is not None)
 
 
 class Notifier(Protocol):

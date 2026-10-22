@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
+from app.models.notification_community import CommunityNotificationResult
 
 
 @dataclass(frozen=True)
@@ -25,8 +26,12 @@ class WebhookTester(Protocol):
 
 
 class CommunityNotifier(Protocol):
-    async def send(self, results: list[dict[str, object]]) -> list[str]: ...
+    async def send(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> list[str]: ...
 
-    async def submit(self, results: list[dict[str, object]]) -> list[str] | None: ...
+    async def submit(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> list[str] | None: ...
 
     async def drain(self, timeout: float) -> bool: ...

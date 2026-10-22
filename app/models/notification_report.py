@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal, NotRequired, Protocol, TypedDict
 
-from app.models.notification import NotifyPayload
+from app.models.notification import DeferredContent, NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
+from app.models.notification_community import CommunityNotificationResult
 
 TaskNotificationChange = Literal["results", "delivery"]
 TaskNoticeMode = Literal["代理结果", "统计信息"]
@@ -92,7 +93,7 @@ class TaskResultReport:
 
 @dataclass
 class TaskNotificationState:
-    results: list[dict[str, object]] = field(default_factory=list, repr=False)
+    results: tuple[CommunityNotificationResult, ...] = field(default=(), repr=False)
     summary_consumed: bool = False
     delivered: set[str] = field(default_factory=set)
     pending: tuple[str, ...] = ()
@@ -108,25 +109,19 @@ class TaskReportPolicy:
 @dataclass(frozen=True)
 class TaskReportSummary:
     text: str = ""
-    markdown: str = ""
-
-
-def filter_community_notification_results(
-    results: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """占位结果不参与摘要和独立通知。"""
-
-    return [item for item in results if not item.get("_notification_only")]
+    markdown: str | DeferredContent[str] = ""
 
 
 class ReportRenderer(Protocol):
     """编排只消费内容端口，模板、字体和图片由实现管理。"""
 
     def community_summary(
-        self, results: list[dict[str, object]]
+        self, results: tuple[CommunityNotificationResult, ...]
     ) -> TaskReportSummary: ...
 
-    def community_payload(self, results: list[dict[str, object]]) -> NotifyPayload: ...
+    def community_payload(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> NotifyPayload: ...
 
     def append_summary(
         self, payload: NotifyPayload, summary: TaskReportSummary

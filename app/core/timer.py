@@ -25,6 +25,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
 from typing import Any
 
+from app.models.notification_community import community_notification_results
 from app.models.notification_ports import CommunityNotifier
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
@@ -526,7 +527,9 @@ class _MainTimer:
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
             if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await self._community_notifier.send(results)
+                    failed_channels = await self._community_notifier.send(
+                        community_notification_results(results)
+                    )
                 except Exception as exc:
                     logger.warning(f"游戏社区签到完成，但通知服务异常: {exc}")
                 else:

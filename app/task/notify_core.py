@@ -49,7 +49,7 @@ from app.models.notification import (
 from app.models.notification_channel import UserNotificationConfig
 from app.models.notification_report import ReportScreenshot, TaskResultReport
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("任务通知核心")
 
@@ -103,7 +103,6 @@ async def push_proxy_result(
         f"已完成数: {report.completed_count}, 未完成数: {report.uncompleted_count}\n\n"
         f"{report.result}"
     )
-    template = get_notification_template(result_template)
     counts = (
         f"已完成用户数: {report.completed_count}, "
         f"未完成用户数: {report.uncompleted_count}"
@@ -121,7 +120,9 @@ async def push_proxy_result(
         NotifyPayload(
             title=title,
             text=message_text,
-            html=template.render(report.template_context()),
+            html=deferred_notification_template(
+                result_template, report.template_context()
+            ),
             signature_sep=signature_sep,
             summary=NotificationSummary(
                 text=counts,

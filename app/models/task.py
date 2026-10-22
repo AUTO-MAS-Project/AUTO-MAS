@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from app.models.notification_community import community_notification_results
 from app.models.notification_ports import LocalNotifier
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
@@ -190,11 +191,11 @@ class TaskItem(ABC):
     def game_sign_results(self) -> list[dict[str, object]]:
         """历史字段继续映射到独立通知状态，不保留第二份结果。"""
 
-        return self.notification_state.results
+        return [item.to_legacy() for item in self.notification_state.results]
 
     @game_sign_results.setter
     def game_sign_results(self, value: list[dict[str, object]]) -> None:
-        self.notification_state.results = value
+        self.notification_state.results = community_notification_results(value)
 
     @property
     def game_sign_summary_consumed(self) -> bool:

@@ -38,7 +38,7 @@ from app.models.notification import NotificationSummary, NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
@@ -85,8 +85,8 @@ async def push_notification(
             ).strip(),
             "failure_notes_text": failure_notes_text,
         }
-        message_html = get_notification_template("general_statistics.html").render(
-            render_data
+        message_html = deferred_notification_template(
+            "general_statistics.html", render_data
         )
 
         # 正文只按渠道分流，投递交 dispatch：用户侧开关在用户目标内判定，

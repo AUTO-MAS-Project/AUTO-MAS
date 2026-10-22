@@ -32,6 +32,7 @@ from app.models.notification import (
     NotifyPayload,
     RenderedNotification,
     WebhookTargetSnapshot,
+    resolve_content,
 )
 from app.models.notification_channel import (
     ChannelTarget,
@@ -105,7 +106,7 @@ class Notification:
             title=payload.title,
             content=payload.text,
             webhook=replace(webhook, enabled=True),
-            images=payload.images,
+            images=resolve_content(payload.images),
         )
 
     async def WebhookPush(

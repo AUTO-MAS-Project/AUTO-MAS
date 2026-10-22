@@ -8,8 +8,10 @@ from app.models.notification import NotifyPayload
 from app.models.notification_channel import (
     ChannelTarget,
     DeliveryChannel,
+    DeliveryFailure,
     DispatchResult,
     EmptyPolicy,
+    NotificationDeliveryError,
     Notifier,
     NotifyTarget,
 )
@@ -20,12 +22,12 @@ logger = get_logger("通知投递")
 
 
 async def _send(
-    channel: str,
+    target: ChannelTarget,
     send: Callable[[], Awaitable[Any]],
     *,
     attempts: int,
     retry_delay: float,
-) -> bool:
+) -> DeliveryFailure | None:
     """发送单个渠道，并把异常和显式 False 都视作失败。"""
 
     for attempt in range(1, attempts + 1):
@@ -33,15 +35,32 @@ async def _send(
             result = await send()
             if result is False:
                 raise RuntimeError("通知渠道返回失败状态")
-            return True
+            return None
         except Exception as exc:
-            if attempt == attempts:
-                logger.warning(f"{channel}通知发送失败: {type(exc).__name__}")
+            if isinstance(exc, NotificationDeliveryError):
+                kind, retryable = exc.kind, exc.retryable
+            elif isinstance(exc, ValueError):
+                kind, retryable = "configuration", False
+            elif isinstance(exc, (OSError, TimeoutError, ConnectionError)):
+                kind, retryable = "transport", True
+            else:
+                kind, retryable = "unknown", True
+            failure = DeliveryFailure(
+                label=target.label,
+                target_id=target.id,
+                stage="send",
+                kind=kind,
+                retryable=retryable,
+                attempts=attempt,
+                error_type=type(exc).__name__,
+            )
+            if attempt == attempts or not retryable:
+                logger.warning(f"{target.label}通知发送失败: {type(exc).__name__}")
                 break
-            logger.warning(f"{channel}通知发送失败，将重试: {type(exc).__name__}")
+            logger.warning(f"{target.label}通知发送失败，将重试: {type(exc).__name__}")
             if retry_delay > 0:
                 await asyncio.sleep(retry_delay)
-    return False
+    return failure
 
 
 def _recipient_action(
@@ -83,6 +102,7 @@ async def dispatch(
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
     unresolved: list[str] = []
+    unresolved_failures: list[DeliveryFailure] = []
     groups: dict[
         str, list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]]
     ] = {}
@@ -91,6 +111,16 @@ async def dispatch(
         for failure in target.unresolved:
             if failure not in unresolved:
                 unresolved.append(failure)
+                unresolved_failures.append(
+                    DeliveryFailure(
+                        label=failure,
+                        stage="catalog"
+                        if failure in target.catalog_failures
+                        else "preparation",
+                        kind="unavailable",
+                        retryable=False,
+                    )
+                )
         for channel, ct in target.channels:
             if ct.label not in skip and ct.id not in skip_ids:
                 groups.setdefault(channel.key, []).append(
@@ -111,7 +141,19 @@ async def dispatch(
             )
             if not should_send:
                 return DispatchResult(
-                    attempted=int(missing), failed=(target.label,) if missing else ()
+                    attempted=int(missing),
+                    failed=(target.label,) if missing else (),
+                    failures=(
+                        DeliveryFailure(
+                            label=target.label,
+                            target_id=target.id,
+                            stage="recipient",
+                            kind="configuration",
+                            retryable=False,
+                        ),
+                    )
+                    if missing
+                    else (),
                 )
         try:
             rendered = render_for_target(
@@ -126,8 +168,21 @@ async def dispatch(
                 use_summary_title=target.use_summary_title,
             )
         except Exception as exc:
-            logger.warning(f"{target.label}通知内容准备失败: {exc}")
-            return DispatchResult(attempted=1, failed=(target.label,))
+            logger.warning(f"{target.label}通知内容准备失败: {type(exc).__name__}")
+            return DispatchResult(
+                attempted=1,
+                failed=(target.label,),
+                failures=(
+                    DeliveryFailure(
+                        label=target.label,
+                        target_id=target.id,
+                        stage="render",
+                        kind="configuration",
+                        retryable=False,
+                        error_type=type(exc).__name__,
+                    ),
+                ),
+            )
         for diagnostic in rendered.diagnostics:
             logger.warning(f"{target.label}通知内容降级: {diagnostic}")
 
@@ -136,13 +191,14 @@ async def dispatch(
                 channel=channel, target=target, rendered=rendered
             )
 
-        if await _send(
-            channel=target.label, send=send, attempts=attempts, retry_delay=retry_delay
-        ):
+        failure = await _send(
+            target=target, send=send, attempts=attempts, retry_delay=retry_delay
+        )
+        if failure is None:
             return DispatchResult(
                 attempted=1, succeeded=(target.label,), succeeded_ids=(target.id,)
             )
-        return DispatchResult(attempted=1, failed=(target.label,))
+        return DispatchResult(attempted=1, failed=(target.label,), failures=(failure,))
 
     async def send_group(
         jobs: list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]],
@@ -201,4 +257,6 @@ async def dispatch(
         failed=tuple(name for result in results for name in result.failed)
         + tuple(unresolved),
         succeeded_ids=tuple(uid for result in results for uid in result.succeeded_ids),
+        failures=tuple(f for result in results for f in result.failures)
+        + tuple(unresolved_failures),
     )

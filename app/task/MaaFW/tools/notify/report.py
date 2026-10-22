@@ -15,7 +15,7 @@ from app.models.notification_channel import UserNotificationConfig
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("MaaFW 通知工具")
 
@@ -85,13 +85,12 @@ async def _push_statistics(
         f"MaaFW 运行结果: {message['user_result']}"
         f"{detail_str}\n"
     )
-    template = get_notification_template("MaaFW_statistics.html")
 
     return await dispatch(
         NotifyPayload(
             title=title,
             text=message_text,
-            html=template.render(message),
+            html=deferred_notification_template("MaaFW_statistics.html", message),
             images=tuple(images),
         ),
         statistic_targets(user_config),

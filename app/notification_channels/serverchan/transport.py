@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import re
 
-from app.models.notification_channel import HttpDependencies
+from app.models.notification_channel import HttpDependencies, NotificationDeliveryError
+from app.notification_channels.common import RemoteHTTPError
 
 
 class Sender:
@@ -69,7 +70,17 @@ class Sender:
 
         async with self.dependencies.http_factory(proxy=proxy) as client:
             response = await client.post(url, json=params, headers=headers)
-            result = response.json()
+            if not response.is_success:
+                raise RemoteHTTPError(
+                    response.status_code,
+                    f"ServerChan 推送通知失败: HTTP {response.status_code}",
+                )
+            try:
+                result = response.json()
+            except ValueError as exc:
+                raise NotificationDeliveryError(
+                    "ServerChan 响应格式无效", kind="transport", retryable=True
+                ) from exc
 
         if result.get("code") == 0:
             self.dependencies.logger.success(f"Server酱推送通知成功: {title}")
@@ -79,4 +90,6 @@ class Sender:
             self.dependencies.logger.warning(
                 f"ServerChan 服务端拒绝: HTTP {response.status_code}{code_hint}"
             )
-            raise Exception(f"ServerChan 推送通知失败: HTTP {response.status_code}")
+            raise NotificationDeliveryError(
+                "ServerChan 服务端拒绝", kind="rejected", retryable=True
+            )

@@ -1,8 +1,10 @@
 """报告与签到摘要的内容组合，不读取配置或修改任务状态。"""
 
+from collections.abc import Callable
 from dataclasses import replace
 
-from app.models.notification import NotifyPayload
+from app.models.notification import DeferredContent, NotifyPayload, resolve_content
+from app.models.notification_community import CommunityNotificationResult
 from app.models.notification_report import TaskReportSummary
 from app.services.community_notification import (
     append_community_summary_html,
@@ -14,15 +16,21 @@ from app.services.community_notification import (
 class DefaultReportRenderer:
     """生产内容实现；协调器可用替身运行，无须加载模板或 Pillow。"""
 
-    def community_summary(self, results: list[dict[str, object]]) -> TaskReportSummary:
+    def community_summary(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> TaskReportSummary:
         return TaskReportSummary(
             text=format_community_task_summary(results).strip(),
-            markdown=format_community_task_summary(
-                results, output_format="markdown"
-            ).strip(),
+            markdown=DeferredContent(
+                lambda: format_community_task_summary(
+                    results, output_format="markdown"
+                ).strip()
+            ),
         )
 
-    def community_payload(self, results: list[dict[str, object]]) -> NotifyPayload:
+    def community_payload(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> NotifyPayload:
         return build_community_notification_payload(results)
 
     def append_summary(
@@ -51,12 +59,18 @@ def append_report_summary(
         payload,
         text=f"{payload.text}\n\n{summary.text}",
         html=(
-            append_community_summary_html(payload.html, summary.text)
+            _map_body(
+                payload.html,
+                lambda html: append_community_summary_html(html, summary.text),
+            )
             if payload.html is not None
             else None
         ),
         markdown=(
-            f"{payload.markdown or payload.text}\n\n{summary.markdown}"
+            _map_body(
+                payload.markdown or payload.text,
+                lambda markdown: f"{markdown}\n\n{resolve_content(summary.markdown)}",
+            )
             if summary.markdown
             else payload.markdown or payload.text
         ),
@@ -88,18 +102,24 @@ def prepare_report_payloads(
             append_report_summary(payload, summary) if summary.text else payload,
         )
 
-    markdown = payload.markdown or payload.text
-    if summary.markdown and summary.markdown not in markdown:
-        markdown = (
-            markdown.replace(embedded_summary, summary.markdown)
-            if embedded_summary in markdown
-            else f"{markdown}\n\n{summary.markdown}"
-        )
+    def merged_markdown() -> str:
+        markdown = resolve_content(payload.markdown or payload.text)
+        summary_markdown = resolve_content(summary.markdown)
+        if summary_markdown and summary_markdown not in markdown:
+            return (
+                markdown.replace(embedded_summary, summary_markdown)
+                if embedded_summary in markdown
+                else f"{markdown}\n\n{summary_markdown}"
+            )
+        return markdown
+
     clean = replace(
         payload,
         text=payload.text.replace(embedded_summary, "").rstrip(),
         html=(
-            payload.html.replace(embedded_summary, "").rstrip()
+            _map_body(
+                payload.html, lambda html: html.replace(embedded_summary, "").rstrip()
+            )
             if payload.html is not None
             else None
         ),
@@ -117,9 +137,22 @@ def prepare_report_payloads(
             else None
         ),
         markdown=(
-            payload.markdown.replace(summary.markdown, "").rstrip()
+            _map_body(
+                payload.markdown,
+                lambda markdown: markdown.replace(
+                    resolve_content(summary.markdown), ""
+                ).rstrip(),
+            )
             if payload.markdown is not None
             else payload.text.replace(embedded_summary, "").rstrip()
         ),
     )
-    return clean, replace(payload, markdown=markdown)
+    return clean, replace(payload, markdown=DeferredContent(merged_markdown))
+
+
+def _map_body(
+    body: str | DeferredContent[str], transform: Callable[[str], str]
+) -> DeferredContent[str]:
+    """组合正文仍保持惰性，某种表达失败不会中断其他表达。"""
+
+    return DeferredContent(lambda: transform(resolve_content(body)))

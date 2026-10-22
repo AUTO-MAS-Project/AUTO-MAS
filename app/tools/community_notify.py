@@ -35,13 +35,51 @@ from app.core.notification_report import (
     NOTIFICATION_RETRY_DELAY_SECONDS,
     NOTIFICATION_SEND_ATTEMPTS,
 )
+from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
-from app.services.community_notification import (
-    build_community_notification_payload,
-    filter_community_notification_results,
-    format_community_notification,
-    format_community_task_summary,
-)
+from app.models.notification_community import community_notification_results
+from app.services import community_notification as content
+from app.services.community_notification import NotificationBodyFormat
+
+
+def filter_community_notification_results(
+    results: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [item for item in results if not item.get("_notification_only")]
+
+
+def build_community_notification_payload(
+    results: list[dict[str, object]],
+) -> NotifyPayload:
+    return content.build_community_notification_payload(
+        community_notification_results(results)
+    )
+
+
+def format_community_notification(
+    results: list[dict[str, object]],
+    *,
+    output_format: NotificationBodyFormat = "markdown",
+    include_signature: bool = True,
+    include_title: bool = True,
+) -> str:
+    return content.format_community_notification(
+        community_notification_results(results),
+        output_format=output_format,
+        include_signature=include_signature,
+        include_title=include_title,
+    )
+
+
+def format_community_task_summary(
+    results: list[dict[str, object]],
+    *,
+    output_format: NotificationBodyFormat = "text",
+) -> str:
+    return content.format_community_task_summary(
+        community_notification_results(results),
+        output_format=output_format,
+    )
 
 
 async def dispatch_community_notification(
@@ -52,7 +90,7 @@ async def dispatch_community_notification(
     completion_notice: str = "",
 ) -> DispatchResult:
     return await get_community_notifier().dispatch(
-        results,
+        community_notification_results(results),
         targets=targets,
         skip_channel_ids=skip_channel_ids,
         completion_notice=completion_notice,
@@ -60,7 +98,7 @@ async def dispatch_community_notification(
 
 
 async def push_community_notification(results: list[dict[str, object]]) -> list[str]:
-    return await get_community_notifier().send(results)
+    return await get_community_notifier().send(community_notification_results(results))
 
 
 __all__ = [

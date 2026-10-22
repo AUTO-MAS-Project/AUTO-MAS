@@ -1193,7 +1193,10 @@ class Task(TaskExecuteBase):
 
         # 签到在后台并行执行；完成事件由报告协调器接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
-            from app.core.task_report import create_task_report_coordinator
+            from app.core.task_report import (
+                create_task_report_coordinator,
+                receive_task_community_results,
+            )
             from app.core.timer import MainTimer
 
             sign_source = {
@@ -1204,7 +1207,10 @@ class Task(TaskExecuteBase):
             community_sign = create_task_report_coordinator(self.task_info)
             self.task_info.community_sign_notification = community_sign
             MainTimer.schedule_community_for_task(
-                source=sign_source, on_completed=community_sign.receive
+                source=sign_source,
+                on_completed=lambda results: receive_task_community_results(
+                    community_sign, results
+                ),
             )
 
         await self.prepare()

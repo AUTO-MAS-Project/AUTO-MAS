@@ -313,6 +313,7 @@ async def manual_game_sign(
     """手动触发游戏社区签到"""
 
     try:
+        from app.models.notification_community import community_notification_results
         from app.tools.community import (
             format_community_sign_results,
             has_community_credentials,
@@ -356,7 +357,9 @@ async def manual_game_sign(
         ):
             warning_messages.append("签到未全部完成，请查看签到结果")
         if results:
-            failed_channels = await notifier.submit(results)
+            failed_channels = await notifier.submit(
+                community_notification_results(results)
+            )
             if failed_channels:
                 warning_messages.append(
                     f"部分通知发送失败：{'、'.join(failed_channels)}"

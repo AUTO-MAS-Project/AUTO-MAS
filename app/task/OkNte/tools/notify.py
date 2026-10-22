@@ -22,7 +22,7 @@ from app.models.notification import NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result, push_statistics_report
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("OK-NTE 通知工具")
 
@@ -47,7 +47,7 @@ async def push_notification(
     if mode != "统计信息":
         return DispatchResult()
 
-    message_html = get_notification_template("general_statistics.html").render(message)
+    message_html = deferred_notification_template("general_statistics.html", message)
     return await push_statistics_report(
         payload=NotifyPayload(
             title=title,

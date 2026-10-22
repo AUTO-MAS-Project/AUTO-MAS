@@ -34,7 +34,7 @@ from app.models.notification import NotificationImage, NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("MaaEnd 通知工具")
 _ERROR_IMAGE_LIMIT = 3
@@ -163,13 +163,11 @@ async def push_notification(
         if sections:
             message_text += "\n\n" + "\n\n".join(sections)
 
-        template = get_notification_template("MaaEnd_statistics.html")
-
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text=message_text,
-                html=template.render(message),
+                html=deferred_notification_template("MaaEnd_statistics.html", message),
                 images=tuple(images),
             ),
             statistic_targets(user_config),

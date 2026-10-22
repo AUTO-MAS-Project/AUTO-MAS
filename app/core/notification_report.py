@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
+from app.models.notification_community import CommunityNotificationResult
 from app.models.notification_report import (
     NotificationDispatcher,
     ReportRenderer,
@@ -15,7 +16,6 @@ from app.models.notification_report import (
     TaskReportPolicy,
     TaskReportRequest,
     TaskReportSummary,
-    filter_community_notification_results,
 )
 from app.utils import get_logger
 
@@ -74,13 +74,14 @@ class TaskReportCoordinator:
         self.result_unavailable = False
         self.task_finished = False
         self.delivery_task: asyncio.Task[None] | None = None
+        self._report_dispatch = dependencies.dispatch
 
-    def receive(self, results: list[dict[str, object]] | None) -> None:
+    def receive(self, results: tuple[CommunityNotificationResult, ...] | None) -> None:
         """先保存结果再发布完成事件；报告等待超时不取消签到。"""
 
         self.result_unavailable = results is None
         # 占位项不参与实际通知，空结果仍能结清已发出的待确认提示。
-        self.state.results = filter_community_notification_results(results or [])
+        self.state.results = results or ()
         if self.dependencies.state_changed is not None:
             self.dependencies.state_changed(self.state, "results")
         self.completed.set()
@@ -140,6 +141,22 @@ class TaskReportCoordinator:
             return
         self.delivery_task = self.dependencies.spawn(self._send_supplement())
 
+    def _schedule_feedback(self, feedback: Callable[[], Awaitable[None]]) -> None:
+        """反馈由宿主持有，慢反馈与反馈异常均不阻塞投递结果返回。"""
+
+        async def report() -> None:
+            try:
+                await feedback()
+            except Exception as exc:
+                logger.warning(f"任务通知反馈失败: {type(exc).__name__}")
+
+        coroutine = report()
+        try:
+            self.dependencies.spawn(coroutine)
+        except Exception as exc:
+            coroutine.close()
+            logger.warning(f"任务通知反馈注册失败: {type(exc).__name__}")
+
     async def _send_supplement(self) -> None:
         # 与报告共用锁，即使签到在报告发送中到达，也只补发未收到摘要的渠道。
         async with self.lock:
@@ -158,7 +175,7 @@ class TaskReportCoordinator:
                 if self.targets is not None
                 else self.dependencies.prepare_targets()
             )
-            result = await self.dependencies.dispatch(
+            result = await self._report_dispatch(
                 payload,
                 targets,
                 attempts=NOTIFICATION_SEND_ATTEMPTS,
@@ -172,17 +189,27 @@ class TaskReportCoordinator:
             if self.dependencies.state_changed is not None:
                 self.dependencies.state_changed(self.state, "delivery")
             if result.failed:
-                await self.dependencies.report_supplement_failure(
-                    result, results_saved=bool(self.state.results)
+                results_saved = bool(self.state.results)
+                self._schedule_feedback(
+                    lambda: self.dependencies.report_supplement_failure(
+                        result, results_saved=results_saved
+                    )
                 )
 
     async def dispatch_report(
-        self, request: TaskReportRequest, *, dispatch: NotificationDispatcher
+        self,
+        request: TaskReportRequest,
+        *,
+        dispatch: NotificationDispatcher | None = None,
     ) -> DispatchResult:
         """使用入口固定的策略；迟到补发会重新读取下一次通知的策略。"""
 
         async with self.lock:
             self.targets = request.targets
+            # 本轮覆盖与本轮目标一起用于迟到补发；下一轮未覆盖时恢复宿主端口。
+            self._report_dispatch = (
+                dispatch if dispatch is not None else self.dependencies.dispatch
+            )
             payload = request.payload
             if self.community_pending:
                 if (
@@ -206,7 +233,7 @@ class TaskReportCoordinator:
                     )
             try:
                 return await self._dispatch_report_payload(
-                    request=request, payload=payload, dispatch=dispatch
+                    request=request, payload=payload
                 )
             finally:
                 if self.community_pending:
@@ -218,7 +245,6 @@ class TaskReportCoordinator:
         *,
         request: TaskReportRequest,
         payload: NotifyPayload,
-        dispatch: NotificationDispatcher,
     ) -> DispatchResult:
         summary = (
             self.community_summary()
@@ -234,7 +260,7 @@ class TaskReportCoordinator:
             embedded_summary=request.embedded_summary,
         )
         if not (request.embedded_summary or summary.text):
-            result = await dispatch(
+            result = await self._report_dispatch(
                 payload,
                 request.targets,
                 attempts=request.attempts,
@@ -245,7 +271,7 @@ class TaskReportCoordinator:
             channels = {
                 ct.id for target in request.targets for _, ct in target.channels
             }
-            with_summary = await dispatch(
+            with_summary = await self._report_dispatch(
                 payload,
                 request.targets,
                 attempts=request.attempts,
@@ -254,7 +280,7 @@ class TaskReportCoordinator:
             )
             # 本轮开始前收到过摘要的渠道只收原始报告，避免同一轮重复投递。
             without_summary = (
-                await dispatch(
+                await self._report_dispatch(
                     clean_payload,
                     request.targets,
                     attempts=request.attempts,
@@ -280,6 +306,13 @@ class TaskReportCoordinator:
                 + tuple(f for f in without_summary.failed if f not in unresolved),
                 succeeded_ids=with_summary.succeeded_ids
                 + without_summary.succeeded_ids,
+                failures=with_summary.failures
+                + tuple(
+                    failure
+                    for failure in without_summary.failures
+                    if failure.label not in unresolved
+                ),
             )
-        await self.dependencies.report_failure(result)
+        if result.failed:
+            self._schedule_feedback(lambda: self.dependencies.report_failure(result))
         return result

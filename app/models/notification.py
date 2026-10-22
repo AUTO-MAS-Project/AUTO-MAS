@@ -19,13 +19,44 @@
 """通知编排与渠道服务共用的内部消息类型。"""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal
+from functools import cached_property
+from typing import Literal, cast
 
 NotificationFormat = Literal["text", "markdown", "html"]
 ImagePresentation = Literal["html", "markdown", "base64", "rich_media"]
 SummaryPolicy = Literal["never", "preferred", "if_over_limit"]
 BodyTitlePolicy = Literal["never", "always", "when_title_missing"]
+
+
+class NotificationContentError(RuntimeError):
+    """可选表达生成失败；不携带模板上下文或账号数据。"""
+
+
+@dataclass(frozen=True)
+class DeferredContent[T]:
+    """按需生成一份可选表达，同一通知的多个目标和重试共用结果。"""
+
+    factory: Callable[[], T]
+
+    @cached_property
+    def _result(self) -> tuple[T | None, str | None]:
+        try:
+            return self.factory(), None
+        except Exception as exc:
+            return None, type(exc).__name__
+
+    def resolve(self) -> T:
+        value, error = self._result
+        if error is not None:
+            raise NotificationContentError(error)
+        return cast(T, value)
+
+
+def resolve_content[T](content: T | DeferredContent[T]) -> T:
+    return content.resolve() if isinstance(content, DeferredContent) else content
+
 
 NOTIFICATION_IMAGE_SCHEME = "notify-image://"
 # 渲染器和传输适配共用图片地址语法，保证资源 ID 按完整边界匹配。
@@ -86,9 +117,11 @@ class NotifyPayload:
     title: str
     text: str
     summary: NotificationSummary | None = None
-    markdown: str | None = None
-    html: str | None = None
-    images: tuple[NotificationImage, ...] = ()
+    markdown: str | DeferredContent[str] | None = None
+    html: str | DeferredContent[str] | None = None
+    images: (
+        tuple[NotificationImage, ...] | DeferredContent[tuple[NotificationImage, ...]]
+    ) = ()
     append_signature: bool = True
     signature_sep: str = "\n\n"
     # 用于正文需要独立标题、但目标协议没有单独标题字段的通知。
@@ -96,6 +129,8 @@ class NotifyPayload:
     presentation: Literal["default", "announcement"] = "default"
 
     def __post_init__(self) -> None:
+        if isinstance(self.images, DeferredContent):
+            return
         image_ids = [image.id for image in self.images]
         if len(image_ids) != len(set(image_ids)):
             raise ValueError("通知图片资源 ID 必须唯一")

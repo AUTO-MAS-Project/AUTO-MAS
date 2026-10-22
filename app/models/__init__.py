@@ -21,11 +21,42 @@
 #   Contact: DLmaster_361@163.com
 
 
-from app.config import *
+from importlib import import_module
 
-from .config import *
-from .emulator import *
-from .schema import *
-from .task import *
+_MODULE_EXPORTS = {
+    "config",
+    "schema",
+    "emulator",
+    "task",
+    "notification",
+    "notification_channel",
+    "notification_report",
+    "notification_ports",
+    "notification_community",
+    "legacy_config",
+    "ConfigBase",
+}
+
+
+def __getattr__(name: str):
+    if name in _MODULE_EXPORTS:
+        return import_module(f".{name}", __name__)
+    if name.startswith("_"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    if name == "ConfigEntry":
+        value = getattr(import_module("app.config"), name)
+    else:
+        # 保留旧包的显式导入兼容；普通子模块导入不再触发这些通配导出。
+        for module_name in (".task", ".schema", ".emulator", ".config", "app.config"):
+            module = import_module(module_name, __name__)
+            exports = getattr(module, "__all__", None)
+            if (exports is None or name in exports) and hasattr(module, name):
+                value = getattr(module, name)
+                break
+        else:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
 
 __all__ = ["ConfigEntry", "config", "schema", "emulator", "task"]

@@ -20,38 +20,38 @@
 #   Contact: DLmaster_361@163.com
 
 
+from __future__ import annotations
+
 import re
 from html import escape
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from PIL import Image, ImageDraw, ImageFont
-
-from app.models.notification import NotificationImage, NotifyPayload
-from app.models.notification_report import (
-    filter_community_notification_results as filter_community_notification_results,
-)
+from app.models.notification import DeferredContent, NotificationImage, NotifyPayload
+from app.models.notification_community import CommunityNotificationResult
 from app.utils.notification_template import get_notification_template
 
-_SUCCESS_STATUSES = {"成功", "已签到"}
+if TYPE_CHECKING:
+    from PIL import ImageDraw, ImageFont
+
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
 
 
-def _result_status_text(item: dict[str, object]) -> str:
+def _result_status_text(item: CommunityNotificationResult) -> str:
     """将单条签到结果转换为模板中的短状态。"""
 
-    status = str(item.get("status", "失败"))
-    if status == "已签到":
+    status = item.status
+    if status == "already_signed":
         return "已签"
-    if status == "成功":
+    if status == "success":
         return "签到成功"
-    if status == "风控":
+    if status == "risk_control":
         return "签到失败-风控"
 
-    reason = str(item.get("reason", "") or "").strip()
+    reason = item.reason.strip()
     if not reason or reason in {"失败", "签到失败"}:
         return "签到失败"
     if reason.startswith("签到失败-"):
@@ -59,17 +59,17 @@ def _result_status_text(item: dict[str, object]) -> str:
     return f"签到失败-{reason}"
 
 
-def _result_account(item: dict[str, object]) -> str:
+def _result_account(item: CommunityNotificationResult) -> str:
     """返回优先使用角色名/UID 的账号标识。"""
 
-    account = str(item.get("account", "") or "").strip()
+    account = item.account.strip()
     if account:
         return account
-    account_uid = str(item.get("account_uid", "") or "").strip()
+    account_uid = item.account_uid.strip()
     return account_uid or "未知用户"
 
 
-def _result_nickname(item: dict[str, object]) -> str:
+def _result_nickname(item: CommunityNotificationResult) -> str:
     """从已确认的账号展示格式中提取角色名，保留其它原始昵称。"""
 
     account = " ".join(_result_account(item).splitlines())
@@ -86,8 +86,8 @@ def _result_nickname(item: dict[str, object]) -> str:
         and alias
         and suffix
         in (
-            item.get("platform"),
-            item.get("game"),
+            item.platform,
+            item.game,
             "官服",
             "B服",
         )
@@ -97,7 +97,7 @@ def _result_nickname(item: dict[str, object]) -> str:
 
 
 def _ordered_platforms(
-    grouped: dict[str, list[dict[str, object]]],
+    grouped: dict[str, list[CommunityNotificationResult]],
 ) -> list[str]:
     """按通知模板固定社区顺序，并保留未知平台结果。"""
 
@@ -107,27 +107,27 @@ def _ordered_platforms(
     ]
 
 
-def _result_detail(item: dict[str, object]) -> str:
+def _result_detail(item: CommunityNotificationResult) -> str:
     """保留已签和失败原因，有奖励的成功结果省去重复状态文案。"""
 
     status = _result_status_text(item)
-    game = str(item.get("game", "") or "").strip()
-    reward = str(item.get("reward", "") or "").strip().replace("×", "x")
+    game = item.game.strip()
+    reward = item.reward.strip().replace("×", "x")
     if not reward:
         return status
     # 云异环的剩余时长属于状态，不能标成新领取的奖励。
     duration_only = game == "云异环" and not reward.startswith("每日首登")
     reward_text = reward if duration_only else f"📥{reward}"
-    if item.get("status") == "成功" and not duration_only:
+    if item.status == "success" and not duration_only:
         return reward_text
     return f"{status} {reward_text}"
 
 
-def _format_notification_item(item: dict[str, object]) -> str:
+def _format_notification_item(item: CommunityNotificationResult) -> str:
     """生成各通知渠道共用的紧凑单行结果。"""
 
-    marker = "✅" if item.get("status") in _SUCCESS_STATUSES else "❌"
-    game = str(item.get("game") or item.get("platform") or "未知")
+    marker = "✅" if item.succeeded else "❌"
+    game = str(item.game or item.platform or "未知")
     identity = _result_nickname(item)
     detail = _result_detail(item)
     return " ".join(f"{marker} [{game}] {identity} {detail}".splitlines())
@@ -152,6 +152,8 @@ _SYMBOL_FALLBACK = {"✅": "[OK]", "❌": "[X]", "📥": "[+]"}
 def _load_notification_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     """加载可显示中文的通知字体，缺失时回退到 Pillow 内置字体。"""
 
+    from PIL import ImageFont
+
     for path in _FONT_CANDIDATES:
         if path.is_file():
             return ImageFont.truetype(str(path), size)
@@ -160,6 +162,8 @@ def _load_notification_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.Ima
 
 def _load_notification_symbol_font(size: int) -> ImageFont.FreeTypeFont | None:
     """加载通知符号字体，固定尺寸字体不可用时保留文字回退。"""
+
+    from PIL import ImageFont
 
     for path in _SYMBOL_FONT_CANDIDATES:
         if path.is_file():
@@ -224,20 +228,19 @@ def _wrap_notification_text(
 
 
 def _community_notification_rows(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
     *,
     include_signature: bool = True,
     include_title: bool = True,
 ) -> list[tuple[str, str]]:
     """统一文本、Markdown、HTML 与图片中的平台分组和结果行。"""
 
-    results = filter_community_notification_results(results)
     if not results:
         return []
 
-    grouped: dict[str, list[dict[str, object]]] = {}
+    grouped: dict[str, list[CommunityNotificationResult]] = {}
     for item in results:
-        platform = str(item.get("platform", "未知") or "未知")
+        platform = item.platform
         grouped.setdefault(platform, []).append(item)
 
     rows: list[tuple[str, str]] = []
@@ -246,9 +249,7 @@ def _community_notification_rows(
     for platform in _ordered_platforms(grouped):
         items = grouped[platform]
         total = len(items)
-        success_count = sum(
-            1 for item in items if item.get("status") in _SUCCESS_STATUSES
-        )
+        success_count = sum(1 for item in items if item.succeeded)
         platform = " ".join(platform.splitlines())
         rows.append(("heading", f"• {platform}({success_count}/{total})："))
         for item in items:
@@ -258,8 +259,12 @@ def _community_notification_rows(
     return rows
 
 
-def _community_notification_image(results: list[dict[str, object]]) -> bytes:
+def _community_notification_image(
+    results: tuple[CommunityNotificationResult, ...],
+) -> bytes:
     """把社区签到结果渲染为适合聊天渠道展示的 PNG 图片。"""
+
+    from PIL import Image, ImageDraw, ImageFont
 
     width = 760
     card_margin = 16
@@ -356,7 +361,7 @@ def _escape_markdown_text(value: str) -> str:
 
 
 def format_community_notification(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
     *,
     output_format: NotificationBodyFormat = "markdown",
     include_signature: bool = True,
@@ -383,7 +388,7 @@ def format_community_notification(
 
 
 def format_community_task_summary(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
     *,
     output_format: NotificationBodyFormat = "text",
 ) -> str:
@@ -434,7 +439,7 @@ def append_community_summary_html(content: str, summary: str) -> str:
 
 
 def _community_html_fragment(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
     *,
     include_signature: bool = True,
     include_title: bool = True,
@@ -452,7 +457,7 @@ def _community_html_fragment(
 
 
 def _render_community_html(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
     title: str,
 ) -> str:
     """按 MAS 通知模板渲染社区签到邮件正文。"""
@@ -466,32 +471,35 @@ def _render_community_html(
 
 
 def build_community_notification_payload(
-    results: list[dict[str, object]],
+    results: tuple[CommunityNotificationResult, ...],
 ) -> NotifyPayload:
     """把结构化社区结果渲染为统一通知载荷。
 
     同时提供纯文本、Markdown 和 HTML 表达，由每个目标按声明能力选择。
     """
 
-    results = filter_community_notification_results(results)
     title = "社区签到通知"
     plain_text = format_community_notification(
         results, output_format="text", include_title=False
     )
-    markdown = format_community_notification(results, include_title=False)
+    markdown = DeferredContent(
+        lambda: format_community_notification(results, include_title=False)
+    )
     return NotifyPayload(
         title=title,
         body_title="【社区签到通知】",
         text=plain_text,
         append_signature=False,
-        html=_render_community_html(results, title),
+        html=DeferredContent(lambda: _render_community_html(results, title)),
         markdown=markdown,
-        images=(
-            NotificationImage(
-                id="community-sign-summary",
-                data=_community_notification_image(results),
-                alt="社区签到结果",
-                mime_type="image/png",
-            ),
+        images=DeferredContent(
+            lambda: (
+                NotificationImage(
+                    id="community-sign-summary",
+                    data=_community_notification_image(results),
+                    alt="社区签到结果",
+                    mime_type="image/png",
+                ),
+            )
         ),
     )

@@ -41,6 +41,7 @@ from app.core.notify import (
     global_target,
 )
 from app.models.notification import NotifyPayload
+from app.models.notification_community import community_notification_results
 from app.models.notification_report import (
     TaskNotificationChange,
     TaskNotificationState,
@@ -124,6 +125,16 @@ def create_task_report_coordinator(task_info: TaskItem) -> TaskReportCoordinator
     )
 
 
+def receive_task_community_results(
+    coordinator: TaskReportCoordinator, results: list[dict[str, object]] | None
+) -> None:
+    """签到业务输出在装配入口转为通知快照，协调器只消费机器状态。"""
+
+    coordinator.receive(
+        community_notification_results(results) if results is not None else None
+    )
+
+
 def _notification_state(task_info: object | None) -> TaskNotificationState:
     if task_info is None:
         return TaskNotificationState()
@@ -133,7 +144,7 @@ def _notification_state(task_info: object | None) -> TaskNotificationState:
 
     # 旧对象只在边界投影历史字段，不强行添加属性，也不覆盖显式通知状态。
     return TaskNotificationState(
-        results=list(
+        results=community_notification_results(
             getattr(
                 task_info,
                 "community_results",
@@ -162,7 +173,7 @@ def _sync_legacy_state(
                 and not hasattr(task_info, "community_results")
             )
             else "community_results",
-            state.results,
+            [item.to_legacy() for item in state.results],
         )
         return
     setattr(task_info, "game_sign_summary_delivered", set(state.delivered))
@@ -218,7 +229,9 @@ class PreparedTaskReport:
                 attempts=attempts,
                 retry_delay=retry_delay,
             ),
-            dispatch=partial(dispatch, notifier=notifier),
+            dispatch=(
+                partial(dispatch, notifier=notifier) if notifier is not None else None
+            ),
         )
 
 

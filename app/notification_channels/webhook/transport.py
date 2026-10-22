@@ -43,7 +43,8 @@ from app.models.notification import (
 if TYPE_CHECKING:
     from httpx import Proxy
 
-from app.models.notification_channel import HttpDependencies
+from app.models.notification_channel import HttpDependencies, NotificationDeliveryError
+from app.notification_channels.common import RemoteHTTPError
 
 UTC4 = timezone(timedelta(hours=4))
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
@@ -299,11 +300,15 @@ class Sender:
             self.dependencies.logger.warning(
                 f"Webhook 推送失败: HTTP {response.status_code}"
             )
-            raise Exception(f"[{webhook.name}] HTTP {response.status_code}")
+            raise RemoteHTTPError(
+                response.status_code, f"[{webhook.name}] HTTP {response.status_code}"
+            )
         failure = webhook_body_failure(response.text, url)
         if failure is not None:
             self.dependencies.logger.warning(f"Webhook 服务端拒绝: {failure}")
-            raise Exception(f"[{webhook.name}] 服务端拒绝")
+            raise NotificationDeliveryError(
+                f"[{webhook.name}] 服务端拒绝", kind="rejected", retryable=True
+            )
         self.dependencies.logger.success(
             f"自定义Webhook推送成功: {webhook.name} - {title}"
         )

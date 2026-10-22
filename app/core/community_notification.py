@@ -12,9 +12,9 @@ from app.core.notification_report import (
 )
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
+from app.models.notification_community import CommunityNotificationResult
 from app.models.notification_report import (
     NotificationDispatcher,
-    filter_community_notification_results,
 )
 from app.utils import get_logger
 
@@ -25,7 +25,7 @@ logger = get_logger("社区通知")
 class CommunityNotificationDependencies:
     dispatch: NotificationDispatcher
     prepare_targets: Callable[[], tuple[NotifyTarget, ...]]
-    render: Callable[[list[dict[str, object]]], NotifyPayload]
+    render: Callable[[tuple[CommunityNotificationResult, ...]], NotifyPayload]
     enabled: Callable[[], bool]
     report_failure: CommunityFailureReporter
     spawn: Callable[[Coroutine[Any, Any, list[str]]], asyncio.Task[list[str]] | None]
@@ -39,13 +39,12 @@ class CommunityNotificationCoordinator:
 
     async def dispatch(
         self,
-        results: list[dict[str, object]],
+        results: tuple[CommunityNotificationResult, ...],
         *,
         targets: Iterable[NotifyTarget] | None = None,
         skip_channel_ids: Iterable[str] = (),
         completion_notice: str = "",
     ) -> DispatchResult:
-        results = filter_community_notification_results(results)
         if not results and not completion_notice:
             return DispatchResult()
         payload = (
@@ -63,13 +62,38 @@ class CommunityNotificationCoordinator:
             skip_channel_ids=skip_channel_ids,
         )
 
-    async def _send(self, results: list[dict[str, object]]) -> list[str]:
+    async def _send(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> list[str]:
         result = await self.dispatch(results)
         if result.failed:
-            await self.dependencies.report_failure(result, results_saved=bool(results))
+            self._schedule_feedback(result, results_saved=bool(results))
         return list(result.failed)
 
-    async def send(self, results: list[dict[str, object]]) -> list[str]:
+    def _schedule_feedback(
+        self, result: DispatchResult, *, results_saved: bool
+    ) -> None:
+        async def report() -> list[str]:
+            try:
+                await self.dependencies.report_failure(
+                    result, results_saved=results_saved
+                )
+            except Exception as exc:
+                logger.warning(f"社区通知反馈失败: {type(exc).__name__}")
+            return []
+
+        coroutine = report()
+        try:
+            task = self.dependencies.spawn(coroutine)
+        except Exception as exc:
+            coroutine.close()
+            logger.warning(f"社区通知反馈注册失败: {type(exc).__name__}")
+        else:
+            if task is not None:
+                self._pending.add(task)
+                task.add_done_callback(self._completed)
+
+    async def send(self, results: tuple[CommunityNotificationResult, ...]) -> list[str]:
         if not self.dependencies.enabled():
             return []
         return await self._send(results)
@@ -86,7 +110,9 @@ class CommunityNotificationCoordinator:
             if failed:
                 logger.warning(f"后台社区通知部分失败: {'、'.join(failed)}")
 
-    async def submit(self, results: list[dict[str, object]]) -> list[str] | None:
+    async def submit(
+        self, results: tuple[CommunityNotificationResult, ...]
+    ) -> list[str] | None:
         """短暂等待渠道结果；超时和请求取消均保留已注册的后台通知。"""
 
         if not self.dependencies.enabled():

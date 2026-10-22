@@ -22,13 +22,23 @@
 
 from __future__ import annotations
 
+from app.models.notification_channel import NotificationDeliveryError
 
-class RemoteHTTPError(RuntimeError):
+
+class RemoteHTTPError(NotificationDeliveryError):
     """远端返回明确 HTTP 状态码的请求错误。"""
 
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code
-        super().__init__(message)
+        super().__init__(
+            message,
+            kind="rate_limited"
+            if status_code == 429
+            else "transport"
+            if status_code >= 500
+            else "rejected",
+            retryable=status_code in (408, 429) or status_code >= 500,
+        )
 
 
 def split_text(text: str, limit: int) -> list[str]:
