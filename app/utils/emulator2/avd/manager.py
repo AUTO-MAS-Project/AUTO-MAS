@@ -263,6 +263,8 @@ def build_launch_args(
     ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
+    - 开机动画只在无头时关（``-no-boot-anim``）：带窗口开机时窗口里有东西看，不再黑屏到出桌面
+      （用户 10-21 提）；
     - ``-audio none``：宿主不出声（用户 09-27 定）；
     - ``-feature -VirtioSndCard``：客体里不带声卡（用户 10-04 定）。本镜像的客体声卡是 virtio-snd，
       不认 ``config.ini`` 的 ``hw.audioOutput`` / ``hw.audioInput``（10-04 实测两项写 no 照样有声卡），
@@ -285,7 +287,6 @@ def build_launch_args(
         "-avd",
         avd,
         "-no-snapshot",
-        "-no-boot-anim",
         "-gpu",
         "host",
         "-ports",
@@ -299,7 +300,7 @@ def build_launch_args(
         str(int(memory_mb)),
     ]
     if headless:
-        args.append("-no-window")
+        args += ["-no-window", "-no-boot-anim"]
     args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
     args += ["-feature", "VulkanBatchedDescriptorSetUpdate"]
