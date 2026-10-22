@@ -639,10 +639,12 @@ class _AvdCore(DeviceBase):
             return DeviceStatus.ONLINE
         return DeviceStatus.STARTING
 
-    def _device_info(self, idx: str, title: str, status: DeviceStatus) -> DeviceInfo:
+    def _device_info(
+        self, idx: str, title: str, status: DeviceStatus, pid: int | None = None
+    ) -> DeviceInfo:
         # 给脚本的是 adb 端口的 TCP 地址：脚本用自己的 adb connect 过去，与雷电 / MuMu 一致。
         # 不给 emulator-<端口> 这个序列号——它只在我们的私有 server（20050）上存在。
-        return DeviceInfo(title, status, f"127.0.0.1:{adb_port(idx)}")
+        return DeviceInfo(title, status, f"127.0.0.1:{adb_port(idx)}", process_id=pid)
 
     async def getStatus(self, idx: str) -> DeviceStatus:
         if str(idx) not in self._instances():
@@ -800,7 +802,11 @@ class _AvdCore(DeviceBase):
 
         await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
-        return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
+        # 带上 qemu 进程号：开机后模拟器若被显卡驱动重置等原因带走（10-22 生产实例 0 就这样，
+        # NVIDIA 驱动内核异常后结束了 qemu），MaaFW 等 adb 时能马上看出来，不再空等几分钟
+        return self._device_info(
+            idx, instance.title, DeviceStatus.ONLINE, pid=process.pid
+        )
 
     async def _wait_boot(
         self, idx: str, instance: AvdInstance, launched: bool, max_wait: float

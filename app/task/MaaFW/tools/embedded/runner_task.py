@@ -1208,6 +1208,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 inputMethods=self._resolve_adb_input_methods(adb_profile),
                 config=adb_profile.config,
                 adbReadyTimeout=self._resolve_adb_ready_timeout(),
+                emulatorPid=getattr(device_info, "process_id", None),
             )
 
         if plan.controllerType == "Win32":
