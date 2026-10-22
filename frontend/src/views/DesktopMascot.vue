@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { DesktopMascotData, DesktopMascotUpdate } from '@/types/desktopMascot'
+import { useDesktopMascotPlayback } from '@/composables/useDesktopMascotPlayback'
 
 const data = ref<DesktopMascotData | null>(null)
-const frame = ref(0)
 const dragging = ref(false)
 const lookFrame = ref<number | null>(null)
 const noticeElement = ref<HTMLElement>()
@@ -14,11 +14,18 @@ const reducedMotion = ref(motionPreference.matches)
 let dispose: (() => void) | undefined
 let disposeUpdate: (() => void) | undefined
 let disposeLook: (() => void) | undefined
-let frameTimer: ReturnType<typeof setInterval> | undefined
 let activePointerId: number | null = null
 let pointerTarget: HTMLElement | null = null
 let dragRevision = 0
 let noticeObserver: ResizeObserver | undefined
+let press: { screenX: number; screenY: number; x: number; y: number; revision: number } | null =
+  null
+let dragRequested = false
+let clickAnimation: Animation | undefined
+let mounted = true
+const DRAG_THRESHOLD = 5
+const CLICK_FEEDBACK_DURATION = 240
+const { sprite, stopped } = useDesktopMascotPlayback(data, dragging, lookFrame, reducedMotion)
 
 const isIdleMessage = computed(
   () =>
@@ -27,33 +34,6 @@ const isIdleMessage = computed(
 const noticeText = computed(
   () => data.value?.notice || (isIdleMessage.value ? data.value?.idleMessage?.text : undefined)
 )
-
-const stopped = computed(() => !dragging.value && data.value?.reaction === 'stopped')
-const reacting = computed(
-  () =>
-    !dragging.value &&
-    Boolean(data.value?.reaction && data.value.reaction !== 'stopped') &&
-    Boolean(data.value?.animation?.resultImageUrl)
-)
-const looking = computed(
-  () =>
-    !dragging.value &&
-    !data.value?.reaction &&
-    data.value?.state === 'idle' &&
-    lookFrame.value !== null &&
-    Boolean(data.value.animation?.lookImageUrl)
-)
-const dragSprite = computed(() => dragging.value && Boolean(data.value?.animation?.dragImageUrl))
-const spriteImageUrl = computed(() => {
-  const animation = data.value?.animation
-  return dragSprite.value
-    ? animation?.dragImageUrl
-    : reacting.value
-      ? animation?.resultImageUrl
-      : looking.value
-        ? animation?.lookImageUrl
-        : animation?.imageUrl
-})
 
 const avatarStyle = computed(() => {
   if (!data.value) return {}
@@ -67,36 +47,6 @@ const avatarStyle = computed(() => {
     '--ant-color-bg-elevated': colors.background,
     '--ant-color-text': colors.text,
     '--ant-color-border': colors.border,
-  }
-})
-
-const spriteStyle = computed(() => {
-  if (!data.value?.animation) return {}
-  const { animation, state, reaction } = data.value
-  const columns = looking.value ? 3 : animation.columns
-  const actionRows = Math.ceil(animation.frameCount / animation.columns)
-  const rows = looking.value ? 3 : actionRows * (dragSprite.value ? 1 : 2)
-  const currentFrame = looking.value
-    ? lookFrame.value!
-    : stopped.value
-      ? Math.min(2, animation.frameCount - 1)
-      : frame.value
-  const action =
-    looking.value || dragSprite.value
-      ? 0
-      : reacting.value
-        ? reaction === 'success'
-          ? 1
-          : 0
-        : stopped.value || (!dragging.value && state === 'working')
-          ? 1
-          : 0
-  const column = currentFrame % columns
-  const row = action * actionRows + Math.floor(currentFrame / columns)
-  return {
-    width: `${columns * 100}%`,
-    height: `${rows * 100}%`,
-    transform: `translate(${(-column / columns) * 100}%, ${(-row / rows) * 100}%)`,
   }
 })
 
@@ -147,47 +97,6 @@ watch(
   { flush: 'post' }
 )
 
-watch(
-  () =>
-    [
-      data.value?.animation,
-      data.value?.state,
-      dragging.value,
-      lookFrame.value,
-      data.value?.reaction,
-    ] as const,
-  () => {
-    frame.value = 0
-  }
-)
-
-watch(
-  () =>
-    [
-      data.value?.animation,
-      data.value?.state,
-      data.value?.animate,
-      reducedMotion.value && !data.value?.motionOverride,
-      dragging.value,
-      lookFrame.value,
-      data.value?.reaction,
-      data.value?.fps,
-    ] as const,
-  ([animation, state, animate, reduced, isDragging, look, reaction, customFps]) => {
-    clearInterval(frameTimer)
-    if (!animation || !animate || reduced) return
-    if (!isDragging && reaction === 'stopped') return
-    if (!isDragging && !reaction && state === 'idle' && look !== null && animation.lookImageUrl)
-      return
-    const fps =
-      customFps ??
-      (isDragging || reaction || state === 'working' ? animation.workingFps : animation.idleFps)
-    frameTimer = setInterval(() => {
-      frame.value = (frame.value + 1) % animation.frameCount
-    }, 1000 / fps)
-  }
-)
-
 onMounted(async () => {
   window.addEventListener('resize', updateViewportWidth)
   motionPreference.addEventListener('change', updateMotionPreference)
@@ -211,7 +120,7 @@ onMounted(async () => {
     lookFrame.value = value
   })
   const initial = await api.getData()
-  if (!changed) {
+  if (!changed && mounted) {
     data.value = initial ? { ...initial, ...pendingUpdate } : null
     lookFrame.value = initial?.lookFrame ?? null
   }
@@ -221,7 +130,8 @@ onUnmounted(() => {
   dispose?.()
   disposeUpdate?.()
   disposeLook?.()
-  clearInterval(frameTimer)
+  mounted = false
+  clickAnimation?.cancel()
   noticeObserver?.disconnect()
   window.removeEventListener('resize', updateViewportWidth)
   motionPreference.removeEventListener('change', updateMotionPreference)
@@ -255,10 +165,10 @@ function decodeStaticImage(event: Event): void {
 }
 
 function hover(): void {
-  if (!dragging.value) window.desktopMascotAPI?.pointer('hover')
+  if (activePointerId === null) window.desktopMascotAPI?.pointer('hover')
 }
 
-async function startDrag(event: PointerEvent): Promise<void> {
+function startPointer(event: PointerEvent): void {
   if (event.button !== 0 || activePointerId !== null) return
   const api = window.desktopMascotAPI
   if (!api || !data.value) return
@@ -267,16 +177,35 @@ async function startDrag(event: PointerEvent): Promise<void> {
   const bounds = target.getBoundingClientRect()
   activePointerId = event.pointerId
   pointerTarget = target
-  const revision = ++dragRevision
+  dragRevision++
+  dragRequested = false
+  press = {
+    screenX: event.screenX,
+    screenY: event.screenY,
+    x: event.clientX - bounds.left,
+    y: event.clientY - bounds.top,
+    revision: data.value.revision,
+  }
+  clickAnimation?.cancel()
   target.setPointerCapture(event.pointerId)
+}
+
+async function startDrag(): Promise<void> {
+  if (!press || dragRequested) return
+  const api = window.desktopMascotAPI
+  const revision = dragRevision
+  dragRequested = true
   try {
     const accepted = await api.startDrag({
-      x: event.clientX - bounds.left,
-      y: event.clientY - bounds.top,
+      x: press.x,
+      y: press.y,
       session: revision,
-      revision: data.value.revision,
+      revision: press.revision,
     })
-    if (revision !== dragRevision) return
+    if (revision !== dragRevision) {
+      if (accepted) api.pointer('end', revision)
+      return
+    }
     if (!accepted) {
       endDrag()
       return
@@ -292,6 +221,39 @@ function moveDrag(event: PointerEvent): void {
   if (event.pointerId !== activePointerId) return
   if (event.buttons === 0) endDrag(event)
   else if (dragging.value) window.desktopMascotAPI?.pointer('move', dragRevision)
+  else if (
+    press &&
+    Math.hypot(event.screenX - press.screenX, event.screenY - press.screenY) >= DRAG_THRESHOLD
+  )
+    void startDrag()
+}
+
+function releasePointer(event: PointerEvent): void {
+  if (event.pointerId !== activePointerId) return
+  const clicked =
+    press &&
+    !dragRequested &&
+    data.value?.revision === press.revision &&
+    Math.hypot(event.screenX - press.screenX, event.screenY - press.screenY) < DRAG_THRESHOLD
+  const target = pointerTarget
+  endDrag(event)
+  if (
+    clicked &&
+    target &&
+    data.value?.animate &&
+    (!reducedMotion.value || data.value.motionOverride)
+  ) {
+    clickAnimation?.cancel()
+    clickAnimation = target.animate(
+      [
+        { transform: 'scale(1)' },
+        { transform: 'scale(1.06, 0.94)' },
+        { transform: 'scale(0.98, 1.02)' },
+        { transform: 'scale(1)' },
+      ],
+      { duration: CLICK_FEEDBACK_DURATION, easing: 'ease-out' }
+    )
+  }
 }
 
 function endDrag(event?: PointerEvent): void {
@@ -301,10 +263,13 @@ function endDrag(event?: PointerEvent): void {
   const session = dragRevision
   activePointerId = null
   pointerTarget = null
+  press = null
+  const requested = dragRequested
+  dragRequested = false
   dragRevision++
   dragging.value = false
   if (target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId)
-  window.desktopMascotAPI?.pointer('end', session)
+  if (requested) window.desktopMascotAPI?.pointer('end', session)
 }
 </script>
 
@@ -333,14 +298,14 @@ function endDrag(event?: PointerEvent): void {
         'reduced-motion': (reducedMotion && !data.motionOverride) || !data.animate,
       }"
       :style="avatarStyle"
-      @pointerdown="startDrag"
+      @pointerdown="startPointer"
       @pointermove="moveDrag"
-      @pointerup="endDrag"
+      @pointerup="releasePointer"
       @pointercancel="endDrag"
       @lostpointercapture="endDrag"
     >
-      <div v-if="data.animation" class="mascot-sprite">
-        <img :src="spriteImageUrl" :style="spriteStyle" draggable="false" alt="" />
+      <div v-if="data.animation && sprite" class="mascot-sprite">
+        <img :src="sprite.imageUrl" :style="sprite.style" draggable="false" alt="" />
       </div>
       <img
         v-else

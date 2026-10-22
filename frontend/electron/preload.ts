@@ -45,8 +45,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('desktop-mascot:activity', working, animate),
   setDesktopMascotIdleMessage: (message: DesktopMascotIdleMessage) =>
     ipcRenderer.invoke('desktop-mascot:idle-message', message),
-  showDesktopMascotNotice: (text: string, reaction?: 'success' | 'failure' | 'stopped') =>
-    ipcRenderer.invoke('desktop-mascot:notice', text, reaction),
+  showDesktopMascotNotice: (
+    text: string,
+    reaction?: 'success' | 'failure' | 'stopped',
+    key?: string
+  ) => ipcRenderer.invoke('desktop-mascot:notice', text, reaction, key),
   onDesktopMascotError: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('desktop-mascot:error', listener)
