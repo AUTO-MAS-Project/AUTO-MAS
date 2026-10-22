@@ -483,6 +483,7 @@ const copyAllInfo = async () => {
 
 /* 右侧徽章样式 */
 .info-badge {
+  position: relative;
   cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
