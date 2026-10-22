@@ -3663,8 +3663,6 @@ class AppConfig:
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        script_list = []
-
         for script in self.ScriptConfig.values():
             if isinstance(script, MaaConfig):
                 if script.Emulator.Id == emulator_uid:
@@ -3672,7 +3670,6 @@ class AppConfig:
                         raise RuntimeError(
                             f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
             elif isinstance(script, GeneralConfig):
                 if (
                     script.Game.Type == "Emulator"
@@ -3682,20 +3679,8 @@ class AppConfig:
                         raise RuntimeError(
                             f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
 
-        for script in script_list:
-            if isinstance(script, MaaConfig):
-                await script.update(
-                    type(script).model_validate({"Emulator": {"Id": "-"}}),
-                    check_visibility=False,
-                )
-            elif isinstance(script, GeneralConfig):
-                await script.update(
-                    type(script).model_validate({"Game": {"EmulatorId": "-"}}),
-                    check_visibility=False,
-                )
-
+        # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
         self.EmulatorConfig.remove(emulator_uid)
         await self.EmulatorConfig.commit()
 
