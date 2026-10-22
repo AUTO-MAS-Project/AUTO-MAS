@@ -322,7 +322,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     for name, path in sorted(surface.backup_dir_files(ts).items()):
         summary = ""
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
             if isinstance(data, dict):
                 sections = sum(1 for v in data.values() if isinstance(v, dict) and v)
                 keys = sum(len(v) for v in data.values() if isinstance(v, dict))

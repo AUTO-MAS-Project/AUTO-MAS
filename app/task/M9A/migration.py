@@ -214,7 +214,7 @@ def migrate_legacy_m9a_scripts(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"M9A 迁移跳过：ScriptConfig.json 读取失败：{exc}")
@@ -1011,7 +1011,9 @@ def _instance_file_items(
         if not candidate.is_file():
             continue
         try:
-            content = json.loads(candidate.read_text(encoding="utf-8"))
+            content = json.loads(
+                candidate.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         task_items = content.get("TaskItems") if isinstance(content, dict) else None
@@ -1154,7 +1156,9 @@ def _seed_update_source(source_path: str, global_mirror_cdk: str) -> tuple[str, 
     if source_path:
         config_path = Path(source_path) / "config" / "config.json"
         try:
-            content = json.loads(config_path.read_text(encoding="utf-8"))
+            content = json.loads(
+                config_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             content = None
         if isinstance(content, dict):
@@ -1341,7 +1345,7 @@ def repair_m9a_migration_losses(
 
     tmp = path.with_name(f"{path.name}.m9a-repairing")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         legacy_scripts = {
             uid: payload
             for uid, payload in _collect_legacy_scripts(backups).items()
@@ -1390,7 +1394,9 @@ def _collect_legacy_scripts(backups: list[Path]) -> dict[str, dict[str, Any]]:
     legacy: dict[str, dict[str, Any]] = {}
     for backup in backups:
         try:
-            content = json.loads(backup.read_text(encoding="utf-8"))
+            content = json.loads(
+                backup.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         if not isinstance(content, dict):

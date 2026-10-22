@@ -340,7 +340,7 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
 
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     if not isinstance(data, dict):
         raise ValueError(f"OK-NTE 配置文件必须是 JSON 对象: {path}")
     return data
