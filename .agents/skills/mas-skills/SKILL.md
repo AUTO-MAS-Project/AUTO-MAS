@@ -51,7 +51,7 @@ Use these skills as needed:
 ## Global Constraints
 Apply these constraints before selecting or combining sub-skills.
 
-1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested.
+1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested. Required extraction under the frontend [Component Size Policy](../mas-frontend-standards/SKILL.md#component-size-policy) is part of the affected task, not unrelated cleanup.
 2. Align with current code style and existing project conventions in the touched module.
 3. Avoid over-engineering, over-abstraction, and defensive programming that does not match existing code patterns.
 4. Study similar existing implementations deeply before coding and follow established local patterns.
@@ -126,7 +126,7 @@ When using this hub:
 
 ## Review Checklist
 1. Selected sub-skills match the user request scope.
-2. Frontend tasks loaded the correct frontend skill pair.
+2. Frontend tasks loaded the correct frontend skill pair; added or modified Vue components have measured baseline/final line counts and satisfy the linked component size policy.
 3. No layer-boundary violations are introduced.
 4. Shared schema semantics remain canonical.
 5. Function behavior and API contract stay consistent after changes.
