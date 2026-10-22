@@ -147,7 +147,7 @@ def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
 def _update_json(path: Path, values: dict[str, object]) -> None:
     data: object = {}
     if path.is_file():
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
     if not isinstance(data, dict):
         raise ValueError(f"OK-WW 配置文件格式错误: {path.name}")
     data.update(values)
@@ -165,7 +165,9 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     if not app_json_path.is_file():
         return
 
-    app_config = json.loads(app_json_path.read_text(encoding="utf-8"))
+    app_config = json.loads(
+        app_json_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+    )
     if not isinstance(app_config, dict):
         raise ValueError("OK-WW app.json 格式错误")
 

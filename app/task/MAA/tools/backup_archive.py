@@ -755,7 +755,9 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
         if "/" in rel or rel not in _MAA_CONFIG_FILES:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):

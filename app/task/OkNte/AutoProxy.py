@@ -203,7 +203,9 @@ def _oknte_daily_activity_enabled(config_dir: Path) -> bool:
     routine_path = config_dir / DAILY_ROUTINE_TASK_FILE
     if routine_path.is_file():
         try:
-            data = json.loads(routine_path.read_text(encoding="utf-8"))
+            data = json.loads(
+                routine_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             return True
 
@@ -220,7 +222,9 @@ def _oknte_daily_activity_enabled(config_dir: Path) -> bool:
     legacy_path = config_dir / LEGACY_DAILY_TASK_FILE
     if legacy_path.is_file():
         try:
-            data = json.loads(legacy_path.read_text(encoding="utf-8"))
+            data = json.loads(
+                legacy_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             return True
         if isinstance(data, dict) and _OKNTE_DAILY_LEGACY_ACTIVITY_KEY in data:

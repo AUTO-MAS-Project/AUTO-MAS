@@ -417,7 +417,9 @@ def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
     if not settings.is_file():
         return []
     try:
-        raw = settings.read_text(encoding="utf-8", errors="replace")
+        raw = settings.read_text(encoding="utf-8", errors="replace").removeprefix(
+            "\ufeff"
+        )
     except OSError:
         return []
     # 先按严格 JSON 解析（绝大多数脚本合规）
