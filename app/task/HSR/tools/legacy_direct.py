@@ -178,7 +178,7 @@ def _existing_archive(item: LegacyDirectSnapshot) -> Path | None:
         return None
     for path in sorted(root.glob(f"{item.user_id}-*.json")):
         try:
-            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         except (OSError, ValueError):
             continue
         if isinstance(saved, dict) and saved.get(LEGACY_GROUP) == item.direct:
@@ -239,7 +239,7 @@ def archive_legacy_direct_snapshots(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"跳过 HSR 旧直控快照留档：ScriptConfig.json 读取失败：{exc}")

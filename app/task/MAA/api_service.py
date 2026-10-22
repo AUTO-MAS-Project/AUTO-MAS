@@ -101,7 +101,9 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
         raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
     try:
-        infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
+        infrast_data = json.loads(
+            json_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+        )
     except json.JSONDecodeError as e:
         raise ValueError("排班表不是有效的 JSON") from e
 
@@ -198,7 +200,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
         if not path.is_file():
             return [], f"MAA 原生排班文件不存在: {path.name}", "empty"
         try:
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         except OSError:
             logger.opt(exception=True).warning(f"读取 MAA 原生排班文件失败: {path}")
             return [], f"MAA 原生排班文件无法读取: {path.name}", "empty"

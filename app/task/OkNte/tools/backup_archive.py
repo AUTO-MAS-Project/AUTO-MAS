@@ -395,7 +395,9 @@ def build_backup_file_summary(
         if "/" in rel or not rel.lower().endswith(".json"):
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):

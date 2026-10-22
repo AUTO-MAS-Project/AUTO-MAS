@@ -375,7 +375,7 @@ def load_initial_local_storage(m7a_root: Path | str) -> dict[str, Any]:
     """读取三月七的 ``assets/config/initial_local_storage.json``。"""
 
     path = Path(m7a_root) / INITIAL_LOCAL_STORAGE_RELATIVE
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
 
 
 def build_local_storage_script(items: dict[str, Any]) -> str:
