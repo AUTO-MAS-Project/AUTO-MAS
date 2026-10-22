@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parse, stringify } from 'yaml'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = path.resolve(frontendRoot, '..')
@@ -87,25 +88,65 @@ export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
   }
 }
 
-const readConfig = async file => {
+const configFiles = {
+  ScriptConfig: 'scripts.yaml',
+  EmulatorConfig: 'emulators.yaml',
+  PlanConfig: 'plans.yaml',
+}
+
+// 已升级的数据根只读 YAML；旧 JSON 只用于尚未完成迁移的数据根。
+const readConfig = async (directory, name) => {
+  let file = path.join(directory, configFiles[name])
+  let details
   try {
-    const details = await lstat(file)
+    details = await lstat(file)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    let migration
+    try {
+      migration = JSON.parse(
+        await readFile(path.join(directory, '.config-migration-v2.json'), 'utf8')
+      )
+    } catch (recordError) {
+      if (recordError.code !== 'ENOENT') throw recordError
+    }
+    if (migration?.complete === true) {
+      throw new Error(`已升级的 E2E 配置缺少 ${configFiles[name]}，请先在应用中恢复配置`)
+    }
+    file = path.join(directory, `${name}.json`)
+  }
+  try {
+    details ??= await lstat(file)
     if (details.isSymbolicLink() || !details.isFile()) throw new Error('invalid file')
-    return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''))
+    const text = (await readFile(file, 'utf8')).replace(/^\uFEFF/, '')
+    const value = file.endsWith('.yaml') ? parse(text) : JSON.parse(text)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('invalid document')
+    }
+    return value
   } catch {
     throw new Error(
-      `无法读取 E2E 配置 ${path.basename(file)}：不存在、为空或不是有效 JSON。先在本机应用里配好一个用户；在 worktree 里跑时用 AUTO_MAS_E2E_TEMPLATE_ROOT 指向你的主检出目录`
+      `无法读取 E2E 配置 ${path.basename(file)}：不存在、为空或格式无效。先在本机应用里配好一个用户；在 worktree 里跑时用 AUTO_MAS_E2E_TEMPLATE_ROOT 指向你的主检出目录`
     )
   }
 }
 
+export const readRealScripts = sourceRoot =>
+  readConfig(path.join(path.resolve(sourceRoot), 'config'), 'ScriptConfig')
+
+const collectionOrder = collection => collection.order ?? collection.instances ?? []
+const collectionValue = (collection, id) => (collection.data ?? collection)[id]
+
 const selectEntry = (collection, id, expectedType) => {
-  const entry = collection.instances?.find(item => item.uid === id)
-  if (!entry || !collection[id]) throw new Error('所选 E2E 配置项不存在')
+  const entry = collectionOrder(collection).find(item => item.uid === id)
+  const value = collectionValue(collection, id)
+  if (!entry || !value) throw new Error('所选 E2E 配置项不存在')
   if (expectedType && entry.type !== expectedType) {
     throw new Error(`所选 E2E 计划表类型不匹配，需要 ${expectedType}`)
   }
-  return { instances: [entry], [id]: collection[id] }
+  return collection.order
+    ? { order: [entry], data: { [id]: value } }
+    : { instances: [entry], [id]: value }
 }
 
 const uuidPattern = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -115,11 +156,12 @@ const describeSelection = candidate =>
 // 开发者在应用里调好的第一个已启用用户就是默认真实 E2E 目标，避免为跑一次测试再抄三个 UUID。
 export const listRealCandidates = scriptConfig => {
   const candidates = []
-  for (const instance of scriptConfig.instances ?? []) {
+  for (const instance of collectionOrder(scriptConfig)) {
     if (!supportedScriptTypes.has(instance.type)) continue
-    const users = scriptConfig[instance.uid]?.SubConfigsInfo?.UserData
-    for (const entry of users?.instances ?? []) {
-      const info = users[entry.uid]?.Info
+    const script = collectionValue(scriptConfig, instance.uid)
+    const users = script?.UserData ?? script?.SubConfigsInfo?.UserData ?? {}
+    for (const entry of collectionOrder(users)) {
+      const info = collectionValue(users, entry.uid)?.Info
       if (info?.Status !== true || !info.Name?.trim()) continue
       candidates.push({
         scriptId: instance.uid,
@@ -176,7 +218,7 @@ const readPlanId = (user, field) => {
  */
 export async function resolveRealTarget(sourceRoot, env) {
   const sourceConfig = path.join(path.resolve(sourceRoot), 'config')
-  const scripts = await readConfig(path.join(sourceConfig, 'ScriptConfig.json'))
+  const scripts = await readRealScripts(sourceRoot)
   const requested = {
     scriptId: env.AUTO_MAS_E2E_SCRIPT_ID?.trim() ?? '',
     userId: env.AUTO_MAS_E2E_USER_ID?.trim() ?? '',
@@ -197,13 +239,22 @@ export async function resolveRealTarget(sourceRoot, env) {
   if (problems.length > 0) throw new Error(`真实 E2E 目标配置不完整: ${problems.join('；')}`)
 
   const selectedScripts = selectEntry(scripts, selection.scriptId)
-  const script = selectedScripts[selection.scriptId]
-  const scriptType = selectedScripts.instances[0].type
+  const script = collectionValue(selectedScripts, selection.scriptId)
+  const scriptType = collectionOrder(selectedScripts)[0].type
   if (!supportedScriptTypes.has(scriptType)) {
     throw new Error(`真实 E2E 尚未登记专项类型 ${scriptType}，请由专项作者补充适配`)
   }
-  const emulatorId = typeof script.Emulator?.Id === 'string' ? script.Emulator.Id : ''
-  const emulatorIndex = script.Emulator?.Index == null ? '' : String(script.Emulator.Index)
+  const binding = ['GeneralConfig', 'MaaEndConfig'].includes(scriptType)
+    ? { Id: script.Game?.EmulatorId, Index: script.Game?.EmulatorIndex }
+    : script.Emulator
+  const emulatorConfigId = typeof binding?.Id === 'string' && binding.Id !== '-' ? binding.Id : ''
+  // 通用脚本可保留未使用的绑定；复制引用，但只为启用了模拟器游戏的目标启动实例。
+  const usesEmulator =
+    scriptType !== 'GeneralConfig' ||
+    (script.Game?.Enabled === true && script.Game?.Type === 'Emulator')
+  const emulatorId = usesEmulator ? emulatorConfigId : ''
+  const emulatorIndex =
+    !usesEmulator || binding?.Index == null || binding.Index === '-' ? '' : String(binding.Index)
   if (Boolean(emulatorId) !== Boolean(emulatorIndex)) {
     throw new Error('所选脚本的模拟器绑定不完整')
   }
@@ -222,6 +273,7 @@ export async function resolveRealTarget(sourceRoot, env) {
     scripts: selectedScripts,
     script,
     scriptType,
+    emulatorConfigId,
     emulatorId,
     emulatorIndex,
     scriptId: selection.scriptId,
@@ -233,14 +285,24 @@ export async function resolveRealTarget(sourceRoot, env) {
 export async function seedRealProfile(sourceRoot, dataRoot, env) {
   sourceRoot = path.resolve(sourceRoot)
   const resolved = await resolveRealTarget(sourceRoot, env)
-  const { sourceConfig, scripts, script, scriptType, emulatorId, emulatorIndex, scriptId, userId } =
-    resolved
-  const users = selectEntry(script.SubConfigsInfo?.UserData ?? {}, userId)
-  const user = users[userId]
+  const {
+    sourceConfig,
+    scripts,
+    script,
+    scriptType,
+    emulatorConfigId,
+    emulatorId,
+    emulatorIndex,
+    scriptId,
+    userId,
+  } = resolved
+  const users = selectEntry(script.UserData ?? script.SubConfigsInfo?.UserData ?? {}, userId)
+  const user = collectionValue(users, userId)
   if (user.Info?.Name !== resolved.accountName || user.Info?.Status !== true) {
     throw new Error('所选用户名称不匹配或用户未启用')
   }
-  script.SubConfigsInfo.UserData = users
+  if (script.UserData) script.UserData = users
+  else script.SubConfigsInfo.UserData = users
   // 移除所有通知配置，避免测试发送真实通知
   for (const key of Object.keys(user)) {
     if (key.includes('Notify')) delete user[key]
@@ -254,25 +316,43 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   const targetConfig = path.join(dataRoot, 'config')
   await mkdir(targetConfig, { recursive: true })
   const selectedConfig = { ScriptConfig: scripts }
-  if (emulatorId) {
+  if (emulatorConfigId) {
     selectedConfig.EmulatorConfig = selectEntry(
-      await readConfig(path.join(sourceConfig, 'EmulatorConfig.json')),
-      emulatorId
+      await readConfig(sourceConfig, 'EmulatorConfig'),
+      emulatorConfigId
     )
-  }
-  // ponytail: 只序列化被选中的条目，避免重新序列化可能有几 MB 的完整配置文件
-  for (const [name, value] of Object.entries(selectedConfig)) {
-    await writeFile(path.join(targetConfig, `${name}.json`), JSON.stringify(value, null, 2))
   }
   const planSelection = planSelectionByScriptType[scriptType]
   const planId = planSelection ? readPlanId(user, planSelection.field) : undefined
   if (planSelection && planId) {
     const plans = selectEntry(
-      await readConfig(path.join(sourceConfig, 'PlanConfig.json')),
+      await readConfig(sourceConfig, 'PlanConfig'),
       planId,
       planSelection.type
     )
-    await writeFile(path.join(targetConfig, 'PlanConfig.json'), JSON.stringify(plans, null, 2))
+    selectedConfig.PlanConfig = plans
+  }
+  // 保留输入格式；只复制选中条目，不把当前配置重新降为旧格式再迁移。
+  const yaml = Array.isArray(scripts.order)
+  for (const [name, value] of Object.entries(selectedConfig)) {
+    if (Array.isArray(value.order) !== yaml) {
+      throw new Error('E2E 配置迁移尚未完成，请先正常启动应用完成迁移')
+    }
+    await writeFile(
+      path.join(targetConfig, yaml ? configFiles[name] : `${name}.json`),
+      yaml ? stringify(value) : JSON.stringify(value, null, 2)
+    )
+  }
+  if (yaml) {
+    // 当前 YAML 的隔离副本从 v2.0 启动，避免首次启动再次尝试 JSON 迁移。
+    const { DatabaseSync } = await import('node:sqlite')
+    await mkdir(path.join(dataRoot, 'data'), { recursive: true })
+    const database = new DatabaseSync(path.join(dataRoot, 'data', 'data.db'))
+    try {
+      database.exec("CREATE TABLE version(v TEXT); INSERT INTO version VALUES('v2.0');")
+    } finally {
+      database.close()
+    }
   }
 
   // 只复制 MAS 托管配置，不复制上次运行的 Temp 恢复事务、备份池或账号历史。
@@ -329,7 +409,13 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   if (scriptType === 'HSRConfig' && script.Game?.Platform === 'Cloud') {
     await copyDirectory(path.join('data', scriptId, userId, 'cloud-profile'))
   }
-  return { emulatorId, emulatorIndex, scriptId, userId, accountName: resolved.accountName }
+  return {
+    emulatorId,
+    emulatorIndex,
+    scriptId,
+    userId,
+    accountName: resolved.accountName,
+  }
 }
 
 export function parseLauncherArgs(argv, env = process.env) {
@@ -377,15 +463,11 @@ async function main() {
           `[e2e] 真实 E2E 目标：${selected.accountName}（脚本 ${selected.scriptId} / 用户 ${selected.userId}）`
         )
       }
-      // 关掉需要读写本机游戏工具的专项，避免测试去碰开发者的真实安装
+      // 其他配置由隔离根按默认值新建，不复制本机工具、签到账号或启动队列。
       await mkdir(path.join(dataRoot, 'config'), { recursive: true })
-      await writeFile(
-        path.join(dataRoot, 'config', 'ToolsConfig.json'),
-        JSON.stringify({ ArknightsPC: { Enabled: false } })
-      )
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
-    // 只覆盖解析出的目标；显式传入的变量在解析不到时保持原值，不被空串抹掉
+    // 真实模式以所选配置为准，清空未使用的模拟器变量，避免沿用上次运行的目标。
     const selectedEnv = Object.fromEntries(
       Object.entries({
         SCRIPT_ID: selected.scriptId,
@@ -394,7 +476,7 @@ async function main() {
         EMULATOR_ID: selected.emulatorId,
         EMULATOR_INDEX: selected.emulatorIndex,
       })
-        .filter(([, value]) => value)
+        .filter(([, value]) => real || value)
         .map(([key, value]) => [`AUTO_MAS_E2E_${key}`, value])
     )
     const cli = path.join(path.dirname(require.resolve('@playwright/test/package.json')), 'cli.js')
