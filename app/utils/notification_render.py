@@ -19,7 +19,6 @@
 """按目标能力选择正文表达并降级图片引用。"""
 
 import re
-from dataclasses import replace
 from html import escape, unescape
 
 from app.models.notification import (
@@ -93,9 +92,8 @@ def render_for_target(
         except Exception as exc:
             images = ()
             diagnostics.append(f"通知图片生成失败，已保留文字: {type(exc).__name__}")
-    if len({image.id for image in images}) != len(images):
+    if len(images) > 1 and len({image.id for image in images}) != len(images):
         raise ValueError("通知图片资源 ID 必须唯一")
-    payload = replace(payload, images=images)
     image_by_id = {image.id: image for image in images}
     content, referenced_images, content_diagnostics = _render_content(
         payload,
@@ -186,7 +184,7 @@ def render_for_target(
         images=target_images,
         text_fallback=text_fallback,
         summary_used=used_summary,
-        diagnostics=tuple(dict.fromkeys(diagnostics)),
+        diagnostics=tuple(dict.fromkeys(diagnostics)) if diagnostics else (),
     )
 
 

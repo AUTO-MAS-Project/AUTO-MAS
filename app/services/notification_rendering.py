@@ -38,27 +38,18 @@ class AsyncNotificationRenderer:
     ) -> RenderedNotification:
         if self._closed:
             raise RuntimeError("通知渲染器已关闭")
-        render = partial(
-            render_for_target,
-            payload,
-            capabilities,
-            summary_policy=summary_policy,
-            use_summary_title=use_summary_title,
-        )
-        content = (
-            payload.summary.text
-            if summary_policy == "preferred"
+        if (
+            summary_policy == "preferred"
             and payload.summary is not None
             and payload.summary.text
-            else next(
-                (
-                    value
-                    for content_format in capabilities.formats
-                    if (value := getattr(payload, content_format, None)) is not None
-                ),
-                None,
-            )
-        )
+        ):
+            content = payload.summary.text
+        else:
+            content = None
+            for content_format in capabilities.formats:
+                content = getattr(payload, content_format, None)
+                if content is not None:
+                    break
         if (
             isinstance(content, str)
             and len(content) <= 8192
@@ -69,7 +60,12 @@ class AsyncNotificationRenderer:
                 and not capabilities.image_presentations
             )
         ):
-            return render()
+            return render_for_target(
+                payload,
+                capabilities,
+                summary_policy=summary_policy,
+                use_summary_title=use_summary_title,
+            )
 
         # 冷导入、模板编译及插件装配先在事件循环上完成，线程只生成内容。
         for content_format in capabilities.formats:
@@ -79,11 +75,21 @@ class AsyncNotificationRenderer:
         if isinstance(payload.images, DeferredContent):
             payload.images.prepare_for_render()
 
+        render = partial(
+            render_for_target,
+            payload,
+            capabilities,
+            summary_policy=summary_policy,
+            use_summary_title=use_summary_title,
+        )
         loop = asyncio.get_running_loop()
-        for previous in list(self._slots):
-            if previous.is_closed():
-                del self._slots[previous]
-        slots = self._slots.setdefault(loop, asyncio.Semaphore(self._workers))
+        slots = self._slots.get(loop)
+        if slots is None:
+            for previous in list(self._slots):
+                if previous.is_closed():
+                    del self._slots[previous]
+            slots = asyncio.Semaphore(self._workers)
+            self._slots[loop] = slots
         await slots.acquire()
         try:
             future = loop.run_in_executor(self._executor, render)

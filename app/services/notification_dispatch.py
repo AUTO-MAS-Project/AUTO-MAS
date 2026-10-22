@@ -4,7 +4,13 @@ import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
-from app.models.notification import NotificationRenderer, NotifyPayload
+from app.models.notification import (
+    NotificationCapabilities,
+    NotificationRenderer,
+    NotifyPayload,
+    RenderedNotification,
+    SummaryPolicy,
+)
 from app.models.notification_channel import (
     ChannelTarget,
     DeliveryChannel,
@@ -105,10 +111,8 @@ async def dispatch(
     skip_ids = set(skip_channel_ids)
     unresolved: list[str] = []
     unresolved_failures: list[DeliveryFailure] = []
-    groups: dict[
-        str, list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]]
-    ] = {}
-    index = 0
+    jobs: list[tuple[DeliveryChannel, ChannelTarget, EmptyPolicy]] = []
+    groups: dict[str, list[int]] = {}
     for target in targets:
         for failure in target.unresolved:
             if failure not in unresolved:
@@ -125,10 +129,50 @@ async def dispatch(
                 )
         for channel, ct in target.channels:
             if ct.label not in skip and ct.id not in skip_ids:
-                groups.setdefault(channel.key, []).append(
-                    (index, channel, ct, target.empty_policy)
+                groups.setdefault(channel.key, []).append(len(jobs))
+                jobs.append((channel, ct, target.empty_policy))
+
+    rendered_cache: dict[
+        tuple[NotificationCapabilities, SummaryPolicy, bool], RenderedNotification
+    ] = {}
+    render_locks: dict[
+        tuple[NotificationCapabilities, SummaryPolicy, bool], asyncio.Lock
+    ] = {}
+
+    async def render(target: ChannelTarget) -> RenderedNotification:
+        capabilities = (
+            target.announcement_capabilities
+            if payload.presentation == "announcement"
+            and target.announcement_capabilities is not None
+            else target.capabilities
+        )
+        if len(jobs) <= 1:
+            return await rendering.render(
+                payload,
+                capabilities,
+                summary_policy=target.summary_policy,
+                use_summary_title=target.use_summary_title,
+            )
+        key = capabilities, target.summary_policy, target.use_summary_title
+        cached = rendered_cache.get(key)
+        if cached is not None:
+            return cached
+        lock = render_locks.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            render_locks[key] = lock
+        # 只合并本轮相同表达的内容计算；传输不持锁，失败也不缓存。
+        async with lock:
+            cached = rendered_cache.get(key)
+            if cached is None:
+                cached = await rendering.render(
+                    payload,
+                    capabilities,
+                    summary_policy=target.summary_policy,
+                    use_summary_title=target.use_summary_title,
                 )
-            index += 1
+                rendered_cache[key] = cached
+            return cached
 
     async def deliver(
         channel: DeliveryChannel, target: ChannelTarget, policy: EmptyPolicy
@@ -158,17 +202,7 @@ async def dispatch(
                     else (),
                 )
         try:
-            rendered = await rendering.render(
-                payload,
-                (
-                    target.announcement_capabilities
-                    if payload.presentation == "announcement"
-                    and target.announcement_capabilities is not None
-                    else target.capabilities
-                ),
-                summary_policy=target.summary_policy,
-                use_summary_title=target.use_summary_title,
-            )
+            rendered = await render(target)
         except Exception as exc:
             logger.warning(f"{target.label}通知内容准备失败: {type(exc).__name__}")
             return DispatchResult(
@@ -202,37 +236,36 @@ async def dispatch(
             )
         return DispatchResult(attempted=1, failed=(target.label,), failures=(failure,))
 
-    async def send_group(
-        jobs: list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]],
-    ) -> list[tuple[int, DispatchResult]]:
-        results = []
-        for index, channel, target, policy in jobs:
-            result = await deliver(channel=channel, target=target, policy=policy)
-            results.append((index, result))
-        return results
+    if len(jobs) == 1 and not unresolved:
+        channel, target, policy = jobs[0]
+        return await deliver(channel=channel, target=target, policy=policy)
+
+    results: dict[int, DispatchResult] = {}
 
     if not concurrent or len(groups) <= 1:
         # 不建子 Task；配置事务的所有者必须与渠道内部提交者相同。
-        jobs = sorted(
-            (job for group in groups.values() for job in group), key=lambda job: job[0]
-        )
-        batches = [await send_group(jobs)]
+        for index, (channel, target, policy) in enumerate(jobs):
+            results[index] = await deliver(
+                channel=channel, target=target, policy=policy
+            )
     else:
-        semaphore = asyncio.Semaphore(4)
+        pending = iter(groups.values())
 
-        async def send_bounded(
-            jobs: list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]],
-        ) -> list[tuple[int, DispatchResult]]:
-            async with semaphore:
-                return await send_group(jobs)
+        async def send_groups() -> None:
+            for group in pending:
+                for index in group:
+                    channel, target, policy = jobs[index]
+                    results[index] = await deliver(
+                        channel=channel, target=target, policy=policy
+                    )
 
         tasks = [
-            asyncio.create_task(send_bounded(jobs), name=f"notification:{key}")
-            for key, jobs in groups.items()
+            asyncio.create_task(send_groups(), name=f"notification:{worker}")
+            for worker in range(min(4, len(groups)))
         ]
         joined = asyncio.gather(*tasks)
         try:
-            batches = await asyncio.shield(joined)
+            await asyncio.shield(joined)
         except BaseException:
             # 只向子任务取消一次；父任务的后续取消不能中断渠道 finally 的异步清理。
             for task in tasks:
@@ -249,16 +282,13 @@ async def dispatch(
                 joined.exception()
             raise
 
-    ordered = sorted(
-        (item for batch in batches for item in batch), key=lambda item: item[0]
-    )
-    results = [result for _, result in ordered]
+    ordered = [results[index] for index in range(len(jobs))]
     return DispatchResult(
-        attempted=sum(result.attempted for result in results),
-        succeeded=tuple(name for result in results for name in result.succeeded),
-        failed=tuple(name for result in results for name in result.failed)
+        attempted=sum(result.attempted for result in ordered),
+        succeeded=tuple(name for result in ordered for name in result.succeeded),
+        failed=tuple(name for result in ordered for name in result.failed)
         + tuple(unresolved),
-        succeeded_ids=tuple(uid for result in results for uid in result.succeeded_ids),
-        failures=tuple(f for result in results for f in result.failures)
+        succeeded_ids=tuple(uid for result in ordered for uid in result.succeeded_ids),
+        failures=tuple(f for result in ordered for f in result.failures)
         + tuple(unresolved_failures),
     )
