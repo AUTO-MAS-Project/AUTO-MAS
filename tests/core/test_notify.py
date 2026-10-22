@@ -94,6 +94,7 @@ class _Config:
         self._values = {
             **_SWITCHES,
             **_TEXTS,
+            "OpenClawQQGroupOpenIds": [],
             "OpenClawQQTargetType": "c2c",
             **(values or {}),
         }

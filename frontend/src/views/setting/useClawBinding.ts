@@ -61,25 +61,24 @@ export function useClawBinding(
 
   const groupError = (code?: string) => {
     if (code === 'binding_changed') return label('BindingChanged')
-    if (code === 'group_not_found') return label('GroupNotFound')
     if (code === 'not_bound') return label('Unbound')
     return label('TargetError')
   }
 
   const loadGroups = async () => {
-    if (targetSaving.value || unbinding.value) return
+    if (groupsLoading.value || targetSaving.value || unbinding.value) return
     const id = ++groupsRunId
     groupsLoading.value = true
     groupsError.value = ''
     try {
       const result = await QqService.getGroupsApiSettingOpenclawQqGroupsPost()
       if (disposed || id !== groupsRunId) return
-      if (result.code !== 200) throw new Error(groupError(result.errorCode))
+      if (result.code !== 200) throw new Error(label('GroupsError'))
       groups.value = result
     } catch {
       if (disposed || id !== groupsRunId) return
       groups.value = null
-      groupsError.value = label('TargetError')
+      groupsError.value = label('GroupsError')
     } finally {
       if (id === groupsRunId) groupsLoading.value = false
     }
@@ -87,6 +86,8 @@ export function useClawBinding(
 
   const selectTarget = async (value: string) => {
     if (!groups.value?.bindingId || targetSaving.value) return
+    const targetType = Object.values(OpenClawQQTargetIn.targetType).find(type => type === value)
+    if (!targetType) return
     const id = ++groupsRunId
     targetSaving.value = true
     groupsLoading.value = false
@@ -94,9 +95,7 @@ export function useClawBinding(
     try {
       const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
         bindingId: groups.value.bindingId,
-        targetType:
-          value === 'c2c' ? OpenClawQQTargetIn.targetType.C2C : OpenClawQQTargetIn.targetType.GROUP,
-        groupOpenId: value === 'c2c' ? null : value.slice('group:'.length),
+        targetType,
       })
       if (disposed || id !== groupsRunId) return
       if (result.code !== 200) {

@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 显式选择私聊或一个已发现的群。
+ * 选择私聊、全部群聊或两者。
  */
 export type OpenClawQQTargetIn = {
     /**
@@ -14,10 +14,6 @@ export type OpenClawQQTargetIn = {
      * 通知接收位置
      */
     targetType: OpenClawQQTargetIn.targetType;
-    /**
-     * 选择群聊时的群 OpenID
-     */
-    groupOpenId?: (string | null);
 };
 export namespace OpenClawQQTargetIn {
     /**
@@ -26,6 +22,7 @@ export namespace OpenClawQQTargetIn {
     export enum targetType {
         C2C = 'c2c',
         GROUP = 'group',
+        ALL = 'all',
     }
 }
 

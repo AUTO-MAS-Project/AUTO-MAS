@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 候选群；群 OpenID 用于选择，不包含聊天内容。
+ * 自动记录的群，不包含聊天内容。
  */
 export type OpenClawQQGroup = {
     /**

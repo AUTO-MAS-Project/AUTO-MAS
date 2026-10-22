@@ -14,8 +14,8 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class QqService {
     /**
-     * 查询 QQ 通知接收位置及候选群
-     * 只返回网关已发现的群和已保存的目标，不枚举 QQ 联系人。
+     * 查询 QQ 通知接收位置及自动记录的群
+     * 只返回自动记录的群和已保存的模式，不枚举 QQ 联系人。
      * @returns OpenClawQQGroupsOut Successful Response
      * @throws ApiError
      */
@@ -27,7 +27,7 @@ export class QqService {
     }
     /**
      * 选择 QQ 通知接收位置
-     * 绑定版本和群存在性校验通过后，保存唯一的通知接收位置。
+     * 验证绑定版本后保存通知模式，无需选择群。
      * @param requestBody
      * @returns OpenClawQQGroupsOut Successful Response
      * @throws ApiError

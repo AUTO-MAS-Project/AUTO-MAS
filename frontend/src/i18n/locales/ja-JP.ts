@@ -4466,19 +4466,21 @@ export default {
       openclawQqSetupHint:
         'QR コードで連携した後、スキャンに使用した QQ アカウントでボットを友だちに追加してから通知をテストしてください。ログイン情報は自動保存されます。',
       openclawQqBind: 'QR コードで連携',
-      openclawQqTargetLabel: '通知の送信先',
-      openclawQqPrivateTarget: '個人チャット（既定）',
-      openclawQqRefreshGroups: 'グループを更新',
-      openclawQqGroupOption: 'グループ …{id} · {time}',
-      openclawQqGroupSaved: '保存済み・確認待ち',
-      openclawQqGroupInvalid: '元のグループは無効です。選び直してください。',
+      openclawQqPrivateTarget: '個別チャット',
+      openclawQqGroupTarget: 'グループ',
+      openclawQqAllTarget: 'すべて',
+      openclawQqTargetLabel: '通知先',
+      openclawQqBindingChanged:
+        'ボットの紐付けが変更されました。更新して通知モードを選び直してください。',
+      openclawQqTargetError: '通知モードを保存できませんでした。更新して再試行してください。',
+      openclawQqTargetSaved: '通知モードを保存しました',
+      openclawQqDiscoveredGroups: '{count} 個のグループを自動検出済み',
+      openclawQqNoGroupsHint:
+        'グループを待機中です。MAS がオンラインの間にボットをグループに追加するか、既存グループでメンションしてください。',
+      openclawQqRefreshGroups: 'グループ状態を更新',
       openclawQqGroupHint:
-        '最新版 QQ で、グループ所有者が自分のボットを友だちのグループに追加し、自発的な発言を許可してください。対象グループでボットにメンションしてから更新し、5分以内に最終交流時刻で1つ選択します。QQ の権限・頻度制限が適用されるため、テスト通知で送信を確認してください。',
-      openclawQqBindingChanged: 'ボットの連携が変更されました。更新して選び直してください。',
-      openclawQqGroupNotFound:
-        '未検出、またはボットが退出したグループです。メンションして更新してください。',
-      openclawQqTargetError: '送信先の取得または保存に失敗しました。更新して再試行してください。',
-      openclawQqTargetSaved: '通知の送信先を保存しました',
+        '個別チャットは紐付けたユーザーへ、グループは検出した全グループへ、すべては両方へ送信します。最新版 QQ でグループ管理者が自分のボットを追加し、能動的な発言を許可してください。MAS がオンラインの状態で追加またはメンションするとグループを記録し、退出や受信拒否で削除します。QQ の権限と送信頻度制限が適用されます。',
+      openclawQqGroupsError: 'グループ状態を取得できませんでした。更新して再試行してください。',
       openclawQqRebind: '再連携',
       openclawQqUnbind: '連携解除',
       openclawQqUnbindConfirm:

@@ -39,32 +39,41 @@ def _openclaw_qq_targets(
     config: ChannelConfig, *, scope: str
 ) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
+    app_id = config.get("Notify", "OpenClawQQAppId")
     target_type = config.get("Notify", "OpenClawQQTargetType")
-    target = QQTarget(
-        app_id=config.get("Notify", "OpenClawQQAppId"),
-        target_type=target_type,
-        openid=config.get(
-            "Notify",
-            "OpenClawQQGroupOpenId"
-            if target_type == "group"
-            else "OpenClawQQTargetOpenId",
-        ),
-    )
-    return (
+    recipients: list[QQTarget] = []
+    if target_type in {"c2c", "all"}:
+        recipients.append(
+            QQTarget(
+                app_id=app_id,
+                target_type="c2c",
+                openid=config.get("Notify", "OpenClawQQTargetOpenId"),
+            )
+        )
+    if target_type in {"group", "all"}:
+        recipients.extend(
+            QQTarget(app_id=app_id, target_type="group", openid=openid)
+            for openid in dict.fromkeys(config.get("Notify", "OpenClawQQGroupOpenIds"))
+            if openid
+        )
+    return tuple(
         ChannelTarget(
             id=(
-                f"{name}:group:{target.app_id}:{target.openid}"
-                if target_type == "group"
+                f"{name}:group:{app_id}:{target.openid}"
+                if target.target_type == "group"
                 else name
             ),
-            label=name,
+            label=f"{name} 群 …{target.openid[-12:]}"
+            if target.target_type == "group" and target.openid
+            else name,
             value=target,
             capabilities=NotificationCapabilities(
                 formats=("text",),
                 image_presentations=frozenset({"rich_media"}),
                 body_title_policy="always",
             ),
-        ),
+        )
+        for target in recipients
     )
 
 

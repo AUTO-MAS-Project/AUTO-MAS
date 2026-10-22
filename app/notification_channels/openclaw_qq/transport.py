@@ -71,7 +71,6 @@ GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
 GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
 GROUP_MESSAGE_INTERVAL_SECONDS = 3.1
 GROUP_RATE_LIMIT_COOLDOWN_SECONDS = 60
-GROUP_DISCOVERY_TTL_SECONDS = 5 * 60
 # Identify 连续被拒达到该次数后，降级为最小事件订阅保住网关连接
 GATEWAY_IDENTIFY_FALLBACK_AFTER = 3
 # 平台审查拒绝正文含链接时，把链接替换为该占位文本后补发
@@ -141,7 +140,7 @@ class QQTarget:
 
 @dataclass(frozen=True)
 class QQGroup:
-    """网关发现的群；重启后仅保留选中的群，发现时间为空。"""
+    """自动记录的群；重启后发现时间为空。"""
 
     openid: str
     last_seen: datetime | None
@@ -149,11 +148,10 @@ class QQGroup:
 
 @dataclass(frozen=True)
 class QQGroups:
-    """不含机器人凭据的群选择快照。"""
+    """不含机器人凭据的通知模式及自动记录的群。"""
 
     binding_id: str
-    target_type: Literal["c2c", "group"]
-    group_openid: str | None
+    target_type: Literal["c2c", "group", "all"]
     groups: tuple[QQGroup, ...]
 
 
@@ -276,73 +274,55 @@ class Sender:
         self._removed_groups: set[str] = set()
         self._group_next_send_at = 0.0
 
-    def _expire_groups(self) -> None:
-        now = datetime.now(UTC)
-        self._groups = {
-            openid: seen
-            for openid, seen in self._groups.items()
-            if (now - seen).total_seconds() < GROUP_DISCOVERY_TTL_SECONDS
-        }
-
     def groups(self) -> QQGroups:
-        """读取当前目标及内存候选群，不把聊天内容或完整群列表写入配置。"""
+        """读取自动记录的全部群，不保存群聊天内容。"""
 
-        self._expire_groups()
-        selected = self._config_value("OpenClawQQGroupOpenId", None)
-        if selected in self._removed_groups:
-            selected = None
-        groups = [QQGroup(openid, seen) for openid, seen in self._groups.items()]
-        groups.sort(key=lambda group: group.last_seen, reverse=True)
-        if selected and selected not in self._groups:
-            groups.insert(0, QQGroup(selected, None))
+        groups = tuple(
+            QQGroup(openid, self._groups.get(openid))
+            for openid in self._config_value("OpenClawQQGroupOpenIds")
+            if openid not in self._removed_groups
+        )
         return QQGroups(
             binding_id=self._binding_id,
             target_type=self._config_value("OpenClawQQTargetType"),
-            group_openid=selected,
-            groups=tuple(groups),
+            groups=groups,
         )
 
     async def set_target(
         self,
         *,
         binding_id: str,
-        target_type: Literal["c2c", "group"],
-        group_openid: str | None,
+        target_type: Literal["c2c", "group", "all"],
     ) -> QQGroups:
-        """只允许当前绑定选择已发现的一个群，旧页面不能覆盖新的绑定。"""
+        """切换私聊、全部群聊或两者，旧页面不能覆盖新的绑定。"""
 
         async with self._send_lock, self._credential_lock, self._config_lock:
             if binding_id != self._binding_id:
                 raise ValueError("binding_changed")
             if not all(self._credentials()):
                 raise ValueError("not_bound")
-            self._expire_groups()
-            if target_type == "group" and group_openid not in self._groups:
-                raise ValueError("group_not_found")
-            await self.dependencies.config.update(
-                {
-                    "OpenClawQQTargetType": target_type,
-                    "OpenClawQQGroupOpenId": (
-                        group_openid if target_type == "group" else None
-                    ),
-                }
-            )
+            await self.dependencies.config.update({"OpenClawQQTargetType": target_type})
             return self.groups()
 
     async def _handle_group_event(self, event: str, data: dict[str, Any]) -> None:
-        """通过加群或群消息发现候选；退群立即使选中目标失效。"""
+        """自动记录群；退群或拒收事件立即停止向该群推送。"""
 
         openid = data.get("group_openid")
         if not isinstance(openid, str) or not openid:
             return
-        if event == "GROUP_DEL_ROBOT":
+        if event in {"GROUP_DEL_ROBOT", "GROUP_MSG_REJECT"}:
             # 配置回写即使被信号拒绝，本次进程也不能继续投递到已知退出的群。
             self._groups.pop(openid, None)
             self._removed_groups.add(openid)
             async with self._config_lock:
-                if self._config_value("OpenClawQQGroupOpenId", None) == openid:
+                groups = list(self._config_value("OpenClawQQGroupOpenIds"))
+                if openid in groups:
                     await self.dependencies.config.update(
-                        {"OpenClawQQGroupOpenId": None}
+                        {
+                            "OpenClawQQGroupOpenIds": [
+                                item for item in groups if item != openid
+                            ]
+                        }
                     )
         elif event in {
             "GROUP_ADD_ROBOT",
@@ -351,6 +331,12 @@ class Sender:
         }:
             self._removed_groups.discard(openid)
             self._groups[openid] = datetime.now(UTC)
+            async with self._config_lock:
+                groups = list(self._config_value("OpenClawQQGroupOpenIds"))
+                if openid not in groups:
+                    await self.dependencies.config.update(
+                        {"OpenClawQQGroupOpenIds": [*groups, openid]}
+                    )
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
@@ -691,7 +677,7 @@ class Sender:
                 "OpenClawQQAppId": "",
                 "OpenClawQQTargetOpenId": "",
                 "OpenClawQQTargetType": "c2c",
-                "OpenClawQQGroupOpenId": None,
+                "OpenClawQQGroupOpenIds": [],
             }
             if self._can_persist_secrets():
                 values["OpenClawQQClientSecret"] = ""
@@ -855,7 +841,7 @@ class Sender:
             finally:
                 self._gateway_online = False
                 self._gateway_ready.clear()
-                # 断线期间可能漏掉退群事件；候选须重新发现，已保存目标仍保留。
+                # 清空临时发现时间，持久化目标仍保留；平台退群拒绝会移除失效目标。
                 self._groups.clear()
             retry = 0 if ready else min(retry + 1, len(GATEWAY_RECONNECT_DELAYS) - 1)
             if not rejected:
@@ -948,19 +934,20 @@ class Sender:
 
     def _validate_target(self, target: QQTarget) -> str:
         app_id, _, user_openid = self._credentials()
-        selected = (
-            self._config_value("OpenClawQQGroupOpenId", None)
+        recipients = (
+            self._config_value("OpenClawQQGroupOpenIds")
             if target.target_type == "group"
-            else user_openid
+            else [user_openid]
         )
         if (
             target.app_id != app_id
-            or self._config_value("OpenClawQQTargetType") != target.target_type
+            or self._config_value("OpenClawQQTargetType")
+            not in {target.target_type, "all"}
             or not target.openid
-            or target.openid != selected
+            or target.openid not in recipients
             or (target.target_type == "group" and target.openid in self._removed_groups)
         ):
-            raise ValueError("QQ 通知目标已失效，请在通知设置中重新确认接收位置")
+            raise ValueError("QQ 通知目标不可用，请确认机器人已入群并允许主动发言")
         return target.openid
 
     async def _send_message_with_token(
@@ -991,6 +978,16 @@ class Sender:
                 operation="QQ 通知发送",
             )
         except RuntimeError as exc:
+            logger.warning(f"QQ 官方机器人消息发送失败：{exc}")
+            if group_target is not None and any(
+                code in str(exc) for code in ("40034101", "40054003")
+            ):
+                try:
+                    await self._handle_group_event(
+                        "GROUP_DEL_ROBOT", {"group_openid": group_target.openid}
+                    )
+                except Exception:
+                    logger.opt(exception=True).warning("移除已退群的 QQ 通知目标失败")
             if group_target is not None and "40034100" in str(exc):
                 self._group_next_send_at = (
                     monotonic() + GROUP_RATE_LIMIT_COOLDOWN_SECONDS
@@ -1150,7 +1147,7 @@ class Sender:
             "OpenClawQQTargetOpenId": normalized.user_openid,
         }
         if changed_bot:
-            values.update(OpenClawQQTargetType="c2c", OpenClawQQGroupOpenId=None)
+            values.update(OpenClawQQTargetType="c2c", OpenClawQQGroupOpenIds=[])
         async with self._config_lock:
             if self._can_persist_secrets():
                 try:

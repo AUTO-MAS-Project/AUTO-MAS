@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
@@ -15,7 +15,7 @@ const props = defineProps<{
   getContainer?: () => HTMLElement
 }>()
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 
 const binding = computed(() => props.binding)
 
@@ -31,28 +31,11 @@ const onEscCapture = (event: KeyboardEvent) => {
 }
 // 启停开关在配置弹窗的开关行里，这里只留绑定状态与操作
 const connected = computed(() => !!binding.value.status?.connected)
-const targetValue = computed(() => {
-  const snapshot = binding.value.groups
-  if (!snapshot) return undefined
-  return snapshot.targetType === 'group' ? `group:${snapshot.groupOpenId || ''}` : 'c2c'
-})
-const targetOptions = computed(() => {
-  const options = [{ value: 'c2c', label: binding.value.label('PrivateTarget'), disabled: false }]
-  for (const group of binding.value.groups?.groups || []) {
-    const time = group.lastSeen
-      ? new Date(group.lastSeen).toLocaleString(locale.value)
-      : binding.value.label('GroupSaved')
-    options.push({
-      value: `group:${group.openId}`,
-      label: t('setting.notify.openclawQqGroupOption', { id: group.openId.slice(-12), time }),
-      disabled: false,
-    })
-  }
-  if (binding.value.groups?.targetType === 'group' && !binding.value.groups.groupOpenId) {
-    options.push({ value: 'group:', label: binding.value.label('GroupInvalid'), disabled: true })
-  }
-  return options
-})
+const targetOptions = computed(() => [
+  { value: 'c2c', label: binding.value.label('PrivateTarget') },
+  { value: 'group', label: binding.value.label('GroupTarget') },
+  { value: 'all', label: binding.value.label('AllTarget') },
+])
 const statusLabel = computed(() => {
   if (!connected.value) return binding.value.label('Unbound')
   if (binding.value.status?.state === 'reconnecting') {
@@ -67,7 +50,14 @@ const statusColor = computed(() => {
   if (!connected.value) return 'default'
   return binding.value.status?.state !== 'connected' ? 'processing' : 'success'
 })
-onMounted(() => void binding.value.loadGroups())
+let groupsTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  void binding.value.loadGroups()
+  groupsTimer = setInterval(() => {
+    if (connected.value && !binding.value.open) void binding.value.loadGroups()
+  }, 3000)
+})
+onBeforeUnmount(() => clearInterval(groupsTimer))
 </script>
 
 <template>
@@ -124,10 +114,8 @@ onMounted(() => void binding.value.loadGroups())
         <div class="target-row">
           <a-select
             id="qq-notification-target"
-            :value="targetValue"
+            :value="binding.groups?.targetType"
             :options="targetOptions"
-            :dropdown-match-select-width="false"
-            :placeholder="binding.label('TargetLabel')"
             :loading="binding.groupsLoading || binding.targetSaving"
             :disabled="
               !binding.groups ||
@@ -151,6 +139,21 @@ onMounted(() => void binding.value.loadGroups())
         </div>
       </a-form-item>
       <a-alert v-if="binding.groupsError" type="error" show-icon :message="binding.groupsError" />
+      <a-typography-paragraph v-if="binding.groups" class="binding-hint">
+        {{
+          t('setting.notify.openclawQqDiscoveredGroups', {
+            count: binding.groups.groups?.length || 0,
+          })
+        }}
+      </a-typography-paragraph>
+      <a-alert
+        v-if="
+          binding.groups?.targetType !== 'c2c' && binding.groups && !binding.groups.groups?.length
+        "
+        type="info"
+        show-icon
+        :message="binding.label('NoGroupsHint')"
+      />
       <a-typography-paragraph type="secondary" class="binding-hint">
         {{ binding.label('GroupHint') }}
       </a-typography-paragraph>
@@ -215,7 +218,7 @@ onMounted(() => void binding.value.loadGroups())
 }
 .target-select {
   flex: 1;
-  min-width: 200px;
+  min-width: 160px;
 }
 .bind-section {
   display: flex;

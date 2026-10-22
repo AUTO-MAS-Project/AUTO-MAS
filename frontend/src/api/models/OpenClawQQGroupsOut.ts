@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { OpenClawQQGroup } from './OpenClawQQGroup';
 /**
- * QQ 通知接收位置及当前进程发现的群。
+ * QQ 通知接收位置及自动记录的群。
  */
 export type OpenClawQQGroupsOut = {
     /**
@@ -28,11 +28,7 @@ export type OpenClawQQGroupsOut = {
      */
     targetType?: OpenClawQQGroupsOut.targetType;
     /**
-     * 选中的群 OpenID
-     */
-    groupOpenId?: (string | null);
-    /**
-     * 候选群
+     * 自动记录的群
      */
     groups?: Array<OpenClawQQGroup>;
     /**
@@ -47,6 +43,7 @@ export namespace OpenClawQQGroupsOut {
     export enum targetType {
         C2C = 'c2c',
         GROUP = 'group',
+        ALL = 'all',
     }
 }
 
