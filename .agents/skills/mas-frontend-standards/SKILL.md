@@ -17,7 +17,7 @@ Keep AUTO-MAS frontend changes aligned with Vue 3, TypeScript, Vite Plus (Vite, 
 
 ## Authority
 
-This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here.
+This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here. The component size policy below is a red line; existing oversized files are not precedent for new code.
 
 ## Mandatory Intake
 
@@ -27,7 +27,7 @@ Before editing frontend code:
 2. Inspect the target page, adjacent pages, related components, composables, API wrappers, router entries, and styles.
 3. Classify the task as new page, fix, refactor, style/UI adjustment, API integration, route change, or documentation-only.
 4. Select `mas-frontend-ui` as a required companion for any UI, layout, component, form, table, modal, feedback, or visual-state change.
-5. Keep changes limited to files directly required by the task.
+5. Keep changes limited to files directly required by the task. Before editing a `.vue` file, record its line count at the task base commit and choose the applicable case in [Component Size Policy](#component-size-policy).
 
 ## Directory And Ownership
 
@@ -53,11 +53,23 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 2. Order code as imports, types, props/emits, composables, state, computed, watchers, lifecycle, functions.
 3. Type props and emits explicitly.
 4. Keep computed values for derived state; keep watchers for side effects only.
-5. Choose boundaries by responsibility, state ownership, and lifecycle. File length is a review signal, not a mandatory extraction threshold; a cohesive component can stay together.
+5. Follow [Component Size Policy](#component-size-policy). Choose extraction boundaries by responsibility, state ownership, and lifecycle.
 6. Extract substantial independent UI or stateful workflows when the boundary hides useful complexity, even with one consumer. Keep simple local state local and pure calculations in ordinary functions. Moving an entire page script into `useXxx()` or forwarding most of its refs and callbacks does not establish a useful boundary.
 7. Do not introduce a new UI, state, request, or routing library for a small task.
 
 When changing component boundaries, reactive inputs, component models, async watchers, or lifecycle handling, read [Vue state and lifecycle](references/vue-state-and-lifecycle.md). It covers state scope, Vue 3.5 props, Pinia destructuring, typed component contracts, stale reads, cleanup, and route reuse. Apply only the relevant sections; preserve existing working contracts during local fixes.
+
+## Component Size Policy
+
+Count the entire `.vue` file, including template, script, styles, comments, and blank lines; count a final unterminated line too. Use `len(Path(path).read_bytes().splitlines())` in Python, and the same count on `git show <base-commit>:<path>` for the baseline. Record the task base commit once; renaming or moving a component does not reset its baseline.
+
+- **New components and existing components at or below 500 lines:** keep each resulting component at or below 500 lines. Split independent business regions even below the limit.
+- **Existing components above 500 lines, with new or expanded business behavior:** extract the affected responsibility before adding that behavior. The original component must become shorter than its baseline, and each new component must meet the limit. Unrelated regions may remain for later work; report the remaining oversized file explicitly.
+- **Existing components above 500 lines, with a local fix or maintenance only:** keep the final count at or below its baseline and add no independent business region. Report the baseline and final count plus why the change fits this case. A larger final count requires extracting the affected responsibility.
+
+These requirements take precedence over following local patterns, minimizing diffs, and avoiding unrequested broad refactors. Perform only the extraction needed for the affected responsibility; preserve behavior and leave unrelated files alone. Any exception requires an explicit user instruction; cohesion or passing lint alone is not an exception.
+
+Extract a meaningful UI region or workflow with clear ownership and a narrow interface. Preserve readable formatting and useful comments. Compressing code, removing whitespace to meet the count, or moving the whole script into a composable with the same broad interface does not satisfy this policy.
 
 ## API And Data Flow
 
@@ -121,6 +133,7 @@ Resolve commands from the current `frontend/package.json` and CI configuration. 
 | Touched surface | Command | Passing criterion |
 | --- | --- | --- |
 | Frontend code | `yarn lint`, `yarn typecheck`, `yarn format:check` | All exit 0; inspect diagnostics and leave no new warnings |
+| Added or modified Vue components | Count every resulting `.vue` file and compare existing files with the task base commit | Each file satisfies [Component Size Policy](#component-size-policy); lint/typecheck do not establish this |
 | Electron main/preload code | Also `node node_modules/typescript/bin/tsc -p tsconfig.electron.json --noEmit` | 0 errors; renderer typecheck does not cover `electron/` |
 | Behavior covered by existing tests | `yarn test <test-file>`; use `yarn test` for changes spanning shared infrastructure or multiple tested flows | Relevant checks pass; report which scope ran |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
@@ -167,6 +180,7 @@ When an existing source-text test fails because you refactored the code it greps
 
 | Temptation | Reality |
 | --- | --- |
+| "This component is already huge; a small addition can stay inline." | Apply [Component Size Policy](#component-size-policy), including its separate rules for added behavior and local fixes. |
 | "I can generate a fresh page faster." | Inspect and reuse local page, component, and composable patterns first. |
 | "The API call is tiny, so direct fetch is fine." | Business API calls go through generated services and composables. |
 | "Shared state is easiest to put in localStorage." | Shared reactive application state belongs in Pinia; `localStorage` is only the narrow fallback for durable, non-sensitive local preferences. |
@@ -190,5 +204,6 @@ For frontend tasks, report:
 2. Verification commands and results.
 3. UI checks when applicable.
 4. Known risks or "no known residual risk".
+5. For every added or modified Vue component, report baseline (or new), final line count, and the applicable size-policy case. Identify remaining oversized files and any explicit user exception; do not report the size check as passed without counting.
 
 State that no business code was changed when the task is documentation-only.
