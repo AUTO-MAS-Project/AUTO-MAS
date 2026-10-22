@@ -781,7 +781,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 self.script_root_path,
                 self.cur_user_item.user_id,
                 one_dragon_bridge.build_execution_segments(
-                    root=self.script_root_path,
+                    root_path=self.script_root_path,
                     script_id=self.script_info.script_id,
                     user_id=self.cur_user_item.user_id,
                     queue=self.one_dragon_queue or [],
