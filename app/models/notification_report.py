@@ -31,6 +31,36 @@ class TaskReportSummary:
     markdown: str = ""
 
 
+def filter_community_notification_results(
+    results: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """占位结果不参与摘要和独立通知。"""
+
+    return [item for item in results if not item.get("_notification_only")]
+
+
+class ReportRenderer(Protocol):
+    """编排只消费内容端口，模板、字体和图片由实现管理。"""
+
+    def community_summary(
+        self, results: list[dict[str, object]]
+    ) -> TaskReportSummary: ...
+
+    def community_payload(self, results: list[dict[str, object]]) -> NotifyPayload: ...
+
+    def append_summary(
+        self, payload: NotifyPayload, summary: TaskReportSummary
+    ) -> NotifyPayload: ...
+
+    def prepare_payloads(
+        self,
+        payload: NotifyPayload,
+        *,
+        summary: TaskReportSummary,
+        embedded_summary: str = "",
+    ) -> tuple[NotifyPayload, NotifyPayload]: ...
+
+
 @dataclass(frozen=True)
 class TaskReportRequest:
     payload: NotifyPayload

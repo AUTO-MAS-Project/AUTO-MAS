@@ -24,7 +24,7 @@
 
 from collections.abc import Iterable
 
-from app.core.community_notification import (
+from app.core.community_notify import (
     get_community_notifier,
     report_community_notification_failure,
 )

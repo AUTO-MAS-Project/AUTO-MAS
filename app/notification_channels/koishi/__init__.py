@@ -30,6 +30,7 @@ from app.models.notification_channel import (
     SCOPE_GLOBAL,
     ChannelConfig,
     ChannelTarget,
+    KoishiDependencies,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -131,7 +132,14 @@ def register() -> NotifyChannel:
         },
         target_builder=_koishi_targets,
         send_adapter=_koishi_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            KoishiDependencies(
+                config=deps.config,
+                websocket_manager_factory=deps.websocket_manager_factory,
+                logger=deps.logger,
+                command_executor=deps.command_executor,
+            )
+        ),
         start_adapter=Sender.start,
         stop_adapter=Sender.stop,
         lifecycle_order=10,

@@ -39,6 +39,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    HttpDependencies,
     NotifyChannel,
 )
 from app.models.notification_channel import target_prefix as _prefix
@@ -152,6 +153,12 @@ def register() -> NotifyChannel:
         fields={},
         target_builder=_webhook_targets,
         send_adapter=_webhook_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            HttpDependencies(
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                logger=deps.logger,
+            )
+        ),
         transport_fields=(),
     )

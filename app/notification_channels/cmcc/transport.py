@@ -28,7 +28,7 @@ import json
 import secrets
 from typing import Any
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import WebSocketDependencies
 from app.notification_channels.common import split_text
 
 SERVER_URL = "wss://5gvas01.cmicmaap.com/gtw-ai/openclaw/ws/msg"
@@ -145,7 +145,7 @@ async def _submit_message(
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: WebSocketDependencies) -> None:
         self.dependencies = dependencies
 
     async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:

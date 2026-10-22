@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import re
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import HttpDependencies
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: HttpDependencies) -> None:
         self.dependencies = dependencies
 
     async def ServerChanPush(self, title: str, content: str, send_key: str) -> None:

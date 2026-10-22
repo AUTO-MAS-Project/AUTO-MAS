@@ -50,6 +50,7 @@ from app.models.notification_report import (
 )
 from app.models.task import TaskItem
 from app.runtime_tasks import RuntimeTasks
+from app.services.notification_report import DefaultReportRenderer
 from app.utils import get_logger
 
 logger = get_logger("任务报告")
@@ -80,7 +81,7 @@ def _spawn_community_notification(
 async def _report_supplement_failure(
     result: DispatchResult, *, results_saved: bool
 ) -> None:
-    from app.core.community_notification import report_community_notification_failure
+    from app.core.community_notify import report_community_notification_failure
 
     await report_community_notification_failure(
         list(result.failed), results_saved=results_saved
@@ -102,6 +103,7 @@ def _create_coordinator(
         community_pending=community_pending,
         dependencies=TaskReportDependencies(
             dispatch=dispatch,
+            renderer=DefaultReportRenderer(),
             read_policy=read_task_report_policy,
             prepare_targets=_prepare_community_targets,
             report_failure=partial(_publish_task_notification_failure, task_id=task_id),

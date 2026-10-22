@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
 from app.models.notification import NotificationImage
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import QQSessionDependencies
 from app.notification_channels.common import RemoteHTTPError, split_text
 from app.utils import get_logger
 from app.utils.platform import secret as platform_secret
@@ -250,7 +250,7 @@ def _decrypt_client_secret(encrypted: str, key: bytes) -> str:
 class Sender:
     """单账号 QQ 官方机器人通知管理器。"""
 
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: QQSessionDependencies) -> None:
         self.dependencies = dependencies
         self._sessions: dict[str, _QrSession] = {}
         self._session_lock = asyncio.Lock()

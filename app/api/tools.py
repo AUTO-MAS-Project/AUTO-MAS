@@ -45,7 +45,7 @@ from app.config.wire import (
     config_group_contract,
 )
 from app.core import Config
-from app.core.community_notification import get_community_notifier
+from app.core.community_notify import get_community_notifier
 from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,

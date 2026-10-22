@@ -30,6 +30,9 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 from app.models.notification import NotificationImage, NotifyPayload
+from app.models.notification_report import (
+    filter_community_notification_results as filter_community_notification_results,
+)
 from app.utils.notification_template import get_notification_template
 
 _SUCCESS_STATUSES = {"成功", "已签到"}
@@ -91,14 +94,6 @@ def _result_nickname(item: dict[str, object]) -> str:
     ):
         return alias
     return account
-
-
-def filter_community_notification_results(
-    results: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    """过滤没有实际签到角色的平台占位结果。"""
-
-    return [item for item in results if not item.get("_notification_only")]
 
 
 def _ordered_platforms(

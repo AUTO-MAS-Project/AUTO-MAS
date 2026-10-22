@@ -7,10 +7,10 @@ from typing import Any
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import (
     ChannelTarget,
+    DeliveryChannel,
     DispatchResult,
     EmptyPolicy,
     Notifier,
-    NotifyChannel,
     NotifyTarget,
 )
 from app.utils import get_logger
@@ -83,7 +83,9 @@ async def dispatch(
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
     unresolved: list[str] = []
-    groups: dict[str, list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]]] = {}
+    groups: dict[
+        str, list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]]
+    ] = {}
     index = 0
     for target in targets:
         for failure in target.unresolved:
@@ -97,7 +99,7 @@ async def dispatch(
             index += 1
 
     async def deliver(
-        channel: NotifyChannel, target: ChannelTarget, policy: EmptyPolicy
+        channel: DeliveryChannel, target: ChannelTarget, policy: EmptyPolicy
     ) -> DispatchResult:
         # None 表示渠道不做空接收者判定，不能与空串共用真值判断。
         if target.empty_recipient is not None:
@@ -143,7 +145,7 @@ async def dispatch(
         return DispatchResult(attempted=1, failed=(target.label,))
 
     async def send_group(
-        jobs: list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]],
+        jobs: list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]],
     ) -> list[tuple[int, DispatchResult]]:
         results = []
         for index, channel, target, policy in jobs:
@@ -161,7 +163,7 @@ async def dispatch(
         semaphore = asyncio.Semaphore(4)
 
         async def send_bounded(
-            jobs: list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]],
+            jobs: list[tuple[int, DeliveryChannel, ChannelTarget, EmptyPolicy]],
         ) -> list[tuple[int, DispatchResult]]:
             async with semaphore:
                 return await send_group(jobs)

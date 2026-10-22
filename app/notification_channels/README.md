@@ -35,8 +35,9 @@
 内容能力由目标快照提供，宿主按该快照渲染。
 
 宿主在配置初始化后、开放 API 和定时任务前注入 `ChannelDependencies`，并为每个
-渠道创建一个实例。依赖只提供 Notify 配置视图、代理、HTTP/SMTP/WebSocket、
-系统通知和命令执行回调等公共能力，不注入逐渠道的发送函数。配置视图沿用现有
+渠道创建一个实例。`ChannelDependencies` 只留在注册装配边界，工厂为实例构造
+邮件、HTTP、WebSocket、系统提示、Koishi 或 QQ 会话的窄依赖对象。发送器不能
+取得其它传输工厂。配置视图沿用现有
 字段、校验、加密和保存流程，不迁移配置。每个发送器执行一次发送；`None`/`True` 表示成功，`False`
 表示失败，普通异常及取消向上传播。宿主负责渲染、重试、汇总与业务收尾。
 超时无法证明消息未送达，保持现有重试策略，不承诺 exactly-once。
@@ -47,7 +48,9 @@ QQ 的扫码、凭据、网关和发送使用同一个已装配实例；原扫�
 主定时器启动后，宿主按 `lifecycle_order` 调用启停入口；QQ 先于 Koishi 恢复连接。
 单个渠道启动失败不影响其他渠道。退出先结束通知任务所有者，再逆序停止渠道。
 HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运行机制。
-`Notify.push_plyer` 和 `Notify.WebhookPush` 分别保留系统提示与 Webhook 测试的直接入口。
+业务系统提示使用任务注入的 `LocalNotifier`；Webhook 草稿测试使用注入的
+`WebhookTester`，禁用草稿仍可测试。旧 `Notify.push_plyer` 和 `Notify.WebhookPush`
+保留兼容用途，普通禁用目标仍跳过。
 
 目标声明是否为本地提示，以及业务请求紧凑摘要时采用的策略；编排层按目标声明
 处理，不根据具体渠道 ID 调整内容。统一投递协议只提供 `send_channel`，渠道
@@ -64,7 +67,7 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
 ```text
 业务 / 任务报告协调器
   -> core.notify：按全局/用户范围读取配置、逐渠道准备目标
-  -> models.notification_channel：NotifyTarget + ChannelTarget
+  -> models.notification_channel：NotifyTarget + DeliveryChannel + ChannelTarget
   -> services.notification_dispatch：显式 Notifier、渲染、重试、并发与结果
   -> services.notification：选择已装配会话或本次无会话发送器
   -> 渠道传输
@@ -73,6 +76,8 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
 
 投递服务不导入 core、全局配置或通知单例。旧的 `core.notify` 入口及目标/结果类型
 导出继续可用；默认实例在 core 门面注入。内部投递契约不属于 OpenAPI。
+`DeliveryChannel` 只保留稳定 key 和发送适配器，投递流程不携带完整渠道声明、
+表单元数据、目标构造器、传输工厂或启停入口。
 
 目标构造逐渠道隔离异常；失败记入 `preparation_failures`。它与目录错误一起组成
 `NotifyTarget.unresolved`，不伪造实际投递次数。即使已知目标全部成功或被跳过，
@@ -119,8 +124,7 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 task.notify_core：专项结果、报告模板与图片
   -> core.task_report：策略快照、状态适配与外部能力装配
   -> core.notification_report：等待、摘要去重、迟到补发
-       -> services.notification_report：组合原始报告与签到摘要
-       -> services.community_notification：生成社区正文与图片
+       -> ReportRenderer：摘要、正文组合和独立社区内容
        -> 显式 NotificationDispatcher：投递并返回 DispatchResult
   -> 已注入的反馈与后台任务所有者
 ```
@@ -134,7 +138,9 @@ task.notify_core：专项结果、报告模板与图片
 和失败渠道属于这份状态；任务历史字段映射到同一状态，不保存第二份数据。
 协调器不持有完整任务对象，不读取全局 Config/Notify，也不直接访问 Publisher
 或 RuntimeTasks。投递、策略读取、默认目标准备、后台任务注册和失败反馈通过
-`TaskReportDependencies` 注入，配置与任务页面反馈留在 core 入口装配。
+`TaskReportDependencies` 注入，配置与任务页面反馈留在 core 入口装配。内容实现
+由该入口装配为 `DefaultReportRenderer`；协调器自身不导入内容服务，且导入
+`app.core` 不再急切加载 Config，因此可以在没有模板、Pillow 或配置实例时运行。
 旧 object 调用的字段兼容集中在该入口，不要求对象允许添加新属性；显式提供的
 通知状态直接复用。已有通知入口及 DispatchResult 返回语义保持不变。
 
@@ -145,3 +151,14 @@ task.notify_core：专项结果、报告模板与图片
 
 社区格式化和报告摘要组合只依赖显式数据，不读取配置或修改任务状态。专项仍
 拥有自己的报告内容与模板，不在通用投递器中识别专项或签到业务。
+
+## 独立社区通知与日历
+
+手动签到 API 和非任务定时签到消费 `CommunityNotifier`。协调器由
+`core.community_notify` 装配；开关、默认目标、内容生成、失败反馈和任务注册
+均通过依赖提供。短暂等待超时或 HTTP 请求取消后，通知继续由 `RuntimeTasks`
+持有；电源动作等待使用统一剩余时限，退出先回收通知再关闭渠道。
+
+日历注入投递器和目标准备函数，只持有提醒及其已送达 ID，不直接访问通知单例。
+未知目标保留在失败结果中，不能结清提醒。MAA 喜报仅声明 announcement 展示
+意图，Webhook 自行声明该意图下的正文能力，专项不识别或修改渠道 ID 与能力。

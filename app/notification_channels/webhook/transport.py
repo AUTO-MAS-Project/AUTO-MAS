@@ -43,7 +43,7 @@ from app.models.notification import (
 if TYPE_CHECKING:
     from httpx import Proxy
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import HttpDependencies
 
 UTC4 = timezone(timedelta(hours=4))
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
@@ -126,7 +126,7 @@ def _is_wecom_robot(url: str) -> bool:
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: HttpDependencies) -> None:
         self.dependencies = dependencies
 
     async def WebhookPush(

@@ -27,7 +27,11 @@ class ChannelConfig(Protocol):
     def Notify_CustomWebhooks(self) -> Any: ...
 
 
-class ChannelRuntimeConfig(Protocol):
+class NotificationConfigReader(Protocol):
+    def get(self, name: str) -> Any: ...
+
+
+class ChannelRuntimeConfig(NotificationConfigReader, Protocol):
     """沿用现有 Notify 配置的读写与变更订阅，不暴露全局 Config。"""
 
     def get(self, name: str) -> Any: ...
@@ -53,7 +57,7 @@ class NotificationTransportSnapshot:
 
 @dataclass(frozen=True)
 class ChannelDependencies:
-    """宿主装配的传输能力；会话读实时配置，无会话投递使用固定数据。"""
+    """仅供宿主和渠道工厂装配；传输实例接收各自的窄依赖。"""
 
     config: ChannelRuntimeConfig
     read_proxy: Callable[[], str | None]
@@ -66,6 +70,51 @@ class ChannelDependencies:
     logger: Any
     command_executor: CommandExecutor | None = None
     transport: NotificationTransportSnapshot | None = field(default=None, repr=False)
+
+
+@dataclass(frozen=True)
+class MailDependencies:
+    config: NotificationConfigReader
+    smtp_factory: Callable[..., Any]
+    logger: Any
+
+
+@dataclass(frozen=True)
+class HttpDependencies:
+    read_proxy: Callable[[], str | None]
+    http_factory: Callable[..., Any]
+    logger: Any
+
+
+@dataclass(frozen=True)
+class WebSocketDependencies:
+    read_proxy: Callable[[], str | None]
+    websocket_connect: Callable[..., Any]
+    logger: Any
+
+
+@dataclass(frozen=True)
+class SystemNoticeDependencies:
+    config: NotificationConfigReader
+    system_notify: Callable[..., Any] | None
+    system_icon: str
+    logger: Any
+
+
+@dataclass(frozen=True)
+class KoishiDependencies:
+    config: NotificationConfigReader
+    websocket_manager_factory: Callable[..., Any]
+    logger: Any
+    command_executor: CommandExecutor | None = None
+
+
+@dataclass(frozen=True)
+class QQSessionDependencies:
+    config: ChannelRuntimeConfig
+    read_proxy: Callable[[], str | None]
+    http_factory: Callable[..., Any]
+    websocket_connect: Callable[..., Any]
 
 
 @dataclass(frozen=True)
@@ -98,6 +147,26 @@ class ChannelTarget:
     announcement_capabilities: NotificationCapabilities | None = None
 
 
+SendAdapter = Callable[
+    [Any, ChannelTarget, RenderedNotification], Awaitable[bool | None]
+]
+
+
+@dataclass(frozen=True)
+class DeliveryChannel:
+    """一次投递仅需的执行描述，不携带目录、控件、工厂和生命周期。"""
+
+    key: str
+    send_adapter: SendAdapter | None = field(repr=False)
+
+    async def send(
+        self, sender: Any, target: ChannelTarget, rendered: RenderedNotification
+    ) -> bool | None:
+        if self.send_adapter is None:
+            raise RuntimeError(f"通知渠道 {self.key} 未绑定发送器")
+        return await self.send_adapter(sender, target, rendered)
+
+
 @dataclass(frozen=True)
 class NotifyChannel:
     """渠道声明及全部行为绑定；公开 API 仍逐字段选择展示元数据。"""
@@ -117,7 +186,7 @@ class NotifyChannel:
     summary_fields: tuple[str, ...]
     fields: Mapping[str, tuple[NotifyChannelField, ...]]
     target_builder: Callable[..., tuple[ChannelTarget, ...]] | None = None
-    send_adapter: Callable[..., Awaitable[bool | None]] | None = None
+    send_adapter: SendAdapter | None = None
     sender_factory: Callable[[ChannelDependencies], Any] | None = None
     start_adapter: Callable[[Any], Awaitable[None]] | None = None
     stop_adapter: Callable[[Any], Awaitable[None]] | None = None
@@ -141,9 +210,12 @@ class NotifyChannel:
     ) -> bool | None:
         """执行单次发送；None/True 成功，False 失败，取消和异常向上传播。"""
 
-        if self.send_adapter is None:
-            raise RuntimeError(f"通知渠道 {self.key} 未绑定发送器")
-        return await self.send_adapter(sender, target, rendered)
+        return await self.delivery().send(
+            sender=sender, target=target, rendered=rendered
+        )
+
+    def delivery(self) -> DeliveryChannel:
+        return DeliveryChannel(key=self.key, send_adapter=self.send_adapter)
 
 
 def target_prefix(scope: str) -> str:
@@ -154,7 +226,7 @@ def target_prefix(scope: str) -> str:
 class NotifyTarget:
     """已解析的投递目标；目录和目标解析失败均保留给本次结果。"""
 
-    channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
+    channels: tuple[tuple[DeliveryChannel, ChannelTarget], ...] = ()
     empty_policy: EmptyPolicy = "send"
     catalog_failures: tuple[str, ...] = ()
     preparation_failures: tuple[str, ...] = ()
@@ -186,7 +258,7 @@ class Notifier(Protocol):
 
     async def send_channel(
         self,
-        channel: NotifyChannel,
+        channel: DeliveryChannel,
         target: ChannelTarget,
         rendered: RenderedNotification,
     ) -> bool | None: ...

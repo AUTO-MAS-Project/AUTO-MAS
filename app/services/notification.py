@@ -35,8 +35,8 @@ from app.models.notification import (
 )
 from app.models.notification_channel import (
     ChannelTarget,
+    DeliveryChannel,
     NotificationTransportSnapshot,
-    NotifyChannel,
 )
 from app.models.notification_ports import LocalNotice
 from app.notification_channels.registry import BoundChannels
@@ -75,14 +75,14 @@ class Notification:
 
     async def send_channel(
         self,
-        channel: NotifyChannel,
+        channel: DeliveryChannel,
         target: ChannelTarget,
         rendered: RenderedNotification,
     ) -> bool | None:
         return await channel.send(
-            self.channel_sender(channel.key, transport=target.transport),
-            target,
-            rendered,
+            sender=self.channel_sender(channel.key, transport=target.transport),
+            target=target,
+            rendered=rendered,
         )
 
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:

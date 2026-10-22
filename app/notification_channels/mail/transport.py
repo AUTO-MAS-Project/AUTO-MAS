@@ -41,7 +41,7 @@ from app.models.notification import (
     NOTIFICATION_IMAGE_URI_PATTERN,
     NotificationImage,
 )
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import MailDependencies
 
 SMTP_TIMEOUT_SECONDS = 15
 _MAIL_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
@@ -84,7 +84,7 @@ def _rewrite_mail_image_sources(
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: MailDependencies) -> None:
         self.dependencies = dependencies
 
     async def send_mail(
@@ -113,7 +113,7 @@ class Sender:
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
-        config = self.dependencies.transport or self.dependencies.config
+        config = self.dependencies.config
         transport = MailTransport(
             smtp_server=config.get("SMTPServerAddress"),
             from_address=config.get("FromAddress"),

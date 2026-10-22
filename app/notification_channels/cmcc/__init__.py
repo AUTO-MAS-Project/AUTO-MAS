@@ -30,6 +30,7 @@ from app.models.notification_channel import (
     ChannelTarget,
     NotifyChannel,
     NotifyChannelField,
+    WebSocketDependencies,
 )
 from app.models.notification_channel import target_prefix as _prefix
 
@@ -95,6 +96,12 @@ def register() -> NotifyChannel:
         },
         target_builder=_cmcc_targets,
         send_adapter=_cmcc_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            WebSocketDependencies(
+                read_proxy=deps.read_proxy,
+                websocket_connect=deps.websocket_connect,
+                logger=deps.logger,
+            )
+        ),
         transport_fields=(),
     )

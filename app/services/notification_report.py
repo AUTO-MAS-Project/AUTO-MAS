@@ -4,7 +4,42 @@ from dataclasses import replace
 
 from app.models.notification import NotifyPayload
 from app.models.notification_report import TaskReportSummary
-from app.services.community_notification import append_community_summary_html
+from app.services.community_notification import (
+    append_community_summary_html,
+    build_community_notification_payload,
+    format_community_task_summary,
+)
+
+
+class DefaultReportRenderer:
+    """生产内容实现；协调器可用替身运行，无须加载模板或 Pillow。"""
+
+    def community_summary(self, results: list[dict[str, object]]) -> TaskReportSummary:
+        return TaskReportSummary(
+            text=format_community_task_summary(results).strip(),
+            markdown=format_community_task_summary(
+                results, output_format="markdown"
+            ).strip(),
+        )
+
+    def community_payload(self, results: list[dict[str, object]]) -> NotifyPayload:
+        return build_community_notification_payload(results)
+
+    def append_summary(
+        self, payload: NotifyPayload, summary: TaskReportSummary
+    ) -> NotifyPayload:
+        return append_report_summary(payload, summary)
+
+    def prepare_payloads(
+        self,
+        payload: NotifyPayload,
+        *,
+        summary: TaskReportSummary,
+        embedded_summary: str = "",
+    ) -> tuple[NotifyPayload, NotifyPayload]:
+        return prepare_report_payloads(
+            payload, summary=summary, embedded_summary=embedded_summary
+        )
 
 
 def append_report_summary(

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import SystemNoticeDependencies
 
 # Windows 通知字段分别保留 63 和 255 个 UTF-16 代码单元，余下一位给结尾空字符。
 PLYER_TITLE_LIMIT = 63
@@ -58,7 +58,7 @@ def clip_notify_text(text: str, limit: int) -> str:
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: SystemNoticeDependencies) -> None:
         self.dependencies = dependencies
 
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
@@ -77,7 +77,7 @@ class Sender:
             通知持续时间
         """
 
-        config = self.dependencies.transport or self.dependencies.config
+        config = self.dependencies.config
         if not config.get("IfPushPlyer"):
             return
 

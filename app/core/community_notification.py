@@ -1,25 +1,19 @@
-"""独立社区通知编排及装配，后台通知由运行时注册表持有。"""
+"""社区通知编排；内容、开关、投递与后台任务所有权均通过端口提供。"""
 
 import asyncio
 from collections.abc import Callable, Coroutine, Iterable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any
 
-from app.core.config import Config
 from app.core.notification_report import (
-    NOTIFICATION_FAST_PATH_WAIT_SECONDS,
     NOTIFICATION_RETRY_DELAY_SECONDS,
     NOTIFICATION_SEND_ATTEMPTS,
     CommunityFailureReporter,
 )
-from app.core.notify import dispatch, global_target
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
-from app.models.notification_report import NotificationDispatcher
-from app.runtime_tasks import RuntimeTasks
-from app.services.community_notification import (
-    build_community_notification_payload,
+from app.models.notification_report import (
+    NotificationDispatcher,
     filter_community_notification_results,
 )
 from app.utils import get_logger
@@ -123,51 +117,3 @@ class CommunityNotificationCoordinator:
             if waiting:
                 return False
         return True
-
-
-def _community_notification_enabled() -> bool:
-    return Config.ToolsConfig.GameSign.NotifyEnabled
-
-
-def _community_notification_targets() -> tuple[NotifyTarget, ...]:
-    return (global_target(include_system=True),)
-
-
-async def report_community_notification_failure(
-    failed_channels: list[str], *, results_saved: bool = True
-) -> None:
-    await Config.push_system_notice(
-        level="warning",
-        title="游戏社区通知发送不完整",
-        lines=[
-            f"发送失败的渠道：{'、'.join(failed_channels)}",
-            (
-                "签到结果已保存，请检查这些渠道的通知配置后重试。"
-                if results_saved
-                else "请检查这些渠道的通知配置后重试。"
-            ),
-        ],
-    )
-
-
-async def _report_failure(result: DispatchResult, *, results_saved: bool) -> None:
-    await report_community_notification_failure(
-        list(result.failed), results_saved=results_saved
-    )
-
-
-_COMMUNITY_NOTIFIER = CommunityNotificationCoordinator(
-    CommunityNotificationDependencies(
-        dispatch=dispatch,
-        prepare_targets=_community_notification_targets,
-        render=build_community_notification_payload,
-        enabled=_community_notification_enabled,
-        report_failure=_report_failure,
-        spawn=partial(RuntimeTasks.spawn, name="community-notification"),
-        fast_path_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-    )
-)
-
-
-def get_community_notifier() -> CommunityNotificationCoordinator:
-    return _COMMUNITY_NOTIFIER

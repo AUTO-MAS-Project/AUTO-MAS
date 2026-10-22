@@ -85,7 +85,7 @@ def _timed_slots_in_window(
 
 class _MainTimer:
     def __init__(self, *, community_notifier: CommunityNotifier | None = None):
-        from app.core.community_notification import get_community_notifier
+        from app.core.community_notify import get_community_notifier
 
         self._community_notifier = (
             get_community_notifier()

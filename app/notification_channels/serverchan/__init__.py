@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    HttpDependencies,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -99,6 +100,12 @@ def register() -> NotifyChannel:
         fields={SCOPE_GLOBAL: (_SERVERCHAN_FIELD,), SCOPE_USER: (_SERVERCHAN_FIELD,)},
         target_builder=_serverchan_targets,
         send_adapter=_serverchan_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            HttpDependencies(
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                logger=deps.logger,
+            )
+        ),
         transport_fields=(),
     )

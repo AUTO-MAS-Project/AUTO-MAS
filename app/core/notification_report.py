@@ -9,20 +9,13 @@ from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
 from app.models.notification_report import (
     NotificationDispatcher,
+    ReportRenderer,
     TaskNotificationChange,
     TaskNotificationState,
     TaskReportPolicy,
     TaskReportRequest,
     TaskReportSummary,
-)
-from app.services.community_notification import (
-    build_community_notification_payload,
     filter_community_notification_results,
-    format_community_task_summary,
-)
-from app.services.notification_report import (
-    append_report_summary,
-    prepare_report_payloads,
 )
 from app.utils import get_logger
 
@@ -49,6 +42,7 @@ class CommunityFailureReporter(Protocol):
 @dataclass(frozen=True)
 class TaskReportDependencies:
     dispatch: NotificationDispatcher
+    renderer: ReportRenderer
     read_policy: Callable[[], TaskReportPolicy]
     prepare_targets: Callable[[], tuple[NotifyTarget, ...]]
     report_failure: Callable[[DispatchResult], Awaitable[None]]
@@ -109,12 +103,7 @@ class TaskReportCoordinator:
             return TaskReportSummary(
                 text=self.completion_notice, markdown=self.completion_notice
             )
-        return TaskReportSummary(
-            text=format_community_task_summary(self.state.results).strip(),
-            markdown=format_community_task_summary(
-                self.state.results, output_format="markdown"
-            ).strip(),
-        )
+        return self.dependencies.renderer.community_summary(self.state.results)
 
     def should_send_result(
         self,
@@ -158,7 +147,7 @@ class TaskReportCoordinator:
             if self.state.summary_consumed or not policy.community_enabled:
                 return
             payload = (
-                build_community_notification_payload(self.state.results)
+                self.dependencies.renderer.community_payload(self.state.results)
                 if self.state.results
                 else NotifyPayload(
                     title="社区签到执行结束", text=self.completion_notice
@@ -212,7 +201,7 @@ class TaskReportCoordinator:
                         )
                 if request.policy.community_enabled and not self.completed.is_set():
                     pending = "社区签到结果待确认，完成后另行通知。"
-                    payload = append_report_summary(
+                    payload = self.dependencies.renderer.append_summary(
                         payload, TaskReportSummary(text=pending, markdown=pending)
                     )
             try:
@@ -239,7 +228,7 @@ class TaskReportCoordinator:
         # 无任务上下文的旧报告显式提供摘要时，Markdown 沿用调用方的同一文本。
         if request.embedded_markdown is not None:
             summary = replace(summary, markdown=request.embedded_markdown)
-        clean_payload, payload = prepare_report_payloads(
+        clean_payload, payload = self.dependencies.renderer.prepare_payloads(
             payload,
             summary=summary,
             embedded_summary=request.embedded_summary,

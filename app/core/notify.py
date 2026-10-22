@@ -41,8 +41,8 @@ from app.models.config import Webhook
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_channel import (
     ChannelTarget,
+    DeliveryChannel,
     NotificationTransportSnapshot,
-    NotifyChannel,
 )
 from app.models.notification_channel import (
     DispatchResult as DispatchResult,
@@ -112,7 +112,7 @@ def _resolve_target(
     system_timeout_seconds: int | None = None,
 ) -> NotifyTarget:
     """逐渠道解析快照；一个渠道失败时保留其不确定性并继续其他渠道。"""
-    pairs: list[tuple[NotifyChannel, ChannelTarget]] = []
+    pairs: list[tuple[DeliveryChannel, ChannelTarget]] = []
     failures: list[str] = []
     for channel in get_notify_channels():
         try:
@@ -123,7 +123,7 @@ def _resolve_target(
                     continue
                 if target.is_local and system_timeout_seconds is not None:
                     target = replace(target, timeout_seconds=system_timeout_seconds)
-                resolved.append((channel, target))
+                resolved.append((channel.delivery(), target))
             if resolved and channel.transport_fields is not None:
                 transport = NotificationTransportSnapshot(
                     values=tuple(
@@ -133,8 +133,8 @@ def _resolve_target(
                     proxy=read_notification_proxy(),
                 )
                 resolved = [
-                    (channel, replace(target, transport=transport))
-                    for channel, target in resolved
+                    (delivery, replace(target, transport=transport))
+                    for delivery, target in resolved
                 ]
             pairs.extend(resolved)
         except Exception as exc:
