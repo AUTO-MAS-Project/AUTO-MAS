@@ -86,6 +86,7 @@ from .shared import (
     _tag_remained_days,
     local_timezone,
     migrate_maa_stamina_pipeline,
+    none_as,
     normalize_maaend_plan_key,
 )
 
@@ -100,7 +101,7 @@ class MaaUserConfig(DomainEntry):
             """按当前用户服务器读取游戏日时间，不改变保存的 UTC 时刻。"""
             return get_game_day_tz(self.__dict__["_entry"].Info.Server)
 
-        AnnihilationCompletedWeek: str = Field(
+        AnnihilationCompletedWeek: Annotated[str, none_as("")] = Field(
             default_factory=lambda: "2000-W01",
             description='剿灭达到周上限时的 ISO 周（形如 "2026-W34"）',
         )
@@ -195,7 +196,7 @@ class MaaUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -252,6 +253,7 @@ class MaaUserConfig(DomainEntry):
             int,
             Field(ge=0, le=9999),
             legacy(group="Info", name="MedicineNumb"),
+            none_as(0),
         ] = Field(default_factory=lambda: 0, description="理智药数量")
 
         SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
@@ -296,12 +298,13 @@ class MaaUserConfig(DomainEntry):
             int,
             Field(ge=0, le=9999),
             legacy(group="Info", name="MedicineNumb"),
+            none_as(0),
         ] = Field(
             default_factory=lambda: 0,
             description="活动关优先任务吃理智药数量",
         )
 
-        ActivityStageIndex: Annotated[int, Field(ge=1, le=9999)] = Field(
+        ActivityStageIndex: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1,
             description="优先刷取的活动关卡序号",
         )
@@ -549,17 +552,17 @@ class MaaConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        AnnihilationTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        AnnihilationTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 40,
             description="剿灭时间限制（分钟）",
         )
 
-        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="游戏更新时间限制（分钟）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
@@ -573,16 +576,16 @@ class MaaConfig(DomainEntry):
             default_factory=lambda: False, description="是否在启动 MAA 前检查游戏更新"
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RoutineTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RoutineTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="日常时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -686,7 +689,7 @@ class MaaEndUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -1095,7 +1098,7 @@ class MaaEndConfig(DomainEntry):
             description="游戏客户端更新时长限制（分钟）",
         )
 
-        WaitTime: Annotated[int, Field(ge=60, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=60, le=9999), none_as(60)] = Field(
             default_factory=lambda: 60, description="等待时间（秒）"
         )
 
@@ -1118,20 +1121,20 @@ class MaaEndConfig(DomainEntry):
             description="账号切换方式（默认使用 MAAEND，MAS 为兼容入口）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10, description="运行超时阈值"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -1257,7 +1260,7 @@ class SrcUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -1332,7 +1335,7 @@ class SrcUserConfig(DomainEntry):
             default_factory=lambda: False, description="使用储备开拓力"
         )
 
-        FuelReserve: Annotated[int, Field(ge=0, le=9999)] = Field(
+        FuelReserve: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 5, description="保留的燃料数量"
         )
 
@@ -1523,12 +1526,12 @@ class SrcConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="游戏更新时间限制（分钟）",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
@@ -1542,16 +1545,16 @@ class SrcConfig(DomainEntry):
             default_factory=lambda: False, description="是否在登录游戏前检查游戏更新"
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -1668,7 +1671,7 @@ class HSRUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -1917,7 +1920,7 @@ class HSRConfig(DomainEntry):
             default_factory=lambda: True, description="仅在原生兑换码内容变化时执行兑换"
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60, description="等待时间（秒）"
         )
 
@@ -1955,7 +1958,7 @@ class HSRConfig(DomainEntry):
     Managed: ManagedFields = Field(default_factory=ManagedFields)
 
     class RunFields(ConfigGroup):
-        DailyTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        DailyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 20,
             description="日常任务超时限制（分钟）",
         )
@@ -1965,15 +1968,15 @@ class HSRConfig(DomainEntry):
             description="低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="失败任务最大尝试次数"
         )
 
-        WeeklyTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        WeeklyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="周常任务超时限制（分钟）",
         )
@@ -2167,7 +2170,7 @@ class MaaFWUserConfig(DomainEntry):
             default_factory=lambda: "",
             description="密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务",
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -2391,7 +2394,7 @@ class MaaFWConfig(DomainEntry):
             description="DirectExe 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 120,
             description="游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。 Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来； MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满； MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。",
         )
@@ -2450,22 +2453,22 @@ class MaaFWConfig(DomainEntry):
             description="每月正常完成一次后，本月剩余时间跳过的 MaaFW 任务名列表",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0,
             description="运行引擎，决定「谁来跑」： 代理次数限制",
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单次运行时间限制（分钟），套在单个用户的整次运行上。截止时刻随 job 文件交给 worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在 worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3,
             description="运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑； 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败， 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。",
         )
 
-        TaskTimeLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        TaskTimeLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 45,
             description="单个任务的时限（分钟），0 表示不限。某个任务卡住时到点只停它、截一张超时图， 记一条任务失败后接着跑后面的任务（计划里第一个任务超时则结束本轮）；不再让 一个卡住的任务吃掉整轮 RunTimeLimit 的时间。 默认 45 而不是 30：M9A 智能均衡刷材料正常 1–22 分钟，自动深眠在新内容日 实测 33.7 分钟，30 会误伤正常运行。",
         )
@@ -2611,7 +2614,7 @@ class M9AConfig(MaaFWConfig):
     )
 
     class GameFields(MaaFWConfig.GameFields):
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default=15, description="启动等待时间(秒)"
         )
 
@@ -2735,7 +2738,7 @@ class GeneralUserConfig(DomainEntry):
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -2851,7 +2854,7 @@ class OkwwUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -2934,12 +2937,12 @@ class OkwwUserConfig(DomainEntry):
             Field(default_factory=lambda: "Shell Credit", description="模拟领域材料")
         )
 
-        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99)] = Field(
-            default_factory=lambda: 1, description="凝素领域序号"
+        WhichForgeryChallengeToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
+            Field(default_factory=lambda: 1, description="凝素领域序号")
         )
 
-        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99)] = Field(
-            default_factory=lambda: 1, description="无音区序号"
+        WhichTacetSuppressionToFarm: Annotated[int, Field(ge=1, le=99), none_as(1)] = (
+            Field(default_factory=lambda: 1, description="无音区序号")
         )
 
         WhichToFarm: Literal[
@@ -3052,7 +3055,7 @@ class OkNteUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             description="密码", default_factory=lambda: ""
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -3117,7 +3120,7 @@ class OkNteUserConfig(DomainEntry):
             description="任务结束后退出（-e）", default_factory=lambda: True
         )
 
-        TaskIndex: Annotated[int, Field(ge=1, le=19)] = Field(
+        TaskIndex: Annotated[int, Field(ge=1, le=19), none_as(1)] = Field(
             default_factory=lambda: 2,
             description="ok-nte.exe -t N -e；新版上游 DailyRoutineTask 是 -t 2",
         )
@@ -3202,7 +3205,7 @@ class BetterGIUserConfig(DomainEntry):
         Password: Annotated[str, encrypted()] = Field(
             description="密码", default_factory=lambda: ""
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -3439,7 +3442,7 @@ class GeneralConfig(DomainEntry):
 
         URL: str = Field(default_factory=lambda: "", description="自定义协议URL")
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="等待时间（秒）"
         )
 
@@ -3455,21 +3458,21 @@ class GeneralConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="代理次数限制"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 10,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="运行次数限制"
         )
 
@@ -3519,7 +3522,7 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d", description="日志路径格式"
         )
 
-        LogTimeEnd: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳结束位置"
         )
 
@@ -3527,7 +3530,7 @@ class GeneralConfig(DomainEntry):
             default_factory=lambda: "%Y-%m-%d %H:%M:%S", description="日志时间格式"
         )
 
-        LogTimeStart: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 1, description="日志时间戳开始位置"
         )
 
@@ -3613,12 +3616,12 @@ class OkwwConfig(DomainEntry):
             description="游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器 默认值必须排首位：值非法时 correct() 回落到 options[0]",
         )
 
-        UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        UpdateFullSyncLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 30,
             description="整文件同步体积上限（GB），超过则中止并提示手动处理",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60, description="等待游戏启动时间"
         )
 
@@ -3636,20 +3639,20 @@ class OkwwConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数上限"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60, description="单次运行超时时间"
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="单次任务重试次数"
         )
 
@@ -3704,7 +3707,7 @@ class OkNteConfig(DomainEntry):
 
         URL: str = Field(description="自定义协议URL", default_factory=lambda: "")
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="游戏等待启动时间", default_factory=lambda: 60
         )
 
@@ -3722,20 +3725,20 @@ class OkNteConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数限制", default_factory=lambda: 0
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志超时限制", default_factory=lambda: 120
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="重试次数限制", default_factory=lambda: 1
         )
 
@@ -3782,7 +3785,7 @@ class OkNteConfig(DomainEntry):
             description="日志文件名格式", default_factory=lambda: ""
         )
 
-        LogTimeEnd: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeEnd: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志时间戳结束位置", default_factory=lambda: 23
         )
 
@@ -3790,7 +3793,7 @@ class OkNteConfig(DomainEntry):
             description="日志时间戳格式", default_factory=lambda: "%Y-%m-%d %H:%M:%S,%f"
         )
 
-        LogTimeStart: Annotated[int, Field(ge=1, le=9999)] = Field(
+        LogTimeStart: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志时间戳开始位置", default_factory=lambda: 1
         )
 
@@ -3872,20 +3875,20 @@ class BetterGIConfig(DomainEntry):
             description="账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建脚本取类默认 MAS；存量脚本（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
         )
 
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数限制", default_factory=lambda: 0
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="日志超时限制", default_factory=lambda: 10
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             description="重试次数限制", default_factory=lambda: 3
         )
 
@@ -4048,7 +4051,7 @@ class ZzzOdUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -4229,7 +4232,7 @@ class ZzzOdConfig(DomainEntry):
             description="游戏路径（游戏本体 ZenlessZoneZero.exe）",
         )
 
-        WaitTime: Annotated[int, Field(ge=0, le=9999)] = Field(
+        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 60,
             description="启动游戏后的等待时间（秒）",
         )
@@ -4249,21 +4252,21 @@ class ZzzOdConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数上限"
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 40,
             description="单次运行超时时间（分钟）；这是日志停滞超时（latest_time 距今），不是 总时长上限——一条龙持续写日志就不会触发；启动器层故障（不写应用层 日志）也靠它兜底超时后切换启动器",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3, description="单次任务重试次数"
         )
 
@@ -4323,7 +4326,7 @@ class BAAHUserConfig(DomainEntry):
 
         Notes: str = Field(default_factory=lambda: "无", description="备注")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             default_factory=lambda: -1, description="剩余天数"
         )
 
@@ -4422,17 +4425,17 @@ class BAAHConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 60,
             description="运行时间限制（分钟）",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 2, description="运行次数限制"
         )
 
@@ -4511,7 +4514,7 @@ class WhimboxUserConfig(DomainEntry):
 
         Notes: str = Field(description="备注", default_factory=lambda: "无")
 
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999)] = Field(
+        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
             description="剩余天数", default_factory=lambda: -1
         )
 
@@ -4611,22 +4614,22 @@ class WhimboxConfig(DomainEntry):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class RunFields(ConfigGroup):
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999)] = Field(
+        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="每日代理次数上限（0=不限）",
             default_factory=lambda: 0,
         )
 
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 30,
             description="运行超时（分钟）：日志静默超过该时长判定卡死",
         )
 
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999)] = Field(
+        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 3,
             description="失败重试次数：只用于「没有上游结论」的异常（进程提前退出/卡死）； 上游自己判负时，仅当失败原因与上一轮不同才继续重试（同一结论连着出现即收口）",
         )
