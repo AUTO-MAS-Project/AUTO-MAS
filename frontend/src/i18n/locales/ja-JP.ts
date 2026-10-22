@@ -4466,6 +4466,19 @@ export default {
       openclawQqSetupHint:
         'QR コードで連携した後、スキャンに使用した QQ アカウントでボットを友だちに追加してから通知をテストしてください。ログイン情報は自動保存されます。',
       openclawQqBind: 'QR コードで連携',
+      openclawQqTargetLabel: '通知の送信先',
+      openclawQqPrivateTarget: '個人チャット（既定）',
+      openclawQqRefreshGroups: 'グループを更新',
+      openclawQqGroupOption: 'グループ …{id} · {time}',
+      openclawQqGroupSaved: '保存済み・確認待ち',
+      openclawQqGroupInvalid: '元のグループは無効です。選び直してください。',
+      openclawQqGroupHint:
+        '最新版 QQ で、グループ所有者が自分のボットを友だちのグループに追加し、自発的な発言を許可してください。対象グループでボットにメンションしてから更新し、最終交流時刻で1つ選択します。QQ の権限・頻度制限が適用されるため、テスト通知で送信を確認してください。',
+      openclawQqBindingChanged: 'ボットの連携が変更されました。更新して選び直してください。',
+      openclawQqGroupNotFound:
+        '未検出、またはボットが退出したグループです。メンションして更新してください。',
+      openclawQqTargetError: '送信先の取得または保存に失敗しました。更新して再試行してください。',
+      openclawQqTargetSaved: '通知の送信先を保存しました',
       openclawQqRebind: '再連携',
       openclawQqUnbind: '連携解除',
       openclawQqUnbindConfirm:

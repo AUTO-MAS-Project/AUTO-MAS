@@ -89,7 +89,12 @@ class _Config:
     """提供通知分组与 Webhook 集合的配置替身。"""
 
     def __init__(self, values: dict | None = None, webhooks=()) -> None:
-        self._values = {**_SWITCHES, **_TEXTS, **(values or {})}
+        self._values = {
+            **_SWITCHES,
+            **_TEXTS,
+            "OpenClawQQTargetType": "c2c",
+            **(values or {}),
+        }
         self.Notify_CustomWebhooks = _Webhooks(webhooks)
         self.reads = 0
         self.Notify = _NotifyFields(self)

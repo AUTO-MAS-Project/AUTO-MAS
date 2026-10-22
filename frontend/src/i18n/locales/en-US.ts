@@ -5110,6 +5110,19 @@ export default {
       openclawQqSetupHint:
         'After scanning the QR code, add the bot as a friend in the same QQ account before testing notifications. Login details are saved automatically.',
       openclawQqBind: 'Bind with QR code',
+      openclawQqTargetLabel: 'Notification destination',
+      openclawQqPrivateTarget: 'Private chat (default)',
+      openclawQqRefreshGroups: 'Refresh groups',
+      openclawQqGroupOption: 'Group …{id} · {time}',
+      openclawQqGroupSaved: 'Saved, awaiting verification',
+      openclawQqGroupInvalid: 'Previous group unavailable. Select another.',
+      openclawQqGroupHint:
+        'Using the latest QQ, the group owner must add their bot to the friends group and allow proactive messages. Mention the bot in the target group, refresh, and select one group by its latest interaction time. QQ permissions and rate limits apply; send a test notification to verify delivery.',
+      openclawQqBindingChanged: 'The bot binding changed. Refresh groups and select again.',
+      openclawQqGroupNotFound:
+        'Group not discovered or bot removed. Mention the bot there and refresh.',
+      openclawQqTargetError: 'Could not load or save the destination. Refresh and try again.',
+      openclawQqTargetSaved: 'Notification destination saved',
       openclawQqRebind: 'Bind again',
       openclawQqUnbind: 'Unbind',
       openclawQqUnbindConfirm: 'Unbinding clears the saved QQ login on this device. Continue?',

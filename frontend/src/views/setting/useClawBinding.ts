@@ -2,7 +2,13 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import QRCode from 'qrcode'
-import { QqService, type OutBase, type OpenClawQQStatusOut } from '@/api'
+import {
+  QqService,
+  OpenClawQQTargetIn,
+  type OutBase,
+  type OpenClawQQStatusOut,
+  type OpenClawQQGroupsOut,
+} from '@/api'
 
 const POLL_INTERVAL = 2000
 
@@ -35,6 +41,11 @@ export function useClawBinding(
   const qrDataUrl = ref('')
   const state = ref('idle')
   const hint = ref('')
+  const groups = ref<OpenClawQQGroupsOut | null>(null)
+  const groupsLoading = ref(false)
+  const targetSaving = ref(false)
+  const groupsError = ref('')
+  let groupsRunId = 0
   let sessionId = ''
   let runId = 0
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -46,6 +57,59 @@ export function useClawBinding(
 
   const checkResponse = (result: OutBase) => {
     if (result.code !== 200) throw new Error(result.message || label('QrError'))
+  }
+
+  const groupError = (code?: string) => {
+    if (code === 'binding_changed') return label('BindingChanged')
+    if (code === 'group_not_found') return label('GroupNotFound')
+    if (code === 'not_bound') return label('Unbound')
+    return label('TargetError')
+  }
+
+  const loadGroups = async () => {
+    if (targetSaving.value || unbinding.value) return
+    const id = ++groupsRunId
+    groupsLoading.value = true
+    groupsError.value = ''
+    try {
+      const result = await QqService.getGroupsApiSettingOpenclawQqGroupsPost()
+      if (disposed || id !== groupsRunId) return
+      if (result.code !== 200) throw new Error(groupError(result.errorCode))
+      groups.value = result
+    } catch {
+      if (disposed || id !== groupsRunId) return
+      groups.value = null
+      groupsError.value = label('TargetError')
+    } finally {
+      if (id === groupsRunId) groupsLoading.value = false
+    }
+  }
+
+  const selectTarget = async (value: string) => {
+    if (!groups.value?.bindingId || targetSaving.value) return
+    const id = ++groupsRunId
+    targetSaving.value = true
+    groupsLoading.value = false
+    groupsError.value = ''
+    try {
+      const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
+        bindingId: groups.value.bindingId,
+        targetType:
+          value === 'c2c' ? OpenClawQQTargetIn.targetType.C2C : OpenClawQQTargetIn.targetType.GROUP,
+        groupOpenId: value === 'c2c' ? null : value.slice('group:'.length),
+      })
+      if (disposed || id !== groupsRunId) return
+      if (result.code !== 200) {
+        groupsError.value = groupError(result.errorCode)
+        return
+      }
+      groups.value = result
+      message.success(label('TargetSaved'))
+    } catch {
+      if (!disposed && id === groupsRunId) groupsError.value = label('TargetError')
+    } finally {
+      targetSaving.value = false
+    }
   }
 
   const loadStatus = async () => {
@@ -106,10 +170,12 @@ export function useClawBinding(
         if (enableAfterBind) await onBoundChange(true)
         isBound = true
         await loadStatus()
+        await loadGroups()
       } else if (['waiting', 'scanned', 'connecting'].includes(state.value)) {
         if (state.value === 'connecting' && !wasConnecting) {
           qqBindingObserved = true
           void loadStatus()
+          void loadGroups()
         }
         timer = setTimeout(() => void poll(id), POLL_INTERVAL)
       }
@@ -123,6 +189,9 @@ export function useClawBinding(
   }
 
   const start = async () => {
+    if (targetSaving.value) return
+    groupsRunId++
+    groupsLoading.value = false
     isBound ||= status.value?.connected === true
     enableAfterBind = !isBound
     close()
@@ -152,11 +221,15 @@ export function useClawBinding(
   }
 
   const unbind = async () => {
+    if (targetSaving.value) return
+    groupsRunId++
+    groupsLoading.value = false
     unbinding.value = true
     try {
       checkResponse(await api.unbind())
       isBound = false
       qqBindingObserved = false
+      groups.value = null
       await onBoundChange(false)
       await loadStatus()
       message.success(label('UnbindSuccess'))
@@ -170,6 +243,7 @@ export function useClawBinding(
   onMounted(loadStatus)
   onBeforeUnmount(() => {
     disposed = true
+    groupsRunId++
     clearTimeout(statusTimer)
     close()
   })
@@ -186,6 +260,12 @@ export function useClawBinding(
     qrDataUrl,
     state,
     hint,
+    groups,
+    groupsLoading,
+    groupsError,
+    targetSaving,
+    loadGroups,
+    selectTarget,
     loadStatus,
     close,
     start,

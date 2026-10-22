@@ -5005,6 +5005,18 @@ export default {
       openclawQqSetupHint:
         '扫码绑定后，请在扫码所用 QQ 中添加该机器人为好友，再发送测试通知。登录信息会自动保存。',
       openclawQqBind: '扫码绑定',
+      openclawQqTargetLabel: '通知接收位置',
+      openclawQqPrivateTarget: '私聊（默认）',
+      openclawQqRefreshGroups: '刷新群列表',
+      openclawQqGroupOption: '群 …{id} · {time}',
+      openclawQqGroupSaved: '已保存，待验证',
+      openclawQqGroupInvalid: '原群已失效，请重新选择',
+      openclawQqGroupHint:
+        "群主需使用最新版 QQ，将自己创建的机器人添加到朋友群并开启主动发言。在目标群 {'@'} 机器人后刷新，按最近互动时间选择一个群。群推送受 QQ 权限和频率限制，请发送测试通知确认。",
+      openclawQqBindingChanged: '机器人绑定已变化，请刷新群列表后重新选择。',
+      openclawQqGroupNotFound: "该群尚未发现或机器人已退群，请在群里 {'@'} 机器人后刷新。",
+      openclawQqTargetError: '读取或保存通知接收位置失败，请刷新后重试。',
+      openclawQqTargetSaved: '通知接收位置已保存',
       openclawQqRebind: '重新绑定',
       openclawQqUnbind: '解除绑定',
       openclawQqUnbindConfirm: '解除绑定会清除本机保存的 QQ 登录状态，确定继续吗？',

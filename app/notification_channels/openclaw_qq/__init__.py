@@ -32,17 +32,28 @@ from app.models.notification_channel import (
 )
 from app.models.notification_channel import target_prefix as _prefix
 
-from .transport import Sender
+from .transport import QQGroupTarget, Sender
 
 
 def _openclaw_qq_targets(
     config: ChannelConfig, *, scope: str
 ) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
+    group_target = None
+    if config.get("Notify", "OpenClawQQTargetType") == "group":
+        group_target = QQGroupTarget(
+            app_id=config.get("Notify", "OpenClawQQAppId"),
+            group_openid=config.get("Notify", "OpenClawQQGroupOpenId"),
+        )
     return (
         ChannelTarget(
-            id=name,
+            id=(
+                f"{name}:group:{group_target.app_id}:{group_target.group_openid}"
+                if group_target is not None
+                else name
+            ),
             label=name,
+            value=group_target,
             capabilities=NotificationCapabilities(
                 formats=("text",),
                 image_presentations=frozenset({"rich_media"}),
@@ -55,6 +66,13 @@ def _openclaw_qq_targets(
 async def _openclaw_qq_send(
     sender: Any, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
+    if target.value is not None:
+        return await sender.send_openclaw_qq(
+            title=rendered.title,
+            content=rendered.content,
+            images=rendered.images,
+            group_target=target.value,
+        )
     return await sender.send_openclaw_qq(
         title=rendered.title,
         content=rendered.content,
