@@ -213,6 +213,7 @@ const handleModalCancel = () => {
   font-size: 24px;
   font-weight: 700;
   color: var(--ant-color-primary);
+  transform-origin: right center;
   font-family:
     'SF Pro Display',
     -apple-system,
@@ -223,6 +224,7 @@ const handleModalCancel = () => {
 }
 
 .progress-bar {
+  margin-inline-end: 0;
   margin-bottom: 6px;
 }
 

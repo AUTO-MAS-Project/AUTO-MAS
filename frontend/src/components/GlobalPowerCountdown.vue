@@ -127,7 +127,9 @@ const handleCancel = async () => {
 }
 
 .countdown-content .warning-icon {
+  width: fit-content;
   font-size: 64px;
+  margin-inline: auto;
   margin-bottom: 24px;
   display: block;
   animation: pulse 2s infinite;
@@ -175,6 +177,7 @@ const handleCancel = async () => {
 }
 
 .countdown-progress {
+  margin-inline-end: 0;
   margin-bottom: 32px;
 }
 
