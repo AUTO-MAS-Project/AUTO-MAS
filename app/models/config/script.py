@@ -439,6 +439,10 @@ class MaaUserConfig(DomainEntry):
         tags = []
         tags.append(_tag_proxy(self, tz=get_game_day_tz(self.Info.Server)))
         tags.append(_tag_remained_days(self))
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
         infrast_mode = self.Task.InfrastMode
         if self.Task.IfInfrast:
             if infrast_mode == "Normal":
@@ -932,6 +936,10 @@ class MaaEndUserConfig(DomainEntry):
         )
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
         if self.Task.IfSanity:
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
@@ -1453,6 +1461,10 @@ class SrcUserConfig(DomainEntry):
         tags = []
         tags.append(_tag_proxy(self))
         tags.append(_tag_remained_days(self))
+        if not self.Info.IfQuickConfig:
+            tags.append(_tag_notes(self))
+            return json.dumps(tags, ensure_ascii=False)
+
         tags.append(
             {
                 "text": f"关卡：{STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
