@@ -16,6 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 import asyncio
+import copy
 import re
 import time
 import uuid
@@ -601,6 +602,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 剔除谁；不能用 plan_mode 代替：全部行都关掉时 plan_mode 为假，战斗项会整体落回
         # 原生副本照跑，与界面「已关」不符（2026-09-12 实机排障）。
         self.plan_combat_bases = plan_combat_bases(_plan_steps)
+        # Plan 里可能残留已改名/删除的策略名，BGI 拿到会直接抛「战斗脚本文件不存在」，
+        # 运行前先按 User/AutoFight 现状清理（支持 .json 与子目录，避免误清有效策略）。
+        self._sanitize_plan_strategies()
         # 路径 B 回退：顶层「通用战斗队伍」(OneDragon.PartyName) 默认填入各战斗步骤的
         # 队伍字段，与路径 A（write_user_one_dragon 把 PartyName 写入秘境/首领，并经
         # apply_global_battle_team 写入地脉花/幽境全局配置）保持一致。仅在对应的 per-group
@@ -667,6 +671,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 f"队伍配置：总开关开启，{len(self.one_dragon_teams)} 个队伍参与匹配，"
                 f"{_hit} 个战斗步骤按场景命中队伍"
             )
+        # 执行层副本必须在此刻（队伍配置写回之后）生成：它决定 main.js 读到的
+        # masTeamOverride/masStrategyOverride，并把策略名解析成绝对路径。
+        self._build_exec_plan_steps()
         self.plan_mode = self.use_execution_layer and bool(self.plan_combat_steps)
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
@@ -775,8 +782,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     self.script_info.script_id,
                     self.cur_user_item.user_id,
                     self.one_dragon_queue or [],
-                    self.plan_combat_steps,
+                    self.exec_plan_steps,
                     CUSTOM_EXEC_KINDS,
+                    default_strategy_path=self.default_strategy_path,
                 ),
             )
             self.exec_group_names = [
@@ -1170,6 +1178,107 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             if i + 1 < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 await asyncio.sleep(10)
+
+    def _sanitize_plan_strategies(self) -> None:
+        """清掉 Plan 里指向已不存在策略文件的策略名（``User/AutoFight`` 下的 .txt/.json）。
+
+        策略下拉是实时扫描该目录得到的，旧配置里可能残留已改名或已删除的策略名；BGI
+        遇到这种名字会抛「战斗脚本文件不存在」，把整步记成失败。这里按「空 = 跟随
+        全局策略」处理（全局叶子已由 ``apply_global_battle_strategy`` 物化为确定值），
+        并逐条打日志说明改掉了哪个名字。
+
+        JSON 行为策略（0.62+，同名时 .json 优先）与子目录里的策略同样算有效——只看
+        ``*.txt`` 会把只有 .json 的策略名误清，这是之前「运行前误清」的来源。
+
+        同时生成执行层专用的 ``exec_plan_steps`` 副本：把有效策略名解析成真实文件的
+        绝对路径。BGI 的 ``setCombatStrategyPath`` 一律拼 ``.txt``，.json 行为策略
+        只有直传路径（``AutoDomainParam`` 双参构造）才会命中文件；原生一条龙路径仍用
+        策略原名，不受影响。
+        """
+        root = self.script_root_path
+        invalid: set[str] = set()
+        self._walk_plan_strategies(self.plan_combat_steps, root, invalid, False)
+        if invalid:
+            logger.warning(
+                "以下战斗策略在 BGI 的 User/AutoFight 中不可用（.txt/.json 均无，"
+                "或该任务只支持 .txt），本次改为跟随全局策略: "
+                + "、".join(sorted(invalid))
+            )
+
+    def _walk_plan_strategies(
+        self, steps: list[object], root: Path, invalid: set[str], resolve: bool
+    ) -> None:
+        """按步骤处理策略字段：失效名降级为内置默认，``resolve`` 为真时换成绝对路径。
+
+        **地脉花例外**：它的 Param 只吃无扩展名策略名（见 ``_walk_strategy_fields``），
+        即使 ``resolve`` 为真也保留名称，否则 BGI 会拿到 ``.../foo.txt`` 再拼后缀。
+        """
+        for step in steps or []:
+            if not isinstance(step, dict):
+                continue
+            settings = step.get("settings")
+            if not isinstance(settings, dict):
+                continue
+            is_ley_line = resolve_base_name(str(step.get("name", ""))) == "自动地脉花"
+            self._walk_strategy_fields(
+                settings, root, invalid, resolve and not is_ley_line
+            )
+
+    @staticmethod
+    def _walk_strategy_fields(
+        node: object, root: Path, invalid: set[str], resolve: bool
+    ) -> None:
+        """遍历 settings 处理策略字段：失效名降级默认，``resolve`` 为真时换成绝对路径。
+
+        秘境/幽境/首领由执行层直传真实路径（BGI 会把策略名硬拼 ".txt"）；地脉花不能
+        直传路径——``AutoLeyLineOutcropTask`` 把策略名交给 ``AutoFightParam`` 的
+        ``ResolveStrategyPath``，契约是「相对 ``User/AutoFight`` 的无扩展名名称」，
+        由 BGI 依次追加 ``.json`` / ``.txt``，传路径会被查成 ``foo.txt.txt``。
+        """
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, str) and "strategy" in str(key).lower():
+                    name = value.strip()
+                    if not name:
+                        continue
+                    if not one_dragon.strategy_file_exists(root, name):
+                        invalid.add(name)
+                        # 置空会被 plan_steps_to_native_settings 的「只收非空值」跳过，
+                        # 原生配置里的旧策略名会残留、BGI 继续尝试加载已删除文件。改为
+                        # 显式写回内置默认（按队伍自动选择），原生与执行层同时覆盖。
+                        node[key] = one_dragon.DEFAULT_COMBAT_STRATEGY
+                    elif resolve:
+                        path = one_dragon.resolve_combat_strategy_path(root, name)
+                        if path:
+                            node[key] = path
+                    continue
+                AutoProxyTask._walk_strategy_fields(value, root, invalid, resolve)
+        elif isinstance(node, list):
+            for item in node:
+                AutoProxyTask._walk_strategy_fields(item, root, invalid, resolve)
+
+    def _build_exec_plan_steps(self) -> None:
+        """生成执行层 Plan 副本：有效策略名解析成绝对路径，并算出通用策略兜底路径。
+
+        **必须在 ``team_resolver.apply_teams_to_steps`` 写回 ``masTeamOverride`` /
+        ``masStrategyOverride`` 之后调用**：副本是深拷贝，早于写回会让队伍配置的选队与
+        策略结果整体丢失。策略名换成绝对路径是为了让 main.js 直传——BGI 的
+        ``setCombatStrategyPath`` 会把名字硬拼成 ".txt"，JSON 策略会因此失效。地脉花除
+        外：它的策略仍是无扩展名名称，由 BGI 自己按 ``.json`` → ``.txt`` 解析。
+        """
+        self.exec_plan_steps = copy.deepcopy(self.plan_combat_steps)
+        self._walk_plan_strategies(
+            self.exec_plan_steps, self.script_root_path, set(), True
+        )
+        # 顶部「通用战斗策略」同样解析成绝对路径：秘境/幽境/首领步骤级留空时由 main.js
+        # 兜底直传；地脉花不吃路径，留空时由 main.js 读全局叶子的名称。
+        self.default_strategy_path = (
+            one_dragon.resolve_combat_strategy_path(
+                self.script_root_path,
+                str(self.cur_user_config.OneDragon.AutoBossStrategyName or ""),
+            )
+            or ""
+        )
 
     async def _run_execution_layer(self) -> bool:
         """路径 B：用**一次** ``--startGroups <段名...>`` 按队列顺序跑完执行层，返回是否成功。

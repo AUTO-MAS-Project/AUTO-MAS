@@ -58,8 +58,35 @@ export function useBettergiGroupSettings(options: {
     return BUILTIN_GROUP_SETTING_SECTIONS[sel.key] || []
   })
 
-  // 每周秘境秘境候选目录（官方 tp.json 扫描；只随 scriptId，不随用户/配置组）
+  // 周表与队伍场景共享目录，进入页面即加载，不随右栏配置组切换而清空。
   const domainCatalog = ref<BetterGIDomainCatalogItem[]>([])
+  const domainCatalogError = ref(false)
+  let domainCatalogPromise: Promise<BetterGIDomainCatalogItem[]> | null = null
+  const loadDomainCatalog = (): Promise<BetterGIDomainCatalogItem[]> => {
+    if (!active || !scriptId) return Promise.resolve([])
+    if (domainCatalog.value.length) return Promise.resolve(domainCatalog.value)
+    if (!domainCatalogPromise) {
+      domainCatalogPromise = fetchDomainCatalog(scriptId)
+        .then(list => {
+          if (active) {
+            domainCatalog.value = list
+            domainCatalogError.value = list.length === 0
+          }
+          return list
+        })
+        .catch(e => {
+          if (active) {
+            logger.error(e instanceof Error ? e.message : String(e))
+            domainCatalogError.value = true
+          }
+          return [] as BetterGIDomainCatalogItem[]
+        })
+        .finally(() => {
+          domainCatalogPromise = null
+        })
+    }
+    return domainCatalogPromise
+  }
 
   // 当前组是否需要周表秘境目录（仅「自动秘境」的每周秘境表格模式需要）
   const needDomainCatalog = computed<boolean>(() =>
@@ -185,7 +212,7 @@ export function useBettergiGroupSettings(options: {
     try {
       // 四份数据互不依赖，并行拉取
       const globalUserId = masConfigEnabled.value ? userId.value : undefined
-      const [dragon, globalDomain, globalStygian, catalog] = await Promise.all([
+      const [dragon, globalDomain, globalStygian] = await Promise.all([
         fetchOneDragonSettings(scriptId, userId.value, dragonConfigName.value, stepNameOf(sel)),
         needGlobalDomainSettings.value
           ? fetchGlobalDomainSettings(scriptId, globalUserId, stepNameOf(sel))
@@ -193,9 +220,7 @@ export function useBettergiGroupSettings(options: {
         needGlobalStygianSettings.value
           ? fetchGlobalStygianSettings(scriptId, globalUserId, stepNameOf(sel))
           : Promise.resolve<Record<string, unknown>>({}),
-        needDomainCatalog.value
-          ? fetchDomainCatalog(scriptId)
-          : Promise.resolve<BetterGIDomainCatalogItem[]>([]),
+        needDomainCatalog.value ? loadDomainCatalog() : Promise.resolve(domainCatalog.value),
       ])
       if (!current()) return
       dragonSettings.value = dragon
@@ -204,7 +229,6 @@ export function useBettergiGroupSettings(options: {
       globalDomainSettingsDirty.value = false
       globalStygianSettings.value = globalStygian
       globalStygianSettingsDirty.value = false
-      domainCatalog.value = catalog
     } catch (e) {
       if (!current()) return
       logger.error(e instanceof Error ? e.message : String(e))
@@ -319,6 +343,8 @@ export function useBettergiGroupSettings(options: {
     dragonConfigName,
     currentGroupSettingSections,
     domainCatalog,
+    domainCatalogError,
+    loadDomainCatalog,
     dragonSettings,
     dragonSettingsLoading,
     dragonSettingsSaving,
