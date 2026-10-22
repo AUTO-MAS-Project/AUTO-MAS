@@ -1,4 +1,6 @@
 import { ref } from 'vue'
+import { translate as t } from '@/i18n'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { message } from 'ant-design-vue'
 import { MaaFwService, OpenAPI } from '@/api'
 import type {
@@ -175,17 +177,15 @@ export function useMaaFWApi() {
       })
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || '读取项目 interface 失败')
+        throw new Error(response.message || t('apiErrors.maafwPreviewFailed'))
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '读取项目 interface 失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
       error.value = errorMsg
       logger.error(`读取项目 interface 失败: ${errorMsg}`)
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false

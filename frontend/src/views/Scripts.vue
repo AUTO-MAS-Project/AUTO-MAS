@@ -66,9 +66,29 @@
     </div>
   </div>
 
+  <a-alert
+    v-if="scriptListError"
+    type="error"
+    show-icon
+    :message="scriptListError"
+    class="script-list-error"
+  >
+    <template #action>
+      <a-button :loading="listLoading" @click="loadScripts">{{ t('apiErrors.retry') }}</a-button>
+    </template>
+  </a-alert>
+
   <!-- 空状态 -->
   <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
-  <div v-if="!addLoading && loadedOnce && scripts.length === 0" class="empty-state">
+  <div v-if="listLoading && !scriptListError && scripts.length === 0" class="scripts-loading">
+    <a-spin size="large" />
+  </div>
+  <div
+    v-else-if="
+      !scriptListError && !listLoading && !addLoading && loadedOnce && scripts.length === 0
+    "
+    class="empty-state"
+  >
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
@@ -80,7 +100,12 @@
     </div>
   </div>
 
-  <div v-else-if="!addLoading && loadedOnce && filteredScripts.length === 0" class="empty-state">
+  <div
+    v-else-if="
+      !scriptListError && !listLoading && !addLoading && loadedOnce && filteredScripts.length === 0
+    "
+    class="empty-state"
+  >
     <a-empty :description="t('scripts.empty.noMatch')">
       <a-button @click="scriptSearchKeyword = ''">{{ t('scripts.clearSearch') }}</a-button>
     </a-empty>
@@ -93,6 +118,8 @@
     :searching="isSearching"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
+    :retrying-users="retryingUsers"
+    @retry-users="retryScriptUsers"
     @edit="handleEditScript"
     @copy="handleCopyScript"
     @delete="handleDeleteScript"
@@ -138,9 +165,11 @@ import {
   SettingOutlined,
   UpOutlined,
 } from '@ant-design/icons-vue'
-import ScriptTable from '@/components/ScriptTable.vue'
+import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
+import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { Script, ScriptType, User } from '@/types/script'
+import type { ScriptType } from '@/types/script'
+import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
 import {
   getScriptEditSegment,
   isMfwFamily,
@@ -149,6 +178,7 @@ import {
 } from '@/views/scripts/components/scriptCreateFlow'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptList } from '@/views/scripts/useScriptList'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
@@ -181,13 +211,20 @@ defineOptions({ name: 'ScriptsPage' })
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
-const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
+const { addScript, deleteScript } = useScriptApi()
+const {
+  getScriptsWithUsers,
+  getScriptUsers,
+  loading: listLoading,
+  error: scriptListError,
+} = useScriptList()
+const retryingUsers = ref(new Set<string>())
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
 const { listEmbeddedSources, cloneEmbedded } = useMaaFWEmbeddedApi()
 
-const scripts = ref<Script[]>([])
+const scripts = ref<ScriptListItem[]>([])
 const scriptSearchKeyword = ref('')
 const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
 const filteredScripts = computed(() =>
@@ -211,7 +248,7 @@ const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
 type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww' | 'Whimbox'
-const configMask = ref<{ kind: ConfigMaskKind; script: Script } | null>(null)
+const configMask = ref<{ kind: ConfigMaskKind; script: ScriptListItem } | null>(null)
 const clearConfigMask = () => {
   configMask.value = null
 }
@@ -340,23 +377,30 @@ onUnmounted(() => {
 
 const loadScripts = async () => {
   try {
-    const scriptDetails = await getScriptsWithUsers()
-
-    // 将 ScriptDetail 转换为 Script 格式（为了兼容现有的表格组件）
-    scripts.value = scriptDetails.map(detail => ({
-      id: detail.uid,
-      type: detail.type as ScriptType,
-      name: detail.name,
-      config: detail.config,
-      users: (detail.users || []).filter((user): user is NonNullable<typeof user> => user !== null),
-    }))
+    const result = await getScriptsWithUsers()
+    if (!scriptListError.value) scripts.value = result
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
+    const errorMsg = getApiErrorMessage(error, t('apiErrors.scriptListFailed'))
     logger.error(`加载脚本列表失败: ${errorMsg}`)
-    message.error(t('scripts.toast.loadListFailed', { error: errorMsg }))
+    scriptListError.value = errorMsg
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
+  }
+}
+
+const retryScriptUsers = async (scriptId: string) => {
+  const script = scripts.value.find(item => item.id === scriptId)
+  if (!script || retryingUsers.value.has(scriptId)) return
+  retryingUsers.value.add(scriptId)
+  try {
+    const result = await getScriptUsers(scriptId)
+    // 整体刷新或删除后，旧的重试结果不再属于当前列表。
+    if (!scripts.value.includes(script)) return
+    script.users = result.users
+    script.usersLoadError = result.error
+  } finally {
+    retryingUsers.value.delete(scriptId)
   }
 }
 
@@ -373,7 +417,7 @@ const handleExpandAll = () => {
 }
 
 // 拖拽排序已写回后端，父级列表同步成新顺序，否则后续共享对象改动会把顺序弹回去
-const handleScriptsReordered = (reordered: Script[]) => {
+const handleScriptsReordered = (reordered: ScriptListItem[]) => {
   scripts.value = [...reordered]
 }
 
@@ -490,7 +534,7 @@ const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) 
   }
 }
 
-const handleEditScript = (script: Script) => {
+const handleEditScript = (script: ScriptListItem) => {
   router.push(
     isMfwFamily(script.type)
       ? maafwRouteLocation(script.type, 'script', { id: script.id })
@@ -498,7 +542,7 @@ const handleEditScript = (script: Script) => {
   )
 }
 
-const handleDeleteScript = async (script: Script) => {
+const handleDeleteScript = async (script: ScriptListItem) => {
   const result = await deleteScript(script.id)
   if (result) {
     // 后端已删除，本地直接移除即可，不必整份重拉
@@ -506,7 +550,7 @@ const handleDeleteScript = async (script: Script) => {
   }
 }
 
-const handleCopyScript = async (script: Script) => {
+const handleCopyScript = async (script: ScriptListItem) => {
   addLoading.value = true
   copyingScriptId.value = script.id
   try {
@@ -521,7 +565,7 @@ const handleCopyScript = async (script: Script) => {
   }
 }
 
-const handleAddUser = (script: Script) => {
+const handleAddUser = (script: ScriptListItem) => {
   // 根据脚本类型跳转到对应的用户添加页面
   if (isMfwFamily(script.type)) {
     // MaaFW 与各特调共用一个用户页，路由按特调注册表生成
@@ -551,9 +595,9 @@ const handleAddUser = (script: Script) => {
   }
 }
 
-const handleEditUser = (user: User) => {
+const handleEditUser = (user: ScriptListUser) => {
   // 从用户数据中找到对应的脚本
-  const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+  const script = scripts.value.find(s => s.id === user.scriptId)
   if (script) {
     // 根据脚本类型跳转到对应的用户编辑页面
     if (isMfwFamily(script.type)) {
@@ -589,9 +633,9 @@ const handleEditUser = (user: User) => {
   }
 }
 
-const handleDeleteUser = async (user: User) => {
+const handleDeleteUser = async (user: ScriptListUser) => {
   // 从用户数据中找到对应的脚本
-  const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+  const script = scripts.value.find(s => s.id === user.scriptId)
   if (!script) {
     message.error(t('scripts.toast.scriptNotFound'))
     return
@@ -729,7 +773,7 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
 }
 
 // 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
-const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
+const handleStartScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const started = await startConfigSession(
       script.id,
@@ -760,7 +804,7 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Wh
   }
 }
 
-const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
+const handleSaveScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const saved = await stopConfigSession(script.id, kind, clearConfigMask)
     if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
@@ -771,17 +815,19 @@ const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whi
   }
 }
 
-const handleStartMAAConfig = (script: Script) => handleStartScriptConfig(script, 'MAA')
-const handleSaveMAAConfig = (script: Script) => handleSaveScriptConfig(script, 'MAA')
-const handleStartSRCConfig = (script: Script) => handleStartScriptConfig(script, 'SRC')
-const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, 'SRC')
+const handleStartMAAConfig = (script: ScriptListItem) => handleStartScriptConfig(script, 'MAA')
+const handleSaveMAAConfig = (script: ScriptListItem) => handleSaveScriptConfig(script, 'MAA')
+const handleStartSRCConfig = (script: ScriptListItem) => handleStartScriptConfig(script, 'SRC')
+const handleSaveSRCConfig = (script: ScriptListItem) => handleSaveScriptConfig(script, 'SRC')
 // 奇想盒：无参数拉起原生 app（下载跑图路线、配置模型/键位等都在那边做，MAS 零写入）
-const handleStartWhimboxConfig = (script: Script) => handleStartScriptConfig(script, 'Whimbox')
-const handleSaveWhimboxConfig = (script: Script) => handleSaveScriptConfig(script, 'Whimbox')
+const handleStartWhimboxConfig = (script: ScriptListItem) =>
+  handleStartScriptConfig(script, 'Whimbox')
+const handleSaveWhimboxConfig = (script: ScriptListItem) =>
+  handleSaveScriptConfig(script, 'Whimbox')
 
-const handleStartMaaEndConfig = async (script: Script) => {
+const handleStartMaaEndConfig = async (script: ScriptListItem) => {
   try {
-    const controllerType = (script.config as any).Game?.ControllerType
+    const controllerType = script.controllerType
     if (controllerType !== 'Win32-Front') {
       message.warning(t('scripts.toast.maaEndUnsupported'))
       return
@@ -808,7 +854,7 @@ const handleStartMaaEndConfig = async (script: Script) => {
   }
 }
 
-const handleSaveMaaEndConfig = async (script: Script) => {
+const handleSaveMaaEndConfig = async (script: ScriptListItem) => {
   try {
     const saved = await stopConfigSession(script.id, 'MaaEnd', clearConfigMask)
     if (saved) {
@@ -821,7 +867,7 @@ const handleSaveMaaEndConfig = async (script: Script) => {
   }
 }
 
-const handleStartOkwwConfig = async (script: Script) => {
+const handleStartOkwwConfig = async (script: ScriptListItem) => {
   try {
     const started = await startConfigSession(
       script.id,
@@ -839,7 +885,7 @@ const handleStartOkwwConfig = async (script: Script) => {
   }
 }
 
-const handleSaveOkwwConfig = async (script: Script) => {
+const handleSaveOkwwConfig = async (script: ScriptListItem) => {
   try {
     const saved = await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
     if (saved) message.success(t('scripts.toast.okwwSaved', { name: script.name }))
@@ -850,10 +896,10 @@ const handleSaveOkwwConfig = async (script: Script) => {
   }
 }
 
-const handleToggleUserStatus = async (user: User) => {
+const handleToggleUserStatus = async (user: ScriptListUser) => {
   try {
     // 找到该用户对应的脚本
-    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+    const script = scripts.value.find(s => s.id === user.scriptId)
     if (!script) {
       message.error(t('scripts.toast.scriptNotFound'))
       return
@@ -879,6 +925,10 @@ const handleToggleUserStatus = async (user: User) => {
 </script>
 
 <style scoped>
+.script-list-error {
+  margin-bottom: 16px;
+}
+
 .maa-config-mask {
   position: fixed;
   top: 0;
@@ -938,6 +988,7 @@ const handleToggleUserStatus = async (user: User) => {
   margin-right: 8px;
 }
 
+.scripts-loading,
 .empty-state {
   display: flex;
   align-items: center;

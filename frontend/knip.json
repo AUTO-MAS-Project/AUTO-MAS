@@ -1,0 +1,25 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.ts",
+    "src/desktopMascot.ts",
+    "src/desktopMascotMenu.ts",
+    "electron/main.ts",
+    "electron/*Preload.ts",
+    "electron/preload.ts",
+    "scripts/*.mjs",
+    "e2e/run.mjs",
+    "e2e/real-batch.mjs",
+    "e2e/*.pw.ts",
+    "e2e/*.check.mjs",
+    "src/**/*.test.ts",
+    "electron/**/*.test.ts",
+    "src/**/*.typecheck.ts"
+  ],
+  "project": ["src/**/*.{ts,vue}", "electron/**/*.ts", "scripts/**/*.mjs", "e2e/**/*.{ts,mjs}"],
+  "ignore": ["src/api/**", "src/auto-imports.d.ts", "src/components.d.ts", "src/vite-env.d.ts"],
+  "paths": { "@/*": ["src/*"] },
+  "ignoreExportsUsedInFile": true,
+  "ignoreBinaries": ["pwsh", "tasklist"],
+  "playwright": false
+}

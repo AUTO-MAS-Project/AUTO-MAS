@@ -3,6 +3,7 @@ import { queryOptions, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Service, type EmulatorConfig_Info } from '@/api'
 import { translate as t } from '@/i18n'
 import { queryClient } from '@/services/queryClient'
+import { queryRequest } from '@/utils/queryRequest'
 
 const EMULATOR_QUERY_KEY = ['emulator-options'] as const
 const OPTIONS_STALE_TIME_MS = 60_000
@@ -12,8 +13,10 @@ const emulatorOptionsQuery = queryOptions({
   queryKey: [...EMULATOR_QUERY_KEY, 'list'],
   staleTime: OPTIONS_STALE_TIME_MS,
   meta: { notifyOnError: true },
-  queryFn: async () => {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+  queryFn: async ({ signal }) => {
+    const response = await queryRequest(signal, () =>
+      Service.getEmulatorComboxApiInfoComboxEmulatorPost()
+    )
     if (response.code !== 200) {
       throw new Error(response.message || t('edit.couldNotLoadEmulator'))
     }
@@ -25,8 +28,8 @@ const emulatorTypesQuery = queryOptions({
   queryKey: [...EMULATOR_QUERY_KEY, 'types'],
   staleTime: OPTIONS_STALE_TIME_MS,
   meta: { notifyOnError: true },
-  queryFn: async () => {
-    const response = await Service.getEmulatorApiEmulatorGetPost({})
+  queryFn: async ({ signal }) => {
+    const response = await queryRequest(signal, () => Service.getEmulatorApiEmulatorGetPost({}))
     if (response.code !== 200) {
       throw new Error(response.message || t('edit.couldNotLoadEmulator'))
     }

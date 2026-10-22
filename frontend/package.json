@@ -41,7 +41,10 @@
     "e2e:real:all": "node e2e/real-batch.mjs",
     "e2e:ui": "node e2e/run.mjs --ui",
     "e2e:report": "playwright show-report playwright-report/browser",
-    "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json"
+    "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json",
+    "audit:baseline": "node scripts/audit-baseline.mjs",
+    "audit:unused": "knip --no-progress",
+    "audit:duplicates": "jscpd src electron"
   },
   "build": {
     "asar": true,
@@ -117,6 +120,8 @@
     "electron": "^43.8.2",
     "electron-builder": "26.8.1",
     "electron-builder-squirrel-windows": "26.15.3",
+    "jscpd": "5.4.1",
+    "knip": "6.41.0",
     "markdown-it": "^14.1.1",
     "markdownlint-cli2": "^0.18.1",
     "matter-js": "^0.20.0",

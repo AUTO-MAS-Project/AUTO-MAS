@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { message } from 'ant-design-vue'
 import { WhimboxService, type WhimboxTaskCatalogData } from '@/api'
 import { translate as t } from '@/i18n'
@@ -33,11 +34,9 @@ export function useWhimboxTaskCatalog() {
       return true
     } catch (err) {
       if (seq !== fetchSeq) return false
-      const errorMsg = err instanceof Error ? err.message : t('edit.whimboxCatalogFetchFailed')
+      const errorMsg = getApiErrorMessage(err, t('edit.whimboxCatalogFetchFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       // 仅最新一次请求有权收 loading；旧请求晚到时不能把新请求的 loading 提前熄灭

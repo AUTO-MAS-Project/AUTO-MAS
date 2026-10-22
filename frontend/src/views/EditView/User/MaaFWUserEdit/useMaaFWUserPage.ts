@@ -64,8 +64,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW用户编辑')
   const router = useRouter()
-  const { addUser, getUsers } = useUserApi()
-  const { getScript } = useScriptApi()
+  const { addUser, getUsers, error: userApiError } = useUserApi()
+  const { getScript, error: scriptApiError } = useScriptApi()
   const { loading: interfaceLoading, previewInterface } = useMaaFWApi()
 
   const pageLoading = ref(true)
@@ -216,7 +216,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const initialScript = host?.takeInitialScript()
       const script = initialScript !== undefined ? initialScript : await getScript(scriptId)
       if (!script) {
-        message.error(t('edit.scriptDoesNotExist2'))
+        if (!scriptApiError.value && !host?.scriptLoadError.value)
+          message.error(t('edit.scriptDoesNotExist2'))
         handleCancel()
         return
       }
@@ -246,7 +247,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本信息失败: ${errorMsg}`)
-      message.error(t('edit.couldNotLoadScript2'))
+      if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
       handleCancel()
     } finally {
       pageLoading.value = false
@@ -267,13 +268,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
         )
         await loadUserData()
       } else {
-        message.error(t('edit.couldNotCreateUser'))
+        if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建用户失败: ${errorMsg}`)
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   }
@@ -310,13 +311,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           handleCancel()
         }
       } else {
-        message.error(t('edit.couldNotFetchUser'))
+        if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载用户数据失败: ${errorMsg}`)
-      message.error(t('edit.couldNotLoadUser2'))
+      if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
       isInitializing.value = false
       handleCancel()
     }

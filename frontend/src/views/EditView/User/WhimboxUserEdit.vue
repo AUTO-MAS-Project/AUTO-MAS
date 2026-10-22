@@ -99,8 +99,8 @@ const logger = window.electronAPI.getLogger('奇想盒用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript } = useScriptApi()
+const { addUser, updateUser, getUsers, error: userApiError } = useUserApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const {
   loading: catalogLoading,
   error: catalogError,
@@ -289,7 +289,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId, userData)
+      if (!(await updateUser(scriptId, userId, userData))) return
       logger.info(`用户配置已保存: ${key}`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -396,13 +396,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（对齐 loadUserData 的 catch）
     isInitializing.value = false
   }
@@ -424,13 +424,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -484,13 +484,13 @@ const loadUserData = async () => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（只能刷新页面）
     isInitializing.value = false
   }

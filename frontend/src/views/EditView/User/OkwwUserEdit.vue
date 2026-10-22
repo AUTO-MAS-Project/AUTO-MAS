@@ -421,7 +421,7 @@ const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
-const { getScript, importScriptConfigFile } = useScriptApi()
+const { getScript, importScriptConfigFile, error: scriptApiError } = useScriptApi()
 const {
   okwwConfigLoading,
   okwwTaskId,
@@ -712,7 +712,7 @@ const handleCloseOkwwView = () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'Okww') {
-    message.error(t('edit.okWwScriptDoes'))
+    if (!scriptApiError.value) message.error(t('edit.okWwScriptDoes'))
     handleCancel()
     return false
   }
@@ -746,7 +746,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
