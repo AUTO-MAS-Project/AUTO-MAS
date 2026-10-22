@@ -1,6 +1,8 @@
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
 import type { DesktopMascotData } from '@/types/desktopMascot'
 
+const STATIC_REACTION_DURATION = 1200
+
 interface MascotClip {
   url: string
   mode: 'idle' | 'working' | 'look' | 'drag' | 'reaction' | 'stopped'
@@ -25,6 +27,8 @@ export function useDesktopMascotPlayback(
   const hidden = ref(document.hidden)
   const decoded = new Set<string>()
   const phases = { idle: 0, working: 0 }
+  const stopped = computed(() => !dragging.value && data.value?.reaction === 'stopped')
+  let reactionPhase: { id?: number; progress: number } | null = null
   let progress = 0
   let sourceUrl: string | undefined
   let disposed = false
@@ -122,9 +126,11 @@ export function useDesktopMascotPlayback(
     (next, previous) => {
       if (previous?.mode === 'idle' || previous?.mode === 'working')
         phases[previous.mode] = progress
+      if (previous?.mode === 'reaction') reactionPhase = { id: previous.reactionId, progress }
       if (sourceUrl !== data.value?.animation?.imageUrl) {
         sourceUrl = data.value?.animation?.imageUrl
         phases.idle = phases.working = 0
+        reactionPhase = null
       }
       if (
         next?.url === previous?.url &&
@@ -133,7 +139,12 @@ export function useDesktopMascotPlayback(
         next?.reactionId === previous?.reactionId
       )
         return
-      progress = next?.mode === 'idle' || next?.mode === 'working' ? phases[next.mode] : 0
+      progress =
+        next?.mode === 'idle' || next?.mode === 'working'
+          ? phases[next.mode]
+          : next?.mode === 'reaction' && reactionPhase && next.reactionId === reactionPhase.id
+            ? reactionPhase.progress
+            : 0
       frame.value = Math.floor(progress) % (next?.count || 1)
     },
     { flush: 'sync' }
@@ -145,12 +156,20 @@ export function useDesktopMascotPlayback(
   watch(
     () => [data.value?.reaction, data.value?.reactionId, data.value?.animation] as const,
     ([reaction, id, animation]) => {
-      if (
-        id !== undefined &&
-        reaction &&
-        (!animation || (reaction !== 'stopped' && !animation.resultImageUrl))
-      )
+      if (id !== undefined && reaction && reaction !== 'stopped' && !animation?.resultImageUrl)
         window.desktopMascotAPI?.reactionEnded(id)
+    },
+    { immediate: true, flush: 'post' }
+  )
+  watch(
+    [() => data.value?.reaction === 'stopped', () => data.value?.reactionId],
+    ([active, id], _previous, onCleanup) => {
+      if (!active || id === undefined) return
+      const timer = setTimeout(
+        () => window.desktopMascotAPI?.reactionEnded(id),
+        STATIC_REACTION_DURATION
+      )
+      onCleanup(() => clearTimeout(timer))
     },
     { immediate: true, flush: 'post' }
   )
@@ -168,8 +187,9 @@ export function useDesktopMascotPlayback(
           window.desktopMascotAPI?.reactionEnded(current.reactionId)
       }
       if (!current) return
-      if (current.mode === 'stopped' || (current.reactionId !== undefined && disabled)) {
-        timer = setTimeout(finish, 1200)
+      if (current.mode === 'stopped') return
+      if (current.reactionId !== undefined && disabled) {
+        timer = setTimeout(finish, STATIC_REACTION_DURATION)
         return
       }
       if (disabled || isHidden || current.mode === 'look') return
@@ -221,5 +241,5 @@ export function useDesktopMascotPlayback(
     decoded.clear()
     document.removeEventListener('visibilitychange', updateVisibility)
   })
-  return { sprite, stopped: computed(() => clip.value?.mode === 'stopped') }
+  return { sprite, stopped }
 }

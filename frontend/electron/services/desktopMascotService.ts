@@ -176,6 +176,9 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       createdAt: Date.now(),
     }
     const current = this.currentNotice
+    this.pendingNotices = this.pendingNotices.filter(
+      item => Date.now() - item.createdAt < NOTICE_MAX_AGE
+    )
     const queued = this.pendingNotices.find(item => item.key === notice.key)
     if (queued && noticePriority(notice) < noticePriority(queued)) return
     if (current?.key === notice.key) {
@@ -185,9 +188,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       )
         return
     }
-    this.pendingNotices = this.pendingNotices.filter(
-      item => item.key !== notice.key && Date.now() - item.createdAt < NOTICE_MAX_AGE
-    )
+    this.pendingNotices = this.pendingNotices.filter(item => item.key !== notice.key)
     if (
       !current ||
       current.key === notice.key ||

@@ -24,6 +24,7 @@ let dragRequested = false
 let clickAnimation: Animation | undefined
 let mounted = true
 const DRAG_THRESHOLD = 5
+const CLICK_FEEDBACK_DURATION = 240
 const { sprite, stopped } = useDesktopMascotPlayback(data, dragging, lookFrame, reducedMotion)
 
 const isIdleMessage = computed(
@@ -250,7 +251,7 @@ function releasePointer(event: PointerEvent): void {
         { transform: 'scale(0.98, 1.02)' },
         { transform: 'scale(1)' },
       ],
-      { duration: 240, easing: 'ease-out' }
+      { duration: CLICK_FEEDBACK_DURATION, easing: 'ease-out' }
     )
   }
 }
