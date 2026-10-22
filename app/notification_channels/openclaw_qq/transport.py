@@ -277,10 +277,13 @@ class Sender:
     def groups(self) -> QQGroups:
         """读取自动记录的全部群，不保存群聊天内容。"""
 
+        removed = self._removed_groups | set(
+            self._config_value("OpenClawQQRejectedGroupOpenIds")
+        )
         groups = tuple(
             QQGroup(openid, self._groups.get(openid))
             for openid in self._config_value("OpenClawQQGroupOpenIds")
-            if openid not in self._removed_groups
+            if openid not in removed
         )
         return QQGroups(
             binding_id=self._binding_id,
@@ -310,35 +313,44 @@ class Sender:
         openid = data.get("group_openid")
         if not isinstance(openid, str) or not openid:
             return
-        if event in {"GROUP_DEL_ROBOT", "GROUP_MSG_REJECT"}:
-            # 配置回写即使被信号拒绝，本次进程也不能继续投递到已知退出的群。
-            self._groups.pop(openid, None)
-            self._removed_groups.add(openid)
-            async with self._config_lock:
-                groups = list(self._config_value("OpenClawQQGroupOpenIds"))
-                if openid in groups:
-                    await self.dependencies.config.update(
-                        {
-                            "OpenClawQQGroupOpenIds": [
-                                item for item in groups if item != openid
-                            ]
-                        }
-                    )
-        elif event in {
+        removed = event in {"GROUP_DEL_ROBOT", "GROUP_MSG_REJECT"}
+        if not removed and event not in {
             "GROUP_ADD_ROBOT",
             "GROUP_AT_MESSAGE_CREATE",
             "GROUP_MSG_RECEIVE",
         }:
-            if event == "GROUP_AT_MESSAGE_CREATE" and openid in self._removed_groups:
-                return
-            self._removed_groups.discard(openid)
-            self._groups[openid] = datetime.now(UTC)
-            async with self._config_lock:
-                groups = list(self._config_value("OpenClawQQGroupOpenIds"))
+            return
+        if removed:
+            # 配置回写即使被信号拒绝，本次进程也不能继续投递到已知退出的群。
+            self._groups.pop(openid, None)
+            self._removed_groups.add(openid)
+        async with self._config_lock:
+            groups = list(self._config_value("OpenClawQQGroupOpenIds"))
+            rejected = list(self._config_value("OpenClawQQRejectedGroupOpenIds"))
+            values = {}
+            if removed:
+                if openid in groups:
+                    values["OpenClawQQGroupOpenIds"] = [
+                        item for item in groups if item != openid
+                    ]
+                if event == "GROUP_MSG_REJECT" and openid not in rejected:
+                    values["OpenClawQQRejectedGroupOpenIds"] = [*rejected, openid]
+            else:
+                if event == "GROUP_AT_MESSAGE_CREATE" and (
+                    openid in self._removed_groups or openid in rejected
+                ):
+                    return
                 if openid not in groups:
-                    await self.dependencies.config.update(
-                        {"OpenClawQQGroupOpenIds": [*groups, openid]}
-                    )
+                    values["OpenClawQQGroupOpenIds"] = [*groups, openid]
+                if openid in rejected:
+                    values["OpenClawQQRejectedGroupOpenIds"] = [
+                        item for item in rejected if item != openid
+                    ]
+            if values:
+                await self.dependencies.config.update(values)
+            if not removed:
+                self._removed_groups.discard(openid)
+                self._groups[openid] = datetime.now(UTC)
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
@@ -680,6 +692,7 @@ class Sender:
                 "OpenClawQQTargetOpenId": "",
                 "OpenClawQQTargetType": "c2c",
                 "OpenClawQQGroupOpenIds": [],
+                "OpenClawQQRejectedGroupOpenIds": [],
             }
             if self._can_persist_secrets():
                 values["OpenClawQQClientSecret"] = ""
@@ -947,7 +960,14 @@ class Sender:
             not in {target.target_type, "all"}
             or not target.openid
             or target.openid not in recipients
-            or (target.target_type == "group" and target.openid in self._removed_groups)
+            or (
+                target.target_type == "group"
+                and (
+                    target.openid in self._removed_groups
+                    or target.openid
+                    in self._config_value("OpenClawQQRejectedGroupOpenIds")
+                )
+            )
         ):
             raise ValueError("QQ 通知目标不可用，请确认机器人已入群并允许主动发言")
         return target.openid
@@ -1149,7 +1169,11 @@ class Sender:
             "OpenClawQQTargetOpenId": normalized.user_openid,
         }
         if changed_bot:
-            values.update(OpenClawQQTargetType="c2c", OpenClawQQGroupOpenIds=[])
+            values.update(
+                OpenClawQQTargetType="c2c",
+                OpenClawQQGroupOpenIds=[],
+                OpenClawQQRejectedGroupOpenIds=[],
+            )
         async with self._config_lock:
             if self._can_persist_secrets():
                 try:
