@@ -410,6 +410,8 @@ export default {
     maaCultivateImportPlaceholder: '育成目標の JSON を貼り付け',
     maaCultivateImportSuccess: '{added} 人を追加し、{updated} 人の目標を更新しました',
     maaCultivateImportUnchanged: '目標は登録済みのため、更新は不要です',
+    maaCultivateImportLevelIgnored:
+      'レベル上げにはまだ対応していないため、インポートしたレベル目標を無視しました',
     maaCultivateImportSkipped: 'インポートできない目標を {count} 件スキップしました',
     maaCultivateImportFailed:
       'インポートに失敗しました。バックエンドの接続を確認して再試行してください',

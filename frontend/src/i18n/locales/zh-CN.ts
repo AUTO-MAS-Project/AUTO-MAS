@@ -394,6 +394,7 @@ export default {
     maaCultivateImportPlaceholder: '粘贴养成目标 JSON',
     maaCultivateImportSuccess: '新增 {added} 名干员，更新 {updated} 名干员',
     maaCultivateImportUnchanged: '目标已存在，无需更新',
+    maaCultivateImportLevelIgnored: '暂不支持等级培养，已忽略导入的等级目标',
     maaCultivateImportSkipped: '已跳过 {count} 项无法导入的目标',
     maaCultivateImportFailed: '导入失败，请检查后端连接后重试',
     maaCultivateImportEmpty: '没有可导入的养成目标',

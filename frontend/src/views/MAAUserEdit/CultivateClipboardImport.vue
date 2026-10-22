@@ -75,6 +75,14 @@ const applyImport = async (content: string) => {
   } else if (!result.skipped?.length) {
     message.info(t('edit.maaCultivateImportUnchanged'))
   }
+  // 后端已校验导入文本；这里只检查等级字段，用于说明被忽略的目标。
+  const payload: unknown = JSON.parse(content.trim())
+  if (
+    Array.isArray(payload) &&
+    payload.some(item => item && typeof item === 'object' && 'level' in item)
+  ) {
+    message.warning(t('edit.maaCultivateImportLevelIgnored'))
+  }
   if (result.added || result.updated || !result.skipped?.length) {
     manualOpen.value = false
     manualText.value = ''

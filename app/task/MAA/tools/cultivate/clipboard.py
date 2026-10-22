@@ -73,7 +73,8 @@ def _parse_clipboard_target(
     if not isinstance(name, str) or not name.strip():
         raise CultivateImportError("operator", index=index)
     name = name.strip()
-    if item.keys() - {"role", "name", "elite", "skill_level", "skill_mastery"}:
+    # 工具箱可能附带等级目标；MAA 暂不支持，忽略后继续导入其他培养目标。
+    if item.keys() - {"role", "name", "elite", "level", "skill_level", "skill_mastery"}:
         raise CultivateImportError("unsupported", index=index, name=name)
     role = item.get("role", "Unknown")
     matches = [
