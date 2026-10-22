@@ -71,6 +71,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const pageLoading = ref(true)
   const loading = computed(() => pageLoading.value)
   const isInitializing = ref(true)
+  /** 用户数据回填成功，页面真正能用了（与 isInitializing 不同，加载出错离页时保持 false） */
+  const userLoaded = ref(false)
   const {
     isSaving,
     hasUnsavedChanges,
@@ -163,7 +165,14 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   })
   const { presentQueuedTasks } = queue
 
-  const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
+  const menu = useMaaFWAddTaskMenu({
+    scriptId,
+    previewData,
+    taskSnapshot,
+    context,
+    queue,
+    ready: userLoaded,
+  })
 
   const userImport = useMaaFWUserQueueImport({ scriptId, userIdHolder, queue })
   const templates = useMaaFWQueueTemplates({ scriptId, scriptConfig, taskSnapshot, queue })
@@ -306,6 +315,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           // 页面上的值换成了后端这一份：之前没存上的改动已不在，失败账一并清掉
           resetSaveFailures()
           isInitializing.value = false
+          userLoaded.value = true
         } else {
           message.error(t('edit.userDoesNotExist'))
           handleCancel()

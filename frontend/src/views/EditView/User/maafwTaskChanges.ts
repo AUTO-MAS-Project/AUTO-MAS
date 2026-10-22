@@ -1,6 +1,6 @@
 // 项目更新后任务队列与 interface 对不上的两种情况：
 // - 队列里的任务 interface 已经没有了（多半是改了 name）：留成虚影，列出原来的设置，由用户自己删；
-// - interface 里多出了用户没见过的任务：在「添加任务」里标 NEW，标过一次就算见过，下次进来不再标。
+// - interface 里多出了用户没见过的任务：在「添加任务」里标 NEW，露过一次面就算见过，下次进来不再标。
 // 「见过哪些任务」只是提示用的本机状态，按脚本存在 localStorage，不进配置。
 
 import { translate as t } from '@/i18n'
@@ -95,8 +95,8 @@ const writeSeen = (scriptId: string, names: Iterable<string>) => {
 }
 
 /**
- * 当前 interface 里用户没见过的任务名，并当场记成见过：NEW 只在这次打开时标，下次就不标了。
- * 第一次打开这个脚本时把现有任务全记成见过，刚导入的项目不会满屏 NEW。
+ * 当前 interface 里用户没见过的任务名。第一次打开这个脚本时把现有任务全记成见过，
+ * 刚导入的项目不会满屏 NEW。
  */
 export const resolveMaaFWNewTaskNames = (scriptId: string, taskNames: readonly string[]) => {
   if (!scriptId) return new Set<string>()
@@ -105,7 +105,13 @@ export const resolveMaaFWNewTaskNames = (scriptId: string, taskNames: readonly s
     writeSeen(scriptId, taskNames)
     return new Set<string>()
   }
+  return new Set(taskNames.filter(name => !seen.has(name)))
+}
+
+/** 把任务记成见过（NEW 在「添加任务」里露了面时调用） */
+export const markMaaFWTasksSeen = (scriptId: string, taskNames: readonly string[]) => {
+  if (!scriptId || taskNames.length === 0) return
+  const seen = readSeen(scriptId) ?? new Set<string>()
   const unseen = taskNames.filter(name => !seen.has(name))
   if (unseen.length > 0) writeSeen(scriptId, [...seen, ...unseen])
-  return new Set(unseen)
 }

@@ -7,7 +7,7 @@ import type {
   MaaFWTaskInfo,
   MaaFWTaskSnapshot,
 } from '@/types/script'
-import { resolveMaaFWNewTaskNames } from '../maafwTaskChanges'
+import { markMaaFWTasksSeen, resolveMaaFWNewTaskNames } from '../maafwTaskChanges'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import type { MaaFWTaskQueue } from './useMaaFWTaskQueue'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
@@ -32,6 +32,8 @@ interface MaaFWAddTaskMenuOptions {
   taskSnapshot: Ref<MaaFWTaskSnapshot>
   context: MaaFWUserTaskContext
   queue: MaaFWTaskQueue
+  /** 用户页加载成功、菜单能用了：这之后露面的 NEW 才算用户见过 */
+  ready: Ref<boolean>
 }
 
 /**
@@ -44,6 +46,7 @@ export function useMaaFWAddTaskMenu({
   taskSnapshot,
   context,
   queue,
+  ready,
 }: MaaFWAddTaskMenuOptions) {
   const { t } = useI18n()
   const { taskByName, partitionTaskOrder, isManagedTaskId, isUnselectableTaskId, getDisplayName } =
@@ -136,6 +139,14 @@ export function useMaaFWAddTaskMenu({
   })
   const isNewTask = (task: MaaFWTaskInfo) => newTaskNames.value.has(task.name)
   const hasNewTasks = computed(() => availableTasks.value.some(isNewTask))
+  // 页面加载成功后，菜单里露了面的 NEW 就记成见过：这次照常标，下次进来不再标。
+  // 加载失败离页、或当前资源 / 控制器下不在菜单里的任务没露面，不算见过
+  watch(
+    [ready, () => availableTasks.value.filter(isNewTask).map(task => task.name)],
+    ([isReady, names]) => {
+      if (isReady) markMaaFWTasksSeen(scriptId, names)
+    }
+  )
 
   /** 选项文字后面挂 NEW 标签（任务）或一个点（含新任务的分组） */
   const markedOption = (
