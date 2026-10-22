@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils.logger import get_logger
 
@@ -161,8 +162,9 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
-    game_sign_summary_consumed: bool = field(default=False, repr=False)
+    notification_state: TaskNotificationState = field(
+        default_factory=TaskNotificationState, init=False, repr=False
+    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -175,8 +177,42 @@ class TaskItem(ABC):
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
+    def game_sign_results(self) -> list[dict[str, object]]:
+        """历史字段继续映射到独立通知状态，不保留第二份结果。"""
+
+        return self.notification_state.results
+
+    @game_sign_results.setter
+    def game_sign_results(self, value: list[dict[str, object]]) -> None:
+        self.notification_state.results = value
+
+    @property
+    def game_sign_summary_consumed(self) -> bool:
+        return self.notification_state.summary_consumed
+
+    @game_sign_summary_consumed.setter
+    def game_sign_summary_consumed(self, value: bool) -> None:
+        self.notification_state.summary_consumed = value
+
+    @property
+    def game_sign_summary_delivered(self) -> set[str]:
+        return self.notification_state.delivered
+
+    @game_sign_summary_delivered.setter
+    def game_sign_summary_delivered(self, value: set[str]) -> None:
+        self.notification_state.delivered = value
+
+    @property
+    def game_sign_summary_pending(self) -> tuple[str, ...]:
+        return self.notification_state.pending
+
+    @game_sign_summary_pending.setter
+    def game_sign_summary_pending(self, value: tuple[str, ...]) -> None:
+        self.notification_state.pending = value
+
+    @property
     def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，底层继续使用历史任务字段。"""
+        """读取社区签到结果，与历史字段共享同一通知状态。"""
 
         return self.game_sign_results
 
@@ -186,7 +222,7 @@ class TaskItem(ABC):
 
     @property
     def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+        """读取社区汇总消费状态，与历史字段共享同一通知状态。"""
 
         return self.game_sign_summary_consumed
 

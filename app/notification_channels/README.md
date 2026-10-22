@@ -107,7 +107,41 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 底层 HTTP/SMTP/WebSocket 超时保持原设置；
 线程内的 SMTP 或系统调用仍受底层能力限制，取消协程不能证明外部消息未送达。
 
-任务报告与签到的等待、合并、已送达集合和迟到补发留在 `core/task_report.py`；
-日历按成功 ID 更新提醒进度。通用投递器不接收 task_info，也不修改业务状态。
+任务报告入口由 `core/task_report.py` 装配；等待、合并、已送达集合和迟到补发由
+`core/notification_report.py` 的协调器管理。日历按成功 ID 更新提醒进度。
+通用投递器不接收 task_info，也不修改业务状态。
 现有后台任务所有者、电源动作前的等待以及退出时先结束通知任务、再关闭渠道的
 顺序保持不变。此路径不引入后台消息队列，也不承诺进程重启后恢复未完成通知。
+
+## 任务通知编排
+
+```text
+task.notify_core：专项结果、报告模板与图片
+  -> core.task_report：策略快照、状态适配与外部能力装配
+  -> core.notification_report：等待、摘要去重、迟到补发
+       -> services.notification_report：组合原始报告与签到摘要
+       -> services.community_notification：生成社区正文与图片
+       -> 显式 NotificationDispatcher：投递并返回 DispatchResult
+  -> 已注入的反馈与后台任务所有者
+```
+
+`PreparedTaskReport` 在一次报告入口读取不可变 `TaskReportPolicy`，是否发送、等待
+和摘要合并共用该策略。等待期间修改配置不改变已经准备的报告；迟到补发属于
+下一次通知，重新读取策略，关闭签到通知后不再补发。目标仍沿用该报告固定的
+目标快照；没有报告的任务在补发入口准备默认目标。
+
+`TaskReportCoordinator` 只持有 `TaskNotificationState`。结果、消费标记、已送达 ID
+和失败渠道属于这份状态；任务历史字段映射到同一状态，不保存第二份数据。
+协调器不持有完整任务对象，不读取全局 Config/Notify，也不直接访问 Publisher
+或 RuntimeTasks。投递、策略读取、默认目标准备、后台任务注册和失败反馈通过
+`TaskReportDependencies` 注入，配置与任务页面反馈留在 core 入口装配。
+旧 object 调用的字段兼容集中在该入口，不要求对象允许添加新属性；显式提供的
+通知状态直接复用。已有通知入口及 DispatchResult 返回语义保持不变。
+
+报告与补发共享一把锁；签到先完成时合并进报告，短暂等待超时则先发送带待确认
+提示的报告，签到继续执行。后续报告对已收到签到摘要的渠道只发送原始内容，
+未收到的渠道继续带摘要。正常空结果与异常终态结清待确认提示，异常不推断
+实际签到失败；零目标、未知渠道和目标准备失败不能被当作全部送达。
+
+社区格式化和报告摘要组合只依赖显式数据，不读取配置或修改任务状态。专项仍
+拥有自己的报告内容与模板，不在通用投递器中识别专项或签到业务。

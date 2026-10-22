@@ -40,14 +40,13 @@ from app.core.notify import (
     global_target,
     statistic_targets,
 )
-from app.core.task_report import dispatch_task_report, should_send_result
+from app.core.task_report import prepare_task_report
 from app.models.notification import (
     NotificationImage,
     NotificationSummary,
     NotifyPayload,
     image_reference,
 )
-from app.tools.community_notify import get_task_community_summary
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
 
@@ -105,7 +104,7 @@ async def push_proxy_result(
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
 ) -> DispatchResult:
-    """推送全局「代理结果」报告；签到汇总与渠道级重试由 dispatch_task_report 承担。
+    """推送全局「代理结果」报告；签到合并和补发由报告协调器承担。
 
     Args:
         title: 通知标题。
@@ -121,7 +120,11 @@ async def push_proxy_result(
             需要更新）时传 False，免得同一件事弹两次。
     """
 
-    if not should_send_result(message, task_info=task_info):
+    report = prepare_task_report(task_info)
+    if not report.should_send(
+        uncompleted_count=message["uncompleted_count"],
+        embedded_summary=bool(message.get("game_sign_summary", False)),
+    ):
         if logger is not None and skip_debug_message:
             logger.debug(skip_debug_message)
         return DispatchResult()
@@ -137,7 +140,7 @@ async def push_proxy_result(
         f"未完成用户数: {message['uncompleted_count']}"
     )
     summary_text = (
-        get_task_community_summary(task_info)
+        report.community_summary().text
         if task_info is not None and message.get("game_sign_summary")
         else ""
     )
@@ -145,7 +148,7 @@ async def push_proxy_result(
     summary_title = message.get("summary_title") or title.replace(
         "报告", "存在异常" if message["uncompleted_count"] > 0 else "已完成！"
     )
-    return await dispatch_task_report(
+    return await report.dispatch(
         NotifyPayload(
             title=title,
             text=message_text,
@@ -159,16 +162,16 @@ async def push_proxy_result(
             images=tuple(images),
         ),
         [global_target(include_system=include_system, system_timeout_seconds=10)],
-        task_info,
         summary_text=summary_text,
     )
 
 
 async def push_maintenance_notice(*, message: str, task_info: object) -> DispatchResult:
     """维护跳过只推送游戏状态，沿用原有通知时机与渠道。"""
-    if not should_send_result({"uncompleted_count": 0}, task_info=task_info):
+    report = prepare_task_report(task_info)
+    if not report.should_send(uncompleted_count=0):
         return DispatchResult()
-    return await dispatch_task_report(
+    return await report.dispatch(
         NotifyPayload(
             title=message,
             text=message,
@@ -176,7 +179,6 @@ async def push_maintenance_notice(*, message: str, task_info: object) -> Dispatc
             summary=NotificationSummary(text=message, title=message),
         ),
         [global_target(include_system=True, system_timeout_seconds=10)],
-        task_info,
     )
 
 
