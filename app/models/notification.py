@@ -18,11 +18,15 @@
 
 """通知编排与渠道服务共用的内部消息类型。"""
 
+from __future__ import annotations
+
 import re
+from _thread import RLock as RLockType
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
-from typing import Literal, cast
+from threading import RLock
+from typing import Any, Literal, Protocol, cast
 
 NotificationFormat = Literal["text", "markdown", "html"]
 ImagePresentation = Literal["html", "markdown", "base64", "rich_media"]
@@ -39,13 +43,53 @@ class DeferredContent[T]:
     """按需生成一份可选表达，同一通知的多个目标和重试共用结果。"""
 
     factory: Callable[[], T]
+    # 在事件循环上解析依赖，返回不再做冷导入的工作函数。
+    prepare_factory: Callable[[], Callable[[], T]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    dependencies: tuple[DeferredContent[Any], ...] = field(
+        default=(), repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        # 执行状态不进入 dataclass 字段或 Pydantic 的外部契约。
+        self.__dict__["_content_lock"] = RLock()
+
+    @property
+    def _lock(self) -> RLockType:
+        return self.__dict__["_content_lock"]
+
+    @cached_property
+    def _prepared(self) -> tuple[Callable[[], T] | None, str | None]:
+        try:
+            return (
+                self.prepare_factory()
+                if self.prepare_factory is not None
+                else self.factory,
+                None,
+            )
+        except Exception as exc:
+            return None, type(exc).__name__
+
+    def prepare_for_render(self) -> None:
+        for dependency in self.dependencies:
+            dependency.prepare_for_render()
+        # 依赖失败仍作为该可选表达的失败，由目标渲染决定是否降级。
+        _ = self._prepared
 
     @cached_property
     def _result(self) -> tuple[T | None, str | None]:
-        try:
-            return self.factory(), None
-        except Exception as exc:
-            return None, type(exc).__name__
+        with self._lock:
+            if "_result" in self.__dict__:
+                return self.__dict__["_result"]
+            factory, error = self._prepared
+            try:
+                result = (factory(), None) if factory is not None else (None, error)
+            except Exception as exc:
+                result = None, type(exc).__name__
+            # cached_property 在 Python 3.12 不串行化并发读取，必须在释放锁前登记。
+            self.__dict__["_result"] = result
+            return result
 
     def resolve(self) -> T:
         value, error = self._result
@@ -160,6 +204,17 @@ class RenderedNotification:
     text_fallback: str | None = None
     summary_used: bool = False
     diagnostics: tuple[str, ...] = ()
+
+
+class NotificationRenderer(Protocol):
+    async def render(
+        self,
+        payload: NotifyPayload,
+        capabilities: NotificationCapabilities,
+        *,
+        summary_policy: SummaryPolicy = "never",
+        use_summary_title: bool = False,
+    ) -> RenderedNotification: ...
 
 
 @dataclass(frozen=True)

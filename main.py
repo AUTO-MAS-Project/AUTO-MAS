@@ -490,6 +490,9 @@ def main():
             from app.core.task_report import shutdown_community_notifications
 
             await shutdown_community_notifications()
+            from app.services.notification_rendering import NotificationRendering
+
+            NotificationRendering.close()
             from app.services.notification import Notify
 
             await Notify.stop()

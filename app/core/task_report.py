@@ -335,9 +335,9 @@ async def dispatch_task_notification(
     targets: list[NotifyTarget],
     *,
     task_info: object | None = None,
-    immediate: bool = False,
+    immediate: bool = True,
 ) -> DispatchResult:
-    """统计与即时提醒共用结果消费；快照先于入队，失败反馈不阻塞业务。"""
+    """统计与即时提醒准备后立即托管；失败反馈不阻塞业务，最终报告另行暂存。"""
 
     prepared_targets = tuple(targets)
     task_id = getattr(task_info, "task_id", None) or current_notification_task_id()

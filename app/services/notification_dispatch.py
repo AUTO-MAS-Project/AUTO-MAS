@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any
 
-from app.models.notification import NotifyPayload
+from app.models.notification import NotificationRenderer, NotifyPayload
 from app.models.notification_channel import (
     ChannelTarget,
     DeliveryChannel,
@@ -15,8 +15,8 @@ from app.models.notification_channel import (
     Notifier,
     NotifyTarget,
 )
+from app.services.notification_rendering import NotificationRendering
 from app.utils import get_logger
-from app.utils.notification_render import render_for_target
 
 logger = get_logger("通知投递")
 
@@ -89,6 +89,7 @@ async def dispatch(
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
     notifier: Notifier,
+    renderer: NotificationRenderer | None = None,
     concurrent: bool = True,
 ) -> DispatchResult:
     """按渠道独立投递并按输入顺序汇总，取消时回收本轮全部子任务。
@@ -98,6 +99,7 @@ async def dispatch(
     """
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
+    rendering = NotificationRendering if renderer is None else renderer
 
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
@@ -156,7 +158,7 @@ async def dispatch(
                     else (),
                 )
         try:
-            rendered = render_for_target(
+            rendered = await rendering.render(
                 payload,
                 (
                     target.announcement_capabilities

@@ -78,7 +78,7 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
-    load_screenshot_images,
+    prepare_screenshot_images,
     screenshot_entries,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger
@@ -3232,8 +3232,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             statistics["task_details"] = self._build_task_details()
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
                 image_id_prefix="maafw",
             )

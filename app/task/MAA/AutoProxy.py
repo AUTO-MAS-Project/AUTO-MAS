@@ -46,7 +46,7 @@ from app.task.emulator_core import (
     resolve_host_adb,
     script_process_env,
 )
-from app.task.notify_core import load_screenshot_images, screenshot_entries
+from app.task.notify_core import prepare_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -3027,8 +3027,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         images: list[NotificationImage] = []
         if not if_success and failure_shot is not None:
             try:
-                loaded = await asyncio.to_thread(
-                    load_screenshot_images,
+                loaded = await prepare_screenshot_images(
                     [(self.cur_user_item.name, failure_shot)],
                     # ID 带用户序号：manager 汇总拼接各用户的图，前缀不唯一
                     # 会让邮件里同名 cid 互相覆盖

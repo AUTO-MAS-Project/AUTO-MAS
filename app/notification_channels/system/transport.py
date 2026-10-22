@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import asyncio
 
-from app.models.notification_channel import SystemNoticeDependencies
+from app.models.notification_channel import (
+    NotificationDeliveryError,
+    SystemNoticeDependencies,
+)
 
 # Windows 通知字段分别保留 63 和 255 个 UTF-16 代码单元，余下一位给结尾空字符。
 PLYER_TITLE_LIMIT = 63
@@ -95,4 +98,8 @@ class Sender:
                 toast=True,
             )
         else:
-            raise RuntimeError("plyer.notification 未正确导入，无法推送系统通知")
+            raise NotificationDeliveryError(
+                "plyer.notification 未正确导入，无法推送系统通知",
+                kind="unavailable",
+                retryable=False,
+            )

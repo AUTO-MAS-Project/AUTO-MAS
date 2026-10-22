@@ -20,7 +20,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from functools import cache
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
@@ -61,7 +61,13 @@ def deferred_notification_template(
             raise NotificationContentError(error_type)
         return get_notification_template(name).render(snapshot)
 
-    return DeferredContent(render)
+    def prepare() -> Callable[[], str]:
+        if error_type is not None:
+            raise NotificationContentError(error_type)
+        template = get_notification_template(name)
+        return lambda: template.render(snapshot)
+
+    return DeferredContent(render, prepare_factory=prepare)
 
 
 def _snapshot_template_context(context: Mapping[str, object]) -> dict[str, object]:

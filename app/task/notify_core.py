@@ -27,8 +27,9 @@
 ``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
 """
 
-import io
-from collections.abc import Sequence
+import asyncio
+from collections.abc import Callable, Sequence
+from functools import partial
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -184,6 +185,41 @@ def load_screenshot_images(
         (标签, 图片资源) 序列；读不到的文件被跳过。
     """
 
+    return _load_screenshot_images(
+        shots, image_id_prefix=image_id_prefix, convert=_screenshot_converter()
+    )
+
+
+def _screenshot_converter() -> Callable[[bytes], bytes] | None:
+    try:
+        from app.services.notification_image import encode_screenshot
+
+        return partial(encode_screenshot, quality=NOTIFY_SCREENSHOT_JPEG_QUALITY)
+    except Exception as exc:
+        logger.warning(f"失败截图转码不可用，改用原图: {type(exc).__name__}")
+        return None
+
+
+async def prepare_screenshot_images(
+    shots: Sequence[tuple[str, Path | bytes]], *, image_id_prefix: str
+) -> list[tuple[str, NotificationImage]]:
+    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。"""
+
+    convert = _screenshot_converter()
+    return await asyncio.to_thread(
+        _load_screenshot_images,
+        shots,
+        image_id_prefix=image_id_prefix,
+        convert=convert,
+    )
+
+
+def _load_screenshot_images(
+    shots: Sequence[tuple[str, Path | bytes]],
+    *,
+    image_id_prefix: str,
+    convert: Callable[[bytes], bytes] | None,
+) -> list[tuple[str, NotificationImage]]:
     images: list[tuple[str, NotificationImage]] = []
     for index, (label, source) in enumerate(shots, start=1):
         if isinstance(source, bytes):
@@ -196,19 +232,15 @@ def load_screenshot_images(
                 continue
         image_id = f"{image_id_prefix}-failure-{index}"
         try:
-            from PIL import Image
-
-            with Image.open(io.BytesIO(data)) as image:
-                buffer = io.BytesIO()
-                image.convert("RGB").save(
-                    buffer, format="JPEG", quality=NOTIFY_SCREENSHOT_JPEG_QUALITY
-                )
+            if convert is None:
+                raise RuntimeError("截图转码不可用")
+            data_jpeg = convert(data)
             images.append(
                 (
                     label,
                     NotificationImage(
                         id=image_id,
-                        data=buffer.getvalue(),
+                        data=data_jpeg,
                         alt=label,
                         mime_type="image/jpeg",
                     ),

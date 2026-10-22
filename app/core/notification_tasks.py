@@ -70,7 +70,7 @@ class TaskNotificationBatch:
     closed: bool = False
 
     async def deliver(self) -> None:
-        # 同一脚本的统计与最终报告保持准备顺序；一个通知异常不丢掉后续通知。
+        # 暂存的最终报告保持准备顺序；一个通知异常不丢掉后续通知。
         for delivery in self.deliveries:
             try:
                 await delivery()

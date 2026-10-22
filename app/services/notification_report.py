@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
 from app.models.notification import DeferredContent, NotifyPayload, resolve_content
 from app.models.notification_community import CommunityNotificationResult
@@ -70,6 +71,7 @@ def append_report_summary(
             _map_body(
                 payload.markdown or payload.text,
                 lambda markdown: f"{markdown}\n\n{resolve_content(summary.markdown)}",
+                dependencies=_dependencies(summary.markdown),
             )
             if summary.markdown
             else payload.markdown or payload.text
@@ -142,17 +144,34 @@ def prepare_report_payloads(
                 lambda markdown: markdown.replace(
                     resolve_content(summary.markdown), ""
                 ).rstrip(),
+                dependencies=_dependencies(summary.markdown),
             )
             if payload.markdown is not None
             else payload.text.replace(embedded_summary, "").rstrip()
         ),
     )
-    return clean, replace(payload, markdown=DeferredContent(merged_markdown))
+    return clean, replace(
+        payload,
+        markdown=DeferredContent(
+            merged_markdown,
+            dependencies=_dependencies(payload.markdown, summary.markdown),
+        ),
+    )
+
+
+def _dependencies(*values: object) -> tuple[DeferredContent[Any], ...]:
+    return tuple(value for value in values if isinstance(value, DeferredContent))
 
 
 def _map_body(
-    body: str | DeferredContent[str], transform: Callable[[str], str]
+    body: str | DeferredContent[str],
+    transform: Callable[[str], str],
+    *,
+    dependencies: tuple[DeferredContent[Any], ...] = (),
 ) -> DeferredContent[str]:
     """组合正文仍保持惰性，某种表达失败不会中断其他表达。"""
 
-    return DeferredContent(lambda: transform(resolve_content(body)))
+    return DeferredContent(
+        lambda: transform(resolve_content(body)),
+        dependencies=(*_dependencies(body), *dependencies),
+    )

@@ -61,6 +61,7 @@ from app.models.notification_channel import (
 from app.models.notification_ports import WebhookTester
 from app.services.notification import Notify
 from app.services.notification_dispatch import dispatch as dispatch_notification
+from app.services.notification_rendering import NotificationRendering
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
@@ -243,6 +244,7 @@ async def dispatch(
         skip_channels=skip_channels,
         skip_channel_ids=skip_channel_ids,
         notifier=Notify if notifier is None else notifier,
+        renderer=NotificationRendering,
         concurrent=not config_manager.in_transaction,
     )
 

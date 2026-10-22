@@ -22,7 +22,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+import httpx
+
 from app.models.notification_channel import NotificationDeliveryError
+
+
+@contextmanager
+def http_delivery_errors() -> Iterator[None]:
+    """HTTP 渠道在协议边界声明网络和协议配置错误，执行器只消费策略。"""
+
+    try:
+        yield
+    except httpx.UnsupportedProtocol as exc:
+        raise NotificationDeliveryError(
+            "通知地址协议不可用", kind="configuration", retryable=False
+        ) from exc
+    except (httpx.TransportError, OSError) as exc:
+        raise NotificationDeliveryError(
+            "通知网络请求失败", kind="transport", retryable=True
+        ) from exc
 
 
 class RemoteHTTPError(NotificationDeliveryError):

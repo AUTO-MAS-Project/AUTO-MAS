@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from httpx import Proxy
 
 from app.models.notification_channel import HttpDependencies, NotificationDeliveryError
-from app.notification_channels.common import RemoteHTTPError
+from app.notification_channels.common import RemoteHTTPError, http_delivery_errors
 
 UTC4 = timezone(timedelta(hours=4))
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
@@ -269,31 +269,36 @@ class Sender:
 
         url = webhook.url
 
-        async with self.dependencies.http_factory(
-            **_webhook_client_kwargs(url, proxy)
-        ) as client:
-            if webhook.method == "POST":
-                if isinstance(data, str):
-                    response = await client.post(url=url, content=data, headers=headers)
-                elif data is None:
-                    # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
-                    response = await client.post(
-                        url=url, content="null", headers=headers
-                    )
-                else:
-                    response = await client.post(url=url, json=data, headers=headers)
-            elif webhook.method == "GET":
-                if isinstance(data, dict):
-                    # Flatten params to ensure all values are str or list of str
-                    params = {}
-                    for k, v in data.items():
-                        if isinstance(v, (dict, list)):
-                            params[k] = json.dumps(v, ensure_ascii=False)
-                        else:
-                            params[k] = str(v)
-                else:
-                    params = {"message": str(data)}
-                response = await client.get(url=url, params=params, headers=headers)
+        with http_delivery_errors():
+            async with self.dependencies.http_factory(
+                **_webhook_client_kwargs(url, proxy)
+            ) as client:
+                if webhook.method == "POST":
+                    if isinstance(data, str):
+                        response = await client.post(
+                            url=url, content=data, headers=headers
+                        )
+                    elif data is None:
+                        # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
+                        response = await client.post(
+                            url=url, content="null", headers=headers
+                        )
+                    else:
+                        response = await client.post(
+                            url=url, json=data, headers=headers
+                        )
+                elif webhook.method == "GET":
+                    if isinstance(data, dict):
+                        # Flatten params to ensure all values are str or list of str
+                        params = {}
+                        for k, v in data.items():
+                            if isinstance(v, (dict, list)):
+                                params[k] = json.dumps(v, ensure_ascii=False)
+                            else:
+                                params[k] = str(v)
+                    else:
+                        params = {"message": str(data)}
+                    response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
         if not response.is_success:

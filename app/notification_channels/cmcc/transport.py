@@ -70,9 +70,13 @@ async def _receive_message(connection: Any) -> dict[str, Any]:
     try:
         message = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise CMCCNewMsgError("中国移动新消息服务返回了无效响应") from exc
+        raise CMCCNewMsgError(
+            "中国移动新消息服务返回了无效响应", kind="transport", retryable=True
+        ) from exc
     if not isinstance(message, dict):
-        raise CMCCNewMsgError("中国移动新消息服务返回了无效响应")
+        raise CMCCNewMsgError(
+            "中国移动新消息服务返回了无效响应", kind="transport", retryable=True
+        )
     return message
 
 

@@ -1109,12 +1109,25 @@ class Sender:
                     continue
                 raise NotificationDeliveryError(
                     f"{operation}失败（错误码 {code}）：{_business_message(response)}",
-                    kind="rate_limited"
+                    kind="configuration"
+                    if code in (401, 401001, 11200, 11201)
+                    else "rate_limited"
                     if code == 429
                     else "transport"
                     if code in (500, 502, 503, 504)
                     else "rejected",
-                    retryable=code in (429, 500, 502, 503, 504),
+                    # 只将已知需重新绑定或调整正文的拒绝判为永久；未知业务码沿用重试。
+                    retryable=code
+                    not in (
+                        401,
+                        401001,
+                        11200,
+                        11201,
+                        304003,
+                        40034028,
+                        40054010,
+                        40054004,
+                    ),
                 )
             return response
         raise NotificationDeliveryError(
@@ -1141,13 +1154,15 @@ class Sender:
         if code not in (None, 0):
             raise NotificationDeliveryError(
                 f"QQ access_token 获取失败：{_business_message(response)}",
-                kind="configuration",
-                retryable=False,
+                kind="configuration"
+                if code in (401, 401001, 11200, 11201)
+                else "rejected",
+                retryable=code not in (401, 401001, 11200, 11201),
             )
         access_token = str(response.get("access_token") or "").strip()
         if not access_token:
             raise NotificationDeliveryError(
-                "QQ access_token 响应缺少访问令牌", kind="rejected", retryable=False
+                "QQ access_token 响应缺少访问令牌", kind="transport", retryable=True
             )
         expires_in = _as_int(response.get("expires_in")) or 7200
         self._access_token = access_token
@@ -1271,11 +1286,11 @@ class Sender:
             ) from exc
         except ValueError as exc:
             raise NotificationDeliveryError(
-                "QQ 官方机器人响应不是合法 JSON", kind="rejected", retryable=False
+                "QQ 官方机器人响应不是合法 JSON", kind="transport", retryable=True
             ) from exc
         if not isinstance(payload, dict):
             raise NotificationDeliveryError(
-                "QQ 官方机器人响应格式无效", kind="rejected", retryable=False
+                "QQ 官方机器人响应格式无效", kind="transport", retryable=True
             )
         return payload
 
