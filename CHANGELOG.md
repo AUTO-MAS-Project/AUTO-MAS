@@ -30,6 +30,26 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 新增
+
+- 【通知】QQ 官方机器人通知支持私聊、所有已识别群或同时推送 (#1588) by @jinghero
+
+### 变更
+
+- 【设置】优化桌宠点击、拖动、动画衔接和任务提醒体验 (#1600) by @jinghero
+
+### 修复
+
+- 【MAA】修复使用关卡或理智计划表时配置自动备份与恢复失败的问题 (#1590) by @jinghero
+- 【主页】修复网络波动时活动信息与日历更新失败的问题 (#1599) by @jinghero
+- 【调度】修复清空剩余天数、运行参数及计划理智药数量或重置剿灭状态时保存失败的问题（仅公测） (#1596) by @jinghero
+- 【模拟器】修复删除模拟器失败后仍清空其他脚本绑定的问题（仅公测） (#1597) by @Lance0174
+- 【设置】修复旧版升级后模拟器类型及部分连战、剿灭和基建设置被重置的问题（仅公测） (#1597) by @Lance0174
+- 【设置】修复升级后星铁游戏路径丢失、部分窗口任务重试报错及旧日期配置导致启动失败（仅公测） by @Lance0174
+- 【更新】修复更新下载、电源倒计时及点击版本信息时出现多余滚动条的问题 (#1589) by @jinghero
+
 ## [v5.8.0-beta.1] - 2026-10-22
 
 ### 新增
@@ -597,6 +617,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...dev
 [v5.8.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0-beta.1
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
