@@ -115,7 +115,11 @@ def _groups_out(sender: Sender) -> OpenClawQQGroupsOut:
     )
 
 
-@router.post("/groups", summary="查询 QQ 通知接收位置及候选群")
+@router.post(
+    "/groups",
+    summary="查询 QQ 通知接收位置及候选群",
+    response_model=OpenClawQQGroupsOut,
+)
 async def get_groups() -> OpenClawQQGroupsOut:
     """只返回网关已发现的群和已保存的目标，不枚举 QQ 联系人。"""
 
@@ -123,10 +127,17 @@ async def get_groups() -> OpenClawQQGroupsOut:
         return _groups_out(get_channel_sender("openclaw_qq"))
     except Exception:
         logger.opt(exception=True).warning("查询 QQ 候选群失败")
-        return OpenClawQQGroupsOut(code=500, status="error", errorCode="request_failed")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="查询 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
 
 
-@router.post("/target", summary="选择 QQ 通知接收位置")
+@router.post(
+    "/target", summary="选择 QQ 通知接收位置", response_model=OpenClawQQGroupsOut
+)
 async def set_target(body: OpenClawQQTargetIn = Body(...)) -> OpenClawQQGroupsOut:
     """绑定版本和群存在性校验通过后，保存唯一的通知接收位置。"""
 
@@ -139,10 +150,26 @@ async def set_target(body: OpenClawQQTargetIn = Body(...)) -> OpenClawQQGroupsOu
         )
         return _groups_out(sender)
     except ValueError as exc:
-        return OpenClawQQGroupsOut(code=400, status="error", errorCode=str(exc))
+        error_code = str(exc)
+        messages = {
+            "binding_changed": "机器人绑定已变化，请刷新群列表后重新选择",
+            "group_not_found": "该群尚未发现或机器人已退群，请在群里 @ 机器人后刷新",
+            "not_bound": "请先扫码绑定 QQ 官方机器人",
+        }
+        return OpenClawQQGroupsOut(
+            code=400,
+            status="error",
+            message=messages.get(error_code, "保存 QQ 通知接收位置失败"),
+            errorCode=error_code,
+        )
     except Exception:
         logger.opt(exception=True).warning("保存 QQ 通知接收位置失败")
-        return OpenClawQQGroupsOut(code=500, status="error", errorCode="request_failed")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="保存 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
 
 
 @router.post(

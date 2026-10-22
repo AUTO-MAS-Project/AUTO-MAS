@@ -130,11 +130,12 @@ class QQStatus:
 
 
 @dataclass(frozen=True)
-class QQGroupTarget:
-    """排队时固定的机器人及群目标，避免切换接收位置后误投。"""
+class QQTarget:
+    """排队时固定的机器人及接收位置，避免切换绑定或目标后误投。"""
 
     app_id: str
-    group_openid: str | None
+    target_type: Literal["c2c", "group"]
+    openid: str | None
 
 
 @dataclass(frozen=True)
@@ -859,7 +860,7 @@ class Sender:
         content: str,
         *,
         images: Sequence[NotificationImage] = (),
-        group_target: QQGroupTarget | None = None,
+        target: QQTarget | None = None,
     ) -> None:
         """向固定的私聊或群聊发送正文和图片，保留分段及链接降级行为。"""
 
@@ -867,12 +868,11 @@ class Sender:
             app_id, client_secret, user_openid = self._credentials()
             if not app_id or not client_secret or not user_openid:
                 raise ValueError("请先在通知设置中扫码绑定 QQ 官方机器人")
-            if group_target is None:
-                if self._config_value("OpenClawQQTargetType") != "c2c":
-                    raise ValueError("QQ 通知接收位置已变更，请重新发送")
-            else:
-                self._validate_group_target(group_target)
-                user_openid = group_target.group_openid
+            target = target or QQTarget(
+                app_id=app_id, target_type="c2c", openid=user_openid
+            )
+            user_openid = self._validate_target(target)
+            group_target = target if target.target_type == "group" else None
 
             chunks = split_text(content, max(1, TEXT_CHUNK_LIMIT - 16))
             for index, chunk in enumerate(chunks, start=1):
@@ -925,14 +925,21 @@ class Sender:
         self._msg_seq = (self._msg_seq % MESSAGE_SEQUENCE_MAX) + 1
         return self._msg_seq
 
-    def _validate_group_target(self, target: QQGroupTarget) -> None:
+    def _validate_target(self, target: QQTarget) -> str:
+        app_id, _, user_openid = self._credentials()
+        selected = (
+            self._config_value("OpenClawQQGroupOpenId", None)
+            if target.target_type == "group"
+            else user_openid
+        )
         if (
-            target.app_id != self._credentials()[0]
-            or self._config_value("OpenClawQQTargetType") != "group"
-            or not target.group_openid
-            or target.group_openid != self._config_value("OpenClawQQGroupOpenId", None)
+            target.app_id != app_id
+            or self._config_value("OpenClawQQTargetType") != target.target_type
+            or not target.openid
+            or target.openid != selected
         ):
-            raise ValueError("QQ 群通知目标已失效，请在通知设置中重新选择群聊")
+            raise ValueError("QQ 通知目标已失效，请在通知设置中重新确认接收位置")
+        return target.openid
 
     async def _send_message_with_token(
         self,
@@ -941,7 +948,7 @@ class Sender:
         client_secret: str,
         user_openid: str,
         body: dict[str, Any],
-        group_target: QQGroupTarget | None = None,
+        group_target: QQTarget | None = None,
     ) -> None:
         """发送单段消息，并在访问令牌过期时无感重试一次。"""
 
@@ -951,7 +958,7 @@ class Sender:
         )
         if group_target is not None:
             await asyncio.sleep(max(0, self._group_next_send_at - monotonic()))
-            self._validate_group_target(group_target)
+            self._validate_target(group_target)
             self._group_next_send_at = monotonic() + GROUP_MESSAGE_INTERVAL_SECONDS
         try:
             await self._request_with_token(
@@ -975,7 +982,7 @@ class Sender:
         client_secret: str,
         user_openid: str,
         image: NotificationImage,
-        group_target: QQGroupTarget | None = None,
+        group_target: QQTarget | None = None,
     ) -> None:
         """上传一张 QQ C2C 图片并发送对应的富媒体消息。"""
 
@@ -993,7 +1000,7 @@ class Sender:
 
         resource = "groups" if group_target is not None else "users"
         if group_target is not None:
-            self._validate_group_target(group_target)
+            self._validate_target(group_target)
         upload_endpoint = (
             f"{API_BASE_URL}/v2/{resource}/{quote(user_openid, safe='')}/files"
         )
@@ -1115,7 +1122,6 @@ class Sender:
             client_secret=client_secret.strip(),
             user_openid=user_openid.strip(),
         )
-        await self._stop_gateway()
         changed_bot = normalized.app_id != self._credentials()[0]
         values = {
             "OpenClawQQAppId": normalized.app_id,
@@ -1145,10 +1151,12 @@ class Sender:
             self._runtime_credentials = (
                 None if self._can_persist_secrets() else normalized
             )
+            await self._stop_gateway()
             self._invalidate_access_token()
             self._binding_id = uuid.uuid4().hex
             if changed_bot:
                 self._groups.clear()
+                self._group_next_send_at = 0.0
 
     async def _request_json(
         self,

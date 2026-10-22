@@ -72,6 +72,8 @@ _TEXTS = {
         "KoishiServerAddress",
         "KoishiToken",
         "CMCCNewMsgApiKey",
+        "OpenClawQQAppId",
+        "OpenClawQQTargetOpenId",
     )
 }
 
@@ -184,9 +186,15 @@ class _Notify:
             "send_koishi", message=message, msgtype=msgtype, client_name=client_name
         )
 
-    async def send_openclaw_qq(self, title=_UNSET, content=_UNSET, *, images=_UNSET):
+    async def send_openclaw_qq(
+        self, title=_UNSET, content=_UNSET, *, images=_UNSET, target=_UNSET
+    ):
         return await self._run(
-            "send_openclaw_qq", title=title, content=content, images=images
+            "send_openclaw_qq",
+            title=title,
+            content=content,
+            images=images,
+            target=target,
         )
 
 
