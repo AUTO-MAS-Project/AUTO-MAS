@@ -102,8 +102,8 @@ async def dispatch(
         # None 表示渠道不做空接收者判定，不能与空串共用真值判断。
         if target.empty_recipient is not None:
             should_send, missing = _recipient_action(
-                target.empty_recipient,
-                policy,
+                value=target.empty_recipient,
+                policy=policy,
                 channel=target.label,
                 hint=target.empty_hint,
             )
@@ -125,9 +125,13 @@ async def dispatch(
             logger.warning(f"{target.label}通知内容降级: {diagnostic}")
 
         async def send() -> bool | None:
-            return await notifier.send_channel(channel, target, rendered)
+            return await notifier.send_channel(
+                channel=channel, target=target, rendered=rendered
+            )
 
-        if await _send(target.label, send, attempts=attempts, retry_delay=retry_delay):
+        if await _send(
+            channel=target.label, send=send, attempts=attempts, retry_delay=retry_delay
+        ):
             return DispatchResult(
                 attempted=1, succeeded=(target.label,), succeeded_ids=(target.id,)
             )
@@ -138,7 +142,7 @@ async def dispatch(
     ) -> list[tuple[int, DispatchResult]]:
         results = []
         for index, channel, target, policy in jobs:
-            result = await deliver(channel, target, policy)
+            result = await deliver(channel=channel, target=target, policy=policy)
             results.append((index, result))
         return results
 
@@ -161,14 +165,24 @@ async def dispatch(
             asyncio.create_task(send_bounded(jobs), name=f"notification:{key}")
             for key, jobs in groups.items()
         ]
+        joined = asyncio.gather(*tasks)
         try:
-            batches = await asyncio.gather(*tasks)
-        finally:
-            # 子渠道取消也须回收兄弟任务，不能让它们在调用方退出后继续投递。
+            batches = await asyncio.shield(joined)
+        except BaseException:
+            # 只向子任务取消一次；父任务的后续取消不能中断渠道 finally 的异步清理。
             for task in tasks:
                 if not task.done():
                     task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            cleanup = asyncio.gather(*tasks, return_exceptions=True)
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+            # 父任务取消时 joined 没有被直接等待，取走其异常以免留下未消费的 Future。
+            if joined.done() and not joined.cancelled():
+                joined.exception()
+            raise
 
     ordered = sorted(
         (item for batch in batches for item in batch), key=lambda item: item[0]
