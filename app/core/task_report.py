@@ -47,6 +47,7 @@ from app.models.notification_report import (
     TaskReportPolicy,
     TaskReportRequest,
     TaskReportSummary,
+    TaskResultHint,
 )
 from app.models.task import TaskItem
 from app.runtime_tasks import RuntimeTasks
@@ -243,7 +244,9 @@ def prepare_task_report(task_info: object | None = None) -> PreparedTaskReport:
     )
 
 
-def should_send_result(message: dict, *, task_info: object | None = None) -> bool:
+def should_send_result(
+    message: TaskResultHint, *, task_info: object | None = None
+) -> bool:
     """兼容旧入口；新的报告入口重用 PreparedTaskReport 的策略快照。"""
 
     return prepare_task_report(task_info).should_send(

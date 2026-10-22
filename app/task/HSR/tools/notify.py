@@ -19,6 +19,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import Literal
+
 from app.core.notify import (
     DispatchResult,
     dispatch,
@@ -26,14 +28,16 @@ from app.core.notify import (
 )
 from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
-from app.task.notify_core import push_task_notice
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.task.notify_core import push_proxy_result, push_statistics_report
 from app.utils import get_logger
+from app.utils.notification_template import get_notification_template
 
 logger = get_logger("HSR 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode | Literal["云登录提醒"],
     title: str,
     message: dict,
     user_config: HSRUserConfig | None,
@@ -50,15 +54,21 @@ async def push_notification(
             statistic_targets(user_config),
         )
 
-    return await push_task_notice(
-        mode,
-        title,
-        message,
-        user_config,
-        task_info,
-        statistics_text=lambda: (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"HSR执行结果: {message['user_result']}\n\n"
+    if mode == "代理结果":
+        return await push_proxy_result(
+            title=title,
+            report=TaskResultReport.from_message(message),
+            task_info=task_info,
+        )
+    if mode != "统计信息":
+        return DispatchResult()
+
+    message_html = get_notification_template("general_statistics.html").render(message)
+    return await push_statistics_report(
+        payload=NotifyPayload(
+            title=title,
+            text=f"开始时间: {message['start_time']}\n结束时间: {message['end_time']}\nHSR执行结果: {message['user_result']}\n\n",
+            html=message_html,
         ),
+        user_config=user_config,
     )

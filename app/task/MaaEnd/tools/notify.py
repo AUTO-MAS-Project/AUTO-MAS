@@ -31,6 +31,7 @@ from app.core.notify import (
 )
 from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
@@ -133,7 +134,7 @@ def _statistic_sections(message: dict) -> list[str]:
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: MaaEndUserConfig | None,
@@ -146,7 +147,10 @@ async def push_notification(
 
     if mode == "代理结果":
         return await push_proxy_result(
-            title=title, message=message, task_info=task_info, images=images
+            title=title,
+            report=TaskResultReport.from_message(message),
+            task_info=task_info,
+            images=images,
         )
 
     if mode == "统计信息":

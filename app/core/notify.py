@@ -27,7 +27,6 @@
 
 from collections.abc import Iterable
 from dataclasses import replace
-from typing import Any
 
 from app.config import config_manager
 from app.core.config import Config
@@ -42,7 +41,10 @@ from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_channel import (
     ChannelTarget,
     DeliveryChannel,
+    NotificationSourceConfig,
     NotificationTransportSnapshot,
+    RecruitmentNotificationConfig,
+    UserNotificationConfig,
 )
 from app.models.notification_channel import (
     DispatchResult as DispatchResult,
@@ -98,14 +100,14 @@ def global_target(
     )
 
 
-def user_target(user_config: Any) -> NotifyTarget:
+def user_target(user_config: NotificationSourceConfig) -> NotifyTarget:
     """按用户配置构造独立通知目标。"""
     return _resolve_target(config=user_config, scope="user", empty_policy="warn")
 
 
 def _resolve_target(
     *,
-    config: Any,
+    config: NotificationSourceConfig,
     scope: str,
     empty_policy: EmptyPolicy,
     include_system: bool = False,
@@ -150,19 +152,23 @@ def _resolve_target(
     )
 
 
-def user_statistic_targets(user_config: Any | None) -> list[NotifyTarget]:
+def user_statistic_targets(
+    user_config: UserNotificationConfig | None,
+) -> list[NotifyTarget]:
     """返回已启用统计通知的用户目标。"""
 
     if (
         user_config is None
         or not user_config.Notify.Enabled
-        or (not user_config.Notify.IfSendStatistic)
+        or not user_config.Notify.IfSendStatistic
     ):
         return []
     return [user_target(user_config)]
 
 
-def recruitment_targets(user_config: Any | None) -> list[NotifyTarget]:
+def recruitment_targets(
+    user_config: RecruitmentNotificationConfig | None,
+) -> list[NotifyTarget]:
     """按全局和个人订阅准备喜报目标，不识别具体传输渠道。"""
 
     targets = []
@@ -186,7 +192,7 @@ def failure_targets() -> list[NotifyTarget]:
 
 
 def statistic_targets(
-    user_config: Any | None,
+    user_config: UserNotificationConfig | None,
     *,
     global_empty_policy: EmptyPolicy = "send",
     compact_summary: bool = False,

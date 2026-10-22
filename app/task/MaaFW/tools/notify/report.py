@@ -1,7 +1,6 @@
 """MaaFW 任务报告推送。"""
 
 from collections.abc import Sequence
-from typing import Any
 
 from app.core.notify import (
     DispatchResult,
@@ -12,6 +11,8 @@ from app.models.notification import (
     NotificationImage,
     NotifyPayload,
 )
+from app.models.notification_channel import UserNotificationConfig
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
@@ -20,11 +21,11 @@ logger = get_logger("MaaFW 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     task_info: object | None = None,
-    user_config: Any | None = None,
+    user_config: UserNotificationConfig | None = None,
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
 ) -> DispatchResult:
@@ -49,7 +50,7 @@ async def push_notification(
     if mode == "代理结果":
         return await push_proxy_result(
             title=title,
-            message=message,
+            report=TaskResultReport.from_message(message),
             task_info=task_info,
             images=images,
             include_system=include_system,
@@ -62,7 +63,7 @@ async def push_notification(
 async def _push_statistics(
     title: str,
     message: dict,
-    user_config: Any | None,
+    user_config: UserNotificationConfig | None,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。

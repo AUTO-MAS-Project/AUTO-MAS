@@ -121,7 +121,8 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 ## 任务通知编排
 
 ```text
-task.notify_core：专项结果、报告模板与图片
+专项边界：既有模式与专项字典 -> TaskResultReport / NotifyPayload
+  -> task.notify_core：类型明确的结果或统计投递
   -> core.task_report：策略快照、状态适配与外部能力装配
   -> core.notification_report：等待、摘要去重、迟到补发
        -> ReportRenderer：摘要、正文组合和独立社区内容
@@ -151,6 +152,13 @@ task.notify_core：专项结果、报告模板与图片
 
 社区格式化和报告摘要组合只依赖显式数据，不读取配置或修改任务状态。专项仍
 拥有自己的报告内容与模板，不在通用投递器中识别专项或签到业务。
+
+共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量、结果和摘要意图
+都是明确字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
+参与共享发送决策。统计入口只接收已生成的 `NotifyPayload`。旧模式与专项字典
+留在各自适配入口，并用有限 `TaskNoticeMode` 标注；共享层不再按字符串模式解析
+任意字典。用户通知配置协议描述实际的只读分组属性，不要求配置实例提供旧式
+get/set；渠道仅通过宿主的 `TargetConfigView` 获取字段。
 
 ## 独立社区通知与日历
 

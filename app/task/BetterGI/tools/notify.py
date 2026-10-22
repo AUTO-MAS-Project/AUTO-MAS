@@ -25,6 +25,7 @@ from app.core.notify import (
 )
 from app.models.config import BetterGIUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
@@ -77,7 +78,7 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: BetterGIUserConfig | None = None,
@@ -127,4 +128,6 @@ async def push_notification(
 
     # 与其余专项一致：正文模板差异保留在本模块（default general_result.html），
     # 推送时机、社区签到摘要注入、渠道级重试与已送达渠道去重交共用核心。
-    return await push_proxy_result(title=title, message=message, task_info=task_info)
+    return await push_proxy_result(
+        title=title, report=TaskResultReport.from_message(message), task_info=task_info
+    )

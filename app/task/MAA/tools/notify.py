@@ -21,6 +21,7 @@
 
 from collections.abc import Sequence
 from functools import cache
+from typing import Literal
 
 from app.core.notify import (
     DispatchResult,
@@ -34,6 +35,7 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
@@ -101,7 +103,7 @@ def _statistic_text(message: dict) -> str:
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode | Literal["公招六星"],
     title: str,
     message: dict,
     user_config: MaaUserConfig | None,
@@ -120,7 +122,7 @@ async def push_notification(
     if mode == "代理结果":
         return await push_proxy_result(
             title=title,
-            message=message,
+            report=TaskResultReport.from_message(message),
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,

@@ -48,6 +48,7 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.notification_report import TaskResultData
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.MaaFW.tools.backup_archive import (
@@ -1927,7 +1928,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,

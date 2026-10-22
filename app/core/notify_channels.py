@@ -30,6 +30,7 @@ from app.config import config_manager
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
     CommandExecutor,
+    NotificationSourceConfig,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -90,7 +91,7 @@ _registry: ChannelRegistry | None = None
 class TargetConfigView:
     """只将 Notify 字段和目标集合暴露给内置渠道。"""
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: NotificationSourceConfig) -> None:
         self.__config = config
 
     def get(self, group: str, name: str) -> Any:

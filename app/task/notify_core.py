@@ -18,18 +18,17 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""各专项通知工具共用的核心原语：模式分发、报告投递与失败截图资源转换。
+"""各专项通知工具共用的核心原语：强类型报告投递与失败截图资源转换。
 
-「代理结果」报告全专项统一走 ``push_proxy_result``；「统计信息」报告的投递
-（模板渲染 + ``statistic_targets``）由 ``push_task_notice`` 统一负责，专项侧
-只留下自己的结果文本——字段形状由各上游的结果结构决定，属于专项特色。
+「代理结果」接收 ``TaskResultReport``；「统计信息」接收已生成的 ``NotifyPayload``。
+模式识别、专项结果字典与模板扩展留在专项边界，共享层只消费明确的报告契约。
 
 失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
 ``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
 """
 
 import io
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -47,55 +46,26 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
+from app.models.notification_channel import UserNotificationConfig
+from app.models.notification_report import ReportScreenshot, TaskResultReport
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
 
 logger = get_logger("任务通知核心")
 
 
-async def push_task_notice(
-    mode: str,
-    title: str,
-    message: dict,
-    user_config: Any | None,
-    task_info: object | None = None,
-    *,
-    statistics_text: Callable[[], str],
+async def push_statistics_report(
+    *, payload: NotifyPayload, user_config: UserNotificationConfig | None
 ) -> DispatchResult:
-    """按 ``mode`` 分发任务报告；未识别的模式返回空结果。
+    """投递专项已生成的统计内容，不接收模式或专项字典。"""
 
-    各专项的 ``notify`` 模块只声明统计信息的正文，模式分发、模板渲染与
-    投递目标（全局渠道 + 用户独立渠道）都在这里统一，免得每个专项各写一份。
-
-    Args:
-        mode: ``"代理结果"``（任务级）或 ``"统计信息"``（用户级）。
-        title: 通知标题。
-        message: 各模式所需字段；代理结果见 ``push_proxy_result``。
-        user_config: 统计信息的用户通知配置，决定用户独立渠道。
-        task_info: 任务信息，代理结果模式用于签到汇总。
-        statistics_text: 统计信息的纯文本正文。只在统计信息模式下调用，
-            代理结果的消息缺少这些字段也不会触发。
-    """
-
-    if mode == "代理结果":
-        return await push_proxy_result(
-            title=title, message=message, task_info=task_info
-        )
-
-    if mode != "统计信息":
-        return DispatchResult()
-
-    message_html = get_notification_template("general_statistics.html").render(message)
-    return await dispatch(
-        NotifyPayload(title=title, text=statistics_text(), html=message_html),
-        statistic_targets(user_config),
-    )
+    return await dispatch(payload, statistic_targets(user_config))
 
 
 async def push_proxy_result(
     *,
     title: str,
-    message: dict,
+    report: TaskResultReport,
     task_info: object | None = None,
     result_template: str = "general_result.html",
     signature_sep: str = "\n\n",
@@ -108,8 +78,7 @@ async def push_proxy_result(
 
     Args:
         title: 通知标题。
-        message: 需含 start_time / end_time / completed_count /
-            uncompleted_count / result 字段。
+        report: 已在专项边界固定公共字段的任务报告。
         task_info: 任务信息，用于签到汇总的渠道级重试。
         result_template: 结果 HTML 模板名，MAA 用 MAA_result.html。
         signature_sep: 签名分隔符，默认与 NotifyPayload 缺省一致；MAA 只空一行。
@@ -120,39 +89,39 @@ async def push_proxy_result(
             需要更新）时传 False，免得同一件事弹两次。
     """
 
-    report = prepare_task_report(task_info)
-    if not report.should_send(
-        uncompleted_count=message["uncompleted_count"],
-        embedded_summary=bool(message.get("game_sign_summary", False)),
+    prepared = prepare_task_report(task_info)
+    if not prepared.should_send(
+        uncompleted_count=report.uncompleted_count,
+        embedded_summary=report.embedded_summary,
     ):
         if logger is not None and skip_debug_message:
             logger.debug(skip_debug_message)
         return DispatchResult()
 
     message_text = (
-        f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
-        f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
-        f"{message['result']}"
+        f"任务开始时间: {report.start_time}, 结束时间: {report.end_time}\n"
+        f"已完成数: {report.completed_count}, 未完成数: {report.uncompleted_count}\n\n"
+        f"{report.result}"
     )
     template = get_notification_template(result_template)
     counts = (
-        f"已完成用户数: {message['completed_count']}, "
-        f"未完成用户数: {message['uncompleted_count']}"
+        f"已完成用户数: {report.completed_count}, "
+        f"未完成用户数: {report.uncompleted_count}"
     )
     summary_text = (
-        report.community_summary().text
-        if task_info is not None and message.get("game_sign_summary")
+        prepared.community_summary().text
+        if task_info is not None and report.embedded_summary
         else ""
     )
     # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
-    summary_title = message.get("summary_title") or title.replace(
-        "报告", "存在异常" if message["uncompleted_count"] > 0 else "已完成！"
+    summary_title = report.summary_title or title.replace(
+        "报告", "存在异常" if report.uncompleted_count > 0 else "已完成！"
     )
-    return await report.dispatch(
+    return await prepared.dispatch(
         NotifyPayload(
             title=title,
             text=message_text,
-            html=template.render(message),
+            html=template.render(report.template_context()),
             signature_sep=signature_sep,
             summary=NotificationSummary(
                 text=counts,
@@ -261,7 +230,7 @@ def load_screenshot_images(
 
 def screenshot_entries(
     images: Sequence[tuple[str, NotificationImage]],
-) -> list[dict[str, str]]:
+) -> list[ReportScreenshot]:
     """构造失败截图模板使用的资源引用和说明文字。"""
 
     return [

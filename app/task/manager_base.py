@@ -13,6 +13,7 @@ from typing import Literal, overload
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import UserConfigType
+from app.models.notification_report import TaskResultData
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, TaskItem, UserItem
 from app.task.maintenance import (
@@ -133,7 +134,7 @@ class ScriptManagerBase(TaskExecuteBase):
         self,
         *,
         result_text: str | None = None,
-    ) -> dict:
+    ) -> TaskResultData:
         """按专项的用户状态口径组织已有报告字段。"""
         summary = self.collect_user_results()
         mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)

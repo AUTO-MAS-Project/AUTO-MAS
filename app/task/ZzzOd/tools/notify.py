@@ -18,14 +18,17 @@
 
 from app.core.notify import DispatchResult
 from app.models.config import ZzzOdUserConfig
-from app.task.notify_core import push_task_notice
+from app.models.notification import NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.task.notify_core import push_proxy_result, push_statistics_report
 from app.utils import get_logger
+from app.utils.notification_template import get_notification_template
 
 logger = get_logger("ZZZ-OD 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: ZzzOdUserConfig | None,
@@ -35,16 +38,21 @@ async def push_notification(
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    return await push_task_notice(
-        mode,
-        title,
-        message,
-        user_config,
-        task_info,
-        statistics_text=lambda: (
-            f"用户: {message['user_info']}\n"
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"执行结果: {message['user_result']}"
+    if mode == "代理结果":
+        return await push_proxy_result(
+            title=title,
+            report=TaskResultReport.from_message(message),
+            task_info=task_info,
+        )
+    if mode != "统计信息":
+        return DispatchResult()
+
+    message_html = get_notification_template("general_statistics.html").render(message)
+    return await push_statistics_report(
+        payload=NotifyPayload(
+            title=title,
+            text=f"用户: {message['user_info']}\n开始时间: {message['start_time']}\n结束时间: {message['end_time']}\n执行结果: {message['user_result']}",
+            html=message_html,
         ),
+        user_config=user_config,
     )

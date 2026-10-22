@@ -35,6 +35,7 @@ from app.core.notify import (
 )
 from app.models.config import WhimboxUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import get_notification_template
@@ -45,7 +46,7 @@ logger = get_logger("奇想盒 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: WhimboxUserConfig | None = None,
@@ -103,4 +104,6 @@ async def push_notification(
     if mode != "代理结果":
         return DispatchResult()
 
-    return await push_proxy_result(title=title, message=message, task_info=task_info)
+    return await push_proxy_result(
+        title=title, report=TaskResultReport.from_message(message), task_info=task_info
+    )

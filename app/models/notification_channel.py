@@ -18,6 +18,39 @@ CHANNEL_INTERFACE_VERSION = 1
 EmptyPolicy = Literal["send", "warn", "skip"]
 
 
+class NotificationSourceConfig(Protocol):
+    """宿主配置的通知分组；动态渠道字段由 TargetConfigView 投影。"""
+
+    @property
+    def Notify(self) -> object: ...
+
+    @property
+    def Notify_CustomWebhooks(self) -> Any: ...
+
+
+class UserNotificationPolicy(Protocol):
+    @property
+    def Enabled(self) -> bool: ...
+
+    @property
+    def IfSendStatistic(self) -> bool: ...
+
+
+class UserNotificationConfig(NotificationSourceConfig, Protocol):
+    @property
+    def Notify(self) -> UserNotificationPolicy: ...
+
+
+class RecruitmentNotificationPolicy(UserNotificationPolicy, Protocol):
+    @property
+    def IfSendSixStar(self) -> bool: ...
+
+
+class RecruitmentNotificationConfig(NotificationSourceConfig, Protocol):
+    @property
+    def Notify(self) -> RecruitmentNotificationPolicy: ...
+
+
 class ChannelConfig(Protocol):
     """宿主提供的目标配置视图，不暴露全局配置或专项对象。"""
 

@@ -1,13 +1,93 @@
 """任务通知的策略、请求和独立运行状态；不依赖任务执行对象。"""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from types import MappingProxyType
+from typing import Literal, NotRequired, Protocol, TypedDict
 
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
 
 TaskNotificationChange = Literal["results", "delivery"]
+TaskNoticeMode = Literal["代理结果", "统计信息"]
+
+
+class ReportScreenshot(TypedDict):
+    image_ref: str
+    label: str
+
+
+class TaskResultData(TypedDict):
+    """专项边界现有报告字典的公共字段，额外展示字段仍由专项拥有。"""
+
+    start_time: str
+    end_time: str
+    completed_count: int
+    uncompleted_count: int
+    result: str
+    title: NotRequired[str]
+    script_name: NotRequired[str]
+    summary_title: NotRequired[str]
+    game_sign_summary: NotRequired[str | bool]
+    screenshots: NotRequired[list[ReportScreenshot]]
+    push_log: NotRequired[str]
+
+
+class TaskResultHint(TypedDict, total=False):
+    """旧判断入口允许只提供判定所需字段。"""
+
+    uncompleted_count: int
+    game_sign_summary: str | bool
+
+
+@dataclass(frozen=True)
+class TaskResultReport:
+    """共享报告只读取明确字段，专项的模板扩展不参与投递决策。"""
+
+    start_time: str
+    end_time: str
+    completed_count: int
+    uncompleted_count: int
+    result: str
+    summary_title: str | None = None
+    embedded_summary: bool = False
+    template_fields: Mapping[str, object] = field(default_factory=dict, repr=False)
+
+    @classmethod
+    def from_message(cls, message: TaskResultData) -> "TaskResultReport":
+        return cls(
+            start_time=message["start_time"],
+            end_time=message["end_time"],
+            completed_count=message["completed_count"],
+            uncompleted_count=message["uncompleted_count"],
+            result=message["result"],
+            summary_title=message.get("summary_title"),
+            embedded_summary=bool(message.get("game_sign_summary")),
+            template_fields=MappingProxyType(
+                {
+                    key: value
+                    for key, value in message.items()
+                    if key
+                    not in {
+                        "start_time",
+                        "end_time",
+                        "completed_count",
+                        "uncompleted_count",
+                        "result",
+                    }
+                }
+            ),
+        )
+
+    def template_context(self) -> dict[str, object]:
+        return {
+            **self.template_fields,
+            "start_time": self.start_time,
+            "end_time": self.end_time,
+            "completed_count": self.completed_count,
+            "uncompleted_count": self.uncompleted_count,
+            "result": self.result,
+        }
 
 
 @dataclass
