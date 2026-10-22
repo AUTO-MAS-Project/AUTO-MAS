@@ -44,6 +44,7 @@
 import json
 from pathlib import Path
 
+from app.config import ConfigEntry
 from app.utils import get_logger
 from app.utils.config_archive import (
     META_FILE_NAMES,
@@ -278,17 +279,26 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 """枚举字段取值中文词表（对齐编辑页选项；未知取值显示原文）"""
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config: ConfigEntry) -> dict:
+    """按配置分组的 JSON 导出规则读取 MAS 页面核心字段，UUID 引用导出为字符串。
 
     覆盖 Info / Stage / Task 三段的全部 MAS 可配置核心内容；值为 ``None``（配置项
     不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
+        group_config = getattr(config, group)
+        fields = group_config.model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
+        if group == "Task":
+            # export 排除虚拟字段，备份预览仍需保留基建方案名称。
+            fields["InfrastName"] = group_config.InfrastName
         for key in keys:
-            if (value := getattr(getattr(config, group), key)) is not None:
+            if (value := fields[key]) is not None:
                 values[key] = value
     return values
 
