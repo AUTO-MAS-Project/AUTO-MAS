@@ -1,8 +1,7 @@
 """只执行已解析的通知目标；配置、业务状态和发送器装配由宿主负责。"""
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
-from typing import Any
+from collections.abc import Iterable
 
 from app.models.notification import (
     NotificationCapabilities,
@@ -25,48 +24,6 @@ from app.services.notification_rendering import NotificationRendering
 from app.utils import get_logger
 
 logger = get_logger("通知投递")
-
-
-async def _send(
-    target: ChannelTarget,
-    send: Callable[[], Awaitable[Any]],
-    *,
-    attempts: int,
-    retry_delay: float,
-) -> DeliveryFailure | None:
-    """发送单个渠道，并把异常和显式 False 都视作失败。"""
-
-    for attempt in range(1, attempts + 1):
-        try:
-            result = await send()
-            if result is False:
-                raise RuntimeError("通知渠道返回失败状态")
-            return None
-        except Exception as exc:
-            if isinstance(exc, NotificationDeliveryError):
-                kind, retryable = exc.kind, exc.retryable
-            elif isinstance(exc, ValueError):
-                kind, retryable = "configuration", False
-            elif isinstance(exc, (OSError, TimeoutError, ConnectionError)):
-                kind, retryable = "transport", True
-            else:
-                kind, retryable = "unknown", True
-            failure = DeliveryFailure(
-                label=target.label,
-                target_id=target.id,
-                stage="send",
-                kind=kind,
-                retryable=retryable,
-                attempts=attempt,
-                error_type=type(exc).__name__,
-            )
-            if attempt == attempts or not retryable:
-                logger.warning(f"{target.label}通知发送失败: {type(exc).__name__}")
-                break
-            logger.warning(f"{target.label}通知发送失败，将重试: {type(exc).__name__}")
-            if retry_delay > 0:
-                await asyncio.sleep(retry_delay)
-    return failure
 
 
 def _recipient_action(
@@ -131,6 +88,7 @@ async def dispatch(
             if ct.label not in skip and ct.id not in skip_ids:
                 groups.setdefault(channel.key, []).append(len(jobs))
                 jobs.append((channel, ct, target.empty_policy))
+    del skip, skip_ids
 
     rendered_cache: dict[
         tuple[NotificationCapabilities, SummaryPolicy, bool], RenderedNotification
@@ -172,6 +130,10 @@ async def dispatch(
                     use_summary_title=target.use_summary_title,
                 )
                 rendered_cache[key] = cached
+                # 等待者已持有各自的锁引用，成功结果可替代本轮的锁登记。
+                del render_locks[key]
+                if not render_locks:
+                    render_locks.clear()  # 释放空字典仍保留的容量。
             return cached
 
     async def deliver(
@@ -222,18 +184,44 @@ async def dispatch(
         for diagnostic in rendered.diagnostics:
             logger.warning(f"{target.label}通知内容降级: {diagnostic}")
 
-        async def send() -> bool | None:
-            return await notifier.send_channel(
-                channel=channel, target=target, rendered=rendered
-            )
-
-        failure = await _send(
-            target=target, send=send, attempts=attempts, retry_delay=retry_delay
-        )
-        if failure is None:
-            return DispatchResult(
-                attempted=1, succeeded=(target.label,), succeeded_ids=(target.id,)
-            )
+        # 在目标协程里重试，发送期间不再额外保留闭包和转发协程。
+        for attempt in range(1, attempts + 1):
+            try:
+                result = await notifier.send_channel(
+                    channel=channel, target=target, rendered=rendered
+                )
+                if result is False:
+                    raise RuntimeError("通知渠道返回失败状态")
+            except Exception as exc:
+                if isinstance(exc, NotificationDeliveryError):
+                    kind, retryable = exc.kind, exc.retryable
+                elif isinstance(exc, ValueError):
+                    kind, retryable = "configuration", False
+                elif isinstance(exc, (OSError, TimeoutError, ConnectionError)):
+                    kind, retryable = "transport", True
+                else:
+                    kind, retryable = "unknown", True
+                failure = DeliveryFailure(
+                    label=target.label,
+                    target_id=target.id,
+                    stage="send",
+                    kind=kind,
+                    retryable=retryable,
+                    attempts=attempt,
+                    error_type=type(exc).__name__,
+                )
+                if attempt == attempts or not retryable:
+                    logger.warning(f"{target.label}通知发送失败: {type(exc).__name__}")
+                    break
+                logger.warning(
+                    f"{target.label}通知发送失败，将重试: {type(exc).__name__}"
+                )
+                if retry_delay > 0:
+                    await asyncio.sleep(retry_delay)
+            else:
+                return DispatchResult(
+                    attempted=1, succeeded=(target.label,), succeeded_ids=(target.id,)
+                )
         return DispatchResult(attempted=1, failed=(target.label,), failures=(failure,))
 
     if len(jobs) == 1 and not unresolved:
