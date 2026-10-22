@@ -8,7 +8,8 @@ license = { file = "LICENSE" }
 authors = [{ name = "AUTO-MAS Team" }]
 dependencies = [
     "loguru==0.7.3",
-    "fastapi==0.116.1",
+    "fastapi==0.133.1",
+    "starlette==1.9.0",
     "pydantic==2.11.7",
     "uvicorn==0.35.0",
     "websockets==15.0.1",
@@ -32,6 +33,7 @@ dependencies = [
     "maafw>=5.12,<6.0",
     "mss==9.0.2",
     "fastapi-mcp==0.4.0",
+    "mcp==1.30.0",
     "json5==0.14.0",
     "protobuf==7.36.1",
     "pyyaml==6.0.3",
