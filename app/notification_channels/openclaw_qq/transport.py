@@ -47,7 +47,10 @@ if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
 from app.models.notification import NotificationImage
-from app.models.notification_channel import QQSessionDependencies
+from app.models.notification_channel import (
+    NotificationDeliveryError,
+    QQSessionDependencies,
+)
 from app.notification_channels.common import RemoteHTTPError, split_text
 from app.utils import get_logger
 from app.utils.platform import secret as platform_secret
@@ -1104,11 +1107,21 @@ class Sender:
                 if attempt == 0 and code in (401, 401001, 11200, 11201):
                     self._invalidate_access_token()
                     continue
-                raise RuntimeError(
-                    f"{operation}失败（错误码 {code}）：{_business_message(response)}"
+                raise NotificationDeliveryError(
+                    f"{operation}失败（错误码 {code}）：{_business_message(response)}",
+                    kind="rate_limited"
+                    if code == 429
+                    else "transport"
+                    if code in (500, 502, 503, 504)
+                    else "rejected",
+                    retryable=code in (429, 500, 502, 503, 504),
                 )
             return response
-        raise RuntimeError(f"{operation}失败：访问令牌重试后仍无效")
+        raise NotificationDeliveryError(
+            f"{operation}失败：访问令牌重试后仍无效",
+            kind="configuration",
+            retryable=False,
+        )
 
     async def _ensure_access_token(self, app_id: str, client_secret: str) -> str:
         """按需换取并缓存官方 access_token。"""
@@ -1126,12 +1139,16 @@ class Sender:
         )
         code = _business_code(response)
         if code not in (None, 0):
-            raise RuntimeError(
-                f"QQ access_token 获取失败：{_business_message(response)}"
+            raise NotificationDeliveryError(
+                f"QQ access_token 获取失败：{_business_message(response)}",
+                kind="configuration",
+                retryable=False,
             )
         access_token = str(response.get("access_token") or "").strip()
         if not access_token:
-            raise RuntimeError("QQ access_token 响应缺少访问令牌")
+            raise NotificationDeliveryError(
+                "QQ access_token 响应缺少访问令牌", kind="rejected", retryable=False
+            )
         expires_in = _as_int(response.get("expires_in")) or 7200
         self._access_token = access_token
         self._access_token_expires_at = monotonic() + max(60, expires_in)
@@ -1249,11 +1266,17 @@ class Sender:
                 f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
             ) from exc
         except httpx.HTTPError as exc:
-            raise RuntimeError("QQ 官方机器人网络请求失败") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人网络请求失败", kind="transport", retryable=True
+            ) from exc
         except ValueError as exc:
-            raise RuntimeError("QQ 官方机器人响应不是合法 JSON") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应不是合法 JSON", kind="rejected", retryable=False
+            ) from exc
         if not isinstance(payload, dict):
-            raise RuntimeError("QQ 官方机器人响应格式无效")
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应格式无效", kind="rejected", retryable=False
+            )
         return payload
 
 

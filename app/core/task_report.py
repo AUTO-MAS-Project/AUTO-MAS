@@ -249,7 +249,7 @@ def prepare_task_report(task_info: object | None = None) -> PreparedTaskReport:
             coordinator.dependencies, state_changed=observer
         )
         if coordinator.completed.is_set():
-            observer(coordinator.state, "results")
+            coordinator.notify_state_changed("results")
     return PreparedTaskReport(
         coordinator=coordinator,
         policy=read_task_report_policy(),

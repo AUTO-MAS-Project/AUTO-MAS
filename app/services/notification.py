@@ -41,6 +41,9 @@ from app.models.notification_channel import (
 )
 from app.models.notification_ports import LocalNotice
 from app.notification_channels.registry import BoundChannels
+from app.utils import get_logger
+
+logger = get_logger("本地通知")
 
 
 class Notification:
@@ -92,12 +95,16 @@ class Notification:
         )
 
     async def send_notice(self, notice: LocalNotice) -> None:
-        await self.push_plyer(
-            title=notice.title,
-            message=notice.message,
-            ticker=notice.ticker,
-            t=notice.duration_seconds,
-        )
+        # 本地提示是附加反馈；保留取消，但不能把已完成的业务改判为失败。
+        try:
+            await self.push_plyer(
+                title=notice.title,
+                message=notice.message,
+                ticker=notice.ticker,
+                t=notice.duration_seconds,
+            )
+        except Exception as exc:
+            logger.warning(f"本地通知发送失败: {type(exc).__name__}")
 
     async def test_webhook(
         self, payload: NotifyPayload, webhook: WebhookTargetSnapshot

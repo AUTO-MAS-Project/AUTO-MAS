@@ -82,10 +82,19 @@ class TaskReportCoordinator:
         self.result_unavailable = results is None
         # 占位项不参与实际通知，空结果仍能结清已发出的待确认提示。
         self.state.results = results or ()
-        if self.dependencies.state_changed is not None:
-            self.dependencies.state_changed(self.state, "results")
         self.completed.set()
+        self.notify_state_changed("results")
         self.schedule_supplement()
+
+    def notify_state_changed(self, change: TaskNotificationChange) -> None:
+        """观察端口只同步外部视图，失败不阻断内部状态推进或结果返回。"""
+
+        if self.dependencies.state_changed is None:
+            return
+        try:
+            self.dependencies.state_changed(self.state, change)
+        except Exception as exc:
+            logger.warning(f"同步任务通知状态失败: {type(exc).__name__}")
 
     @property
     def completion_notice(self) -> str:
@@ -186,8 +195,7 @@ class TaskReportCoordinator:
             self.state.pending = result.failed
             if result.attempted and not result.failed:
                 self.state.summary_consumed = True
-            if self.dependencies.state_changed is not None:
-                self.dependencies.state_changed(self.state, "delivery")
+            self.notify_state_changed("delivery")
             if result.failed:
                 results_saved = bool(self.state.results)
                 self._schedule_feedback(
@@ -294,8 +302,7 @@ class TaskReportCoordinator:
             self.state.pending = with_summary.failed
             if self.state.delivered & channels and not with_summary.failed:
                 self.state.summary_consumed = True
-            if self.dependencies.state_changed is not None:
-                self.dependencies.state_changed(self.state, "delivery")
+            self.notify_state_changed("delivery")
             unresolved = {
                 failure for target in request.targets for failure in target.unresolved
             }
