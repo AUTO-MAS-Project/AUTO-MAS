@@ -21,11 +21,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from copy import deepcopy
 from functools import cache
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, cast
 
-from app.models.notification import DeferredContent
+from app.models.notification import DeferredContent, NotificationContentError
 from app.utils.paths import resource_path
 
 if TYPE_CHECKING:
@@ -49,5 +49,43 @@ def deferred_notification_template(
 ) -> DeferredContent[str]:
     """固定模板数据，在目标选择 HTML 时才读取模板并渲染。"""
 
-    snapshot = deepcopy(dict(context))
-    return DeferredContent(lambda: get_notification_template(name).render(snapshot))
+    error_type = None
+    try:
+        snapshot = _snapshot_template_context(context)
+    except Exception as exc:
+        snapshot = {}
+        error_type = type(exc).__name__
+
+    def render() -> str:
+        if error_type is not None:
+            raise NotificationContentError(error_type)
+        return get_notification_template(name).render(snapshot)
+
+    return DeferredContent(render)
+
+
+def _snapshot_template_context(context: Mapping[str, object]) -> dict[str, object]:
+    """复制普通容器及只读字典；不透明扩展保持原有 Jinja 渲染语义。"""
+
+    memo: dict[int, object] = {}
+
+    def snapshot(value: object) -> object:
+        if id(value) in memo:
+            return memo[id(value)]
+        if isinstance(value, (dict, MappingProxyType)):
+            copied: dict[object, object] = {}
+            memo[id(value)] = copied
+            copied.update((key, snapshot(item)) for key, item in value.items())
+            return copied
+        if isinstance(value, list):
+            items: list[object] = []
+            memo[id(value)] = items
+            items.extend(snapshot(item) for item in value)
+            return items
+        if isinstance(value, tuple):
+            # 元组可经列表间接引用自身，递归中可能已登记最终元组。
+            items_tuple = tuple(snapshot(item) for item in value)
+            return memo.setdefault(id(value), items_tuple)
+        return value
+
+    return cast(dict[str, object], snapshot(dict(context)))
