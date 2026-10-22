@@ -1900,7 +1900,13 @@ class HSRConfig(DomainEntry):
             description="启动游戏时临时覆盖 1920×1080 注册表分辨率",
         )
 
-        Path: FilePath = Field(default_factory=lambda: None, description="游戏路径")
+        # 页面选择游戏目录，同时兼容已保存的 StarRail.exe 路径。
+        Path: Annotated[
+            NativePath | None,
+            path_policy(
+                kind="any", must_exist=True, blocked_dirs=STANDARD_BLOCKED_DIRS
+            ),
+        ] = Field(default_factory=lambda: None, description="游戏路径")
 
         Platform: Literal["Client", "Cloud"] = Field(
             default_factory=lambda: "Client",
