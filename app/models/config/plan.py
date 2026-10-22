@@ -35,6 +35,7 @@ from app.utils.constants import UTC4, game_now
 from .base import DomainEntry
 from .shared import (
     default_baah_plan_key,
+    none_as,
     normalize_baah_plan_key,
     normalize_maaend_plan_key,
     normalize_mss_plan_key,
@@ -84,7 +85,7 @@ class MaaPlanConfig(PlanDaysConfig):
     "MAA计划表配置"
 
     class ALLFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -103,7 +104,7 @@ class MaaPlanConfig(PlanDaysConfig):
     ALL: ALLFields = Field(default_factory=ALLFields)
 
     class FridayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -168,7 +169,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Info: InfoFields = Field(default_factory=InfoFields)
 
     class MondayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -187,7 +188,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Monday: MondayFields = Field(default_factory=MondayFields)
 
     class SaturdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -206,7 +207,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Saturday: SaturdayFields = Field(default_factory=SaturdayFields)
 
     class SundayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -225,7 +226,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Sunday: SundayFields = Field(default_factory=SundayFields)
 
     class ThursdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -244,7 +245,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Thursday: ThursdayFields = Field(default_factory=ThursdayFields)
 
     class TuesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
@@ -263,7 +264,7 @@ class MaaPlanConfig(PlanDaysConfig):
     Tuesday: TuesdayFields = Field(default_factory=TuesdayFields)
 
     class WednesdayFields(ConfigGroup):
-        MedicineNumb: Annotated[int, Field(ge=0, le=9999)] = Field(
+        MedicineNumb: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             description="吃理智药", default_factory=lambda: 0
         )
 
