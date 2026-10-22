@@ -180,13 +180,13 @@ def _strategy_file(root: Path, rel: Path, exts: tuple[str, ...]) -> Path | None:
     不能用 ``Path.with_suffix``：策略名本身可能带点（如 ``foo.bar``），那会把 ``.bar``
     当成后缀替换掉，导致有效策略被误判失效或解析到别的文件。
     """
-    if rel.suffix.lower() in {".json", ".txt"}:
-        candidate = _autofight_candidate(root, rel)
-        if candidate and candidate.is_file() and candidate.suffix.lower() in exts:
-            return candidate
-        return None
+    # 下拉值是无扩展名名称，主体本身也可能以 .json/.txt 结尾，先按名称追加。
     for suffix in exts:
         candidate = _autofight_candidate(root, Path(f"{rel.as_posix()}{suffix}"))
+        if candidate and candidate.is_file():
+            return candidate
+    if rel.suffix.lower() in exts:
+        candidate = _autofight_candidate(root, rel)
         if candidate and candidate.is_file():
             return candidate
     return None
@@ -253,6 +253,15 @@ def resolve_combat_strategy_path(
         return None
     found = _strategy_file(root, rel, exts)
     return str(found) if found else None
+
+
+def resolve_combat_strategy_name(root: Path, name: str) -> str | None:
+    """返回地脉花使用的无扩展名相对名称，保留文件名主体中的点号。"""
+    path = resolve_combat_strategy_path(root, name)
+    if path is None:
+        return None
+    relative = Path(path).relative_to((root / _AUTO_FIGHT_REL_DIR).resolve())
+    return relative.with_suffix("").as_posix()
 
 
 def list_js_scripts(root: Path) -> list[tuple[str, str]]:

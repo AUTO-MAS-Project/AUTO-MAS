@@ -206,7 +206,11 @@ def build_execution_segments(
             # 战斗 4 项整体一项，只在第一个被接管的战斗项处插入一次
             if plan_steps and not combat_placed:
                 _append_synthetic(
-                    [build_combat_project(plan_steps, default_strategy_path)]
+                    [
+                        build_combat_project(
+                            plan_steps, default_strategy_path=default_strategy_path
+                        )
+                    ]
                 )
                 combat_placed = True
             continue
@@ -231,7 +235,11 @@ def build_execution_segments(
             0,
             {
                 "config": None,
-                "projects": [build_combat_project(plan_steps, default_strategy_path)],
+                "projects": [
+                    build_combat_project(
+                        plan_steps, default_strategy_path=default_strategy_path
+                    )
+                ],
             },
         )
     return segments

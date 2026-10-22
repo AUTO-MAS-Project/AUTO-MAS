@@ -153,15 +153,6 @@ function isAbsoluteStrategyPath(value) {
   return /^[A-Za-z]:[\\/]/.test(text) || /^[\\/]{2}/.test(text);
 }
 
-// 地脉花策略名归一：BGI 的 AutoLeyLineOutcropTask 把策略名交给 AutoFightParam 的
-// ResolveStrategyPath，契约是「相对 User/AutoFight 的无扩展名名称」，由 BGI 依次追加
-// .json → .txt。传绝对路径或带扩展名的名字会被查成 "foo.txt.txt" 后报「战斗策略文件
-// 不存在」，故这里只裁掉已知扩展名，子目录名称原样保留。
-function strategyNameOf(value) {
-  const text = String(value || "").trim();
-  return text.replace(/\.(json|txt)$/i, "");
-}
-
 // 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
 // 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
 function domainNameOf(step) {
@@ -239,11 +230,11 @@ async function dispatchCombat(step) {
       // 战斗策略：优先当天行，其次每周默认行，最后才是步骤级 combatStrategyPath（全局兜底）。
       // 留空则完全不设置，由 BGI 沿用 autoFightConfig 的全局策略。
       const strategyName =
-    s.masStrategyOverride ||
-    todayRow.strategy ||
-    defaultRow.strategy ||
-    s.combatStrategyPath ||
-    defaultStrategyPath;
+        s.masStrategyOverride ||
+        todayRow.strategy ||
+        defaultRow.strategy ||
+        s.combatStrategyPath ||
+        defaultStrategyPath;
       // 无对应秘境配置：正常已由主循环 combatSkipReason 前置拦下（同一个 domainNameOf）。
       // 这里保留兜底，但返回 "skipped" 而不是静默 return——静默 return 会让主循环接着打
       // MAS_STEP_DONE，把「没跑的步」记成成功。
@@ -337,8 +328,8 @@ async function dispatchCombat(step) {
       }
       // 队伍配置表「战斗场景」选队结果优先级最高（压过每日/每周行）
       team = s.masTeamOverride || team;
-      // 统一归一成无扩展名名称（含队伍覆盖值；后端对地脉花也不做路径转换）
-      strategy = strategyNameOf(s.masStrategyOverride || strategy);
+      // 后端已归一为无扩展名名称，不能再次裁后缀：名称主体可能本来就以 .txt 结尾。
+      strategy = s.masStrategyOverride || strategy;
       if (isAbsoluteStrategyPath(strategy)) {
         // 只剩手工编辑 Plan 才可能留下路径：按「未填写」处理，交给全局叶子兜底，
         // 而不是让 BGI 把它当名称拼成 AutoFight\C:\... 后报文件不存在。
@@ -418,8 +409,7 @@ async function dispatchCombat(step) {
       // 跳过赋值会留下 Param 构造时 SetDefault() 从全局 autoStygianOnslaughtConfig.fightTeamName
       // 读来的旧值，表现为「右栏已清空却仍切到旧队伍」。
       setProp(p, "fightTeamName", s.fightTeamName || "");
-      const stygianStrategy =
-    s.strategyName || s.combatStrategyPath || defaultStrategyPath;
+      const stygianStrategy = s.strategyName || s.combatStrategyPath || defaultStrategyPath;
       // 幽境 Param 无 combatStrategyPath 属性：setCombatStrategyPath(strategyName) 有副作用，
       // 内部把 "User\AutoFight\<策略名>.txt" 写入 CombatScriptBagPath（源码已核实）。
       // 只调用方法本身即可，不要把返回值赋给属性（会抛 no suitable property 异常）。
@@ -473,10 +463,10 @@ async function dispatchCombat(step) {
       // 首领讨伐策略存于 s.strategyName（由右栏 AutoBossStrategyName 映射而来）；
       // 其余组策略走 s.combatStrategyPath。两者取其一经 setCombatStrategyPath 按策略名重算路径。
       const bossStrategy =
-    s.masStrategyOverride ||
-    s.strategyName ||
-    s.combatStrategyPath ||
-    defaultStrategyPath;
+        s.masStrategyOverride ||
+        s.strategyName ||
+        s.combatStrategyPath ||
+        defaultStrategyPath;
       if (bossStrategy) {
         if (isAbsoluteStrategyPath(bossStrategy)) {
           setProp(p, "combatStrategyPath", bossStrategy);
