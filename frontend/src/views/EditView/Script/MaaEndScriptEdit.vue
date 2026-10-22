@@ -270,7 +270,15 @@
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
-                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+                :help="
+                  !canSetResolution
+                    ? t(
+                        maaEndLaunchSupported
+                          ? 'edit.maaEndResolutionRequiresNative'
+                          : 'edit.maaEndResolutionUnsupported'
+                      )
+                    : undefined
+                "
               >
                 <a-select
                   :value="canSetResolution && maaEndConfig.Game.SetResolution"
@@ -853,7 +861,11 @@ const {
   game: maaEndConfig.Game,
   getScriptId: () => scriptId,
   enabled: () =>
-    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
+    !isInitializing.value &&
+    launchCapabilitiesReady.value &&
+    isWinController.value &&
+    (effectiveLaunchMode.value !== 'MaaEnd' || maaEndLaunchSupported.value),
+  autoDetect: () => effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
@@ -975,7 +987,10 @@ const refreshScript = async () => {
   formData.name = scriptDetail.name
 }
 
+let maaEndOptionsGeneration = 0
 const loadMaaEndOptions = async () => {
+  const generation = ++maaEndOptionsGeneration
+  const requestedPath = maaEndConfig.Info.Path
   launchCapabilitiesReady.value = false
   launchGameControllers.value = []
   gameSettingControllers.value = []
@@ -983,10 +998,14 @@ const loadMaaEndOptions = async () => {
   originalDisplayType.value = null
   controllerOptions.value = []
   controllerProtocols.value = {}
-  if (!maaEndConfig.Info.Path?.trim()) return
+  if (!requestedPath?.trim()) {
+    maaEndOptionsLoading.value = false
+    return
+  }
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)
+    if (generation !== maaEndOptionsGeneration || requestedPath !== maaEndConfig.Info.Path) return
     if (response?.code !== 200) return
 
     launchGameControllers.value = response.launchGameControllers ?? []
@@ -1008,7 +1027,9 @@ const loadMaaEndOptions = async () => {
       }
     }
   } finally {
-    maaEndOptionsLoading.value = false
+    if (generation === maaEndOptionsGeneration && requestedPath === maaEndConfig.Info.Path) {
+      maaEndOptionsLoading.value = false
+    }
   }
 }
 
@@ -1230,6 +1251,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  maaEndOptionsGeneration += 1
   cleanupConfigSession()
 })
 </script>

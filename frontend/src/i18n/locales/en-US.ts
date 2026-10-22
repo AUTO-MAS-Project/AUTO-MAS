@@ -2069,7 +2069,8 @@ export default {
       'Select a valid MaaEnd installation and wait for resources to load to check native launch support.',
     maaEndNativeLaunchUnsupported:
       'This MaaEnd installation or controller has no native launch entry. Use the launcher or MAS instead.',
-    maaEndNativeLauncherHint: 'MaaEnd locates its own launcher and does not use this path.',
+    maaEndNativeLauncherHint:
+      'This MaaEnd installation or controller has no native launch entry. Use MAS or launcher mode instead.',
     maaEndArgumentsUnsupported:
       'These arguments apply only to MAS launch. For other modes, use settings supported by the official launcher.',
     maaEndResolutionUnsupported:

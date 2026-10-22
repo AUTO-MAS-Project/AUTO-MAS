@@ -10,6 +10,7 @@ export function useMaaEndLauncher(options: {
   game: GameConfig
   getScriptId: () => string
   enabled: () => boolean
+  autoDetect?: () => boolean
   save: (patch: Partial<GameConfig>) => Promise<boolean>
 }) {
   const { t } = useI18n()
@@ -27,7 +28,13 @@ export function useMaaEndLauncher(options: {
     detectedPath.value = ''
     error.value = ''
     detecting.value = false
-    if (!options.enabled() || source.value === 'manual' || !options.game.Path) return
+    if (
+      !options.enabled() ||
+      options.autoDetect?.() === false ||
+      source.value === 'manual' ||
+      !options.game.Path
+    )
+      return
     detecting.value = true
     try {
       const result = await Service.getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
@@ -98,13 +105,13 @@ export function useMaaEndLauncher(options: {
   const changeSource = async (value: 'auto' | 'manual') => {
     if (value === source.value) return
     if (value === 'manual') await selectFile()
-    else await save({ LauncherPath: '' })
+    else await save({ LauncherPath: null })
   }
 
   const changeLaunchMode = (LaunchMode: GameConfig['LaunchMode']) => save({ LaunchMode })
 
   watch(
-    () => [options.enabled(), options.game.Path, options.game.LauncherPath],
+    () => [options.enabled(), options.autoDetect?.(), options.game.Path, options.game.LauncherPath],
     () => void refresh(),
     { immediate: true }
   )

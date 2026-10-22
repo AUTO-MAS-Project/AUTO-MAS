@@ -144,9 +144,17 @@ def _describe_maaend_pretask_failure(
     if task_name == _MAAEND_LAUNCH_GAME_PRETASK:
         hints = (
             (
+                "无法找到启动器",
+                "MaaEnd 未能找到官方启动器，请在 MAS 游戏设置中手动选择 Launcher.exe 后重试。",
+            ),
+            (
+                "填写的 launcher.exe 路径无效",
+                "MaaEnd 启动器路径无效，请在 MAS 或 MaaEnd 原生配置中重新选择 Launcher.exe。",
+            ),
+            (
                 "failed to find launcher install directory",
                 "MaaEnd 未能找到官方启动器安装目录。请检查 MaaEnd 的区服选择和启动器安装记录，"
-                "或切换为「启动器启动」/「MAS 启动」。MaaEnd 启动不使用 MAS 中配置的启动器路径。",
+                "新版 MaaEnd 可在 MAS 中手动指定启动器路径，旧版请更新 MaaEnd。",
             ),
             (
                 "failed to start launcher",
@@ -498,11 +506,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         async with _LAUNCHER_AUTOMATION_LOCK:
             if mode == "MaaEnd":
                 logger.info("启动方式为「MaaEnd 启动」")
-                # 仅登记游戏安装目录内可确认的启动器用于收尾，不干预上游路径选择。
-                launcher_path = await asyncio.to_thread(
-                    discover_launcher_exe,
-                    Path(str(self.script_config.Game.Path)),
-                )
+                # 手选路径与上游启动入口共用；未指定时保留 MaaEnd 原生定位方式。
+                if self.script_config.Game.LauncherPath:
+                    launcher_path = self._launcher_path()
+                else:
+                    launcher_path = await asyncio.to_thread(
+                        discover_launcher_exe,
+                        Path(str(self.script_config.Game.Path)),
+                    )
                 if launcher_path is not None:
                     self.launcher_runtime_path = launcher_path.resolve()
                     _LAUNCHER_OWNERS[self.launcher_runtime_path] = self.launcher_owner
@@ -558,15 +569,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         task_name = self._game_setting_pretask()
         if task_name is None:
             raise RuntimeError("当前 MaaEnd 不支持所选启动方式的游戏设置入口")
-        if (
-            not preserve_running_game
-            and self.mode == self.first_run_mode
-            and self.script_config.Game.SetResolution
-        ):
-            self._read_original_game_settings()
-            # 新版检测游戏已运行会直接返回，应用设置前须先关闭游戏。
-            # 调用方持有启动器锁；此处不能再次获取同一把锁。
-            await self._kill_game_process_unlocked()
         interface = load_interface_model(self.maaend_root_path)
         controller_name = str(self.script_config.Game.ControllerType)
         controller = next(
@@ -580,8 +582,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         resource = _select_resource(interface, "", controller)
         skipped: list[str] = []
         # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
+        setting_options = self.launcher_game_setting_options.copy()
+        if (
+            task_name == _MAAEND_LAUNCH_GAME_PRETASK
+            and self.script_config.Game.LauncherPath
+        ):
+            launcher_path = self._launcher_path()
+            if launcher_path is not None:
+                await asyncio.to_thread(verify_launcher_signature, launcher_path)
+                # 仅覆盖传给上游的本轮参数，不固化到原生或 MAS 配置来源。
+                setting_options["LaunchGamePCLauncherPath"] = {
+                    "type": "select",
+                    "value": "Manual",
+                }
+                setting_options["LaunchGamePCLauncherExe"] = {
+                    "type": "input",
+                    "values": {"LauncherExe": str(launcher_path)},
+                }
         values = _mxu_option_values(
-            self.launcher_game_setting_options,
+            setting_options,
             build_task_option_maps(interface)[task_name],
             "游戏启动设置",
             _Labels(interface, None),
@@ -611,6 +630,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             raise RuntimeError(
                 "当前 MaaEnd 不支持此控制器的游戏启动设置，请更新 MaaEnd"
             )
+        if (
+            not preserve_running_game
+            and self.mode == self.first_run_mode
+            and self.script_config.Game.SetResolution
+        ):
+            self._read_original_game_settings()
+            # 路径、签名与预任务参数全部就绪后再关闭游戏，校验失败不打断现有游戏。
+            # 新版检测游戏已运行会直接返回；调用方持有启动器锁，此处不能再次获取。
+            await self._kill_game_process_unlocked()
         await push_dispatch_log(
             self.script_info,
             "正在由 MaaEnd 启动游戏..."
