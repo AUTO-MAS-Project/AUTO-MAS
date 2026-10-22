@@ -70,99 +70,114 @@ async def dispatch(
     skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
     notifier: Notifier,
+    concurrent: bool = True,
 ) -> DispatchResult:
-    """向所有目标分发通知，返回实际尝试/成功/失败渠道。
+    """按渠道独立投递并按输入顺序汇总，取消时回收本轮全部子任务。
 
-    ``skip_channels`` 中的渠道不会被发送（也不计入尝试次数），用于只向
-    尚未送达的渠道重试，避免已成功渠道收到重复内容。
-    ``skip_channel_ids`` 按稳定 ID 跳过，不受 Webhook 同名或改名影响。
-    ``notifier`` 由宿主注入；本模块不读取全局配置或查找通知单例。
+    目录及目标解析失败不计 attempted，也不能因跳过已送达 ID 而消失。
+    事务内调用由宿主传 concurrent=False，保持同 Task 的配置提交语义。
     """
-
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
 
-    sender = notifier
-
     skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
-    succeeded: list[str] = []
-    succeeded_ids: list[str] = []
-    failed: list[str] = []
-    attempted = 0
-    catalog_failures: list[str] = []
+    unresolved: list[str] = []
+    groups: dict[str, list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]]] = {}
+    index = 0
+    for target in targets:
+        for failure in target.unresolved:
+            if failure not in unresolved:
+                unresolved.append(failure)
+        for channel, ct in target.channels:
+            if ct.label not in skip and ct.id not in skip_ids:
+                groups.setdefault(channel.key, []).append(
+                    (index, channel, ct, target.empty_policy)
+                )
+            index += 1
 
-    async def attempt(
-        channel: str,
-        channel_impl: NotifyChannel,
-        channel_target: ChannelTarget,
-        *,
-        channel_id: str | None = None,
-    ) -> None:
-        nonlocal attempted
-        delivery_id = channel_id or channel
-        if channel in skip or delivery_id in skip_ids:
-            return
-        attempted += 1
+    async def deliver(
+        channel: NotifyChannel, target: ChannelTarget, policy: EmptyPolicy
+    ) -> DispatchResult:
+        # None 表示渠道不做空接收者判定，不能与空串共用真值判断。
+        if target.empty_recipient is not None:
+            should_send, missing = _recipient_action(
+                target.empty_recipient,
+                policy,
+                channel=target.label,
+                hint=target.empty_hint,
+            )
+            if not should_send:
+                return DispatchResult(
+                    attempted=int(missing), failed=(target.label,) if missing else ()
+                )
         try:
             rendered = render_for_target(
                 payload,
-                channel_target.capabilities,
-                summary_policy=channel_target.summary_policy,
-                use_summary_title=channel_target.use_summary_title,
+                target.capabilities,
+                summary_policy=target.summary_policy,
+                use_summary_title=target.use_summary_title,
             )
         except Exception as exc:
-            logger.warning(f"{channel}通知内容准备失败: {exc}")
-            failed.append(channel)
-            return
+            logger.warning(f"{target.label}通知内容准备失败: {exc}")
+            return DispatchResult(attempted=1, failed=(target.label,))
         for diagnostic in rendered.diagnostics:
-            logger.warning(f"{channel}通知内容降级: {diagnostic}")
+            logger.warning(f"{target.label}通知内容降级: {diagnostic}")
 
-        async def send() -> Any:
-            return await sender.send_channel(channel_impl, channel_target, rendered)
+        async def send() -> bool | None:
+            return await notifier.send_channel(channel, target, rendered)
 
-        if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
-            succeeded.append(channel)
-            succeeded_ids.append(delivery_id)
-        else:
-            failed.append(channel)
+        if await _send(target.label, send, attempts=attempts, retry_delay=retry_delay):
+            return DispatchResult(
+                attempted=1, succeeded=(target.label,), succeeded_ids=(target.id,)
+            )
+        return DispatchResult(attempted=1, failed=(target.label,))
 
-    def miss(channel: str) -> None:
-        nonlocal attempted
-        if channel in skip or channel in skip_ids:
-            return
-        attempted += 1
-        failed.append(channel)
+    async def send_group(
+        jobs: list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]],
+    ) -> list[tuple[int, DispatchResult]]:
+        results = []
+        for index, channel, target, policy in jobs:
+            result = await deliver(channel, target, policy)
+            results.append((index, result))
+        return results
 
-    for target in targets:
-        # 跳过已送达 ID 不能消除目录不完整；不伪造目标、发送或递增尝试数。
-        for failure in target.unresolved:
-            if failure not in catalog_failures:
-                catalog_failures.append(failure)
-        for channel, ct in target.channels:
-            should_send = True
-            # None 表示该渠道不做空值判定（系统通知 / Koishi / QQ / Webhook），
-            # 不能进 _recipient_action：None 与空串同判真值会把它们在 warn 下误记失败。
-            if ct.empty_recipient is not None:
-                should_send, missing = _recipient_action(
-                    ct.empty_recipient,
-                    target.empty_policy,
-                    channel=ct.label,
-                    hint=ct.empty_hint,
-                )
-                if missing:
-                    miss(ct.label)
-            if should_send:
-                await attempt(
-                    ct.label,
-                    channel,
-                    ct,
-                    channel_id=ct.id,
-                )
+    if not concurrent or len(groups) <= 1:
+        # 不建子 Task；配置事务的所有者必须与渠道内部提交者相同。
+        jobs = sorted(
+            (job for group in groups.values() for job in group), key=lambda job: job[0]
+        )
+        batches = [await send_group(jobs)]
+    else:
+        semaphore = asyncio.Semaphore(4)
 
+        async def send_bounded(
+            jobs: list[tuple[int, NotifyChannel, ChannelTarget, EmptyPolicy]],
+        ) -> list[tuple[int, DispatchResult]]:
+            async with semaphore:
+                return await send_group(jobs)
+
+        tasks = [
+            asyncio.create_task(send_bounded(jobs), name=f"notification:{key}")
+            for key, jobs in groups.items()
+        ]
+        try:
+            batches = await asyncio.gather(*tasks)
+        finally:
+            # 子渠道取消也须回收兄弟任务，不能让它们在调用方退出后继续投递。
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    ordered = sorted(
+        (item for batch in batches for item in batch), key=lambda item: item[0]
+    )
+    results = [result for _, result in ordered]
     return DispatchResult(
-        attempted=attempted,
-        succeeded=tuple(succeeded),
-        failed=tuple((*failed, *catalog_failures)),
-        succeeded_ids=tuple(succeeded_ids),
+        attempted=sum(result.attempted for result in results),
+        succeeded=tuple(name for result in results for name in result.succeeded),
+        failed=tuple(name for result in results for name in result.failed)
+        + tuple(unresolved),
+        succeeded_ids=tuple(uid for result in results for uid in result.succeeded_ids),
     )

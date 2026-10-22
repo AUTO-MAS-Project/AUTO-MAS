@@ -29,6 +29,7 @@ from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
+from app.config import config_manager
 from app.core.config import Config
 from app.core.notify_channels import (
     TargetConfigView,
@@ -194,6 +195,7 @@ async def dispatch(
         skip_channels=skip_channels,
         skip_channel_ids=skip_channel_ids,
         notifier=Notify if notifier is None else notifier,
+        concurrent=not config_manager.in_transaction,
     )
 
 
