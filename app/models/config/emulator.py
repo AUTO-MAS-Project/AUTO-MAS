@@ -66,9 +66,10 @@ class EmulatorConfig(DomainEntry):
     "模拟器配置"
 
     class InfoFields(ConfigGroup):
-        Type: Literal["general", "mumu", "ldplayer", "emulator2"] = Field(
-            default_factory=lambda: "general", description="模拟器类型"
-        )
+        Type: Annotated[
+            Literal["general", "mumu", "ldplayer", "emulator2"],
+            legacy(group="Data", name="Type"),
+        ] = Field(default_factory=lambda: "general", description="模拟器类型")
 
         Baselines: JsonDictString = Field(
             default_factory=lambda: "{}",

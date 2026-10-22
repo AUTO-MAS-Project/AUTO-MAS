@@ -256,9 +256,10 @@ class MaaUserConfig(DomainEntry):
             none_as(0),
         ] = Field(default_factory=lambda: 0, description="理智药数量")
 
-        SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = Field(
-            default_factory=lambda: "0", description="连战次数"
-        )
+        SeriesNumb: Annotated[
+            Literal["0", "6", "5", "4", "3", "2", "1", "-1"],
+            legacy(group="Info", name="SeriesNumb"),
+        ] = Field(default_factory=lambda: "0", description="连战次数")
 
         Stage: Annotated[str, legacy(group="Info", name="Stage")] = Field(
             default_factory=lambda: "-", description="主关卡"
@@ -309,22 +310,28 @@ class MaaUserConfig(DomainEntry):
             description="优先刷取的活动关卡序号",
         )
 
-        Annihilation: Literal[
-            "Close",
-            "Annihilation",
-            "Chernobog@Annihilation",
-            "LungmenOutskirts@Annihilation",
-            "LungmenDowntown@Annihilation",
+        Annihilation: Annotated[
+            Literal[
+                "Close",
+                "Annihilation",
+                "Chernobog@Annihilation",
+                "LungmenOutskirts@Annihilation",
+                "LungmenDowntown@Annihilation",
+            ],
+            legacy(group="Info", name="Annihilation"),
         ] = Field(default_factory=lambda: "Annihilation", description="剿灭模式")
 
-        AnnihilationStartWeekday: Literal[
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
+        AnnihilationStartWeekday: Annotated[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ],
+            legacy(group="Info", name="AnnihilationStartWeekday"),
         ] = Field(default_factory=lambda: "Monday", description="剿灭开始星期")
 
         CultivateAutoRaise: bool = Field(
@@ -410,9 +417,10 @@ class MaaUserConfig(DomainEntry):
             description="是否更换主题（主题名称在 MAA 侧配置，MAS 仅透传）",
         )
 
-        InfrastMode: Literal["Normal", "Rotation", "Custom"] = Field(
-            default_factory=lambda: "Normal", description="基建模式"
-        )
+        InfrastMode: Annotated[
+            Literal["Normal", "Rotation", "Custom"],
+            legacy(group="Info", name="InfrastMode"),
+        ] = Field(default_factory=lambda: "Normal", description="基建模式")
 
         InfrastName: Annotated[
             Virtual[str], legacy(group="Info", name="InfrastName")
