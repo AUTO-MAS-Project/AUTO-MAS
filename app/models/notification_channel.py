@@ -15,6 +15,7 @@ from app.models.notification import (
 SCOPE_GLOBAL = "global"
 SCOPE_USER = "user"
 CHANNEL_INTERFACE_VERSION = 1
+EmptyPolicy = Literal["send", "warn", "skip"]
 
 
 class ChannelConfig(Protocol):
@@ -131,3 +132,45 @@ class NotifyChannel:
 
 def target_prefix(scope: str) -> str:
     return "全局" if scope == SCOPE_GLOBAL else "用户"
+
+
+@dataclass(frozen=True)
+class NotifyTarget:
+    """已解析的投递目标；目录和目标解析失败均保留给本次结果。"""
+
+    channels: tuple[tuple[NotifyChannel, ChannelTarget], ...] = ()
+    empty_policy: EmptyPolicy = "send"
+    catalog_failures: tuple[str, ...] = ()
+    preparation_failures: tuple[str, ...] = ()
+
+    @property
+    def unresolved(self) -> tuple[str, ...]:
+        """尚未解析出目标的失败，不伪造一次实际投递。"""
+        return tuple(
+            dict.fromkeys((*self.catalog_failures, *self.preparation_failures))
+        )
+
+
+@dataclass(frozen=True)
+class DispatchResult:
+    """分发结果；零目标和全跳过均不表示已送达。
+
+    attempted 只统计进入投递处理的目标，目录或目标解析失败不增加计数。
+    succeeded/failed 保留显示名称，succeeded_ids 用于按稳定 ID 补发。
+    """
+
+    attempted: int = 0
+    succeeded: tuple[str, ...] = ()
+    failed: tuple[str, ...] = ()
+    succeeded_ids: tuple[str, ...] = ()
+
+
+class Notifier(Protocol):
+    """统一投递面；渠道内部的传输方法不进入公共协议。"""
+
+    async def send_channel(
+        self,
+        channel: NotifyChannel,
+        target: ChannelTarget,
+        rendered: RenderedNotification,
+    ) -> bool | None: ...

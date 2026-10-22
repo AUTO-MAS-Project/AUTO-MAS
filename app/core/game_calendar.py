@@ -353,7 +353,7 @@ class _GameCalendar:
                     self._save_schedule()
                     continue
                 if target_ids.issubset(reminder.delivered):
-                    reminder.completed = not target.catalog_failures
+                    reminder.completed = not target.unresolved
                     if not reminder.completed:
                         reminder.next_attempt_at = now + timedelta(
                             seconds=CALENDAR_RETRY_INTERVAL_SECONDS
@@ -401,7 +401,7 @@ class _GameCalendar:
                             dict.fromkeys((*reminder.delivered, *result.succeeded_ids))
                         )
                         reminder.completed = (
-                            not target.catalog_failures
+                            not target.unresolved
                             and target_ids.issubset(reminder.delivered)
                         )
                     if result.failed:

@@ -414,7 +414,7 @@ async def _dispatch_task_report(
             if delivered & channels and not with_summary.failed:
                 mark_task_community_summary_consumed(task_info)
         catalog_failures = {
-            failure for target in targets for failure in target.catalog_failures
+            failure for target in targets for failure in target.unresolved
         }
         result = DispatchResult(
             attempted=with_summary.attempted + without_summary.attempted,
