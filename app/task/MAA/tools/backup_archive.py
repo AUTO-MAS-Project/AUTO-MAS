@@ -286,6 +286,8 @@ def read_overlay_values(config: ConfigEntry) -> dict:
     不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
         group_config = getattr(config, group)
