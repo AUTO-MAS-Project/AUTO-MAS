@@ -78,32 +78,15 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
         ("Configurations", "Default", "Gui", "StartUpSettings", "StartEmulator"),
         False,
     ),
-    ("gui.json", ("Configurations", "Default", "Start.StartGame"), "False"),
-    ("gui.json", ("Configurations", "Default", "Start.RunDirectly"), "False"),
-    (
-        "gui.json",
-        ("Configurations", "Default", "Start.OpenEmulatorAfterLaunch"),
-        "False",
-    ),
     # 调起 MAA 的 GUI 必有人要操作界面，启动即最小化恒为关——否则用户自己
-    # 设过"启动时最小化"的，配置会话打开就是缩在托盘里。gui.json 的
-    # Start.MinimizeDirectly 与 gui.new.json 的 Gui.MinimizeOnStartup 是同一
-    # 开关的新旧两通道（均为 MAA 真实键，native 池 3/3 实证），必须同时压住。
-    # 会话级覆盖，回写前还原，不进 base。
-    (
-        "gui.json",
-        ("Global", "Start.MinimizeDirectly"),
-        "False",
-    ),
+    # 设过"启动时最小化"的，配置会话打开就是缩在托盘里。会话级覆盖，回写前还原，
+    # 不进 base。
     (
         "gui.new.json",
         ("Gui", "MinimizeOnStartup"),
         False,
     ),
     # 更新由 MAS 的更新流程接管，配置会话只临时关闭，退出时恢复原值。
-    ("gui.json", ("Global", "VersionUpdate.ScheduledUpdateCheck"), "False"),
-    ("gui.json", ("Global", "VersionUpdate.AutoDownloadUpdatePackage"), "False"),
-    ("gui.json", ("Global", "VersionUpdate.AutoInstallUpdatePackage"), "False"),
     ("gui.new.json", ("Update", "CheckOnSchedule"), False),
     ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
     ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
@@ -302,10 +285,8 @@ class ScriptConfigTask(TaskExecuteBase):
             ),
         )
 
-        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
-            "TaskQueue"
-        ]
-        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
+        preset_queue = get_maa_base_preset()["Configurations"]["Default"]["TaskQueue"]
+        base_gui_new_set = read_maa_config_with_fallback(mas_dir)
         base_configurations = base_gui_new_set.get("Configurations")
         repaired_queues = 0
         managed_queue = self._uses_managed_queue() and not self.view_only
@@ -332,15 +313,11 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；下方用预设补齐队列。
-        gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
-        gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
+        gui_new_set = read_maa_config_with_fallback(self.maa_set_path)
 
-        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
-        # Default 本身也可能缺失——沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
-        ensure_maa_default_configuration(gui_set, gui_new_set)
-
-        # 各配置部分的引用
-        global_set = gui_set["Global"]
+        # 把生效方案归一为 Default；Default 本身也可能缺失——沿用安装目录配置时
+        # 该文件不由 MAS 生成，兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_new_set)
 
         # 快速配置使用三段预设；关闭快速配置和查看备份时保留来源原队列。
         for configuration in gui_new_set["Configurations"].values():
@@ -361,13 +338,10 @@ class ScriptConfigTask(TaskExecuteBase):
         # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
         # 可配置状态（用户不必先终止队列）。这些是会话级覆盖，回写时还原成原值。
         self._session_startup_restore = _apply_session_startup_overrides(
-            {"gui.json": gui_set, "gui.new.json": gui_new_set}
+            {"gui.new.json": gui_new_set}
         )
 
         # 关闭所有定时
-        for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"  # OLD: 即将移除
-        # NEW: Timers.List[*].IsEnabled = false
         if "Timers" not in gui_new_set:
             gui_new_set["Timers"] = {}
         if "List" not in gui_new_set["Timers"]:
@@ -377,18 +351,11 @@ class ScriptConfigTask(TaskExecuteBase):
                 timer["IsEnabled"] = False
 
         # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"  # OLD: 即将移除
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"  # OLD: 即将移除
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"  # OLD: 即将移除
-        # NEW:
-        gui_new_set.setdefault("Update", {})["CheckOnSchedule"] = False
-        gui_new_set.setdefault("Update", {})["AutoDownloadUpdatePackage"] = False
-        gui_new_set.setdefault("Update", {})["AutoInstallUpdatePackage"] = False
+        update_set = gui_new_set.setdefault("Update", {})
+        update_set["CheckOnSchedule"] = False
+        update_set["AutoDownloadUpdatePackage"] = False
+        update_set["AutoInstallUpdatePackage"] = False
 
-        (self.maa_set_path / "gui.json").write_text(  # OLD: 即将移除
-            json.dumps(gui_set, ensure_ascii=False, indent=4),
-            encoding="utf-8",  # OLD: 即将移除
-        )  # OLD: 即将移除
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
@@ -397,10 +364,7 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
         # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
-        self._maa_config_baseline = {
-            "gui.json": deepcopy(gui_set),
-            "gui.new.json": deepcopy(gui_new_set),
-        }
+        self._maa_config_baseline = {"gui.new.json": deepcopy(gui_new_set)}
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
     async def _notify_config_discarded(

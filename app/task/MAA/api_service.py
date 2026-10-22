@@ -183,7 +183,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return [], "未找到或无法读取 MAA 原生配置", "empty"
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return [], "MAA 原生配置缺少任务队列", "empty"
     for task in queue:
@@ -277,7 +277,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
-    scheme = maa_scheme_name(config_dir, data)
+    scheme = maa_scheme_name(data)
     queue = maa_task_queue(data, scheme)
     if not isinstance(queue, list):
         raise ValueError(f"MAA 配置的方案「{scheme}」缺少任务队列, 无法设置基建班次")
@@ -327,7 +327,7 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return -1
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return -1
     for task in queue:
@@ -413,6 +413,20 @@ async def get_depot_stage_candidates(
         config_path=Config.config_path,
         item_id=item_id,
         proxy=Config.proxy,
+    )
+
+
+async def get_depot_stage_candidates_batch(
+    *, script_id: str, item_ids: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """一次返回编辑页所需材料的关卡候选。"""
+
+    _maa_script_config(script_id)
+
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+    return await depot_cultivate_service.stage_candidates_batch(
+        config_path=Config.config_path, item_ids=item_ids, proxy=Config.proxy
     )
 
 
