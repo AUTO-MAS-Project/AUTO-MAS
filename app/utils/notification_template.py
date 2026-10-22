@@ -72,17 +72,17 @@ def _snapshot_template_context(context: Mapping[str, object]) -> dict[str, objec
     def snapshot(value: object) -> object:
         if id(value) in memo:
             return memo[id(value)]
-        if isinstance(value, (dict, MappingProxyType)):
+        if type(value) is dict or isinstance(value, MappingProxyType):
             copied: dict[object, object] = {}
             memo[id(value)] = copied
             copied.update((key, snapshot(item)) for key, item in value.items())
             return copied
-        if isinstance(value, list):
+        if type(value) is list:
             items: list[object] = []
             memo[id(value)] = items
             items.extend(snapshot(item) for item in value)
             return items
-        if isinstance(value, tuple):
+        if type(value) is tuple:
             # 元组可经列表间接引用自身，递归中可能已登记最终元组。
             items_tuple = tuple(snapshot(item) for item in value)
             return memo.setdefault(id(value), items_tuple)
