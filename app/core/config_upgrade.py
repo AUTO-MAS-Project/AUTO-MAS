@@ -134,16 +134,31 @@ def convert_legacy(
                                     parsed = month.replace(day=15, hour=12, tzinfo=UTC4)
                                 else:
                                     # 旧协议仅这两个字段保存纯时分；迁移不依赖可变的 UI 提示。
-                                    if (type(node).__name__, group_name, name) not in {
+                                    if (type(node).__name__, group_name, name) in {
                                         ("TimeSet", "Info", "Time"),
                                         ("QueueItem", "Schedule", "Time"),
                                     }:
-                                        raise
-                                    # 旧 %H:%M 校验允许小时、分钟未补零，迁移沿用其解析范围。
-                                    parsed = datetime.combine(
-                                        date(2000, 1, 1),
-                                        datetime.strptime(value, "%H:%M").time(),
-                                    )
+                                        # 旧校验允许未补零，迁移沿用其解析范围。
+                                        parsed = datetime.combine(
+                                            date(2000, 1, 1),
+                                            datetime.strptime(value, "%H:%M").time(),
+                                        )
+                                    else:
+                                        # 旧完整日期时间也使用 strptime，合法值未必补零。
+                                        for date_format in (
+                                            "%Y-%m-%d %H:%M:%S",
+                                            "%Y-%m-%d %H:%M",
+                                            "%Y-%m-%d",
+                                        ):
+                                            try:
+                                                parsed = datetime.strptime(
+                                                    value, date_format
+                                                )
+                                            except ValueError:
+                                                continue
+                                            break
+                                        else:
+                                            raise
                         else:
                             raise TypeError("旧日期时间必须为字符串或日期对象")
                         if parsed.utcoffset() is None:
