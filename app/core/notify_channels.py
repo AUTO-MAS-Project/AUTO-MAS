@@ -26,6 +26,7 @@ from __future__ import annotations
 import inspect
 from typing import Any, Mapping
 
+from app.config import config_manager
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
     CommandExecutor,
@@ -113,10 +114,12 @@ class RuntimeConfigView:
         return getattr(self.__config.Notify, name)
 
     async def update(self, values: Mapping[str, Any]) -> None:
-        await self.__config.update(
-            type(self.__config).model_validate({"Notify": dict(values)}),
-            check_visibility=False,
-        )
+        # 机器人凭据、接收模式与目标是成组更新，任一字段被信号拒绝时整体回退。
+        async with config_manager.transaction():
+            await self.__config.update(
+                type(self.__config).model_validate({"Notify": dict(values)}),
+                check_visibility=False,
+            )
 
     def bind(self, name: str, callback: Any) -> None:
         async def on_changed(sender, event):

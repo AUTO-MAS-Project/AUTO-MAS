@@ -2,15 +2,49 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { OpenClawQQGroupsOut } from '../models/OpenClawQQGroupsOut';
 import type { OpenClawQQQrCheckIn } from '../models/OpenClawQQQrCheckIn';
 import type { OpenClawQQQrCheckOut } from '../models/OpenClawQQQrCheckOut';
 import type { OpenClawQQQrStartOut } from '../models/OpenClawQQQrStartOut';
 import type { OpenClawQQStatusOut } from '../models/OpenClawQQStatusOut';
+import type { OpenClawQQTargetIn } from '../models/OpenClawQQTargetIn';
 import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class QqService {
+    /**
+     * 查询 QQ 通知接收位置及自动记录的群
+     * 只返回自动记录的群和已保存的模式，不枚举 QQ 联系人。
+     * @returns OpenClawQQGroupsOut Successful Response
+     * @throws ApiError
+     */
+    public static getGroupsApiSettingOpenclawQqGroupsPost(): CancelablePromise<OpenClawQQGroupsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/openclaw-qq/groups',
+        });
+    }
+    /**
+     * 选择 QQ 通知接收位置
+     * 验证绑定版本后保存通知模式，无需选择群。
+     * @param requestBody
+     * @returns OpenClawQQGroupsOut Successful Response
+     * @throws ApiError
+     */
+    public static setTargetApiSettingOpenclawQqTargetPost(
+        requestBody: OpenClawQQTargetIn,
+    ): CancelablePromise<OpenClawQQGroupsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/openclaw-qq/target',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 查询 QQ 官方机器人绑定状态
      * 返回 QQ 绑定及网关状态，不返回协议凭据。

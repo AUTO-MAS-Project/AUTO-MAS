@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
@@ -31,6 +31,11 @@ const onEscCapture = (event: KeyboardEvent) => {
 }
 // 启停开关在配置弹窗的开关行里，这里只留绑定状态与操作
 const connected = computed(() => !!binding.value.status?.connected)
+const targetOptions = computed(() => [
+  { value: 'c2c', label: binding.value.label('PrivateTarget') },
+  { value: 'group', label: binding.value.label('GroupTarget') },
+  { value: 'all', label: binding.value.label('AllTarget') },
+])
 const statusLabel = computed(() => {
   if (!connected.value) return binding.value.label('Unbound')
   if (binding.value.status?.state === 'reconnecting') {
@@ -45,6 +50,14 @@ const statusColor = computed(() => {
   if (!connected.value) return 'default'
   return binding.value.status?.state !== 'connected' ? 'processing' : 'success'
 })
+let groupsTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => {
+  void binding.value.loadGroups()
+  groupsTimer = setInterval(() => {
+    if (connected.value && !binding.value.open) void binding.value.loadGroups()
+  }, 3000)
+})
+onBeforeUnmount(() => clearInterval(groupsTimer))
 </script>
 
 <template>
@@ -76,7 +89,7 @@ const statusColor = computed(() => {
         <a-space wrap>
           <a-button
             :type="connected ? 'default' : 'primary'"
-            :disabled="binding.statusLoading || binding.unbinding"
+            :disabled="binding.statusLoading || binding.unbinding || binding.targetSaving"
             @click="binding.start"
           >
             <template #icon><QrcodeOutlined /></template>
@@ -89,11 +102,62 @@ const statusColor = computed(() => {
             :get-popup-container="getContainer"
             @confirm="binding.unbind"
           >
-            <a-button danger :loading="binding.unbinding">{{ binding.label('Unbind') }}</a-button>
+            <a-button danger :loading="binding.unbinding" :disabled="binding.targetSaving">{{
+              binding.label('Unbind')
+            }}</a-button>
           </a-popconfirm>
         </a-space>
       </div>
     </div>
+    <a-form v-if="connected" layout="vertical" class="target-form">
+      <a-form-item :label="binding.label('TargetLabel')" html-for="qq-notification-target">
+        <div class="target-row">
+          <a-select
+            id="qq-notification-target"
+            :value="binding.groups?.targetType"
+            :options="targetOptions"
+            :loading="binding.groupsLoading || binding.targetSaving"
+            :disabled="
+              !binding.groups ||
+              binding.groupsLoading ||
+              binding.targetSaving ||
+              binding.unbinding ||
+              binding.open
+            "
+            :get-popup-container="getContainer"
+            class="target-select"
+            @change="(value: unknown) => binding.selectTarget(String(value))"
+          />
+          <a-button
+            :loading="binding.groupsLoading"
+            :disabled="binding.targetSaving || binding.unbinding || binding.open"
+            @click="binding.loadGroups"
+          >
+            <template #icon><ReloadOutlined /></template>
+            {{ binding.label('RefreshGroups') }}
+          </a-button>
+        </div>
+      </a-form-item>
+      <a-alert v-if="binding.groupsError" type="error" show-icon :message="binding.groupsError" />
+      <a-typography-paragraph v-if="binding.groups" class="binding-hint">
+        {{
+          t('setting.notify.openclawQqDiscoveredGroups', {
+            count: binding.groups.groups?.length || 0,
+          })
+        }}
+      </a-typography-paragraph>
+      <a-alert
+        v-if="
+          binding.groups?.targetType !== 'c2c' && binding.groups && !binding.groups.groups?.length
+        "
+        type="info"
+        show-icon
+        :message="binding.label('NoGroupsHint')"
+      />
+      <a-typography-paragraph type="secondary" class="binding-hint">
+        {{ binding.label('GroupHint') }}
+      </a-typography-paragraph>
+    </a-form>
   </div>
   <a-modal
     :open="binding.open"
@@ -143,6 +207,18 @@ const statusColor = computed(() => {
 }
 .binding-hint {
   margin: 0;
+}
+.target-form {
+  margin-top: 16px;
+}
+.target-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.target-select {
+  flex: 1;
+  min-width: 160px;
 }
 .bind-section {
   display: flex;

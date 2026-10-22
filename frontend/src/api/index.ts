@@ -856,10 +856,13 @@ export type { OkwwUserConfig_NotifyInput } from './models/OkwwUserConfig_NotifyI
 export type { OkwwUserConfig_Task } from './models/OkwwUserConfig_Task';
 export type { OkwwUserConfig_TaskInput } from './models/OkwwUserConfig_TaskInput';
 export type { OkwwUserConfigInput } from './models/OkwwUserConfigInput';
+export type { OpenClawQQGroup } from './models/OpenClawQQGroup';
+export { OpenClawQQGroupsOut } from './models/OpenClawQQGroupsOut';
 export type { OpenClawQQQrCheckIn } from './models/OpenClawQQQrCheckIn';
 export type { OpenClawQQQrCheckOut } from './models/OpenClawQQQrCheckOut';
 export type { OpenClawQQQrStartOut } from './models/OpenClawQQQrStartOut';
 export type { OpenClawQQStatusOut } from './models/OpenClawQQStatusOut';
+export { OpenClawQQTargetIn } from './models/OpenClawQQTargetIn';
 export type { OutBase } from './models/OutBase';
 export type { PatternDebugIn } from './models/PatternDebugIn';
 export type { PatternDebugOut } from './models/PatternDebugOut';
