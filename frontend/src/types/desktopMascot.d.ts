@@ -24,6 +24,7 @@ export interface DesktopMascotData {
   idleMessage?: DesktopMascotIdleMessage
   lookFrame?: number | null
   reaction?: 'success' | 'failure' | 'stopped'
+  reactionId?: number
   animation?: {
     imageUrl: string
     columns: number
@@ -202,7 +203,11 @@ export interface DesktopMascotHostAPI {
   ): Promise<void>
   setDesktopMascotActivity(working: boolean, animate: boolean): Promise<void>
   setDesktopMascotIdleMessage(message: DesktopMascotIdleMessage): Promise<void>
-  showDesktopMascotNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): Promise<void>
+  showDesktopMascotNotice(
+    text: string,
+    reaction?: 'success' | 'failure' | 'stopped',
+    key?: string
+  ): Promise<void>
   onDesktopMascotError(callback: () => void): () => void
   onDesktopMascotRefreshIdleMessage(callback: () => void): () => void
 }
@@ -213,6 +218,7 @@ export interface DesktopMascotAPI {
   onUpdated(callback: (update: DesktopMascotUpdate) => void): () => void
   pointer(...args: ['hover'] | ['move' | 'end', number]): void
   startDrag(offset: DesktopMascotDragStart): Promise<boolean>
+  reactionEnded(id: number): void
   imageDecoded(imageUrl: string, pngDataUrl: string): void
   onLookChanged(callback: (frame: number | null) => void): () => void
 }

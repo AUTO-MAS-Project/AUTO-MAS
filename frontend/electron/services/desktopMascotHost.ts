@@ -123,7 +123,8 @@ export function createDesktopMascotHost(options: DesktopMascotHostOptions) {
     startDrag: (sender, offset) => service?.startDrag(sender, offset) ?? false,
     setDecodedImage: (sender, imageUrl, pngDataUrl) =>
       service?.setDecodedImage(sender, imageUrl, pngDataUrl),
-    showNotice: (text, reaction) => service?.showNotice(text, reaction),
+    finishReaction: (sender, id) => service?.finishReaction(sender, id),
+    showNotice: (text, reaction, key) => service?.showNotice(text, reaction, key),
   })
 
   const unmount = (): void => {
