@@ -282,6 +282,12 @@
               <template #icon><DeleteOutlined /></template>
             </a-button>
           </div>
+          <div v-if="domainCatalogError && !domainCatalog.length" class="scene-empty-tip">
+            <span>{{ t('edit.bettergiTeamSceneDomainEmpty') }}</span>
+            <a-button size="small" type="link" @click="emit('reload-domain-catalog')">
+              {{ t('edit.bettergiTeamSceneDomainRetry') }}
+            </a-button>
+          </div>
           <a-button size="small" type="dashed" block @click="addCond('domain')">
             <template #icon><PlusOutlined /></template>
             {{ t('edit.bettergiTeamSceneAddDomain') }}
@@ -389,6 +395,7 @@ const props = defineProps<{
   editable: boolean
   strategyOptions: SelectOption[]
   domainCatalog: Array<{ name: string; region?: string; rewards?: string[] }>
+  domainCatalogError: boolean
   bossCatalog: Array<{ region: string; name: string; label: string }>
   leylineCountryOptions: SelectOption[]
   leylineTypeOptions: SelectOption[]
@@ -397,6 +404,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'save', key: string, value: unknown): void
   (e: 'open-strategy-dir'): void
+  (e: 'reload-domain-catalog'): void
 }>()
 
 const { t } = useI18n()
@@ -928,6 +936,18 @@ defineExpose({ syncFromForm })
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+/* 秘境目录加载失败提示：与「添加条件」按钮同宽，避免下拉为空时无从判断 */
+.scene-empty-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  /* 用主题变量而非固定黑色：暗色主题下 rgba(0,0,0,.45) 几乎不可读 */
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .team-howto-title {

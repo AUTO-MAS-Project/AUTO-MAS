@@ -2380,6 +2380,8 @@ export default {
     bettergiTeamSceneAddBoss: 'Add boss condition',
     bettergiTeamSceneDialogTip:
       'Matching is exact: only teams identical to the actual target of this run are selected.',
+    bettergiTeamSceneDomainEmpty: 'Failed to load the domain catalog. Click "Reload" to retry',
+    bettergiTeamSceneDomainRetry: 'Reload',
     bettergiTeamNameRequired: 'Enter a team name',
     bettergiTeamNameExists: 'A team with this name already exists',
     bettergiGroupMail: 'Collect mail',

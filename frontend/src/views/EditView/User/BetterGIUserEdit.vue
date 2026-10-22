@@ -765,10 +765,12 @@
             :editable="formData.Info.IfUseMasConfig"
             :strategy-options="strategyOptions"
             :domain-catalog="domainCatalog"
+            :domain-catalog-error="domainCatalogError"
             :boss-catalog="AUTO_BOSS_CATALOG"
             :leyline-country-options="LEY_LINE_COUNTRY_OPTIONS"
             :leyline-type-options="LEY_LINE_TYPE_OPTIONS"
             @save="saveField"
+            @reload-domain-catalog="loadDomainCatalog"
             @open-strategy-dir="openBettergiDir('autoFight')"
           />
         </a-form>
@@ -1245,6 +1247,8 @@ const {
   MAS_ONE_DRAGON_SLOT_NAME,
   dragonConfigName,
   domainCatalog,
+  domainCatalogError,
+  loadDomainCatalog,
   dragonSettings,
   dragonSettingsLoading,
   dragonSettingsSaving,
@@ -1700,6 +1704,7 @@ onMounted(async () => {
       loadPathingTree(),
       loadStrategyOptions(),
       loadOneDragonConfigs(),
+      loadDomainCatalog(),
     ])
     await loadUser()
     // 编辑界面进入：归档 BGI 全局配置当前状态（须在 userId 就绪后）
