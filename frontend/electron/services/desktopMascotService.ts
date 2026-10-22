@@ -197,6 +197,8 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       this.displayNotice(notice)
       return
     }
+    // 未关联运行任务的临时进度只即时显示，避免排队后落在任务结果之后。
+    if (!key && !reaction) return
     this.pendingNotices.push(notice)
     this.pendingNotices.sort(
       (left, right) =>
