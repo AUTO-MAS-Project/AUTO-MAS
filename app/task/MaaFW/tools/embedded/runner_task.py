@@ -2261,7 +2261,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return True
         if self.run_plan.controllerType != "Win32" or self.interface_model is None:
             return False
-        if _optional_int(self.script_config.get("Device", "HWnd")):
+        if _optional_int(self.script_config.Device.HWnd):
             return False
         controller = _find_controller(
             self.interface_model, self.run_plan.controllerName
