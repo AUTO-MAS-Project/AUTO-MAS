@@ -66,6 +66,18 @@ const setBusy = (value: boolean) => {
 
 const applyImport = async (content: string) => {
   if (!content.trim()) throw new Error(t('edit.maaCultivateImportEmpty'))
+  // 提前说明等级限制，只有等级目标、没有其他可导入目标时也能看到提示。
+  try {
+    const payload: unknown = JSON.parse(content.trim())
+    if (
+      Array.isArray(payload) &&
+      payload.some(item => item && typeof item === 'object' && 'level' in item)
+    ) {
+      message.warning(t('edit.maaCultivateImportLevelIgnored'))
+    }
+  } catch {
+    // 格式校验和错误提示仍由后端统一处理。
+  }
   const result = await props.importTargets(content)
   if (result.added || result.updated) {
     message.success(
@@ -74,14 +86,6 @@ const applyImport = async (content: string) => {
     emit('imported', result.operatorIds)
   } else if (!result.skipped?.length) {
     message.info(t('edit.maaCultivateImportUnchanged'))
-  }
-  // 后端已校验导入文本；这里只检查等级字段，用于说明被忽略的目标。
-  const payload: unknown = JSON.parse(content.trim())
-  if (
-    Array.isArray(payload) &&
-    payload.some(item => item && typeof item === 'object' && 'level' in item)
-  ) {
-    message.warning(t('edit.maaCultivateImportLevelIgnored'))
   }
   if (result.added || result.updated || !result.skipped?.length) {
     manualOpen.value = false

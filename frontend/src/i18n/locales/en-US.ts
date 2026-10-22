@@ -407,7 +407,7 @@ export default {
     maaCultivateImportSuccess: 'Added {added} operators and updated {updated} operators',
     maaCultivateImportUnchanged: 'These targets already exist; no changes needed',
     maaCultivateImportLevelIgnored:
-      'Operator leveling is not supported yet. Imported level targets were ignored',
+      'Operator leveling is not supported yet. Level targets are ignored during import',
     maaCultivateImportSkipped: 'Skipped {count} entries that could not be imported',
     maaCultivateImportFailed: 'Import failed. Check the backend connection and try again',
     maaCultivateImportEmpty: 'No training targets to import',
