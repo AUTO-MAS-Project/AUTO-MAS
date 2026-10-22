@@ -149,6 +149,14 @@ class MaaEndManager(ScriptManagerBase):
             if launch_mode == "MaaEnd":
                 if controller_name not in loader.pretask_controllers("LaunchGamePC"):
                     return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
+                if script_config.Game.LauncherPath:
+                    try:
+                        resolve_launcher_exe(
+                            Path(str(script_config.Game.Path)),
+                            str(script_config.Game.LauncherPath),
+                        )
+                    except ValueError as error:
+                        return str(error)
             else:
                 # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
                 client_exe = Path(str(script_config.Game.Path or "").strip())
