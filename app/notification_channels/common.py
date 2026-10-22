@@ -36,7 +36,7 @@ def http_delivery_errors() -> Iterator[None]:
 
     try:
         yield
-    except httpx.UnsupportedProtocol as exc:
+    except (httpx.InvalidURL, httpx.UnsupportedProtocol) as exc:
         raise NotificationDeliveryError(
             "通知地址协议不可用", kind="configuration", retryable=False
         ) from exc

@@ -22,7 +22,7 @@
 """任务报告入口：装配策略、通知状态、投递器和任务页面反馈。"""
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any
@@ -109,6 +109,7 @@ def _create_coordinator(
     state: TaskNotificationState,
     task_id: str | None,
     community_pending: bool = False,
+    report_failure: Callable[[DispatchResult], Awaitable[None]] | None = None,
 ) -> TaskReportCoordinator:
     return TaskReportCoordinator(
         state=state,
@@ -118,7 +119,9 @@ def _create_coordinator(
             renderer=DefaultReportRenderer(),
             read_policy=read_task_report_policy,
             prepare_targets=_prepare_community_targets,
-            report_failure=partial(_publish_task_notification_failure, task_id=task_id),
+            report_failure=report_failure
+            if report_failure is not None
+            else partial(_publish_task_notification_failure, task_id=task_id),
             report_supplement_failure=_report_supplement_failure,
             spawn=partial(_spawn_community_notification, task_id=task_id),
         ),
@@ -132,6 +135,11 @@ def create_task_report_coordinator(task_info: TaskItem) -> TaskReportCoordinator
         state=task_info.notification_state,
         task_id=task_info.task_id,
         community_pending=True,
+        report_failure=partial(
+            publish_notification_failure,
+            task_id=task_info.task_id,
+            system_notice=True,
+        ),
     )
 
 
@@ -263,7 +271,19 @@ def prepare_task_report(task_info: object | None = None) -> PreparedTaskReport:
     coordinator = getattr(task_info, "community_sign_notification", None)
     if coordinator is None:
         coordinator = _create_coordinator(
-            state=state, task_id=getattr(task_info, "task_id", None)
+            state=state,
+            task_id=getattr(task_info, "task_id", None)
+            or current_notification_task_id(),
+            report_failure=(
+                partial(
+                    publish_notification_failure,
+                    task_id=getattr(task_info, "task_id", None)
+                    or current_notification_task_id(),
+                    system_notice=True,
+                )
+                if isinstance(task_info, TaskItem) or current_notification_task_id()
+                else None
+            ),
         )
     if task_info is not None and not hasattr(task_info, "notification_state"):
         # 旧对象通过显式观察端口接收结果与投递状态；后台补发沿用同一适配。

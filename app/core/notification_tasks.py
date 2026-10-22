@@ -29,7 +29,7 @@ def spawn_notification(
 
 
 async def publish_notification_failure(
-    result: DispatchResult, *, task_id: str | None
+    result: DispatchResult, *, task_id: str | None, system_notice: bool = False
 ) -> None:
     """统一消费投递失败；页面反馈故障不向业务传播。"""
 
@@ -37,21 +37,28 @@ async def publish_notification_failure(
         return
     failed_channels = tuple(dict.fromkeys(result.failed))
     logger.warning(f"任务通知未送达: {'、'.join(failed_channels)}")
-    if not task_id:
-        return
-
-    from app.core.ws import Publisher, protocol
-    from app.models.schema import WSTaskNoticeData
-
     title = "部分通知发送失败" if result.succeeded else "通知发送失败"
     try:
-        await Publisher.send(
-            id=str(task_id),
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(
-                level="warning", message=f"{title}：{'、'.join(failed_channels)}"
-            ),
-        )
+        if system_notice:
+            # 后台发送可晚于 task.completed；系统常驻订阅不会随任务标签页退订。
+            from app.core.config import Config
+
+            await Config.push_system_notice(
+                level="warning",
+                title=title,
+                lines=[f"发送失败的渠道：{'、'.join(failed_channels)}"],
+            )
+        elif task_id:
+            from app.core.ws import Publisher, protocol
+            from app.models.schema import WSTaskNoticeData
+
+            await Publisher.send(
+                id=str(task_id),
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning", message=f"{title}：{'、'.join(failed_channels)}"
+                ),
+            )
     except Exception as exc:
         logger.warning(f"发送通知失败提示到前端时出现异常: {type(exc).__name__}")
 
@@ -59,7 +66,8 @@ async def publish_notification_failure(
 def consume_notification_result(result: DispatchResult, *, task_id: str | None) -> None:
     if result.failed:
         spawn_notification(
-            publish_notification_failure(result, task_id=task_id), task_id=task_id
+            publish_notification_failure(result, task_id=task_id, system_notice=True),
+            task_id=task_id,
         )
 
 
