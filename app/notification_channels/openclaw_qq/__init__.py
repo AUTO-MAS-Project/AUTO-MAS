@@ -32,23 +32,48 @@ from app.models.notification_channel import (
 )
 from app.models.notification_channel import target_prefix as _prefix
 
-from .transport import Sender
+from .transport import QQTarget, Sender
 
 
 def _openclaw_qq_targets(
     config: ChannelConfig, *, scope: str
 ) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
-    return (
+    app_id = config.get("Notify", "OpenClawQQAppId")
+    target_type = config.get("Notify", "OpenClawQQTargetType")
+    recipients: list[QQTarget] = []
+    if target_type in {"c2c", "all"}:
+        recipients.append(
+            QQTarget(
+                app_id=app_id,
+                target_type="c2c",
+                openid=config.get("Notify", "OpenClawQQTargetOpenId"),
+            )
+        )
+    if target_type in {"group", "all"}:
+        recipients.extend(
+            QQTarget(app_id=app_id, target_type="group", openid=openid)
+            for openid in dict.fromkeys(config.get("Notify", "OpenClawQQGroupOpenIds"))
+            if openid
+        )
+    return tuple(
         ChannelTarget(
-            id=name,
-            label=name,
+            id=(
+                f"{name}:group:{app_id}:{target.openid}"
+                if target.target_type == "group"
+                else name
+            ),
+            label=f"{name} 群 …{target.openid[-12:]}"
+            if target.target_type == "group" and target.openid
+            else name,
+            value=target,
             capabilities=NotificationCapabilities(
                 formats=("text",),
                 image_presentations=frozenset({"rich_media"}),
                 body_title_policy="always",
             ),
-        ),
+        )
+        for target in recipients
     )
 
 
@@ -59,6 +84,7 @@ async def _openclaw_qq_send(
         title=rendered.title,
         content=rendered.content,
         images=rendered.images,
+        target=target.value,
     )
 
 

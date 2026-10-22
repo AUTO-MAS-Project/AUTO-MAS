@@ -5128,6 +5128,20 @@ export default {
       openclawQqSetupHint:
         'After scanning the QR code, add the bot as a friend in the same QQ account before testing notifications. Login details are saved automatically.',
       openclawQqBind: 'Bind with QR code',
+      openclawQqPrivateTarget: 'Private chat',
+      openclawQqGroupTarget: 'Groups',
+      openclawQqAllTarget: 'All',
+      openclawQqTargetLabel: 'Notification destination',
+      openclawQqBindingChanged: 'The bot binding changed. Refresh and select the mode again.',
+      openclawQqTargetError: 'Could not save the notification mode. Refresh to try again.',
+      openclawQqTargetSaved: 'Notification mode saved',
+      openclawQqDiscoveredGroups: '{count} groups discovered automatically',
+      openclawQqNoGroupsHint:
+        'Waiting for groups: add the bot to a group or mention it in an existing group while MAS is online.',
+      openclawQqRefreshGroups: 'Refresh group status',
+      openclawQqGroupHint:
+        'Private chat sends to the bound user; Groups sends to every discovered group; All sends to both. In the latest QQ, the group owner can add their own bot and allow proactive messages. Keep MAS online when adding or mentioning the bot to discover groups. Leaving a group or disabling reception removes it. QQ permissions and rate limits apply.',
+      openclawQqGroupsError: 'Could not load group status. Refresh to try again.',
       openclawQqRebind: 'Bind again',
       openclawQqUnbind: 'Unbind',
       openclawQqUnbindConfirm: 'Unbinding clears the saved QQ login on this device. Continue?',

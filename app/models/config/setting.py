@@ -264,6 +264,24 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: "", description="SMTP 服务器地址"
         )
 
+        OpenClawQQTargetType: Annotated[
+            Literal["c2c", "group", "all"], ui(visibility=UiVisibility.HIDE)
+        ] = Field(default="c2c", description="QQ 官方机器人通知接收位置")
+        OpenClawQQGroupOpenIds: Annotated[
+            list[str],
+            ui(visibility=UiVisibility.HIDE),
+            legacy(
+                group="Notify",
+                name="OpenClawQQGroupOpenId",
+                convert=lambda value: [value] if value else [],
+            ),
+        ] = Field(default_factory=list, description="QQ 官方机器人自动发现的群 OpenID")
+        OpenClawQQRejectedGroupOpenIds: Annotated[
+            list[str], ui(visibility=UiVisibility.HIDE)
+        ] = Field(
+            default_factory=list, description="QQ 官方机器人已明确拒收的群 OpenID"
+        )
+
         SendTaskResultTime: Literal["不推送", "任何时刻", "仅失败时"] = Field(
             default_factory=lambda: "不推送", description="任务结果推送时间"
         )

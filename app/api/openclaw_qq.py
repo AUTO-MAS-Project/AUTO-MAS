@@ -22,11 +22,15 @@
 
 """QQ 官方机器人扫码绑定 API。"""
 
+from datetime import datetime
+from typing import Literal
+
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core.notify_channels import get_channel_sender
 from app.models.schema import OutBase
+from app.notification_channels.openclaw_qq.transport import Sender
 from app.utils import get_logger
 
 
@@ -67,8 +71,102 @@ class OpenClawQQStatusOut(OutBase):
     )
 
 
+class OpenClawQQGroup(BaseModel):
+    """自动记录的群，不包含聊天内容。"""
+
+    openId: str = Field(description="机器人收到事件的群 OpenID")
+    lastSeen: datetime | None = Field(default=None, description="最近发现时间（UTC）")
+
+
+class OpenClawQQGroupsOut(OutBase):
+    """QQ 通知接收位置及自动记录的群。"""
+
+    bindingId: str = Field(default="", description="绑定版本，用于拒绝旧页面保存")
+    targetType: Literal["c2c", "group", "all"] = Field(
+        default="c2c", description="通知接收位置"
+    )
+    groups: list[OpenClawQQGroup] = Field(
+        default_factory=list, description="自动记录的群"
+    )
+    errorCode: str = Field(default="", description="可本地化的错误标识")
+
+
+class OpenClawQQTargetIn(BaseModel):
+    """选择私聊、全部群聊或两者。"""
+
+    bindingId: str = Field(min_length=1, description="查询群列表时返回的绑定版本")
+    targetType: Literal["c2c", "group", "all"] = Field(description="通知接收位置")
+
+
 router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人通知"])
 logger = get_logger("QQ 机器人通知 API")
+
+
+def _groups_out(sender: Sender) -> OpenClawQQGroupsOut:
+    snapshot = sender.groups()
+    return OpenClawQQGroupsOut(
+        bindingId=snapshot.binding_id,
+        targetType=snapshot.target_type,
+        groups=[
+            OpenClawQQGroup(openId=group.openid, lastSeen=group.last_seen)
+            for group in snapshot.groups
+        ],
+    )
+
+
+@router.post(
+    "/groups",
+    summary="查询 QQ 通知接收位置及自动记录的群",
+    response_model=OpenClawQQGroupsOut,
+)
+async def get_groups() -> OpenClawQQGroupsOut:
+    """只返回自动记录的群和已保存的模式，不枚举 QQ 联系人。"""
+
+    try:
+        return _groups_out(get_channel_sender("openclaw_qq"))
+    except Exception:
+        logger.opt(exception=True).warning("查询 QQ 群状态失败")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="查询 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
+
+
+@router.post(
+    "/target", summary="选择 QQ 通知接收位置", response_model=OpenClawQQGroupsOut
+)
+async def set_target(body: OpenClawQQTargetIn = Body(...)) -> OpenClawQQGroupsOut:
+    """验证绑定版本后保存通知模式，无需选择群。"""
+
+    try:
+        sender = get_channel_sender("openclaw_qq")
+        await sender.set_target(
+            binding_id=body.bindingId,
+            target_type=body.targetType,
+        )
+        return _groups_out(sender)
+    except ValueError as exc:
+        error_code = str(exc)
+        messages = {
+            "binding_changed": "机器人绑定已变化，请刷新群列表后重新选择",
+            "not_bound": "请先扫码绑定 QQ 官方机器人",
+        }
+        return OpenClawQQGroupsOut(
+            code=400,
+            status="error",
+            message=messages.get(error_code, "保存 QQ 通知接收位置失败"),
+            errorCode=error_code,
+        )
+    except Exception:
+        logger.opt(exception=True).warning("保存 QQ 通知接收位置失败")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="保存 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
 
 
 @router.post(
