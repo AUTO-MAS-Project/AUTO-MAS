@@ -1112,7 +1112,7 @@ class Sender:
                     kind="configuration"
                     if code in (401, 401001, 11200, 11201)
                     else "rate_limited"
-                    if code == 429
+                    if code in (429, 40034100)
                     else "transport"
                     if code in (500, 502, 503, 504)
                     else "rejected",
@@ -1262,6 +1262,7 @@ class Sender:
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
             details: list[str] = []
+            code = None
             try:
                 error_payload = exc.response.json()
             except ValueError:
@@ -1276,9 +1277,15 @@ class Sender:
                 if code == 40054004:
                     details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
             suffix = f"，{'，'.join(details)}" if details else ""
+            message = f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）"
+            if code == 40034100:
+                # 群限流沿用已有冷却，不能被 HTTP 4xx 的默认永久拒绝覆盖。
+                raise NotificationDeliveryError(
+                    message, kind="rate_limited", retryable=True
+                ) from exc
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
+                message,
             ) from exc
         except httpx.HTTPError as exc:
             raise NotificationDeliveryError(
@@ -1307,4 +1314,6 @@ def _is_url_reject_error(error: str) -> bool:
 def _is_token_error(error: RuntimeError) -> bool:
     """判断 HTTP 错误是否可能表示访问令牌失效。"""
 
+    if isinstance(error, NotificationDeliveryError) and error.kind == "rate_limited":
+        return False
     return "状态码 401" in str(error) or "状态码 403" in str(error)
