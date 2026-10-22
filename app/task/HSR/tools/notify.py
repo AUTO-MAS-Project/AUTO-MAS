@@ -23,9 +23,9 @@ from typing import Literal
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
@@ -52,6 +52,8 @@ async def push_notification(
         return await dispatch(
             NotifyPayload(title=title, text=str(message.get("message", ""))),
             statistic_targets(user_config),
+            task_info=task_info,
+            immediate=True,
         )
 
     if mode == "代理结果":
@@ -71,4 +73,5 @@ async def push_notification(
             html=message_html,
         ),
         user_config=user_config,
+        task_info=task_info,
     )

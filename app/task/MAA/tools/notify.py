@@ -25,10 +25,10 @@ from typing import Literal
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     recruitment_targets,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaUserConfig
 from app.models.notification import (
     DeferredContent,
@@ -140,6 +140,7 @@ async def push_notification(
                 images=images,
             ),
             statistic_targets(user_config),
+            task_info=task_info,
         )
 
     if mode == "公招六星":
@@ -165,6 +166,8 @@ async def push_notification(
                 presentation="announcement",
             ),
             recruitment_targets(user_config),
+            task_info=task_info,
+            immediate=True,
         )
 
     return DispatchResult()

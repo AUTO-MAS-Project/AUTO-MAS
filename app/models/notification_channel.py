@@ -311,6 +311,8 @@ class DispatchResult:
     failed: tuple[str, ...] = ()
     succeeded_ids: tuple[str, ...] = ()
     failures: tuple[DeliveryFailure, ...] = ()
+    # 已由宿主接管，尚未实际投递；不得作为送达成功消费。
+    queued: bool = False
 
     @property
     def failed_ids(self) -> tuple[str, ...]:

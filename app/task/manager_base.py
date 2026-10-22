@@ -20,6 +20,7 @@ from app.task.maintenance import (
     get_maintenance_message,
     get_user_maintenance,
 )
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import push_maintenance_notice
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -43,7 +44,7 @@ class UserRunSummary:
         return len(self.failed) + len(self.waiting)
 
 
-class ScriptManagerBase(TaskExecuteBase):
+class ScriptManagerBase(NotificationTaskBase):
     # 收尾仍持有配置 X 锁，取消后也须等待完成再让调度器切换任务。
     wait_for_finalizer_on_cancel = True
 

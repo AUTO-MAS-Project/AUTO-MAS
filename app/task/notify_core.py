@@ -35,11 +35,10 @@ from typing import Any
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     global_target,
     statistic_targets,
 )
-from app.core.task_report import prepare_task_report
+from app.core.task_report import dispatch_task_notification, prepare_task_report
 from app.models.notification import (
     NotificationImage,
     NotificationSummary,
@@ -55,11 +54,16 @@ logger = get_logger("任务通知核心")
 
 
 async def push_statistics_report(
-    *, payload: NotifyPayload, user_config: UserNotificationConfig | None
+    *,
+    payload: NotifyPayload,
+    user_config: UserNotificationConfig | None,
+    task_info: object | None = None,
 ) -> DispatchResult:
     """投递专项已生成的统计内容，不接收模式或专项字典。"""
 
-    return await dispatch(payload, statistic_targets(user_config))
+    return await dispatch_task_notification(
+        payload, statistic_targets(user_config), task_info=task_info
+    )
 
 
 async def push_proxy_result(

@@ -26,9 +26,9 @@ from pathlib import Path
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
@@ -171,6 +171,7 @@ async def push_notification(
                 images=tuple(images),
             ),
             statistic_targets(user_config),
+            task_info=task_info,
         )
 
     return DispatchResult()

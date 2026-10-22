@@ -58,4 +58,5 @@ async def push_notification(
             html=message_html,
         ),
         user_config=user_config,
+        task_info=task_info,
     )

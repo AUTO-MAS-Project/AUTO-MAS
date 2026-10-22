@@ -21,10 +21,10 @@ from typing import Any
 from app.core.notify import (
     DispatchResult,
     NotifyTarget,
-    dispatch,
     failure_targets,
     user_statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
 from app.task.notify_core import load_screenshot_images
 from app.utils import get_logger

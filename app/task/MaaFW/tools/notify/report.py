@@ -4,9 +4,9 @@ from collections.abc import Sequence
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.notification import (
     NotificationImage,
     NotifyPayload,
@@ -56,7 +56,13 @@ async def push_notification(
             include_system=include_system,
         )
     if mode == "统计信息":
-        return await _push_statistics(title, message, user_config, images)
+        return await _push_statistics(
+            title=title,
+            message=message,
+            user_config=user_config,
+            images=images,
+            task_info=task_info,
+        )
     return DispatchResult()
 
 
@@ -65,6 +71,8 @@ async def _push_statistics(
     message: dict,
     user_config: UserNotificationConfig | None,
     images: Sequence[NotificationImage] = (),
+    *,
+    task_info: object | None = None,
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 
@@ -94,4 +102,5 @@ async def _push_statistics(
             images=tuple(images),
         ),
         statistic_targets(user_config),
+        task_info=task_info,
     )

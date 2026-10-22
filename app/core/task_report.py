@@ -27,11 +27,21 @@ from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any
 
+from app.config import config_manager
 from app.core.config import Config
 from app.core.notification_report import (
     NOTIFICATION_FAST_PATH_WAIT_SECONDS,
     TaskReportCoordinator,
     TaskReportDependencies,
+)
+from app.core.notification_tasks import (
+    _PENDING_NOTIFICATIONS,
+    consume_notification_result,
+    current_notification_task_id,
+    drain_notifications,
+    publish_notification_failure,
+    shutdown_notifications,
+    submit_task_notification,
 )
 from app.core.notify import (
     DispatchResult,
@@ -57,7 +67,7 @@ from app.utils import get_logger
 
 logger = get_logger("任务报告")
 
-_PENDING_TASK_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[None]] = set()
+_PENDING_TASK_COMMUNITY_NOTIFICATIONS = _PENDING_NOTIFICATIONS
 
 
 def read_task_report_policy() -> TaskReportPolicy:
@@ -219,20 +229,33 @@ class PreparedTaskReport:
         retry_delay: float = 0,
         notifier: Notifier | None = None,
     ) -> DispatchResult:
-        return await self.coordinator.dispatch_report(
-            TaskReportRequest(
-                payload=payload,
-                targets=tuple(targets),
-                policy=self.policy,
-                embedded_summary=summary_text,
-                embedded_markdown=(summary_text if not self.has_task else None),
-                attempts=attempts,
-                retry_delay=retry_delay,
-            ),
-            dispatch=(
-                partial(dispatch, notifier=notifier) if notifier is not None else None
-            ),
+        request = TaskReportRequest(
+            payload=payload,
+            targets=tuple(targets),
+            policy=self.policy,
+            embedded_summary=summary_text,
+            embedded_markdown=(summary_text if not self.has_task else None),
+            attempts=attempts,
+            retry_delay=retry_delay,
         )
+        dispatcher = (
+            partial(dispatch, notifier=notifier) if notifier is not None else None
+        )
+
+        async def deliver() -> DispatchResult:
+            try:
+                return await self.coordinator.dispatch_report(
+                    request, dispatch=dispatcher
+                )
+            finally:
+                self.coordinator.reports_pending -= 1
+                self.coordinator.schedule_supplement()
+
+        # 显式配置事务保持同 Task 执行；常规脚本批次在完整收尾后交给宿主。
+        if not config_manager.in_transaction and submit_task_notification(deliver):
+            self.coordinator.reports_pending += 1
+            return DispatchResult(queued=True)
+        return await self.coordinator.dispatch_report(request, dispatch=dispatcher)
 
 
 def prepare_task_report(task_info: object | None = None) -> PreparedTaskReport:
@@ -291,50 +314,41 @@ async def dispatch_task_report(
 
 
 async def drain_task_community_notifications(timeout: float) -> bool:
-    """电源动作前有限等待签到补发，超时只停止等待，不取消投递。"""
-
-    deadline = asyncio.get_running_loop().time() + timeout
-    while tasks := {
-        task for task in _PENDING_TASK_COMMUNITY_NOTIFICATIONS if not task.done()
-    }:
-        remaining = deadline - asyncio.get_running_loop().time()
-        if remaining <= 0:
-            return False
-        _, pending = await asyncio.wait(tasks, timeout=remaining)
-        if pending:
-            return False
-    return True
+    """兼容旧入口；电源动作现在同时等待主报告、统计、补发与失败反馈。"""
+    return await drain_notifications(timeout)
 
 
 async def shutdown_community_notifications() -> None:
     """退出时取消并等待任务报告补发，然后才能释放共享连接。"""
 
-    tasks = [task for task in _PENDING_TASK_COMMUNITY_NOTIFICATIONS if not task.done()]
-    for task in tasks:
-        task.cancel()
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    await shutdown_notifications()
 
 
 async def _publish_task_notification_failure(
     result: DispatchResult, *, task_id: str | None
 ) -> None:
-    """任务页面反馈在入口装配，不进入报告协调器。"""
+    await publish_notification_failure(result, task_id=task_id)
 
-    if not result.failed or not task_id:
-        return
 
-    from app.core.ws import Publisher, protocol
-    from app.models.schema import WSTaskNoticeData
+async def dispatch_task_notification(
+    payload: NotifyPayload,
+    targets: list[NotifyTarget],
+    *,
+    task_info: object | None = None,
+    immediate: bool = False,
+) -> DispatchResult:
+    """统计与即时提醒共用结果消费；快照先于入队，失败反馈不阻塞业务。"""
 
-    failed_channels = tuple(dict.fromkeys(result.failed))
-    title = "部分通知发送失败" if result.succeeded else "通知发送失败"
-    message = f"{title}：{'、'.join(failed_channels)}"
-    try:
-        await Publisher.send(
-            id=str(task_id),
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="warning", message=message),
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"发送通知失败提示到前端时出现异常: {exc}")
+    prepared_targets = tuple(targets)
+    task_id = getattr(task_info, "task_id", None) or current_notification_task_id()
+
+    async def deliver() -> DispatchResult:
+        result = await dispatch(payload, prepared_targets)
+        consume_notification_result(result, task_id=task_id)
+        return result
+
+    if not config_manager.in_transaction and submit_task_notification(
+        deliver, immediate=immediate
+    ):
+        return DispatchResult(queued=True)
+    return await deliver()

@@ -74,6 +74,7 @@ class TaskReportCoordinator:
         self.result_unavailable = False
         self.task_finished = False
         self.delivery_task: asyncio.Task[None] | None = None
+        self.reports_pending = 0
         self._report_dispatch = dependencies.dispatch
 
     def receive(self, results: tuple[CommunityNotificationResult, ...] | None) -> None:
@@ -140,6 +141,8 @@ class TaskReportCoordinator:
         self.schedule_supplement()
 
     def schedule_supplement(self) -> None:
+        if self.reports_pending:
+            return
         if not self.completed.is_set() or not (
             self.task_finished or (self.report_sent and self.wait_expired)
         ):

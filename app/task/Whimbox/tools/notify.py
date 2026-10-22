@@ -30,9 +30,9 @@ tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全�
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import WhimboxUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
@@ -99,6 +99,7 @@ async def push_notification(
                 summary=NotificationSummary(text=message_text),
             ),
             statistic_targets(user_config, compact_summary=True),
+            task_info=task_info,
         )
 
     if mode != "代理结果":
