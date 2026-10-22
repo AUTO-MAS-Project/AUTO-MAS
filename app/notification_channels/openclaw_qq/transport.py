@@ -329,6 +329,8 @@ class Sender:
             "GROUP_AT_MESSAGE_CREATE",
             "GROUP_MSG_RECEIVE",
         }:
+            if event == "GROUP_AT_MESSAGE_CREATE" and openid in self._removed_groups:
+                return
             self._removed_groups.discard(openid)
             self._groups[openid] = datetime.now(UTC)
             async with self._config_lock:
