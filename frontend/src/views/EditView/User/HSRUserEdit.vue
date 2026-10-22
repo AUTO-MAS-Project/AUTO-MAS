@@ -429,8 +429,8 @@ const logger = window.electronAPI.getLogger('HSR 用户编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript, updateScript } = useScriptApi()
+const { addUser, updateUser, getUsers, error: userApiError } = useUserApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
@@ -1220,7 +1220,7 @@ onMounted(async () => {
   try {
     const script = await getScript(scriptId)
     if (!script) {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
       return
     }
@@ -1241,7 +1241,7 @@ onMounted(async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
   } finally {
     isInitializing.value = false
   }
@@ -1267,13 +1267,13 @@ const createUserImmediately = async () => {
       await loadUserData()
       if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -1312,13 +1312,13 @@ const loadUserData = async () => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
   }
 }
 </script>

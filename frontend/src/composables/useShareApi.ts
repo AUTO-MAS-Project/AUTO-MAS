@@ -149,6 +149,18 @@ const toAuthState = (response: ShareAuthStatusOut): ShareAuthState => ({
   message: RESULT_STATUSES.includes(response.authStatus) ? (response.message ?? '') : '',
 })
 
+// 分享弹窗和主题商店共用后台设备会话；先完成旧撤销，再申请新设备码。
+let shareAuthTail: Promise<unknown> = Promise.resolve()
+
+const queueShareAuthAction = <T>(action: () => Promise<T>): Promise<T> => {
+  const run = shareAuthTail.then(action, action)
+  shareAuthTail = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
 export function useShareApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -170,21 +182,27 @@ export function useShareApi() {
     }
   }
 
-  const getShareAuthStatus = () =>
-    runAuthCall(() => Service.getShareAuthStatusApiShareAuthStatusPost())
+  const getShareAuthStatus = async () => {
+    await shareAuthTail
+    return runAuthCall(() => Service.getShareAuthStatusApiShareAuthStatusPost())
+  }
 
   const startShareAuth = async () => {
     loading.value = true
     try {
-      return await runAuthCall(() => Service.startShareAuthApiShareAuthStartPost())
+      return await queueShareAuthAction(() =>
+        runAuthCall(() => Service.startShareAuthApiShareAuthStartPost())
+      )
     } finally {
       loading.value = false
     }
   }
 
+  // 轮询不占用变更队列，慢轮询期间仍可取消；后端会丢弃过期设备会话的结果。
   const pollShareAuth = () => runAuthCall(() => Service.pollShareAuthApiShareAuthPollPost())
 
-  const cancelShareAuth = () => runAuthCall(() => Service.cancelShareAuthApiShareAuthCancelPost())
+  const cancelShareAuth = () =>
+    queueShareAuthAction(() => runAuthCall(() => Service.cancelShareAuthApiShareAuthCancelPost()))
 
   // 分享前检查：返回自动脱敏后仍然可疑的配置项，由用户确认
   const inspectShare = async (

@@ -172,7 +172,7 @@ const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise
     const updateData: GlobalConfig = { [category]: changes }
     const result = await updateSettings(updateData)
     if (!result) {
-      message.error(t('setting.toast.saveFailed'))
+      // 请求层已提示后端原因，保留当前输入供重试。
       return false
     }
     return true

@@ -194,7 +194,7 @@ const { t } = useI18n()
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -541,13 +541,13 @@ const loadUserData = async () => {
         router.push('/scripts')
       }
     } else {
-      message.error(t('edit.couldNotLoadUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
       router.push('/scripts')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
     router.push('/scripts')
   }
 }
@@ -719,7 +719,7 @@ if (!userId) {
       isEdit.value = true
       logger.info(`新建用户，获取userId: ${userId}`)
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       router.push('/scripts')
     }
     // 标记初始化完成

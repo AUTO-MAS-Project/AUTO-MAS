@@ -38,7 +38,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
   const router = useRouter()
-  const { getScript, previewMaaFWInterface } = useScriptApi()
+  const { getScript, previewMaaFWInterface, error: scriptApiError } = useScriptApi()
 
   const {
     pageLoading,
@@ -167,7 +167,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       if (!response || response.code !== 200 || !response.data) {
         previewData.value = null
         // 后端没给原因就不记：卡片标题已经是「读取项目失败」，不再重复一行
-        previewError.value = response?.message || ''
+        previewError.value = response?.message || scriptApiError.value || ''
         message.error(previewError.value || t('edit.maafwPreviewFailed'))
         return
       }
@@ -248,7 +248,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         loadEmulatorOptions(),
       ])
       if (!scriptDetail) {
-        message.error(t('edit.scriptDoesNotExist'))
+        if (!scriptApiError.value && !host?.scriptLoadError.value)
+          message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }

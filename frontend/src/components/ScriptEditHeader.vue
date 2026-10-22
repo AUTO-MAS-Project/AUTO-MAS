@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img :src="logoSrc" :alt="logoAlt" class="breadcrumb-logo" />
+            <img :src="headerLogo" :alt="headerLogoAlt" class="breadcrumb-logo" />
             {{ headerTitle }}
           </div>
         </a-breadcrumb-item>
@@ -17,8 +17,14 @@
     <a-space size="middle" wrap>
       <slot name="extra-actions" />
       <DocLink v-if="docUrl" :url="docUrl" />
+      <slot name="after-doc-actions" />
 
-      <a-button size="large" class="cancel-button" @click="emit('cancel')">
+      <a-button
+        size="large"
+        class="cancel-button"
+        :disabled="cancelDisabled"
+        @click="emit('cancel')"
+      >
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -44,6 +50,12 @@ const props = defineProps<{
   scriptType: ScriptType
   /** 第二级面包屑文字，留空则用「编辑脚本」 */
   title?: string
+  /** 特调描述对象中的文档与图标优先于公共登记；空文档地址隐藏入口。 */
+  docUrl?: string
+  logoSrc?: string
+  logoAlt?: string
+  /** 导入等不可中断流程由页面决定何时允许返回。 */
+  cancelDisabled?: boolean
 }>()
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
@@ -52,10 +64,12 @@ const headerTitle = computed(() => props.title ?? t('comp.editScript'))
 
 const emit = defineEmits<{ cancel: [] }>()
 
-const logoSrc = computed(() => SCRIPT_LOGOS[props.scriptType])
-const logoAlt = computed(() => SCRIPT_LABELS[props.scriptType])
+const headerLogo = computed(() => props.logoSrc ?? SCRIPT_LOGOS[props.scriptType])
+const headerLogoAlt = computed(() => props.logoAlt ?? SCRIPT_LABELS[props.scriptType])
 const docUrl = computed(
-  () => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes]
+  () =>
+    props.docUrl ??
+    MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes]
 )
 </script>
 

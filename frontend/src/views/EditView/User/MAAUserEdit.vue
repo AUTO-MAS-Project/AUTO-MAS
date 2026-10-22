@@ -286,7 +286,7 @@ const { parseImport } = useMaaCultivateImportApi()
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const { getPlans } = usePlanApi()
 const {
   maaConfigLoading,
@@ -746,7 +746,7 @@ const fieldSave = useMAAFieldSave({
     (key === 'Task.EventDepotMaintainPlans' && eventDepotPlanEditor.hasPendingEdits()),
   onFailure: () => {
     const errorMsg = userError.value
-    if (!errorMsg || errorMsg.includes('HTTP error')) message.error(t('edit.couldNotSaveUser'))
+    if (!errorMsg) message.error(t('edit.couldNotSaveUser'))
     logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
   },
   onError: error => {
@@ -833,13 +833,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -861,13 +861,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -930,13 +930,13 @@ const loadUserData = async (): Promise<boolean> => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userError.value) message.error(t('edit.couldNotLoadUser2'))
   }
   return false
 }
@@ -1381,7 +1381,7 @@ const {
   backup: () => ensureMaaBackup('mas'),
   onSaveError: error => {
     logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error(t('edit.couldNotSaveUser'))
+    if (!userError.value) message.error(t('edit.couldNotSaveUser'))
   },
   onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
   onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
