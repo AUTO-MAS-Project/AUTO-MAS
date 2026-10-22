@@ -71,6 +71,7 @@ GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
 GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
 GROUP_MESSAGE_INTERVAL_SECONDS = 3.1
 GROUP_RATE_LIMIT_COOLDOWN_SECONDS = 60
+GROUP_DISCOVERY_TTL_SECONDS = 5 * 60
 # Identify 连续被拒达到该次数后，降级为最小事件订阅保住网关连接
 GATEWAY_IDENTIFY_FALLBACK_AFTER = 3
 # 平台审查拒绝正文含链接时，把链接替换为该占位文本后补发
@@ -272,12 +273,24 @@ class Sender:
         self._gateway_seen_ready = False
         self._binding_id = uuid.uuid4().hex
         self._groups: dict[str, datetime] = {}
+        self._removed_groups: set[str] = set()
         self._group_next_send_at = 0.0
+
+    def _expire_groups(self) -> None:
+        now = datetime.now(UTC)
+        self._groups = {
+            openid: seen
+            for openid, seen in self._groups.items()
+            if (now - seen).total_seconds() < GROUP_DISCOVERY_TTL_SECONDS
+        }
 
     def groups(self) -> QQGroups:
         """读取当前目标及内存候选群，不把聊天内容或完整群列表写入配置。"""
 
+        self._expire_groups()
         selected = self._config_value("OpenClawQQGroupOpenId", None)
+        if selected in self._removed_groups:
+            selected = None
         groups = [QQGroup(openid, seen) for openid, seen in self._groups.items()]
         groups.sort(key=lambda group: group.last_seen, reverse=True)
         if selected and selected not in self._groups:
@@ -303,6 +316,7 @@ class Sender:
                 raise ValueError("binding_changed")
             if not all(self._credentials()):
                 raise ValueError("not_bound")
+            self._expire_groups()
             if target_type == "group" and group_openid not in self._groups:
                 raise ValueError("group_not_found")
             await self.dependencies.config.update(
@@ -322,8 +336,10 @@ class Sender:
         if not isinstance(openid, str) or not openid:
             return
         if event == "GROUP_DEL_ROBOT":
+            # 配置回写即使被信号拒绝，本次进程也不能继续投递到已知退出的群。
+            self._groups.pop(openid, None)
+            self._removed_groups.add(openid)
             async with self._config_lock:
-                self._groups.pop(openid, None)
                 if self._config_value("OpenClawQQGroupOpenId", None) == openid:
                     await self.dependencies.config.update(
                         {"OpenClawQQGroupOpenId": None}
@@ -333,6 +349,7 @@ class Sender:
             "GROUP_AT_MESSAGE_CREATE",
             "GROUP_MSG_RECEIVE",
         }:
+            self._removed_groups.discard(openid)
             self._groups[openid] = datetime.now(UTC)
 
     def bind_config_hooks(self) -> None:
@@ -624,13 +641,14 @@ class Sender:
                             message="二维码登录会话已关闭，请重新生成",
                         )
                     # 会话锁覆盖保存与启动；解绑或重新扫码只能在本次绑定完成后失效会话。
-                    await self._save_credentials_locked(
-                        app_id=app_id,
-                        client_secret=client_secret,
-                        user_openid=user_openid,
-                    )
-                    session.bound_at = monotonic()
-                    await self._start_gateway(app_id, client_secret)
+                    if session.bound_at is None:
+                        await self._save_credentials_locked(
+                            app_id=app_id,
+                            client_secret=client_secret,
+                            user_openid=user_openid,
+                        )
+                        session.bound_at = monotonic()
+                        await self._start_gateway(app_id, client_secret)
         except (ValueError, RuntimeError) as exc:
             async with self._session_lock:
                 if (
@@ -680,6 +698,7 @@ class Sender:
             async with self._config_lock:
                 await self.dependencies.config.update(values)
             self._groups.clear()
+            self._removed_groups.clear()
             self._binding_id = uuid.uuid4().hex
 
     async def _start_gateway(self, app_id: str, client_secret: str) -> None:
@@ -836,6 +855,8 @@ class Sender:
             finally:
                 self._gateway_online = False
                 self._gateway_ready.clear()
+                # 断线期间可能漏掉退群事件；候选须重新发现，已保存目标仍保留。
+                self._groups.clear()
             retry = 0 if ready else min(retry + 1, len(GATEWAY_RECONNECT_DELAYS) - 1)
             if not rejected:
                 # 本轮未收到 op 9 时清零，计数只反映连续的鉴权拒绝。
@@ -937,6 +958,7 @@ class Sender:
             or self._config_value("OpenClawQQTargetType") != target.target_type
             or not target.openid
             or target.openid != selected
+            or (target.target_type == "group" and target.openid in self._removed_groups)
         ):
             raise ValueError("QQ 通知目标已失效，请在通知设置中重新确认接收位置")
         return target.openid
@@ -1156,6 +1178,7 @@ class Sender:
             self._binding_id = uuid.uuid4().hex
             if changed_bot:
                 self._groups.clear()
+                self._removed_groups.clear()
                 self._group_next_send_at = 0.0
 
     async def _request_json(

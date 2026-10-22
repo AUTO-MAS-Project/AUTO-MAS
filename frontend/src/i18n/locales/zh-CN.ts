@@ -5012,7 +5012,7 @@ export default {
       openclawQqGroupSaved: '已保存，待验证',
       openclawQqGroupInvalid: '原群已失效，请重新选择',
       openclawQqGroupHint:
-        "群主需使用最新版 QQ，将自己创建的机器人添加到朋友群并开启主动发言。在目标群 {'@'} 机器人后刷新，按最近互动时间选择一个群。群推送受 QQ 权限和频率限制，请发送测试通知确认。",
+        "群主需使用最新版 QQ，将自己创建的机器人添加到朋友群并开启主动发言。在目标群 {'@'} 机器人后刷新，5 分钟内按最近互动时间选择一个群。群推送受 QQ 权限和频率限制，请发送测试通知确认。",
       openclawQqBindingChanged: '机器人绑定已变化，请刷新群列表后重新选择。',
       openclawQqGroupNotFound: "该群尚未发现或机器人已退群，请在群里 {'@'} 机器人后刷新。",
       openclawQqTargetError: '读取或保存通知接收位置失败，请刷新后重试。',

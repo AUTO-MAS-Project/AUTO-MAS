@@ -5117,7 +5117,7 @@ export default {
       openclawQqGroupSaved: 'Saved, awaiting verification',
       openclawQqGroupInvalid: 'Previous group unavailable. Select another.',
       openclawQqGroupHint:
-        'Using the latest QQ, the group owner must add their bot to the friends group and allow proactive messages. Mention the bot in the target group, refresh, and select one group by its latest interaction time. QQ permissions and rate limits apply; send a test notification to verify delivery.',
+        'Using the latest QQ, the group owner must add their bot to the friends group and allow proactive messages. Mention the bot in the target group, refresh, and select one group within 5 minutes by its latest interaction time. QQ permissions and rate limits apply; send a test notification to verify delivery.',
       openclawQqBindingChanged: 'The bot binding changed. Refresh groups and select again.',
       openclawQqGroupNotFound:
         'Group not discovered or bot removed. Mention the bot there and refresh.',
