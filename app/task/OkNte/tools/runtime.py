@@ -92,11 +92,15 @@ class OkNteProcessManager(ProcessManager):
     ) -> None:
         """自动搜索本次安装的主进程；不改变父类显式目标搜索的契约。"""
 
-        def scan() -> tuple[psutil.Process, float] | None:
+        def scan() -> tuple[psutil.Process, float, str] | None:
             executables = runtime_executables(self.root)
-            candidates: list[tuple[int, float, int, psutil.Process]] = []
-            for proc in psutil.process_iter(["pid", "exe", "cmdline", "create_time"]):
-                info = proc.info
+            candidates: list[tuple[int, float, int, psutil.Process, str]] = []
+            for proc in psutil.process_iter():
+                try:
+                    # 独立快照，避免其他扫描替换缓存进程对象的 info。
+                    info = proc.as_dict(attrs=["pid", "exe", "cmdline", "create_time"])
+                except psutil.NoSuchProcess:
+                    continue
                 if not info["exe"] or not info["cmdline"]:
                     continue
                 # 冻结包的 multiprocessing worker 与 GUI 共用 EXE，不能当作本体。
@@ -108,11 +112,13 @@ class OkNteProcessManager(ProcessManager):
                     continue
                 if min_create_time is not None and created < min_create_time - 2:
                     continue
-                candidates.append((executables.index(exe), created, proc.pid, proc))
+                candidates.append(
+                    (executables.index(exe), created, proc.pid, proc, info["exe"])
+                )
             if not candidates:
                 return None
-            _, created, _, proc = min(candidates)
-            return proc, created
+            _, created, _, proc, selected_exe = min(candidates)
+            return proc, created, selected_exe
 
         # 不依据磁盘残留文件决定模式：源码与冻结包文件可能同时存在。
         # 每轮重算候选，覆盖启动器更新期间才解压出来的新本体。
@@ -120,8 +126,8 @@ class OkNteProcessManager(ProcessManager):
         while time.monotonic() < deadline:
             found = await asyncio.to_thread(scan)
             if found is not None:
-                proc, created = found
-                target = ProcessInfo(exe=proc.info["exe"])
+                proc, created, selected_exe = found
+                target = ProcessInfo(exe=selected_exe)
                 self.target_process = proc
                 self._target_info = target
                 self._target_create_time = created
