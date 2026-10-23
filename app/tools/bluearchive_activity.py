@@ -20,9 +20,9 @@
 
 """碧蓝档案活动排期查询。
 
-取数复用上游的 GameKee 中转接口（``POST /api/info/bluearchive/activity``），本模块
-只负责把它翻译成两个口径：调度侧要「当前有没有进行中的活动」，界面还要活动名与
-起止时间。取数失败返回 None，由调用方退回默认行为。
+取数与首页路由共用 GameKee / SRA 数据源和缓存，本模块只负责把活动翻译成两个
+口径：调度侧要「当前有没有进行中的活动」，界面还要活动名与起止时间。
+取数失败返回 None，由调用方退回默认行为。
 """
 
 import time
@@ -30,6 +30,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from app.tools.bluearchive_activity_source import fetch_bluearchive_activities
 from app.utils import get_logger
 
 logger = get_logger("碧蓝档案活动")
@@ -158,8 +159,7 @@ async def _fetch_page(
 ) -> list[Mapping[str, object]] | None:
     """取回一页活动条目。
 
-    取数复用上游 ``POST /api/info/bluearchive/activity`` 的转发逻辑与它自带的缓存，
-    本模块不再自己维护 GameKee 的地址、请求头与缓存。
+    与首页路由共用取数模块，本模块不维护数据源地址、请求头与缓存。
 
     Args:
         line_type: 服务器标识，取 GameKee 时代的原文拼写。
@@ -169,24 +169,17 @@ async def _fetch_page(
         list[Mapping[str, object]] | None: 该页条目；取数失败为 None。
     """
 
-    ## 局部导入：避免模块导入期与 app.api.info 形成环
-    from app.api.info import get_bluearchive_activity
-    from app.models.schema import BlueArchiveActivityIn
-
-    response = await get_bluearchive_activity(
-        BlueArchiveActivityIn(
-            line_type=line_type,
-            page=page,
-            page_size=ACTIVITY_PAGE_SIZE,
+    try:
+        data = await fetch_bluearchive_activities(
+            line_type=line_type, page=page, page_size=ACTIVITY_PAGE_SIZE
         )
-    )
-    if response.code != 200:
+    except Exception as e:
         logger.warning(
-            f"获取碧蓝档案活动排期失败({line_type} 第 {page} 页): {response.message}"
+            f"获取碧蓝档案活动排期失败({line_type} 第 {page} 页): {type(e).__name__}: {e}"
         )
         return None
 
-    batch = response.data.get("data") if isinstance(response.data, Mapping) else None
+    batch = data.get("data")
     if not isinstance(batch, list):
         logger.warning(f"碧蓝档案活动排期结构异常({line_type} 第 {page} 页)")
         return None
