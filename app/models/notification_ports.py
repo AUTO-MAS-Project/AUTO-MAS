@@ -141,6 +141,15 @@ class TaskNotifications(NotificationService, LocalNotifier, Protocol):
         self, task_info: TaskItem | None = None
     ) -> PreparedReport: ...
 
+    async def push_statistics_report(
+        self,
+        *,
+        payload: NotifyPayload,
+        user_config: UserNotificationConfig | None,
+        task_info: TaskItem,
+        compact_summary: bool = False,
+    ) -> DispatchResult: ...
+
     async def dispatch_task_notification(
         self,
         payload: NotifyPayload,

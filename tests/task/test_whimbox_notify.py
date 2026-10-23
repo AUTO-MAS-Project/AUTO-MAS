@@ -36,8 +36,7 @@ def _payload_of(message: dict):
     """跑一遍 push_notification，返回交给 dispatch 的 NotifyPayload。"""
 
     notifications = SimpleNamespace(
-        dispatch_task_notification=AsyncMock(return_value=None),
-        statistic_targets=lambda *args, **kwargs: ["T"],
+        push_statistics_report=AsyncMock(return_value=None),
     )
     asyncio.run(
         notify_mod.push_notification(
@@ -48,7 +47,7 @@ def _payload_of(message: dict):
             task_info=SimpleNamespace(notifications=notifications),
         )
     )
-    return notifications.dispatch_task_notification.await_args.args[0]
+    return notifications.push_statistics_report.await_args.kwargs["payload"]
 
 
 def test_failure_notes_render_to_text_and_html():

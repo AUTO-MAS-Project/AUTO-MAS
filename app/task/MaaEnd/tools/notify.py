@@ -160,14 +160,14 @@ async def push_notification(
         if sections:
             message_text += "\n\n" + "\n\n".join(sections)
 
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(
+        return await task_info.notifications.push_statistics_report(
+            payload=NotifyPayload(
                 title=title,
                 text=message_text,
                 html=deferred_notification_template("MaaEnd_statistics.html", message),
                 images=tuple(images),
             ),
-            task_info.notifications.statistic_targets(user_config),
+            user_config=user_config,
             task_info=task_info,
         )
 

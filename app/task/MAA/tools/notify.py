@@ -126,15 +126,15 @@ async def push_notification(
         )
 
     if mode == "统计信息":
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(
+        return await task_info.notifications.push_statistics_report(
+            payload=NotifyPayload(
                 title=title,
                 text=_statistic_text(message),
                 html=deferred_notification_template("MAA_statistics.html", message),
                 signature_sep=SIGNATURE_SEP,
                 images=images,
             ),
-            task_info.notifications.statistic_targets(user_config),
+            user_config=user_config,
             task_info=task_info,
         )
 

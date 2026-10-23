@@ -39,27 +39,12 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
-from app.models.notification_channel import DispatchResult, UserNotificationConfig
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import ReportScreenshot
 from app.models.task import TaskItem
 from app.utils import get_logger
 
 logger = get_logger("任务通知核心")
-
-
-async def push_statistics_report(
-    *,
-    payload: NotifyPayload,
-    user_config: UserNotificationConfig | None,
-    task_info: TaskItem,
-) -> DispatchResult:
-    """投递专项已生成的统计内容，不接收模式或专项字典。"""
-
-    return await task_info.notifications.dispatch_task_notification(
-        payload,
-        task_info.notifications.statistic_targets(user_config),
-        task_info=task_info,
-    )
 
 
 async def push_maintenance_notice(

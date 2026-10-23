@@ -21,7 +21,6 @@ from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_statistics_report
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -50,7 +49,7 @@ async def push_notification(
         return DispatchResult()
 
     message_html = deferred_notification_template("general_statistics.html", message)
-    return await push_statistics_report(
+    return await task_info.notifications.push_statistics_report(
         payload=NotifyPayload(
             title=title,
             text=f"用户: {message['user_info']}\n开始时间: {message['start_time']}\n结束时间: {message['end_time']}\n执行结果: {message['user_result']}",

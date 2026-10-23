@@ -176,6 +176,22 @@ class HostNotificationService:
 
         return create_task_report_coordinator(task_info, notifications=self)
 
+    async def push_statistics_report(
+        self,
+        *,
+        payload: NotifyPayload,
+        user_config: UserNotificationConfig | None,
+        task_info: TaskItem,
+        compact_summary: bool = False,
+    ) -> DispatchResult:
+        """按任务原有托管与失败反馈规则投递统计正文。"""
+
+        return await self.dispatch_task_notification(
+            payload,
+            self.statistic_targets(user_config, compact_summary=compact_summary),
+            task_info=task_info,
+        )
+
     async def dispatch_task_notification(
         self,
         payload: NotifyPayload,

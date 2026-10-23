@@ -90,13 +90,13 @@ async def _push_statistics(
         f"{detail_str}\n"
     )
 
-    return await task_info.notifications.dispatch_task_notification(
-        NotifyPayload(
+    return await task_info.notifications.push_statistics_report(
+        payload=NotifyPayload(
             title=title,
             text=message_text,
             html=deferred_notification_template("MaaFW_statistics.html", message),
             images=tuple(images),
         ),
-        task_info.notifications.statistic_targets(user_config),
+        user_config=user_config,
         task_info=task_info,
     )

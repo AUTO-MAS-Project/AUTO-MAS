@@ -110,17 +110,16 @@ async def push_notification(
             "general_statistics.html", message
         )
 
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(
+        return await task_info.notifications.push_statistics_report(
+            payload=NotifyPayload(
                 title=title,
                 text=message_text_full,
                 html=message_html,
                 summary=NotificationSummary(text=message_text),
             ),
-            task_info.notifications.statistic_targets(
-                user_config, compact_summary=True
-            ),
+            user_config=user_config,
             task_info=task_info,
+            compact_summary=True,
         )
 
     if mode != "代理结果":

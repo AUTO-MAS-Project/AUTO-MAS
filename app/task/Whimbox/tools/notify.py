@@ -88,17 +88,16 @@ async def push_notification(
 
         # 正文只按渠道分流，投递交 dispatch：用户侧开关在用户目标内判定，
         # 全局渠道与「统计信息」总开关在 statistic_targets 内判定
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(
+        return await task_info.notifications.push_statistics_report(
+            payload=NotifyPayload(
                 title=title,
                 text=message_text_full,
                 html=message_html,
                 summary=NotificationSummary(text=message_text),
             ),
-            task_info.notifications.statistic_targets(
-                user_config, compact_summary=True
-            ),
+            user_config=user_config,
             task_info=task_info,
+            compact_summary=True,
         )
 
     if mode != "代理结果":
