@@ -3,8 +3,9 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { TaskboardActivity, TaskboardSection } from '@/types/taskboard'
+import { parseActivityTime } from '@/utils/activityTime'
+import { useTaskboardStateStore } from '@/stores/taskboardState'
 import { useTaskboardData } from './useTaskboardData'
-import { useTaskboardStorage } from './useTaskboardStorage'
 import GamePickerModal from './components/GamePickerModal.vue'
 import TaskboardCard from './components/TaskboardCard.vue'
 import TaskboardToolbar from './components/TaskboardToolbar.vue'
@@ -37,7 +38,7 @@ const {
   updatedAt,
 } = useTaskboardData(t)
 
-const { enabledKeys, saveEnabledKeys } = useTaskboardStorage()
+const taskboardState = useTaskboardStateStore()
 
 const tab = ref<'active' | 'done' | 'archived'>('active')
 const keyword = ref('')
@@ -46,8 +47,9 @@ const expanded = ref<Record<string, boolean>>({})
 const editOpen = ref(false)
 
 const enabledOptions = computed(() => {
-  if (!enabledKeys.value) return gameMetas.value
-  const set = new Set(enabledKeys.value)
+  const keys = taskboardState.selectedGames
+  if (!keys) return gameMetas.value
+  const set = new Set(keys)
   return gameMetas.value.filter(option => set.has(option.key))
 })
 
@@ -68,16 +70,10 @@ const filtered = computed(() => {
   })
 })
 
-const parseTs = (value?: string) => {
-  if (!value) return 0
-  const iso = /[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : value.replace(' ', 'T') + '+08:00'
-  const ts = Date.parse(iso)
-  return Number.isNaN(ts) ? 0 : ts
-}
-
+// 时间解析统一走 utils/activityTime，兼容 +08:00 与 +0800
 /* 进行中 / 已达成：扁平列表，严格按结束时间从近到远；已归档：按游戏分组。 */
 const byEndAsc = (a: TaskboardActivity, b: TaskboardActivity) =>
-  parseTs(a.end_time) - parseTs(b.end_time)
+  parseActivityTime(a.end_time) - parseActivityTime(b.end_time)
 
 const groupOfArchived = (list: TaskboardActivity[]): TaskboardSection[] => {
   const byGame = new Map<string, TaskboardActivity[]>()
@@ -90,9 +86,11 @@ const groupOfArchived = (list: TaskboardActivity[]): TaskboardSection[] => {
     id: key,
     name: gameName(key),
     showHead: true,
-    items: [...items].sort((a, b) => parseTs(b.end_time) - parseTs(a.end_time)),
+    items: [...items].sort((a, b) => parseActivityTime(b.end_time) - parseActivityTime(a.end_time)),
   }))
-  groups.sort((a, b) => parseTs(b.items[0]?.end_time) - parseTs(a.items[0]?.end_time))
+  groups.sort(
+    (a, b) => parseActivityTime(b.items[0]?.end_time) - parseActivityTime(a.items[0]?.end_time)
+  )
   return groups
 }
 
@@ -129,12 +127,16 @@ const setStatus = async (e: TaskboardActivity, target: 'active' | 'done') => {
   }
 }
 
-const saveGames = (keys: string[]) => {
-  enabledKeys.value = [...keys]
-  saveEnabledKeys()
+const saveGames = async (keys: string[]) => {
+  const error = await taskboardState.saveSelection(keys)
+  if (error) {
+    message.error(t('taskboard.saveFailedWithReason', { p0: error }))
+    return
+  }
   if (gameFilter.value && !enabledOptions.value.some(option => option.key === gameFilter.value)) {
     gameFilter.value = undefined
   }
+  editOpen.value = false
 }
 
 const toggleExpand = (id: string) => {
@@ -147,7 +149,13 @@ const toggleExpand = (id: string) => {
     <div class="tb-header">
       <h1 class="page-title">{{ t('taskboard.title') }}</h1>
       <span class="tb-updated">
-        {{ updatedAt ? t('taskboard.dataUpdated', { p0: updatedAt }) : t('taskboard.loading') }}
+        {{
+          updatedAt
+            ? t('taskboard.dataUpdated', { p0: updatedAt })
+            : loading || completionLoading
+              ? t('taskboard.loading')
+              : t('taskboard.notUpdated')
+        }}
       </span>
       <a-button :loading="refreshing || loading" @click="load">
         {{ t('taskboard.refresh') }}

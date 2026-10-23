@@ -24,6 +24,7 @@
 import asyncio
 import hashlib
 import io
+import json
 import os
 import re
 import tempfile
@@ -61,6 +62,8 @@ from app.models.schema import (
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
+from app.utils.constants import UTC8
+from app.utils.io import write_file
 
 
 class GameCalendarActivityInfo(BaseModel):
@@ -107,6 +110,56 @@ class GameCalendarActivityCompletionIn(
 class GameCalendarActivitiesOut(OutBase):
     data: list[GameCalendarActivityInfo] = Field(
         default_factory=list, description="用户已完成且未过期的活动"
+    )
+
+
+class TaskboardArchivedActivity(BaseModel):
+    id: str = Field(..., min_length=1, max_length=300, description="任务台活动 id")
+    game_key: str = Field(..., min_length=1, max_length=100, description="游戏标识")
+    title: str = Field(..., min_length=1, max_length=500, description="活动名称")
+    start_time: str = Field(default="", max_length=40, description="活动开始时间")
+    end_time: str = Field(default="", max_length=40, description="活动结束时间")
+    description: str = Field(default="", max_length=2000, description="活动说明")
+    image_url: str = Field(default="", max_length=2000, description="封面地址")
+
+
+class TaskboardDoneRecord(BaseModel):
+    at: str = Field(..., min_length=1, max_length=40, description="完成时间")
+    end: str = Field(default="", max_length=40, description="活动结束时间，用于裁剪")
+
+
+class TaskboardState(BaseModel):
+    selected_games: list[str] | None = Field(
+        default=None, max_length=100, description="任务台勾选的游戏；为空表示尚未保存"
+    )
+    archived: list[TaskboardArchivedActivity] = Field(
+        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
+    )
+    done_at: Dict[str, TaskboardDoneRecord] = Field(
+        default_factory=dict, description="活动完成日期，key 为游戏与活动的组合键"
+    )
+
+
+class TaskboardStateOut(OutBase):
+    data: TaskboardState = Field(default_factory=TaskboardState)
+
+
+class TaskboardSelectionIn(BaseModel):
+    games: list[str] = Field(
+        default_factory=list, max_length=100, description="勾选的游戏"
+    )
+
+
+class TaskboardArchiveIn(BaseModel):
+    archived: list[TaskboardArchivedActivity] = Field(
+        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
+    )
+
+
+class TaskboardDoneAtIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
+    record: TaskboardDoneRecord | None = Field(
+        default=None, description="为空表示删除该记录"
     )
 
 
@@ -205,6 +258,139 @@ async def set_activity_completion(
     except (OSError, TypeError):
         logger.exception("保存游戏活动完成状态失败")
         return OutBase(code=500, status="error", message="保存活动完成状态失败")
+
+
+## 任务台的持久化：已选游戏、归档缓存、完成日期统一落在配置目录，
+## 不再依赖渲染进程的 localStorage。活动时间的格式不固定（带/不带时区），
+## 裁剪时解析失败就保留，避免把坏数据连带删掉。
+TASKBOARD_STATE_FILENAME = "TaskboardData.json"
+TASKBOARD_KEEP_DAYS = 45
+_TASKBOARD_LOCK = asyncio.Lock()
+
+
+def _taskboard_timestamp(value: str) -> float:
+    """解析活动时间字符串，兼容带时区与北京时间裸时间；无法解析返回 0。"""
+    text = (value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC8)
+    return parsed.timestamp()
+
+
+def _prune_taskboard_state(state: TaskboardState) -> TaskboardState:
+    """按活动结束时间清理归档与完成日期，保留 45 天。"""
+    cutoff = (datetime.now(tz=UTC8) - timedelta(days=TASKBOARD_KEEP_DAYS)).timestamp()
+    state.archived = [
+        item
+        for item in state.archived
+        if not item.end_time
+        or _taskboard_timestamp(item.end_time) == 0
+        or _taskboard_timestamp(item.end_time) >= cutoff
+    ]
+    state.done_at = {
+        key: record
+        for key, record in state.done_at.items()
+        if not record.end
+        or _taskboard_timestamp(record.end) == 0
+        or _taskboard_timestamp(record.end) >= cutoff
+    }
+    return state
+
+
+def _taskboard_state_path() -> Path:
+    """任务台状态文件固定在配置目录。"""
+    return Config.config_path / TASKBOARD_STATE_FILENAME
+
+
+def _read_taskboard_state() -> TaskboardState:
+    """读取任务台状态；文件缺失或损坏时按空状态处理。"""
+    path = _taskboard_state_path()
+    if not path.exists():
+        return TaskboardState()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return _prune_taskboard_state(TaskboardState.model_validate(payload))
+    except (OSError, ValueError, TypeError):
+        logger.warning("任务台状态文件损坏，按空状态处理")
+        return TaskboardState()
+
+
+def _write_taskboard_state(state: TaskboardState) -> None:
+    """裁剪后原子写回任务台状态文件。"""
+    write_file(_taskboard_state_path(), _prune_taskboard_state(state).model_dump())
+
+
+@router.get(
+    "/taskboard/state",
+    tags=["Get"],
+    summary="获取任务台状态",
+    response_model=TaskboardStateOut,
+)
+async def get_taskboard_state() -> TaskboardStateOut:
+    async with _TASKBOARD_LOCK:
+        return TaskboardStateOut(data=_read_taskboard_state())
+
+
+@router.put(
+    "/taskboard/selection",
+    tags=["Set"],
+    summary="保存任务台勾选的游戏",
+    response_model=OutBase,
+)
+async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
+    try:
+        async with _TASKBOARD_LOCK:
+            state = _read_taskboard_state()
+            state.selected_games = payload.games
+            _write_taskboard_state(state)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台游戏选择失败")
+        return OutBase(code=500, status="error", message="保存任务台游戏选择失败")
+
+
+@router.put(
+    "/taskboard/archive",
+    tags=["Set"],
+    summary="保存任务台归档缓存",
+    response_model=OutBase,
+)
+async def set_taskboard_archive(payload: TaskboardArchiveIn) -> OutBase:
+    try:
+        async with _TASKBOARD_LOCK:
+            state = _read_taskboard_state()
+            state.archived = payload.archived
+            _write_taskboard_state(state)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台归档失败")
+        return OutBase(code=500, status="error", message="保存任务台归档失败")
+
+
+@router.put(
+    "/taskboard/done-at",
+    tags=["Set"],
+    summary="记录或删除任务台的完成日期",
+    response_model=OutBase,
+)
+async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
+    try:
+        async with _TASKBOARD_LOCK:
+            state = _read_taskboard_state()
+            if payload.record is None:
+                state.done_at.pop(payload.key, None)
+            else:
+                state.done_at[payload.key] = payload.record
+            _write_taskboard_state(state)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台完成日期失败")
+        return OutBase(code=500, status="error", message="保存任务台完成日期失败")
 
 
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，

@@ -5,9 +5,8 @@
     :width="'min(1000px, 92vw)'"
     :ok-text="t('taskboard.save')"
     :cancel-text="t('taskboard.cancel')"
-    :mask-closable="false"
     @ok="onOk"
-    @cancel="requestClose"
+    @cancel="close"
   >
     <p class="tb-edit-hint">{{ t('taskboard.editGamesHint') }}</p>
     <div class="tb-edit-tools">
@@ -61,7 +60,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
 interface PickerOption extends TaskboardGameOption {
@@ -81,7 +79,6 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const draft = ref<string[]>([])
-const initial = ref<string[]>([])
 const keyword = ref('')
 
 watch(
@@ -89,7 +86,6 @@ watch(
   open => {
     if (!open) return
     draft.value = [...props.selected]
-    initial.value = [...props.selected]
     keyword.value = ''
   },
   { immediate: true }
@@ -101,12 +97,6 @@ const filteredOptions = computed(() => {
   return props.options.filter(option => option.name.toLowerCase().includes(kw))
 })
 
-const dirty = computed(
-  () =>
-    draft.value.length !== initial.value.length ||
-    draft.value.some(key => !initial.value.includes(key))
-)
-
 const toggle = (key: string) => {
   draft.value = draft.value.includes(key)
     ? draft.value.filter(item => item !== key)
@@ -115,24 +105,8 @@ const toggle = (key: string) => {
 
 const close = () => emit('update:open', false)
 
-const onOk = () => {
-  emit('save', [...draft.value])
-  close()
-}
-
-const requestClose = () => {
-  if (!dirty.value) {
-    close()
-    return
-  }
-  Modal.confirm({
-    title: t('taskboard.discardTitle'),
-    content: t('taskboard.discardBody'),
-    okText: t('taskboard.discardOk'),
-    cancelText: t('taskboard.keepEditing'),
-    onOk: close,
-  })
-}
+// 保存只上报勾选结果，成功与否由页面决定；失败时弹窗保持打开、草稿不丢。
+const onOk = () => emit('save', [...draft.value])
 
 const hideCover = (ev: Event) => {
   const img = ev.target as HTMLImageElement

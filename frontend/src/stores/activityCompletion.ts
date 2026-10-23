@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { defineStore } from 'pinia'
+import { useTaskboardStateStore } from './taskboardState'
 import {
   ApiError,
   GetService,
@@ -34,32 +35,6 @@ interface ScopeState {
   pending: string[]
 }
 
-const DONE_AT_KEY = 'auto-mas.activity-completion.done-at'
-
-const readDoneAt = (): Record<string, string> => {
-  try {
-    const raw = localStorage.getItem(DONE_AT_KEY)
-    if (!raw) return {}
-    const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).filter(
-        ([, value]) => typeof value === 'string'
-      )
-    ) as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-
-const saveDoneAt = (value: Record<string, string>) => {
-  try {
-    localStorage.setItem(DONE_AT_KEY, JSON.stringify(value))
-  } catch {
-    // 本地存储不可用时仅本次会话生效
-  }
-}
-
 const nowText = () => {
   const date = new Date()
   const pad = (value: number) => String(value).padStart(2, '0')
@@ -74,12 +49,11 @@ const nowText = () => {
  */
 export const useActivityCompletionStore = defineStore('activityCompletion', () => {
   const states = reactive<Record<string, ScopeState>>({})
-  /** 完成日期：只用于展示，跟着完成状态一起由两个入口维护 */
-  const doneAt = reactive<Record<string, string>>(readDoneAt())
+  const taskboardState = useTaskboardStateStore()
   const doneKey = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
     `${scopeKey(scope)}|${activityKey(item)}`
   const doneAtOf = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
-    doneAt[doneKey(scope, item)] ?? ''
+    taskboardState.doneAtOf(doneKey(scope, item))
 
   const stateOf = (scope: ActivityCompletionScope): ScopeState => {
     const key = scopeKey(scope)
@@ -173,10 +147,10 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
       if (response.code !== 200) throw new Error(response.message)
       state.items = state.items.filter(activity => activityKey(activity) !== key)
       if (completed) state.items.push(item)
-      const dateKey = doneKey(scope, item)
-      if (completed) doneAt[dateKey] = nowText()
-      else delete doneAt[dateKey]
-      saveDoneAt({ ...doneAt })
+      void taskboardState.setDone(
+        doneKey(scope, item),
+        completed ? { at: nowText(), end: item.endTime } : null
+      )
     } catch (error) {
       throw completionError(error)
     } finally {

@@ -1,10 +1,7 @@
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import type { Composer } from 'vue-i18n'
 import { GameCalendarActivityCompletionIn } from '@/api'
-import {
-  useActivityCompletionApi,
-  type ActivityCompletionScope,
-} from '@/composables/useActivityCompletionApi'
+import { useActivityCompletionApi } from '@/composables/useActivityCompletionApi'
 import { HOME_ACTIVITY_MODULE_BUILDERS } from '@/views/home/activityModuleFactory'
 import type { ActivityModuleContext, HomeActivityModule } from '@/views/home/activityModules/types'
 import { buildBlueArchiveActivityPresentation } from '@/views/home/activityModules/bluearchive'
@@ -12,19 +9,12 @@ import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
 import type { HomeActivityEntry, HomeActivityPanel, ResourceItem } from '@/types/home'
 import type { TaskboardActivity, TaskboardGameOption } from '@/types/taskboard'
-import { useTaskboardStorage } from './useTaskboardStorage'
+import { parseActivityTime } from '@/utils/activityTime'
+import { useTaskboardStateStore } from '@/stores/taskboardState'
 
 const ARCHIVE_KEEP_DAYS = 45
 const DAY = 86400000
 const URGENCY_DAYS = 30
-
-const parseTs = (value?: string) => {
-  if (!value) return 0
-  // 已带时区的 ISO 直接解析，裸时间按北京时间补 +08:00
-  const iso = /[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : value.replace(' ', 'T') + '+08:00'
-  const ts = Date.parse(iso)
-  return Number.isNaN(ts) ? 0 : ts
-}
 
 const nowText = () => {
   const date = new Date()
@@ -59,31 +49,27 @@ export const useTaskboardData = (t: Composer['t']) => {
 
   const Game = GameCalendarActivityCompletionIn.game
   const Server = GameCalendarActivityCompletionIn.server
-  const COMPLETION_SCOPES: Record<string, ActivityCompletionScope> = {
-    endfield: { game: Game.ENDFIELD },
-    starrail: { game: Game.STARRAIL },
-    genshin: { game: Game.GENSHIN },
-    zenless: { game: Game.ZENLESS },
-    wutheringwaves: { game: Game.WUTHERINGWAVES },
-    nte: { game: Game.NTE },
-    infinitynikki: { game: Game.INFINITYNIKKI },
-    arknights: { game: Game.ARKNIGHTS },
-    stellasora: { game: Game.STELLASORA },
-    reverse1999: { game: Game.REVERSE1999 },
-    'bluearchive-cn': { game: Game.BLUEARCHIVE, server: Server.CN },
-    'bluearchive-jp': { game: Game.BLUEARCHIVE, server: Server.JP },
-    'bluearchive-global': { game: Game.BLUEARCHIVE, server: Server.GLOBAL },
+  const defaultServer = Server.CN
+
+  // 完成作用域从模块元数据派生，新增游戏接入首页模块后会自动出现在任务台。
+  const completions = new Map<string, ReturnType<typeof useActivityCompletionApi>>()
+  for (const [key, module] of gameModules) {
+    for (const server of module.completionServers ?? [defaultServer]) {
+      completions.set(key, useActivityCompletionApi({ game: module.game, server }))
+    }
   }
-  const completions = new Map(
-    Object.entries(COMPLETION_SCOPES).map(
-      ([key, scope]) => [key, useActivityCompletionApi(scope)] as const
+  // 碧蓝档案首页是一个模块内切三服，任务台按服拆成三项。
+  for (const server of [Server.CN, Server.JP, Server.GLOBAL]) {
+    completions.set(
+      `bluearchive-${server}`,
+      useActivityCompletionApi({ game: Game.BLUEARCHIVE, server })
     )
-  )
+  }
 
   const nowTs = ref(Date.now())
   const updatedAt = ref('')
   const refreshing = ref(false)
-  const { cachedEvents, saveCache } = useTaskboardStorage()
+  const taskboardState = useTaskboardStateStore()
 
   const gameMetas = computed<TaskboardGameOption[]>(() => {
     const out: TaskboardGameOption[] = []
@@ -148,34 +134,37 @@ export const useTaskboardData = (t: Composer['t']) => {
     return out
   })
 
-  /* 数据源只保留当期活动，已结束的会消失；本地累积一份缓存补出「已归档」 */
+  /* 数据源只保留当期活动，已结束的会消失；后端累积一份缓存补出「已归档」。
+   * 状态还没从后端取回来时不能写，否则会用空缓存覆盖已有归档。 */
   watch(
-    currentEvents,
-    list => {
-      const map = new Map(cachedEvents.value.map(e => [e.id, e]))
+    [currentEvents, () => taskboardState.loaded] as const,
+    ([list, ready]) => {
+      if (!ready) return
+      const map = new Map(taskboardState.archived.map(e => [e.id, e]))
       for (const e of list) map.set(e.id, e)
       const cutoff = Date.now()
       const present = new Set(list.map(e => e.id))
       const readyGames = readyGameKeys.value
-      cachedEvents.value = [...map.values()].filter(e => {
-        const end = parseTs(e.end_time)
+      const kept = [...map.values()].filter(e => {
+        const end = parseActivityTime(e.end_time)
         if (!end) return true
         if (end <= cutoff) return end + ARCHIVE_KEEP_DAYS * DAY > cutoff
         // 还没结束、但对应游戏的数据源里已经没有它时不再显示；
         // 游戏本身没取到数据时保留缓存，避免源临时失败丢内容。
         return present.has(e.id) || !readyGames.has(e.gameKey)
       })
-      saveCache()
+      taskboardState.archived = kept
+      void taskboardState.saveArchive(kept)
     },
     { immediate: true }
   )
 
   const allEvents = computed<TaskboardActivity[]>(() => {
-    const map = new Map(cachedEvents.value.map(e => [e.id, e]))
+    const map = new Map(taskboardState.archived.map(e => [e.id, e]))
     for (const e of currentEvents.value) map.set(e.id, e)
     const now = nowTs.value
     return [...map.values()].filter(e => {
-      const end = parseTs(e.end_time)
+      const end = parseActivityTime(e.end_time)
       return !end || end + ARCHIVE_KEEP_DAYS * DAY > now
     })
   })
@@ -204,11 +193,11 @@ export const useTaskboardData = (t: Composer['t']) => {
   type ActivityState = 'active' | 'done' | 'archived' | 'upcoming'
 
   const stateOf = (e: TaskboardActivity): ActivityState => {
-    const end = parseTs(e.end_time)
+    const end = parseActivityTime(e.end_time)
     if (end && end <= nowTs.value) return 'archived'
     if (isCompleted(e)) return 'done'
     // 还没开始的活动不算「进行中」，否则会把后面几期一起列出来。
-    const start = parseTs(e.start_time)
+    const start = parseActivityTime(e.start_time)
     if (start && start > nowTs.value) return 'upcoming'
     return 'active'
   }
@@ -230,7 +219,7 @@ export const useTaskboardData = (t: Composer['t']) => {
   const countByOption = (option: TaskboardGameOption) =>
     allEvents.value.filter(e => e.gameKey === option.key && stateOf(e) === 'active').length
 
-  const remaining = (e: TaskboardActivity) => parseTs(e.end_time) - nowTs.value
+  const remaining = (e: TaskboardActivity) => parseActivityTime(e.end_time) - nowTs.value
 
   const progressOf = (e: TaskboardActivity): number | null => {
     if (!e.end_time) return null
@@ -247,7 +236,9 @@ export const useTaskboardData = (t: Composer['t']) => {
     e: TaskboardActivity
   ): { tone: 'muted' | 'normal' | 'urgent'; text: string } => {
     if (stateOf(e) === 'archived') {
-      const left = Math.ceil((parseTs(e.end_time) + ARCHIVE_KEEP_DAYS * DAY - nowTs.value) / DAY)
+      const left = Math.ceil(
+        (parseActivityTime(e.end_time) + ARCHIVE_KEEP_DAYS * DAY - nowTs.value) / DAY
+      )
       return {
         tone: 'muted',
         text: left > 0 ? t('taskboard.deleteInDays', { p0: left }) : t('taskboard.deleteToday'),
@@ -265,7 +256,7 @@ export const useTaskboardData = (t: Composer['t']) => {
 
   /* 一律按北京时间显示：1999 源给的是 UTC（带 Z），直接切字符串会差 8 小时 */
   const fmtDate = (value?: string) => {
-    const ts = parseTs(value)
+    const ts = parseActivityTime(value)
     if (!ts) return t('taskboard.undetermined')
     const date = new Date(ts + 8 * 3600 * 1000)
     const pad = (n: number) => String(n).padStart(2, '0')
@@ -293,6 +284,9 @@ export const useTaskboardData = (t: Composer['t']) => {
         issues.push(`${gameName(key)}: ${t('taskboard.sourceStale')}`)
       }
     }
+    if (taskboardState.errorMessage) {
+      issues.push(`${t('taskboard.stateFailed')}: ${taskboardState.errorMessage}`)
+    }
     return [...new Set(issues)]
   })
 
@@ -308,6 +302,20 @@ export const useTaskboardData = (t: Composer['t']) => {
     await Promise.all([...completions.values()].map(completion => completion.load(true)))
   }
 
+  /* “数据更新”只代表一次真正成功的读取：活动源和完成状态都结束且没有失败/陈旧。 */
+  const stampUpdatedAt = () => {
+    if (loading.value || completionLoading.value || taskboardState.loading) return
+    if (completionError.value || sourceIssues.value.length) return
+    updatedAt.value = nowText()
+  }
+
+  // 初次加载里“源还在用快照/仍在加载”会先后结束，条件一旦满足就补写更新时间。
+  watchEffect(() => {
+    if (loading.value || completionLoading.value) return
+    if (completionError.value || sourceIssues.value.length) return
+    updatedAt.value = nowText()
+  })
+
   const load = async () => {
     refreshing.value = true
     try {
@@ -316,7 +324,7 @@ export const useTaskboardData = (t: Composer['t']) => {
         baSource.refresh(),
         ...[...completions.values()].map(completion => completion.load(true)),
       ])
-      if (!completionError.value && !sourceIssues.value.length) updatedAt.value = nowText()
+      stampUpdatedAt()
     } finally {
       refreshing.value = false
     }
@@ -326,10 +334,9 @@ export const useTaskboardData = (t: Composer['t']) => {
 
   let timer: ReturnType<typeof setInterval> | null = null
   onMounted(() => {
+    void taskboardState.load()
     sources.value.forEach(source => source.start())
-    void Promise.all([...completions.values()].map(completion => completion.load())).then(() => {
-      if (!completionError.value && !sourceIssues.value.length) updatedAt.value = nowText()
-    })
+    void Promise.all([...completions.values()].map(completion => completion.load()))
     timer = setInterval(() => {
       nowTs.value = Date.now()
     }, 300000)
