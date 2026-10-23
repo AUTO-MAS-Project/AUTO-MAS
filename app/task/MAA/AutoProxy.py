@@ -61,6 +61,7 @@ from app.utils.constants import (
 )
 from app.utils.emulator2.avd.components import root_from_manager_exe
 from app.utils.emulator2.avd.constants import console_port as avd_console_port
+from app.utils.emulator2.facade import Emulator2Manager
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     ConfigCorruptedError,
@@ -2569,11 +2570,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             device_ref = resolve_device_ref(
                 self.emulator_manager, self.script_config.Emulator.Index
             )
-            if device_ref is None:
+            # 自定义管理器可无专用引用，多安装管理器仍须解析所选安装。
+            if device_ref is None and isinstance(
+                self.emulator_manager, Emulator2Manager
+            ):
                 raise ValueError("无法解析所选模拟器实例，请检查模拟器配置")
             connect_settings = current_gui["ConnectSettings"]
             adb_path = self.emulator_manager.get_adb_path()
-            if adb_path is None and device_ref.emulator_type == "general":
+            if (
+                adb_path is None
+                and device_ref is not None
+                and device_ref.emulator_type == "general"
+            ):
                 configured_adb = str(connect_settings.get("AdbPath") or "").strip()
                 if configured_adb:
                     adb_path = Path(configured_adb)
