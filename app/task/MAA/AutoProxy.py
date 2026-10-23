@@ -61,6 +61,7 @@ from app.utils.constants import (
 )
 from app.utils.emulator2.avd.components import root_from_manager_exe
 from app.utils.emulator2.avd.constants import console_port as avd_console_port
+from app.utils.emulator2.facade import Emulator2Manager
 from app.utils.game_update import GameUpdateResult
 from app.utils.io import (
     ConfigCorruptedError,
@@ -2563,6 +2564,41 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             logger.info(
                 f"魔改 AVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
+            )
+        else:
+            # 先按所选实例解析安装，避免多安装管理器沿用上一次命中的 ADB。
+            device_ref = resolve_device_ref(
+                self.emulator_manager, self.script_config.Emulator.Index
+            )
+            # 自定义管理器可无专用引用，多安装管理器仍须解析所选安装。
+            if device_ref is None and isinstance(
+                self.emulator_manager, Emulator2Manager
+            ):
+                raise ValueError("无法解析所选模拟器实例，请检查模拟器配置")
+            connect_settings = current_gui["ConnectSettings"]
+            adb_path = self.emulator_manager.get_adb_path()
+            if (
+                adb_path is None
+                and device_ref is not None
+                and device_ref.emulator_type == "general"
+            ):
+                configured_adb = str(connect_settings.get("AdbPath") or "").strip()
+                if configured_adb:
+                    adb_path = Path(configured_adb)
+                    if not adb_path.is_absolute():
+                        adb_path = self.maa_set_path.parent / adb_path
+            if adb_path is None or not adb_path.is_file():
+                raise ValueError("未找到可用的 ADB，请检查模拟器或 MAA 的连接设置")
+            address = emulator_info.adb_address.strip()
+            if not address or address == "Unknown":
+                raise ValueError("无法获取所选模拟器的 ADB 地址，请检查模拟器连接")
+            connect_settings.update(
+                {
+                    "AdbPath": str(adb_path),
+                    "Address": address,
+                    "AutoDetect": False,
+                    "AlwaysAutoDetect": False,
+                }
             )
 
         post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
