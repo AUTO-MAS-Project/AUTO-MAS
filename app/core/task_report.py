@@ -106,7 +106,7 @@ def _create_coordinator(
             prepare_targets=_prepare_community_targets,
             report_failure=report_failure
             if report_failure is not None
-            else partial(_publish_task_notification_failure, task_id=task_id),
+            else partial(publish_notification_failure, task_id=task_id),
             report_supplement_failure=_report_supplement_failure,
             spawn=partial(
                 spawn_notification,
@@ -331,12 +331,6 @@ async def shutdown_community_notifications() -> None:
     """退出时取消并等待任务报告补发，然后才能释放共享连接。"""
 
     await shutdown_notifications()
-
-
-async def _publish_task_notification_failure(
-    result: DispatchResult, *, task_id: str | None
-) -> None:
-    await publish_notification_failure(result, task_id=task_id)
 
 
 async def dispatch_task_notification(
