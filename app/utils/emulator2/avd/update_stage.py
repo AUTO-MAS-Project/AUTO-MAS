@@ -776,17 +776,100 @@ def _to_trash(root: str | Path, *paths: Path) -> None:
             _rename(path, trash / f"{time.time_ns()}-{path.name}")
 
 
-def purge_trash(root: str | Path) -> None:
-    """删 ``trash``。删不掉（文件被占用）只记日志，下次启动再删。"""
+def _tidy_up(root: str | Path, *paths: Path) -> None:
+    """收尾时顺手丢掉不再要的目录：逐个改名进 ``trash``，改不动的（被不带共享删除地打开着，比如杀软
+    在扫）只记日志、留到下次清理，不影响这次的结果和状态。"""
+    for path in paths:
+        try:
+            _to_trash(root, path)
+        except OSError as e:
+            logger.warning(f"{path} 这次挪不走（{e.strerror or e}），留着下次再清理")
+
+
+_MOUNT_POINT_TAG = getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", 0xA0000003)
+
+
+def _remove_best_effort(path: Path, failed: list[str]) -> None:
+    """删 ``path``（文件或目录）：删不掉的项记进 ``failed`` 后跳过，其余照删。
+
+    不跟随目录链接（符号链接、junction 只删链接本身）。只读文件先去掉只读再删。
+    """
+    native = native_path(path)
     try:
-        remove_tree(_trash_dir(root))
+        info = os.lstat(native)
+    except FileNotFoundError:
+        return
     except OSError as e:
-        logger.warning(f"清理 {_trash_dir(root)} 没删完，下次启动再删: {e}")
+        failed.append(f"{path}（{e.strerror or e}）")
+        return
+    is_link = stat.S_ISLNK(info.st_mode) or (
+        getattr(info, "st_reparse_tag", 0) == _MOUNT_POINT_TAG
+    )
+    if stat.S_ISDIR(info.st_mode) and not is_link:
+        try:
+            names = os.listdir(native)
+        except OSError as e:
+            failed.append(f"{path}（{e.strerror or e}）")
+            return
+        before = len(failed)
+        for name in names:
+            _remove_best_effort(path / name, failed)
+        if len(failed) > before:
+            return  # 里面有删不掉的，目录本身肯定删不掉，不重复记
+        removers = [os.rmdir]
+    elif is_link:
+        # 目录链接要 rmdir，文件链接要 unlink；不分辨，两种都试
+        removers = [os.unlink, os.rmdir]
+    else:
+        removers = [os.unlink]
+    error: OSError | None = None
+    for remove in removers:
+        for attempt in range(2):
+            try:
+                remove(native)
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError as e:
+                error = e
+                if attempt == 0:
+                    with suppress(OSError):
+                        os.chmod(native, stat.S_IWRITE)
+            except OSError as e:
+                error = e
+                break
+    failed.append(f"{path}（{getattr(error, 'strerror', None) or error}）")
+
+
+def purge_trash(root: str | Path) -> None:
+    """删 ``trash``：逐项尽力删，删不掉的（文件被占用、杀软在扫）跳过并记日志，其余照删；剩下的下次再删。"""
+    trash = _trash_dir(root)
+    failed: list[str] = []
+    _remove_best_effort(trash, failed)
+    if failed:
+        shown = "；".join(failed[:5]) + (
+            f" 等 {len(failed)} 项" if len(failed) > 5 else ""
+        )
+        logger.warning(f"清理 {trash} 有删不掉的，先跳过、下次再删：{shown}")
+
+
+def trash_bytes(root: str | Path) -> int:
+    """``trash`` 里还占着多少字节（读不到的不算）。"""
+    total = 0
+    for folder, _dirs, files in os.walk(native_path(_trash_dir(root))):
+        for name in files:
+            with suppress(OSError):
+                total += os.lstat(os.path.join(folder, name)).st_size
+    return total
 
 
 def _finish_install(root: Path, state: dict[str, Any]) -> None:
     """换上的收尾：记 ``mas-avd.json``，暂存与下载改名进 ``trash``，写状态（记下上一版和它的摘要，等第一次
-    开机确认），最后才真删。"""
+    开机确认），最后才真删。
+
+    暂存、下载、上一代旧版这些挪不走（比如杀软正开着下载的包）不算失败：新版已经换上，只记日志留到
+    下次清理（:func:`_tidy_up`），照样写好状态，回退也照样可用。
+    """
     target = state["target"]
     _record_history(
         root,
@@ -801,7 +884,7 @@ def _finish_install(root: Path, state: dict[str, Any]) -> None:
         },
     )
     # 装好了，下载的包不再要（别的根目录要用时已经链接 / 复制走了）
-    _to_trash(
+    _tidy_up(
         root,
         pkg_dir(root),
         stage_emulator_dir(root).parent,
@@ -862,7 +945,12 @@ def swap_in(root: str | Path) -> str:
     # 只留一代旧版：上一次更新留下、还没等到开机确认的那份先挪开（记在 previousBefore），换上成功
     # 后再删；第一次改名失败、或中途崩溃退回旧版时挪回来，等于什么都没动
     older = update_dir(root) / "previous-old"
-    _to_trash(root, older, update_dir(root) / "discard")
+    try:
+        _to_trash(root, older, update_dir(root) / "discard")
+    except OSError as e:
+        raise SwapBlocked(
+            f"上次留下、要删的旧版文件还被占用（{e.strerror or e}），什么都没动，稍后再试"
+        ) from e
     purge_trash(root)
     saved_previous = state.get("previous")
     if os.path.lexists(native_path(previous_dir(root))):
@@ -953,8 +1041,10 @@ def previous_problem(root: str | Path, state: dict[str, Any] | None = None) -> s
     if not os.path.isdir(native_path(previous_dir(root) / "emulator")):
         return "旧版已经删掉了"
     fingerprint = previous.get("fingerprint")
-    if not fingerprint or fingerprint != tree_fingerprint((previous_dir(root), "")):
-        return "旧版不完整（可能删到一半），不能回退"
+    if not fingerprint:
+        return "换上时没有记下旧版的文件摘要，确认不了旧版完整，不能回退"
+    if fingerprint != tree_fingerprint((previous_dir(root), "")):
+        return "旧版和换上时记下的不一致（文件被删改过，或删到一半），不能回退"
     return ""
 
 
@@ -993,8 +1083,9 @@ def _finish_rollback(root: Path, state: dict[str, Any]) -> None:
             "to": previous.get("version", ""),
         },
     )
-    # 回退前若还拼好了更新的一版，它的暂存一并丢掉（下载的包还在，再装时重新拼）
-    _to_trash(
+    # 回退前若还拼好了更新的一版，它的暂存一并丢掉（下载的包还在，再装时重新拼）。挪不走的只记日志、
+    # 留到下次清理，不影响回退结果
+    _tidy_up(
         root,
         update_dir(root) / "discard",
         previous_dir(root),
@@ -1031,7 +1122,12 @@ def rollback(root: str | Path) -> str:
     ensure_not_in_use(root, "回退")
     old = previous_dir(root) / "emulator"
     discard = update_dir(root) / "discard"
-    _to_trash(root, discard)
+    try:
+        _to_trash(root, discard)
+    except OSError as e:
+        raise SwapBlocked(
+            f"上次回退换下来、要删的文件还被占用（{e.strerror or e}），什么都没动，稍后再试"
+        ) from e
     purge_trash(root)
     discard.mkdir(parents=True)
     resume_phase = state.get("phase")
@@ -1112,7 +1208,10 @@ def recover(root: str | Path) -> str | None:
       ``previous`` 改回去，并把上一代旧版（``previous-old``）挪回。两次改名都做完了只差包内文件 → 补完。
       第一次改名都没成 → 回到「待安装」，上一代旧版挪回。
     - 回退中：同理补完或恢复。
-    - 不在换上中却还有 ``previous-old``（挪开上一代旧版之后、写下「换上中」之前就退出了）：挪回去。
+    - 不在换上中却还有 ``previous-old``：和状态里记的上一版摘要一致（挪开上一代旧版之后、写下「换上中」
+      之前就退出了）就挪回去；不一致（换上收尾时没挪走的）就丢掉。
+    - 状态里还记着上一版、``previous\\emulator`` 却不在了（开机确认把它挪进 ``trash`` 后、写状态前退出）：
+      去掉这条回退记录。
     - 上次没删完的 ``trash`` 再删一次。
     """
     root = Path(root)
@@ -1150,7 +1249,7 @@ def recover(root: str | Path) -> str | None:
                     },
                 }
                 write_state(root, abort)
-                _to_trash(root, pkg_dir(root), stage.parent)
+                _tidy_up(root, pkg_dir(root), stage.parent)
                 purge_trash(root)
                 return "上次更新没装完，已退回旧版"
             return "sdk\\emulator 不见了，也没有可用的新版或旧版"
@@ -1191,12 +1290,33 @@ def recover(root: str | Path) -> str | None:
         write_state(root, state)
         return "上次回退还没开始，已恢复原状"
     if os.path.lexists(native_path(older)):
-        # 挪开上一代旧版之后、写下「换上中」之前退出：previous 里只有这次做到一半的备份
-        _restore_older(root)
-        done = (done + "；" if done else "") + "上次换上前挪开的旧版已挪回"
+        recorded = (state.get("previous") or {}).get("fingerprint")
+        if recorded and recorded == tree_fingerprint((older, "")):
+            # 挪开上一代旧版之后、写下「换上中」之前退出：previous 里只有这次做到一半的备份
+            _restore_older(root)
+            done = _join(done, "上次换上前挪开的旧版已挪回")
+        else:
+            # 换上收尾时没挪走的上一代旧版（状态里记的上一版不是它），留着没用
+            _tidy_up(root, older)
+            done = _join(done, "丢掉了上次没挪走的上一代旧版")
+    state = read_state(root)  # 上面可能已经改过状态（丢掉暂存）
+    previous = state.get("previous")
+    if (
+        isinstance(previous, dict)
+        and previous
+        and not os.path.isdir(native_path(previous_dir(root) / "emulator"))
+    ):
+        # 开机确认已经把旧版挪进 trash、还没来得及写状态就退出了：旧版没了，记录也去掉
+        state["previous"] = None
+        write_state(root, state)
+        done = _join(done, "上一版已经删掉，去掉了它的回退记录")
     if os.path.lexists(native_path(_trash_dir(root))):
         purge_trash(root)
     return done
+
+
+def _join(done: str | None, more: str) -> str:
+    return f"{done}；{more}" if done else more
 
 
 __all__ = [
@@ -1240,6 +1360,7 @@ __all__ = [
     "stage_emulator_dir",
     "staged_fingerprint",
     "swap_in",
+    "trash_bytes",
     "tree_fingerprint",
     "update_dir",
     "verify_package",

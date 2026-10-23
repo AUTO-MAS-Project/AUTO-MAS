@@ -80,8 +80,15 @@ FULL_PACKAGE_ADVICE = "缺 adb 或系统镜像时，在「添加魔改 AVD」里
 
 
 def root_key(root: str | Path) -> str:
-    """根目录的规范化键，按它去重。"""
-    return os.path.normcase(os.path.abspath(str(root)))
+    """根目录的规范化键，按它去重、按它查各张按根目录记的表（开机中、正在换上、更新状态与锁……）。
+
+    按真实路径算（解开目录链接 / 符号链接）：管理器的根目录取自 ``Path(主程序).resolve()``，配置里登记的
+    却可能是链接或别的写法，两边必须算出同一个键。路径不在时 ``realpath`` 照样给出规范化的结果。
+    """
+    try:
+        return os.path.normcase(os.path.realpath(str(root)))
+    except (OSError, ValueError):
+        return os.path.normcase(os.path.abspath(str(root)))
 
 
 def sdk_dir(root: str | Path) -> Path:

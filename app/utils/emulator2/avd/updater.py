@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
 import shutil
 import time
@@ -53,7 +54,7 @@ import httpx
 
 from app.services.update_transport import download_resumable
 from app.utils import get_logger
-from app.utils.update_files import native_path, replace_file
+from app.utils.update_files import native_path, replace_file, resolve_within
 
 from . import first_install, update_range
 from . import update_stage as stage
@@ -622,7 +623,13 @@ async def _prepare_by_range(
     runtime: _Runtime, release: RemoteRelease, target: dict[str, Any]
 ) -> dict[str, Any] | None:
     """按区间只取变了的文件拼出新版。不能这么做（变化太多、服务器不配合、核对不过……）时丢掉这一批、
-    返回 ``None``，调用方改下整包；用户取消照常往外抛。"""
+    返回 ``None``，调用方改下整包；用户取消照常往外抛。
+
+    这条路用不上发布记录里整包的 SHA-256（asset digest）：整包没有下全，算不出它的摘要。核对靠包里的
+    清单：新写法版本（``vX.Y.Z``）必须带清单，拼好后逐文件比大小和 SHA-256（:func:`_verify_and_stage`），
+    和整包下载一样严；只有没有清单的旧 tag（``v37.2.10-masN``）这时只剩每个条目的 zip CRC32（取回的
+    条目解压时核对、本地复制的按 CRC 比过），比整包下载少一道整包摘要。
+    """
     from app.core import Config
 
     root = runtime.root
@@ -708,11 +715,25 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
         and stage.stage_emulator_dir(root).is_dir()
     ):
         raise _NothingToDo(f"{release.version} 已经下载并核对过，可以安装")
+    # 上次没删完的先删（trash 里都是已经不要的），再看剩余空间
+    await asyncio.to_thread(stage.purge_trash, root)
     free = (await asyncio.to_thread(shutil.disk_usage, root)).free
     if free < UPDATE_MIN_FREE_BYTES:
+        left = await asyncio.to_thread(stage.trash_bytes, root)
+        left_text = (
+            f"{left / 1024**3:.2f} GB"
+            if left >= 1024**3
+            else f"{left / 1024**2:.1f} MB"
+        )
+        hint = (
+            f"。另外 {stage.update_dir(root) / 'trash'} 里还占着 {left_text}，"
+            "是之前要删、但文件被占用没删掉的，关掉占用它的程序（或重启电脑）后 MAS 会再删"
+            if left
+            else ""
+        )
         raise RuntimeError(
             f"{root.anchor or root} 剩余空间 {free / 1024**3:.1f} GB，更新要临时占用约 "
-            f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理"
+            f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理{hint}"
         )
     await asyncio.to_thread(stage.begin_staging, root, target)
     try:
@@ -1151,8 +1172,110 @@ def _first_install_mode(root: Path) -> str:
     raise ValueError("请选一个空文件夹，MAS 会把魔改 AVD 装进去")
 
 
+def _read_first_install_marker(root: Path) -> dict[str, Any] | None:
+    """上次首次安装留下的标记；没有返回 ``None``，读不出返回空 dict（当作装到一半、不知道挪了哪些）。"""
+    try:
+        data = json.loads(_first_install_marker(root).read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _clear_half_installed(root: Path, root_files: list[str]) -> None:
+    """重做首次安装前清掉上次挪进来的包内东西：``sdk\\emulator`` 整个，加上标记里记的根目录文件
+    （只认包内路径，``avd``、``mas-avd.json`` 等不属于包的一律不碰），删空了的目录顺手删掉。"""
+    stage.remove_tree(stage.emulator_dir(root))
+    anchor = Path(os.path.abspath(root))
+    for rel in root_files:
+        try:
+            if stage.package_path(rel) != rel or stage.is_emulator_file(rel):
+                continue
+            target = resolve_within(anchor, rel, resolve_links=False)
+        except (stage.PackageError, ValueError):
+            continue
+        if os.path.lexists(native_path(target)):
+            os.chmod(native_path(target), 0o666)
+            os.unlink(native_path(target))
+        parent = target.parent
+        while parent != anchor and anchor in parent.parents:
+            try:
+                os.rmdir(native_path(parent))
+            except OSError:
+                break
+            parent = parent.parent
+
+
+def _place_into_root(root: Path, pkg: Path, release: RemoteRelease) -> None:
+    """把核对过的 ``pkg`` 挪进根目录，挪完核对。
+
+    挪之前写下标记（版本、包、根目录里归包管的文件）：挪到一半中断，再点「下载并安装」认得出、重做。
+    重做时期间可能已经出了新版，所以先清掉上次挪进来的（``sdk\\emulator`` 整个、上次记下的根目录
+    文件），新旧两版的文件不会混在一起。标记里的根目录文件取新旧两次的并集，清到一半再中断也不漏。
+
+    挪完核对：包里每个文件都在、大小对（同盘改名，内容在 ``pkg`` 里已按清单 / CRC 核对过），
+    ``sdk\\emulator`` 里不许多出包里没有的文件，上一次独有的根目录文件已经不在。对不上就抛
+    :class:`~.update_stage.PackageError`、留着标记，再点会重做。
+    """
+    files = sorted(stage.walk_files(pkg))
+    sizes = {rel: os.stat(native_path(pkg / rel)).st_size for rel in files}
+    new_root_files = [rel for rel in files if not stage.is_emulator_file(rel)]
+    old = _read_first_install_marker(root)
+    old_root_files = [
+        rel for rel in (old or {}).get("rootFiles") or [] if isinstance(rel, str)
+    ]
+    marker = _first_install_marker(root)
+    stage.write_json_atomic(
+        marker,
+        {
+            "version": str(release.version),
+            "asset": release.asset.name,
+            "rootFiles": sorted({*old_root_files, *new_root_files}),
+        },
+    )
+    if old is not None:
+        logger.info(
+            f"{root} 上次首次安装（{old.get('version') or '版本不明'}）没装完，先清掉挪进来的文件再装 "
+            f"{release.version}"
+        )
+        _clear_half_installed(root, old_root_files)
+    for rel in files:
+        replace_file(pkg / rel, root / rel)
+
+    problems: list[str] = []
+    for rel in files:
+        target = root / rel
+        if not target.is_file():
+            problems.append(f"缺 {rel}")
+        elif os.stat(native_path(target)).st_size != sizes[rel]:
+            problems.append(f"{rel} 大小不对")
+    expected_emulator = {rel.lower() for rel in files if stage.is_emulator_file(rel)}
+    problems += [
+        f"sdk\\emulator 里多出 {rel}"
+        for rel in (
+            f"sdk/emulator/{item}"
+            for item in stage.walk_files(stage.emulator_dir(root))
+        )
+        if rel.lower() not in expected_emulator
+    ]
+    current = {rel.lower() for rel in new_root_files}
+    problems += [
+        f"上一次的 {rel} 还在"
+        for rel in old_root_files
+        if rel.lower() not in current and os.path.lexists(native_path(root / rel))
+    ]
+    if problems:
+        shown = "；".join(problems[:5])
+        more = f" 等 {len(problems)} 项" if len(problems) > 5 else ""
+        raise stage.PackageError(
+            f"装进去的文件和包对不上：{shown}{more}。请再点一次「下载并安装」重做"
+        )
+    marker.unlink()
+
+
 async def _install_package_into(runtime: _Runtime, release: RemoteRelease) -> None:
-    """空目录：下整包、核对，解到 ``.update\\pkg`` 再整体挪进根目录。"""
+    """空目录：下整包、核对，解到 ``.update\\pkg`` 再整体挪进根目录（:func:`_place_into_root`）。"""
     root = runtime.root
     root.mkdir(parents=True, exist_ok=True)
     free = (await asyncio.to_thread(shutil.disk_usage, root)).free
@@ -1194,14 +1317,7 @@ async def _install_package_into(runtime: _Runtime, release: RemoteRelease) -> No
         except stage.PackageError:
             stage.remove_tree(pkg)
             raise
-        # 往根目录挪之前写下标记：挪到一半中断，再点「下载并安装」会认出来、重做（逐个文件覆盖）
-        marker = _first_install_marker(root)
-        stage.write_json_atomic(
-            marker, {"version": str(release.version), "asset": release.asset.name}
-        )
-        for rel in sorted(stage.walk_files(pkg)):
-            replace_file(pkg / rel, root / rel)
-        marker.unlink()
+        _place_into_root(root, pkg, release)
         stage.remove_tree(stage.update_dir(root))
 
     await asyncio.to_thread(
