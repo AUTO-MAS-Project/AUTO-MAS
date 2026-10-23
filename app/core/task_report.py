@@ -42,9 +42,6 @@ from app.models.notification_report import (
 )
 from app.models.task import TaskItem
 from app.services.notification_report import DefaultReportRenderer
-from app.utils import get_logger
-
-logger = get_logger("任务报告")
 
 
 def _create_coordinator(
