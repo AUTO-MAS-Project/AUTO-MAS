@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from app.models.notification import (
     NotificationImage,
@@ -70,8 +70,6 @@ class NotificationService(Protocol):
         task_info: TaskItem | None = None,
         result_template: str = "general_result.html",
         signature_sep: str = "\n\n",
-        logger: Any | None = None,
-        skip_debug_message: str | None = None,
         images: Sequence[NotificationImage] = (),
         include_system: bool = True,
     ) -> DispatchResult: ...
