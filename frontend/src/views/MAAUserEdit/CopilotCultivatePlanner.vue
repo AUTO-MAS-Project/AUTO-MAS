@@ -24,6 +24,8 @@
         <a-segmented v-model:value="source" :options="scopeOptions" :disabled="busy || disabled" />
       </div>
       <div v-if="source === 'author' && (!result || showAnalysisSettings)" class="source-query">
+        <!-- 回车解析作者名 → 唯一命中直接定位（query 置为作者 ID，下方自动加载其作业）；
+             多命中列在下面点选，零命中就地提示 -->
         <a-input-search
           v-model:value="authorKeyword"
           :placeholder="t('maaCopilot.authorHint')"
@@ -32,15 +34,8 @@
           :disabled="busy || disabled"
           @search="searchAuthors"
         />
-        <a-select
-          v-model:value="query"
-          :options="authors"
-          :placeholder="t('maaCopilot.selectAuthor')"
-          :aria-label="t('maaCopilot.selectAuthor')"
-          :disabled="busy || disabled"
-          class="author-select"
-        />
       </div>
+      <!-- 作业集/单个作业的链接输入：必须紧跟上面的 v-if 成链，避免漏进作者模式 -->
       <div v-else-if="source !== 'all' && (!result || showAnalysisSettings)" class="source-query">
         <a-input
           v-model:value="query"
@@ -48,6 +43,29 @@
           :aria-label="t(source === 'set' ? 'maaCopilot.set' : 'maaCopilot.copilot')"
           :disabled="busy || disabled"
         />
+      </div>
+      <div
+        v-if="source === 'author' && (!result || showAnalysisSettings) && authorCandidates.length"
+        class="author-candidates"
+      >
+        <span class="author-candidates-label">
+          {{ t('maaCopilot.authorCandidates', { count: authorCandidates.length }) }}
+        </span>
+        <a-button
+          v-for="author in authorCandidates"
+          :key="author.value"
+          size="small"
+          :disabled="busy || disabled"
+          @click="selectAuthor(author)"
+        >
+          {{ author.label }}
+        </a-button>
+      </div>
+      <div
+        v-if="source === 'author' && (!result || showAnalysisSettings) && authorNone"
+        class="author-none"
+      >
+        {{ t('maaCopilot.noAuthors') }}
       </div>
       <CopilotSourceStatus
         :state="sourceState"
@@ -131,8 +149,10 @@ const { t } = useI18n()
 const api = useMaaCopilotApi()
 const source = ref<NonNullable<MaaCopilotSourceIn['source']>>(MaaCopilotSourceIn.source.ALL)
 const query = ref('')
+// 作者搜索：输入框只持有关键词；query 承载解析后的作者 ID（后端按 uploaderId 取作业）
 const authorKeyword = ref('')
-const authors = ref<Array<{ label: string; value: string }>>([])
+const authorCandidates = ref<Array<{ label: string; value: string }>>([])
+const authorNone = ref(false)
 const searching = ref(false)
 const sourceState = shallowRef<MaaCopilotSourceOut | null>(null)
 const result = shallowRef<MaaCopilotAnalyzeOut | null>(null)
@@ -161,7 +181,12 @@ const invalidate = () => {
   busy.value = false
   error.value = ''
 }
-watch([source, query], invalidate)
+// 作者 query 只在点选/唯一命中时离散赋值，变更即自动加载其作业；
+// set/copilot 是逐字符输入的 query，不自动加载，仍由下方按钮触发
+watch([source, query], () => {
+  invalidate()
+  if (source.value === 'author' && validSource.value) void syncSource(false)
+})
 watch(
   () => props.bindingKey,
   () => {
@@ -171,6 +196,11 @@ watch(
 )
 watch([coverage, requireModules], () => {
   result.value = null
+})
+// 重新输入视为放弃旧结果：清空候选与零命中提示
+watch(authorKeyword, () => {
+  authorCandidates.value = []
+  authorNone.value = false
 })
 onScopeDispose(() => {
   generation++
@@ -201,23 +231,35 @@ const syncSource = async (refresh: boolean) => {
   }
   await poll(refresh ? MaaCopilotSourceIn.action.REFRESH : MaaCopilotSourceIn.action.LOAD)
 }
+// 回车/按钮触发解析（接口慢，不做输入防抖）；代次守卫防连续回车的乱序覆盖
 const searchAuthors = async () => {
-  if (!authorKeyword.value.trim()) return
+  const keyword = authorKeyword.value.trim()
+  if (!keyword) return
+  authorCandidates.value = []
+  authorNone.value = false
   const version = ++searchGeneration
   searching.value = true
   try {
-    const response = await api.searchAuthors(authorKeyword.value)
+    const response = await api.searchAuthors(keyword)
     if (version !== searchGeneration) return
-    authors.value = (response.data ?? []).flatMap(item =>
+    const matched = (response.data ?? []).flatMap(item =>
       item.value ? [{ label: item.label, value: item.value }] : []
     )
-    if (!authors.value.length) message.info(t('maaCopilot.noAuthors'))
+    // 唯一命中直接定位：query 置为作者 ID 触发下方自动加载其作业
+    if (matched.length === 1) selectAuthor(matched[0])
+    else if (matched.length > 1) authorCandidates.value = matched
+    else authorNone.value = true
   } catch (e) {
     if (version === searchGeneration)
       error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
   } finally {
     if (version === searchGeneration) searching.value = false
   }
+}
+const selectAuthor = (author: { label: string; value: string }) => {
+  authorKeyword.value = author.label
+  query.value = author.value
+  authorCandidates.value = []
 }
 const analyze = async () => {
   if (
@@ -336,12 +378,28 @@ onMounted(() => void syncSource(false))
   flex: 1;
   min-width: 200px;
 }
+/* 多命中候选/零命中提示：上提贴近输入框，视觉上同属一次搜索 */
+.author-candidates {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -8px 0 16px;
+}
+
+.author-candidates-label {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.author-none {
+  margin: -8px 0 16px;
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+}
 .analyze-actions {
   padding: 20px 0;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-.author-select {
-  min-width: 200px;
 }
 .analysis-loading {
   display: flex;

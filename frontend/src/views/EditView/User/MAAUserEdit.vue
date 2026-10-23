@@ -44,27 +44,36 @@
       @handle-cancel="handleCancel"
     />
 
-    <div v-else class="cultivation-page-header">
-      <div>
-        <a-breadcrumb>
-          <a-breadcrumb-item
-            ><router-link to="/scripts">{{ t('edit.scripts') }}</router-link></a-breadcrumb-item
-          >
-          <a-breadcrumb-item
-            ><router-link :to="{ name: 'MAAUserEdit', params: { scriptId, userId } }">{{
-              formData.Info.Name || scriptName
-            }}</router-link></a-breadcrumb-item
-          >
-          <a-breadcrumb-item>{{ t('maaCopilot.pageTitle') }}</a-breadcrumb-item>
-        </a-breadcrumb>
-        <h2>{{ t('maaCopilot.pageTitle') }}</h2>
-        <p>{{ t('maaCopilot.saveHint') }}</p>
-      </div>
-      <a-button :loading="leavingPage" @click="handleCancel">{{ t('edit.back') }}</a-button>
-    </div>
-
+    <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :inert="editorBusy">
+      <CultivationPage
+        v-if="cultivationPage && !isInitializing"
+        :script-id="scriptId"
+        :user-id="userId"
+        :script-name="scriptName"
+        :form-data="formData"
+        :loading="loading"
+        :leaving-page="leavingPage"
+        :editor-busy="editorBusy"
+        :operator-catalog="cultivateOperatorCatalog"
+        :operator-options-loading="cultivateOperatorOptionsLoading"
+        :operator-options-error="cultivateOperatorOptionsError"
+        :skland-role-options="sklandRoleOptions"
+        :skland-role-loading="sklandRoleLoading"
+        :skland-role-error="sklandRoleError"
+        :load-skland-role-options="loadSklandRoleOptions"
+        :item-options="depotItemOptions"
+        :cultivate-preview="cultivatePreview"
+        :cultivate-preview-loading="cultivatePreviewLoading"
+        :cultivate-preview-error="cultivatePreviewError"
+        :load-cultivate-preview="loadCultivatePreview"
+        :import-cultivate-targets="importCultivateTargets"
+        :prepare-copilot-analysis="prepareCopilotAnalysis"
+        @save="handleFieldSave"
+        @back="handleCancel"
+      />
+      <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
+      <a-card v-else class="config-card" :inert="editorBusy">
         <a-form
           ref="formRef"
           :model="formData"
@@ -72,170 +81,135 @@
           layout="vertical"
           class="config-form"
         >
-          <CultivateTargetEditor
-            v-if="cultivationPage && !isInitializing"
-            :form-data="formData"
+          <!-- 基本信息组件 -->
+          <BasicInfoSection
+            v-model:form-data="formData"
             :loading="loading"
-            :operator-catalog="cultivateOperatorCatalog"
-            :operator-options-loading="cultivateOperatorOptionsLoading"
-            :operator-options-error="cultivateOperatorOptionsError"
-            :skland-role-options="sklandRoleOptions"
-            :skland-role-loading="sklandRoleLoading"
-            :skland-role-error="sklandRoleError"
-            :load-skland-role-options="loadSklandRoleOptions"
-            :item-options="depotItemOptions"
-            :cultivate-preview="cultivatePreview"
-            :cultivate-preview-loading="cultivatePreviewLoading"
-            :cultivate-preview-error="cultivatePreviewError"
-            :load-cultivate-preview="loadCultivatePreview"
-            :import-cultivate-targets="importCultivateTargets"
-            :prepare-copilot-analysis="prepareCopilotAnalysis"
+            :server-options="serverOptions"
             @save="handleFieldSave"
           />
-          <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
-          <template v-else>
-            <!-- 基本信息组件 -->
-            <BasicInfoSection
-              v-model:form-data="formData"
-              :loading="loading"
-              :server-options="serverOptions"
-              @save="handleFieldSave"
-            />
 
-            <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
-            <a-flex class="section-header" align="center" wrap="wrap" gap="small">
-              <h3>{{ t('edit.configurationSource') }}</h3>
-            </a-flex>
-            <GeneralConfigModeSelector
-              :model-value="formData.Info.Base"
-              :options="maaConfigModeOptions"
-              :disabled="loading"
-              :quick-config="formData.Info.IfQuickConfig"
-              :quick-config-disabled="loading || isInitializing"
-              :alert-message="t('edit.configSourceHintBase')"
-              :show-gui-hint="false"
-              @change="handleConfigModeChange"
-              @quick-config-change="handleQuickConfigChange"
-            />
-            <!-- MAA 不提供配置导入 -->
-            <ConfigActionsSection
-              :base="formData.Info.Base"
-              script-label="MAA"
-              :disabled="loading || showMaaConfigMask || configLocked"
-              :config-loading="preparingSession || maaConfigLoading"
-              :configuring="showMaaConfigMask"
-              :show-import="false"
-              @configure="handleMAAConfig"
-              @script-config="handleScriptConfig"
-            />
+          <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
+          <a-flex class="section-header" align="center" wrap="wrap" gap="small">
+            <h3>{{ t('edit.configurationSource') }}</h3>
+          </a-flex>
+          <GeneralConfigModeSelector
+            :model-value="formData.Info.Base"
+            :options="maaConfigModeOptions"
+            :disabled="loading"
+            :quick-config="formData.Info.IfQuickConfig"
+            :quick-config-disabled="loading || isInitializing"
+            :alert-message="t('edit.configSourceHintBase')"
+            :show-gui-hint="false"
+            @change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
+          />
+          <!-- MAA 不提供配置导入 -->
+          <ConfigActionsSection
+            :base="formData.Info.Base"
+            script-label="MAA"
+            :disabled="loading || showMaaConfigMask || configLocked"
+            :config-loading="preparingSession || maaConfigLoading"
+            :configuring="showMaaConfigMask"
+            :show-import="false"
+            @configure="handleMAAConfig"
+            @script-config="handleScriptConfig"
+          />
 
-            <a-flex
-              class="section-header"
-              justify="space-between"
-              align="center"
-              wrap="wrap"
-              gap="small"
-            >
-              <h3>{{ t('edit.taskConfiguration') }}</h3>
-              <a-space>
-                <a-button size="small" @click="openRestoreModal">
-                  <template #icon><HistoryOutlined /></template>
-                  {{ t('edit.configRestoreTitle') }}
-                </a-button>
-              </a-space>
-            </a-flex>
-            <TaskPipelineSection
-              v-if="formData.Info.IfQuickConfig"
-              v-model:form-data="formData"
-              :loading="loading"
-              :stage-options="stageOptions"
-              :activity-stages="activityStages"
-              :activity-stage-loading="activityStageLoading"
-              :activity-stage-error="activityStageError"
-              :depot-item-options="depotItemOptions"
-              :depot-item-options-loading="depotItemOptionsLoading"
-              :depot-item-options-error="depotItemOptionsError"
-              :depot-stage-candidates="depotStageCandidates"
-              :depot-stage-candidates-loading="depotStageCandidatesLoading"
-              :depot-inventory="depotInventory"
-              :depot-inventory-time="depotInventoryTime"
-              :skland-role-options="sklandRoleOptions"
-              :load-skland-role-options="loadSklandRoleOptions"
-              :skland-role-loading="sklandRoleLoading"
-              :skland-role-error="sklandRoleError"
-              :depot-plan-editor="depotPlanEditor"
-              :event-depot-plan-editor="eventDepotPlanEditor"
-              :cultivate-operator-catalog="cultivateOperatorCatalog"
-              :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
-              :cultivate-operator-options-error="cultivateOperatorOptionsError"
-              :cultivate-preview="cultivatePreview"
-              :cultivate-preview-loading="cultivatePreviewLoading"
-              :cultivate-preview-error="cultivatePreviewError"
-              :load-cultivate-preview="loadCultivatePreview"
-              :import-cultivate-targets="importCultivateTargets"
-              :fight-summary="fightSummary"
-              :is-edit="isEdit"
-              :infrastructure-importing="infrastructureImporting"
-              :infrastructure-options="infrastructureOptions"
-              :infrastructure-options-loading="infrastructureOptionsLoading"
-              :infrast-plan-select="infrastPlanSelect"
-              :infrast-plan-state="infrastPlanState"
-              @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
-              @select-infrast-plan="handleInfrastPlanSelectChange"
-              @save="handleFieldSave"
-              @retry-activity="loadActivityStageOptions(true)"
-            >
-              <template #fight-detail>
-                <StageConfigSection
-                  v-model:form-data="formData"
-                  :loading="loading"
-                  :stage-mode-options="stageModeOptions"
-                  :stage-options="stageOptions"
-                  :is-plan-mode="isPlanMode"
-                  :display-medicine-numb="displayMedicineNumb"
-                  :display-series-numb="displaySeriesNumb"
-                  :display-stage="displayStage"
-                  :display-stage1="displayStage1"
-                  :display-stage2="displayStage2"
-                  :display-stage3="displayStage3"
-                  :medicine-numb-tooltip="medicineNumbTooltip"
-                  :series-numb-tooltip="seriesNumbTooltip"
-                  :stage-tooltip="stageTooltip"
-                  :stage1-tooltip="stage1Tooltip"
-                  :stage2-tooltip="stage2Tooltip"
-                  :stage3-tooltip="stage3Tooltip"
-                  @update-medicine-numb="updateMedicineNumb"
-                  @update-series-numb="updateSeriesNumb"
-                  @update-stage="updateStage"
-                  @update-stage1="updateStage1"
-                  @update-stage2="updateStage2"
-                  @update-stage3="updateStage3"
-                  @handle-add-custom-stage="addCustomStage"
-                  @handle-add-custom-stage1="addCustomStage1"
-                  @handle-add-custom-stage2="addCustomStage2"
-                  @handle-add-custom-stage3="addCustomStage3"
-                  @save="handleFieldSave"
-                />
-              </template>
-            </TaskPipelineSection>
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
+            <h3>{{ t('edit.taskConfiguration') }}</h3>
+            <a-space>
+              <a-button size="small" @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </a-space>
+          </a-flex>
+          <TaskPipelineSection
+            v-if="formData.Info.IfQuickConfig"
+            v-model:form-data="formData"
+            :loading="loading"
+            :stage-options="stageOptions"
+            :activity-stages="activityStages"
+            :activity-stage-loading="activityStageLoading"
+            :activity-stage-error="activityStageError"
+            :depot-item-options="depotItemOptions"
+            :depot-item-options-loading="depotItemOptionsLoading"
+            :depot-item-options-error="depotItemOptionsError"
+            :depot-stage-candidates="depotStageCandidates"
+            :depot-stage-candidates-loading="depotStageCandidatesLoading"
+            :depot-inventory="depotInventory"
+            :depot-inventory-time="depotInventoryTime"
+            :depot-plan-editor="depotPlanEditor"
+            :event-depot-plan-editor="eventDepotPlanEditor"
+            :fight-summary="fightSummary"
+            :is-edit="isEdit"
+            :infrastructure-importing="infrastructureImporting"
+            :infrastructure-options="infrastructureOptions"
+            :infrastructure-options-loading="infrastructureOptionsLoading"
+            :infrast-plan-select="infrastPlanSelect"
+            :infrast-plan-state="infrastPlanState"
+            @select-and-import-infrastructure-config="selectAndImportInfrastructureConfig"
+            @select-infrast-plan="handleInfrastPlanSelectChange"
+            @save="handleFieldSave"
+            @retry-activity="loadActivityStageOptions(true)"
+          >
+            <template #fight-detail>
+              <StageConfigSection
+                v-model:form-data="formData"
+                :loading="loading"
+                :stage-mode-options="stageModeOptions"
+                :stage-options="stageOptions"
+                :is-plan-mode="isPlanMode"
+                :display-medicine-numb="displayMedicineNumb"
+                :display-series-numb="displaySeriesNumb"
+                :display-stage="displayStage"
+                :display-stage1="displayStage1"
+                :display-stage2="displayStage2"
+                :display-stage3="displayStage3"
+                :medicine-numb-tooltip="medicineNumbTooltip"
+                :series-numb-tooltip="seriesNumbTooltip"
+                :stage-tooltip="stageTooltip"
+                :stage1-tooltip="stage1Tooltip"
+                :stage2-tooltip="stage2Tooltip"
+                :stage3-tooltip="stage3Tooltip"
+                @update-medicine-numb="updateMedicineNumb"
+                @update-series-numb="updateSeriesNumb"
+                @update-stage="updateStage"
+                @update-stage1="updateStage1"
+                @update-stage2="updateStage2"
+                @update-stage3="updateStage3"
+                @handle-add-custom-stage="addCustomStage"
+                @handle-add-custom-stage1="addCustomStage1"
+                @handle-add-custom-stage2="addCustomStage2"
+                @handle-add-custom-stage3="addCustomStage3"
+                @save="handleFieldSave"
+              />
+            </template>
+          </TaskPipelineSection>
 
-            <!-- 额外脚本组件 -->
-            <ExtraScriptSection
-              v-model:form-data="formData"
-              :loading="loading"
-              @save="handleFieldSave"
-            />
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
 
-            <!-- 通知配置组件 -->
-            <UserNotifyConfig
-              v-model="formData.Notify"
-              :loading="loading"
-              :script-id="scriptId"
-              :user-id="userId"
-              show-six-star
-              @save="handleFieldSave"
-            />
-          </template>
+          <!-- 通知配置组件 -->
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            show-six-star
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </ConfigLockPanel>
@@ -273,7 +247,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import CultivateTargetEditor from '@/views/MAAUserEdit/CultivateTargetEditor.vue'
+import CultivationPage from '@/views/MAAUserEdit/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
@@ -1666,21 +1640,6 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cultivation-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  max-width: 1200px;
-  margin: 0 auto 24px;
-  gap: 16px;
-}
-.cultivation-page-header h2 {
-  margin: 12px 0 8px;
-}
-.cultivation-page-header p {
-  margin: 0;
-  color: var(--ant-color-text-secondary);
-}
 .cultivation-page-loading {
   display: grid;
   place-items: center;
