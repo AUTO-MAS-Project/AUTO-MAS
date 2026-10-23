@@ -162,6 +162,10 @@ import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
 import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
 import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
 import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
+import type { TaskboardArchiveIn } from '../models/TaskboardArchiveIn';
+import type { TaskboardDoneAtIn } from '../models/TaskboardDoneAtIn';
+import type { TaskboardSelectionIn } from '../models/TaskboardSelectionIn';
+import type { TaskboardStateOut } from '../models/TaskboardStateOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -308,6 +312,74 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/activity/completions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取任务台状态
+     * @returns TaskboardStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskboardStateApiInfoTaskboardStateGet(): CancelablePromise<TaskboardStateOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/taskboard/state',
+        });
+    }
+    /**
+     * 保存任务台勾选的游戏
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardSelectionApiInfoTaskboardSelectionPut(
+        requestBody: TaskboardSelectionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/selection',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存任务台归档缓存
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardArchiveApiInfoTaskboardArchivePut(
+        requestBody: TaskboardArchiveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/archive',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录或删除任务台的完成日期
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardDoneAtApiInfoTaskboardDoneAtPut(
+        requestBody: TaskboardDoneAtIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/done-at',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

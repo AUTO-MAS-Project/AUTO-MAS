@@ -973,6 +973,13 @@ export type { SrcUserConfig_NotifyInput } from './models/SrcUserConfig_NotifyInp
 export type { SrcUserConfig_Stage } from './models/SrcUserConfig_Stage';
 export type { SrcUserConfig_StageInput } from './models/SrcUserConfig_StageInput';
 export type { SrcUserConfigInput } from './models/SrcUserConfigInput';
+export type { TaskboardArchivedActivity } from './models/TaskboardArchivedActivity';
+export type { TaskboardArchiveIn } from './models/TaskboardArchiveIn';
+export type { TaskboardDoneAtIn } from './models/TaskboardDoneAtIn';
+export type { TaskboardDoneRecord } from './models/TaskboardDoneRecord';
+export type { TaskboardSelectionIn } from './models/TaskboardSelectionIn';
+export type { TaskboardState } from './models/TaskboardState';
+export type { TaskboardStateOut } from './models/TaskboardStateOut';
 export { TaskCreateIn } from './models/TaskCreateIn';
 export type { TaskCreateOut } from './models/TaskCreateOut';
 export type { TaskRuntimeSnapshot } from './models/TaskRuntimeSnapshot';

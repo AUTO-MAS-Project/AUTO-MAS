@@ -76,6 +76,7 @@ import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
 import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
+import type { TaskboardStateOut } from '../models/TaskboardStateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -120,6 +121,17 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取任务台状态
+     * @returns TaskboardStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskboardStateApiInfoTaskboardStateGet(): CancelablePromise<TaskboardStateOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/taskboard/state',
         });
     }
     /**
