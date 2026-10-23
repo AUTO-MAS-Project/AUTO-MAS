@@ -31,6 +31,7 @@ from typing import Literal
 from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
@@ -42,7 +43,7 @@ from .task_mapping import (
     engine_label,
     resolve_script_assignment,
 )
-from .tools import push_notification
+from .tools import build_statistics_payload
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
@@ -553,14 +554,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
         success_symbol = "√" if self.cur_user_item.status == "完成" else "X"
 
         try:
-            await push_notification(
-                "统计信息",
-                (
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 HSR 自动代理统计报告"
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_statistics_payload(
+                    title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 HSR 自动代理统计报告",
+                    message=statistics,
                 ),
-                statistics,
-                self.cur_user_config,
+                user_config=self.cur_user_config,
                 task_info=self.task_info,
             )
         except Exception as e:
@@ -645,12 +644,20 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self._append_log(message)
             await self._send_task_notice("warning", message)
             try:
-                await push_notification(
-                    "云登录提醒",
-                    f"{user_name} 需要登录云·星穹铁道",
-                    {"message": message},
-                    self.cur_user_config,
+                # 需人工介入的提醒立即托管，让离开电脑的用户及时知道要登录。
+                logger.info(
+                    f"开始推送通知, 模式: 云登录提醒, 标题: {user_name} 需要登录云·星穹铁道"
+                )
+                await self.task_info.notifications.dispatch_task_notification(
+                    NotifyPayload(
+                        title=f"{user_name} 需要登录云·星穹铁道",
+                        text=message,
+                    ),
+                    self.task_info.notifications.statistic_targets(
+                        self.cur_user_config
+                    ),
                     task_info=self.task_info,
+                    immediate=True,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")

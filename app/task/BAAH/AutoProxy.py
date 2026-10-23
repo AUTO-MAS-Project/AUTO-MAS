@@ -60,8 +60,8 @@ from .tools import (
     ManagedConfigBackup,
     apply_managed_config,
     baah_resolve,
+    build_statistics_payload,
     latest_log_file,
-    push_notification,
     read_json,
     resolve_config_name,
     resolve_log_time_range,
@@ -967,11 +967,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         )
 
         try:
-            await push_notification(
-                "统计信息",
-                title,
-                statistics,
-                self.cur_user_config,
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_statistics_payload(title=title, message=statistics),
+                user_config=self.cur_user_config,
                 task_info=self.task_info,
             )
         except Exception as e:

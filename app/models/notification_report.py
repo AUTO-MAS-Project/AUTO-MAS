@@ -9,8 +9,6 @@ from app.models.notification import DeferredContent, NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
 from app.models.notification_community import CommunityNotificationResult
 
-TaskNoticeMode = Literal["代理结果", "统计信息"]
-
 
 class ReportScreenshot(TypedDict):
     image_ref: str

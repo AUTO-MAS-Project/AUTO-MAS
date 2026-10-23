@@ -55,7 +55,7 @@ from .config import (
 )
 from .game_update import UpdateSource, ensure_game_updated, fetch_update_source
 from .login import login
-from .notify import push_notification
+from .notify import build_statistics_payload
 from .poor_yaml import poor_yaml_read, poor_yaml_write
 from .process import (
     SrcProcessState,
@@ -79,7 +79,7 @@ __all__ = [
     "fetch_update_source",
     "UpdateSource",
     "login",
-    "push_notification",
+    "build_statistics_payload",
     "poor_yaml_read",
     "poor_yaml_write",
     "has_committed_src_user_config_transaction",

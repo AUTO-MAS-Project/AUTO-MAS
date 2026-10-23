@@ -69,7 +69,7 @@ from .config_schema import (
     get_all_config_info,
 )
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
-from .tools import push_notification
+from .tools import build_statistics_payload
 from .tools.account_switch import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -1229,11 +1229,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
 
             try:
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-NTE 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-NTE 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
                     task_info=self.task_info,
                 )
             except Exception as e:

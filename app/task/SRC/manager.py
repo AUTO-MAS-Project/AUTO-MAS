@@ -26,6 +26,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
@@ -47,7 +48,6 @@ from .tools import (
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
-    push_notification,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -899,11 +899,9 @@ class SrcManager(ScriptManagerBase):
         result = {**result, "summary_title": completion_title}
         try:
             await asyncio.wait_for(
-                push_notification(
-                    mode="代理结果",
+                self.task_info.notifications.push_proxy_result(
                     title=title,
-                    message=result,
-                    user_config=None,
+                    report=TaskResultReport.from_message(result),
                     task_info=self.task_info,
                 ),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,

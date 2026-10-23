@@ -84,7 +84,7 @@ from .native_config import (
     save_native_launch_args,
     save_native_tasks,
 )
-from .notify import push_notification
+from .notify import build_statistics_payload
 from .zzz_od_config import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
@@ -199,7 +199,7 @@ __all__ = [
     "normalize_app_group_entries",
     "onedragon_backup_root",
     "predefined_team_options",
-    "push_notification",
+    "build_statistics_payload",
     "read_after_done",
     "read_app_config",
     "read_app_group",

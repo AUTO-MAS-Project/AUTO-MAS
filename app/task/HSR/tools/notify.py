@@ -19,56 +19,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-from typing import Literal
-
-from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
-from app.models.notification_channel import DispatchResult
-from app.models.notification_report import TaskNoticeMode, TaskResultReport
-from app.models.task import TaskItem
-from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
-logger = get_logger("HSR 通知工具")
 
-
-async def push_notification(
-    mode: TaskNoticeMode | Literal["云登录提醒"],
-    title: str,
-    message: dict,
-    user_config: HSRUserConfig | None,
-    *,
-    task_info: TaskItem,
-) -> DispatchResult:
-    """通过所有渠道推送 HSR 通知; 返回分发的实际尝试/成功/失败结果。"""
-
-    logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
-
-    if mode == "云登录提醒":
-        # 需人工介入的即时提醒：用户不在电脑前时靠它知道要去扫码/登录。
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(title=title, text=str(message.get("message", ""))),
-            task_info.notifications.statistic_targets(user_config),
-            task_info=task_info,
-            immediate=True,
-        )
-
-    if mode == "代理结果":
-        return await task_info.notifications.push_proxy_result(
-            title=title,
-            report=TaskResultReport.from_message(message),
-            task_info=task_info,
-        )
-    if mode != "统计信息":
-        return DispatchResult()
+def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
+    """构造专项统计正文，投递由注入的通知服务负责。"""
 
     message_html = deferred_notification_template("general_statistics.html", message)
-    return await task_info.notifications.push_statistics_report(
-        payload=NotifyPayload(
-            title=title,
-            text=f"开始时间: {message['start_time']}\n结束时间: {message['end_time']}\nHSR执行结果: {message['user_result']}\n\n",
-            html=message_html,
-        ),
-        user_config=user_config,
-        task_info=task_info,
+    return NotifyPayload(
+        title=title,
+        text=f"开始时间: {message['start_time']}\n结束时间: {message['end_time']}\nHSR执行结果: {message['user_result']}\n\n",
+        html=message_html,
     )

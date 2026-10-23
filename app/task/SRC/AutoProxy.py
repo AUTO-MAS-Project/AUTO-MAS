@@ -42,13 +42,13 @@ from app.utils.io import read_file, write_file
 
 from .tools import (
     archive_mas_runtime_backup,
+    build_statistics_payload,
     ensure_game_updated,
     kill_src_processes,
     login,
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
-    push_notification,
     read_overlay_values,
     read_src_webui_port,
     recover_src_user_config,
@@ -753,11 +753,12 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
         try:
             await asyncio.wait_for(
-                push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
                     task_info=self.task_info,
                 ),
                 timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,

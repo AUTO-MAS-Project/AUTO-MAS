@@ -186,6 +186,7 @@ class HostNotificationService:
     ) -> DispatchResult:
         """按任务原有托管与失败反馈规则投递统计正文。"""
 
+        logger.info(f"开始推送通知, 模式: 统计信息, 标题: {payload.title}")
         return await self.dispatch_task_notification(
             payload,
             self.statistic_targets(user_config, compact_summary=compact_summary),
@@ -492,6 +493,7 @@ class HostNotificationService:
                 需要更新）时传 False，免得同一件事弹两次。
         """
 
+        logger.info(f"开始推送通知, 模式: 代理结果, 标题: {title}")
         prepared = self.prepare_task_report(task_info)
         if not prepared.should_send(
             uncompleted_count=report.uncompleted_count,

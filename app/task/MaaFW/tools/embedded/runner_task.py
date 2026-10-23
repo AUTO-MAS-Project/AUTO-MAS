@@ -75,7 +75,7 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
     subprocess_proxy_scope,
 )
-from app.task.MaaFW.tools.notify import push_notification
+from app.task.MaaFW.tools.notify import build_statistics_payload
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
     prepare_screenshot_images,
@@ -3259,15 +3259,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 mark = MAINTENANCE_LAST_STATUS
             else:
                 mark = "X"
-            await push_notification(
-                mode="统计信息",
-                title=(
-                    f"{datetime.now().strftime('%m-%d')} |{mark}|  "
-                    f"{self.cur_user_item.name} 的自动代理统计报告"
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_statistics_payload(
+                    title=f"{datetime.now().strftime('%m-%d')} |{mark}|  {self.cur_user_item.name} 的自动代理统计报告",
+                    message=statistics,
+                    images=[image for _, image in images],
                 ),
-                message=statistics,
                 user_config=self.cur_user_config,
-                images=[image for _, image in images],
                 task_info=self.task_info,
             )
         except Exception as exc:

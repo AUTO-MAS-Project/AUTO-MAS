@@ -64,7 +64,7 @@ from .push_log import (
     _okww_supplement_po,
     okww_resolve,
 )
-from .tools import async_switch_account, push_notification
+from .tools import async_switch_account, build_statistics_payload
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -1090,12 +1090,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     if self.cur_user_item.maintenance_skipped
                     else "X"
                 )
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
                     task_info=self.task_info,
                 )
             except Exception as e:

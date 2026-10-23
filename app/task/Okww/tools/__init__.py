@@ -17,6 +17,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 from .account_switch import account_switch, async_switch_account
-from .notify import push_notification
+from .notify import build_statistics_payload
 
-__all__ = ["push_notification", "account_switch", "async_switch_account"]
+__all__ = ["build_statistics_payload", "account_switch", "async_switch_account"]

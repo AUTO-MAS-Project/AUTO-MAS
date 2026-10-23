@@ -24,11 +24,7 @@ import mimetypes
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
-from app.models.notification_channel import DispatchResult
-from app.models.notification_report import TaskNoticeMode, TaskResultReport
-from app.models.task import TaskItem
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -129,46 +125,23 @@ def _statistic_sections(message: dict) -> list[str]:
     ]
 
 
-async def push_notification(
-    mode: TaskNoticeMode,
-    title: str,
-    message: dict,
-    user_config: MaaEndUserConfig | None,
-    *,
-    task_info: TaskItem,
-    images: Sequence[NotificationImage] = (),
-) -> DispatchResult:
-    """通过所有渠道推送通知；结果报告可附带图片。"""
+def build_statistics_payload(
+    *, title: str, message: dict, images: Sequence[NotificationImage] = ()
+) -> NotifyPayload:
+    """构造专项统计正文，投递由注入的通知服务负责。"""
 
-    logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
+    message_text = (
+        f"开始时间: {message['start_time']}\n"
+        f"结束时间: {message['end_time']}\n"
+        f"MaaEnd执行结果: {message['user_result']}"
+    )
+    sections = _statistic_sections(message)
+    if sections:
+        message_text += "\n\n" + "\n\n".join(sections)
 
-    if mode == "代理结果":
-        return await task_info.notifications.push_proxy_result(
-            title=title,
-            report=TaskResultReport.from_message(message),
-            task_info=task_info,
-            images=images,
-        )
-
-    if mode == "统计信息":
-        message_text = (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"MaaEnd执行结果: {message['user_result']}"
-        )
-        sections = _statistic_sections(message)
-        if sections:
-            message_text += "\n\n" + "\n\n".join(sections)
-
-        return await task_info.notifications.push_statistics_report(
-            payload=NotifyPayload(
-                title=title,
-                text=message_text,
-                html=deferred_notification_template("MaaEnd_statistics.html", message),
-                images=tuple(images),
-            ),
-            user_config=user_config,
-            task_info=task_info,
-        )
-
-    return DispatchResult()
+    return NotifyPayload(
+        title=title,
+        text=message_text,
+        html=deferred_notification_template("MaaEnd_statistics.html", message),
+        images=tuple(images),
+    )

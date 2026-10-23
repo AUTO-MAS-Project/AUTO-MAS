@@ -21,18 +21,13 @@
 
 from collections.abc import Sequence
 from functools import cache
-from typing import Literal
 
-from app.models.config import MaaUserConfig
 from app.models.notification import (
     DeferredContent,
     NotificationImage,
     NotifyPayload,
     image_reference,
 )
-from app.models.notification_channel import DispatchResult
-from app.models.notification_report import TaskNoticeMode, TaskResultReport
-from app.models.task import TaskItem
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 from app.utils.paths import resource_path
@@ -98,71 +93,38 @@ def _statistic_text(message: dict) -> str:
     )
 
 
-async def push_notification(
-    mode: TaskNoticeMode | Literal["公招六星"],
-    title: str,
-    message: dict,
-    user_config: MaaUserConfig | None,
-    task_info: TaskItem,
-    *,
-    images: Sequence[NotificationImage] = (),
-) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。
+def build_statistics_payload(
+    *, title: str, message: dict, images: Sequence[NotificationImage] = ()
+) -> NotifyPayload:
+    """构造专项统计正文，投递由注入的通知服务负责。"""
 
-    ``images`` 只在「统计信息」模式下随报告附带（失败截图），模板通过
-    资源 ID 引用对应图片。
-    """
+    return NotifyPayload(
+        title=title,
+        text=_statistic_text(message),
+        html=deferred_notification_template("MAA_statistics.html", message),
+        signature_sep=SIGNATURE_SEP,
+        images=images,
+    )
 
-    logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
-    if mode == "代理结果":
-        return await task_info.notifications.push_proxy_result(
-            title=title,
-            report=TaskResultReport.from_message(message),
-            task_info=task_info,
-            result_template="MAA_result.html",
-            signature_sep=SIGNATURE_SEP,
-            images=images,
-        )
+def build_recruitment_payload(*, title: str, message: dict) -> NotifyPayload:
+    """构造固定喜报正文及按需加载的配图。"""
 
-    if mode == "统计信息":
-        return await task_info.notifications.push_statistics_report(
-            payload=NotifyPayload(
-                title=title,
-                text=_statistic_text(message),
-                html=deferred_notification_template("MAA_statistics.html", message),
-                signature_sep=SIGNATURE_SEP,
-                images=images,
-            ),
-            user_config=user_config,
-            task_info=task_info,
-        )
-
-    if mode == "公招六星":
-        # 喜报正文是固定文案, message 只用于渲染 HTML
-
-        return await task_info.notifications.dispatch_task_notification(
-            NotifyPayload(
-                title=title,
-                text="好羡慕~",
-                markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
-                html=deferred_notification_template("MAA_six_star.html", message),
-                signature_sep=SIGNATURE_SEP,
-                images=DeferredContent(
-                    lambda: (
-                        NotificationImage(
-                            id=SIX_STAR_IMAGE_ID,
-                            data=_six_star_image(),
-                            url=SIX_STAR_IMAGE_URL,
-                            alt="喜报",
-                        ),
-                    )
+    return NotifyPayload(
+        title=title,
+        text="好羡慕~",
+        markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
+        html=deferred_notification_template("MAA_six_star.html", message),
+        signature_sep=SIGNATURE_SEP,
+        images=DeferredContent(
+            lambda: (
+                NotificationImage(
+                    id=SIX_STAR_IMAGE_ID,
+                    data=_six_star_image(),
+                    url=SIX_STAR_IMAGE_URL,
+                    alt="喜报",
                 ),
-                presentation="announcement",
-            ),
-            task_info.notifications.recruitment_targets(user_config),
-            task_info=task_info,
-            immediate=True,
-        )
-
-    return DispatchResult()
+            )
+        ),
+        presentation="announcement",
+    )

@@ -101,6 +101,7 @@ from .tools import (
     archive_onedragon_backup,
     archive_taken_slot,
     backup_instance,
+    build_statistics_payload,
     clear_run_records,
     collect_mas_user_info,
     diff_run_records,
@@ -112,7 +113,6 @@ from .tools import (
     list_app_catalog,
     list_instances,
     mas_backup_root,
-    push_notification,
     read_game_account,
     read_native_after_done,
     recycle_orphan_slots,
@@ -2077,12 +2077,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
                     task_info=self.task_info,
                 )
             except Exception as e:
