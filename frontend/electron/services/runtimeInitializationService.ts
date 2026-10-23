@@ -525,6 +525,22 @@ function cancelledOutcome(): RuntimeStageOutcome {
 }
 
 /**
+ * 手动更新 Runtime 的阶段观察口径：与第 0 步共用 runtime_binary 阶段观察，
+ * upgraded / current / skipped 记成功，失败与取消沿用第 0 步的错误码与失败段，
+ * 原始结果随行返回给失败页。
+ */
+function runtimeBinaryObservation(result: RuntimeBinaryAlignResult) {
+  const success =
+    result.status === 'upgraded' || result.status === 'current' || result.status === 'skipped'
+  return {
+    result,
+    success,
+    code: success ? undefined : (result.code ?? RUNTIME_BINARY_ALIGN_ERROR),
+    failedStage: success ? undefined : 'python',
+  }
+}
+
+/**
  * 从事件 details 里读 Runtime 自己的轮转日志路径。
  *
  * `details` 是裸 `Record<string, unknown>`，Runtime 只在写了日志文件的命令上放 `logPath`，
@@ -714,15 +730,24 @@ export class RuntimeInitializationService {
     this.operating = true
     this.aligning = true
     try {
-      await stopBackends?.()
-      if (this.cancelRequested) return { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
-      return await this.alignRuntimeBinary({
-        channel: this.releaseChannel,
-        runtimePath,
-        appRoot,
-        onProgress,
-        isCancelled: () => this.cancelRequested,
+      // 与第 0 步共用 runtime_binary 阶段观察，真实结局（含失败与取消）与耗时由此入库；
+      // 模式与占用守卫在观察之外，被拒绝的请求不算一次更新。
+      const observed = await observeInitializationStage('runtime_binary', mode, async () => {
+        await stopBackends?.()
+        if (this.cancelRequested) {
+          return runtimeBinaryObservation({ status: 'cancelled', code: RUNTIME_BINARY_CANCELLED })
+        }
+        return runtimeBinaryObservation(
+          await this.alignRuntimeBinary({
+            channel: this.releaseChannel,
+            runtimePath,
+            appRoot,
+            onProgress,
+            isCancelled: () => this.cancelRequested,
+          })
+        )
       })
+      return observed.result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.error(`更新 Runtime 失败: ${message}`)

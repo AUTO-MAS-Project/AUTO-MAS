@@ -10,6 +10,7 @@
       @update:status="handleBackendStatusChange"
       @complete="handleBackendComplete"
       @error="handleBackendError"
+      @recovery-action="handleBackendRecoveryAction"
       @runtime-updated="handleRuntimeUpdated"
       @skip="handleSkip"
     />
@@ -51,6 +52,7 @@ const {
   flowKind,
   handleBackendComplete,
   handleBackendError,
+  handleBackendRecoveryAction,
   handleBackendStatusChange,
   handleFailureAction,
   handleMirrorSelect,

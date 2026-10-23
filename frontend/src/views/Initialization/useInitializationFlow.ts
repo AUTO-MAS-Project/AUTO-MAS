@@ -513,6 +513,11 @@ export function useInitializationFlow() {
     })
   }
 
+  /** 后端失败页的重试与查看日志由面板本地执行，这里只补恢复选择观察。 */
+  function handleBackendRecoveryAction(kind: FailureActionKind) {
+    recordRecoveryAction(kind)
+  }
+
   function resetFailureState(state: StepState) {
     state.showMirrorSelection = false
     state.failureActions = []
@@ -845,6 +850,7 @@ export function useInitializationFlow() {
     flowKind,
     handleBackendComplete,
     handleBackendError,
+    handleBackendRecoveryAction,
     handleBackendStatusChange,
     handleFailureAction,
     handleMirrorSelect,
