@@ -1,3 +1,4 @@
+import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
 import { readBackendDocument } from './services/backendConfig'
@@ -30,7 +31,11 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
-import { isAnalyticsSender, registerAnalyticsHandlers } from './ipc/analyticsHandlers'
+import {
+  isAnalyticsSender,
+  isApplicationWindowSender,
+  registerAnalyticsHandlers,
+} from './ipc/analyticsHandlers'
 import {
   analyticsService,
   disposeAnalytics,
@@ -1273,7 +1278,7 @@ function createLogWindow(file?: LogWindowFile) {
 // 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
 // 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
 // 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
-// 拆不拆由弹窗自己调后端接口。
+// 用户选择由弹窗发出，拆除请求由主进程持有直到接口返回。
 
 interface VirtualDisplayPromptPayload {
   /** 回来的真实显示设备名 */
@@ -1283,6 +1288,25 @@ interface VirtualDisplayPromptPayload {
 }
 
 let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+let virtualPromptAnalytics: ReturnType<
+  typeof beginMainFeature<'virtual_display_prompt_answered'>
+> | null = null
+ipcMain.on('vdd-prompt:observe', (event, choice: unknown) => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return
+  if (choice !== 'keep') return
+  virtualPromptAnalytics?.finish({ choice: 'keep', outcome: 'success' })
+  virtualPromptAnalytics = null
+})
+
+// 拆除会先广播关闭弹窗再返回 HTTP；请求与终态由主进程持有，避免窗口销毁后漏记。
+ipcMain.handle('vdd-prompt:detach', async event => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return null
+  virtualPromptAnalytics?.finish({ choice: 'remove', outcome: 'accepted' })
+  virtualPromptAnalytics = null
+  return detachPromptVirtualDisplay(getLocalApiEndpoint())
+})
 
 const VDD_PROMPT_WIDTH = 460
 const VDD_PROMPT_HEIGHT = 240
@@ -1350,6 +1374,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
   )
 
+  virtualPromptAnalytics = beginMainFeature('virtual_display_prompt_answered')
   const win = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -1391,6 +1416,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     if (virtualDisplayPromptWindow === win) {
       virtualDisplayPromptWindow = null
       virtualDisplayPromptPayload = null
+      virtualPromptAnalytics = null
     }
     logger.info('虚拟显示器询问弹窗已关闭')
   })
@@ -1400,6 +1426,7 @@ function closeVirtualDisplayPrompt(): void {
   const win = virtualDisplayPromptWindow
   virtualDisplayPromptWindow = null
   virtualDisplayPromptPayload = null
+  virtualPromptAnalytics = null
   if (win && !win.isDestroyed()) {
     win.close()
   }
@@ -2382,7 +2409,11 @@ app.on('before-quit', event => {
 app.whenReady().then(async () => {
   registerAnalyticsHandlers(() => mainWindow)
   refreshAnalyticsPreference()
-  analyticsService.recordAppStarted()
+  analyticsService.recordAppStarted({
+    launch_kind: isAutoStart ? 'auto_start' : 'manual',
+    runtime_mode: resolveRuntimeLaunchModeDetail(getAppRoot()).mode,
+    release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
+  })
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)

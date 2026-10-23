@@ -94,8 +94,12 @@ export type AnalyticsScreen =
   | 'settings'
   | 'taskboard'
 export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
-  app_started: Record<string, never>
-  renderer_ready: { duration_bucket: AnalyticsDurationBucket }
+  app_started: {
+    launch_kind: 'manual' | 'auto_start' | 'unknown'
+    runtime_mode: AnalyticsRuntimeMode
+    release_channel: 'stable' | 'beta' | 'unknown'
+  }
+  renderer_ready: { duration_bucket: AnalyticsDurationBucket; visibility: 'visible' | 'hidden' }
   backend_start_finished: {
     outcome: 'success' | 'failure'
     runtime_mode: AnalyticsRuntimeMode
@@ -167,7 +171,11 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
       | 'unknown'
     duration_bucket: AnalyticsDurationBucket
   }
-  screen_view: { screen: AnalyticsScreen; script_type: AnalyticsScriptType }
+  screen_view: {
+    screen: AnalyticsScreen
+    script_type: AnalyticsScriptType
+    entry_source: AnalyticsScreen | 'initial' | 'other'
+  }
   script_create_finished: {
     create_kind: 'new' | 'template' | 'reuse' | 'copy'
     script_type: AnalyticsScriptType
@@ -309,6 +317,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     duration_bucket: AnalyticsDurationBucket
   }
   connection_incident_finished: {
+    reason_kind: 'normal' | 'abnormal' | 'policy' | 'server' | 'other'
     outcome: 'recovered' | 'recovery_stopped'
     recovery_kind: 'reconnect' | 'manual' | 'backend_restart'
     duration_bucket: AnalyticsDurationBucket

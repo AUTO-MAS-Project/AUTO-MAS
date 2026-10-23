@@ -24,10 +24,34 @@ const script = [
 const runtime = ['off', 'managed', 'development', 'unknown']
 const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
 const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
+const screens = [
+  'initialization',
+  'home',
+  'scripts',
+  'script_edit',
+  'script_setup',
+  'user_add',
+  'user_edit',
+  'plans',
+  'emulators',
+  'queue',
+  'scheduler',
+  'history',
+  'gamesign',
+  'community_sign',
+  'community_activity',
+  'theme_store',
+  'settings',
+  'taskboard',
+]
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   ...featureAnalyticsSchemas,
-  app_started: {},
-  renderer_ready: { duration_bucket: duration },
+  app_started: {
+    launch_kind: ['manual', 'auto_start', 'unknown'],
+    runtime_mode: runtime,
+    release_channel: ['stable', 'beta', 'unknown'],
+  },
+  renderer_ready: { duration_bucket: duration, visibility: ['visible', 'hidden'] },
   initialization_decided: {
     decision: ['skip-home', 'full-init', 'force-backend-update'],
     runtime_mode: runtime,
@@ -128,27 +152,9 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     duration_bucket: duration,
   },
   screen_view: {
-    screen: [
-      'initialization',
-      'home',
-      'scripts',
-      'script_edit',
-      'script_setup',
-      'user_add',
-      'user_edit',
-      'plans',
-      'emulators',
-      'queue',
-      'scheduler',
-      'history',
-      'gamesign',
-      'community_sign',
-      'community_activity',
-      'theme_store',
-      'settings',
-      'taskboard',
-    ],
+    screen: screens,
     script_type: script,
+    entry_source: [...screens, 'initial', 'other'],
   },
   script_create_finished: {
     create_kind: ['new', 'template', 'reuse', 'copy'],
@@ -300,6 +306,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     duration_bucket: duration,
   },
   connection_incident_finished: {
+    reason_kind: ['normal', 'abnormal', 'policy', 'server', 'other'],
     outcome: ['recovered', 'recovery_stopped'],
     recovery_kind: ['reconnect', 'manual', 'backend_restart'],
     duration_bucket: duration,

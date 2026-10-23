@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { getAnalyticsScriptType } from '@/utils/analytics'
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -171,10 +173,20 @@ export function useMaaFWApi() {
     error.value = null
 
     try {
-      const response = await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({
-        path,
-        scriptId,
-      })
+      const response = await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: scriptId ? getAnalyticsScriptType(scriptId) : 'MaaFW',
+          operation_kind: 'preview',
+          engine_kind: 'unknown',
+        },
+        () =>
+          MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({
+            path,
+            scriptId,
+          }),
+        apiOutcome
+      )
 
       if (response.code !== 200 || !response.data) {
         throw new Error(response.message || t('apiErrors.maafwPreviewFailed'))

@@ -418,6 +418,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   showVirtualDisplayPrompt?: (
     payload: VirtualDisplayPromptPayload
   ) => Promise<{ success: boolean; error?: string }>
+  observeVirtualDisplayPrompt?: () => void
+  detachVirtualDisplayFromPrompt: () => Promise<import('@/api').VirtualDisplayDetachOut | null>
   closeVirtualDisplayPrompt?: () => Promise<void>
   /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
   getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>

@@ -3,6 +3,7 @@ import type {
   AnalyticsContext,
   AnalyticsEvent,
   AnalyticsEventName,
+  AnalyticsEventProps,
 } from '../../src/types/analytics'
 import { validateAnalyticsEvent } from './analyticsPolicy'
 
@@ -68,8 +69,14 @@ export class AnalyticsService {
     }
   }
 
-  recordAppStarted(): void {
-    this.emit('app_started', {}, this.getContext())
+  recordAppStarted(
+    props: AnalyticsEventProps['app_started'] = {
+      launch_kind: 'unknown',
+      runtime_mode: 'unknown',
+      release_channel: 'unknown',
+    }
+  ): void {
+    this.emit('app_started', props, this.getContext())
   }
 
   recordRendererEvent(context: unknown, event: unknown): void {

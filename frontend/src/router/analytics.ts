@@ -34,13 +34,24 @@ export function registerRouterAnalytics(router: Router): void {
   router.beforeResolve(to => {
     contexts.set(to, captureAnalyticsContext())
   })
-  router.afterEach((to, _from, failure) => {
+  router.afterEach((to, from, failure) => {
     const context = contexts.get(to)
     contexts.delete(to)
     if (failure || !context || typeof to.name !== 'string') return
+    const entry_source = !from.name
+      ? ('initial' as const)
+      : (screens[String(from.name)] ??
+        (/ScriptEdit$/.test(String(from.name))
+          ? ('script_edit' as const)
+          : /UserEdit$/.test(String(from.name))
+            ? ('user_edit' as const)
+            : ('other' as const)))
     const screen = screens[to.name]
     if (screen) {
-      recordAnalyticsEvent(context, { name: 'screen_view', props: { screen, script_type: 'none' } })
+      recordAnalyticsEvent(context, {
+        name: 'screen_view',
+        props: { screen, script_type: 'none', entry_source },
+      })
       return
     }
     const match =
@@ -50,7 +61,11 @@ export function registerRouterAnalytics(router: Router): void {
     if (!match) return
     recordAnalyticsEvent(context, {
       name: 'screen_view',
-      props: { screen: scriptScreens[match[2]], script_type: analyticsScriptType(match[1]) },
+      props: {
+        screen: scriptScreens[match[2]],
+        script_type: analyticsScriptType(match[1]),
+        entry_source,
+      },
     })
   })
 }

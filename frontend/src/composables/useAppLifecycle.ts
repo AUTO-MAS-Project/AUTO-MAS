@@ -89,11 +89,12 @@ let initialized = false
 let incidentAnalytics: ReturnType<
   typeof beginAnalyticsOperation<'connection_incident_finished'>
 > | null = null
+let incidentReason: AnalyticsEventProps['connection_incident_finished']['reason_kind'] = 'other'
 let recoveryKind: AnalyticsEventProps['connection_incident_finished']['recovery_kind'] = 'reconnect'
 const finishIncidentAnalytics = (
   outcome: AnalyticsEventProps['connection_incident_finished']['outcome']
 ) => {
-  incidentAnalytics?.finish({ outcome, recovery_kind: recoveryKind })
+  incidentAnalytics?.finish({ outcome, recovery_kind: recoveryKind, reason_kind: incidentReason })
   incidentAnalytics = null
 }
 let lifecycleDisposers: Array<() => void> = []
@@ -804,6 +805,16 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   if (disconnectIncidentShown) return
   incidentAnalytics = beginAnalyticsOperation('connection_incident_finished')
   recoveryKind = 'reconnect'
+  incidentReason =
+    event.code === 1000
+      ? 'normal'
+      : event.code === 1006
+        ? 'abnormal'
+        : event.code === 1008
+          ? 'policy'
+          : [1001, 1011, 1012, 1013].includes(event.code)
+            ? 'server'
+            : 'other'
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
   notification.warning({

@@ -214,6 +214,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程开窗；弹窗页面自己取数据、自己关
   showVirtualDisplayPrompt: (payload: unknown) => ipcRenderer.invoke('vdd-prompt:show', payload),
+  observeVirtualDisplayPrompt: () => ipcRenderer.send('vdd-prompt:observe', 'keep'),
+  detachVirtualDisplayFromPrompt: () => ipcRenderer.invoke('vdd-prompt:detach'),
   closeVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:close'),
   getVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:get'),
   onVirtualDisplayPromptData: (callback: (payload: unknown) => void) => {

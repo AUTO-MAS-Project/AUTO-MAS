@@ -59,7 +59,8 @@ type Observation = {
   startedAt: number
 }
 const operations = new Map<string, Observation>()
-const ambiguousOperations = new Map<string, number>()
+const ambiguousOperations = new Set<string>()
+let observationSaturated = false
 let subscription: string | null = null
 const operationKey = (id: string, index: string, action: string) => id + ':' + index + ':' + action
 function settle(key: string, entry: Observation) {
@@ -94,6 +95,7 @@ export function disposeEmulatorAnalytics(): void {
   subscription = null
   operations.clear()
   ambiguousOperations.clear()
+  observationSaturated = false
 }
 
 function operate(input: Parameters<typeof Api.operationEmulatorApiEmulatorOperatePost>[0]) {
@@ -107,12 +109,16 @@ function operate(input: Parameters<typeof Api.operationEmulatorApiEmulatorOperat
   }
   // 无操作 ID 的同设备并发不能可靠关联，不把任意一条结束帧配给新请求。
   const previous = operations.get(key)
-  if (previous && performance.now() - previous.startedAt < 120_000) {
+  if (previous) {
     operations.delete(key)
-    remember(ambiguousOperations, key, performance.now() + 120_000)
-  } else if ((ambiguousOperations.get(key) ?? 0) <= performance.now()) {
-    ambiguousOperations.delete(key)
-    remember(operations, key, entry)
+    ambiguousOperations.add(key)
+  } else if (!observationSaturated && !ambiguousOperations.has(key)) {
+    // 未决键不能按时间过期或逐出：旧后台请求仍可能返回。容量耗尽后停止关联到窗口结束。
+    if (operations.size + ambiguousOperations.size >= 128) {
+      observationSaturated = true
+      operations.clear()
+      ambiguousOperations.clear()
+    } else operations.set(key, entry)
   }
   const request = observeFeature(
     'emulator_operation_result',
@@ -130,7 +136,10 @@ function operate(input: Parameters<typeof Api.operationEmulatorApiEmulatorOperat
       settle(key, entry)
     },
     () => {
-      if (operations.get(key) === entry) operations.delete(key)
+      if (operations.get(key) === entry) {
+        operations.delete(key)
+        ambiguousOperations.add(key)
+      }
     }
   )
   return request

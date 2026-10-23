@@ -26,7 +26,10 @@ export function recordRendererReady(context: Promise<AnalyticsContext>, duration
   if (!Number.isFinite(durationMs) || durationMs < 0) return
   recordAnalyticsEvent(context, {
     name: 'renderer_ready',
-    props: { duration_bucket: durationBucket(durationMs) },
+    props: {
+      duration_bucket: durationBucket(durationMs),
+      visibility: document.visibilityState === 'hidden' ? 'hidden' : 'visible',
+    },
   })
 }
 

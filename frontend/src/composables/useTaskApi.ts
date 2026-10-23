@@ -1,3 +1,4 @@
+import { observeFeature } from '@/utils/featureAnalytics'
 import { ApiError, Service, TaskCreateIn, type TaskCreateOut } from '@/api'
 import {
   analyticsScriptType,
@@ -137,7 +138,16 @@ export function requestScriptConfigStart(
 }
 
 export function requestScriptUpdateStart(taskId: string): Promise<TaskCreateOut> {
-  return requestTaskStart({ taskId, mode: TaskCreateIn.mode.UPDATE }, { source: 'script_update' })
+  return observeFeature(
+    'adapter_setup_finished',
+    {
+      script_type: getAnalyticsScriptType(taskId),
+      operation_kind: 'update',
+      engine_kind: 'unknown',
+    },
+    () => requestTaskStart({ taskId, mode: TaskCreateIn.mode.UPDATE }, { source: 'script_update' }),
+    result => (result.code === 200 && result.taskId ? 'accepted' : 'rejected')
+  )
 }
 
 /** 共用任务操作只处理请求结果；缺少后端说明时，提示文案由入口负责。 */

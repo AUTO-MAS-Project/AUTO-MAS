@@ -1,3 +1,6 @@
+import { adapterUpdateOutcome } from '@/utils/adapterAnalytics'
+import { observeFeature } from '@/utils/featureAnalytics'
+import { getAnalyticsScriptType } from '@/utils/analytics'
 import { ApiError, MaaFwService, MaaFWProjectUpdateIn, type MaaFWProjectUpdateOut } from '@/api'
 
 /** MaaFW 项目更新：复用生成客户端，统一页面结果与错误提示。 */
@@ -45,13 +48,23 @@ export function useMaaFWUpdateApi() {
   ): Promise<MaaFWUpdateResult> => {
     let payload: MaaFWProjectUpdateOut
     try {
-      payload = await MaaFwService.updateMaafwProjectApiScriptsMaafwUpdatePost({
-        scriptId,
-        action:
-          action === 'check'
-            ? MaaFWProjectUpdateIn.action.CHECK
-            : MaaFWProjectUpdateIn.action.APPLY,
-      })
+      payload = await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: getAnalyticsScriptType(scriptId),
+          operation_kind: action === 'check' ? 'update_check' : 'update',
+          engine_kind: 'embedded',
+        },
+        () =>
+          MaaFwService.updateMaafwProjectApiScriptsMaafwUpdatePost({
+            scriptId,
+            action:
+              action === 'check'
+                ? MaaFWProjectUpdateIn.action.CHECK
+                : MaaFWProjectUpdateIn.action.APPLY,
+          }),
+        result => adapterUpdateOutcome(result, action)
+      )
     } catch (error) {
       if (error instanceof ApiError) {
         const body: unknown = error.body

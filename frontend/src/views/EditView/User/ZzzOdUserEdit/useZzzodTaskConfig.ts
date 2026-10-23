@@ -10,7 +10,7 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api'
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import type { TaskCard } from './zzzodTypes'
 export function useZzzodTaskConfig(options: {
   scriptId: string

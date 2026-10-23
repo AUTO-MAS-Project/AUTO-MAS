@@ -13,11 +13,23 @@ let mainWindow: () => BrowserWindow | null = () => null
 
 /** 同 preload 也被日志窗等复用，因此同时校验窗口、主 frame 和本地应用文件。 */
 export function isAnalyticsSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  const window = mainWindow()
+  return isApplicationWindowSender(event, mainWindow())
+}
+
+/** 专用辅助窗口仍须单独限定窗口身份与业务消息，不能走通用事件桥。 */
+export function isApplicationWindowSender(
+  event: IpcMainEvent | IpcMainInvokeEvent,
+  window: BrowserWindow | null,
+  options: { allowDevelopment?: boolean } = {}
+): boolean {
   if (!window || window.isDestroyed() || event.sender !== window.webContents) return false
   if (event.senderFrame !== window.webContents.mainFrame) return false
   try {
     const url = new URL(event.senderFrame.url)
+    if (options.allowDevelopment && process.env.VITE_DEV_SERVER_URL) {
+      const development = new URL(process.env.VITE_DEV_SERVER_URL)
+      return url.origin === development.origin && url.pathname === development.pathname
+    }
     return (
       url.protocol === 'file:' &&
       fileURLToPath(url) === path.join(app.getAppPath(), 'dist', 'index.html')
