@@ -12,20 +12,32 @@
 
     <template v-else>
       <div class="activity-header">
-        <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
-        <div v-if="items.length > 1" class="banner-switcher">
-          <button
-            v-for="(item, index) in items"
-            :key="item.key"
-            type="button"
-            class="switcher-chip"
-            :class="{ 'is-active': index === activeIndex }"
-            :style="index === activeIndex ? activeChipStyle(item) : undefined"
-            :aria-current="index === activeIndex ? 'true' : undefined"
-            @click="select(index)"
+        <div class="activity-header-top">
+          <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
+          <div v-if="items.length > 1" class="banner-switcher">
+            <button
+              v-for="(item, index) in items"
+              :key="item.key"
+              type="button"
+              class="switcher-chip"
+              :class="{ 'is-active': index === activeIndex }"
+              :style="index === activeIndex ? activeChipStyle(item) : undefined"
+              :aria-current="index === activeIndex ? 'true' : undefined"
+              @click="select(index)"
+            >
+              {{ item.title }}
+            </button>
+          </div>
+
+          <a-button
+            type="link"
+            size="small"
+            class="activity-all-link"
+            @click="navigateTo('/taskboard')"
           >
-            {{ item.title }}
-          </button>
+            {{ t('taskboard.viewAll') }}
+            <ArrowRightOutlined />
+          </a-button>
         </div>
 
         <slot v-if="activeKey" name="community" :module-key="activeKey" />
@@ -91,7 +103,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { ArrowRightOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { navigateTo } from '@/router'
 import type { HomeActivityPanel, HomeModuleKey } from '@/types/home'
 import HomeActivityBanner from './HomeActivityBanner.vue'
 import HomeActivitySection from './HomeActivitySection.vue'
@@ -257,6 +270,31 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* 整条切换栏：外框画在这一行上，游戏标签和「查看全部活动」都在同一条里 */
+.activity-header-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 12px;
+  background: var(--ant-color-bg-container);
+}
+
+.activity-header-top .banner-switcher {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.activity-all-link {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .banner-viewport {
