@@ -2519,6 +2519,13 @@ export default {
     saveFailed: '保存に失敗しました。しばらくしてから再試行してください',
     completionFailed: '達成状態の読み込みに失敗しました。マークが不正確な可能性があります',
     retry: '再試行',
+    sourceIssue: '一部のデータソースが更新されていません',
+    sourceUnavailable: 'データソースを利用できません',
+    sourceStale: '前回のキャッシュを使用中',
+    discardTitle: '未保存の変更があります',
+    discardBody: '閉じると今回の選択は破棄されます。破棄しますか？',
+    discardOk: '破棄する',
+    keepEditing: '編集を続ける',
   },
   emulator: {
     title: 'エミュレーター管理',

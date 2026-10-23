@@ -3151,6 +3151,13 @@ export default {
     saveFailed: 'Failed to save, please try again later',
     completionFailed: 'Failed to load completion status; marks may be inaccurate',
     retry: 'Retry',
+    sourceIssue: 'Some sources were not updated',
+    sourceUnavailable: 'Source unavailable',
+    sourceStale: 'Using cached data',
+    discardTitle: 'Unsaved changes',
+    discardBody: 'Closing will discard your selection. Discard changes?',
+    discardOk: 'Discard',
+    keepEditing: 'Keep editing',
   },
   emulator: {
     title: 'Emulators',
