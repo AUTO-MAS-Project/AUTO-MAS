@@ -18,6 +18,8 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功固定 1/10 采样 |
 | `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
+| `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
+| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、耗时桶 | 开始、结束都收到的样本 |
 | `update_download_finished` | 本窗口发起下载的结局 | `source`、`outcome`、耗时桶 | 完成、取消、失败共用一个终态 |
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、耗时桶 | 多轮重连归并为一次 |
 
@@ -39,6 +41,22 @@ Electron 主进程按 Aptabase 的单事件协议向
 任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
 进程重启或集合淘汰后不保证精确一次。没有完整收到创建和完成的任务不推断结局，
 不能以观察完成数除以全部请求数声称全量成功率。
+
+逐脚本事件沿用 MAS 现有脚本执行边界与结果判定：混合队列分别记录各专项，循环每轮单独记录；
+原生配置和脚本更新不计入。尚未轮到、被禁用或占用而跳过的条目没有开始事件。
+`script_run_started` 表示进入执行流程，可能随后预检失败、无用户或因维护全部跳过，
+不等于游戏内任务已执行或已成功。结束结果分别为 `success`、`failed`、`skipped`、`no_user`、
+`incomplete`、`error`、`cancelled`，复用现有 MAS 状态，不读取上游内部数据。
+轮次 ID 和任务 ID 仅用于本机 WS 关联与最多 128 项的内存去重，不发送至 Aptabase。
+重复边界不增加次数，恢复快照不补报；缺失开始、断线、退出或关闭遥测造成的样本不推测结局。
+
+在 Aptabase 的 Release Dashboard 选择 `script_run_started`，属性选择 `script_type`，
+可自动得到时间范围内各专项进入执行流程的次数；切换 `script_run_finished` 可查看结束结果。
+选择 `mode` 可比较顺序与循环，选择 `outcome` 可查看各结果次数，无需导出再手工相加。
+当前官方后台的自定义趋势图只支持按事件名保存，属性分类选择为临时页面状态；
+不提供同时按专项与结果交叉分组的固定图表、成功率公式或定时报表。
+因此这些高级报表仍需后续补展示或分析能力，当前不宣称已有自动成功率看板。
+旧版本只有整任务事件，不能从历史 `multi` 或整轮循环汇总反推出逐脚本次数。
 下载只观察本地启动的操作，取消 API 与 WS 共用一次终态；快照只对账，超时或网络结果不明记
 `observation_unknown`，不推断后台失败。主动关闭、计划内重启和被其他窗口接管不算断线事故；
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。

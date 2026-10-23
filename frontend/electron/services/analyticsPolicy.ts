@@ -99,6 +99,16 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     outcome: ['success', 'error', 'cancelled'],
     duration_bucket: duration,
   },
+  script_run_started: {
+    mode: ['AutoProxy', 'CycleRun'],
+    script_type: script,
+  },
+  script_run_finished: {
+    mode: ['AutoProxy', 'CycleRun'],
+    script_type: script,
+    outcome: ['success', 'failed', 'skipped', 'no_user', 'incomplete', 'error', 'cancelled'],
+    duration_bucket: duration,
+  },
   update_download_finished: {
     source: ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown'],
     outcome: ['completed', 'failed', 'cancelled', 'observation_unknown'],

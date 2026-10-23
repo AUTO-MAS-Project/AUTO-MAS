@@ -102,6 +102,16 @@ export interface AnalyticsEventProps {
     outcome: 'success' | 'error' | 'cancelled'
     duration_bucket: AnalyticsDurationBucket
   }
+  script_run_started: {
+    mode: 'AutoProxy' | 'CycleRun'
+    script_type: AnalyticsScriptType
+  }
+  script_run_finished: {
+    mode: 'AutoProxy' | 'CycleRun'
+    script_type: AnalyticsScriptType
+    outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+    duration_bucket: AnalyticsDurationBucket
+  }
   update_download_finished: {
     source: 'cnb' | 'github' | 'mirrorchyan' | 'autosite' | 'unknown'
     outcome: 'completed' | 'failed' | 'cancelled' | 'observation_unknown'
@@ -125,7 +135,7 @@ export type AnalyticsEvent = {
 export type RendererAnalyticsEvent = Extract<AnalyticsEvent, { name: RendererAnalyticsEventName }>
 export type AnalyticsOperationName = Exclude<
   RendererAnalyticsEventName,
-  'renderer_ready' | 'screen_view'
+  'renderer_ready' | 'screen_view' | 'script_run_started'
 >
 
 /** 操作开始前取得代次，关闭再开启后旧操作不能补报。 */

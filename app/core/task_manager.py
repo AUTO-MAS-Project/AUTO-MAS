@@ -25,8 +25,8 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -48,7 +48,9 @@ from app.models.schema import (
     WSTaskInfoUpdatedData,
     WSTaskLogUpdatedData,
     WSTaskNoticeData,
+    WSTaskScriptFinishedData,
     WSTaskScriptIdentityData,
+    WSTaskScriptStartedData,
 )
 from app.models.task import (
     ScriptItem,
@@ -738,10 +740,10 @@ class Task(TaskExecuteBase):
                 attributes=metric_attributes,
             )
 
-    @contextmanager
-    def _observe_script_run(
+    @asynccontextmanager
+    async def _observe_script_run(
         self, script_item: ScriptItem, script_config
-    ) -> Iterator[None]:
+    ) -> AsyncIterator[None]:
         """按专项记一次脚本运行；顺序执行与循环运行共用。
 
         结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
@@ -751,6 +753,24 @@ class Task(TaskExecuteBase):
         from app.services.telemetry import record_count
 
         outcome = "error"
+        run = (
+            WSTaskScriptStartedData(
+                taskId=self.task_info.task_id,
+                runId=str(uuid.uuid4()),
+                scriptType=_SCRIPT_TYPE_BY_CLASS.get(
+                    type(script_config).__name__, "unknown"
+                ),
+                mode="CycleRun" if self.task_info.is_cycle else "AutoProxy",
+            )
+            if self.task_info.mode == "AutoProxy"
+            else None
+        )
+        if run is not None:
+            await Publisher.send(
+                id=protocol.ID_TASK_MANAGER,
+                type=protocol.TASK_SCRIPT_STARTED,
+                data=run,
+            )
         try:
             yield
             user_statuses = [
@@ -785,6 +805,12 @@ class Task(TaskExecuteBase):
                     "outcome": outcome,
                 },
             )
+            if run is not None:
+                await Publisher.send(
+                    id=protocol.ID_TASK_MANAGER,
+                    type=protocol.TASK_SCRIPT_FINISHED,
+                    data=WSTaskScriptFinishedData(**run.model_dump(), outcome=outcome),
+                )
 
     def _build_task_item(
         self,
@@ -1057,7 +1083,7 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                with self._observe_script_run(script_item, script_config):
+                async with self._observe_script_run(script_item, script_config):
                     await self._spawn_with_preview(task_item, entry, queue_uid)
 
                 success = is_script_success(
@@ -1426,7 +1452,7 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                with self._observe_script_run(script_item, script_config):
+                async with self._observe_script_run(script_item, script_config):
                     await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)

@@ -53,8 +53,10 @@ export function recordAnalyticsEvent(
 }
 
 /** 操作只消费一次终态；异步 IPC 不进入业务 await 链。 */
-export function beginAnalyticsOperation<K extends AnalyticsOperationName>(name: K) {
-  const context = captureAnalyticsContext()
+export function beginAnalyticsOperation<K extends AnalyticsOperationName>(
+  name: K,
+  context = captureAnalyticsContext()
+) {
   const startedAt = performance.now()
   let finished = false
   return {
