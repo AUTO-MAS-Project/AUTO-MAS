@@ -50,6 +50,12 @@ from pydantic import (
 
 from app.core import Config
 from app.core.game_calendar import GameCalendar
+from app.core.taskboard_state import (
+    load_state,
+    save_archive,
+    save_selection,
+    set_done_at,
+)
 from app.models.schema import (
     BlueArchiveActivityIn,
     ComboBoxItem,
@@ -57,6 +63,11 @@ from app.models.schema import (
     EmulatorDeleteIn,
     OutBase,
     PlanComboxConsumer,
+)
+from app.models.taskboard import (
+    TaskboardArchivedActivity,
+    TaskboardDoneRecord,
+    TaskboardState,
 )
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
@@ -149,6 +160,29 @@ class PlanComboxIn(BaseModel):
     consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
 
 
+class TaskboardStateOut(OutBase):
+    data: TaskboardState = Field(default_factory=TaskboardState)
+
+
+class TaskboardSelectionIn(BaseModel):
+    games: list[str] = Field(
+        default_factory=list, max_length=100, description="勾选的游戏"
+    )
+
+
+class TaskboardArchiveIn(BaseModel):
+    archived: list[TaskboardArchivedActivity] = Field(
+        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
+    )
+
+
+class TaskboardDoneAtIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
+    record: TaskboardDoneRecord | None = Field(
+        default=None, description="为空表示删除该记录"
+    )
+
+
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 logger = get_logger("信息获取 API")
 
@@ -205,6 +239,66 @@ async def set_activity_completion(
     except (OSError, TypeError):
         logger.exception("保存游戏活动完成状态失败")
         return OutBase(code=500, status="error", message="保存活动完成状态失败")
+
+
+## 任务台状态：文件读写与裁剪放在 app.core.taskboard_state，这里只做参数与错误转换。
+@router.get(
+    "/taskboard/state",
+    tags=["Get"],
+    summary="获取任务台状态",
+    response_model=TaskboardStateOut,
+)
+async def get_taskboard_state() -> TaskboardStateOut:
+    try:
+        return TaskboardStateOut(data=await load_state())
+    except (OSError, TypeError, ValueError):
+        logger.exception("读取任务台状态失败")
+        return TaskboardStateOut(code=500, status="error", message="读取任务台状态失败")
+
+
+@router.put(
+    "/taskboard/selection",
+    tags=["Set"],
+    summary="保存任务台勾选的游戏",
+    response_model=OutBase,
+)
+async def set_taskboard_selection(payload: TaskboardSelectionIn) -> OutBase:
+    try:
+        await save_selection(payload.games)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台游戏选择失败")
+        return OutBase(code=500, status="error", message="保存任务台游戏选择失败")
+
+
+@router.put(
+    "/taskboard/archive",
+    tags=["Set"],
+    summary="保存任务台归档缓存",
+    response_model=OutBase,
+)
+async def set_taskboard_archive(payload: TaskboardArchiveIn) -> OutBase:
+    try:
+        await save_archive(payload.archived)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台归档失败")
+        return OutBase(code=500, status="error", message="保存任务台归档失败")
+
+
+@router.put(
+    "/taskboard/done-at",
+    tags=["Set"],
+    summary="记录或删除任务台的完成日期",
+    response_model=OutBase,
+)
+async def set_taskboard_done_at(payload: TaskboardDoneAtIn) -> OutBase:
+    try:
+        await set_done_at(payload.key, payload.record)
+        return OutBase()
+    except (OSError, TypeError, ValueError):
+        logger.exception("保存任务台完成日期失败")
+        return OutBase(code=500, status="error", message="保存任务台完成日期失败")
 
 
 ## 碧蓝档案活动数据取自 GameKee 的活动表。那个接口靠自定义头识别是哪个游戏，

@@ -305,6 +305,12 @@ const routes = [
     meta: { title: '历史记录' },
   },
   {
+    path: '/taskboard',
+    name: 'Taskboard',
+    component: () => import('@/views/taskboard/index.vue'),
+    meta: { title: '任务台' },
+  },
+  {
     path: '/gamesign',
     name: 'GameSign',
     component: () => import('../views/gamesign/index.vue'),

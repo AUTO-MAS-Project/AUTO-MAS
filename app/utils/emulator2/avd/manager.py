@@ -28,7 +28,8 @@
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
 （每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
 实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、
-客体日志落盘、客体 Vulkan 驱动补丁。
+客体日志落盘、客体 Vulkan 驱动补丁。启动器里没有的一项：数据盘请求密集时不让 vCPU 停机
+（``res/avd/guest/mas-idlepoll.sh``）。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
 关机默认让安卓自己正常关机、等 qemu 自己退出，不成再退回 ``sync`` + 控制台 ``kill``：控制台
@@ -263,6 +264,8 @@ def build_launch_args(
     ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
+    - 开机动画只在无头时关（``-no-boot-anim``）：带窗口开机时窗口里有东西看，不再黑屏到出桌面
+      （用户 10-21 提）；
     - ``-audio none``：宿主不出声（用户 09-27 定）；
     - ``-feature -VirtioSndCard``：客体里不带声卡（用户 10-04 定）。本镜像的客体声卡是 virtio-snd，
       不认 ``config.ini`` 的 ``hw.audioOutput`` / ``hw.audioInput``（10-04 实测两项写 no 照样有声卡），
@@ -285,7 +288,6 @@ def build_launch_args(
         "-avd",
         avd,
         "-no-snapshot",
-        "-no-boot-anim",
         "-gpu",
         "host",
         "-ports",
@@ -299,7 +301,7 @@ def build_launch_args(
         str(int(memory_mb)),
     ]
     if headless:
-        args.append("-no-window")
+        args += ["-no-window", "-no-boot-anim"]
     args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
     args += ["-feature", "VulkanBatchedDescriptorSetUpdate"]
@@ -639,10 +641,26 @@ class _AvdCore(DeviceBase):
             return DeviceStatus.ONLINE
         return DeviceStatus.STARTING
 
-    def _device_info(self, idx: str, title: str, status: DeviceStatus) -> DeviceInfo:
+    def _device_info(
+        self,
+        idx: str,
+        title: str,
+        status: DeviceStatus,
+        process: psutil.Process | None = None,
+    ) -> DeviceInfo:
         # 给脚本的是 adb 端口的 TCP 地址：脚本用自己的 adb connect 过去，与雷电 / MuMu 一致。
         # 不给 emulator-<端口> 这个序列号——它只在我们的私有 server（20050）上存在。
-        return DeviceInfo(title, status, f"127.0.0.1:{adb_port(idx)}")
+        started_at = None
+        if process is not None:
+            with suppress(psutil.Error):
+                started_at = process.create_time()
+        return DeviceInfo(
+            title,
+            status,
+            f"127.0.0.1:{adb_port(idx)}",
+            process_id=process.pid if process is not None else None,
+            process_started_at=started_at,
+        )
 
     async def getStatus(self, idx: str) -> DeviceStatus:
         if str(idx) not in self._instances():
@@ -800,7 +818,11 @@ class _AvdCore(DeviceBase):
 
         await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
-        return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
+        # 带上 qemu 进程号：开机后模拟器若被显卡驱动重置等原因带走（10-22 生产实例 0 就这样，
+        # NVIDIA 驱动内核异常后结束了 qemu），MaaFW 等 adb 时能马上看出来，不再空等几分钟
+        return self._device_info(
+            idx, instance.title, DeviceStatus.ONLINE, process=process
+        )
 
     async def _wait_boot(
         self, idx: str, instance: AvdInstance, launched: bool, max_wait: float
@@ -990,6 +1012,10 @@ class _AvdCore(DeviceBase):
         # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
         await self._setup_network(idx)
+
+        # 8b) 数据盘请求密集时（游戏下载每 8 KB fsync 一次）不让 vCPU 停机，省掉每次请求等 Hyper-V
+        #     唤醒 vCPU 的时间；平时不动（依据见脚本头注释）
+        await self._setup_idlepoll(idx)
 
         # 9) 客体日志：缓冲调到 16 MB（持久），开机后持续落盘到 <根>\logs，问题包要用
         await self._start_logcat(idx, instance)
@@ -1304,6 +1330,26 @@ class _AvdCore(DeviceBase):
             )
         else:
             logger.warning(f"实例 {idx} fastpath 没起来: {status[-300:]}")
+
+    async def _setup_idlepoll(self, idx: str) -> None:
+        remote = f"{GUEST_TMP_DIR}/mas-idlepoll.sh"
+        if not await self._push(idx, guest_script("mas-idlepoll.sh"), remote):
+            return
+        _, started = await self._shell(idx, f"su 0 sh {remote} daemon")
+        _, status = await self._shell(idx, f"su 0 sh {remote} status")
+        lines = {
+            key: value.strip()
+            for key, _, value in (line.partition(":") for line in status.splitlines())
+        }
+        if lines.get("watchers"):
+            logger.info(
+                f"实例 {idx} 密集读写加速: 守护已起（pid {lines['watchers']}，"
+                f"数据盘 {lines.get('disk') or '?'}）"
+            )
+        else:
+            logger.warning(
+                f"实例 {idx} 密集读写加速没起来: {(started.strip() + ' / ' + status)[-300:]}"
+            )
 
     async def _start_logcat(self, idx: str, instance: AvdInstance) -> None:
         await self._shell(
