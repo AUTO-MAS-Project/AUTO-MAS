@@ -25,6 +25,84 @@ const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   app_started: {},
   renderer_ready: { duration_bucket: duration },
+  initialization_decided: {
+    decision: ['skip-home', 'full-init', 'force-backend-update'],
+    runtime_mode: runtime,
+    duration_bucket: duration,
+  },
+  initialization_stage_finished: {
+    stage: [
+      'runtime_binary',
+      'bootstrap',
+      'python',
+      'pip',
+      'git',
+      'repository',
+      'dependency',
+      'unknown',
+    ],
+    runtime_mode: runtime,
+    outcome: ['success', 'failure'],
+    known_code: [
+      'none',
+      'unknown',
+      'RUNTIME_NOT_FOUND',
+      'RUNTIME_BINARY_ALIGN_ERROR',
+      'OPERATION_CANCELLED',
+      'NETWORK_UNAVAILABLE',
+      'DEPENDENCY_SYNC_FAILED',
+      'ENVIRONMENT_BROKEN',
+      'PYTHON_VERSION_MISMATCH',
+      'LOCKFILE_MISSING',
+      'LOCKFILE_OUTDATED',
+      'WORKSPACE_RESTORE_FAILED',
+      'INTERNAL_ERROR',
+    ],
+    failed_stage: [
+      'none',
+      'runtime_binary',
+      'bootstrap',
+      'python',
+      'pip',
+      'git',
+      'repository',
+      'dependency',
+      'unknown',
+    ],
+    duration_bucket: duration,
+  },
+  initialization_recovery_selected: {
+    action: [
+      'restore-workspace',
+      'retry',
+      'retry-other-mirror',
+      'rebuild-environment',
+      'open-log',
+      'run-doctor',
+      'skip',
+      'select-mirror',
+    ],
+    stage: ['python', 'pip', 'git', 'repository', 'dependency', 'backend'],
+    mirror_kind: ['default', 'official', 'mirror', 'unknown'],
+    duration_bucket: duration,
+  },
+  notification_channel_changed: {
+    channel_kind: ['system', 'mail', 'serverchan', 'cmcc', 'koishi', 'openclaw_qq'],
+    action: ['enable', 'disable'],
+    outcome: ['success', 'failure'],
+    duration_bucket: duration,
+  },
+  notification_binding_finished: {
+    channel_kind: ['openclaw_qq'],
+    action: ['bind', 'rebind', 'unbind'],
+    outcome: ['connected', 'unbound', 'failure', 'expired', 'cancelled', 'replaced', 'unmounted'],
+    duration_bucket: duration,
+  },
+  webhook_test_finished: {
+    scope_kind: ['global', 'script'],
+    outcome: ['success', 'failure', 'unknown'],
+    duration_bucket: duration,
+  },
   backend_start_finished: {
     outcome: ['success', 'failure'],
     runtime_mode: runtime,
@@ -212,7 +290,10 @@ export function validateAnalyticsEvent(value: unknown, renderer: boolean): Analy
     return null
   if (!Object.prototype.hasOwnProperty.call(schemas, value.name) || !isRecord(value.props))
     return null
-  if (renderer && (value.name === 'app_started' || value.name === 'backend_start_finished'))
+  if (
+    renderer &&
+    ['app_started', 'backend_start_finished', 'initialization_stage_finished'].includes(value.name)
+  )
     return null
   const schema = schemas[value.name as AnalyticsEventName]
   if (Object.keys(value.props).length !== Object.keys(schema).length) return null

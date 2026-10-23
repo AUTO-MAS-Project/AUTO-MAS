@@ -494,6 +494,23 @@ export function useInitializationFlow() {
 
   function handleMirrorSelect(mirrorKey: string) {
     currentState.value.selectedMirror = mirrorKey
+    recordRecoveryAction('select-mirror')
+  }
+
+  function recordRecoveryAction(
+    action: AnalyticsEventProps['initialization_recovery_selected']['action']
+  ) {
+    const state = currentState.value
+    const type = state.mirrors.find(mirror => mirror.key === state.selectedMirror)?.type
+    beginAnalyticsOperation('initialization_recovery_selected').finish({
+      action,
+      stage: currentStep.value.key,
+      mirror_kind: !state.selectedMirror
+        ? 'default'
+        : type === 'official' || type === 'mirror'
+          ? type
+          : 'unknown',
+    })
   }
 
   function resetFailureState(state: StepState) {
@@ -513,6 +530,7 @@ export function useInitializationFlow() {
   }
 
   async function handleSkip() {
+    recordRecoveryAction('skip')
     ensureAnalyticsAttempt()
     skippedStage = true
     const step = currentStep.value
@@ -595,6 +613,7 @@ export function useInitializationFlow() {
   }
 
   async function handleFailureAction(kind: FailureActionKind) {
+    recordRecoveryAction(kind)
     const state = currentState.value
 
     switch (kind) {

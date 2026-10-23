@@ -29,6 +29,36 @@ export type AnalyticsScriptType =
   | 'multi'
   | 'none'
 export type AnalyticsRuntimeMode = 'off' | 'managed' | 'development' | 'unknown'
+export type AnalyticsInitializationStage =
+  | 'runtime_binary'
+  | 'bootstrap'
+  | 'python'
+  | 'pip'
+  | 'git'
+  | 'repository'
+  | 'dependency'
+  | 'unknown'
+export type AnalyticsInitializationCode =
+  | 'none'
+  | 'unknown'
+  | 'RUNTIME_NOT_FOUND'
+  | 'RUNTIME_BINARY_ALIGN_ERROR'
+  | 'OPERATION_CANCELLED'
+  | 'NETWORK_UNAVAILABLE'
+  | 'DEPENDENCY_SYNC_FAILED'
+  | 'ENVIRONMENT_BROKEN'
+  | 'PYTHON_VERSION_MISMATCH'
+  | 'LOCKFILE_MISSING'
+  | 'LOCKFILE_OUTDATED'
+  | 'WORKSPACE_RESTORE_FAILED'
+  | 'INTERNAL_ERROR'
+export type AnalyticsNotificationChannel =
+  | 'system'
+  | 'mail'
+  | 'serverchan'
+  | 'cmcc'
+  | 'koishi'
+  | 'openclaw_qq'
 export type AnalyticsTaskMode = 'AutoProxy' | 'ScriptConfig' | 'Update' | 'CycleRun' | 'unknown'
 export type AnalyticsTaskSource =
   | 'home'
@@ -63,6 +93,57 @@ export interface AnalyticsEventProps {
   backend_start_finished: {
     outcome: 'success' | 'failure'
     runtime_mode: AnalyticsRuntimeMode
+    duration_bucket: AnalyticsDurationBucket
+  }
+  initialization_decided: {
+    decision: 'skip-home' | 'full-init' | 'force-backend-update'
+    runtime_mode: AnalyticsRuntimeMode
+    duration_bucket: AnalyticsDurationBucket
+  }
+  initialization_stage_finished: {
+    stage: AnalyticsInitializationStage
+    runtime_mode: AnalyticsRuntimeMode
+    outcome: 'success' | 'failure'
+    known_code: AnalyticsInitializationCode
+    failed_stage: AnalyticsInitializationStage | 'none'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  initialization_recovery_selected: {
+    action:
+      | 'restore-workspace'
+      | 'retry'
+      | 'retry-other-mirror'
+      | 'rebuild-environment'
+      | 'open-log'
+      | 'run-doctor'
+      | 'skip'
+      | 'select-mirror'
+    stage: 'python' | 'pip' | 'git' | 'repository' | 'dependency' | 'backend'
+    mirror_kind: 'default' | 'official' | 'mirror' | 'unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  notification_channel_changed: {
+    channel_kind: AnalyticsNotificationChannel
+    action: 'enable' | 'disable'
+    outcome: 'success' | 'failure'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  notification_binding_finished: {
+    channel_kind: 'openclaw_qq'
+    action: 'bind' | 'rebind' | 'unbind'
+    outcome:
+      | 'connected'
+      | 'unbound'
+      | 'failure'
+      | 'expired'
+      | 'cancelled'
+      | 'replaced'
+      | 'unmounted'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  webhook_test_finished: {
+    scope_kind: 'global' | 'script'
+    outcome: 'success' | 'failure' | 'unknown'
     duration_bucket: AnalyticsDurationBucket
   }
   initialization_finished: {
@@ -208,7 +289,7 @@ export interface AnalyticsEventProps {
 export type AnalyticsEventName = keyof AnalyticsEventProps
 export type RendererAnalyticsEventName = Exclude<
   AnalyticsEventName,
-  'app_started' | 'backend_start_finished'
+  'app_started' | 'backend_start_finished' | 'initialization_stage_finished'
 >
 export type AnalyticsEvent = {
   [K in AnalyticsEventName]: { name: K; props: AnalyticsEventProps[K] }

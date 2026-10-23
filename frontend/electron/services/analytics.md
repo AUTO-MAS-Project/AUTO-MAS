@@ -11,6 +11,9 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `app_started` | 主进程进入 ready | 无 | 每进程最多一次 |
 | `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket` | 每进程最多一次 |
 | `backend_start_finished` | 串行启动作业的真实结果 | `outcome`、`runtime_mode`、耗时桶 | 合并的启动请求不重复 |
+| `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
+| `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
+| `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
 | `initialization_finished` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
@@ -29,6 +32,9 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `config_restore_finished` | MAS/原生备份恢复与强制确认结果 | `script_type`、`target_kind`、`forced`、`outcome`、耗时桶 | 每次实际恢复请求 |
 | `community_login_finished` | 米游社、森空岛扫码会话的终态 | `provider`、`stage`、`outcome`、耗时桶 | 每次生成尝试一个终态，不逐次轮询 |
 | `notification_test_finished` | 已配置通知的总体测试响应 | `test_kind`、`request_outcome`、耗时桶 | 每次实际测试请求 |
+| `notification_channel_changed` | 内置通知渠道启用、停用的保存结果 | `channel_kind`、`action`、`outcome`、耗时桶 | 每次实际写入；包括绑定后的自动启停 |
+| `notification_binding_finished` | QQ 通知绑定、重绑及解绑结果 | `channel_kind`、`action`、`outcome`、耗时桶 | 每次绑定会话一个终态；状态查询不计 |
+| `webhook_test_finished` | 独立 Webhook 测试的返回结果 | `scope_kind`、`outcome`、耗时桶 | 每次测试一次；不含地址或响应正文 |
 | `update_download_finished` | 本窗口发起下载的结局 | `source`、`outcome`、耗时桶 | 完成、取消、失败共用一个终态 |
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、耗时桶 | 多轮重连归并为一次 |
 
@@ -43,6 +49,16 @@ Electron 主进程按 Aptabase 的单事件协议向
 
 初始化准备步骤完成不代表成功；确认主连接可用后才记成功，跳过步骤、强行进入但未确认连接、
 失败分别记录。启动时自动跳过已完成的安装步骤仍需确认连接，单独标记 `flow_kind=skip`。
+
+阶段统计在主进程执行边界记录：Runtime 自身校验/更新为 `runtime_binary`，完整准备命令为
+`bootstrap`，单项命令对应 `python`、`repository` 或 `dependency`；失败时另带有限枚举的
+`failed_stage`。不把界面补齐的阶段或接管的 pip/Git 算成成功。旧链路完整初始化与单步重试
+在实际安装、拉取及依赖调用返回时记录。错误码只保留显式白名单，其他一律 `unknown`。
+恢复选择只记录按钮动作、阶段和内置镜像类别，不记录镜像键、地址或诊断内容。
+
+QQ 绑定以当前扫码会话返回网关 `connected` 为完成；取消、替换、过期、失败和卸载分别终结，
+迟到响应不计入新会话。绑定/解绑的结果先于后续渠道开关保存及页面刷新确认，开关写入单独统计。
+Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unknown`，不据此断定对端未收到。
 失败后的工作区恢复、普通重试和 Runtime 更新各开启新尝试；重复启动回调不重置计时或重复计数，
 恢复耗时包含完整 bootstrap，Runtime 更新后的尝试也包含镜像配置准备。
 脚本模板导入失败时，根据清理结果区分失败与部分完成；项目复用失败但保留基础记录为部分完成。

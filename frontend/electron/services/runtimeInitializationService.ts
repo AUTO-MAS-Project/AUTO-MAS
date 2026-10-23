@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 import { getLogger } from './logger'
+import { observeInitializationStage } from './initializationAnalytics'
 import { MirrorConfig, MirrorService } from './mirrorService'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -1028,6 +1029,16 @@ export class RuntimeInitializationService {
    * （原因只会是网络与文件占用，都是重试能解决的），并给「重试」与「打开日志」两个入口。
    */
   private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const { mode, runtimePath } = this.options.launchConfig
+    if (mode !== 'managed' || !(runtimePath || process.resourcesPath)) {
+      return this.runRuntimeAlignment(bridge)
+    }
+    return observeInitializationStage('runtime_binary', this.options.launchConfig.mode, () =>
+      this.runRuntimeAlignment(bridge)
+    )
+  }
+
+  private async runRuntimeAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
     const outcome = await this.runAlignment(bridge)
     // 对齐期间收到的取消不能丢：exe 本来就最新、开发者自带 Runtime 这些路径不会去看取消判据，
     // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
@@ -1118,6 +1129,26 @@ export class RuntimeInitializationService {
 
   /** 跑一条 Runtime 命令，把事件桥接进进度，把失败转成现有失败形状。 */
   private async execute(
+    command: string[],
+    mirror: RuntimeMirrorSelection | null | undefined,
+    bridge: BootstrapProgressBridge
+  ): Promise<RuntimeStageOutcome> {
+    const stage =
+      command[0] === 'bootstrap'
+        ? 'bootstrap'
+        : command[0] === 'workspace'
+          ? 'repository'
+          : command[0] === 'dependencies'
+            ? 'dependency'
+            : command[0] === 'repair' || command[0] === 'environment'
+              ? 'python'
+              : 'unknown'
+    return observeInitializationStage(stage, this.options.launchConfig.mode, () =>
+      this.executeCommand(command, mirror, bridge)
+    )
+  }
+
+  private async executeCommand(
     command: string[],
     mirror: RuntimeMirrorSelection | null | undefined,
     bridge: BootstrapProgressBridge

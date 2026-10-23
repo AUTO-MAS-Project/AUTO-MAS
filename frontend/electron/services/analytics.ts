@@ -105,7 +105,8 @@ export class AnalyticsService {
     context: AnalyticsContext
   ): void {
     if (context === null || context !== this.getContext()) return
-    const once = name === 'app_started' || name === 'renderer_ready'
+    const once =
+      name === 'app_started' || name === 'renderer_ready' || name === 'initialization_decided'
     if (once && this.emitted.has(name)) return
     const now = Date.now()
     const minute = Math.floor(now / 60_000)
