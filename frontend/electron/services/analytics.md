@@ -20,6 +20,10 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
 | `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
 | `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、耗时桶 | 开始、结束都收到的样本 |
+| `native_config_action_finished` | 原生配置打开、查看、保存/关闭请求及丢弃通知 | `script_type`、`operation`、`outcome`、耗时桶 | 每次实际请求；重复丢弃帧去重 |
+| `config_restore_finished` | MAS/原生备份恢复与强制确认结果 | `script_type`、`target_kind`、`forced`、`outcome`、耗时桶 | 每次实际恢复请求 |
+| `community_login_finished` | 米游社、森空岛扫码会话的终态 | `provider`、`stage`、`outcome`、耗时桶 | 每次生成尝试一个终态，不逐次轮询 |
+| `notification_test_finished` | 已配置通知的总体测试响应 | `test_kind`、`request_outcome`、耗时桶 | 每次实际测试请求 |
 | `update_download_finished` | 本窗口发起下载的结局 | `source`、`outcome`、耗时桶 | 完成、取消、失败共用一个终态 |
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、耗时桶 | 多轮重连归并为一次 |
 
@@ -49,6 +53,18 @@ Electron 主进程按 Aptabase 的单事件协议向
 `incomplete`、`error`、`cancelled`，复用现有 MAS 状态，不读取上游内部数据。
 轮次 ID 和任务 ID 仅用于本机 WS 关联与最多 128 项的内存去重，不发送至 Aptabase。
 重复边界不增加次数，恢复快照不补报；缺失开始、断线、退出或关闭遥测造成的样本不推测结局。
+后端逐轮消息通过运行时任务注册表后台发送，最多 32 项在途，拥塞时直接丢弃；
+结束帧等待开始帧的发送结果，但脚本执行和收尾均不等待统计消息。进程关闭取消在途消息。
+整任务完成不提前清掉逐轮观察，以容纳晚到的最后一轮终态。
+
+原生配置的 `open/view/save/close/timeout` 只记录请求受理或失败，不宣称 GUI 已打开或配置已保存；
+MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类，不取原因正文。
+恢复请求的 `confirmation_required` 表示还需二次确认，强制恢复是另一请求；不传备份时间或文件名。
+扫码会话只记录生成、扫码、保存阶段的最终结果。凭据已由后端确认保存后，即使本地回填失败仍记
+`saved`；无目标账号仅记 `confirmed_unsaved`。过期、取消、重新生成和卸载分别记录，
+票据、二维码地址、凭据及账号标识均不进入事件。旧会话异步响应和关闭期间的会话不补报。
+通知测试仅记录总体请求的 `accepted/rejected/unknown`，网络异常为结果未知，
+不提供逐渠道送达率，不采集通知渠道配置、收件人或正文。Webhook 测试尚未纳入。
 
 在 Aptabase 的 Release Dashboard 选择 `script_run_started`，属性选择 `script_type`，
 可自动得到时间范围内各专项进入执行流程的次数；切换 `script_run_finished` 可查看结束结果。

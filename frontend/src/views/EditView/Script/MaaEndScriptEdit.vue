@@ -644,7 +644,7 @@
 </template>
 
 <script setup lang="ts">
-import { requestScriptConfigStart } from '@/composables/useTaskApi'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
@@ -1223,7 +1223,7 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
+    const response = await stopNativeConfig(maaEndTaskId.value, 'save')
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

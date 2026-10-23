@@ -1,9 +1,8 @@
-import { requestTaskStart } from '@/composables/useTaskApi'
+import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
 // ZZZ-OD 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
@@ -63,7 +62,7 @@ export function useZzzodGuiSession() {
 
     stoppingZzzodConfig.value = true
     try {
-      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      const response = await stopNativeConfig(taskId, keepOnFailure ? 'save' : 'close')
       if (response.code !== 200) {
         throw new Error(response.message || t('edit.zzzodStopFailed'))
       }

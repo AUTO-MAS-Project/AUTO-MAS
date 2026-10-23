@@ -112,6 +112,37 @@ export interface AnalyticsEventProps {
     outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
     duration_bucket: AnalyticsDurationBucket
   }
+  native_config_action_finished: {
+    script_type: AnalyticsScriptType
+    operation: 'open' | 'view' | 'save' | 'close' | 'timeout' | 'discard'
+    outcome: 'accepted' | 'failure' | 'discarded'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  config_restore_finished: {
+    script_type: AnalyticsScriptType
+    target_kind: 'mas' | 'native' | 'unknown'
+    forced: 'yes' | 'no'
+    outcome: 'success' | 'failure' | 'confirmation_required'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  community_login_finished: {
+    provider: 'miyoushe' | 'skland'
+    stage: 'create' | 'scan' | 'save'
+    outcome:
+      | 'saved'
+      | 'confirmed_unsaved'
+      | 'failure'
+      | 'expired'
+      | 'cancelled'
+      | 'replaced'
+      | 'unmounted'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  notification_test_finished: {
+    test_kind: 'configured'
+    request_outcome: 'accepted' | 'rejected' | 'unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
   update_download_finished: {
     source: 'cnb' | 'github' | 'mirrorchyan' | 'autosite' | 'unknown'
     outcome: 'completed' | 'failed' | 'cancelled' | 'observation_unknown'

@@ -1,9 +1,8 @@
-import { requestTaskStart } from '@/composables/useTaskApi'
+import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
@@ -99,7 +98,7 @@ export function useNativeGuiSession(options: {
     stopping.value = true
     stoppingPromise = Promise.resolve().then(async () => {
       try {
-        const response = await Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId })
+        const response = await stopNativeConfig(currentTaskId, keepOnFailure ? 'save' : 'close')
         if (response.code !== 200) {
           throw new Error(response.message || t(keys.stopFailed))
         }

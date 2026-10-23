@@ -241,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { requestScriptConfigStart } from '@/composables/useTaskApi'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -687,7 +687,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
         async () => {
           if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             const taskId = generalTaskId.value
-            const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+            const response = await stopNativeConfig(taskId, 'timeout')
 
             if (response && response.code === 200) {
               for (const subscriptionId of generalSubscriptionIds.value) {
@@ -736,7 +736,7 @@ const handleSaveGeneralConfig = async () => {
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await stopNativeConfig(taskId, generalSessionViewOnly.value ? 'close' : 'save')
     if (response && response.code === 200) {
       for (const subscriptionId of generalSubscriptionIds.value) {
         unsubscribe(subscriptionId)
@@ -868,7 +868,7 @@ const stopGeneralSession = async () => {
   const taskId = generalTaskId.value
   if (!taskId || generalSubscriptionIds.value.length === 0) return
   try {
-    await Service.stopTaskApiDispatchStopPost({ taskId })
+    await stopNativeConfig(taskId)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   }

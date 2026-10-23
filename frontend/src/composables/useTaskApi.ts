@@ -1,5 +1,10 @@
 import { ApiError, Service, TaskCreateIn, type TaskCreateOut } from '@/api'
-import { beginAnalyticsOperation } from '@/utils/analytics'
+import {
+  analyticsScriptType,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import type { AnalyticsEventProps } from '@/types/analytics'
 
 function taskRequestError(error: unknown): Error {
@@ -22,12 +27,43 @@ type TaskStartMetadata = Partial<
   Pick<AnalyticsEventProps['task_start_result'], 'source' | 'target_kind'>
 >
 
+function nativeScriptType(taskId: string, targetId = '') {
+  const script = getTaskRuntimeStates().find(task => task.taskId === taskId)?.scripts[0]
+  return script ? analyticsScriptType(script.scriptType) : getAnalyticsScriptType(targetId)
+}
+
+/** 仅记录停止请求的受理结果；不能由停止成功推断原生配置已经保存。 */
+export async function stopNativeConfig(
+  taskId: string,
+  action: 'save' | 'close' | 'timeout' = 'close'
+) {
+  const operation = beginAnalyticsOperation('native_config_action_finished')
+  const script_type = nativeScriptType(taskId)
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    operation.finish({
+      script_type,
+      operation: action,
+      outcome: response.code === 200 ? 'accepted' : 'failure',
+    })
+    return response
+  } catch (error) {
+    operation.finish({ script_type, operation: action, outcome: 'failure' })
+    throw error
+  }
+}
+
 /** 保留原始接口返回语义，供配置会话和更新入口复用同一个请求计数边界。 */
 export async function requestTaskStart(
   request: TaskCreateIn,
   metadata: TaskStartMetadata = {}
 ): Promise<TaskCreateOut> {
   const operation = beginAnalyticsOperation('task_start_result')
+  const nativeOperation =
+    request.mode === TaskCreateIn.mode.SCRIPT_CONFIG
+      ? beginAnalyticsOperation('native_config_action_finished')
+      : null
+  const nativeAction = request.viewOnly ? 'view' : 'open'
   const dimensions = {
     source: metadata.source ?? 'unknown',
     target_kind:
@@ -38,9 +74,19 @@ export async function requestTaskStart(
   try {
     response = await Service.addTaskApiDispatchStartPost(request)
   } catch (error) {
+    nativeOperation?.finish({
+      script_type: getAnalyticsScriptType(request.taskId),
+      operation: nativeAction,
+      outcome: 'failure',
+    })
     operation.finish({ ...dimensions, outcome: 'failure' })
     throw error
   }
+  nativeOperation?.finish({
+    script_type: nativeScriptType(response.taskId ?? '', request.taskId),
+    operation: nativeAction,
+    outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
+  })
   operation.finish({
     ...dimensions,
     outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',

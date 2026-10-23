@@ -4,6 +4,7 @@ import {
   WS_ID_TASK_MANAGER,
   WS_TASK_SCRIPT_STARTED,
   WS_TASK_SCRIPT_FINISHED,
+  WS_TASK_CONFIG_DISCARDED,
 } from '@/services/websocket/types'
 import {
   analyticsScriptType,
@@ -17,6 +18,7 @@ type ObservedTask = {
   operation: ReturnType<typeof beginAnalyticsOperation<'task_observed_finished'>>
   mode: AnalyticsEventProps['task_observed_finished']['mode']
   script_type: AnalyticsEventProps['task_observed_finished']['script_type']
+  discardSubscription?: string
 }
 const observed = new Map<string, ObservedTask>()
 const completed = new Set<string>()
@@ -60,23 +62,35 @@ export function bootstrapTaskAnalytics(): void {
   disposeListener = onTaskRuntimeEvent(event => {
     if (event.type === 'snapshot') return
     if (event.type === 'removed') {
-      observed.delete(event.taskId)
+      removeObservedTask(event.taskId)
       clearTaskScriptRuns(event.taskId)
       return
     }
     const state = event.state
     if (event.type === 'created' && !observed.has(state.taskId) && !completed.has(state.taskId)) {
-      if (observed.size >= 128) observed.delete(observed.keys().next().value!)
+      if (observed.size >= 128) removeObservedTask(observed.keys().next().value!)
       const types = new Set(state.scripts.map(item => analyticsScriptType(item.scriptType)))
       observed.set(state.taskId, {
         operation: beginAnalyticsOperation('task_observed_finished'),
         mode: state.mode ?? 'unknown',
         script_type: types.size > 1 ? 'multi' : (types.values().next().value ?? 'unknown'),
       })
+      if (state.mode === 'ScriptConfig') {
+        const entry = observed.get(state.taskId)!
+        const discard = beginAnalyticsOperation('native_config_action_finished')
+        entry.discardSubscription = subscribe(
+          { id: state.taskId, type: WS_TASK_CONFIG_DISCARDED },
+          () =>
+            discard.finish({
+              script_type: entry.script_type,
+              operation: 'discard',
+              outcome: 'discarded',
+            })
+        )
+      }
     } else if (event.type === 'completed') {
-      clearTaskScriptRuns(state.taskId)
-      const entry = observed.get(state.taskId)
-      observed.delete(state.taskId)
+      // 逐轮消息独立后台发送，最后一轮的终态可能晚于整任务完成。
+      const entry = removeObservedTask(state.taskId)
       if (!completed.has(state.taskId)) {
         if (completed.size >= 128) completed.delete(completed.values().next().value!)
         completed.add(state.taskId)
@@ -91,6 +105,13 @@ export function bootstrapTaskAnalytics(): void {
   })
 }
 
+function removeObservedTask(taskId: string): ObservedTask | undefined {
+  const entry = observed.get(taskId)
+  if (entry?.discardSubscription) unsubscribe(entry.discardSubscription)
+  observed.delete(taskId)
+  return entry
+}
+
 function clearTaskScriptRuns(taskId: string): void {
   for (const [runId, entry] of scriptRuns) {
     if (entry.taskId === taskId) scriptRuns.delete(runId)
@@ -100,6 +121,9 @@ function clearTaskScriptRuns(taskId: string): void {
 export function disposeTaskAnalytics(): void {
   disposeListener?.()
   disposeListener = null
+  for (const entry of observed.values()) {
+    if (entry.discardSubscription) unsubscribe(entry.discardSubscription)
+  }
   observed.clear()
   completed.clear()
   subscriptions.splice(0).forEach(unsubscribe)
