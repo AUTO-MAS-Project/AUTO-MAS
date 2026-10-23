@@ -1,85 +1,32 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
+import type { GameCalendarActivityInfo } from '@/api'
 import {
-  ApiError,
-  GetService,
-  SetService,
-  type GameCalendarActivityInfo,
-  type GameCalendarActivityCompletionIn,
-} from '@/api'
+  useActivityCompletionStore,
+  type ActivityCompletionScope,
+} from '@/stores/activityCompletion'
 
-export type ActivityCompletionScope = Pick<GameCalendarActivityCompletionIn, 'game' | 'server'>
-const activityKey = (item: GameCalendarActivityInfo) =>
-  JSON.stringify([item.name.trim(), new Date(item.startTime).getTime()])
+export type { ActivityCompletionScope } from '@/stores/activityCompletion'
 
-const completionError = (error: unknown): Error => {
-  if (error instanceof ApiError) {
-    const body: unknown = error.body
-    if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
-      return new Error(body.message)
-    }
-  }
-  return error instanceof Error ? error : new Error(String(error))
-}
-
-/** 各游戏及服务器独立保存完成状态，继续与后台日历共用持久化记录。 */
+/**
+ * 活动完成状态的页面级入口。
+ *
+ * 实际状态存在 `useActivityCompletionStore` 里，首页活动卡与任务台共用；
+ * 这里只按当前作用域（游戏 + 服务器）包一层，保持调用方现有的 API 形状。
+ */
 export const useActivityCompletionApi = (scope: ActivityCompletionScope) => {
-  const completedActivities = ref<GameCalendarActivityInfo[]>([])
-  const completedKeys = computed(() => new Set(completedActivities.value.map(activityKey)))
-  const savingKeys = ref(new Set<string>())
-  const loading = ref(false)
-  const ready = ref(false)
-  const errorMessage = ref('')
-  const isCompleted = (item: GameCalendarActivityInfo) => completedKeys.value.has(activityKey(item))
-  const isSaving = (item: GameCalendarActivityInfo) => savingKeys.value.has(activityKey(item))
+  const store = useActivityCompletionStore()
+  const state = computed(() => store.stateOf(scope))
 
-  const load = async () => {
-    if (loading.value || savingKeys.value.size) return
-    loading.value = true
-    // 读取与保存互斥，避免较早的读取结果覆盖刚保存的完成状态。
-    ready.value = false
-    errorMessage.value = ''
-    try {
-      const response = await GetService.getActivityCompletionsApiInfoActivityCompletionsGet(
-        scope.game,
-        scope.server
-      )
-      if (response.code !== 200) throw new Error(response.message)
-      completedActivities.value = response.data ?? []
-      ready.value = true
-    } catch (error) {
-      ready.value = false
-      errorMessage.value = completionError(error).message
-    } finally {
-      loading.value = false
-    }
+  const isCompleted = (item: GameCalendarActivityInfo) => store.isCompleted(scope, item)
+  const isSaving = (item: GameCalendarActivityInfo) => store.isSaving(scope, item)
+
+  return {
+    loading: computed(() => state.value.loading),
+    ready: computed(() => state.value.ready),
+    errorMessage: computed(() => state.value.errorMessage),
+    isCompleted,
+    isSaving,
+    load: (force = false) => store.load(scope, force),
+    toggle: (item: GameCalendarActivityInfo) => store.toggle(scope, item),
   }
-
-  const toggle = async (item: GameCalendarActivityInfo) => {
-    if (!ready.value || isSaving(item)) return
-    const key = activityKey(item)
-    const completed = !isCompleted(item)
-    savingKeys.value = new Set(savingKeys.value).add(key)
-    try {
-      const response = await SetService.setActivityCompletionApiInfoActivityCompletionsPost({
-        ...scope,
-        ...item,
-        startTime: new Date(item.startTime).toISOString(),
-        endTime: new Date(item.endTime).toISOString(),
-        completed,
-      })
-      if (response.code !== 200) throw new Error(response.message)
-      completedActivities.value = completedActivities.value.filter(
-        activity => activityKey(activity) !== key
-      )
-      if (completed) completedActivities.value.push(item)
-    } catch (error) {
-      throw completionError(error)
-    } finally {
-      const pending = new Set(savingKeys.value)
-      pending.delete(key)
-      savingKeys.value = pending
-    }
-  }
-
-  return { loading, ready, errorMessage, isCompleted, isSaving, load, toggle }
 }
