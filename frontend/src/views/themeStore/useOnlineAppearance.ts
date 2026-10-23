@@ -20,7 +20,7 @@ export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
 export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
-export type OnlineAppearanceInstallOutcome = 'installed' | 'cancelled' | 'failed'
+export type OnlineAppearanceInstallOutcome = 'installed' | 'partial' | 'cancelled' | 'failed'
 
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
 
@@ -435,7 +435,13 @@ export function useOnlineAppearance(options: {
       telemetry.finish({
         category_kind,
         outcome:
-          outcome === 'installed' ? 'success' : outcome === 'cancelled' ? 'cancelled' : 'failure',
+          outcome === 'installed'
+            ? 'success'
+            : outcome === 'partial'
+              ? 'partial'
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : 'failure',
       })
       installing.value = false
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。

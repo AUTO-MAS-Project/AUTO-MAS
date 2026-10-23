@@ -85,7 +85,7 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |
 | `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
 | `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
-| `adapter_setup_finished` | 奇想盒配置与原生会话 | `script_type`、`operation_kind`、`engine_kind` |
+| `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
 
 
 耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
@@ -182,7 +182,8 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
 
 主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
-保存成功按进程内成功序号固定抽取每 10 次中的第 1 次，失败不参与此采样，输出
+共享配置写入事件 `config_write_finished` 的成功样本按进程内成功序号固定抽取每 10 次中的第 1 次，
+其他事件族不沿用该采样序号；失败不参与此采样，输出
 `sample_rate=10/1`；限频、断网、关闭、并发上限仍会丢弃，不能把乘以采样倍率的数量当精确总数。
 采样序号不落盘，导航采用相邻去重和同一频率预算。没有后台心跳、进度或逐日志事件。
 
@@ -224,3 +225,17 @@ ClickHouse 在后台处理 TTL，不保证过期时刻立即物理删除。本�
 
 协议参考：[Aptabase 单事件实现](https://github.com/aptabase/aptabase-electron/blob/main/src/main.ts)、
 [官方自建 SDK 说明](https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK)。
+
+## 本次验收边界（2026-10-24）
+
+四批代码完成 84 项场景接入，复用 72 个事件族；另修复商店桌宠已安装但选择保存失败时误报安装失败。
+107 项针对性验证、96 项既有前端测试、
+11 项隔离浏览器流程，以及 Renderer/Electron 编译、未签名安装包构建通过。证据以 PR 对应评论为准。
+
+用专用入口运行隔离打包端，统计服务代码未经修改：本地接收器收到全部 72 类契约样本；
+生产目的地只发送一条版本 `0.0.0-telemetry-validation` 的测试进程启动。正式 Release 看板筛选该版本后
+可查询 1 个会话、1 条 `app_started`，不是仅以 HTTP 200 推断入库。关闭状态与运行中关闭后、旧代次和
+额外字段均未增加生产请求。测试完恢复原始 ASAR 与配置，不修改用户安装目录或业务数据。
+
+这不等于 84 个真实业务场景逐一通过：真实游戏、扫码、升级、虚拟屏硬件及真实混合队列/循环逐轮
+运行仍缺作者环境的执行证据。没有完成信号的原生保存和安装仍只报告请求受理。

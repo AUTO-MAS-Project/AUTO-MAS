@@ -170,7 +170,14 @@ export function useAppearanceSettings() {
     }
     if (result.appearance) showAppearancePreview(result.appearance)
     if ('mascot' in result && result.mascot) {
-      await saveConfig({ desktopMascotId: result.mascot.id })
+      try {
+        await saveConfig({ desktopMascotId: result.mascot.id })
+      } catch (error) {
+        // 资源已经安装，保存选择失败不会撤销安装。
+        logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
+        message.error(t('themeStore.installFailed'))
+        return 'partial'
+      }
       message.success(t('setting.basic.mascotImported'))
     }
     return 'installed'
@@ -222,7 +229,7 @@ export function useAppearanceSettings() {
   const handleAppearanceImport = async (): Promise<void> => {
     if (appearanceBusy.value) return
     const telemetry = beginAnalyticsOperation('appearance_package_finished')
-    let outcome: 'success' | 'failure' | 'cancelled' | 'unknown' = 'unknown'
+    let outcome: 'success' | 'partial' | 'failure' | 'cancelled' | 'unknown' = 'unknown'
     try {
       const paths = await window.electronAPI.selectFile([
         { name: t('setting.basic.importAppearance'), extensions: ['zip'] },
@@ -233,7 +240,13 @@ export function useAppearanceSettings() {
       }
       const result = await importAppearanceFromPath(paths[0])
       outcome =
-        result === 'installed' ? 'success' : result === 'cancelled' ? 'cancelled' : 'failure'
+        result === 'installed'
+          ? 'success'
+          : result === 'partial'
+            ? 'partial'
+            : result === 'cancelled'
+              ? 'cancelled'
+              : 'failure'
     } catch (error) {
       logger.error(`导入外观失败: ${error instanceof Error ? error.message : String(error)}`)
       message.error(t('setting.basic.appearanceImportFailed'))
