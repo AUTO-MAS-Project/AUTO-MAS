@@ -1,5 +1,5 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、只给 MFW 脚本和 MAA 用的设备标记。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -89,30 +89,3 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 /** 这个根目录是不是已经在配置里了（路径写法不同也算同一个）。 */
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
-
-// ---- 魔改 AVD 只给 MFW 脚本和 MAA ----
-
-/** 设备下拉里的一项（各脚本编辑页共用的形状，同 ``ComboBoxItem``）。 */
-export interface DeviceOption {
-  label: string
-  value: string | null
-}
-
-/**
- * 魔改 AVD 目前只支持 MFW 脚本和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
- * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（MAA）时原样返回。MFW 脚本页不经过这里。
- * 后端保存与运行时也会拦，这里只是让用户选之前就看到。
- */
-export const markModAvdOptions = <T extends DeviceOption>(
-  options: T[],
-  isModAvd: (value: string | null) => boolean,
-  allowed: boolean,
-  hint: string
-): (T & { disabled?: boolean })[] => {
-  if (allowed) return options
-  return options.map(option =>
-    isModAvd(option.value)
-      ? { ...option, label: `${option.label}（${hint}）`, disabled: true }
-      : option
-  )
-}
