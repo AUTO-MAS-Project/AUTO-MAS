@@ -26,6 +26,7 @@
 """
 
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.task.notify_core import user_statistics_text
 from app.utils.notification_template import deferred_notification_template
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
@@ -35,12 +36,7 @@ def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
     """构造专项统计正文，投递由注入的通知服务负责。"""
 
     # 简略版（所有渠道的兜底）：仅 4 字段汇总
-    message_text = (
-        f"用户: {message['user_info']}\n"
-        f"开始时间: {message['start_time']}\n"
-        f"结束时间: {message['end_time']}\n"
-        f"执行结果: {message['user_result']}"
-    )
+    message_text = user_statistics_text(message)
     # 完整版：4 字段 + 上游结果块原文透传（含各步 ✅/⏭️/❌ 与多账号分组）
     result_block = str(message.get("result_block") or "")
     result_text = f"\n\n{result_block}" if result_block else ""

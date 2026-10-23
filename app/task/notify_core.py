@@ -18,10 +18,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""各专项通知工具共用的统计、维护提醒与失败截图资源转换。
+"""专项共用的简单统计正文、维护提醒与失败截图资源转换。
 
-代理结果由注入的宿主服务接收强类型报告；统计信息接收已生成的 ``NotifyPayload``。
-模式识别、专项结果字典与模板扩展留在专项边界。
+投递统一交注入的宿主服务；复杂统计与专项模板扩展由各自的正文适配提供。
 
 失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
 ``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
@@ -43,8 +42,48 @@ from app.models.notification_channel import DispatchResult
 from app.models.notification_report import ReportScreenshot
 from app.models.task import TaskItem
 from app.utils import get_logger
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("任务通知核心")
+
+
+def user_statistics_text(message: dict) -> str:
+    """构造用户统计的四字段正文，也供复杂报告作为紧凑摘要。"""
+
+    return (
+        f"用户: {message['user_info']}\n"
+        f"开始时间: {message['start_time']}\n"
+        f"结束时间: {message['end_time']}\n"
+        f"执行结果: {message['user_result']}"
+    )
+
+
+def build_user_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
+    """构造含用户信息的简单统计通知。"""
+
+    message_html = deferred_notification_template("general_statistics.html", message)
+    return NotifyPayload(
+        title=title,
+        text=user_statistics_text(message),
+        html=message_html,
+    )
+
+
+def build_script_statistics_payload(
+    *, title: str, message: dict, result_label: str
+) -> NotifyPayload:
+    """构造使用专项结果标签的简单统计通知，沿用末尾两次换行。"""
+
+    message_html = deferred_notification_template("general_statistics.html", message)
+    return NotifyPayload(
+        title=title,
+        text=(
+            f"开始时间: {message['start_time']}\n"
+            f"结束时间: {message['end_time']}\n"
+            f"{result_label}: {message['user_result']}\n\n"
+        ),
+        html=message_html,
+    )
 
 
 async def push_maintenance_notice(

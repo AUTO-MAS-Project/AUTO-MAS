@@ -40,6 +40,7 @@ from app.services.wuthering_waves import (
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     append_push_log,
     kill_pids,
@@ -64,7 +65,7 @@ from .push_log import (
     _okww_supplement_po,
     okww_resolve,
 )
-from .tools import async_switch_account, build_statistics_payload
+from .tools import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -1091,7 +1092,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     else "X"
                 )
                 await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                    payload=build_user_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
                         message=statistics,
                     ),

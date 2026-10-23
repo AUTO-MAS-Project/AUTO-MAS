@@ -71,6 +71,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -101,7 +102,6 @@ from .tools import (
     archive_onedragon_backup,
     archive_taken_slot,
     backup_instance,
-    build_statistics_payload,
     clear_run_records,
     collect_mas_user_info,
     diff_run_records,
@@ -2078,7 +2078,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
                 await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                    payload=build_user_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
                         message=statistics,
                     ),

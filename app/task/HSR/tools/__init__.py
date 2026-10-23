@@ -17,8 +17,3 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
-
-
-from .notify import build_statistics_payload
-
-__all__ = ["build_statistics_payload"]

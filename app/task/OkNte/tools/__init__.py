@@ -15,7 +15,3 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-from .notify import build_statistics_payload
-
-__all__ = ["build_statistics_payload"]

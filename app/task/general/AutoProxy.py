@@ -36,6 +36,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
     LogMonitor,
@@ -52,8 +53,6 @@ from app.utils import (
 from app.utils.constants import UTC4
 from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
-
-from .tools import build_statistics_payload
 
 logger = get_logger("通用脚本自动代理")
 
@@ -891,9 +890,10 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
 
         try:
             await self.task_info.notifications.push_statistics_report(
-                payload=build_statistics_payload(
+                payload=build_script_statistics_payload(
                     title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                     message=statistics,
+                    result_label="通用脚本执行结果",
                 ),
                 user_config=self.cur_user_config,
                 task_info=self.task_info,

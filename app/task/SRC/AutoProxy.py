@@ -31,6 +31,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_SHARED,
@@ -42,7 +43,6 @@ from app.utils.io import read_file, write_file
 
 from .tools import (
     archive_mas_runtime_backup,
-    build_statistics_payload,
     ensure_game_updated,
     kill_src_processes,
     login,
@@ -754,9 +754,10 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         try:
             await asyncio.wait_for(
                 self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                    payload=build_script_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                         message=statistics,
+                        result_label="SRC脚本执行结果",
                     ),
                     user_config=self.cur_user_config,
                     task_info=self.task_info,

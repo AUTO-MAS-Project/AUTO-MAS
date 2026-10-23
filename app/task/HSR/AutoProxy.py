@@ -35,6 +35,7 @@ from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
+from app.task.notify_core import build_script_statistics_payload
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
 
@@ -43,7 +44,6 @@ from .task_mapping import (
     engine_label,
     resolve_script_assignment,
 )
-from .tools import build_statistics_payload
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
@@ -555,9 +555,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         try:
             await self.task_info.notifications.push_statistics_report(
-                payload=build_statistics_payload(
+                payload=build_script_statistics_payload(
                     title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 HSR 自动代理统计报告",
                     message=statistics,
+                    result_label="HSR执行结果",
                 ),
                 user_config=self.cur_user_config,
                 task_info=self.task_info,

@@ -19,6 +19,7 @@
 from datetime import datetime
 
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.task.notify_core import user_statistics_text
 from app.utils.notification_template import deferred_notification_template
 
 from .drop_statistics import format_drop_statistics
@@ -70,12 +71,7 @@ def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
     """构造专项统计正文，投递由注入的通知服务负责。"""
 
     # 简略版（聊天机器人类渠道的兜底）：仅 4 字段汇总，旧版格式
-    message_text = (
-        f"用户: {message['user_info']}\n"
-        f"开始时间: {message['start_time']}\n"
-        f"结束时间: {message['end_time']}\n"
-        f"执行结果: {message['user_result']}"
-    )
+    message_text = user_statistics_text(message)
     steps_text = (
         "\n\n" + _render_one_dragon_steps(steps)
         if (steps := message.get("one_dragon_steps"))

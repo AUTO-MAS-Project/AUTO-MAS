@@ -36,6 +36,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     append_push_log,
@@ -69,7 +70,6 @@ from .config_schema import (
     get_all_config_info,
 )
 from .push_log import OKNTE_PUSH_RULES, oknte_resolve
-from .tools import build_statistics_payload
 from .tools.account_switch import async_switch_account
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
@@ -1230,9 +1230,10 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
             try:
                 await self.task_info.notifications.push_statistics_report(
-                    payload=build_statistics_payload(
+                    payload=build_script_statistics_payload(
                         title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 OK-NTE 自动代理统计报告",
                         message=statistics,
+                        result_label="OK-NTE 执行结果",
                     ),
                     user_config=self.cur_user_config,
                     task_info=self.task_info,
