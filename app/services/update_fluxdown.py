@@ -37,6 +37,7 @@ Mirror 酱源（临时授权 URL + 短期 token）在本文件里一律跳过 Fl
 
 from __future__ import annotations
 
+import asyncio
 import threading
 from pathlib import Path
 
@@ -95,25 +96,25 @@ async def download_file(
     if downloader != "fluxdown" or source.lower() == "mirrorchyan":
         if downloader == "fluxdown":
             logger.info("Mirror 酱源跳过 FluxDown,走内置 httpx 下载")
-        if explicit_builtin:
-            # 用户多次失败后显式选择内置 httpx：若此前 FluxDown 任务因
-            # 管理通道异常处于"状态未知"，daemon 可能仍在写 destination，
-            # 此时内置以 wb 打开会双写。仅当任务确认已停止/不存在时才启动
-            # 内置下载；未确认停止则拒绝，引导用户重试或等待。
-            cli = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
-            if cli is not None:
-                if not fluxdown_server_task_safe_to_overwrite(cli, url, destination):
-                    raise FluxdownResumableError(
-                        "存在状态未知的 FluxDown 任务且无法确认已停止，"
-                        "为避免双写已阻止内置下载；请稍后重试或检查 FluxDown 状态"
-                    )
+        # 无论是显式选内置还是配置默认走内置，只要此前可能经 FluxDown 下载过
+        # 同一 (url, destination)，都需先确认旧 server 任务已停止再覆写；
+        # 显式内置成功后再清理映射，避免残留任务在下次同 url 下载时被无谓 resume
+        cli = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
+        if cli is not None:
+            safe = await asyncio.to_thread(
+                fluxdown_server_task_safe_to_overwrite, cli, url, destination
+            )
+            if not safe:
+                raise FluxdownResumableError(
+                    "存在状态未知的 FluxDown 任务且无法确认已停止，"
+                    "为避免双写已阻止内置下载；请稍后重试或检查 FluxDown 状态"
+                )
         size = await _httpx_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
         if explicit_builtin:
             # 用户多次失败后显式选择 httpx 并下载成功：清掉 FluxDown 任务映射,
             # 避免残留任务在下次同 url 下载时被无谓 resume
-            cli = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
             if cli is not None:
                 fluxdown_server_forget(cli, url, destination)
                 logger.info("已按用户选择使用内置 httpx 完成下载,清理 FluxDown 任务映射")

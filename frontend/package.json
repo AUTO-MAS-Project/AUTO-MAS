@@ -117,7 +117,7 @@
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0",
     "dayjs": "^1.11.13",
-    "electron": "^43.8.2",
+    "electron": "43.8.2",
     "electron-builder": "26.8.1",
     "electron-builder-squirrel-windows": "26.15.3",
     "jscpd": "5.4.1",

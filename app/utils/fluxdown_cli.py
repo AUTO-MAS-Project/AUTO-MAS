@@ -980,7 +980,10 @@ async def _wait_thread_done(task: "asyncio.Task", *, propagate_cancel: bool = Fa
             break
         except asyncio.CancelledError as e:
             if task.done():
-                # 线程异常/被取消时原样抛出
+                # 线程已结束但取消同时到达：把取消重新抛给调用方，
+                # 由调用方决定是进入清理还是继续；不静默吞掉
+                if propagate_cancel:
+                    raise e
                 return task.result()
             if cancelled is None:
                 cancelled = e
@@ -1066,10 +1069,15 @@ async def fluxdown_server_download(
             # 状态未知：尽力暂停（pause 失败也不放弃任务），仅当 pause 返回 0
             # 且重查 status 能拿到响应（任务确已停下）才清映射重新 add；
             # 否则保留映射抛出，让上层按"任务未确认停止"处理。
+            # propagate_cancel=True：pause 是进入清理前的最后一步，若用户
+            # 此时取消，必须把取消抛给上面的 except 统一处理，不能吞掉继续 add
             try:
                 pause_code, _ = await _to_thread_strong(
-                    _run_cli, cli_exe, env, ["pause", task_id], 10
+                    _run_cli, cli_exe, env, ["pause", task_id], 10,
+                    propagate_cancel=True,
                 )
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 pause_code = 1
             confirmed = False
@@ -1109,7 +1117,18 @@ async def fluxdown_server_download(
             resumed = True
             logger.info(f"[server] 续传任务: {task_id} ({url})")
         else:
-            # resume 失败（可能任务状态不可恢复）→ 重新 add
+            # resume 失败：区分"任务确实不存在"和"管理通道异常/超时"
+            # code==124 是客户端超时，不能证明 daemon 没接受恢复命令，
+            # 旧任务可能已在后台恢复，此时重新 add 会双写同一文件
+            if code == 124:
+                record.status = "failed"
+                record.error = "resume 超时，无法确认旧任务状态，保留映射待续传"
+                record.duration_ms = int((time.monotonic() - t0) * 1000)
+                logger.warning(
+                    f"[server] resume 超时 (task {task_id}), 无法确认已停止,保留映射"
+                )
+                raise RuntimeError("FluxDown server status 查询失败（任务未确认停止）")
+            # 其他非零：任务可能真的不存在/不可恢复，清映射重新 add
             task_id = None
             await asyncio.to_thread(_map_pop, cli_exe, key)
 
