@@ -22,13 +22,44 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-class RemoteHTTPError(RuntimeError):
+import httpx
+
+from app.models.notification_channel import NotificationDeliveryError
+
+
+@contextmanager
+def http_delivery_errors() -> Iterator[None]:
+    """HTTP 渠道在协议边界声明网络和协议配置错误，执行器只消费策略。"""
+
+    try:
+        yield
+    except (httpx.InvalidURL, httpx.UnsupportedProtocol) as exc:
+        raise NotificationDeliveryError(
+            "通知地址协议不可用", kind="configuration", retryable=False
+        ) from exc
+    except (httpx.TransportError, OSError) as exc:
+        raise NotificationDeliveryError(
+            "通知网络请求失败", kind="transport", retryable=True
+        ) from exc
+
+
+class RemoteHTTPError(NotificationDeliveryError):
     """远端返回明确 HTTP 状态码的请求错误。"""
 
     def __init__(self, status_code: int, message: str) -> None:
         self.status_code = status_code
-        super().__init__(message)
+        super().__init__(
+            message,
+            kind="rate_limited"
+            if status_code == 429
+            else "transport"
+            if status_code >= 500
+            else "rejected",
+            retryable=status_code in (408, 429) or status_code >= 500,
+        )
 
 
 def split_text(text: str, limit: int) -> list[str]:

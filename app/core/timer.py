@@ -25,6 +25,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
 from typing import Any
 
+from app.models.notification_community import community_notification_results
+from app.models.notification_ports import CommunityNotifier
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
@@ -83,7 +85,14 @@ def _timed_slots_in_window(
 
 
 class _MainTimer:
-    def __init__(self):
+    def __init__(self, *, community_notifier: CommunityNotifier | None = None):
+        from app.core.community_notify import get_community_notifier
+
+        self._community_notifier = (
+            get_community_notifier()
+            if community_notifier is None
+            else community_notifier
+        )
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
@@ -449,7 +458,7 @@ class _MainTimer:
     ) -> bool:
         """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
 
-        from app.core.task_report import drain_task_community_notifications
+        from app.core.notification_tasks import drain_notifications
 
         deadline = asyncio.get_running_loop().time() + timeout
         while True:
@@ -462,7 +471,11 @@ class _MainTimer:
                 )
                 if pending:
                     return False
-            if not await drain_task_community_notifications(
+            if not await drain_notifications(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            if not await self._community_notifier.drain(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
@@ -521,14 +534,11 @@ class _MainTimer:
             logger.success("游戏社区签到执行完成")
 
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-            if (
-                source not in TASK_COMMUNITY_SOURCES
-                and Config.ToolsConfig.GameSign.NotifyEnabled
-            ):
-                from app.tools.community_notify import push_community_notification
-
+            if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await push_community_notification(results)
+                    failed_channels = await self._community_notifier.send(
+                        community_notification_results(results)
+                    )
                 except Exception as exc:
                     logger.warning(f"游戏社区签到完成，但通知服务异常: {exc}")
                 else:

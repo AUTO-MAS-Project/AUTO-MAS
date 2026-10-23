@@ -18,86 +18,61 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""各专项通知工具共用的核心原语：模式分发、报告投递与失败截图资源转换。
+"""各专项通知工具共用的核心原语：强类型报告投递与失败截图资源转换。
 
-「代理结果」报告全专项统一走 ``push_proxy_result``；「统计信息」报告的投递
-（模板渲染 + ``statistic_targets``）由 ``push_task_notice`` 统一负责，专项侧
-只留下自己的结果文本——字段形状由各上游的结果结构决定，属于专项特色。
+「代理结果」接收 ``TaskResultReport``；「统计信息」接收已生成的 ``NotifyPayload``。
+模式识别、专项结果字典与模板扩展留在专项边界，共享层只消费明确的报告契约。
 
 失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
 ``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
 """
 
-import io
+import asyncio
 from collections.abc import Callable, Sequence
+from functools import partial
 from html import escape
 from pathlib import Path
 from typing import Any
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     global_target,
     statistic_targets,
 )
-from app.core.task_report import dispatch_task_report, should_send_result
+from app.core.task_report import dispatch_task_notification, prepare_task_report
 from app.models.notification import (
     NotificationImage,
     NotificationSummary,
     NotifyPayload,
     image_reference,
 )
-from app.tools.community_notify import get_task_community_summary
+from app.models.notification_channel import UserNotificationConfig
+from app.models.notification_report import ReportScreenshot, TaskResultReport
+from app.models.task import TaskItem
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("任务通知核心")
 
 
-async def push_task_notice(
-    mode: str,
-    title: str,
-    message: dict,
-    user_config: Any | None,
-    task_info: object | None = None,
+async def push_statistics_report(
     *,
-    statistics_text: Callable[[], str],
+    payload: NotifyPayload,
+    user_config: UserNotificationConfig | None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
-    """按 ``mode`` 分发任务报告；未识别的模式返回空结果。
+    """投递专项已生成的统计内容，不接收模式或专项字典。"""
 
-    各专项的 ``notify`` 模块只声明统计信息的正文，模式分发、模板渲染与
-    投递目标（全局渠道 + 用户独立渠道）都在这里统一，免得每个专项各写一份。
-
-    Args:
-        mode: ``"代理结果"``（任务级）或 ``"统计信息"``（用户级）。
-        title: 通知标题。
-        message: 各模式所需字段；代理结果见 ``push_proxy_result``。
-        user_config: 统计信息的用户通知配置，决定用户独立渠道。
-        task_info: 任务信息，代理结果模式用于签到汇总。
-        statistics_text: 统计信息的纯文本正文。只在统计信息模式下调用，
-            代理结果的消息缺少这些字段也不会触发。
-    """
-
-    if mode == "代理结果":
-        return await push_proxy_result(
-            title=title, message=message, task_info=task_info
-        )
-
-    if mode != "统计信息":
-        return DispatchResult()
-
-    message_html = get_notification_template("general_statistics.html").render(message)
-    return await dispatch(
-        NotifyPayload(title=title, text=statistics_text(), html=message_html),
-        statistic_targets(user_config),
+    return await dispatch_task_notification(
+        payload, statistic_targets(user_config), task_info=task_info
     )
 
 
 async def push_proxy_result(
     *,
     title: str,
-    message: dict,
-    task_info: object | None = None,
+    report: TaskResultReport,
+    task_info: TaskItem | None = None,
     result_template: str = "general_result.html",
     signature_sep: str = "\n\n",
     logger: Any | None = None,
@@ -105,12 +80,11 @@ async def push_proxy_result(
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
 ) -> DispatchResult:
-    """推送全局「代理结果」报告；签到汇总与渠道级重试由 dispatch_task_report 承担。
+    """推送全局「代理结果」报告；签到合并和补发由报告协调器承担。
 
     Args:
         title: 通知标题。
-        message: 需含 start_time / end_time / completed_count /
-            uncompleted_count / result 字段。
+        report: 已在专项边界固定公共字段的任务报告。
         task_info: 任务信息，用于签到汇总的渠道级重试。
         result_template: 结果 HTML 模板名，MAA 用 MAA_result.html。
         signature_sep: 签名分隔符，默认与 NotifyPayload 缺省一致；MAA 只空一行。
@@ -121,35 +95,40 @@ async def push_proxy_result(
             需要更新）时传 False，免得同一件事弹两次。
     """
 
-    if not should_send_result(message, task_info=task_info):
+    prepared = prepare_task_report(task_info)
+    if not prepared.should_send(
+        uncompleted_count=report.uncompleted_count,
+        embedded_summary=report.embedded_summary,
+    ):
         if logger is not None and skip_debug_message:
             logger.debug(skip_debug_message)
         return DispatchResult()
 
     message_text = (
-        f"任务开始时间: {message['start_time']}, 结束时间: {message['end_time']}\n"
-        f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
-        f"{message['result']}"
+        f"任务开始时间: {report.start_time}, 结束时间: {report.end_time}\n"
+        f"已完成数: {report.completed_count}, 未完成数: {report.uncompleted_count}\n\n"
+        f"{report.result}"
     )
-    template = get_notification_template(result_template)
     counts = (
-        f"已完成用户数: {message['completed_count']}, "
-        f"未完成用户数: {message['uncompleted_count']}"
+        f"已完成用户数: {report.completed_count}, "
+        f"未完成用户数: {report.uncompleted_count}"
     )
     summary_text = (
-        get_task_community_summary(task_info)
-        if task_info is not None and message.get("game_sign_summary")
+        prepared.community_summary().text
+        if task_info is not None and report.embedded_summary
         else ""
     )
     # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
-    summary_title = message.get("summary_title") or title.replace(
-        "报告", "存在异常" if message["uncompleted_count"] > 0 else "已完成！"
+    summary_title = report.summary_title or title.replace(
+        "报告", "存在异常" if report.uncompleted_count > 0 else "已完成！"
     )
-    return await dispatch_task_report(
+    return await prepared.dispatch(
         NotifyPayload(
             title=title,
             text=message_text,
-            html=template.render(message),
+            html=deferred_notification_template(
+                result_template, report.template_context()
+            ),
             signature_sep=signature_sep,
             summary=NotificationSummary(
                 text=counts,
@@ -159,16 +138,18 @@ async def push_proxy_result(
             images=tuple(images),
         ),
         [global_target(include_system=include_system, system_timeout_seconds=10)],
-        task_info,
         summary_text=summary_text,
     )
 
 
-async def push_maintenance_notice(*, message: str, task_info: object) -> DispatchResult:
+async def push_maintenance_notice(
+    *, message: str, task_info: TaskItem
+) -> DispatchResult:
     """维护跳过只推送游戏状态，沿用原有通知时机与渠道。"""
-    if not should_send_result({"uncompleted_count": 0}, task_info=task_info):
+    report = prepare_task_report(task_info)
+    if not report.should_send(uncompleted_count=0):
         return DispatchResult()
-    return await dispatch_task_report(
+    return await report.dispatch(
         NotifyPayload(
             title=message,
             text=message,
@@ -176,7 +157,6 @@ async def push_maintenance_notice(*, message: str, task_info: object) -> Dispatc
             summary=NotificationSummary(text=message, title=message),
         ),
         [global_target(include_system=True, system_timeout_seconds=10)],
-        task_info,
     )
 
 
@@ -208,6 +188,41 @@ def load_screenshot_images(
         (标签, 图片资源) 序列；读不到的文件被跳过。
     """
 
+    return _load_screenshot_images(
+        shots, image_id_prefix=image_id_prefix, convert=_screenshot_converter()
+    )
+
+
+def _screenshot_converter() -> Callable[[bytes], bytes] | None:
+    try:
+        from app.services.notification_image import encode_screenshot
+
+        return partial(encode_screenshot, quality=NOTIFY_SCREENSHOT_JPEG_QUALITY)
+    except Exception as exc:
+        logger.warning(f"失败截图转码不可用，改用原图: {type(exc).__name__}")
+        return None
+
+
+async def prepare_screenshot_images(
+    shots: Sequence[tuple[str, Path | bytes]], *, image_id_prefix: str
+) -> list[tuple[str, NotificationImage]]:
+    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。"""
+
+    convert = _screenshot_converter()
+    return await asyncio.to_thread(
+        _load_screenshot_images,
+        shots,
+        image_id_prefix=image_id_prefix,
+        convert=convert,
+    )
+
+
+def _load_screenshot_images(
+    shots: Sequence[tuple[str, Path | bytes]],
+    *,
+    image_id_prefix: str,
+    convert: Callable[[bytes], bytes] | None,
+) -> list[tuple[str, NotificationImage]]:
     images: list[tuple[str, NotificationImage]] = []
     for index, (label, source) in enumerate(shots, start=1):
         if isinstance(source, bytes):
@@ -220,19 +235,15 @@ def load_screenshot_images(
                 continue
         image_id = f"{image_id_prefix}-failure-{index}"
         try:
-            from PIL import Image
-
-            with Image.open(io.BytesIO(data)) as image:
-                buffer = io.BytesIO()
-                image.convert("RGB").save(
-                    buffer, format="JPEG", quality=NOTIFY_SCREENSHOT_JPEG_QUALITY
-                )
+            if convert is None:
+                raise RuntimeError("截图转码不可用")
+            data_jpeg = convert(data)
             images.append(
                 (
                     label,
                     NotificationImage(
                         id=image_id,
-                        data=buffer.getvalue(),
+                        data=data_jpeg,
                         alt=label,
                         mime_type="image/jpeg",
                     ),
@@ -259,7 +270,7 @@ def load_screenshot_images(
 
 def screenshot_entries(
     images: Sequence[tuple[str, NotificationImage]],
-) -> list[dict[str, str]]:
+) -> list[ReportScreenshot]:
     """构造失败截图模板使用的资源引用和说明文字。"""
 
     return [

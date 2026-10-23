@@ -12,8 +12,9 @@ from app.core.notify import (
     user_target,
 )
 from app.core.notify_channels import get_notify_channels
-from app.core.task_report import dispatch_task_report
+from app.core.task_report import prepare_task_report
 from app.models.notification import NotificationSummary
+from app.models.task import TaskItem
 
 _UNSET = object()
 
@@ -515,12 +516,21 @@ def test_dispatch_honors_skip_by_name_and_by_id() -> None:
     assert list(result.succeeded) == ["全局 Webhook 二番"]
 
 
-class _Task:
+class _Task(TaskItem):
     def __init__(self) -> None:
-        self.game_sign_summary_consumed = False
+        super().__init__(
+            mode="AutoProxy",
+            task_id="task-1",
+            queue_id=None,
+            script_id=None,
+            user_id=None,
+        )
+
+    async def on_change(self) -> None:
+        pass
 
 
-def test_dispatch_task_report_retries_only_failed_channels() -> None:
+def test_prepared_task_report_retries_only_failed_channels() -> None:
     """多脚本任务: 第二批报告只把汇总重发给上次失败的渠道,
     已送达渠道收到的报告不含汇总, 避免重复。"""
 
@@ -539,77 +549,71 @@ def test_dispatch_task_report_retries_only_failed_channels() -> None:
     notify = _Notify({"send_mail": ["false"]})
     with patch.object(notify_module, "Notify", notify):
         result = _run(
-            dispatch_task_report(
-                payload, [_global_target(config)], task, summary_text=summary
+            prepare_task_report(task).dispatch(
+                payload, [_global_target(config)], summary_text=summary
             )
         )
 
     # 第一次: 邮件失败, ServerChan 成功 → 汇总不消费, delivered 记录 ServerChan
     assert list(result.failed) == ["全局邮件"]
-    assert task.game_sign_summary_delivered == {"全局 ServerChan"}
-    assert task.game_sign_summary_pending == ("全局邮件",)
-    assert task.game_sign_summary_consumed is False
+    assert task.notification_state.delivered == {"全局 ServerChan"}
+    assert task.notification_state.summary_consumed is False
 
     # 第二次: 只向失败渠道重发含汇总的载荷; 已送达渠道收到不含汇总的载荷
     notify = _Notify()
     with patch.object(notify_module, "Notify", notify):
         result = _run(
-            dispatch_task_report(
-                payload, [_global_target(config)], task, summary_text=summary
+            prepare_task_report(task).dispatch(
+                payload, [_global_target(config)], summary_text=summary
             )
         )
 
     assert list(result.failed) == []
-    assert task.game_sign_summary_delivered == {"全局 ServerChan", "全局邮件"}
-    assert task.game_sign_summary_pending == ()
+    assert task.notification_state.delivered == {"全局 ServerChan", "全局邮件"}
     # 邮件拿到含汇总的重试版, ServerChan 只拿到去掉汇总的报告
     sent = [kwargs["content"] for kwargs in notify.kwargs]
     assert "签到情况" in sent[0]
     assert "签到情况" not in sent[1]
 
 
-def test_dispatch_task_report_zero_targets_keeps_summary() -> None:
+def test_prepared_task_report_zero_targets_keeps_summary() -> None:
     task = _Task()
     summary = "签到情况: 小明: 签到成功"
 
     with patch.object(notify_module, "Notify", _Notify()):
         result = _run(
-            dispatch_task_report(
+            prepare_task_report(task).dispatch(
                 NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None),
                 [],
-                task,
                 summary_text=summary,
             )
         )
 
     assert result.attempted == 0
-    assert task.game_sign_summary_delivered == set()
-    assert task.game_sign_summary_pending == ()
-    assert task.game_sign_summary_consumed is False
+    assert task.notification_state.delivered == set()
+    assert task.notification_state.summary_consumed is False
 
 
-def test_dispatch_task_report_publishes_failure_notice() -> None:
+def test_prepared_task_report_publishes_failure_notice() -> None:
     config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
     task = _Task()
     task.task_id = "task-1"
 
     with patch.object(notify_module, "Notify", _Notify({"send_mail": ["false"]})):
-        with patch("app.core.ws.Publisher.send", new_callable=AsyncMock) as publish:
+        with patch(
+            "app.core.config.Config.push_system_notice", new_callable=AsyncMock
+        ) as publish:
             result = _run(
-                dispatch_task_report(
+                prepare_task_report(task).dispatch(
                     NotifyPayload(title="报告", text="正文"),
                     [_global_target(config)],
-                    task,
                 )
             )
 
     assert result.failed == ("全局邮件",)
     publish.assert_awaited_once()
-    assert publish.await_args.kwargs["id"] == "task-1"
-    assert publish.await_args.kwargs["type"] == "task.notice"
-    notice = publish.await_args.kwargs["data"]
-    assert notice.level == "warning"
-    assert "全局邮件" in notice.message
+    assert publish.await_args.kwargs["level"] == "warning"
+    assert "全局邮件" in publish.await_args.kwargs["lines"][0]
 
 
 def test_descriptor_fields_exist_in_config_and_schema() -> None:

@@ -48,8 +48,9 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.notification_report import TaskResultData
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -94,9 +95,10 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.task.MaaFW.tools.notify import push_notification
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
-    load_screenshot_images,
+    prepare_screenshot_images,
     screenshot_entries,
 )
 from app.utils import get_logger
@@ -355,7 +357,7 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     return None
 
 
-class MaaFWEmbeddedManager(TaskExecuteBase):
+class MaaFWEmbeddedManager(NotificationTaskBase):
     """MaaFW 内置运行（第二层）管理器。
 
     只负责把脚本配置、用户配置和模拟器实例装配好，运行编排全部交给
@@ -1901,7 +1903,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
@@ -1928,8 +1930,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if summary_title:
             result["summary_title"] = summary_title
         try:
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
                 image_id_prefix="maafw",
             )

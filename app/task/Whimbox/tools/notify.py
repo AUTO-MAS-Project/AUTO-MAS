@@ -30,14 +30,16 @@ tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全�
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import WhimboxUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
@@ -45,11 +47,11 @@ logger = get_logger("奇想盒 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: WhimboxUserConfig | None = None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """通过全局或用户配置的渠道推送奇想盒任务报告。"""
 
@@ -84,8 +86,8 @@ async def push_notification(
             ).strip(),
             "failure_notes_text": failure_notes_text,
         }
-        message_html = get_notification_template("general_statistics.html").render(
-            render_data
+        message_html = deferred_notification_template(
+            "general_statistics.html", render_data
         )
 
         # 正文只按渠道分流，投递交 dispatch：用户侧开关在用户目标内判定，
@@ -98,9 +100,12 @@ async def push_notification(
                 summary=NotificationSummary(text=message_text),
             ),
             statistic_targets(user_config, compact_summary=True),
+            task_info=task_info,
         )
 
     if mode != "代理结果":
         return DispatchResult()
 
-    return await push_proxy_result(title=title, message=message, task_info=task_info)
+    return await push_proxy_result(
+        title=title, report=TaskResultReport.from_message(message), task_info=task_info
+    )

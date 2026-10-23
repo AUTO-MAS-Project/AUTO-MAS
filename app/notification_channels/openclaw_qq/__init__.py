@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     ChannelConfig,
     ChannelTarget,
     NotifyChannel,
+    QQSessionDependencies,
 )
 from app.models.notification_channel import target_prefix as _prefix
 
@@ -106,7 +107,14 @@ def register() -> NotifyChannel:
         fields={},
         target_builder=_openclaw_qq_targets,
         send_adapter=_openclaw_qq_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            QQSessionDependencies(
+                config=deps.config,
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                websocket_connect=deps.websocket_connect,
+            )
+        ),
         start_adapter=Sender.start,
         stop_adapter=Sender.stop,
         lifecycle_order=0,

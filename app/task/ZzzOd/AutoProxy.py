@@ -67,9 +67,10 @@ from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
+from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
@@ -1508,11 +1509,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             kill_game=self._mas_should_close_game()
                         )
                         try:
-                            await Notify.push_plyer(
-                                "ZZZ-OD 自动代理出现异常！",
-                                f"用户 {self.cur_user_item.name} 游戏启动失败",
-                                f"{self.cur_user_item.name}的自动代理出现异常",
-                                3,
+                            await self.task_info.local_notifier.send_notice(
+                                LocalNotice(
+                                    title="ZZZ-OD 自动代理出现异常！",
+                                    message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                                    duration_seconds=3,
+                                )
                             )
                         except Exception:
                             pass
@@ -1620,11 +1623,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self.script_info.log = f"{failure_reason}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
-                    await Notify.push_plyer(
-                        "ZZZ-OD 自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="ZZZ-OD 自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
@@ -2291,11 +2296,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "ZZZ-OD 运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="ZZZ-OD 运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass

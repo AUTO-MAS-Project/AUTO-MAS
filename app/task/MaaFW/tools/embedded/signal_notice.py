@@ -11,23 +11,21 @@ worker 在 ``MaaFWRunResult.signal`` 里回报信号（见 ``core/runner/run_sig
 
 from __future__ import annotations
 
-import asyncio
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
     NotifyTarget,
-    dispatch,
-    global_target,
+    failure_targets,
     user_statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
-from app.task.notify_core import load_screenshot_images
+from app.task.notify_core import prepare_screenshot_images
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 信号通知")
@@ -153,9 +151,7 @@ def signal_global_targets() -> list[NotifyTarget]:
     ``push_signal_notices``。
     """
 
-    if Config.setting.Notify.SendTaskResultTime != "不推送":
-        return [global_target(include_system=True, system_timeout_seconds=10)]
-    return []
+    return failure_targets()
 
 
 def build_signal_payload(
@@ -226,8 +222,7 @@ async def push_signal_notices(
             )
             continue
         if global_targets:
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 [("证据截图", path) for path in record.screenshots],
                 image_id_prefix="maafw",
             )
@@ -239,8 +234,7 @@ async def push_signal_notices(
         for user_id, user_name, targets in user_targets:
             own_shot = record.user_screenshots.get(user_id)
             images = (
-                await asyncio.to_thread(
-                    load_screenshot_images,
+                await prepare_screenshot_images(
                     [("证据截图", own_shot)],
                     image_id_prefix="maafw",
                 )

@@ -19,25 +19,30 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import Literal
+
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
-from app.task.notify_core import push_task_notice
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
+from app.task.notify_core import push_proxy_result, push_statistics_report
 from app.utils import get_logger
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("HSR 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode | Literal["云登录提醒"],
     title: str,
     message: dict,
     user_config: HSRUserConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """通过所有渠道推送 HSR 通知; 返回分发的实际尝试/成功/失败结果。"""
 
@@ -48,17 +53,26 @@ async def push_notification(
         return await dispatch(
             NotifyPayload(title=title, text=str(message.get("message", ""))),
             statistic_targets(user_config),
+            task_info=task_info,
+            immediate=True,
         )
 
-    return await push_task_notice(
-        mode,
-        title,
-        message,
-        user_config,
-        task_info,
-        statistics_text=lambda: (
-            f"开始时间: {message['start_time']}\n"
-            f"结束时间: {message['end_time']}\n"
-            f"HSR执行结果: {message['user_result']}\n\n"
+    if mode == "代理结果":
+        return await push_proxy_result(
+            title=title,
+            report=TaskResultReport.from_message(message),
+            task_info=task_info,
+        )
+    if mode != "统计信息":
+        return DispatchResult()
+
+    message_html = deferred_notification_template("general_statistics.html", message)
+    return await push_statistics_report(
+        payload=NotifyPayload(
+            title=title,
+            text=f"开始时间: {message['start_time']}\n结束时间: {message['end_time']}\nHSR执行结果: {message['user_result']}\n\n",
+            html=message_html,
         ),
+        user_config=user_config,
+        task_info=task_info,
     )

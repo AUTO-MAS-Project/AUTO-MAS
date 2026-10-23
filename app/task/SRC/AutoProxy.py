@@ -27,9 +27,9 @@ from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.proxy_helpers import (
@@ -340,11 +340,13 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     await self._handle_process_cleanup_failure()
 
                 try:
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="用户自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
@@ -400,11 +402,13 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             await self._handle_process_cleanup_failure()
 
         try:
-            await Notify.push_plyer(
-                "用户自动代理出现异常！",
-                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-                f"{self.cur_user_item.name}的自动代理出现异常",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="用户自动代理出现异常！",
+                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                    duration_seconds=3,
+                )
             )
         except Exception:
             pass
@@ -454,11 +458,13 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         )
         await close_emulator(self)
 
-        await Notify.push_plyer(
-            "游戏需要手动更新！",
-            result.message,
-            f"{self.cur_user_item.name}的游戏需要手动更新",
-            3,
+        await self.task_info.local_notifier.send_notice(
+            LocalNotice(
+                title="游戏需要手动更新！",
+                message=result.message,
+                ticker=f"{self.cur_user_item.name}的游戏需要手动更新",
+                duration_seconds=3,
+            )
         )
         return False
 
@@ -817,11 +823,13 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if self.run_book:
             try:
                 await asyncio.wait_for(
-                    Notify.push_plyer(
-                        "成功完成一个自动代理任务！",
-                        f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                        f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                        3,
+                    self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="成功完成一个自动代理任务！",
+                            message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                            ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                            duration_seconds=3,
+                        )
                     ),
                     timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
                 )
@@ -874,6 +882,39 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 logger.opt(exception=True).warning(
                     f"上报 SRC 通知异常失败: {report_error}"
                 )
+
+        if self.run_book:
+            if (
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
+            ):
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
+                )
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
+            )
+            await self.cur_user_config.commit()
+            self.cur_user_item.status = "完成"
+            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            try:
+                await asyncio.wait_for(
+                    self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="成功完成一个自动代理任务！",
+                            message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                            ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                            duration_seconds=3,
+                        )
+                    ),
+                    timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送系统通知时出现异常: {e}")
+        else:
+            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            self.cur_user_item.status = "异常"
 
     async def _handle_process_cleanup_failure(self) -> None:
         """记录 SRC 进程清理失败，并确保任务不会被标记为完成。"""

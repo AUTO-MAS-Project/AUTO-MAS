@@ -20,27 +20,27 @@
 #   Contact: DLmaster_361@163.com
 
 from collections.abc import Sequence
-from dataclasses import replace
 from functools import cache
+from typing import Literal
 
-from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyTarget,
-    dispatch,
-    global_target,
+    recruitment_targets,
     statistic_targets,
-    user_target,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaUserConfig
 from app.models.notification import (
+    DeferredContent,
     NotificationImage,
     NotifyPayload,
     image_reference,
 )
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 from app.utils.paths import resource_path
 
 logger = get_logger("MAA 通知工具")
@@ -104,54 +104,12 @@ def _statistic_text(message: dict) -> str:
     )
 
 
-def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
-    """公招六星喜报的推送目标, 全局与用户各有独立开关。"""
-
-    targets = []
-    if Config.setting.Notify.IfSendSixStar:
-        targets.append(global_target())
-    if (
-        user_config is not None
-        and user_config.Notify.Enabled
-        and user_config.Notify.IfSendSixStar
-    ):
-        targets.append(user_target(user_config))
-    # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。
-    return [
-        replace(
-            target,
-            channels=tuple(
-                (
-                    (
-                        channel,
-                        replace(
-                            channel_target,
-                            capabilities=replace(
-                                channel_target.capabilities,
-                                formats=("text",),
-                                double_text_newlines=(
-                                    "markdown" in channel_target.capabilities.formats
-                                    or channel_target.capabilities.double_text_newlines
-                                ),
-                            ),
-                        ),
-                    )
-                    if channel.key == "webhook"
-                    else (channel, channel_target)
-                )
-                for channel, channel_target in target.channels
-            ),
-        )
-        for target in targets
-    ]
-
-
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode | Literal["公招六星"],
     title: str,
     message: dict,
     user_config: MaaUserConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     *,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
@@ -166,7 +124,7 @@ async def push_notification(
     if mode == "代理结果":
         return await push_proxy_result(
             title=title,
-            message=message,
+            report=TaskResultReport.from_message(message),
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,
@@ -174,42 +132,43 @@ async def push_notification(
         )
 
     if mode == "统计信息":
-        template = get_notification_template("MAA_statistics.html")
-
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text=_statistic_text(message),
-                html=template.render(message),
+                html=deferred_notification_template("MAA_statistics.html", message),
                 signature_sep=SIGNATURE_SEP,
                 images=images,
             ),
             statistic_targets(user_config),
+            task_info=task_info,
         )
 
     if mode == "公招六星":
         # 喜报正文是固定文案, message 只用于渲染 HTML
-        template = get_notification_template("MAA_six_star.html")
-
-        image = _six_star_image()
 
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text="好羡慕~",
                 markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
-                html=template.render(message),
+                html=deferred_notification_template("MAA_six_star.html", message),
                 signature_sep=SIGNATURE_SEP,
-                images=(
-                    NotificationImage(
-                        id=SIX_STAR_IMAGE_ID,
-                        data=image,
-                        url=SIX_STAR_IMAGE_URL,
-                        alt="喜报",
-                    ),
+                images=DeferredContent(
+                    lambda: (
+                        NotificationImage(
+                            id=SIX_STAR_IMAGE_ID,
+                            data=_six_star_image(),
+                            url=SIX_STAR_IMAGE_URL,
+                            alt="喜报",
+                        ),
+                    )
                 ),
+                presentation="announcement",
             ),
-            _six_star_targets(user_config),
+            recruitment_targets(user_config),
+            task_info=task_info,
+            immediate=True,
         )
 
     return DispatchResult()

@@ -25,11 +25,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import KoishiDependencies
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: KoishiDependencies) -> None:
         self.dependencies = dependencies
         self._manager = dependencies.websocket_manager_factory()
         self._auth_token: str | None = None
