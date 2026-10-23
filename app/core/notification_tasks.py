@@ -19,9 +19,12 @@ _PENDING_NOTIFICATIONS: set[asyncio.Task[None]] = set()
 
 
 def spawn_notification(
-    coroutine: Coroutine[Any, Any, None], *, task_id: str | None
+    coroutine: Coroutine[Any, Any, None],
+    *,
+    task_id: str | None,
+    name: str = "task-notification",
 ) -> asyncio.Task[None] | None:
-    task = RuntimeTasks.spawn(coroutine, name=f"task-notification:{task_id}")
+    task = RuntimeTasks.spawn(coroutine, name=f"{name}:{task_id}")
     if task is not None:
         _PENDING_NOTIFICATIONS.add(task)
         task.add_done_callback(_PENDING_NOTIFICATIONS.discard)

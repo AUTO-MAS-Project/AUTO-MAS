@@ -21,11 +21,9 @@
 
 """任务报告入口：装配策略、通知状态、投递器和任务页面反馈。"""
 
-import asyncio
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any
 
 from app.config import config_manager
 from app.core.config import Config
@@ -35,12 +33,12 @@ from app.core.notification_report import (
     TaskReportDependencies,
 )
 from app.core.notification_tasks import (
-    _PENDING_NOTIFICATIONS,
     consume_notification_result,
     current_notification_task_id,
     drain_notifications,
     publish_notification_failure,
     shutdown_notifications,
+    spawn_notification,
     submit_task_notification,
 )
 from app.core.notify import (
@@ -61,13 +59,10 @@ from app.models.notification_report import (
     TaskResultHint,
 )
 from app.models.task import TaskItem
-from app.runtime_tasks import RuntimeTasks
 from app.services.notification_report import DefaultReportRenderer
 from app.utils import get_logger
 
 logger = get_logger("任务报告")
-
-_PENDING_TASK_COMMUNITY_NOTIFICATIONS = _PENDING_NOTIFICATIONS
 
 
 def read_task_report_policy() -> TaskReportPolicy:
@@ -78,16 +73,6 @@ def read_task_report_policy() -> TaskReportPolicy:
         community_enabled=Config.ToolsConfig.GameSign.NotifyEnabled,
         wait_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
     )
-
-
-def _spawn_community_notification(
-    coroutine: Coroutine[Any, Any, None], *, task_id: str | None
-) -> asyncio.Task[None] | None:
-    task = RuntimeTasks.spawn(coroutine, name=f"task-community-notification:{task_id}")
-    if task is not None:
-        _PENDING_TASK_COMMUNITY_NOTIFICATIONS.add(task)
-        task.add_done_callback(_PENDING_TASK_COMMUNITY_NOTIFICATIONS.discard)
-    return task
 
 
 async def _report_supplement_failure(
@@ -123,7 +108,11 @@ def _create_coordinator(
             if report_failure is not None
             else partial(_publish_task_notification_failure, task_id=task_id),
             report_supplement_failure=_report_supplement_failure,
-            spawn=partial(_spawn_community_notification, task_id=task_id),
+            spawn=partial(
+                spawn_notification,
+                task_id=task_id,
+                name="task-community-notification",
+            ),
         ),
     )
 
