@@ -31,7 +31,6 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-from app.models.config import Webhook
 from app.models.notification import (
     DEFAULT_WEBHOOK_TEMPLATE,
     WECOM_ROBOT_HOST,
@@ -134,7 +133,7 @@ class Sender:
         self,
         title: str,
         content: str,
-        webhook: Webhook | WebhookTargetSnapshot,
+        webhook: WebhookTargetSnapshot,
         *,
         images: Sequence[NotificationImage] = (),
     ) -> None:
@@ -147,20 +146,11 @@ class Sender:
             通知标题
         content: str
             通知内容
-        webhook: Webhook | WebhookTargetSnapshot
-            Webhook 配置或创建目标时的只读快照
+        webhook: WebhookTargetSnapshot
+            目标准备或草稿测试时固定的只读快照
         images: Sequence[NotificationImage], optional
             可选图片资源，由 Webhook 协议适配器编码
         """
-        if isinstance(webhook, Webhook):
-            webhook = WebhookTargetSnapshot(
-                name=webhook.Info.Name,
-                enabled=webhook.Info.Enabled,
-                url=webhook.Data.Url,
-                template=webhook.Data.Template,
-                headers=webhook.Data.Headers,
-                method=webhook.Data.Method,
-            )
         proxy = self.dependencies.read_proxy()
         image = images[-1] if images else None
         image_base64 = (
