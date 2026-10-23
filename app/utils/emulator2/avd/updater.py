@@ -24,7 +24,9 @@
 
 1. **查更新**：问 :func:`.update_source.update_sources` 里的源（现在只有 GitHub），结果缓存 4 小时；
    MAS 启动时查一次，用户点「检查更新」不走缓存。失败只记日志，不弹窗、不挡启动。
-2. **下载**：到 ``<根>\\.update\\download``（同盘、续传），按发布记录的 SHA-256 核对；实例开着也能下。
+2. **下载**：GitHub 源先按区间只取变了的文件（:mod:`.update_range`，没变的从本地复制）；变化太多或
+   任何一步不行就下整包到 ``<根>\\.update\\download``（同盘、续传），按发布记录的 SHA-256 核对。
+   实例开着也能下。
 3. **拼新版**：解到 ``pkg``、按清单逐文件核对（旧版包没有清单，靠包的 SHA-256 + zip CRC），
    ``sdk\\emulator`` 改名进 ``stage``（:mod:`.update_stage`）。
 4. **换上**：只有没有任何进程的可执行文件在 ``sdk\\emulator`` 下时才换；要关实例只走现有的
@@ -53,13 +55,16 @@ from app.services.update_transport import download_resumable
 from app.utils import get_logger
 from app.utils.update_files import native_path
 
+from . import first_install, update_range
 from . import update_stage as stage
-from .components import local_sdk_root, manager_key_exe, root_key
+from .components import emulator_self_built, local_sdk_root, manager_key_exe, root_key
 from .constants import (
     MIN_MOD_AVD_BUILD,
+    MODAVD_FORCE_FULL_PACKAGE_ENV,
     MODAVD_MANIFEST_FILE,
     POWER_CLOSE_TIMEOUT_SECONDS,
     UPDATE_CHECK_CACHE_SECONDS,
+    UPDATE_DIR,
     UPDATE_MIN_FREE_BYTES,
 )
 from .update_source import (
@@ -527,16 +532,28 @@ def _stage_sync(
     verifying: stage.Progress,
 ) -> dict[str, Any]:
     """解包 → 按清单核对 → ``sdk\\emulator`` 改名进 ``stage``。核对不通过丢掉暂存、报错。"""
-    root = runtime.root
-    version = parse_version(target["version"])
-    assert version is not None
     files = stage.extract_package(
         archive,
-        stage.pkg_dir(root),
+        stage.pkg_dir(runtime.root),
         top_dir=target["asset"]["topDir"],
         progress=extracting,
         cancelled=_cancelled(runtime),
     )
+    return _verify_and_stage(runtime, target, verifying, files=files, mode="full")
+
+
+def _verify_and_stage(
+    runtime: _Runtime,
+    target: dict[str, Any],
+    verifying: stage.Progress,
+    *,
+    files: int,
+    mode: str,
+) -> dict[str, Any]:
+    """``pkg`` 已经拼好（整包解出来或按区间拼出来）：按清单核对，再把 ``sdk\\emulator`` 改名进 ``stage``。"""
+    root = runtime.root
+    version = parse_version(target["version"])
+    assert version is not None
     manifest = read_manifest_file(stage.pkg_dir(root) / MODAVD_MANIFEST_FILE)
     if manifest is not None:
         stage.check_package_manifest(manifest, version)
@@ -555,9 +572,91 @@ def _stage_sync(
     return {
         "verified": "manifest" if manifest is not None else "zip",
         "files": files,
-        "mode": "full",
+        "mode": mode,
         "version": target["version"],
     }
+
+
+def _range_allowed(root: Path, release: RemoteRelease) -> bool:
+    """GitHub 源才按区间取；已经有下好的整包（或下了一半、别的根目录下好了）就直接用它。"""
+    if (
+        release.source != "github"
+        or os.environ.get(MODAVD_FORCE_FULL_PACKAGE_ENV, "").strip()
+    ):
+        return False
+    asset = release.asset
+    folder = stage.download_dir(root)
+    if (folder / asset.name).is_file() or (folder / f"{asset.name}.part").is_file():
+        return False
+    return not any(
+        (stage.download_dir(other) / asset.name).is_file()
+        for other in _managed_roots()
+        if root_key(other) != root_key(root)
+    )
+
+
+async def _prepare_by_range(
+    runtime: _Runtime, release: RemoteRelease, target: dict[str, Any]
+) -> dict[str, Any] | None:
+    """按区间只取变了的文件拼出新版。不能这么做（变化太多、服务器不配合、核对不过……）时丢掉这一批、
+    返回 ``None``，调用方改下整包；用户取消照常往外抛。"""
+    from app.core import Config
+
+    root = runtime.root
+    try:
+        async with httpx.AsyncClient(
+            proxy=Config.proxy,
+            follow_redirects=True,
+            timeout=_DOWNLOAD_TIMEOUT,
+            headers={"User-Agent": "AutoMasGui"},
+        ) as client:
+            plan = await update_range.plan_range(client, release.asset, root)
+            message = (
+                f"按区间下载变了的 {len(plan.fetch)} 个文件"
+                f"（约 {plan.fetch_bytes / 1024**2:.1f} MiB，整包 {release.asset.size / 1024**2:.1f} MiB）"
+            )
+            logger.info(f"{root} 更新到 {release.version}：{message}")
+
+            async def on_bytes(done: int, total: int) -> None:
+                _set(
+                    runtime,
+                    "downloading",
+                    message=message,
+                    # 计划里每个条目按文件头余量估的长度，实际取回的会略多一点
+                    percent=min(round(done * 100 / total, 1), 100.0) if total else None,
+                    downloadedBytes=min(done, total),
+                    totalBytes=total,
+                )
+                await _publish(runtime, force=False)
+
+            await on_bytes(0, plan.fetch_bytes)
+            await update_range.assemble_by_range(
+                client,
+                plan,
+                root,
+                stage.pkg_dir(root),
+                on_bytes=on_bytes,
+                cancelled=_cancelled(runtime),
+            )
+        files = len(plan.fetch) + len(plan.copy)
+        _set(runtime, "verifying", message="正在按清单核对每个文件")
+        await _publish(runtime)
+        return await asyncio.to_thread(
+            _verify_and_stage,
+            runtime,
+            target,
+            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+            files=files,
+            mode="range",
+        )
+    except stage.UpdateCancelled:
+        raise
+    except (update_range.RangeUnavailable, stage.PackageError, OSError) as e:
+        logger.info(f"{root} 这次不按区间取，改下整包：{e}")
+    except Exception as e:  # noqa: BLE001 - 区间这一路任何意外都退回整包
+        logger.opt(exception=True).warning(f"{root} 按区间取出错，改下整包：{e}")
+    await asyncio.to_thread(stage.remove_tree, stage.pkg_dir(root))
+    return None
 
 
 async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
@@ -579,30 +678,34 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
             f"{root.anchor or root} 剩余空间 {free / 1024**3:.1f} GB，更新要临时占用约 "
             f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理"
         )
-    _set(
-        runtime,
-        "downloading",
-        message=f"正在下载 {release.asset.name}",
-        totalBytes=release.asset.size,
-    )
-    await _publish(runtime)
-    archive = await _download(runtime, release)
     previous = state.get("previous")
-    await asyncio.to_thread(
-        stage.write_state,
-        root,
-        {"phase": stage.PHASE_DOWNLOADED, "target": target, "previous": previous},
-    )
-    _set(runtime, "extracting", message="正在解包")
-    await _publish(runtime)
-    staged = await asyncio.to_thread(
-        _stage_sync,
-        runtime,
-        archive,
-        target,
-        _thread_progress(runtime, "extracting", "正在解包"),
-        _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
-    )
+    staged = None
+    if await asyncio.to_thread(_range_allowed, root, release):
+        staged = await _prepare_by_range(runtime, release, target)
+    if staged is None:
+        _set(
+            runtime,
+            "downloading",
+            message=f"正在下载 {release.asset.name}",
+            totalBytes=release.asset.size,
+        )
+        await _publish(runtime)
+        archive = await _download(runtime, release)
+        await asyncio.to_thread(
+            stage.write_state,
+            root,
+            {"phase": stage.PHASE_DOWNLOADED, "target": target, "previous": previous},
+        )
+        _set(runtime, "extracting", message="正在解包")
+        await _publish(runtime)
+        staged = await asyncio.to_thread(
+            _stage_sync,
+            runtime,
+            archive,
+            target,
+            _thread_progress(runtime, "extracting", "正在解包"),
+            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+        )
     await asyncio.to_thread(
         stage.write_state,
         root,
@@ -613,9 +716,15 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
             "previous": previous,
         },
     )
+    checked = (
+        "按清单逐文件核对"
+        if staged["verified"] == "manifest"
+        else "旧版包没有清单，按 zip CRC 核对"
+        + ("" if staged["mode"] == "range" else "并核对了整包的 SHA-256")
+    )
     logger.info(
         f"{root} 的 {release.version} 已拼好（{staged['files']} 个文件，"
-        f"{'按清单逐文件核对' if staged['verified'] == 'manifest' else '旧版包没有清单，按包的 SHA-256 与 zip CRC 核对'}）"
+        f"{'按区间只取变了的' if staged['mode'] == 'range' else '整包'}，{checked}）"
     )
 
 
@@ -679,13 +788,17 @@ async def start_download(root: str) -> dict[str, Any]:
 
 
 async def cancel(root: str) -> dict[str, Any]:
-    """取消下载 / 解包（已下的部分留着，下次接着下）。换上一旦开始不能取消。"""
-    path = await _managed(root)
-    runtime = _runtime(path)
-    if not runtime.busy or runtime.progress.stage not in (
-        "downloading",
-        "extracting",
-        "verifying",
+    """取消下载 / 解包（已下的部分留着，下次接着下）。换上一旦开始不能取消。首次安装的下载也走这里。"""
+    runtime = _runtimes.get(root_key(str(root or "").strip()))
+    if (
+        runtime is None
+        or not runtime.busy
+        or runtime.progress.stage
+        not in (
+            "downloading",
+            "extracting",
+            "verifying",
+        )
     ):
         return {"ok": False, "message": "现在没有可以取消的下载"}
     runtime.cancel_requested = True
@@ -919,10 +1032,187 @@ def note_boot_completed(root: str | Path) -> None:
         )
 
 
+# ---- 首次安装 --------------------------------------------------------------
+
+#: 许可协议全文的缓存（秒）：同一次打开安装界面里反复点不用每次都去取。
+_LICENSE_CACHE_SECONDS = 3600.0
+_license_cache: tuple[float, dict[str, str]] | None = None
+
+
+async def sdk_license() -> dict[str, str]:
+    """《Android SDK 许可协议》全文（首次安装时在界面上给用户看、同意后才补全组件）。"""
+    global _license_cache
+    if _license_cache and time.monotonic() - _license_cache[0] < _LICENSE_CACHE_SECONDS:
+        return _license_cache[1]
+    from app.core import Config
+
+    result = await first_install.fetch_sdk_license(proxy=Config.proxy)
+    _license_cache = (time.monotonic(), result)
+    return result
+
+
+def _first_install_mode(root: Path) -> str:
+    """``full``：空目录（或只有上次没装完留下的 ``.update``），下包再补全组件；
+    ``components``：已经是解压好的魔改 AVD（自编版模拟器在、组件缺着），只补全组件。"""
+    from app.utils.emulator2.avd.precheck import path_item
+
+    path_check = path_item(root)
+    if not path_check.ok:
+        raise ValueError(path_check.message())
+    if root.exists() and not root.is_dir():
+        raise ValueError(f"{root} 不是文件夹")
+    if any(root_key(root) == root_key(managed) for managed in _managed_roots()):
+        raise ValueError("这个目录已经加进模拟器管理了")
+    if not root.exists() or not any(
+        child.name != UPDATE_DIR for child in root.iterdir()
+    ):
+        return "full"
+    if (
+        emulator_self_built(root)
+        and (root / first_install.FETCH_COMPONENTS_SCRIPT).is_file()
+    ):
+        return "components"
+    raise ValueError("请选一个空文件夹，MAS 会把魔改 AVD 装进去")
+
+
+async def _install_package_into(runtime: _Runtime, release: RemoteRelease) -> None:
+    """空目录：下整包、核对，解到 ``.update\\pkg`` 再整体挪进根目录。"""
+    root = runtime.root
+    root.mkdir(parents=True, exist_ok=True)
+    free = (await asyncio.to_thread(shutil.disk_usage, root)).free
+    if free < UPDATE_MIN_FREE_BYTES:
+        raise RuntimeError(
+            f"{root.anchor or root} 剩余空间 {free / 1024**3:.1f} GB，模拟器本体要约 "
+            f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB（补全组件另要约 6 GB），请先清理"
+        )
+    _set(
+        runtime,
+        "downloading",
+        message=f"正在下载 {release.asset.name}",
+        totalBytes=release.asset.size,
+    )
+    await _publish(runtime)
+    archive = await _download(runtime, release)
+    _set(runtime, "extracting", message="正在解包")
+    await _publish(runtime)
+    target = release.as_dict()
+
+    def unpack(extracting: stage.Progress, verifying: stage.Progress) -> None:
+        pkg = stage.pkg_dir(root)
+        stage.extract_package(
+            archive,
+            pkg,
+            top_dir=target["asset"]["topDir"],
+            progress=extracting,
+            cancelled=_cancelled(runtime),
+        )
+        manifest = read_manifest_file(pkg / MODAVD_MANIFEST_FILE)
+        if manifest is not None:
+            stage.check_package_manifest(manifest, release.version)
+            problems = stage.verify_tree(
+                pkg, manifest, progress=verifying, cancelled=_cancelled(runtime)
+            )
+            if problems:
+                stage.remove_tree(pkg)
+                raise stage.PackageError(
+                    "包里的文件和清单对不上：" + "；".join(problems[:5])
+                )
+        for child in sorted(pkg.iterdir()):
+            os.replace(child, root / child.name)
+        stage.remove_tree(stage.update_dir(root))
+
+    await asyncio.to_thread(
+        unpack,
+        _thread_progress(runtime, "extracting", "正在解包"),
+        _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+    )
+    logger.info(f"已把 {release.version}（{release.asset.name}）装进 {root}")
+
+
+async def _first_install_job(runtime: _Runtime, mode: str) -> None:
+    root = runtime.root
+    async with runtime.lock:
+        runtime.cancel_requested = False
+        try:
+            if mode == "full":
+                release = await _latest(force=False)
+                required = _automas_block(release)
+                if required:
+                    raise RuntimeError(
+                        f"{release.version} 需要 AUTO-MAS {required} 或更新的版本，请先更新 AUTO-MAS"
+                    )
+                await _install_package_into(runtime, release)
+            _set(
+                runtime,
+                "components",
+                message="正在补全组件（adb 与系统镜像，约 1.6 GB）",
+            )
+            await _publish(runtime)
+
+            def on_line(line: str) -> None:
+                runtime.progress.message = line
+                if time.monotonic() - runtime.published_at >= _PUBLISH_INTERVAL_SECONDS:
+                    runtime.published_at = time.monotonic()
+                    _spawn(_publish(runtime), "avd-first-install-progress")
+
+            code = await first_install.run_fetch_components(root, on_line)
+            if code != 0:
+                reason = first_install.FETCH_COMPONENTS_EXIT.get(code, f"退出码 {code}")
+                raise RuntimeError(
+                    f"补全组件没有完成：{reason}。详情见 {root / first_install.FETCH_COMPONENTS_LOG}，"
+                    "可以再点一次接着补"
+                )
+            _set(
+                runtime,
+                "installed",
+                "success",
+                "魔改 AVD 已装好，点「添加」把它加进模拟器管理",
+            )
+        except stage.UpdateCancelled:
+            _set(runtime, "cancelled", "idle", "已取消，下次接着下")
+        except Exception as e:  # noqa: BLE001 - 失败如实交给界面
+            logger.opt(exception=True).warning(f"在 {root} 安装魔改 AVD 失败: {e}")
+            _set(runtime, "failed", "failed", f"安装失败：{e}")
+        await _publish(runtime)
+
+
+async def start_first_install(root: str, *, accept_license: bool) -> dict[str, Any]:
+    """「添加魔改 AVD」选了空目录：下全量包装进去，再（用户同意许可协议后）跑包里的补全组件。
+    已经解压好、只缺组件的目录只补全组件。立刻返回，进度同更新（WebSocket）。"""
+    if not accept_license:
+        return {"ok": False, "message": "要先阅读并同意《Android SDK 许可协议》"}
+    text = str(root or "").strip()
+    if not text or not Path(text).is_absolute():
+        raise ValueError("请选择一个完整路径的文件夹")
+    path = Path(text)
+    mode = await asyncio.to_thread(_first_install_mode, path)
+    runtime = _runtime(path)
+    if runtime.busy:
+        return {"ok": False, "message": "正在安装，请稍候"}
+    runtime.job = asyncio.create_task(
+        _first_install_job(runtime, mode), name=f"avd-first-install:{path}"
+    )
+    return {
+        "ok": True,
+        "message": "开始下载魔改 AVD" if mode == "full" else "开始补全组件",
+    }
+
+
+def first_install_progress(root: str) -> dict[str, Any]:
+    """首次安装的进度快照（根目录还没纳管，用不了更新状态）。"""
+    runtime = _runtimes.get(root_key(str(root or "").strip()))
+    if runtime is None:
+        return {"busy": False, "progress": asdict(_Progress())}
+    return {"busy": runtime.busy, "progress": asdict(runtime.progress)}
+
+
 __all__ = [
     "cancel",
     "check",
+    "first_install_progress",
     "install",
+    "sdk_license",
+    "start_first_install",
     "note_boot_completed",
     "on_tasks_idle",
     "rollback",

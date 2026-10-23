@@ -33,5 +33,7 @@
 - :mod:`.service`        给 API 用的业务入口
 - :mod:`.update_source`  版本号、更新公告、下载源（GitHub）
 - :mod:`.update_stage`   更新的本机文件操作：解包、核对、换上、回退、崩溃恢复
-- :mod:`.updater`        更新流程：查更新、下载、安装、回退、开机确认、空闲时自动装
+- :mod:`.update_range`   GitHub 源按区间只取变了的文件
+- :mod:`.first_install`  首次安装：许可协议全文、运行包里的「补全组件」
+- :mod:`.updater`        更新流程：查更新、下载、安装、回退、开机确认、空闲时自动装、首次安装
 """

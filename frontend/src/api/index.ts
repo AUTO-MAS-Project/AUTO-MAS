@@ -190,8 +190,11 @@ export type { Emulator2AvdApkInstallOut } from './models/Emulator2AvdApkInstallO
 export type { Emulator2AvdChangeEntry } from './models/Emulator2AvdChangeEntry';
 export type { Emulator2AvdChangeGroup } from './models/Emulator2AvdChangeGroup';
 export type { Emulator2AvdComponentItem } from './models/Emulator2AvdComponentItem';
+export type { Emulator2AvdInstallIn } from './models/Emulator2AvdInstallIn';
+export type { Emulator2AvdInstallStatusOut } from './models/Emulator2AvdInstallStatusOut';
 export type { Emulator2AvdInstanceIn } from './models/Emulator2AvdInstanceIn';
 export type { Emulator2AvdInstanceOptionsOut } from './models/Emulator2AvdInstanceOptionsOut';
+export type { Emulator2AvdLicenseOut } from './models/Emulator2AvdLicenseOut';
 export type { Emulator2AvdPrecheckItem } from './models/Emulator2AvdPrecheckItem';
 export type { Emulator2AvdStatusIn } from './models/Emulator2AvdStatusIn';
 export type { Emulator2AvdStatusOut } from './models/Emulator2AvdStatusOut';

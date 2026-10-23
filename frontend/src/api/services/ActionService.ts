@@ -8,6 +8,7 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdInstallIn } from '../models/Emulator2AvdInstallIn';
 import type { Emulator2AvdUpdateActionIn } from '../models/Emulator2AvdUpdateActionIn';
 import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
 import type { Emulator2AvdUpdateOptionsIn } from '../models/Emulator2AvdUpdateOptionsIn';
@@ -341,6 +342,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/update/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 安装魔改 AVD 到空文件夹
+     * 空文件夹：从 GitHub 下载最新的 ModAVD、核对后装进去，再运行包里的「补全组件」
+     * （tools\fetch-components.ps1 -AcceptLicense）从官方渠道下载 adb 与系统镜像。已经解压好、只缺组件的
+     * 根目录只补全组件。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。装好后走
+     * 原有的添加流程。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallStartApiEmulator2AvdInstallStartPost(
+        requestBody: Emulator2AvdInstallIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/start',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

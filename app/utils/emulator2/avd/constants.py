@@ -141,6 +141,8 @@ MODAVD_REPOSITORY = "ModAVD/ModAVD"
 MODAVD_RELEASE_API = f"https://api.github.com/repos/{MODAVD_REPOSITORY}/releases/latest"
 #: 只供测试：把上面的查询地址换成本地模拟服务（不进配置、不上界面）。
 MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
+#: 设成 1 时不按区间取、一律下整包（验收比对与应急用，不进配置、不上界面）。
+MODAVD_FORCE_FULL_PACKAGE_ENV = "AUTO_MAS_MODAVD_FORCE_FULL_PACKAGE"
 #: 包根上的逐文件清单（下一个公开版本 v33.0.0 起才有）。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
 #: 更新器在根目录里的工作目录：下载、解包、暂存、上一版都在这里。和根目录同一个盘，换上靠改名。

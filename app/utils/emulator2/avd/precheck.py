@@ -174,7 +174,8 @@ async def acceleration_item(
 
 
 TEST_PACKAGE_ADVICE = (
-    "请把魔改 AVD 内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
+    "选一个空文件夹点「下载并安装」让 MAS 装进去，或把魔改 AVD 包解压到这个目录"
+    "（解压后目录里应有 sdk\\emulator）"
 )
 
 

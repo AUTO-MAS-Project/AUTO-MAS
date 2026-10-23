@@ -3225,7 +3225,7 @@ export default {
       manage: '管理与更新',
       title: '魔改 AVD（内测）',
       root: '根目录',
-      rootPlaceholder: '选择或输入模拟器内测包解压后的文件夹，实例也放在这里',
+      rootPlaceholder: '选择解压好的魔改 AVD 文件夹，或一个空文件夹让 MAS 装进去；实例也放在这里',
       check: '检查',
       unsupportedScript: '魔改 AVD 目前只支持 MFW 脚本和 MAA',
       prechecks: '电脑检查',
@@ -3294,6 +3294,23 @@ export default {
           statusFailed: '读取魔改 AVD 更新状态失败',
           checkFailed: '检查魔改 AVD 更新失败',
           actionFailed: '魔改 AVD 更新操作失败',
+        },
+      },
+      install: {
+        title: '安装魔改 AVD',
+        hint: '这个文件夹里还没有魔改 AVD。选一个空文件夹，MAS 会从 GitHub 下载最新版装进来（约 270 MB），再从 Google 官方渠道补全 adb 和系统镜像（约 1.6 GB，解压后约 4.5 GB）。',
+        componentsHint:
+          '这里的魔改 AVD 还缺 adb 或系统镜像，MAS 可以从 Google 官方渠道补全（约 1.6 GB，解压后约 4.5 GB）。',
+        start: '下载并安装',
+        fetchComponents: '补全组件',
+        licenseTitle: 'Android SDK 许可协议',
+        licenseIntro:
+          'adb 和系统镜像属于 Google，要先同意下面的《Android SDK 许可协议》才能下载（全文取自 {source}）。',
+        agree: '我已阅读并同意《Android SDK 许可协议》',
+        agreeAndStart: '同意并开始',
+        toast: {
+          licenseFailed: '取不到许可协议全文',
+          startFailed: '安装魔改 AVD 失败',
         },
       },
     },

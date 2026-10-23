@@ -590,6 +590,30 @@ class Emulator2AvdUpdateActionOut(OutBase):
     runningInstances: int = Field(default=0, description="需要先关的实例台数")
 
 
+class Emulator2AvdLicenseOut(OutBase):
+    text: str = Field(default="", description="《Android SDK 许可协议》全文")
+    source: str = Field(default="", description="从哪个镜像取到的")
+
+
+class Emulator2AvdInstallIn(BaseModel):
+    root: str = Field(
+        ...,
+        description="要装进去的文件夹: 空文件夹 (下载 ModAVD 再补全组件), 或已经解压好、只缺组件的魔改 AVD 根目录",
+    )
+    acceptLicense: bool = Field(
+        default=False,
+        description="用户已在界面上阅读并同意《Android SDK 许可协议》; 为 false 时拒绝",
+    )
+
+
+class Emulator2AvdInstallStatusOut(OutBase):
+    busy: bool = Field(default=False, description="是否正在安装")
+    progress: Emulator2AvdUpdateProgress = Field(
+        default_factory=Emulator2AvdUpdateProgress,
+        description="最近一次安装的进度; 补全组件时 message 是脚本最新的一行输出",
+    )
+
+
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
 logger = get_logger("Emulator 2.0 API")
 
@@ -1143,3 +1167,73 @@ async def avd_update_options(
         )
         return Emulator2AvdUpdateStatusOut(**_error(e))
     return Emulator2AvdUpdateStatusOut(**result)
+
+
+# ---- 魔改 AVD 首次安装 ------------------------------------------------------
+
+
+@router.post(
+    "/avd/install/license",
+    tags=["Get"],
+    summary="取《Android SDK 许可协议》全文",
+    response_model=Emulator2AvdLicenseOut,
+    status_code=200,
+)
+async def avd_install_license() -> Emulator2AvdLicenseOut:
+    """首次安装要补全 adb 与系统镜像（属于 Google，不能再分发），先在界面上展示许可协议全文，
+    用户同意后才开始。按补全组件脚本的镜像顺序取。"""
+    try:
+        result = await avd_updater.sdk_license()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_license失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdLicenseOut(**_error(e))
+    return Emulator2AvdLicenseOut(**result)
+
+
+@router.post(
+    "/avd/install/start",
+    tags=["Action"],
+    summary="安装魔改 AVD 到空文件夹",
+    response_model=Emulator2AvdUpdateActionOut,
+    status_code=200,
+)
+async def avd_install_start(
+    payload: Emulator2AvdInstallIn = Body(...),
+) -> Emulator2AvdUpdateActionOut:
+    """空文件夹：从 GitHub 下载最新的 ModAVD、核对后装进去，再运行包里的「补全组件」
+    （tools\\fetch-components.ps1 -AcceptLicense）从官方渠道下载 adb 与系统镜像。已经解压好、只缺组件的
+    根目录只补全组件。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。装好后走
+    原有的添加流程。"""
+    try:
+        result = await avd_updater.start_first_install(
+            payload.root, accept_license=payload.acceptLicense
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_start失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdUpdateActionOut(**_error(e))
+    return Emulator2AvdUpdateActionOut(**result)
+
+
+@router.post(
+    "/avd/install/status",
+    tags=["Get"],
+    summary="查询魔改 AVD 首次安装进度",
+    response_model=Emulator2AvdInstallStatusOut,
+    status_code=200,
+)
+async def avd_install_status(
+    payload: Emulator2AvdUpdateRootIn = Body(...),
+) -> Emulator2AvdInstallStatusOut:
+    """首次安装的进度快照（WebSocket 没连上时兜底）。"""
+    try:
+        result = avd_updater.first_install_progress(payload.root)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_status失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstallStatusOut(**_error(e))
+    return Emulator2AvdInstallStatusOut(**result)

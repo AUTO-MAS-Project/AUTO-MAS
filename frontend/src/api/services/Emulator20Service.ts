@@ -4,8 +4,11 @@
 /* eslint-disable */
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdInstallIn } from '../models/Emulator2AvdInstallIn';
+import type { Emulator2AvdInstallStatusOut } from '../models/Emulator2AvdInstallStatusOut';
 import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdLicenseOut } from '../models/Emulator2AvdLicenseOut';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2AvdUpdateActionIn } from '../models/Emulator2AvdUpdateActionIn';
@@ -523,6 +526,62 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/update/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取《Android SDK 许可协议》全文
+     * 首次安装要补全 adb 与系统镜像（属于 Google，不能再分发），先在界面上展示许可协议全文，
+     * 用户同意后才开始。按补全组件脚本的镜像顺序取。
+     * @returns Emulator2AvdLicenseOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallLicenseApiEmulator2AvdInstallLicensePost(): CancelablePromise<Emulator2AvdLicenseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/license',
+        });
+    }
+    /**
+     * 安装魔改 AVD 到空文件夹
+     * 空文件夹：从 GitHub 下载最新的 ModAVD、核对后装进去，再运行包里的「补全组件」
+     * （tools\fetch-components.ps1 -AcceptLicense）从官方渠道下载 adb 与系统镜像。已经解压好、只缺组件的
+     * 根目录只补全组件。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。装好后走
+     * 原有的添加流程。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallStartApiEmulator2AvdInstallStartPost(
+        requestBody: Emulator2AvdInstallIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 首次安装进度
+     * 首次安装的进度快照（WebSocket 没连上时兜底）。
+     * @param requestBody
+     * @returns Emulator2AvdInstallStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallStatusApiEmulator2AvdInstallStatusPost(
+        requestBody: Emulator2AvdUpdateRootIn,
+    ): CancelablePromise<Emulator2AvdInstallStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/status',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

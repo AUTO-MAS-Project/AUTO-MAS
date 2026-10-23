@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 添加魔改 AVD：选根目录（解压好的模拟器内测包）→ 看电脑检查与组件 → 添加。
+ * 添加魔改 AVD：选根目录 → 看电脑检查与组件 → 添加。
  *
- * 缺组件时由电脑检查写明缺哪几项。组件齐了点「添加」走普通的路径纳管。已纳管的根目录也从这里看
- * 组件和电脑检查，并在「模拟器更新」里查新版本、下载、安装、回退。
+ * 选的是空文件夹时可以一键安装（下载魔改 AVD、同意许可协议后补全组件）；缺组件时由电脑检查写明
+ * 缺哪几项。组件齐了点「添加」走普通的路径纳管。已纳管的根目录也从这里看组件和电脑检查，并在
+ * 「模拟器更新」里查新版本、下载、安装、回退。
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -14,6 +15,7 @@ import type { Emulator2AvdStatusOut } from '@/api'
 import { useAvdApi } from '@/composables/useAvdApi'
 import { isRootAdded, samePath } from '../avdLogic'
 import AvdComponentList from './AvdComponentList.vue'
+import AvdFirstInstall from './AvdFirstInstall.vue'
 import AvdPrecheckList from './AvdPrecheckList.vue'
 import AvdUpdatePanel from './AvdUpdatePanel.vue'
 
@@ -37,6 +39,10 @@ const current = computed(() =>
   status.value && samePath(checkedRoot.value, root.value) ? status.value : null
 )
 const ready = computed(() => Boolean(current.value?.ready))
+/** 目录里已经是够新的魔改 AVD 自编版（只缺 adb / 系统镜像） */
+const hasSelfBuiltEmulator = computed(() =>
+  Boolean(current.value?.components?.find(item => item.id === 'emulator')?.testPackage)
+)
 const alreadyAdded = computed(() => isRootAdded(props.addedRoots ?? [], root.value))
 
 const reset = () => {
@@ -122,6 +128,13 @@ watch(open, value => {
 
       <!-- 已纳管的根目录才能更新（更新会改名目录，后端只认纳管的根目录） -->
       <AvdUpdatePanel v-if="alreadyAdded && current" :root="checkedRoot" @changed="check()" />
+      <!-- 还不能添加：空文件夹一键安装，已解压好的只补全组件；装好后重新检查，再照常点「添加」 -->
+      <AvdFirstInstall
+        v-else-if="current && !ready"
+        :root="checkedRoot"
+        :has-emulator="hasSelfBuiltEmulator"
+        @installed="check(true)"
+      />
 
       <template v-if="current">
         <AvdPrecheckList :items="current.prechecks ?? []" />
