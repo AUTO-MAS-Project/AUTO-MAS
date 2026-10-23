@@ -31,7 +31,7 @@ from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
-from app.models.notification_report import TaskResultData
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.notification_lifecycle import NotificationTaskBase
@@ -48,7 +48,6 @@ from .task_mapping import (
     resolve_script_assignment,
     script_supports,
 )
-from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
     check_cloud_prerequisites,
@@ -1437,11 +1436,9 @@ class HSRManager(NotificationTaskBase):
         }
 
         try:
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
-                user_config=None,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
             )
         except Exception as e:  # noqa: BLE001

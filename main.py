@@ -303,9 +303,21 @@ def main():
         await Config.init_config()
 
         from app.api.ws_command import execute_ws_command
-        from app.core.notify_channels import initialize_notification_channels
+        from app.config import config_manager
+        from app.core.game_calendar import GameCalendar
+        from app.core.notify_channels import create_notification_service
+        from app.runtime_tasks import RuntimeTasks
 
-        initialize_notification_channels(command_executor=execute_ws_command)
+        notifications = create_notification_service(
+            config=Config,
+            transactions=config_manager,
+            runtime=RuntimeTasks,
+            command_executor=execute_ws_command,
+        )
+        app.state.notifications = notifications
+        TaskManager.bind_notifications(notifications)
+        MainTimer.bind_notifications(notifications)
+        GameCalendar.bind_notifications(notifications)
 
         background_task: asyncio.Task | None = None
 
@@ -395,9 +407,7 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
-                from app.services.notification import Notify
-
-                await run_optional_step("通知渠道", Notify.start)
+                await run_optional_step("通知渠道", notifications.start)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -488,12 +498,7 @@ def main():
             await ObsReplay.stop()
             # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await RuntimeTasks.shutdown()
-            from app.services.notification_rendering import NotificationRendering
-
-            NotificationRendering.close()
-            from app.services.notification import Notify
-
-            await Notify.stop()
+            await notifications.close()
             from app.config import config_manager
 
             await config_manager.flush()

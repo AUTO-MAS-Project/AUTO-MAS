@@ -67,7 +67,7 @@ from .contracts import (
 from .tools.feed import LoguruFileFeed, build_log_path_resolver
 from .tools.launcher import EmbeddedPythonLauncher, find_upstream_pids
 from .tools.marker import WhimboxMarkerParser, is_benign_marker
-from .tools.notify import push_notification
+from .tools.notify import build_statistics_payload
 from .tools.upstream import WheelAssetsConfigSurface, parse_override_map
 
 logger = get_logger("奇想盒 自动代理")
@@ -598,12 +598,14 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
                     "一条龙任务已完成" if self.run_book else self.cur_user_item.result
                 )
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的奇想盒自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的奇想盒自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
+                    compact_summary=True,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志

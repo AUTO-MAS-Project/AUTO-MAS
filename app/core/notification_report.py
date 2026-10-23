@@ -97,7 +97,6 @@ class TaskReportCoordinator:
         self.task_finished = False
         self.delivery_task: asyncio.Task[None] | None = None
         self.reports_pending = 0
-        self._report_dispatch = dependencies.dispatch
 
     def receive(self, results: tuple[CommunityNotificationResult, ...] | None) -> None:
         """先保存结果再发布完成事件；报告等待超时不取消签到。"""
@@ -132,10 +131,7 @@ class TaskReportCoordinator:
         *,
         policy: TaskReportPolicy,
         uncompleted_count: int,
-        embedded_summary: bool = False,
     ) -> bool:
-        if embedded_summary:
-            return True
         if policy.community_enabled and (
             self.community_summary().text
             or (self.community_pending and not self.completed.is_set())
@@ -182,7 +178,7 @@ class TaskReportCoordinator:
                 if self.targets is not None
                 else self.dependencies.prepare_targets()
             )
-            result = await self._report_dispatch(
+            result = await self.dependencies.dispatch(
                 payload,
                 targets,
                 attempts=NOTIFICATION_SEND_ATTEMPTS,
@@ -207,17 +203,11 @@ class TaskReportCoordinator:
     async def dispatch_report(
         self,
         request: TaskReportRequest,
-        *,
-        dispatch: NotificationDispatcher | None = None,
     ) -> DispatchResult:
         """使用入口固定的策略；迟到补发会重新读取下一次通知的策略。"""
 
         async with self.lock:
             self.targets = request.targets
-            # 本轮覆盖与本轮目标一起用于迟到补发；下一轮未覆盖时恢复宿主端口。
-            self._report_dispatch = (
-                dispatch if dispatch is not None else self.dependencies.dispatch
-            )
             payload = request.payload
             if self.community_pending:
                 if (
@@ -259,37 +249,26 @@ class TaskReportCoordinator:
             if request.policy.community_enabled
             else TaskReportSummary()
         )
-        clean_payload, payload = self.dependencies.renderer.prepare_payloads(
-            payload,
-            summary=summary,
-            embedded_summary=request.embedded_summary,
-        )
-        if not (request.embedded_summary or summary.text):
-            result = await self._report_dispatch(
+        if not summary.text:
+            result = await self.dependencies.dispatch(
                 payload,
                 request.targets,
-                attempts=request.attempts,
-                retry_delay=request.retry_delay,
             )
         else:
             delivered = set(self.state.delivered)
             channels = {
                 ct.id for target in request.targets for _, ct in target.channels
             }
-            with_summary = await self._report_dispatch(
-                payload,
+            with_summary = await self.dependencies.dispatch(
+                self.dependencies.renderer.append_summary(payload, summary),
                 request.targets,
-                attempts=request.attempts,
-                retry_delay=request.retry_delay,
                 skip_channel_ids=delivered,
             )
             # 本轮开始前收到过摘要的渠道只收原始报告，避免同一轮重复投递。
             without_summary = (
-                await self._report_dispatch(
-                    clean_payload,
+                await self.dependencies.dispatch(
+                    payload,
                     request.targets,
-                    attempts=request.attempts,
-                    retry_delay=request.retry_delay,
                     skip_channel_ids=channels - delivered,
                 )
                 if delivered & channels

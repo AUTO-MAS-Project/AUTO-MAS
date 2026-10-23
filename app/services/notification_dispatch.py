@@ -20,7 +20,6 @@ from app.models.notification_channel import (
     Notifier,
     NotifyTarget,
 )
-from app.services.notification_rendering import NotificationRendering
 from app.utils import get_logger
 
 logger = get_logger("通知投递")
@@ -49,10 +48,9 @@ async def dispatch(
     *,
     attempts: int = 1,
     retry_delay: float = 0,
-    skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
     notifier: Notifier,
-    renderer: NotificationRenderer | None = None,
+    renderer: NotificationRenderer,
     concurrent: bool = True,
 ) -> DispatchResult:
     """按渠道独立投递并按输入顺序汇总，取消时回收本轮全部子任务。
@@ -62,9 +60,7 @@ async def dispatch(
     """
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
-    rendering = NotificationRendering if renderer is None else renderer
 
-    skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
     unresolved: list[str] = []
     unresolved_failures: list[DeliveryFailure] = []
@@ -85,10 +81,10 @@ async def dispatch(
                     )
                 )
         for channel, ct in target.channels:
-            if ct.label not in skip and ct.id not in skip_ids:
+            if ct.id not in skip_ids:
                 groups.setdefault(channel.key, []).append(len(jobs))
                 jobs.append((channel, ct, target.empty_policy))
-    del skip, skip_ids
+    del skip_ids
 
     rendered_cache: dict[
         tuple[NotificationCapabilities, SummaryPolicy, bool], RenderedNotification
@@ -105,7 +101,7 @@ async def dispatch(
             else target.capabilities
         )
         if len(jobs) <= 1:
-            return await rendering.render(
+            return await renderer.render(
                 payload,
                 capabilities,
                 summary_policy=target.summary_policy,
@@ -123,7 +119,7 @@ async def dispatch(
         async with lock:
             cached = rendered_cache.get(key)
             if cached is None:
-                cached = await rendering.render(
+                cached = await renderer.render(
                     payload,
                     capabilities,
                     summary_policy=target.summary_policy,

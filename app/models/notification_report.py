@@ -9,8 +9,6 @@ from app.models.notification import DeferredContent, NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
 from app.models.notification_community import CommunityNotificationResult
 
-TaskNoticeMode = Literal["代理结果", "统计信息"]
-
 
 class ReportScreenshot(TypedDict):
     image_ref: str
@@ -28,7 +26,6 @@ class TaskResultData(TypedDict):
     title: NotRequired[str]
     script_name: NotRequired[str]
     summary_title: NotRequired[str]
-    game_sign_summary: NotRequired[str | bool]
     screenshots: NotRequired[list[ReportScreenshot]]
     push_log: NotRequired[str]
 
@@ -43,7 +40,6 @@ class TaskResultReport:
     uncompleted_count: int
     result: str
     summary_title: str | None = None
-    embedded_summary: bool = False
     template_fields: Mapping[str, object] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -55,7 +51,6 @@ class TaskResultReport:
             uncompleted_count=message["uncompleted_count"],
             result=message["result"],
             summary_title=message.get("summary_title"),
-            embedded_summary=bool(message.get("game_sign_summary")),
             template_fields=MappingProxyType(
                 {
                     key: value
@@ -118,23 +113,12 @@ class ReportRenderer(Protocol):
         self, payload: NotifyPayload, summary: TaskReportSummary
     ) -> NotifyPayload: ...
 
-    def prepare_payloads(
-        self,
-        payload: NotifyPayload,
-        *,
-        summary: TaskReportSummary,
-        embedded_summary: str = "",
-    ) -> tuple[NotifyPayload, NotifyPayload]: ...
-
 
 @dataclass(frozen=True)
 class TaskReportRequest:
     payload: NotifyPayload
     targets: tuple[NotifyTarget, ...]
     policy: TaskReportPolicy
-    embedded_summary: str = ""
-    attempts: int = 1
-    retry_delay: float = 0
 
 
 class NotificationDispatcher(Protocol):

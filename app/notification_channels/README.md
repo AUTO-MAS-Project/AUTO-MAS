@@ -50,8 +50,9 @@ QQ 的扫码、凭据、网关和发送使用同一个已装配实例；原扫�
 单个渠道启动失败不影响其他渠道。退出先结束通知任务所有者，再逆序停止渠道。
 HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运行机制。
 业务系统提示使用任务注入的 `LocalNotifier`；Webhook 草稿测试使用注入的
-`WebhookTester`，禁用草稿仍可测试。旧 `Notify.push_plyer` 和 `Notify.WebhookPush`
-保留兼容用途，普通禁用目标仍跳过。
+`WebhookTester`，禁用草稿仍可测试。两者直接使用已装配渠道的真实能力，
+旧 `Notify.push_plyer` 和 `Notify.WebhookPush` 转发已退役，普通禁用目标仍跳过。
+Webhook 传输只接受准备好的快照，不再读取配置对象；正式目标和草稿测试各自在入口固定输入。
 
 目标声明是否为本地提示，以及业务请求紧凑摘要时采用的策略；编排层按目标声明
 处理，不根据具体渠道 ID 调整内容。统一投递协议只提供 `send_channel`，渠道
@@ -59,6 +60,7 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
 
 设置 API 使用显式展示字段白名单，不能直接序列化完整声明、工厂、依赖或目标。
 现有表单和保存 API 保持不变；新增配置能力仍需正常的配置、API 与表单开发。
+运行时直接使用注册表的渠道声明；设置目录额外加入通知策略控件，策略不参与投递。
 
 正式产物由 Runtime 使用完整 Git 工作树，CI 验证包也预置精确提交的浅克隆；
 清单和动态入口均随仓库交付，无需另加中央渠道名单或打包包含名单。
@@ -66,8 +68,9 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
 ## 单次通知的准备与投递
 
 ```text
-业务 / 任务报告协调器
-  -> core.notify：按全局/用户范围读取配置、逐渠道准备目标
+lifespan 创建 HostNotificationService 并绑定业务消费者
+  -> 业务 / 任务报告协调器消费注入的通知能力
+  -> core.notify.HostNotificationService：按全局/用户范围读取配置、逐渠道准备目标
   -> models.notification_channel：NotifyTarget + DeliveryChannel + ChannelTarget
   -> services.notification_dispatch：显式 Notifier、渲染、重试、并发与结果
   -> services.notification：选择已装配会话或本次无会话发送器
@@ -75,8 +78,26 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
   -> DispatchResult 返回业务所有者
 ```
 
-投递服务不导入 core、全局配置或通知单例。旧的 `core.notify` 入口及目标/结果类型
-导出继续可用；默认实例在 core 门面注入。内部投递契约不属于 OpenAPI。
+投递服务不导入 core、全局配置或通知单例，发送器和渲染器必须显式传入。
+宿主通过 `core.notify_channels.create_notification_service` 创建实例，再绑定 API、
+定时器、日历与任务管理器。API 依赖从 `app.state.notifications` 取用；任务由
+创建者绑定 `TaskItem.notifications`。旧的模块级发送函数、默认实例和类型转发
+已退役，目标和结果类型直接从模型层导入。内部投递契约不属于 OpenAPI。
+
+`models.notification_ports.NotificationService` 定义全局、用户、统计和代理结果能力，
+后续插件宿主可将同一个服务绑定到插件；现役任务通过 `TaskNotifications` 消费
+目标准备、报告与批次能力。Service 不引入插件管理器、通用服务注册表或新的任务队列。
+manager 直接向服务提交强类型代理结果。简单统计共用 `task.notify_core` 的两种
+正文构造，复杂统计由 BetterGI、MAA、MaaEnd、Whimbox 和 MaaFW 的纯内容适配提供。
+这些适配只生成正文、模板与图片声明，不选择目标、不调用发送服务或持有渠道连接。
+M9A 统计随 MaaFW 使用 `MaaFW_statistics.html`，旧 `m9a_statistics.html` 已退役。
+结果和统计邮件各自共享相同的 CSS 片段，渲染后仍为内联样式；专项正文独立保留。
+社区通知的直接生成与预准备路径共用正文和图片生成实现，仍按目标能力惰性计算。
+渠道目录可以缓存不可变声明，发送器、渲染器和待投递状态则按服务实例持有。
+
+通知渠道仍在后台可选初始化步骤启动。退出先停止入口和业务任务，再由
+`RuntimeTasks.shutdown()` 回收已托管任务，随后关闭服务的渲染器、渠道与配置订阅，
+最后统一保存配置；停用未来某个插件不应关闭应用共享的通知资源。
 `DeliveryChannel` 只保留稳定 key 和发送适配器，投递流程不携带完整渠道声明、
 表单元数据、目标构造器、传输工厂或启停入口。
 
@@ -139,13 +160,14 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 ## 任务通知编排
 
 ```text
-专项边界：既有模式与专项字典 -> TaskResultReport / NotifyPayload
-  -> task.notify_core：类型明确的结果或统计投递
+manager -> TaskResultReport -> 注入服务 push_proxy_result
   -> core.task_report：策略快照、独立通知状态与外部能力装配
   -> core.notification_report：等待、摘要去重、迟到补发
-       -> ReportRenderer：摘要、正文组合和独立社区内容
-       -> 显式 NotificationDispatcher：投递并返回 DispatchResult
-  -> 已注入的反馈与后台任务所有者
+       -> ReportRenderer + 显式 NotificationDispatcher
+AutoProxy / runner -> 共用或专项正文构造 -> NotifyPayload
+  -> 注入服务 push_statistics_report -> dispatch_task_notification
+MAA 喜报 / HSR 云登录提醒 -> NotifyPayload -> dispatch_task_notification
+以上路径共用宿主的目标准备、投递、失败反馈与后台任务所有者
 ```
 
 `PreparedTaskReport` 在一次报告入口读取不可变 `TaskReportPolicy`，是否发送、等待
@@ -153,8 +175,8 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 下一次通知，重新读取策略，关闭签到通知后不再补发。目标仍沿用该报告固定的
 目标快照；没有报告的任务在补发入口准备默认目标。
 
-默认报告和补发使用同一个注入的投递端口。单次显式 notifier 覆盖与本轮目标一起
-绑定到本轮迟到补发；下一轮没有显式覆盖时恢复宿主默认端口。
+报告与补发固定使用服务装配时绑定的投递端口，不再按单次报告更换发送器。
+发送器统一在服务构造时注入；底层投递器仍接收显式依赖，不提供全局默认实例。
 
 `TaskReportCoordinator` 只持有 `TaskNotificationState`，与任务共享结果、消费标记和
 已送达 ID；失败渠道通过每次投递的 `DispatchResult` 返回。
@@ -167,7 +189,7 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 object 字段投影和同步观察端口已退役。投递事实通过 DispatchResult 返回；失败反馈另外交宿主任务
 所有者持有，反馈异常或延迟不改变投递结果。电源前有限等待、退出回收同时覆盖反馈。
 任务和通知批次的失败通过常驻系统提示发布；无任务、无批次的独立报告失败仍只记录日志。
-电源动作直接等待 `notification_tasks.drain_notifications`，通知回收使用统一任务所有者。
+电源动作等待注入的 `NotificationTasks.drain_notifications`，通知回收使用统一任务所有者。
 
 报告与补发共享一把锁；签到先完成时合并进报告，短暂等待超时则先发送带待确认
 提示的报告，签到继续执行。后续报告对已收到签到摘要的渠道只发送原始内容，
@@ -181,22 +203,26 @@ object 字段投影和同步观察端口已退役。投递事实通过 DispatchR
 risk_control / failed 机器状态。旧字典、中文状态及占位过滤仅在入口适配；日期、
 `_completed` 判定和 API 保存仍由签到业务处理，不由通知状态反推。
 `community_notification_results` 和 `from_legacy` 是现役业务适配，继续承担上述转换；
-`tools/community_notify.py` 的旧转发门面已退役，独立社区通知从 `core.community_notify`
-装配，纯内容生成使用 `services.community_notification`。
+`tools/community_notify.py` 和 `core.community_notify` 的旧入口已退役，独立社区通知
+由宿主 Service 装配，纯内容生成使用 `services.community_notification`。
 
-共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量、结果和摘要意图
-都是明确字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
-参与共享发送决策。统计入口只接收已生成的 `NotifyPayload`。旧模式与专项字典
-留在各自适配入口，并用有限 `TaskNoticeMode` 标注；共享层不再按字符串模式解析
-任意字典。用户通知配置协议描述实际的只读分组属性，不要求配置实例提供旧式
+共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量和结果都是明确
+字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
+参与共享发送决策。任务统计入口只接收已生成的 `NotifyPayload`，并保留即时托管、
+事务内同 Task 投递与失败反馈；插件的独立 `send_statistics` 不承担任务托管。
+专项字典只进入正文构造，旧模式路由和 `TaskNoticeMode` 已退役。用户通知配置协议
+描述实际的只读分组属性，不要求配置实例提供旧式
 get/set；渠道仅通过宿主的 `TargetConfigView` 获取字段。
+签到摘要只由协调器消费结构化结果后追加；旧内嵌摘要标记、正文剥离和替换路径已退役。
+即时任务通知固定立即托管，普通报告使用默认单次投递；重试参数只保留在实际需要配置的发送入口。
 
 ## 独立社区通知与日历
 
 手动签到 API 和非任务定时签到消费 `CommunityNotifier`。协调器由
-`core.community_notify` 装配；开关、默认目标、内容生成、失败反馈和任务注册
+宿主 Service 装配；开关、默认目标、内容生成、失败反馈和任务注册
 均通过依赖提供。短暂等待超时或 HTTP 请求取消后，通知继续由 `RuntimeTasks`
 持有；电源动作等待使用统一剩余时限，退出先回收通知再关闭渠道。
+独立社区通知只发送本次结果；目标去重和完成提示由任务报告协调器处理，不另设通用覆盖入口。
 
 日历注入投递器和目标准备函数，只持有提醒及其已送达 ID，不直接访问通知单例。
 未知目标保留在失败结果中，不能结清提醒。MAA 喜报仅声明 announcement 展示
