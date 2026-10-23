@@ -26,19 +26,6 @@ class CommunityNotificationResult:
     reason: str = ""
     status_text: str = "失败"
 
-    def to_legacy(self) -> dict[str, object]:
-        """历史任务字段的只读结果投影。"""
-
-        return {
-            "account": self.account,
-            "account_uid": self.account_uid,
-            "game": self.game,
-            "platform": self.platform,
-            "status": self.status_text,
-            "reward": self.reward,
-            "reason": self.reason,
-        }
-
     @property
     def succeeded(self) -> bool:
         # _completed 是签到业务的完成判据，不等于领取奖励成功。

@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.models.notification import NotifyPayload
@@ -11,7 +11,6 @@ from app.models.notification_community import CommunityNotificationResult
 from app.models.notification_report import (
     NotificationDispatcher,
     ReportRenderer,
-    TaskNotificationChange,
     TaskNotificationState,
     TaskReportPolicy,
     TaskReportRequest,
@@ -74,9 +73,6 @@ class TaskReportDependencies:
     report_failure: Callable[[DispatchResult], Awaitable[None]]
     report_supplement_failure: CommunityFailureReporter
     spawn: Callable[[Coroutine[Any, Any, None]], asyncio.Task[None] | None]
-    state_changed: (
-        Callable[[TaskNotificationState, TaskNotificationChange], None] | None
-    ) = None
 
 
 class TaskReportCoordinator:
@@ -110,18 +106,7 @@ class TaskReportCoordinator:
         # 占位项不参与实际通知，空结果仍能结清已发出的待确认提示。
         self.state.results = results or ()
         self.completed.set()
-        self.notify_state_changed("results")
         self.schedule_supplement()
-
-    def notify_state_changed(self, change: TaskNotificationChange) -> None:
-        """观察端口只同步外部视图，失败不阻断内部状态推进或结果返回。"""
-
-        if self.dependencies.state_changed is None:
-            return
-        try:
-            self.dependencies.state_changed(self.state, change)
-        except Exception as exc:
-            logger.warning(f"同步任务通知状态失败: {type(exc).__name__}")
 
     @property
     def completion_notice(self) -> str:
@@ -205,10 +190,8 @@ class TaskReportCoordinator:
                 skip_channel_ids=self.state.delivered,
             )
             self.state.delivered.update(result.succeeded_ids)
-            self.state.pending = result.failed
             if result.attempted and not result.failed:
                 self.state.summary_consumed = True
-            self.notify_state_changed("delivery")
             if result.failed:
                 results_saved = bool(self.state.results)
                 schedule_notification_feedback(
@@ -276,9 +259,6 @@ class TaskReportCoordinator:
             if request.policy.community_enabled
             else TaskReportSummary()
         )
-        # 无任务上下文的旧报告显式提供摘要时，Markdown 沿用调用方的同一文本。
-        if request.embedded_markdown is not None:
-            summary = replace(summary, markdown=request.embedded_markdown)
         clean_payload, payload = self.dependencies.renderer.prepare_payloads(
             payload,
             summary=summary,
@@ -316,10 +296,8 @@ class TaskReportCoordinator:
                 else DispatchResult()
             )
             self.state.delivered.update(with_summary.succeeded_ids)
-            self.state.pending = with_summary.failed
             if self.state.delivered & channels and not with_summary.failed:
                 self.state.summary_consumed = True
-            self.notify_state_changed("delivery")
             unresolved = {
                 failure for target in request.targets for failure in target.unresolved
             }

@@ -9,7 +9,6 @@ from app.models.notification import DeferredContent, NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
 from app.models.notification_community import CommunityNotificationResult
 
-TaskNotificationChange = Literal["results", "delivery"]
 TaskNoticeMode = Literal["代理结果", "统计信息"]
 
 
@@ -32,13 +31,6 @@ class TaskResultData(TypedDict):
     game_sign_summary: NotRequired[str | bool]
     screenshots: NotRequired[list[ReportScreenshot]]
     push_log: NotRequired[str]
-
-
-class TaskResultHint(TypedDict, total=False):
-    """旧判断入口允许只提供判定所需字段。"""
-
-    uncompleted_count: int
-    game_sign_summary: str | bool
 
 
 @dataclass(frozen=True)
@@ -96,7 +88,6 @@ class TaskNotificationState:
     results: tuple[CommunityNotificationResult, ...] = field(default=(), repr=False)
     summary_consumed: bool = False
     delivered: set[str] = field(default_factory=set)
-    pending: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -142,7 +133,6 @@ class TaskReportRequest:
     targets: tuple[NotifyTarget, ...]
     policy: TaskReportPolicy
     embedded_summary: str = ""
-    embedded_markdown: str | None = None
     attempts: int = 1
     retry_delay: float = 0
 

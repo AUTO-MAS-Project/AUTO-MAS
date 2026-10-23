@@ -22,7 +22,7 @@
 """任务报告入口：装配策略、通知状态、投递器和任务页面反馈。"""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 
 from app.config import config_manager
@@ -51,12 +51,10 @@ from app.core.notify import (
 from app.models.notification import NotifyPayload
 from app.models.notification_community import community_notification_results
 from app.models.notification_report import (
-    TaskNotificationChange,
     TaskNotificationState,
     TaskReportPolicy,
     TaskReportRequest,
     TaskReportSummary,
-    TaskResultHint,
 )
 from app.models.task import TaskItem
 from app.services.notification_report import DefaultReportRenderer
@@ -142,67 +140,12 @@ def receive_task_community_results(
     )
 
 
-def _notification_state(task_info: object | None) -> TaskNotificationState:
-    if task_info is None:
-        return TaskNotificationState()
-    state = getattr(task_info, "notification_state", None)
-    if state is not None:
-        return state
-
-    # 旧对象只在边界投影历史字段，不强行添加属性，也不覆盖显式通知状态。
-    return TaskNotificationState(
-        results=community_notification_results(
-            getattr(
-                task_info,
-                "community_results",
-                getattr(task_info, "game_sign_results", ()),
-            )
-        ),
-        summary_consumed=getattr(
-            task_info,
-            "community_summary_consumed",
-            getattr(task_info, "game_sign_summary_consumed", False),
-        ),
-        delivered=set(getattr(task_info, "game_sign_summary_delivered", ())),
-        pending=tuple(getattr(task_info, "game_sign_summary_pending", ())),
-    )
-
-
-def _sync_legacy_state(
-    task_info: object, state: TaskNotificationState, change: TaskNotificationChange
-) -> None:
-    if change == "results":
-        setattr(
-            task_info,
-            "game_sign_results"
-            if (
-                hasattr(task_info, "game_sign_results")
-                and not hasattr(task_info, "community_results")
-            )
-            else "community_results",
-            [item.to_legacy() for item in state.results],
-        )
-        return
-    setattr(task_info, "game_sign_summary_delivered", set(state.delivered))
-    setattr(task_info, "game_sign_summary_pending", state.pending)
-    setattr(
-        task_info,
-        (
-            "community_summary_consumed"
-            if hasattr(task_info, "community_summary_consumed")
-            else "game_sign_summary_consumed"
-        ),
-        state.summary_consumed,
-    )
-
-
 @dataclass(frozen=True)
 class PreparedTaskReport:
     """装配边界返回的单次报告上下文，重用同一策略完成判断与发送。"""
 
     coordinator: TaskReportCoordinator
     policy: TaskReportPolicy
-    has_task: bool = False
 
     def should_send(
         self, *, uncompleted_count: int, embedded_summary: bool = False
@@ -231,7 +174,6 @@ class PreparedTaskReport:
             targets=tuple(targets),
             policy=self.policy,
             embedded_summary=summary_text,
-            embedded_markdown=(summary_text if not self.has_task else None),
             attempts=attempts,
             retry_delay=retry_delay,
         )
@@ -255,70 +197,33 @@ class PreparedTaskReport:
         return await self.coordinator.dispatch_report(request, dispatch=dispatcher)
 
 
-def prepare_task_report(task_info: object | None = None) -> PreparedTaskReport:
-    state = _notification_state(task_info)
+def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport:
     coordinator = getattr(task_info, "community_sign_notification", None)
     if coordinator is None:
+        batch_task_id = current_notification_task_id()
+        task_id = (
+            task_info.task_id if task_info is not None else None
+        ) or batch_task_id
         coordinator = _create_coordinator(
-            state=state,
-            task_id=getattr(task_info, "task_id", None)
-            or current_notification_task_id(),
+            state=(
+                task_info.notification_state
+                if task_info is not None
+                else TaskNotificationState()
+            ),
+            task_id=task_id,
             report_failure=(
                 partial(
                     publish_notification_failure,
-                    task_id=getattr(task_info, "task_id", None)
-                    or current_notification_task_id(),
+                    task_id=task_id,
                     system_notice=True,
                 )
-                if isinstance(task_info, TaskItem) or current_notification_task_id()
+                if task_info is not None or batch_task_id
                 else None
             ),
         )
-    if task_info is not None and not hasattr(task_info, "notification_state"):
-        # 旧对象通过显式观察端口接收结果与投递状态；后台补发沿用同一适配。
-        observer = partial(_sync_legacy_state, task_info)
-        coordinator.dependencies = replace(
-            coordinator.dependencies, state_changed=observer
-        )
-        if coordinator.completed.is_set():
-            coordinator.notify_state_changed("results")
     return PreparedTaskReport(
         coordinator=coordinator,
         policy=read_task_report_policy(),
-        has_task=task_info is not None,
-    )
-
-
-def should_send_result(
-    message: TaskResultHint, *, task_info: object | None = None
-) -> bool:
-    """兼容旧入口；新的报告入口重用 PreparedTaskReport 的策略快照。"""
-
-    return prepare_task_report(task_info).should_send(
-        uncompleted_count=message.get("uncompleted_count", 0),
-        embedded_summary=bool(message.get("game_sign_summary", False)),
-    )
-
-
-async def dispatch_task_report(
-    payload: NotifyPayload,
-    targets: list[NotifyTarget],
-    task_info: object | None,
-    *,
-    summary_text: str = "",
-    attempts: int = 1,
-    retry_delay: float = 0,
-    notifier: Notifier | None = None,
-) -> DispatchResult:
-    """兼容既有任务报告调用；将完整任务对象留在装配边界。"""
-
-    return await prepare_task_report(task_info).dispatch(
-        payload,
-        targets,
-        summary_text=summary_text,
-        attempts=attempts,
-        retry_delay=retry_delay,
-        notifier=notifier,
     )
 
 

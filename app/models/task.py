@@ -29,7 +29,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from app.models.notification_community import community_notification_results
 from app.models.notification_ports import LocalNotifier
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
@@ -186,60 +185,6 @@ class TaskItem(ABC):
         if self._local_notifier is None:
             raise RuntimeError("任务的本地通知依赖尚未装配")
         return self._local_notifier
-
-    @property
-    def game_sign_results(self) -> list[dict[str, object]]:
-        """历史字段继续映射到独立通知状态，不保留第二份结果。"""
-
-        return [item.to_legacy() for item in self.notification_state.results]
-
-    @game_sign_results.setter
-    def game_sign_results(self, value: list[dict[str, object]]) -> None:
-        self.notification_state.results = community_notification_results(value)
-
-    @property
-    def game_sign_summary_consumed(self) -> bool:
-        return self.notification_state.summary_consumed
-
-    @game_sign_summary_consumed.setter
-    def game_sign_summary_consumed(self, value: bool) -> None:
-        self.notification_state.summary_consumed = value
-
-    @property
-    def game_sign_summary_delivered(self) -> set[str]:
-        return self.notification_state.delivered
-
-    @game_sign_summary_delivered.setter
-    def game_sign_summary_delivered(self, value: set[str]) -> None:
-        self.notification_state.delivered = value
-
-    @property
-    def game_sign_summary_pending(self) -> tuple[str, ...]:
-        return self.notification_state.pending
-
-    @game_sign_summary_pending.setter
-    def game_sign_summary_pending(self, value: tuple[str, ...]) -> None:
-        self.notification_state.pending = value
-
-    @property
-    def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，与历史字段共享同一通知状态。"""
-
-        return self.game_sign_results
-
-    @community_results.setter
-    def community_results(self, value: list[dict[str, object]]) -> None:
-        self.game_sign_results = value
-
-    @property
-    def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，与历史字段共享同一通知状态。"""
-
-        return self.game_sign_summary_consumed
-
-    @community_summary_consumed.setter
-    def community_summary_consumed(self, value: bool) -> None:
-        self.game_sign_summary_consumed = value
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
