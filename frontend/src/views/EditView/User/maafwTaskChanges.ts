@@ -1,6 +1,6 @@
 // 项目更新后任务队列与 interface 对不上的两种情况：
 // - 队列里的任务 interface 已经没有了（多半是改了 name）：留成虚影，列出原来的设置，由用户自己删；
-// - interface 里多出了用户没见过的任务：在「添加任务」里标 NEW，加进队列后消掉。
+// - interface 里多出了用户没见过的任务：在「添加任务」里标 NEW，露过一次面就算见过，下次进来不再标。
 // 「见过哪些任务」只是提示用的本机状态，按脚本存在 localStorage，不进配置。
 
 import { translate as t } from '@/i18n'
@@ -108,9 +108,10 @@ export const resolveMaaFWNewTaskNames = (scriptId: string, taskNames: readonly s
   return new Set(taskNames.filter(name => !seen.has(name)))
 }
 
-/** 把任务记成见过（加进队列时调用） */
+/** 把任务记成见过（NEW 在「添加任务」里露了面时调用） */
 export const markMaaFWTasksSeen = (scriptId: string, taskNames: readonly string[]) => {
   if (!scriptId || taskNames.length === 0) return
   const seen = readSeen(scriptId) ?? new Set<string>()
-  writeSeen(scriptId, [...seen, ...taskNames])
+  const unseen = taskNames.filter(name => !seen.has(name))
+  if (unseen.length > 0) writeSeen(scriptId, [...seen, ...unseen])
 }
