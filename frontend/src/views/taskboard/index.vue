@@ -89,8 +89,7 @@ const nowText = () => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-const { enabledKeys, cachedEvents, doneAt, saveEnabledKeys, saveCache, saveDoneAt } =
-  useTaskboardStorage()
+const { enabledKeys, cachedEvents, saveEnabledKeys, saveCache } = useTaskboardStorage()
 
 /* 游戏清单：标题与封面都取首页模块的面板数据，碧蓝档案按日/国际/国三服各算一个 */
 const gameMetas = computed<TaskboardGameOption[]>(() => {
@@ -176,16 +175,6 @@ watch(
       return present.has(e.id) || !readyGames.has(e.gameKey)
     })
     saveCache()
-    // 活动被清掉后，它的完成日期也没有意义了
-    const alive = new Set(cachedEvents.value.map(e => e.id))
-    let doneChanged = false
-    for (const id of Object.keys(doneAt.value)) {
-      if (!alive.has(id)) {
-        delete doneAt.value[id]
-        doneChanged = true
-      }
-    }
-    if (doneChanged) saveDoneAt()
   },
   { immediate: true }
 )
@@ -257,6 +246,7 @@ const completionError = computed(() => {
 const isCompleted = (e: TaskboardActivity) => completionOf(e)?.isCompleted(activityOf(e)) ?? false
 const isSaving = (e: TaskboardActivity) => completionOf(e)?.isSaving(activityOf(e)) ?? false
 const isCompletionReady = (e: TaskboardActivity) => completionOf(e)?.ready.value ?? false
+const doneAtOf = (e: TaskboardActivity) => completionOf(e)?.doneAtOf(activityOf(e)) ?? ''
 
 type ActivityState = 'active' | 'done' | 'archived' | 'upcoming'
 
@@ -383,14 +373,8 @@ const setStatus = async (e: TaskboardActivity, s: 'active' | 'done') => {
   try {
     if (s === 'done') {
       if (!isCompleted(e)) await completion.toggle(activityOf(e))
-      doneAt.value[e.id] = nowText()
-      saveDoneAt()
-    } else {
-      if (isCompleted(e)) await completion.toggle(activityOf(e))
-      if (doneAt.value[e.id]) {
-        delete doneAt.value[e.id]
-        saveDoneAt()
-      }
+    } else if (isCompleted(e)) {
+      await completion.toggle(activityOf(e))
     }
   } catch {
     message.error(t('taskboard.saveFailed'))
@@ -416,21 +400,6 @@ const loading = computed(() => {
 
 const reloadCompletions = async () => {
   await Promise.all([...completions.values()].map(completion => completion.load(true)))
-  reconcileDoneAt()
-}
-
-/* 首页撤销后本地可能还留着旧的完成日期：加载完按后端记录对一次账。 */
-const reconcileDoneAt = () => {
-  let changed = false
-  for (const [id, date] of Object.entries(doneAt.value)) {
-    const event = allEvents.value.find(item => item.id === id)
-    if (!event) continue
-    if (!isCompleted(event)) {
-      delete doneAt.value[id]
-      changed = true
-    }
-  }
-  if (changed) saveDoneAt()
 }
 
 const load = async () => {
@@ -441,8 +410,7 @@ const load = async () => {
       baSource.refresh(),
       ...[...completions.values()].map(completion => completion.load(true)),
     ])
-    reconcileDoneAt()
-    updatedAt.value = nowText()
+    if (!completionError.value) updatedAt.value = nowText()
   } finally {
     refreshing.value = false
   }
@@ -452,11 +420,10 @@ const sources = computed(() => [...gameModules.map(([, module]) => module.source
 
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  updatedAt.value = nowText()
   sources.value.forEach(source => source.start())
-  void Promise.all([...completions.values()].map(completion => completion.load())).then(
-    reconcileDoneAt
-  )
+  void Promise.all([...completions.values()].map(completion => completion.load())).then(() => {
+    if (!completionError.value) updatedAt.value = nowText()
+  })
   timer = setInterval(() => {
     nowTs.value = Date.now()
   }, 300000)
@@ -598,8 +565,8 @@ onUnmounted(() => {
                 <div class="tb-card-time">
                   <span>{{ t('taskboard.startsAt') }} {{ fmtDate(e.start_time) }}</span>
                   <span>{{ t('taskboard.endsAt') }} {{ fmtDate(e.end_time) }}</span>
-                  <span v-if="stateOf(e) === 'done' && doneAt[e.id]" class="tb-card-done">
-                    {{ t('taskboard.doneAt', { p0: doneAt[e.id] }) }}
+                  <span v-if="stateOf(e) === 'done' && doneAtOf(e)" class="tb-card-done">
+                    {{ t('taskboard.doneAt', { p0: doneAtOf(e) }) }}
                   </span>
                 </div>
                 <a-progress

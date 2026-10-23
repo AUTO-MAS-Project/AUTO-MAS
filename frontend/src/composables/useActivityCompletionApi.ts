@@ -26,6 +26,7 @@ export const useActivityCompletionApi = (scope: ActivityCompletionScope) => {
     errorMessage: computed(() => state.value.errorMessage),
     isCompleted,
     isSaving,
+    doneAtOf: (item: GameCalendarActivityInfo) => store.doneAtOf(scope, item),
     load: (force = false) => store.load(scope, force),
     toggle: (item: GameCalendarActivityInfo) => store.toggle(scope, item),
   }

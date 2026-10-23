@@ -13,6 +13,8 @@ export type ActivityCompletionScope = Pick<GameCalendarActivityCompletionIn, 'ga
 const activityKey = (item: GameCalendarActivityInfo) =>
   JSON.stringify([item.name.trim(), new Date(item.startTime).getTime()])
 
+const scopeKey = (scope: ActivityCompletionScope) => `${scope.game}:${scope.server ?? 'cn'}`
+
 const completionError = (error: unknown): Error => {
   if (error instanceof ApiError) {
     const body: unknown = error.body
@@ -32,7 +34,37 @@ interface ScopeState {
   pending: string[]
 }
 
-const scopeKey = (scope: ActivityCompletionScope) => `${scope.game}:${scope.server ?? 'cn'}`
+const DONE_AT_KEY = 'auto-mas.activity-completion.done-at'
+
+const readDoneAt = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(DONE_AT_KEY)
+    if (!raw) return {}
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter(
+        ([, value]) => typeof value === 'string'
+      )
+    ) as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+const saveDoneAt = (value: Record<string, string>) => {
+  try {
+    localStorage.setItem(DONE_AT_KEY, JSON.stringify(value))
+  } catch {
+    // 本地存储不可用时仅本次会话生效
+  }
+}
+
+const nowText = () => {
+  const date = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 /**
  * 活动完成状态的唯一归属：首页活动卡与任务台共用这一份。
@@ -42,6 +74,12 @@ const scopeKey = (scope: ActivityCompletionScope) => `${scope.game}:${scope.serv
  */
 export const useActivityCompletionStore = defineStore('activityCompletion', () => {
   const states = reactive<Record<string, ScopeState>>({})
+  /** 完成日期：只用于展示，跟着完成状态一起由两个入口维护 */
+  const doneAt = reactive<Record<string, string>>(readDoneAt())
+  const doneKey = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
+    `${scopeKey(scope)}|${activityKey(item)}`
+  const doneAtOf = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
+    doneAt[doneKey(scope, item)] ?? ''
 
   const stateOf = (scope: ActivityCompletionScope): ScopeState => {
     const key = scopeKey(scope)
@@ -66,7 +104,7 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
   const isSaving = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
     stateOf(scope).pending.includes(activityKey(item))
 
-  const inFlight = new Map<string, Promise<void>>()
+  const queues = new Map<string, Promise<void>>()
 
   const runLoad = async (scope: ActivityCompletionScope) => {
     const state = stateOf(scope)
@@ -80,7 +118,8 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
         scope.server
       )
       if (response.code !== 200) throw new Error(response.message)
-      state.items = response.data ?? []
+      // 响应回来时如果正在保存，保留本地最新的完成状态，别被这次读覆盖。
+      if (!state.pending.length) state.items = response.data ?? []
       state.ready = true
     } catch (error) {
       state.ready = false
@@ -94,22 +133,26 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
     const key = scopeKey(scope)
     const state = stateOf(scope)
     if (state.pending.length) return
-    // 同一进程内复用已经取到的结果；手动刷新时传 force 重新拉。
-    if (!force && state.ready) return
 
-    const current = inFlight.get(key)
-    if (current) {
-      // 刷新撞上正在进行的请求时要等它结束，否则会带着旧数据收尾。
-      await current
-      if (!force) return
+    // 同一作用域的读取串行排队：并发刷新不会同时发出多个 GET，
+    // 旧响应也不会晚于新响应写回。非强制调用直接复用队列里的那一次。
+    const queued = queues.get(key)
+    if (queued) {
+      if (!force) {
+        await queued
+        return
+      }
+    } else if (!force && state.ready) {
+      return
     }
 
-    const task = runLoad(scope)
-    inFlight.set(key, task)
+    const previous = queues.get(key) ?? Promise.resolve()
+    const run = previous.catch(() => undefined).then(() => runLoad(scope))
+    queues.set(key, run)
     try {
-      await task
+      await run
     } finally {
-      inFlight.delete(key)
+      if (queues.get(key) === run) queues.delete(key)
     }
   }
 
@@ -130,6 +173,10 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
       if (response.code !== 200) throw new Error(response.message)
       state.items = state.items.filter(activity => activityKey(activity) !== key)
       if (completed) state.items.push(item)
+      const dateKey = doneKey(scope, item)
+      if (completed) doneAt[dateKey] = nowText()
+      else delete doneAt[dateKey]
+      saveDoneAt({ ...doneAt })
     } catch (error) {
       throw completionError(error)
     } finally {
@@ -137,5 +184,5 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
     }
   }
 
-  return { stateOf, isCompleted, isSaving, load, toggle }
+  return { stateOf, isCompleted, isSaving, doneAtOf, load, toggle }
 })
