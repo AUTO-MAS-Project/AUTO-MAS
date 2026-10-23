@@ -46,6 +46,7 @@ export class AnalyticsService {
   private readonly eventCounts = new Map<AnalyticsEventName, number>()
   private lastScreen = ''
   private successfulWrites = 0
+  private automaticUpdateCheckEmitted = false
 
   constructor(private readonly options: AnalyticsOptions) {}
 
@@ -108,6 +109,8 @@ export class AnalyticsService {
     const once =
       name === 'app_started' || name === 'renderer_ready' || name === 'initialization_decided'
     if (once && this.emitted.has(name)) return
+    const automaticCheck = name === 'update_check_finished' && props.trigger_kind === 'automatic'
+    if (automaticCheck && this.automaticUpdateCheckEmitted) return
     const now = Date.now()
     const minute = Math.floor(now / 60_000)
     if (minute !== this.minute) {
@@ -127,6 +130,7 @@ export class AnalyticsService {
       this.lastScreen = key
     }
     if (once) this.emitted.add(name)
+    if (automaticCheck) this.automaticUpdateCheckEmitted = true
     this.minuteCount++
     if (
       !this.session ||

@@ -29,6 +29,7 @@ export type AnalyticsScriptType =
   | 'multi'
   | 'none'
 export type AnalyticsRuntimeMode = 'off' | 'managed' | 'development' | 'unknown'
+export type AnalyticsUpdateSource = 'cnb' | 'github' | 'mirrorchyan' | 'autosite' | 'unknown'
 export type AnalyticsInitializationStage =
   | 'runtime_binary'
   | 'bootstrap'
@@ -275,8 +276,31 @@ export interface AnalyticsEventProps {
     duration_bucket: AnalyticsDurationBucket
   }
   update_download_finished: {
-    source: 'cnb' | 'github' | 'mirrorchyan' | 'autosite' | 'unknown'
+    source: AnalyticsUpdateSource
     outcome: 'completed' | 'failed' | 'cancelled' | 'observation_unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  update_check_finished: {
+    trigger_kind: 'manual' | 'automatic'
+    outcome: 'success' | 'failure'
+    update_available: 'yes' | 'no' | 'unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  update_download_started: {
+    source_kind: AnalyticsUpdateSource
+    release_channel: 'stable' | 'beta' | 'unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  update_source_changed: {
+    from_kind: AnalyticsUpdateSource
+    to_kind: 'cnb'
+    trigger_kind: 'manual' | 'low_speed'
+    outcome: 'success' | 'failure' | 'unknown'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  update_install_requested: {
+    choice: 'install_now' | 'later'
+    request_outcome: 'accepted' | 'rejected' | 'unknown' | 'not_requested'
     duration_bucket: AnalyticsDurationBucket
   }
   connection_incident_finished: {

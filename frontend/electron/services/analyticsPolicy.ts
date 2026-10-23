@@ -21,6 +21,7 @@ const script = [
   'none',
 ]
 const runtime = ['off', 'managed', 'development', 'unknown']
+const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
 const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   app_started: {},
@@ -269,8 +270,31 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     duration_bucket: duration,
   },
   update_download_finished: {
-    source: ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown'],
+    source: updateSource,
     outcome: ['completed', 'failed', 'cancelled', 'observation_unknown'],
+    duration_bucket: duration,
+  },
+  update_check_finished: {
+    trigger_kind: ['manual', 'automatic'],
+    outcome: ['success', 'failure'],
+    update_available: ['yes', 'no', 'unknown'],
+    duration_bucket: duration,
+  },
+  update_download_started: {
+    source_kind: updateSource,
+    release_channel: ['stable', 'beta', 'unknown'],
+    duration_bucket: duration,
+  },
+  update_source_changed: {
+    from_kind: updateSource,
+    to_kind: ['cnb'],
+    trigger_kind: ['manual', 'low_speed'],
+    outcome: ['success', 'failure', 'unknown'],
+    duration_bucket: duration,
+  },
+  update_install_requested: {
+    choice: ['install_now', 'later'],
+    request_outcome: ['accepted', 'rejected', 'unknown', 'not_requested'],
     duration_bucket: duration,
   },
   connection_incident_finished: {

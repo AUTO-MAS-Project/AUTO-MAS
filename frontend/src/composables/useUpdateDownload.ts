@@ -17,6 +17,7 @@ import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 import type { ChangelogData } from '@/utils/changelog'
 import { beginAnalyticsOperation } from '@/utils/analytics'
+import { analyticsUpdateSource, beginDownloadAnalytics } from '@/utils/updateAnalytics'
 import type { AnalyticsEventProps } from '@/types/analytics'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
@@ -49,23 +50,14 @@ let snapshotGeneration = 0
 let mutationGeneration = 0
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
-let downloadAnalytics: ReturnType<
-  typeof beginAnalyticsOperation<'update_download_finished'>
-> | null = null
+let downloadAnalytics: ReturnType<typeof beginDownloadAnalytics> | null = null
 
 const finishDownloadAnalytics = (
   outcome: AnalyticsEventProps['update_download_finished']['outcome']
 ) => {
   const operation = downloadAnalytics
   downloadAnalytics = null
-  const sources: Record<string, AnalyticsEventProps['update_download_finished']['source']> = {
-    CNB: 'cnb',
-    GitHub: 'github',
-    MirrorChyan: 'mirrorchyan',
-    AutoSite: 'autosite',
-  }
-  const sourceKind = sources[source.value] ?? 'unknown'
-  operation?.finish({ source: sourceKind, outcome })
+  operation?.finish(source.value, outcome)
 }
 
 const progressPercent = computed(() => {
@@ -193,6 +185,7 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   fileSize.value = data.file_size || 0
   speed.value = data.speed || 0
   source.value = data.source || ''
+  downloadAnalytics?.started(source.value)
 
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
@@ -202,7 +195,7 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
       cancelText: t('misc.continueDownload'),
       zIndex: 10001,
       centered: true,
-      onOk: switchToCnb,
+      onOk: () => switchDownloadSource('low_speed'),
       onCancel: () => lowSpeedDetector.suppress(),
     })
   }
@@ -313,7 +306,8 @@ const start = async (version: string, data: ChangelogData) => {
   logger.info(`开始下载: ${version}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
-  downloadAnalytics = beginAnalyticsOperation('update_download_finished')
+  const attempt = beginDownloadAnalytics(version)
+  downloadAnalytics = attempt
   latestVersion.value = version
   updateData.value = data
 
@@ -324,6 +318,7 @@ const start = async (version: string, data: ChangelogData) => {
 
   try {
     const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
       receiveFailed(response.message || '下载请求失败')
@@ -331,6 +326,7 @@ const start = async (version: string, data: ChangelogData) => {
     }
     invalidateSnapshot()
   } catch (error) {
+    if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '网络请求失败，请检查网络连接')
     logger.error(`启动下载失败: ${errorMessage}`)
@@ -373,13 +369,22 @@ const open = () => {
   }
 }
 
-const switchToCnb = async () => {
+const switchToCnb = () => switchDownloadSource('manual')
+
+const switchDownloadSource = async (trigger_kind: 'manual' | 'low_speed') => {
   if (status.value !== 'downloading') return
+  const operation = beginAnalyticsOperation('update_source_changed')
+  const dimensions = {
+    from_kind: analyticsUpdateSource(source.value),
+    to_kind: 'cnb' as const,
+    trigger_kind,
+  }
 
   const operationGeneration = invalidateSnapshot()
   status.value = 'switchingSource'
   try {
     const response = await updateDownloadApi.switchToCnb()
+    operation.finish({ ...dimensions, outcome: response.code === 200 ? 'success' : 'failure' })
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
       invalidateSnapshot()
@@ -393,6 +398,7 @@ const switchToCnb = async () => {
       receiveFailed(failureMessage, 'observation_unknown')
     }
   } catch (error) {
+    operation.finish({ ...dimensions, outcome: 'unknown' })
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '切换下载源失败')
     logger.error(`切换下载源失败: ${errorMessage}`)
@@ -406,8 +412,13 @@ const retry = async () => {
 }
 
 const install = async () => {
+  const operation = beginAnalyticsOperation('update_install_requested')
   try {
     const response = await Service.installUpdateApiUpdateInstallPost()
+    operation.finish({
+      choice: 'install_now',
+      request_outcome: response.code === 200 ? 'accepted' : 'rejected',
+    })
     if (response.code === 200) {
       message.success(t('misc.installerStarted'))
       resetState()
@@ -416,6 +427,7 @@ const install = async () => {
       message.error(response.message || '启动安装失败')
     }
   } catch (error) {
+    operation.finish({ choice: 'install_now', request_outcome: 'unknown' })
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
     message.error(t('misc.couldNotStartInstaller'))
@@ -423,6 +435,10 @@ const install = async () => {
 }
 
 const installLater = () => {
+  beginAnalyticsOperation('update_install_requested').finish({
+    choice: 'later',
+    request_outcome: 'not_requested',
+  })
   modalVisible.value = false
 }
 
