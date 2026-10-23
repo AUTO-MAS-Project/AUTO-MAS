@@ -174,7 +174,7 @@ def _get_registry() -> ChannelRegistry:
 
 
 def get_notify_channels() -> tuple[NotifyChannel, ...]:
-    """目录读取不依赖传输装配；未装配时仍禁止发送。"""
+    """供设置页展示渠道及通知策略，不依赖传输装配。"""
     registry = _get_registry()
     return tuple(sorted((*registry.channels, _POLICY), key=lambda c: (c.order, c.key)))
 
@@ -268,7 +268,7 @@ def create_notification_service(
         config=config,
         transactions=transactions,
         runtime=runtime,
-        channels=get_notify_channels(),
+        channels=registry.channels,
         catalog_failures=get_notify_channel_failures(),
         transport=transport,
         renderer=AsyncNotificationRenderer(),
