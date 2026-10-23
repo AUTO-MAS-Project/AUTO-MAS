@@ -48,6 +48,7 @@ from app.models.notification import (
 )
 from app.models.notification_channel import UserNotificationConfig
 from app.models.notification_report import ReportScreenshot, TaskResultReport
+from app.models.task import TaskItem
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -58,7 +59,7 @@ async def push_statistics_report(
     *,
     payload: NotifyPayload,
     user_config: UserNotificationConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """投递专项已生成的统计内容，不接收模式或专项字典。"""
 
@@ -71,7 +72,7 @@ async def push_proxy_result(
     *,
     title: str,
     report: TaskResultReport,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     result_template: str = "general_result.html",
     signature_sep: str = "\n\n",
     logger: Any | None = None,
@@ -141,7 +142,9 @@ async def push_proxy_result(
     )
 
 
-async def push_maintenance_notice(*, message: str, task_info: object) -> DispatchResult:
+async def push_maintenance_notice(
+    *, message: str, task_info: TaskItem
+) -> DispatchResult:
     """维护跳过只推送游戏状态，沿用原有通知时机与渠道。"""
     report = prepare_task_report(task_info)
     if not report.should_send(uncompleted_count=0):

@@ -13,6 +13,7 @@ from app.models.notification import (
 )
 from app.models.notification_channel import UserNotificationConfig
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
@@ -24,7 +25,7 @@ async def push_notification(
     mode: TaskNoticeMode,
     title: str,
     message: dict,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     user_config: UserNotificationConfig | None = None,
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
@@ -72,7 +73,7 @@ async def _push_statistics(
     user_config: UserNotificationConfig | None,
     images: Sequence[NotificationImage] = (),
     *,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 

@@ -20,6 +20,7 @@ from app.core.notify import DispatchResult
 from app.models.config import ZzzOdUserConfig
 from app.models.notification import NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result, push_statistics_report
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
@@ -32,7 +33,7 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: ZzzOdUserConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """通过全局或用户配置的渠道推送 ZZZ-OD 任务报告; 返回分发结果。"""
 

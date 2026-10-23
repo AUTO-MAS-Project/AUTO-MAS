@@ -32,6 +32,7 @@ from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
@@ -138,7 +139,7 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: MaaEndUserConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
     """通过所有渠道推送通知；结果报告可附带图片。"""
