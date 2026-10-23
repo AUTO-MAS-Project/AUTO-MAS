@@ -111,6 +111,8 @@ class MaaFWDeviceConfig(BaseModel):
     # 模拟器进程号（宿主从模拟器管理器的 open 结果里取，目前只有魔改 AVD 给）。等 adb 期间
     # 进程没了就立即判失败，交给外层重试重开模拟器，而不是把整段等待预算耗完。
     emulatorPid: int | None = None
+    # 该进程的启动时刻（Unix 秒）。和进程号一起比对：进程号被复用给别的进程时也算已退出。
+    emulatorStartedAt: float | None = None
 
 
 class MaaFWFailureScreenshot(BaseModel):

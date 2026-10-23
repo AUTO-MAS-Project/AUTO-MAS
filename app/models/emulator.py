@@ -54,6 +54,9 @@ class DeviceInfo:
     process_id: int | None = None
     """模拟器进程号；脚本等 adb 时据此判断模拟器是不是已经退出，退出了就不再空等。目前只有魔改 AVD
     的 ``open`` 给（qemu 进程），其它后端为 ``None``。"""
+    process_started_at: float | None = None
+    """该进程的启动时刻（Unix 秒，``psutil.Process.create_time()``）。和进程号一起比对，进程号被
+    系统复用给别的进程时也能认出原来的模拟器已经没了。"""
 
 
 @dataclass(frozen=True)
