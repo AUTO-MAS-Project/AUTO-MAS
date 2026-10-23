@@ -3268,6 +3268,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 message=statistics,
                 user_config=self.cur_user_config,
                 images=[image for _, image in images],
+                task_info=self.task_info,
             )
         except Exception as exc:
             logger.opt(exception=True).warning(f"推送 MaaFW 统计信息时出现异常: {exc}")

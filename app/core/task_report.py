@@ -21,31 +21,18 @@
 
 """任务报告入口：装配策略、通知状态、投递器和任务页面反馈。"""
 
+from __future__ import annotations
+
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import partial
+from typing import TYPE_CHECKING
 
-from app.config import config_manager
-from app.core.config import Config
-from app.core.notification_report import (
-    NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-    TaskReportCoordinator,
-    TaskReportDependencies,
-)
-from app.core.notification_tasks import (
-    consume_notification_result,
-    current_notification_task_id,
-    publish_notification_failure,
-    spawn_notification,
-    submit_task_notification,
-)
-from app.core.notify import (
-    DispatchResult,
-    Notifier,
-    NotifyTarget,
-    dispatch,
-    global_target,
-)
+from app.core.notification_report import TaskReportCoordinator, TaskReportDependencies
+from app.models.notification_channel import DispatchResult, Notifier, NotifyTarget
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 from app.models.notification import NotifyPayload
 from app.models.notification_community import community_notification_results
 from app.models.notification_report import (
@@ -61,32 +48,9 @@ from app.utils import get_logger
 logger = get_logger("任务报告")
 
 
-def read_task_report_policy() -> TaskReportPolicy:
-    """每次报告入口读取一次策略；后台补发作为下一次通知重新读取。"""
-
-    return TaskReportPolicy(
-        result_time=Config.setting.Notify.SendTaskResultTime,
-        community_enabled=Config.ToolsConfig.GameSign.NotifyEnabled,
-        wait_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-    )
-
-
-async def _report_supplement_failure(
-    result: DispatchResult, *, results_saved: bool
-) -> None:
-    from app.core.community_notify import report_community_notification_failure
-
-    await report_community_notification_failure(
-        list(result.failed), results_saved=results_saved
-    )
-
-
-def _prepare_community_targets() -> tuple[NotifyTarget, ...]:
-    return (global_target(include_system=True),)
-
-
 def _create_coordinator(
     *,
+    notifications: HostNotificationService,
     state: TaskNotificationState,
     task_id: str | None,
     community_pending: bool = False,
@@ -96,16 +60,16 @@ def _create_coordinator(
         state=state,
         community_pending=community_pending,
         dependencies=TaskReportDependencies(
-            dispatch=dispatch,
+            dispatch=notifications.dispatch,
             renderer=DefaultReportRenderer(),
-            read_policy=read_task_report_policy,
-            prepare_targets=_prepare_community_targets,
+            read_policy=notifications.read_task_report_policy,
+            prepare_targets=lambda: (notifications.global_target(include_system=True),),
             report_failure=report_failure
             if report_failure is not None
-            else publish_notification_failure,
-            report_supplement_failure=_report_supplement_failure,
+            else notifications.tasks.publish_notification_failure,
+            report_supplement_failure=notifications.report_community_failure,
             spawn=partial(
-                spawn_notification,
+                notifications.tasks.spawn_notification,
                 task_id=task_id,
                 name="task-community-notification",
             ),
@@ -113,15 +77,18 @@ def _create_coordinator(
     )
 
 
-def create_task_report_coordinator(task_info: TaskItem) -> TaskReportCoordinator:
+def create_task_report_coordinator(
+    task_info: TaskItem, *, notifications: HostNotificationService
+) -> TaskReportCoordinator:
     """任务启动时绑定独立通知状态，协调器不持有任务执行对象。"""
 
     return _create_coordinator(
+        notifications=notifications,
         state=task_info.notification_state,
         task_id=task_info.task_id,
         community_pending=True,
         report_failure=partial(
-            publish_notification_failure,
+            notifications.tasks.publish_notification_failure,
             system_notice=True,
         ),
     )
@@ -143,6 +110,7 @@ class PreparedTaskReport:
 
     coordinator: TaskReportCoordinator
     policy: TaskReportPolicy
+    notifications: HostNotificationService
 
     def should_send(
         self, *, uncompleted_count: int, embedded_summary: bool = False
@@ -175,7 +143,9 @@ class PreparedTaskReport:
             retry_delay=retry_delay,
         )
         dispatcher = (
-            partial(dispatch, notifier=notifier) if notifier is not None else None
+            partial(self.notifications.dispatch, notifier=notifier)
+            if notifier is not None
+            else None
         )
 
         async def deliver() -> DispatchResult:
@@ -188,20 +158,26 @@ class PreparedTaskReport:
                 self.coordinator.schedule_supplement()
 
         # 显式配置事务保持同 Task 执行；常规脚本批次在完整收尾后交给宿主。
-        if not config_manager.in_transaction and submit_task_notification(deliver):
+        if (
+            not self.notifications.transactions.in_transaction
+            and self.notifications.tasks.submit_task_notification(deliver)
+        ):
             self.coordinator.reports_pending += 1
             return DispatchResult(queued=True)
         return await self.coordinator.dispatch_report(request, dispatch=dispatcher)
 
 
-def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport:
+def prepare_task_report(
+    task_info: TaskItem | None = None, *, notifications: HostNotificationService
+) -> PreparedTaskReport:
     coordinator = getattr(task_info, "community_sign_notification", None)
     if coordinator is None:
-        batch_task_id = current_notification_task_id()
+        batch_task_id = notifications.tasks.current_notification_task_id()
         task_id = (
             task_info.task_id if task_info is not None else None
         ) or batch_task_id
         coordinator = _create_coordinator(
+            notifications=notifications,
             state=(
                 task_info.notification_state
                 if task_info is not None
@@ -210,7 +186,7 @@ def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport
             task_id=task_id,
             report_failure=(
                 partial(
-                    publish_notification_failure,
+                    notifications.tasks.publish_notification_failure,
                     system_notice=True,
                 )
                 if task_info is not None or batch_task_id
@@ -219,7 +195,8 @@ def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport
         )
     return PreparedTaskReport(
         coordinator=coordinator,
-        policy=read_task_report_policy(),
+        policy=notifications.read_task_report_policy(),
+        notifications=notifications,
     )
 
 
@@ -227,6 +204,7 @@ async def dispatch_task_notification(
     payload: NotifyPayload,
     targets: list[NotifyTarget],
     *,
+    notifications: HostNotificationService,
     task_info: TaskItem | None = None,
     immediate: bool = True,
 ) -> DispatchResult:
@@ -235,15 +213,16 @@ async def dispatch_task_notification(
     prepared_targets = tuple(targets)
     task_id = (
         task_info.task_id if task_info is not None else None
-    ) or current_notification_task_id()
+    ) or notifications.tasks.current_notification_task_id()
 
     async def deliver() -> DispatchResult:
-        result = await dispatch(payload, prepared_targets)
-        consume_notification_result(result, task_id=task_id)
+        result = await notifications.dispatch(payload, prepared_targets)
+        notifications.tasks.consume_notification_result(result, task_id=task_id)
         return result
 
-    if not config_manager.in_transaction and submit_task_notification(
-        deliver, immediate=immediate
+    if (
+        not notifications.transactions.in_transaction
+        and notifications.tasks.submit_task_notification(deliver, immediate=immediate)
     ):
         return DispatchResult(queued=True)
     return await deliver()

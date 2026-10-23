@@ -2042,6 +2042,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                     f"{self.cur_user_item.name} 的 BetterGI 自动代理统计报告",
                     statistics,
                     self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志，让用户能看到推送为何失败

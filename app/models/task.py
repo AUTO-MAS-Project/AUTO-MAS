@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
-from app.models.notification_ports import LocalNotifier
+from app.models.notification_ports import LocalNotifier, TaskNotifications
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils.logger import get_logger
@@ -166,7 +166,7 @@ class TaskItem(ABC):
     notification_state: TaskNotificationState = field(
         default_factory=TaskNotificationState, init=False, repr=False
     )
-    _local_notifier: LocalNotifier | None = field(
+    _notifications: TaskNotifications | None = field(
         default=None, init=False, repr=False, compare=False
     )
     _change_task: asyncio.Task[None] | None = field(
@@ -180,11 +180,19 @@ class TaskItem(ABC):
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
+    def bind_notifications(self, notifications: TaskNotifications) -> None:
+        """由任务创建者绑定能力，不读取全局通知实例。"""
+        self._notifications = notifications
+
+    @property
+    def notifications(self) -> TaskNotifications:
+        if self._notifications is None:
+            raise RuntimeError("任务的通知依赖尚未装配")
+        return self._notifications
+
     @property
     def local_notifier(self) -> LocalNotifier:
-        if self._local_notifier is None:
-            raise RuntimeError("任务的本地通知依赖尚未装配")
-        return self._local_notifier
+        return self.notifications
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)

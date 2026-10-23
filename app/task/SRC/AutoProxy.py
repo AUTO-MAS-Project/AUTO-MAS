@@ -758,6 +758,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                     statistics,
                     self.cur_user_config,
+                    task_info=self.task_info,
                 ),
                 timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
             )

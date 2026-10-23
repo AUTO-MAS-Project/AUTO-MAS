@@ -86,13 +86,8 @@ def _timed_slots_in_window(
 
 class _MainTimer:
     def __init__(self, *, community_notifier: CommunityNotifier | None = None):
-        from app.core.community_notify import get_community_notifier
-
-        self._community_notifier = (
-            get_community_notifier()
-            if community_notifier is None
-            else community_notifier
-        )
+        self._community_notifier = community_notifier
+        self._drain_notifications: Callable[[float], Awaitable[bool]] | None = None
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
@@ -107,6 +102,16 @@ class _MainTimer:
         self._timed_fired: set[tuple[str, str, datetime]] = set()
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
+
+    def bind_notifications(self, notifications) -> None:
+        self._community_notifier = notifications.community
+        self._drain_notifications = notifications.tasks.drain_notifications
+
+    @property
+    def community_notifier(self) -> CommunityNotifier:
+        if self._community_notifier is None:
+            raise RuntimeError("定时器的通知依赖尚未装配")
+        return self._community_notifier
 
     async def start(self):
         """启动定时器"""
@@ -449,8 +454,6 @@ class _MainTimer:
     ) -> bool:
         """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
 
-        from app.core.notification_tasks import drain_notifications
-
         deadline = asyncio.get_running_loop().time() + timeout
         while True:
             signing = self.community_sign_task
@@ -462,11 +465,13 @@ class _MainTimer:
                 )
                 if pending:
                     return False
-            if not await drain_notifications(
+            if self._drain_notifications is None:
+                raise RuntimeError("定时器的通知等待能力尚未装配")
+            if not await self._drain_notifications(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
-            if not await self._community_notifier.drain(
+            if not await self.community_notifier.drain(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
@@ -527,7 +532,7 @@ class _MainTimer:
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
             if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await self._community_notifier.send(
+                    failed_channels = await self.community_notifier.send(
                         community_notification_results(results)
                     )
                 except Exception as exc:

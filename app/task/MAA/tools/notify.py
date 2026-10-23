@@ -23,12 +23,6 @@ from collections.abc import Sequence
 from functools import cache
 from typing import Literal
 
-from app.core.notify import (
-    DispatchResult,
-    recruitment_targets,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaUserConfig
 from app.models.notification import (
     DeferredContent,
@@ -36,9 +30,9 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 from app.utils.paths import resource_path
@@ -109,7 +103,7 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: MaaUserConfig | None,
-    task_info: TaskItem | None = None,
+    task_info: TaskItem,
     *,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
@@ -122,7 +116,7 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        return await push_proxy_result(
+        return await task_info.notifications.push_proxy_result(
             title=title,
             report=TaskResultReport.from_message(message),
             task_info=task_info,
@@ -132,7 +126,7 @@ async def push_notification(
         )
 
     if mode == "统计信息":
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(
                 title=title,
                 text=_statistic_text(message),
@@ -140,14 +134,14 @@ async def push_notification(
                 signature_sep=SIGNATURE_SEP,
                 images=images,
             ),
-            statistic_targets(user_config),
+            task_info.notifications.statistic_targets(user_config),
             task_info=task_info,
         )
 
     if mode == "公招六星":
         # 喜报正文是固定文案, message 只用于渲染 HTML
 
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(
                 title=title,
                 text="好羡慕~",
@@ -166,7 +160,7 @@ async def push_notification(
                 ),
                 presentation="announcement",
             ),
-            recruitment_targets(user_config),
+            task_info.notifications.recruitment_targets(user_config),
             task_info=task_info,
             immediate=True,
         )

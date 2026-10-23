@@ -1,20 +1,18 @@
 import asyncio
 import inspect
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from app.core import notify as notify_module
-from app.core.notify import (
-    Notifier,
-    NotifyPayload,
-    dispatch,
-    global_target,
-    user_target,
-)
-from app.core.notify_channels import get_notify_channels
-from app.core.task_report import prepare_task_report
-from app.models.notification import NotificationSummary
+from app.config import config_manager
+from app.core.config import Config
+from app.core.notify import HostNotificationService
+from app.core.notify_channels import get_notify_channel_failures, get_notify_channels
+from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_channel import Notifier
 from app.models.task import TaskItem
+from app.runtime_tasks import OwnedTaskRegistry
+from app.services.notification_rendering import AsyncNotificationRenderer
 
 _UNSET = object()
 
@@ -207,19 +205,46 @@ def _run(awaitable):
     return asyncio.run(awaitable)
 
 
-def _global_target(
-    config: _Config,
-    *,
-    include_system: bool = False,
-    empty_policy="send",
-    system_timeout_seconds=None,
-):
-    with patch.object(notify_module, "Config", config):
-        return global_target(
-            include_system=include_system,
-            empty_policy=empty_policy,
-            system_timeout_seconds=system_timeout_seconds,
-        )
+@contextmanager
+def _service(config=None, *, notifier=None):
+    async def push_notice(**kwargs):
+        await Config.push_system_notice(**kwargs)
+
+    environment = SimpleNamespace(
+        setting=config if config is not None else Config.setting,
+        ToolsConfig=Config.ToolsConfig,
+        push_system_notice=push_notice,
+    )
+    renderer = AsyncNotificationRenderer()
+    service = HostNotificationService(
+        config=environment,
+        transactions=config_manager,
+        channels=get_notify_channels(),
+        catalog_failures=get_notify_channel_failures(),
+        transport=notifier if notifier is not None else _Notify(),
+        renderer=renderer,
+        runtime=OwnedTaskRegistry(),
+        runtime_config=SimpleNamespace(read_proxy=lambda: None),
+    )
+    try:
+        yield service
+    finally:
+        renderer.close()
+
+
+def _global_target(config, **kwargs):
+    with _service(config) as notifications:
+        return notifications.global_target(**kwargs)
+
+
+def user_target(config):
+    with _service() as notifications:
+        return notifications.user_target(config)
+
+
+async def dispatch(payload, targets, *, notifier, **kwargs):
+    with _service(notifier=notifier) as notifications:
+        return await notifications.dispatch(payload, targets, **kwargs)
 
 
 def _protocol_members():
@@ -547,9 +572,9 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
     payload = NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None)
 
     notify = _Notify({"send_mail": ["false"]})
-    with patch.object(notify_module, "Notify", notify):
+    with _service(notifier=notify) as notifications:
         result = _run(
-            prepare_task_report(task).dispatch(
+            notifications.prepare_task_report(task).dispatch(
                 payload, [_global_target(config)], summary_text=summary
             )
         )
@@ -561,9 +586,9 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
 
     # 第二次: 只向失败渠道重发含汇总的载荷; 已送达渠道收到不含汇总的载荷
     notify = _Notify()
-    with patch.object(notify_module, "Notify", notify):
+    with _service(notifier=notify) as notifications:
         result = _run(
-            prepare_task_report(task).dispatch(
+            notifications.prepare_task_report(task).dispatch(
                 payload, [_global_target(config)], summary_text=summary
             )
         )
@@ -580,9 +605,9 @@ def test_prepared_task_report_zero_targets_keeps_summary() -> None:
     task = _Task()
     summary = "签到情况: 小明: 签到成功"
 
-    with patch.object(notify_module, "Notify", _Notify()):
+    with _service() as notifications:
         result = _run(
-            prepare_task_report(task).dispatch(
+            notifications.prepare_task_report(task).dispatch(
                 NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None),
                 [],
                 summary_text=summary,
@@ -599,12 +624,12 @@ def test_prepared_task_report_publishes_failure_notice() -> None:
     task = _Task()
     task.task_id = "task-1"
 
-    with patch.object(notify_module, "Notify", _Notify({"send_mail": ["false"]})):
+    with _service(notifier=_Notify({"send_mail": ["false"]})) as notifications:
         with patch(
             "app.core.config.Config.push_system_notice", new_callable=AsyncMock
         ) as publish:
             result = _run(
-                prepare_task_report(task).dispatch(
+                notifications.prepare_task_report(task).dispatch(
                     NotifyPayload(title="报告", text="正文"),
                     [_global_target(config)],
                 )

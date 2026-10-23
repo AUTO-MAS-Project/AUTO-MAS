@@ -3055,6 +3055,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     statistics,
                     self.cur_user_config,
                     images=images,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
@@ -3074,6 +3075,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
                     {"user_name": self.cur_user_item.name},
                     self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")

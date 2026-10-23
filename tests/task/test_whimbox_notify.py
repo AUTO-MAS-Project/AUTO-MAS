@@ -16,7 +16,8 @@
 
 import asyncio
 from html import unescape
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from app.models.notification import resolve_content
 from app.task.Whimbox.tools import notify as notify_mod
@@ -34,18 +35,20 @@ BASE_MESSAGE = {
 def _payload_of(message: dict):
     """跑一遍 push_notification，返回交给 dispatch 的 NotifyPayload。"""
 
-    with (
-        patch.object(
-            notify_mod, "dispatch", new=AsyncMock(return_value=None)
-        ) as dispatch,
-        patch.object(notify_mod, "statistic_targets", return_value=["T"]),
-    ):
-        asyncio.run(
-            notify_mod.push_notification(
-                "统计信息", "标题", message, user_config=object()
-            )
+    notifications = SimpleNamespace(
+        dispatch_task_notification=AsyncMock(return_value=None),
+        statistic_targets=lambda *args, **kwargs: ["T"],
+    )
+    asyncio.run(
+        notify_mod.push_notification(
+            "统计信息",
+            "标题",
+            message,
+            user_config=object(),
+            task_info=SimpleNamespace(notifications=notifications),
         )
-        return dispatch.await_args.args[0]
+    )
+    return notifications.dispatch_task_notification.await_args.args[0]
 
 
 def test_failure_notes_render_to_text_and_html():

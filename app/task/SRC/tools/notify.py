@@ -19,12 +19,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-from app.core.notify import DispatchResult
 from app.models.config import SrcUserConfig
 from app.models.notification import NotifyPayload
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result, push_statistics_report
+from app.task.notify_core import push_statistics_report
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -36,14 +36,15 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: SrcUserConfig | None,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
 ) -> DispatchResult:
     """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        return await push_proxy_result(
+        return await task_info.notifications.push_proxy_result(
             title=title,
             report=TaskResultReport.from_message(message),
             task_info=task_info,

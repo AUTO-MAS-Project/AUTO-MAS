@@ -24,16 +24,11 @@ import mimetypes
 from collections.abc import Sequence
 from pathlib import Path
 
-from app.core.notify import (
-    DispatchResult,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -139,7 +134,8 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: MaaEndUserConfig | None,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
     """通过所有渠道推送通知；结果报告可附带图片。"""
@@ -147,7 +143,7 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        return await push_proxy_result(
+        return await task_info.notifications.push_proxy_result(
             title=title,
             report=TaskResultReport.from_message(message),
             task_info=task_info,
@@ -164,14 +160,14 @@ async def push_notification(
         if sections:
             message_text += "\n\n" + "\n\n".join(sections)
 
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(
                 title=title,
                 text=message_text,
                 html=deferred_notification_template("MaaEnd_statistics.html", message),
                 images=tuple(images),
             ),
-            statistic_targets(user_config),
+            task_info.notifications.statistic_targets(user_config),
             task_info=task_info,
         )
 

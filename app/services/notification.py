@@ -127,6 +127,3 @@ class Notification:
         return await self.channel_sender("webhook").WebhookPush(
             title=title, content=content, webhook=webhook, images=images
         )
-
-
-Notify = Notification()

@@ -21,16 +21,12 @@
 
 from typing import Literal
 
-from app.core.notify import (
-    DispatchResult,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import HSRUserConfig
 from app.models.notification import NotifyPayload
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result, push_statistics_report
+from app.task.notify_core import push_statistics_report
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -42,7 +38,8 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: HSRUserConfig | None,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
 ) -> DispatchResult:
     """通过所有渠道推送 HSR 通知; 返回分发的实际尝试/成功/失败结果。"""
 
@@ -50,15 +47,15 @@ async def push_notification(
 
     if mode == "云登录提醒":
         # 需人工介入的即时提醒：用户不在电脑前时靠它知道要去扫码/登录。
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(title=title, text=str(message.get("message", ""))),
-            statistic_targets(user_config),
+            task_info.notifications.statistic_targets(user_config),
             task_info=task_info,
             immediate=True,
         )
 
     if mode == "代理结果":
-        return await push_proxy_result(
+        return await task_info.notifications.push_proxy_result(
             title=title,
             report=TaskResultReport.from_message(message),
             task_info=task_info,

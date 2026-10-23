@@ -19,7 +19,7 @@
 """奇想盒通知：上游「任务结果如下」结果块原样透传进报告正文。
 
 多账号时上游结果块天然按「账号N：」分组，MAS 不重组（值经手、语义不过手）。
-「代理结果」复用通用入口 ``app/task/notify_core.push_proxy_result``（全专项统一，
+「代理结果」复用注入服务的 ``push_proxy_result``（全专项统一，
 不自行拼接）；统计通知的**正文**按渠道分流（长渠道全文、短渠道摘要，对齐 BetterGI
 tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全局 + 用户目标、
 渠道级重试、失败隔离与 ``DispatchResult`` 都由通用核心负责，本模块不直接调渠道。
@@ -28,16 +28,11 @@ tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全�
 邮件/网页正文（模板 ``general_statistics.html`` 的 ``result_block_body`` 区块）。
 """
 
-from app.core.notify import (
-    DispatchResult,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import WhimboxUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -51,7 +46,8 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: WhimboxUserConfig | None = None,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
 ) -> DispatchResult:
     """通过全局或用户配置的渠道推送奇想盒任务报告。"""
 
@@ -92,20 +88,22 @@ async def push_notification(
 
         # 正文只按渠道分流，投递交 dispatch：用户侧开关在用户目标内判定，
         # 全局渠道与「统计信息」总开关在 statistic_targets 内判定
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(
                 title=title,
                 text=message_text_full,
                 html=message_html,
                 summary=NotificationSummary(text=message_text),
             ),
-            statistic_targets(user_config, compact_summary=True),
+            task_info.notifications.statistic_targets(
+                user_config, compact_summary=True
+            ),
             task_info=task_info,
         )
 
     if mode != "代理结果":
         return DispatchResult()
 
-    return await push_proxy_result(
+    return await task_info.notifications.push_proxy_result(
         title=title, report=TaskResultReport.from_message(message), task_info=task_info
     )

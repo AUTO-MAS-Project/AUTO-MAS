@@ -967,7 +967,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         )
 
         try:
-            await push_notification("统计信息", title, statistics, self.cur_user_config)
+            await push_notification(
+                "统计信息",
+                title,
+                statistics,
+                self.cur_user_config,
+                task_info=self.task_info,
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 

@@ -2,19 +2,13 @@
 
 from collections.abc import Sequence
 
-from app.core.notify import (
-    DispatchResult,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.notification import (
     NotificationImage,
     NotifyPayload,
 )
-from app.models.notification_channel import UserNotificationConfig
+from app.models.notification_channel import DispatchResult, UserNotificationConfig
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -25,7 +19,8 @@ async def push_notification(
     mode: TaskNoticeMode,
     title: str,
     message: dict,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
     user_config: UserNotificationConfig | None = None,
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
@@ -49,7 +44,7 @@ async def push_notification(
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
-        return await push_proxy_result(
+        return await task_info.notifications.push_proxy_result(
             title=title,
             report=TaskResultReport.from_message(message),
             task_info=task_info,
@@ -73,7 +68,7 @@ async def _push_statistics(
     user_config: UserNotificationConfig | None,
     images: Sequence[NotificationImage] = (),
     *,
-    task_info: TaskItem | None = None,
+    task_info: TaskItem,
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 
@@ -95,13 +90,13 @@ async def _push_statistics(
         f"{detail_str}\n"
     )
 
-    return await dispatch(
+    return await task_info.notifications.dispatch_task_notification(
         NotifyPayload(
             title=title,
             text=message_text,
             html=deferred_notification_template("MaaFW_statistics.html", message),
             images=tuple(images),
         ),
-        statistic_targets(user_config),
+        task_info.notifications.statistic_targets(user_config),
         task_info=task_info,
     )

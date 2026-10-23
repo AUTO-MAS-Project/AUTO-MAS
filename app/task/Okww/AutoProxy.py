@@ -1096,6 +1096,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     f"{self.cur_user_item.name} 的 OK-WW 自动代理统计报告",
                     statistics,
                     self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(

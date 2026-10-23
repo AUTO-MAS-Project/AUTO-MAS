@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -15,10 +16,13 @@ from app.models.notification_channel import (
     DispatchResult,
     EmptyPolicy,
     NotificationSourceConfig,
+    Notifier,
+    NotifyTarget,
+    RecruitmentNotificationConfig,
     UserNotificationConfig,
 )
 from app.models.notification_community import CommunityNotificationResult
-from app.models.notification_report import TaskResultReport
+from app.models.notification_report import TaskReportSummary, TaskResultReport
 
 if TYPE_CHECKING:
     from app.models.task import TaskItem
@@ -83,6 +87,72 @@ class LocalNotice:
 
 class LocalNotifier(Protocol):
     async def send_notice(self, notice: LocalNotice) -> None: ...
+
+
+class PreparedReport(Protocol):
+    def should_send(
+        self, *, uncompleted_count: int, embedded_summary: bool = False
+    ) -> bool: ...
+
+    def community_summary(self) -> TaskReportSummary: ...
+
+    async def dispatch(
+        self,
+        payload: NotifyPayload,
+        targets: list[NotifyTarget],
+        *,
+        summary_text: str = "",
+        attempts: int = 1,
+        retry_delay: float = 0,
+        notifier: Notifier | None = None,
+    ) -> DispatchResult: ...
+
+
+class TaskNotifications(NotificationService, LocalNotifier, Protocol):
+    """现役任务消费的目标选择和报告能力；批次仍由任务生命周期界定。"""
+
+    def global_target(
+        self,
+        *,
+        include_system: bool = False,
+        empty_policy: EmptyPolicy = "send",
+        system_timeout_seconds: int | None = None,
+    ) -> NotifyTarget: ...
+
+    def statistic_targets(
+        self,
+        user_config: UserNotificationConfig | None,
+        *,
+        global_empty_policy: EmptyPolicy = "send",
+        compact_summary: bool = False,
+    ) -> list[NotifyTarget]: ...
+
+    def user_statistic_targets(
+        self, user_config: UserNotificationConfig | None
+    ) -> list[NotifyTarget]: ...
+
+    def recruitment_targets(
+        self, user_config: RecruitmentNotificationConfig | None
+    ) -> list[NotifyTarget]: ...
+
+    def failure_targets(self) -> list[NotifyTarget]: ...
+
+    def prepare_task_report(
+        self, task_info: TaskItem | None = None
+    ) -> PreparedReport: ...
+
+    async def dispatch_task_notification(
+        self,
+        payload: NotifyPayload,
+        targets: list[NotifyTarget],
+        *,
+        task_info: TaskItem | None = None,
+        immediate: bool = True,
+    ) -> DispatchResult: ...
+
+    def task_notification_batch(
+        self, *, task_id: str | None
+    ) -> AbstractContextManager[None]: ...
 
 
 class WebhookTester(Protocol):

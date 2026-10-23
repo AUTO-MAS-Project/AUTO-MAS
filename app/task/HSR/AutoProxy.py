@@ -561,6 +561,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 ),
                 statistics,
                 self.cur_user_config,
+                task_info=self.task_info,
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
@@ -649,6 +650,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     f"{user_name} 需要登录云·星穹铁道",
                     {"message": message},
                     self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")

@@ -2024,6 +2024,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self.signal_tracker,
                 script_name=self.script_info.name or "空白",
                 user_config_for=user_config_for,
+                notifications=self.task_info.notifications,
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")

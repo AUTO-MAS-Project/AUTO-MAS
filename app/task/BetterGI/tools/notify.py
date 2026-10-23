@@ -18,16 +18,11 @@
 
 from datetime import datetime
 
-from app.core.notify import (
-    DispatchResult,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import BetterGIUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_channel import DispatchResult
 from app.models.notification_report import TaskNoticeMode, TaskResultReport
 from app.models.task import TaskItem
-from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
 
@@ -83,7 +78,8 @@ async def push_notification(
     title: str,
     message: dict,
     user_config: BetterGIUserConfig | None = None,
-    task_info: TaskItem | None = None,
+    *,
+    task_info: TaskItem,
 ) -> DispatchResult:
     """通过全局或用户配置的渠道推送 BetterGI 任务报告。"""
 
@@ -114,14 +110,16 @@ async def push_notification(
             "general_statistics.html", message
         )
 
-        return await dispatch(
+        return await task_info.notifications.dispatch_task_notification(
             NotifyPayload(
                 title=title,
                 text=message_text_full,
                 html=message_html,
                 summary=NotificationSummary(text=message_text),
             ),
-            statistic_targets(user_config, compact_summary=True),
+            task_info.notifications.statistic_targets(
+                user_config, compact_summary=True
+            ),
             task_info=task_info,
         )
 
@@ -130,6 +128,6 @@ async def push_notification(
 
     # 与其余专项一致：正文模板差异保留在本模块（default general_result.html），
     # 推送时机、社区签到摘要注入、渠道级重试与已送达渠道去重交共用核心。
-    return await push_proxy_result(
+    return await task_info.notifications.push_proxy_result(
         title=title, report=TaskResultReport.from_message(message), task_info=task_info
     )

@@ -39,13 +39,13 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
+from app.api.notification_dependencies import get_community_notifier
 from app.config.wire import (
     ConfigInput,
     ConfigPayload,
     config_group_contract,
 )
 from app.core import Config
-from app.core.community_notify import get_community_notifier
 from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
