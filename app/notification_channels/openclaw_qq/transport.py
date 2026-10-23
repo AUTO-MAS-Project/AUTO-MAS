@@ -1173,18 +1173,6 @@ class Sender:
         self._access_token = ""
         self._access_token_expires_at = 0.0
 
-    async def _save_credentials(
-        self, *, app_id: str, client_secret: str, user_openid: str
-    ) -> None:
-        """保存扫码返回的凭据，非 Windows 只保留本次运行所需数据。"""
-
-        async with self._send_lock, self._credential_lock:
-            await self._save_credentials_locked(
-                app_id=app_id,
-                client_secret=client_secret,
-                user_openid=user_openid,
-            )
-
     async def _save_credentials_locked(
         self, *, app_id: str, client_secret: str, user_openid: str
     ) -> None:
