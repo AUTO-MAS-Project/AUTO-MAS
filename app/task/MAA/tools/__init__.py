@@ -23,12 +23,13 @@
 
 from .bilibili import agree_bilibili
 from .game_update import ensure_game_updated
-from .notify import push_notification
+from .notify import build_recruitment_payload, build_statistics_payload
 from .UpdateMAA import update_maa
 
 __all__ = [
     "agree_bilibili",
-    "push_notification",
+    "build_recruitment_payload",
+    "build_statistics_payload",
     "update_maa",
     "ensure_game_updated",
 ]

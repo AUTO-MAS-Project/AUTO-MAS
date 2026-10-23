@@ -186,10 +186,10 @@ async def test_bettergi_report_keeps_nodes_and_summary(monkeypatch):
     script.user_list[0].push_log = [("info", "node-A", 0.0)]
     script.user_list[1].push_log = [("info", "node-B", 0.0)]
     push = AsyncMock()
-    monkeypatch.setattr(bgi, "push_notification", push)
+    info.bind_notifications(SimpleNamespace(push_proxy_result=push))
     await instance.final_task()
-    report = push.await_args.args[2]
-    assert report["completed_count"] == 1
-    assert report["uncompleted_count"] == 1
-    assert "node-A" in report["result"] and "node-B" in report["result"]
-    assert report["result"] in script.log
+    report = push.await_args.kwargs["report"]
+    assert report.completed_count == 1
+    assert report.uncompleted_count == 1
+    assert "node-A" in report.result and "node-B" in report.result
+    assert report.result in script.log

@@ -161,14 +161,6 @@ def _community_notification_rows(
     return rows
 
 
-def _community_notification_image(
-    results: tuple[CommunityNotificationResult, ...],
-) -> bytes:
-    from app.services.notification_image import render_community_image
-
-    return render_community_image(_community_notification_rows(results))
-
-
 def _prepare_community_images(
     results: tuple[CommunityNotificationResult, ...],
 ) -> Callable[[], tuple[NotificationImage, ...]]:
@@ -287,23 +279,11 @@ def _community_html_fragment(
     return "".join(html_lines)
 
 
-def _render_community_html(
-    results: tuple[CommunityNotificationResult, ...],
-    title: str,
-) -> str:
-    """按 MAS 通知模板渲染社区签到邮件正文。"""
-
-    return get_notification_template("community_result.html").render(
-        title=title,
-        content=_community_html_fragment(
-            results, include_signature=False, include_title=False
-        ),
-    )
-
-
 def _prepare_community_html(
     results: tuple[CommunityNotificationResult, ...], title: str
 ) -> Callable[[], str]:
+    """按 MAS 通知模板渲染社区签到邮件正文。"""
+
     template = get_notification_template("community_result.html")
     return lambda: template.render(
         title=title,
@@ -334,19 +314,12 @@ def build_community_notification_payload(
         text=plain_text,
         append_signature=False,
         html=DeferredContent(
-            lambda: _render_community_html(results, title),
+            lambda: _prepare_community_html(results, title)(),
             prepare_factory=lambda: _prepare_community_html(results, title),
         ),
         markdown=markdown,
         images=DeferredContent(
-            lambda: (
-                NotificationImage(
-                    id="community-sign-summary",
-                    data=_community_notification_image(results),
-                    alt="社区签到结果",
-                    mime_type="image/png",
-                ),
-            ),
+            lambda: _prepare_community_images(results)(),
             prepare_factory=lambda: _prepare_community_images(results),
         ),
     )

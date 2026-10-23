@@ -24,6 +24,7 @@ from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import System
@@ -58,13 +59,14 @@ from .AutoProxy import (
 )
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification, update_maa
+from .tools import update_maa
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
     native_backup_root,
 )
 from .tools.game_update import ensure_game_updated
+from .tools.notify import SIGNATURE_SEP
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -612,12 +614,12 @@ class MaaManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
+                            result_template="MAA_result.html",
+                            signature_sep=SIGNATURE_SEP,
                             images=[image for _, image in rollup_pairs],
                         )
                 except Exception as e:

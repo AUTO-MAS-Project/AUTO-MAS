@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
-from app.models.notification_ports import LocalNotifier
 from app.models.schema import (
     ReplayRecord,
     TaskRuntimeSnapshot,
@@ -103,6 +102,8 @@ from .ws import MainConnection, Publisher, protocol
 System = LazyProxy("app.services", "System")
 
 if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
+
     from .notification_report import TaskReportCoordinator
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
@@ -329,17 +330,8 @@ class _ReplayRequest:
     history_paths: list[str]
 
 
-def _default_local_notifier() -> LocalNotifier:
-    from app.services.notification import Notify
-
-    return Notify
-
-
 @dataclass
 class TaskInfo(TaskItem):
-    _local_notifier: LocalNotifier | None = field(
-        default_factory=_default_local_notifier, init=False, repr=False, compare=False
-    )
     community_sign_notification: "TaskReportCoordinator | None" = field(
         default=None, init=False, repr=False
     )
@@ -633,9 +625,12 @@ class Task(TaskExecuteBase):
         script_reservations: _ScriptTaskReservations | None = None,
         script_run_days: list[list[str]] | None = None,
         on_finished: Callable[[TaskStatusOut], None] | None = None,
+        create_report_coordinator: Callable[[TaskItem], "TaskReportCoordinator"]
+        | None = None,
     ):
         super().__init__()
         self.task_info = task_info
+        self._create_report_coordinator = create_report_coordinator
         self.script_identities = script_identities
         # 结束时的终态回调（调度器用来留存结果，供 taskId 单点查询）
         self._on_finished = on_finished
@@ -1194,7 +1189,6 @@ class Task(TaskExecuteBase):
         # 签到在后台并行执行；完成事件由报告协调器接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
             from app.core.task_report import (
-                create_task_report_coordinator,
                 receive_task_community_results,
             )
             from app.core.timer import MainTimer
@@ -1204,7 +1198,9 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            community_sign = create_task_report_coordinator(self.task_info)
+            if self._create_report_coordinator is None:
+                raise RuntimeError("任务的报告协调器工厂尚未装配")
+            community_sign = self._create_report_coordinator(self.task_info)
             self.task_info.community_sign_notification = community_sign
             MainTimer.schedule_community_for_task(
                 source=sign_source,
@@ -1534,6 +1530,9 @@ class Task(TaskExecuteBase):
 
 class _TaskManager:
     """业务调度器"""
+
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
+        self.notifications = notifications
 
     def __init__(self):
         super().__init__()
@@ -1947,12 +1946,14 @@ class _TaskManager:
                 view_only=view_only and exec_mode == "ScriptConfig",
                 instance_idx=instance_idx if exec_mode == "ScriptConfig" else None,
             )
+            self.task_info[task_uid].bind_notifications(self.notifications)
             self.task_handler[task_uid] = Task(
                 self.task_info[task_uid],
                 script_identities,
                 self._script_reservations,
                 script_run_days=script_run_days,
                 on_finished=self._remember_result,
+                create_report_coordinator=self.notifications.create_task_report_coordinator,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

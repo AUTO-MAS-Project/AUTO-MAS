@@ -39,17 +39,6 @@ class DefaultReportRenderer:
     ) -> NotifyPayload:
         return append_report_summary(payload, summary)
 
-    def prepare_payloads(
-        self,
-        payload: NotifyPayload,
-        *,
-        summary: TaskReportSummary,
-        embedded_summary: str = "",
-    ) -> tuple[NotifyPayload, NotifyPayload]:
-        return prepare_report_payloads(
-            payload, summary=summary, embedded_summary=embedded_summary
-        )
-
 
 def append_report_summary(
     payload: NotifyPayload, summary: TaskReportSummary
@@ -86,75 +75,6 @@ def append_report_summary(
             )
             if payload.summary is not None
             else None
-        ),
-    )
-
-
-def prepare_report_payloads(
-    payload: NotifyPayload,
-    *,
-    summary: TaskReportSummary,
-    embedded_summary: str = "",
-) -> tuple[NotifyPayload, NotifyPayload]:
-    """返回不含摘要与含摘要两个版本，兼容已在正文内嵌摘要的报告。"""
-
-    if not embedded_summary:
-        return (
-            payload,
-            append_report_summary(payload, summary) if summary.text else payload,
-        )
-
-    def merged_markdown() -> str:
-        markdown = resolve_content(payload.markdown or payload.text)
-        summary_markdown = resolve_content(summary.markdown)
-        if summary_markdown and summary_markdown not in markdown:
-            return (
-                markdown.replace(embedded_summary, summary_markdown)
-                if embedded_summary in markdown
-                else f"{markdown}\n\n{summary_markdown}"
-            )
-        return markdown
-
-    clean = replace(
-        payload,
-        text=payload.text.replace(embedded_summary, "").rstrip(),
-        html=(
-            _map_body(
-                payload.html, lambda html: html.replace(embedded_summary, "").rstrip()
-            )
-            if payload.html is not None
-            else None
-        ),
-        summary=(
-            replace(
-                payload.summary,
-                text=payload.summary.text.replace(embedded_summary, "").rstrip(),
-                overflow_text=(
-                    payload.summary.overflow_text.replace(embedded_summary, "").rstrip()
-                    if payload.summary.overflow_text is not None
-                    else None
-                ),
-            )
-            if payload.summary is not None
-            else None
-        ),
-        markdown=(
-            _map_body(
-                payload.markdown,
-                lambda markdown: markdown.replace(
-                    resolve_content(summary.markdown), ""
-                ).rstrip(),
-                dependencies=_dependencies(summary.markdown),
-            )
-            if payload.markdown is not None
-            else payload.text.replace(embedded_summary, "").rstrip()
-        ),
-    )
-    return clean, replace(
-        payload,
-        markdown=DeferredContent(
-            merged_markdown,
-            dependencies=_dependencies(payload.markdown, summary.markdown),
         ),
     )
 

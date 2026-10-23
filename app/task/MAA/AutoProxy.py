@@ -88,8 +88,9 @@ from .constants import (
 )
 from .tools import (
     agree_bilibili,
+    build_recruitment_payload,
+    build_statistics_payload,
     log_statistics,
-    push_notification,
 )
 from .tools.activity_inventory import resolve_activity_inventory_plans
 from .tools.avd import (
@@ -3049,12 +3050,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         )
         if should_send_statistics:
             try:
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
-                    images=images,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                        message=statistics,
+                        images=images,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")
@@ -3069,11 +3072,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 六星通知独立处理，避免单个通知异常阻断掉落统计。
         if if_six_star:
             try:
-                await push_notification(
-                    "公招六星",
-                    f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
-                    {"user_name": self.cur_user_item.name},
-                    self.cur_user_config,
+                logger.info(
+                    f"开始推送通知, 模式: 公招六星, 标题: 喜报: 用户 {self.cur_user_item.name} 公招出六星啦！"
+                )
+                await self.task_info.notifications.dispatch_task_notification(
+                    build_recruitment_payload(
+                        title=f"喜报: 用户 {self.cur_user_item.name} 公招出六星啦！",
+                        message={"user_name": self.cur_user_item.name},
+                    ),
+                    self.task_info.notifications.recruitment_targets(
+                        self.cur_user_config
+                    ),
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")

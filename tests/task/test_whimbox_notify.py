@@ -8,15 +8,13 @@
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
 
-"""奇想盒统计通知的正文组装（纯逻辑，打桩 dispatch 后断言正文）。
+"""奇想盒统计通知的正文组装（纯逻辑，直接断言正文）。
 
 结果块只有 ✅/⏭️/❌ 三态、不带原因，「未完成原因」段放的是上游 ❌/🛑 行原文；
 缺该字段时（例如没抓到失败提示）不应出现空标题。
 """
 
-import asyncio
 from html import unescape
-from unittest.mock import AsyncMock, patch
 
 from app.models.notification import resolve_content
 from app.task.Whimbox.tools import notify as notify_mod
@@ -32,20 +30,9 @@ BASE_MESSAGE = {
 
 
 def _payload_of(message: dict):
-    """跑一遍 push_notification，返回交给 dispatch 的 NotifyPayload。"""
+    """直接构造正文，不依赖发送器或任务对象。"""
 
-    with (
-        patch.object(
-            notify_mod, "dispatch", new=AsyncMock(return_value=None)
-        ) as dispatch,
-        patch.object(notify_mod, "statistic_targets", return_value=["T"]),
-    ):
-        asyncio.run(
-            notify_mod.push_notification(
-                "统计信息", "标题", message, user_config=object()
-            )
-        )
-        return dispatch.await_args.args[0]
+    return notify_mod.build_statistics_payload(title="标题", message=message)
 
 
 def test_failure_notes_render_to_text_and_html():

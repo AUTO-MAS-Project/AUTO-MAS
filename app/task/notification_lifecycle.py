@@ -2,7 +2,6 @@
 
 import asyncio
 
-from app.core.notification_tasks import task_notification_batch
 from app.models.task import TaskExecuteBase, TaskItem
 
 
@@ -10,5 +9,7 @@ class NotificationTaskBase(TaskExecuteBase):
     task_info: TaskItem
 
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
-        with task_notification_batch(task_id=self.task_info.task_id):
+        with self.task_info.notifications.task_notification_batch(
+            task_id=self.task_info.task_id
+        ):
             await super()._execute_task(parent_tg)

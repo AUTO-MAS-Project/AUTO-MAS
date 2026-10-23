@@ -1,7 +1,7 @@
 """社区通知编排；内容、开关、投递与后台任务所有权均通过端口提供。"""
 
 import asyncio
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,46 +38,24 @@ class CommunityNotificationCoordinator:
         self.dependencies = dependencies
         self._pending: set[asyncio.Task[list[str]]] = set()
 
-    async def dispatch(
-        self,
-        results: tuple[CommunityNotificationResult, ...],
-        *,
-        targets: Iterable[NotifyTarget] | None = None,
-        skip_channel_ids: Iterable[str] = (),
-        completion_notice: str = "",
-    ) -> DispatchResult:
-        if not results and not completion_notice:
-            return DispatchResult()
-        payload = (
-            self.dependencies.render(results)
-            if results
-            else NotifyPayload(title="社区签到执行结束", text=completion_notice)
-        )
-        return await self.dependencies.dispatch(
-            payload,
-            tuple(targets)
-            if targets is not None
-            else self.dependencies.prepare_targets(),
-            attempts=NOTIFICATION_SEND_ATTEMPTS,
-            retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
-            skip_channel_ids=skip_channel_ids,
-        )
-
     async def _send(
         self, results: tuple[CommunityNotificationResult, ...]
     ) -> list[str]:
-        result = await self.dispatch(results)
+        if not results:
+            return []
+        result = await self.dependencies.dispatch(
+            self.dependencies.render(results),
+            self.dependencies.prepare_targets(),
+            attempts=NOTIFICATION_SEND_ATTEMPTS,
+            retry_delay=NOTIFICATION_RETRY_DELAY_SECONDS,
+        )
         if result.failed:
-            self._schedule_feedback(result, results_saved=bool(results))
+            self._schedule_feedback(result)
         return list(result.failed)
 
-    def _schedule_feedback(
-        self, result: DispatchResult, *, results_saved: bool
-    ) -> None:
+    def _schedule_feedback(self, result: DispatchResult) -> None:
         task = schedule_notification_feedback(
-            lambda: self.dependencies.report_failure(
-                result, results_saved=results_saved
-            ),
+            lambda: self.dependencies.report_failure(result, results_saved=True),
             spawn=self.dependencies.spawn,
             result=[],
             logger=logger,

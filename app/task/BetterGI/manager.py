@@ -23,6 +23,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -32,7 +33,7 @@ from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import archive_native_backup, push_notification
+from .tools import archive_native_backup
 from .Update import BetterGIUpdateTask
 
 logger = get_logger("BetterGI 调度器")
@@ -263,8 +264,10 @@ class BetterGIManager(ScriptManagerBase):
                 result = self.build_proxy_report(result_text=user_result_text)
 
                 try:
-                    await push_notification(
-                        "代理结果", title, result, task_info=self.task_info
+                    await self.task_info.notifications.push_proxy_result(
+                        title=title,
+                        report=TaskResultReport.from_message(result),
+                        task_info=self.task_info,
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
