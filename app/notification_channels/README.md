@@ -66,8 +66,9 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
 ## 单次通知的准备与投递
 
 ```text
-业务 / 任务报告协调器
-  -> core.notify：按全局/用户范围读取配置、逐渠道准备目标
+lifespan 创建 HostNotificationService 并绑定业务消费者
+  -> 业务 / 任务报告协调器消费注入的通知能力
+  -> core.notify.HostNotificationService：按全局/用户范围读取配置、逐渠道准备目标
   -> models.notification_channel：NotifyTarget + DeliveryChannel + ChannelTarget
   -> services.notification_dispatch：显式 Notifier、渲染、重试、并发与结果
   -> services.notification：选择已装配会话或本次无会话发送器
@@ -75,8 +76,21 @@ HTTP/SMTP 继续使用单次上下文，不增加连接池、队列或后台运�
   -> DispatchResult 返回业务所有者
 ```
 
-投递服务不导入 core、全局配置或通知单例。旧的 `core.notify` 入口及目标/结果类型
-导出继续可用；默认实例在 core 门面注入。内部投递契约不属于 OpenAPI。
+投递服务不导入 core、全局配置或通知单例，发送器和渲染器必须显式传入。
+宿主通过 `core.notify_channels.create_notification_service` 创建实例，再绑定 API、
+定时器、日历与任务管理器。API 依赖从 `app.state.notifications` 取用；任务由
+创建者绑定 `TaskItem.notifications`。旧的模块级发送函数、默认实例和类型转发
+已退役，目标和结果类型直接从模型层导入。内部投递契约不属于 OpenAPI。
+
+`models.notification_ports.NotificationService` 定义全局、用户、统计和代理结果能力，
+后续插件宿主可将同一个服务绑定到插件；现役任务通过 `TaskNotifications` 消费
+目标准备、报告与批次能力。Service 不引入插件管理器、通用服务注册表或新的任务队列。
+专项通知文件保留正文、模板、截图及结果适配；它们消费注入能力，不持有渠道连接。
+渠道目录可以缓存不可变声明，发送器、渲染器和待投递状态则按服务实例持有。
+
+通知渠道仍在后台可选初始化步骤启动。退出先停止入口和业务任务，再由
+`RuntimeTasks.shutdown()` 回收已托管任务，随后关闭服务的渲染器、渠道与配置订阅，
+最后统一保存配置；停用未来某个插件不应关闭应用共享的通知资源。
 `DeliveryChannel` 只保留稳定 key 和发送适配器，投递流程不携带完整渠道声明、
 表单元数据、目标构造器、传输工厂或启停入口。
 
@@ -167,7 +181,7 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 object 字段投影和同步观察端口已退役。投递事实通过 DispatchResult 返回；失败反馈另外交宿主任务
 所有者持有，反馈异常或延迟不改变投递结果。电源前有限等待、退出回收同时覆盖反馈。
 任务和通知批次的失败通过常驻系统提示发布；无任务、无批次的独立报告失败仍只记录日志。
-电源动作直接等待 `notification_tasks.drain_notifications`，通知回收使用统一任务所有者。
+电源动作等待注入的 `NotificationTasks.drain_notifications`，通知回收使用统一任务所有者。
 
 报告与补发共享一把锁；签到先完成时合并进报告，短暂等待超时则先发送带待确认
 提示的报告，签到继续执行。后续报告对已收到签到摘要的渠道只发送原始内容，
@@ -181,8 +195,8 @@ object 字段投影和同步观察端口已退役。投递事实通过 DispatchR
 risk_control / failed 机器状态。旧字典、中文状态及占位过滤仅在入口适配；日期、
 `_completed` 判定和 API 保存仍由签到业务处理，不由通知状态反推。
 `community_notification_results` 和 `from_legacy` 是现役业务适配，继续承担上述转换；
-`tools/community_notify.py` 的旧转发门面已退役，独立社区通知从 `core.community_notify`
-装配，纯内容生成使用 `services.community_notification`。
+`tools/community_notify.py` 和 `core.community_notify` 的旧入口已退役，独立社区通知
+由宿主 Service 装配，纯内容生成使用 `services.community_notification`。
 
 共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量、结果和摘要意图
 都是明确字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
@@ -194,7 +208,7 @@ get/set；渠道仅通过宿主的 `TargetConfigView` 获取字段。
 ## 独立社区通知与日历
 
 手动签到 API 和非任务定时签到消费 `CommunityNotifier`。协调器由
-`core.community_notify` 装配；开关、默认目标、内容生成、失败反馈和任务注册
+宿主 Service 装配；开关、默认目标、内容生成、失败反馈和任务注册
 均通过依赖提供。短暂等待超时或 HTTP 请求取消后，通知继续由 `RuntimeTasks`
 持有；电源动作等待使用统一剩余时限，退出先回收通知再关闭渠道。
 
