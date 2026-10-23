@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
+from app.models.notification_ports import LocalNotifier
 from app.models.schema import (
     ReplayRecord,
     TaskRuntimeSnapshot,
@@ -102,7 +103,7 @@ from .ws import MainConnection, Publisher, protocol
 System = LazyProxy("app.services", "System")
 
 if TYPE_CHECKING:
-    from .task_report import TaskCommunitySignNotification
+    from .notification_report import TaskReportCoordinator
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
@@ -328,9 +329,18 @@ class _ReplayRequest:
     history_paths: list[str]
 
 
+def _default_local_notifier() -> LocalNotifier:
+    from app.services.notification import Notify
+
+    return Notify
+
+
 @dataclass
 class TaskInfo(TaskItem):
-    community_sign_notification: "TaskCommunitySignNotification | None" = field(
+    _local_notifier: LocalNotifier | None = field(
+        default_factory=_default_local_notifier, init=False, repr=False, compare=False
+    )
+    community_sign_notification: "TaskReportCoordinator | None" = field(
         default=None, init=False, repr=False
     )
     replay_cancelled: bool = field(default=False, init=False, repr=False)
@@ -1183,7 +1193,10 @@ class Task(TaskExecuteBase):
 
         # 签到在后台并行执行；完成事件由报告协调器接收，不阻塞脚本初始化与运行。
         if self.task_info.mode == "AutoProxy":
-            from app.core.task_report import TaskCommunitySignNotification
+            from app.core.task_report import (
+                create_task_report_coordinator,
+                receive_task_community_results,
+            )
             from app.core.timer import MainTimer
 
             sign_source = {
@@ -1191,10 +1204,13 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            community_sign = TaskCommunitySignNotification(self.task_info)
+            community_sign = create_task_report_coordinator(self.task_info)
             self.task_info.community_sign_notification = community_sign
             MainTimer.schedule_community_for_task(
-                source=sign_source, on_completed=community_sign.receive
+                source=sign_source,
+                on_completed=lambda results: receive_task_community_results(
+                    community_sign, results
+                ),
             )
 
         await self.prepare()

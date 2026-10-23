@@ -34,9 +34,10 @@ from app.models.config import (
 )
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import NotificationImage
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import (
     close_emulator,
@@ -45,7 +46,7 @@ from app.task.emulator_core import (
     resolve_host_adb,
     script_process_env,
 )
-from app.task.notify_core import load_screenshot_images, screenshot_entries
+from app.task.notify_core import prepare_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -1371,11 +1372,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
                     await close_emulator(self)
 
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
-                        f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="用户自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
+                            duration_seconds=3,
+                        )
                     )
                     continue
 
@@ -1456,11 +1459,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     if self.mode == "GreenTicketStore":
                         self.run_book[self.mode] = True
                     else:
-                        await Notify.push_plyer(
-                            "用户自动代理出现异常！",
-                            f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
-                            f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
-                            3,
+                        await self.task_info.local_notifier.send_notice(
+                            LocalNotice(
+                                title="用户自动代理出现异常！",
+                                message=f"用户 {self.cur_user_item.name} 的{MAA_RUN_MOOD_BOOK[self.mode]}部分出现一次异常",
+                                ticker=f"{self.cur_user_item.name}的{MAA_RUN_MOOD_BOOK[self.mode]}出现异常",
+                                duration_seconds=3,
+                            )
                         )
 
                 if self.cur_user_config.Info.IfQuickConfig:
@@ -3022,8 +3027,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         images: list[NotificationImage] = []
         if not if_success and failure_shot is not None:
             try:
-                loaded = await asyncio.to_thread(
-                    load_screenshot_images,
+                loaded = await prepare_screenshot_images(
                     [(self.cur_user_item.name, failure_shot)],
                     # ID 带用户序号：manager 汇总拼接各用户的图，前缀不唯一
                     # 会让邮件里同名 cid 互相覆盖
@@ -3097,11 +3101,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="成功完成一个自动代理任务！",
+                    message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                    ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                    duration_seconds=3,
+                )
             )
         else:
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")

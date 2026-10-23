@@ -30,6 +30,8 @@ from app.models.notification_channel import (
     SCOPE_GLOBAL,
     ChannelConfig,
     ChannelTarget,
+    KoishiDependencies,
+    NotificationDeliveryError,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -79,19 +81,21 @@ async def _koishi_send(
     sender: Any, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     if rendered.format != "html":
-        return await sender.send_koishi(rendered.content)
-
-    if _KOISHI_HTML_DOCUMENT_PATTERN.search(rendered.content[:256]):
-        return await sender.send_koishi(
-            _koishi_html_from_text(rendered.text_fallback or rendered.title),
-            msgtype="html",
+        success = await sender.send_koishi(rendered.content)
+    else:
+        if _KOISHI_HTML_DOCUMENT_PATTERN.search(rendered.content[:256]):
+            content = _koishi_html_from_text(rendered.text_fallback or rendered.title)
+        else:
+            content = rendered.content
+            title = html_escape(rendered.title)
+            if title and title not in content:
+                content = f"<h2>{title}</h2>{content}"
+        success = await sender.send_koishi(content, msgtype="html")
+    if success is False:
+        raise NotificationDeliveryError(
+            "Koishi 连接不可用或消息未提交", kind="unavailable", retryable=True
         )
-
-    content = rendered.content
-    title = html_escape(rendered.title)
-    if title and title not in content:
-        content = f"<h2>{title}</h2>{content}"
-    return await sender.send_koishi(content, msgtype="html")
+    return success
 
 
 def register() -> NotifyChannel:
@@ -131,7 +135,14 @@ def register() -> NotifyChannel:
         },
         target_builder=_koishi_targets,
         send_adapter=_koishi_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            KoishiDependencies(
+                config=deps.config,
+                websocket_manager_factory=deps.websocket_manager_factory,
+                logger=deps.logger,
+                command_executor=deps.command_executor,
+            )
+        ),
         start_adapter=Sender.start,
         stop_adapter=Sender.stop,
         lifecycle_order=10,

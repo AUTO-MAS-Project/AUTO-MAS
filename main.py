@@ -486,10 +486,11 @@ def main():
             from app.services.obs_replay import ObsReplay
 
             await ObsReplay.stop()
+            # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await RuntimeTasks.shutdown()
-            from app.core.task_report import shutdown_community_notifications
+            from app.services.notification_rendering import NotificationRendering
 
-            await shutdown_community_notifications()
+            NotificationRendering.close()
             from app.services.notification import Notify
 
             await Notify.stop()

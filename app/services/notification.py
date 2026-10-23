@@ -23,16 +23,27 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
 from app.models.config import Webhook
 from app.models.notification import (
     NotificationImage,
+    NotifyPayload,
     RenderedNotification,
     WebhookTargetSnapshot,
+    resolve_content,
 )
-from app.models.notification_channel import ChannelTarget, NotifyChannel
+from app.models.notification_channel import (
+    ChannelTarget,
+    DeliveryChannel,
+    NotificationTransportSnapshot,
+)
+from app.models.notification_ports import LocalNotice
 from app.notification_channels.registry import BoundChannels
+from app.utils import get_logger
+
+logger = get_logger("本地通知")
 
 
 class Notification:
@@ -50,10 +61,12 @@ class Notification:
             raise RuntimeError("通知渠道已装配")
         self._channels = channels
 
-    def channel_sender(self, key: str) -> Any:
+    def channel_sender(
+        self, key: str, *, transport: NotificationTransportSnapshot | None = None
+    ) -> Any:
         if self._channels is None:
             raise RuntimeError("通知渠道尚未装配")
-        return self._channels.sender(key)
+        return self._channels.sender(key, transport=transport)
 
     async def start(self) -> None:
         if self._channels is None:
@@ -66,15 +79,41 @@ class Notification:
 
     async def send_channel(
         self,
-        channel: NotifyChannel,
+        channel: DeliveryChannel,
         target: ChannelTarget,
         rendered: RenderedNotification,
     ) -> bool | None:
-        return await channel.send(self.channel_sender(channel.key), target, rendered)
+        return await channel.send(
+            sender=self.channel_sender(channel.key, transport=target.transport),
+            target=target,
+            rendered=rendered,
+        )
 
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         return await self.channel_sender("system").push_plyer(
             title=title, message=message, ticker=ticker, t=t
+        )
+
+    async def send_notice(self, notice: LocalNotice) -> None:
+        # 本地提示是附加反馈；保留取消，但不能把已完成的业务改判为失败。
+        try:
+            await self.push_plyer(
+                title=notice.title,
+                message=notice.message,
+                ticker=notice.ticker,
+                t=notice.duration_seconds,
+            )
+        except Exception as exc:
+            logger.warning(f"本地通知发送失败: {type(exc).__name__}")
+
+    async def test_webhook(
+        self, payload: NotifyPayload, webhook: WebhookTargetSnapshot
+    ) -> None:
+        await self.WebhookPush(
+            title=payload.title,
+            content=payload.text,
+            webhook=replace(webhook, enabled=True),
+            images=resolve_content(payload.images),
         )
 
     async def WebhookPush(

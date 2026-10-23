@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import smtplib
+import ssl
 import traceback
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -41,7 +43,7 @@ from app.models.notification import (
     NOTIFICATION_IMAGE_URI_PATTERN,
     NotificationImage,
 )
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import MailDependencies, NotificationDeliveryError
 
 SMTP_TIMEOUT_SECONDS = 15
 _MAIL_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
@@ -84,7 +86,7 @@ def _rewrite_mail_image_sources(
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: MailDependencies) -> None:
         self.dependencies = dependencies
 
     async def send_mail(
@@ -242,5 +244,30 @@ class Sender:
                 )
                 raise
 
-        await asyncio.to_thread(send)
+        try:
+            await asyncio.to_thread(send)
+        except smtplib.SMTPRecipientsRefused as exc:
+            temporary = any(400 <= code < 500 for code, _ in exc.recipients.values())
+            raise NotificationDeliveryError(
+                "邮件收件人被拒绝", kind="rejected", retryable=temporary
+            ) from exc
+        except smtplib.SMTPResponseException as exc:
+            temporary = 400 <= exc.smtp_code < 500
+            raise NotificationDeliveryError(
+                "邮件服务器拒绝请求",
+                kind="transport"
+                if temporary
+                else "configuration"
+                if isinstance(exc, smtplib.SMTPAuthenticationError)
+                else "rejected",
+                retryable=temporary,
+            ) from exc
+        except (smtplib.SMTPNotSupportedError, ssl.SSLCertVerificationError) as exc:
+            raise NotificationDeliveryError(
+                "邮件服务器配置不可用", kind="configuration", retryable=False
+            ) from exc
+        except (OSError, smtplib.SMTPServerDisconnected) as exc:
+            raise NotificationDeliveryError(
+                "邮件连接失败", kind="transport", retryable=True
+            ) from exc
         self.dependencies.logger.success(f"邮件发送成功: {title}")

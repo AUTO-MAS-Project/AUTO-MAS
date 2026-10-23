@@ -1,30 +1,32 @@
 """MaaFW 任务报告推送。"""
 
 from collections.abc import Sequence
-from typing import Any
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.notification import (
     NotificationImage,
     NotifyPayload,
 )
+from app.models.notification_channel import UserNotificationConfig
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("MaaFW 通知工具")
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
-    task_info: object | None = None,
-    user_config: Any | None = None,
+    task_info: TaskItem | None = None,
+    user_config: UserNotificationConfig | None = None,
     images: Sequence[NotificationImage] = (),
     include_system: bool = True,
 ) -> DispatchResult:
@@ -49,21 +51,29 @@ async def push_notification(
     if mode == "代理结果":
         return await push_proxy_result(
             title=title,
-            message=message,
+            report=TaskResultReport.from_message(message),
             task_info=task_info,
             images=images,
             include_system=include_system,
         )
     if mode == "统计信息":
-        return await _push_statistics(title, message, user_config, images)
+        return await _push_statistics(
+            title=title,
+            message=message,
+            user_config=user_config,
+            images=images,
+            task_info=task_info,
+        )
     return DispatchResult()
 
 
 async def _push_statistics(
     title: str,
     message: dict,
-    user_config: Any | None,
+    user_config: UserNotificationConfig | None,
     images: Sequence[NotificationImage] = (),
+    *,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """推送用户级「统计信息」（全局 + 用户独立渠道）。
 
@@ -84,14 +94,14 @@ async def _push_statistics(
         f"MaaFW 运行结果: {message['user_result']}"
         f"{detail_str}\n"
     )
-    template = get_notification_template("MaaFW_statistics.html")
 
     return await dispatch(
         NotifyPayload(
             title=title,
             text=message_text,
-            html=template.render(message),
+            html=deferred_notification_template("MaaFW_statistics.html", message),
             images=tuple(images),
         ),
         statistic_targets(user_config),
+        task_info=task_info,
     )

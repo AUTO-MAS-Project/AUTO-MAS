@@ -20,14 +20,16 @@ from datetime import datetime
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import BetterGIUserConfig
 from app.models.notification import NotificationSummary, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 from .drop_statistics import format_drop_statistics
 
@@ -77,11 +79,11 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: BetterGIUserConfig | None = None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
 ) -> DispatchResult:
     """通过全局或用户配置的渠道推送 BetterGI 任务报告。"""
 
@@ -108,8 +110,8 @@ async def push_notification(
         )
         # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
         message_text_full = f"{message_text}{steps_text}{drops_text}"
-        message_html = get_notification_template("general_statistics.html").render(
-            message
+        message_html = deferred_notification_template(
+            "general_statistics.html", message
         )
 
         return await dispatch(
@@ -120,6 +122,7 @@ async def push_notification(
                 summary=NotificationSummary(text=message_text),
             ),
             statistic_targets(user_config, compact_summary=True),
+            task_info=task_info,
         )
 
     if mode != "代理结果":
@@ -127,4 +130,6 @@ async def push_notification(
 
     # 与其余专项一致：正文模板差异保留在本模块（default general_result.html），
     # 推送时机、社区签到摘要注入、渠道级重试与已送达渠道去重交共用核心。
-    return await push_proxy_result(title=title, message=message, task_info=task_info)
+    return await push_proxy_result(
+        title=title, report=TaskResultReport.from_message(message), task_info=task_info
+    )

@@ -26,14 +26,16 @@ from pathlib import Path
 
 from app.core.notify import (
     DispatchResult,
-    dispatch,
     statistic_targets,
 )
+from app.core.task_report import dispatch_task_notification as dispatch
 from app.models.config import MaaEndUserConfig
 from app.models.notification import NotificationImage, NotifyPayload
+from app.models.notification_report import TaskNoticeMode, TaskResultReport
+from app.models.task import TaskItem
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
-from app.utils.notification_template import get_notification_template
+from app.utils.notification_template import deferred_notification_template
 
 logger = get_logger("MaaEnd 通知工具")
 _ERROR_IMAGE_LIMIT = 3
@@ -133,11 +135,11 @@ def _statistic_sections(message: dict) -> list[str]:
 
 
 async def push_notification(
-    mode: str,
+    mode: TaskNoticeMode,
     title: str,
     message: dict,
     user_config: MaaEndUserConfig | None,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
     """通过所有渠道推送通知；结果报告可附带图片。"""
@@ -146,7 +148,10 @@ async def push_notification(
 
     if mode == "代理结果":
         return await push_proxy_result(
-            title=title, message=message, task_info=task_info, images=images
+            title=title,
+            report=TaskResultReport.from_message(message),
+            task_info=task_info,
+            images=images,
         )
 
     if mode == "统计信息":
@@ -159,16 +164,15 @@ async def push_notification(
         if sections:
             message_text += "\n\n" + "\n\n".join(sections)
 
-        template = get_notification_template("MaaEnd_statistics.html")
-
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text=message_text,
-                html=template.render(message),
+                html=deferred_notification_template("MaaEnd_statistics.html", message),
                 images=tuple(images),
             ),
             statistic_targets(user_config),
+            task_info=task_info,
         )
 
     return DispatchResult()

@@ -18,14 +18,89 @@
 
 """通知编排与渠道服务共用的内部消息类型。"""
 
+from __future__ import annotations
+
 import re
-from dataclasses import dataclass
-from typing import Literal
+from _thread import RLock as RLockType
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from functools import cached_property
+from threading import RLock
+from typing import Any, Literal, Protocol, cast
 
 NotificationFormat = Literal["text", "markdown", "html"]
 ImagePresentation = Literal["html", "markdown", "base64", "rich_media"]
 SummaryPolicy = Literal["never", "preferred", "if_over_limit"]
 BodyTitlePolicy = Literal["never", "always", "when_title_missing"]
+
+
+class NotificationContentError(RuntimeError):
+    """可选表达生成失败；不携带模板上下文或账号数据。"""
+
+
+@dataclass(frozen=True)
+class DeferredContent[T]:
+    """按需生成一份可选表达，同一通知的多个目标和重试共用结果。"""
+
+    factory: Callable[[], T]
+    # 在事件循环上解析依赖，返回不再做冷导入的工作函数。
+    prepare_factory: Callable[[], Callable[[], T]] | None = field(
+        default=None, repr=False, compare=False
+    )
+    dependencies: tuple[DeferredContent[Any], ...] = field(
+        default=(), repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        # 执行状态不进入 dataclass 字段或 Pydantic 的外部契约。
+        self.__dict__["_content_lock"] = RLock()
+
+    @property
+    def _lock(self) -> RLockType:
+        return self.__dict__["_content_lock"]
+
+    @cached_property
+    def _prepared(self) -> tuple[Callable[[], T] | None, str | None]:
+        try:
+            return (
+                self.prepare_factory()
+                if self.prepare_factory is not None
+                else self.factory,
+                None,
+            )
+        except Exception as exc:
+            return None, type(exc).__name__
+
+    def prepare_for_render(self) -> None:
+        for dependency in self.dependencies:
+            dependency.prepare_for_render()
+        # 依赖失败仍作为该可选表达的失败，由目标渲染决定是否降级。
+        _ = self._prepared
+
+    @cached_property
+    def _result(self) -> tuple[T | None, str | None]:
+        with self._lock:
+            if "_result" in self.__dict__:
+                return self.__dict__["_result"]
+            factory, error = self._prepared
+            try:
+                result = (factory(), None) if factory is not None else (None, error)
+            except Exception as exc:
+                result = None, type(exc).__name__
+            # cached_property 在 Python 3.12 不串行化并发读取，必须在释放锁前登记。
+            self.__dict__["_result"] = result
+            return result
+
+    def resolve(self) -> T:
+        value, error = self._result
+        if error is not None:
+            raise NotificationContentError(error)
+        return cast(T, value)
+
+
+def resolve_content[T](content: T | DeferredContent[T]) -> T:
+    return content.resolve() if isinstance(content, DeferredContent) else content
+
 
 NOTIFICATION_IMAGE_SCHEME = "notify-image://"
 # 渲染器和传输适配共用图片地址语法，保证资源 ID 按完整边界匹配。
@@ -86,15 +161,20 @@ class NotifyPayload:
     title: str
     text: str
     summary: NotificationSummary | None = None
-    markdown: str | None = None
-    html: str | None = None
-    images: tuple[NotificationImage, ...] = ()
+    markdown: str | DeferredContent[str] | None = None
+    html: str | DeferredContent[str] | None = None
+    images: (
+        tuple[NotificationImage, ...] | DeferredContent[tuple[NotificationImage, ...]]
+    ) = ()
     append_signature: bool = True
     signature_sep: str = "\n\n"
     # 用于正文需要独立标题、但目标协议没有单独标题字段的通知。
     body_title: str | None = None
+    presentation: Literal["default", "announcement"] = "default"
 
     def __post_init__(self) -> None:
+        if isinstance(self.images, DeferredContent):
+            return
         image_ids = [image.id for image in self.images]
         if len(image_ids) != len(set(image_ids)):
             raise ValueError("通知图片资源 ID 必须唯一")
@@ -124,6 +204,17 @@ class RenderedNotification:
     text_fallback: str | None = None
     summary_used: bool = False
     diagnostics: tuple[str, ...] = ()
+
+
+class NotificationRenderer(Protocol):
+    async def render(
+        self,
+        payload: NotifyPayload,
+        capabilities: NotificationCapabilities,
+        *,
+        summary_policy: SummaryPolicy = "never",
+        use_summary_title: bool = False,
+    ) -> RenderedNotification: ...
 
 
 @dataclass(frozen=True)
