@@ -33,6 +33,32 @@ COMMUNITY_SIGN_RESULT_UNAVAILABLE_TEXT = (
 COMMUNITY_SIGN_EMPTY_RESULT_TEXT = "本次社区签到已结束，没有新的签到结果。"
 
 
+def schedule_notification_feedback[T](
+    feedback: Callable[[], Awaitable[None]],
+    *,
+    spawn: Callable[[Coroutine[Any, Any, T]], asyncio.Task[T] | None],
+    result: T,
+    logger: Any,
+    label: str,
+) -> asyncio.Task[T] | None:
+    """统一注册与隔离反馈；后台返回值和任务所有权沿用调用方契约。"""
+
+    async def report() -> T:
+        try:
+            await feedback()
+        except Exception as exc:
+            logger.warning(f"{label}反馈失败: {type(exc).__name__}")
+        return result
+
+    coroutine = report()
+    try:
+        return spawn(coroutine)
+    except Exception as exc:
+        coroutine.close()
+        logger.warning(f"{label}反馈注册失败: {type(exc).__name__}")
+        return None
+
+
 class CommunityFailureReporter(Protocol):
     async def __call__(
         self, result: DispatchResult, *, results_saved: bool
@@ -153,22 +179,6 @@ class TaskReportCoordinator:
             return
         self.delivery_task = self.dependencies.spawn(self._send_supplement())
 
-    def _schedule_feedback(self, feedback: Callable[[], Awaitable[None]]) -> None:
-        """反馈由宿主持有，慢反馈与反馈异常均不阻塞投递结果返回。"""
-
-        async def report() -> None:
-            try:
-                await feedback()
-            except Exception as exc:
-                logger.warning(f"任务通知反馈失败: {type(exc).__name__}")
-
-        coroutine = report()
-        try:
-            self.dependencies.spawn(coroutine)
-        except Exception as exc:
-            coroutine.close()
-            logger.warning(f"任务通知反馈注册失败: {type(exc).__name__}")
-
     async def _send_supplement(self) -> None:
         # 与报告共用锁，即使签到在报告发送中到达，也只补发未收到摘要的渠道。
         async with self.lock:
@@ -201,10 +211,14 @@ class TaskReportCoordinator:
             self.notify_state_changed("delivery")
             if result.failed:
                 results_saved = bool(self.state.results)
-                self._schedule_feedback(
+                schedule_notification_feedback(
                     lambda: self.dependencies.report_supplement_failure(
                         result, results_saved=results_saved
-                    )
+                    ),
+                    spawn=self.dependencies.spawn,
+                    result=None,
+                    logger=logger,
+                    label="任务通知",
                 )
 
     async def dispatch_report(
@@ -324,5 +338,11 @@ class TaskReportCoordinator:
                 ),
             )
         if result.failed:
-            self._schedule_feedback(lambda: self.dependencies.report_failure(result))
+            schedule_notification_feedback(
+                lambda: self.dependencies.report_failure(result),
+                spawn=self.dependencies.spawn,
+                result=None,
+                logger=logger,
+                label="任务通知",
+            )
         return result

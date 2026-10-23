@@ -9,6 +9,7 @@ from app.core.notification_report import (
     NOTIFICATION_RETRY_DELAY_SECONDS,
     NOTIFICATION_SEND_ATTEMPTS,
     CommunityFailureReporter,
+    schedule_notification_feedback,
 )
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import DispatchResult, NotifyTarget
@@ -73,25 +74,18 @@ class CommunityNotificationCoordinator:
     def _schedule_feedback(
         self, result: DispatchResult, *, results_saved: bool
     ) -> None:
-        async def report() -> list[str]:
-            try:
-                await self.dependencies.report_failure(
-                    result, results_saved=results_saved
-                )
-            except Exception as exc:
-                logger.warning(f"社区通知反馈失败: {type(exc).__name__}")
-            return []
-
-        coroutine = report()
-        try:
-            task = self.dependencies.spawn(coroutine)
-        except Exception as exc:
-            coroutine.close()
-            logger.warning(f"社区通知反馈注册失败: {type(exc).__name__}")
-        else:
-            if task is not None:
-                self._pending.add(task)
-                task.add_done_callback(self._completed)
+        task = schedule_notification_feedback(
+            lambda: self.dependencies.report_failure(
+                result, results_saved=results_saved
+            ),
+            spawn=self.dependencies.spawn,
+            result=[],
+            logger=logger,
+            label="社区通知",
+        )
+        if task is not None:
+            self._pending.add(task)
+            task.add_done_callback(self._completed)
 
     async def send(self, results: tuple[CommunityNotificationResult, ...]) -> list[str]:
         if not self.dependencies.enabled():
