@@ -3155,6 +3155,7 @@ export default {
     retry: 'Retry',
     sourceIssue: 'Some sources were not updated',
     stateFailed: 'Failed to load taskboard state',
+    archiveFailed: 'Failed to save the archive',
     sourceUnavailable: 'Source unavailable',
     sourceStale: 'Using cached data',
   },

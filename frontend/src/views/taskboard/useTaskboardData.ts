@@ -287,6 +287,9 @@ export const useTaskboardData = (t: Composer['t']) => {
     if (taskboardState.errorMessage) {
       issues.push(`${t('taskboard.stateFailed')}: ${taskboardState.errorMessage}`)
     }
+    if (taskboardState.archiveError) {
+      issues.push(`${t('taskboard.archiveFailed')}: ${taskboardState.archiveError}`)
+    }
     return [...new Set(issues)]
   })
 
@@ -304,7 +307,13 @@ export const useTaskboardData = (t: Composer['t']) => {
 
   /* “数据更新”只代表一次真正成功的读取：活动源和完成状态都结束且没有失败/陈旧。 */
   const stampUpdatedAt = () => {
-    if (loading.value || completionLoading.value || taskboardState.loading) return
+    if (
+      loading.value ||
+      completionLoading.value ||
+      taskboardState.loading ||
+      !taskboardState.loaded
+    )
+      return
     if (completionError.value || sourceIssues.value.length) return
     updatedAt.value = nowText()
   }
@@ -319,11 +328,16 @@ export const useTaskboardData = (t: Composer['t']) => {
   const load = async () => {
     refreshing.value = true
     try {
+      // 状态首次读取失败后，刷新要能重试，而不是一直用默认选择和空历史。
+      await taskboardState.load()
       await Promise.all([
         ...gameModules.map(([, module]) => module.source.refresh()),
         baSource.refresh(),
         ...[...completions.values()].map(completion => completion.load(true)),
       ])
+      if (taskboardState.loaded) {
+        await taskboardState.saveArchive(taskboardState.archived)
+      }
       stampUpdatedAt()
     } finally {
       refreshing.value = false

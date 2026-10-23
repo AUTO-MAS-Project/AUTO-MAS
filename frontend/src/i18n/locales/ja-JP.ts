@@ -2523,6 +2523,7 @@ export default {
     retry: '再試行',
     sourceIssue: '一部のデータソースが更新されていません',
     stateFailed: 'タスクボードの状態を読み込めません',
+    archiveFailed: 'アーカイブの保存に失敗しました',
     sourceUnavailable: 'データソースを利用できません',
     sourceStale: '前回のキャッシュを使用中',
   },

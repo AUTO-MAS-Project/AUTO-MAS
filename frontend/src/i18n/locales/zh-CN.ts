@@ -2991,6 +2991,7 @@ export default {
     retry: '重试',
     sourceIssue: '部分数据源未更新',
     stateFailed: '任务台状态读取失败',
+    archiveFailed: '归档保存失败',
     sourceUnavailable: '数据源暂不可用',
     sourceStale: '正在使用上次缓存',
   },

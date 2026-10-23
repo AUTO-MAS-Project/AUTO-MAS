@@ -49,6 +49,7 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
   const loaded = ref(false)
   const loading = ref(false)
   const errorMessage = ref('')
+  const archiveError = ref('')
 
   const load = async () => {
     if (loaded.value || loading.value) return
@@ -82,20 +83,29 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
   }
 
   let lastArchiveJson = ''
+  let archiveRequestId = 0
   const saveArchive = async (list: TaskboardActivity[]): Promise<string | null> => {
     const payload = list.map(toPayload)
     const json = JSON.stringify(payload)
-    if (json === lastArchiveJson) return null
+    // 上次保存失败时即使内容没变也要重试，否则错误状态永远清不掉。
+    if (json === lastArchiveJson && !archiveError.value) return null
+    const requestId = ++archiveRequestId
     try {
       const response = await SetService.setTaskboardArchiveApiInfoTaskboardArchivePut({
         archived: payload,
       })
+      if (requestId !== archiveRequestId) return null
       if (response.code !== 200) throw new Error(response.message)
       archived.value = list
       lastArchiveJson = json
+      archiveError.value = ''
       return null
     } catch (error) {
-      return errorText(error)
+      // 较早的请求晚失败时，不要把已经成功的新结果又标成失败。
+      if (requestId !== archiveRequestId) return null
+      const message = errorText(error)
+      archiveError.value = message
+      return message
     }
   }
 
@@ -119,6 +129,7 @@ export const useTaskboardStateStore = defineStore('taskboardState', () => {
     loaded,
     loading,
     errorMessage,
+    archiveError,
     load,
     saveSelection,
     saveArchive,
