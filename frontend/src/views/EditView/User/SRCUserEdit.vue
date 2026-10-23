@@ -156,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptConfigStart } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -585,11 +586,7 @@ const startConfigSession = async (viewOnly: boolean) => {
     }
 
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      viewOnly,
-    })
+    const response = await requestScriptConfigStart(userId, viewOnly)
 
     if (response && response.taskId) {
       const wsId = response.taskId

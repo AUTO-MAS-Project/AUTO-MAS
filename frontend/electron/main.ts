@@ -28,6 +28,13 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { isAnalyticsSender, registerAnalyticsHandlers } from './ipc/analyticsHandlers'
+import {
+  analyticsService,
+  disposeAnalytics,
+  refreshAnalyticsPreference,
+  syncAnalyticsPreference,
+} from './services/analyticsService'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerMascotHandlers } from './ipc/mascotHandlers'
 import {
@@ -2124,8 +2131,11 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
 })
 
 // 新增：同步后端配置的IPC处理器
-ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+ipcMain.handle('sync-backend-config', async (event, backendSettings) => {
   try {
+    if (isAnalyticsSender(event) && backendSettings.Function) {
+      syncAnalyticsPreference(backendSettings.Function.IfEnableTelemetry)
+    }
     const currentConfig = loadConfig()
 
     // 同步UI配置
@@ -2287,6 +2297,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
@@ -2304,6 +2315,9 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  registerAnalyticsHandlers(() => mainWindow)
+  refreshAnalyticsPreference()
+  analyticsService.recordAppStarted()
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)

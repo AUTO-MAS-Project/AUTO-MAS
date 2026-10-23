@@ -24,7 +24,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
       logger.warn('托盘启动任务缺少任务 ID，忽略')
       return
     }
-    void startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY })
+    void startTask({ taskId, mode: TaskCreateIn.mode.AUTO_PROXY }, { source: 'tray' })
       .then(response => {
         if (disposed) return
         options.onStarted({

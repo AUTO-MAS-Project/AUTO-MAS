@@ -31,6 +31,9 @@ import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitiali
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
+import { analyticsService, refreshAnalyticsPreference } from './analyticsService'
+import { analyticsDuration } from './analyticsPolicy'
+import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 const logger = getLogger('后端服务')
 const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
@@ -141,6 +144,7 @@ export class BackendService {
   private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
 
   private readonly startupHealthPath = '/api/core/health'
+  private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
@@ -178,13 +182,34 @@ export class BackendService {
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     const startedAt = performance.now()
+    refreshAnalyticsPreference()
+    const context = analyticsService.getContext()
+    this.analyticsRuntimeMode = 'unknown'
+    const record = (success: boolean) => {
+      refreshAnalyticsPreference()
+      analyticsService.recordMainEvent(context, {
+        name: 'backend_start_finished',
+        props: {
+          outcome: success ? 'success' : 'failure',
+          runtime_mode: this.analyticsRuntimeMode,
+          duration_bucket: analyticsDuration(performance.now() - startedAt),
+        },
+      })
+    }
 
     return observeMainOperation(
       'AUTO-MAS backend startup',
       'auto_mas.backend.start',
       { component: 'electron-main' },
       async () => {
-        const result = await this.startBackendProcess(options)
+        let result: BackendStartResult
+        try {
+          result = await this.startBackendProcess(options)
+        } catch (error) {
+          record(false)
+          throw error
+        }
+        record(result.success)
         const attributes = {
           component: 'electron-main',
           outcome: result.success ? 'success' : 'failure',
@@ -205,6 +230,7 @@ export class BackendService {
     // 灰度开关打开后整条生命周期都走 Runtime 监督链路，绝不与旧链路混用：两条链路的端口、
     // 关闭语义与进程归属都不同，中途回退只会留下无人负责的后端进程。
     const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
+    this.analyticsRuntimeMode = launchConfig.mode
     if (launchConfig.mode !== 'off') {
       return this.startBackendViaRuntime(launchConfig, options)
     }

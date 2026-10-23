@@ -154,6 +154,8 @@
 </template>
 
 <script setup lang="ts">
+import { requestTaskStart } from '@/composables/useTaskApi'
+
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -173,7 +175,6 @@ import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListM
 import {
   getScriptEditSegment,
   isMfwFamily,
-  type ScriptCreateRequest,
   type TemplateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
@@ -203,6 +204,7 @@ import DocLink from '@/components/DocLink.vue'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
+import { useScriptCreation } from '@/views/scripts/useScriptCreation'
 
 const { t } = useI18n()
 
@@ -211,7 +213,7 @@ defineOptions({ name: 'ScriptsPage' })
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
-const { addScript, deleteScript } = useScriptApi()
+const { deleteScript } = useScriptApi()
 const {
   getScriptsWithUsers,
   getScriptUsers,
@@ -238,8 +240,6 @@ const templates = ref<ShareTemplateItem[]>([])
 const templatePage = ref(1)
 const templateTotal = ref(0)
 let templateRequestId = 0
-const addLoading = ref(false)
-const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
 // 新建 MFW 脚本第二步「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本
 const mfwSources = ref<MaaFWEmbeddedSourceItem[]>([])
@@ -421,80 +421,19 @@ const handleScriptsReordered = (reordered: ScriptListItem[]) => {
   scripts.value = [...reordered]
 }
 
-const navigateToCreatedScript = (
-  scriptId: string,
-  type: ScriptType,
-  data?: Record<string, unknown>
-) => {
-  const route = {
-    // MFW 家族新建后进各自类型的分步引导（同一个页面）；其余类型直接进编辑页
-    ...(isMfwFamily(type)
-      ? maafwRouteLocation(type, 'setup', { id: scriptId })
-      : { path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}` }),
-    ...(data
-      ? {
-          state: {
-            scriptData: {
-              id: scriptId,
-              type,
-              config: JSON.parse(JSON.stringify(data)),
-            },
-          },
-        }
-      : {}),
-  }
-  router.push(route)
-}
-
-const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
-  addLoading.value = true
-  try {
-    const type = request.kind === 'new' || request.kind === 'mfw-reuse' ? request.type : 'General'
-    const result = await addScript(type)
-    if (!result) return
-
-    if (request.kind === 'mfw-reuse') {
-      // 同一个项目再建一个脚本：从源脚本的副本克隆，秒级可用；类型随项目（M9A → M9A）。
-      // 克隆失败脚本也已经建好了，照样进引导页让用户自己选目录。
-      try {
-        const { message: text } = await cloneEmbedded(result.scriptId, request.sourceScriptId)
-        if (text) message.success(text)
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        logger.error(`复用已有脚本的项目失败: ${reason}`)
-        message.error(t('scripts.toast.reuseFailed', { reason }))
-      }
-      scriptCreateVisible.value = false
-      navigateToCreatedScript(result.scriptId, type)
-      return
-    }
-
-    if (request.kind === 'general-template') {
-      const imported = await importScriptFromTemplate(result.scriptId, request.template)
-      // 导入失败就把刚建出来的空脚本删掉，不给用户留一个没有配置的壳
-      if (!imported) {
-        await deleteScript(result.scriptId)
-        await loadScripts()
-        return
-      }
-      message.success(
-        t('scripts.toast.createdFromTemplate', { name: request.template.displayName })
-      )
-      await loadScripts()
-      scriptCreateVisible.value = false
-      navigateToCreatedScript(result.scriptId, 'General')
-      return
-    }
-
+const {
+  addLoading,
+  copyingScriptId,
+  submit: handleSubmitScriptCreate,
+  copy: handleCopyScript,
+} = useScriptCreation({
+  reloadScripts: () => loadScripts(),
+  closeDialog: () => {
     scriptCreateVisible.value = false
-    navigateToCreatedScript(result.scriptId, type, result.data)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`创建脚本失败: ${errorMsg}`)
-  } finally {
-    addLoading.value = false
-  }
-}
+  },
+  importTemplate: importScriptFromTemplate,
+  cloneProject: cloneEmbedded,
+})
 
 const loadMfwSources = async () => {
   mfwSourcesLoading.value = true
@@ -547,21 +486,6 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   if (result) {
     // 后端已删除，本地直接移除即可，不必整份重拉
     scripts.value = scripts.value.filter(item => item.id !== script.id)
-  }
-}
-
-const handleCopyScript = async (script: ScriptListItem) => {
-  addLoading.value = true
-  copyingScriptId.value = script.id
-  try {
-    const result = await addScript(script.type, script.id)
-    if (result) {
-      await loadScripts()
-      message.success(t('scripts.toast.copied', { name: script.name }))
-    }
-  } finally {
-    addLoading.value = false
-    copyingScriptId.value = null
   }
 }
 
@@ -710,10 +634,13 @@ const startConfigSession = async (
     return false
   }
 
-  const response = await Service.addTaskApiDispatchStartPost({
-    taskId: targetId,
-    mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-  })
+  const response = await requestTaskStart(
+    {
+      taskId: targetId,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    },
+    { source: 'script_config' }
+  )
   if (response.code !== 200 || !response.taskId) {
     throw new Error(response.message || t('scripts.toast.startFailedRaw', { label }))
   }

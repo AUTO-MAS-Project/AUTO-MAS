@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 // BetterGI 原生设置会话（原生 GUI 直控）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -82,11 +83,14 @@ export function useBettergiGuiSession() {
     try {
       bettergiConfigLoading.value = true
       currentSessionViewOnly.value = viewOnly
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: userId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId: userId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.bettergiStartFailed'))
       }

@@ -15,6 +15,7 @@ import {
   disposeSchedulerSubscriptions,
 } from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
+import { bootstrapTaskAnalytics, disposeTaskAnalytics } from '@/services/taskAnalytics'
 import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
@@ -29,6 +30,10 @@ let registered = false
  */
 export function bootstrapRealtimeResidents(): void {
   if (!registered) {
+    registerResidentResource('task-analytics', {
+      bootstrap: bootstrapTaskAnalytics,
+      dispose: disposeTaskAnalytics,
+    })
     registerResidentResource('task-runtime', {
       bootstrap: bootstrapTaskRuntimeState,
       dispose: disposeTaskRuntimeState,

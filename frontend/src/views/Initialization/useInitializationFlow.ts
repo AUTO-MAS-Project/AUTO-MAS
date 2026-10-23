@@ -2,6 +2,9 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { connectionState } from '@/services/websocket/connection'
+import type { AnalyticsEventProps } from '@/types/analytics'
 import { getBackendVersion } from '@/composables/useVersionService'
 import {
   canRestoreWorkspace,
@@ -115,6 +118,27 @@ export function useInitializationFlow() {
   const runtimeMirrorKeys = ref<Record<string, string[]>>({})
   const runtimeFallbackLogPath = ref('')
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
+  let analyticsAttempt: ReturnType<
+    typeof beginAnalyticsOperation<'initialization_finished'>
+  > | null = null
+  let skippedStage = false
+  const ensureAnalyticsAttempt = () => {
+    if (!analyticsAttempt) {
+      analyticsAttempt = beginAnalyticsOperation('initialization_finished')
+      skippedStage = false
+    }
+  }
+  const failAnalyticsAttempt = (
+    stage: AnalyticsEventProps['initialization_finished']['failed_stage']
+  ) => {
+    analyticsAttempt?.finish({
+      outcome: 'failure',
+      flow_kind: flowKind.value,
+      runtime_mode: runtimeMode.value,
+      failed_stage: stage,
+    })
+    analyticsAttempt = null
+  }
 
   const isDev = import.meta.env.DEV
   const version = import.meta.env.VITE_APP_VERSION
@@ -341,6 +365,7 @@ export function useInitializationFlow() {
     errorMessage: string,
     failure: RuntimeFailureFields
   ) {
+    failAnalyticsAttempt(stepKey)
     const state = stepStates.value[stepKey]
     state.status = 'failed'
     state.message = errorMessage
@@ -441,6 +466,7 @@ export function useInitializationFlow() {
   }
 
   async function startInitialization(startIndex = 0) {
+    ensureAnalyticsAttempt()
     logger.info('开始初始化流程')
 
     try {
@@ -460,6 +486,7 @@ export function useInitializationFlow() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`初始化失败: ${errorMessage}`)
+      failAnalyticsAttempt('unknown')
       message.error(t('init.msg.initFailed'))
     }
   }
@@ -485,6 +512,8 @@ export function useInitializationFlow() {
   }
 
   async function handleSkip() {
+    ensureAnalyticsAttempt()
+    skippedStage = true
     const step = currentStep.value
     const state = stepStates.value[step.key]
 
@@ -502,6 +531,7 @@ export function useInitializationFlow() {
   }
 
   async function handleRetry(rebuild = false) {
+    ensureAnalyticsAttempt()
     const step = currentStep.value
     const state = stepStates.value[step.key]
     resetFailureState(state)
@@ -526,6 +556,7 @@ export function useInitializationFlow() {
   function handleBackendStatusChange(
     status: 'waiting' | 'starting' | 'running' | 'success' | 'failed'
   ) {
+    if (status === 'starting' || status === 'running') ensureAnalyticsAttempt()
     stepStates.value.backend.status =
       status === 'starting' || status === 'running' ? 'processing' : status
   }
@@ -558,6 +589,7 @@ export function useInitializationFlow() {
       markStepFailed('dependency', errorMessage, failure)
       await loadMirrorConfigs()
     }
+    failAnalyticsAttempt('backend')
   }
 
   async function handleFailureAction(kind: FailureActionKind) {
@@ -622,10 +654,27 @@ export function useInitializationFlow() {
   }
 
   async function handleLocalEnterApp() {
+    const operation = analyticsAttempt
+    analyticsAttempt = null
+    const skipped = skippedStage
+    const dimensions = {
+      flow_kind: flowKind.value,
+      runtime_mode: runtimeMode.value,
+      failed_stage: 'none' as const,
+    }
     try {
       const success = await enterApp('初始化完成后进入', true)
       if (!success) await forceEnterApp('初始化完成后强制进入')
+      operation?.finish({
+        ...dimensions,
+        outcome: skipped
+          ? 'skipped'
+          : connectionState().value === 'open'
+            ? 'success'
+            : 'unconfirmed',
+      })
     } catch {
+      operation?.finish({ ...dimensions, outcome: 'unconfirmed' })
       await forceEnterApp('初始化失败后强制进入')
     }
   }
@@ -707,6 +756,7 @@ export function useInitializationFlow() {
   }
 
   onMounted(async () => {
+    ensureAnalyticsAttempt()
     logger.info('初始化界面已加载')
 
     if (isDev) {
@@ -755,6 +805,7 @@ export function useInitializationFlow() {
   })
 
   onUnmounted(() => {
+    analyticsAttempt = null
     if (initializationTimer) clearTimeout(initializationTimer)
 
     const api = window.electronAPI

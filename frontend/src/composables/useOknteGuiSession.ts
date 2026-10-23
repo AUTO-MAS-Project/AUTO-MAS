@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 // OK-NTE 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -81,11 +82,14 @@ export function useOknteGuiSession() {
   const startSession = async (taskId: string, viewOnly = false): Promise<void> => {
     try {
       oknteConfigLoading.value = true
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.oknteSessionStartFailed'))
       }

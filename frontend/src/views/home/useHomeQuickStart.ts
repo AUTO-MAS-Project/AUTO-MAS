@@ -148,10 +148,13 @@ export const useHomeQuickStart = () => {
         fallbackLabel: t('home.quickStart.fallbackLabel'),
         failureReason: t('home.quickStart.startFailed'),
         startTask: taskId =>
-          startTask({
-            taskId,
-            mode: selectedHomeMode.value,
-          }),
+          startTask(
+            {
+              taskId,
+              mode: selectedHomeMode.value,
+            },
+            { source: 'home' }
+          ),
         onTaskStarted: result => {
           trackStartedTask({
             taskId: result.taskId,

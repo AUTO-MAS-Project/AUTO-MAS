@@ -20,6 +20,12 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import {
+  analyticsConfigSection,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+  rememberAnalyticsScriptType,
+} from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -72,6 +78,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      rememberAnalyticsScriptType(response.scriptId, type)
       scriptListRequest = null
       // 播放添加脚本成功音频
       const { playSound } = useAudioPlayer()
@@ -125,6 +132,11 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      for (const item of response.index)
+        rememberAnalyticsScriptType(
+          item.uid,
+          item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
+        )
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
@@ -170,6 +182,10 @@ export function useScriptApi() {
       const item = response.index[0]
       const config = response.data[item.uid]
       const scriptType = resolveScriptType(item.type)
+      rememberAnalyticsScriptType(
+        item.uid,
+        item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
+      )
 
       return {
         uid: item.uid,
@@ -295,7 +311,14 @@ export function useScriptApi() {
     scriptId: string,
     data: Record<string, unknown>
   ): Promise<boolean> => {
+    const operation = beginAnalyticsOperation('config_write_finished')
+    const dimensions = {
+      owner_kind: 'script' as const,
+      section_kind: analyticsConfigSection(data),
+      script_type: getAnalyticsScriptType(scriptId),
+    }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      operation.finish({ ...dimensions, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
@@ -323,8 +346,10 @@ export function useScriptApi() {
       }
 
       scriptListRequest = null
+      operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
+      operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)

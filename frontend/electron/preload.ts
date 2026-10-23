@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { RendererAnalyticsEvent } from '../src/types/analytics'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -16,6 +17,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  analytics: {
+    getContext: () => ipcRenderer.invoke('analytics:context'),
+    trackEvent: (context: number, event: RendererAnalyticsEvent) =>
+      ipcRenderer.send('analytics:event', context, event),
+  },
   isMacOS: process.platform === 'darwin',
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),

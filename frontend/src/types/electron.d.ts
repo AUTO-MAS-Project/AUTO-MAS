@@ -1,4 +1,5 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -222,6 +223,10 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  analytics?: {
+    getContext: () => Promise<AnalyticsContext>
+    trackEvent: (context: number, event: RendererAnalyticsEvent) => void
+  }
   isMacOS: boolean
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>

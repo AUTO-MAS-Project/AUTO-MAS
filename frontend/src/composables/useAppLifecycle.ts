@@ -7,6 +7,8 @@ import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
@@ -84,6 +86,16 @@ export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'er
 // ==================== 模块级状态 ====================
 
 let initialized = false
+let incidentAnalytics: ReturnType<
+  typeof beginAnalyticsOperation<'connection_incident_finished'>
+> | null = null
+let recoveryKind: AnalyticsEventProps['connection_incident_finished']['recovery_kind'] = 'reconnect'
+const finishIncidentAnalytics = (
+  outcome: AnalyticsEventProps['connection_incident_finished']['outcome']
+) => {
+  incidentAnalytics?.finish({ outcome, recovery_kind: recoveryKind })
+  incidentAnalytics = null
+}
 let lifecycleDisposers: Array<() => void> = []
 let residentSubscriptionIds: string[] = []
 
@@ -283,6 +295,7 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 }
 
 const handleConnected = async (): Promise<void> => {
+  finishIncidentAnalytics('recovered')
   // 重新连上（系统恢复后重连、手动重连）说明后端实际可用：撤掉恢复失败终态和它的弹窗。
   // 自动重启计数不在这里清零，按时间窗累计
   dismissRestartFailure()
@@ -624,6 +637,7 @@ export function closeApp(): Promise<void> {
 const showRestartFailureModal = (): void => {
   // 达到恢复失败上限：仅提示一次，提供重启应用兜底
   if (restartFailureShown) return
+  finishIncidentAnalytics('recovery_stopped')
   restartFailureShown = true
   backendStatus.value = 'error'
   stopReconnect()
@@ -684,6 +698,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
   }
 
   const run = async (): Promise<void> => {
+    recoveryKind = 'backend_restart'
     backendRestartTimestamps.push(Date.now())
     backendStatus.value = 'starting'
     logger.warn(
@@ -752,6 +767,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
  * @param reason 记入日志的触发原因
  */
 export function beginIntentionalBackendRestart(reason: string): void {
+  incidentAnalytics = null
   if (intentionalRestartTimer !== undefined) window.clearTimeout(intentionalRestartTimer)
   intentionalRestartActive = true
   intentionalRestartTimer = window.setTimeout(() => {
@@ -785,6 +801,8 @@ export function endIntentionalBackendRestart(reason: string): void {
 
 const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   if (disconnectIncidentShown) return
+  incidentAnalytics = beginAnalyticsOperation('connection_incident_finished')
+  recoveryKind = 'reconnect'
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
   notification.warning({
@@ -815,6 +833,7 @@ const escalateDisconnectIncident = (): void => {
 }
 
 const dismissDisconnectIncident = (): void => {
+  incidentAnalytics = null
   disconnectIncidentShown = false
   notification.close(DISCONNECT_NOTICE_KEY)
   notification.close(SUPERSEDED_NOTICE_KEY)
@@ -1033,6 +1052,7 @@ export async function connectWithRetry(
 /** 手动重连（devtools/恢复入口） */
 export async function manualReconnect(): Promise<boolean> {
   if (isClosing()) return false
+  recoveryKind = 'manual'
   stopReconnect()
   // 连同失败弹窗一起撤掉，否则再次进入终态时旧弹窗失去句柄、叠在新弹窗下
   dismissRestartFailure()

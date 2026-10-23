@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -121,11 +122,14 @@ export function useNativeGuiSession(options: {
     try {
       configLoading.value = true
       discardedReason = null
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: startTaskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId: startTaskId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t(keys.startFailed))
       }

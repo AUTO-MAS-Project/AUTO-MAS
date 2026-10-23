@@ -914,7 +914,10 @@ export function useSchedulerLogic() {
           : undefined
       )
 
-      const response = await taskApi.startTask(requestBody)
+      const response = await taskApi.startTask(requestBody, {
+        source: 'scheduler',
+        target_kind: isScriptTask(tab) ? 'script' : 'queue',
+      })
       tab.status = '运行'
       tab.taskId = response.taskId
 

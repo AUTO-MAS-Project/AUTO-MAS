@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 // ZZZ-OD 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -85,12 +86,15 @@ export function useZzzodGuiSession() {
   ): Promise<void> => {
     try {
       zzzodConfigLoading.value = true
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-        instanceIdx: instanceIdx ?? undefined,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+          instanceIdx: instanceIdx ?? undefined,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.zzzodStartFailed'))
       }

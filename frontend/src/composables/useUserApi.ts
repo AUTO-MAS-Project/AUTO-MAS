@@ -15,6 +15,11 @@ import type {
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import {
+  analyticsConfigSection,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('用户API')
 
@@ -32,7 +37,10 @@ export function useUserApi() {
     scriptId: string,
     options: AddUserOptions = {}
   ): Promise<UserCreateOut | null> => {
+    const operation = beginAnalyticsOperation('user_create_finished')
+    const script_type = getAnalyticsScriptType(scriptId)
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      operation.finish({ script_type, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
       addUserErrorCode.value = null
@@ -58,12 +66,14 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      operation.finish({ script_type, outcome: response.userId ? 'success' : 'failure' })
       // 播放添加用户成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_user')
 
       return response
     } catch (err) {
+      operation.finish({ script_type, outcome: 'failure' })
       addUserErrorCode.value ??= getApiErrorCode(err)
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userAddFailed'))
       error.value = errorMsg
@@ -82,7 +92,14 @@ export function useUserApi() {
     userId: string,
     userData: UserUpdateIn['data']
   ): Promise<boolean> => {
+    const operation = beginAnalyticsOperation('config_write_finished')
+    const dimensions = {
+      owner_kind: 'user' as const,
+      section_kind: analyticsConfigSection(userData),
+      script_type: getAnalyticsScriptType(scriptId),
+    }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      operation.finish({ ...dimensions, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
@@ -109,8 +126,10 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
+      operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)

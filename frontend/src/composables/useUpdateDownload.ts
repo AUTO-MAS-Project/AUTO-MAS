@@ -16,6 +16,8 @@ import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 import type { ChangelogData } from '@/utils/changelog'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
@@ -47,6 +49,24 @@ let snapshotGeneration = 0
 let mutationGeneration = 0
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
+let downloadAnalytics: ReturnType<
+  typeof beginAnalyticsOperation<'update_download_finished'>
+> | null = null
+
+const finishDownloadAnalytics = (
+  outcome: AnalyticsEventProps['update_download_finished']['outcome']
+) => {
+  const operation = downloadAnalytics
+  downloadAnalytics = null
+  const sources: Record<string, AnalyticsEventProps['update_download_finished']['source']> = {
+    CNB: 'cnb',
+    GitHub: 'github',
+    MirrorChyan: 'mirrorchyan',
+    AutoSite: 'autosite',
+  }
+  const sourceKind = sources[source.value] ?? 'unknown'
+  operation?.finish({ source: sourceKind, outcome })
+}
 
 const progressPercent = computed(() => {
   if (fileSize.value <= 0) return 0
@@ -115,6 +135,7 @@ const startRuntimeMonitoring = () => {
       status.value === 'switchingSource'
     ) {
       logger.warn('更新下载等待超时')
+      finishDownloadAnalytics('observation_unknown')
       status.value = 'failed'
       failureReason.value = '下载超时，请检查网络连接；后台任务可能仍在运行'
       speed.value = 0
@@ -131,6 +152,7 @@ const clearSubscription = () => {
 }
 
 const resetState = () => {
+  downloadAnalytics = null
   stopRuntimeMonitoring()
   status.value = 'idle'
   source.value = ''
@@ -187,6 +209,7 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
 }
 
 const receiveCancelled = () => {
+  finishDownloadAnalytics('cancelled')
   invalidateSnapshot()
   logger.info('下载已取消')
   resetState()
@@ -194,6 +217,7 @@ const receiveCancelled = () => {
 }
 
 const receiveCompleted = () => {
+  finishDownloadAnalytics('completed')
   invalidateSnapshot()
   logger.info('下载完成')
   stopRuntimeMonitoring()
@@ -201,7 +225,8 @@ const receiveCompleted = () => {
   speed.value = 0
 }
 
-const receiveFailed = (reason: string) => {
+const receiveFailed = (reason: string, outcome: 'failed' | 'observation_unknown' = 'failed') => {
+  finishDownloadAnalytics(outcome)
   invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
@@ -211,6 +236,8 @@ const receiveFailed = (reason: string) => {
 }
 
 const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
+  // 快照用于对账，终态快照也不伪造成新收到的完成事件。
+  if (!['downloading', 'switchingSource'].includes(snapshot.status)) downloadAnalytics = null
   source.value = snapshot.source ?? ''
   downloadedSize.value = snapshot.downloaded_size ?? 0
   fileSize.value = snapshot.file_size ?? 0
@@ -274,6 +301,7 @@ export function bootstrapUpdateDownloadSubscriptions(): void {
 
 /** 应用最终退出时释放更新下载常驻资源；幂等。 */
 export function disposeUpdateDownloadSubscriptions(): void {
+  downloadAnalytics = null
   invalidateSnapshot()
   disposeConnectedListener?.()
   disposeConnectedListener = null
@@ -285,6 +313,7 @@ const start = async (version: string, data: ChangelogData) => {
   logger.info(`开始下载: ${version}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
+  downloadAnalytics = beginAnalyticsOperation('update_download_finished')
   latestVersion.value = version
   updateData.value = data
 
@@ -305,7 +334,7 @@ const start = async (version: string, data: ChangelogData) => {
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '网络请求失败，请检查网络连接')
     logger.error(`启动下载失败: ${errorMessage}`)
-    receiveFailed(errorMessage)
+    receiveFailed(errorMessage, 'observation_unknown')
   }
 }
 const cancel = async () => {
@@ -361,14 +390,14 @@ const switchToCnb = async () => {
     } else {
       const failureMessage = response.message || '切换下载源失败'
       message.error(failureMessage)
-      receiveFailed(failureMessage)
+      receiveFailed(failureMessage, 'observation_unknown')
     }
   } catch (error) {
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '切换下载源失败')
     logger.error(`切换下载源失败: ${errorMessage}`)
     message.error(errorMessage)
-    receiveFailed(errorMessage)
+    receiveFailed(errorMessage, 'observation_unknown')
   }
 }
 
