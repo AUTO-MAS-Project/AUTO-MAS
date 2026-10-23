@@ -2566,16 +2566,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
         else:
             # 先按所选实例解析安装，避免多安装管理器沿用上一次命中的 ADB。
-            if (
-                resolve_device_ref(
-                    self.emulator_manager, self.script_config.Emulator.Index
-                )
-                is None
-            ):
+            device_ref = resolve_device_ref(
+                self.emulator_manager, self.script_config.Emulator.Index
+            )
+            if device_ref is None:
                 raise ValueError("无法解析所选模拟器实例，请检查模拟器配置")
             connect_settings = current_gui["ConnectSettings"]
             adb_path = self.emulator_manager.get_adb_path()
-            if adb_path is None:
+            if adb_path is None and device_ref.emulator_type == "general":
                 configured_adb = str(connect_settings.get("AdbPath") or "").strip()
                 if configured_adb:
                     adb_path = Path(configured_adb)
