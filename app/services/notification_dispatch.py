@@ -48,7 +48,6 @@ async def dispatch(
     *,
     attempts: int = 1,
     retry_delay: float = 0,
-    skip_channels: Iterable[str] = (),
     skip_channel_ids: Iterable[str] = (),
     notifier: Notifier,
     renderer: NotificationRenderer,
@@ -62,7 +61,6 @@ async def dispatch(
     if attempts < 1:
         raise ValueError("通知发送次数必须大于 0")
 
-    skip = set(skip_channels)
     skip_ids = set(skip_channel_ids)
     unresolved: list[str] = []
     unresolved_failures: list[DeliveryFailure] = []
@@ -83,10 +81,10 @@ async def dispatch(
                     )
                 )
         for channel, ct in target.channels:
-            if ct.label not in skip and ct.id not in skip_ids:
+            if ct.id not in skip_ids:
                 groups.setdefault(channel.key, []).append(len(jobs))
                 jobs.append((channel, ct, target.empty_policy))
-    del skip, skip_ids
+    del skip_ids
 
     rendered_cache: dict[
         tuple[NotificationCapabilities, SummaryPolicy, bool], RenderedNotification

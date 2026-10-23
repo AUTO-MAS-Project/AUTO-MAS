@@ -517,7 +517,7 @@ def test_user_target_uses_user_scope_and_warn_policy() -> None:
     assert notify.calls == ["ServerChanPush", "WebhookPush"]
 
 
-def test_dispatch_honors_skip_by_name_and_by_id() -> None:
+def test_dispatch_honors_skip_by_id() -> None:
     config = _Config(
         {
             "IfSendMail": True,
@@ -531,8 +531,7 @@ def test_dispatch_honors_skip_by_name_and_by_id() -> None:
         dispatch(
             PAYLOAD,
             [_global_target(config)],
-            skip_channels=("全局邮件", "全局 Koishi"),
-            skip_channel_ids=("全局 Webhook hook-1",),
+            skip_channel_ids=("全局邮件", "全局 Koishi", "全局 Webhook hook-1"),
             notifier=_Notify(),
         )
     )

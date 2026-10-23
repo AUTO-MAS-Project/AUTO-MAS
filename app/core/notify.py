@@ -424,7 +424,6 @@ class HostNotificationService:
         *,
         attempts: int = 1,
         retry_delay: float = 0,
-        skip_channels: Iterable[str] = (),
         skip_channel_ids: Iterable[str] = (),
         notifier: Notifier | None = None,
     ) -> DispatchResult:
@@ -434,7 +433,6 @@ class HostNotificationService:
             targets=targets,
             attempts=attempts,
             retry_delay=retry_delay,
-            skip_channels=skip_channels,
             skip_channel_ids=skip_channel_ids,
             notifier=self._transport if notifier is None else notifier,
             renderer=self._renderer,
