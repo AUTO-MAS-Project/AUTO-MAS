@@ -10,6 +10,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic import AwareDatetime, TypeAdapter
 
@@ -26,6 +27,9 @@ from app.tools.game_calendar import (
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.io import write_file
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 
 logger = get_logger("游戏日历")
 CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
@@ -168,7 +172,7 @@ class _GameCalendar:
         self._dirty = False
         self._save_retry_at: datetime | None = None
 
-    def bind_notifications(self, notifications) -> None:
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
         self._dispatcher = notifications.dispatch
         self._prepare_target = lambda: notifications.global_target(
             include_system=True, empty_policy="skip"

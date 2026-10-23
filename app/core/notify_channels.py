@@ -35,7 +35,6 @@ from app.models.notification_channel import (
     NotifyChannel,
     NotifyChannelField,
 )
-from app.models.notification_channel import ChannelTarget as ChannelTarget
 from app.notification_channels.registry import ChannelRegistry
 
 if TYPE_CHECKING:
@@ -264,8 +263,7 @@ def create_notification_service(
         logger=get_logger("通知服务"),
         command_executor=command_executor,
     )
-    transport = Notification()
-    transport.bind(registry.bind(dependencies))
+    transport = Notification(registry.bind(dependencies))
     return HostNotificationService(
         config=config,
         transactions=transactions,

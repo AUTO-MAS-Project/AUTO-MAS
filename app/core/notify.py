@@ -119,6 +119,7 @@ class HostNotificationService:
         await self._transport.start()
 
     async def close(self) -> None:
+        """宿主先回收运行时任务，再释放渲染、渠道和配置订阅。"""
         if self._closed:
             return
         self._closed = True
@@ -154,6 +155,7 @@ class HostNotificationService:
         )
 
     def read_task_report_policy(self) -> TaskReportPolicy:
+        """报告入口固定一次策略，迟到补发作为下一次通知重新读取。"""
         return TaskReportPolicy(
             result_time=self.config.setting.Notify.SendTaskResultTime,
             community_enabled=self.config.ToolsConfig.GameSign.NotifyEnabled,

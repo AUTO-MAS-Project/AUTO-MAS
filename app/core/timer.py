@@ -23,7 +23,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.models.notification_community import community_notification_results
 from app.models.notification_ports import CommunityNotifier
@@ -41,6 +41,9 @@ from .community_scheduler import (
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 
 logger = get_logger("主业务定时器")
 
@@ -103,7 +106,7 @@ class _MainTimer:
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
 
-    def bind_notifications(self, notifications) -> None:
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
         self._community_notifier = notifications.community
         self._drain_notifications = notifications.tasks.drain_notifications
 
