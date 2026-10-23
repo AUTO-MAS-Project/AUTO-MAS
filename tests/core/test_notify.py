@@ -10,6 +10,8 @@ from app.core.notify import HostNotificationService
 from app.core.notify_channels import get_notify_channel_failures, get_notify_channels
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.models.notification_channel import Notifier
+from app.models.notification_community import CommunityNotificationResult
+from app.models.notification_report import TaskReportPolicy
 from app.models.task import TaskItem
 from app.runtime_tasks import OwnedTaskRegistry
 from app.services.notification_rendering import AsyncNotificationRenderer
@@ -199,6 +201,15 @@ class _Notify:
 
 
 PAYLOAD = NotifyPayload(title="标题", text="正文", html="<p>正文</p>")
+_COMMUNITY_RESULTS = (
+    CommunityNotificationResult(
+        account="summary-account",
+        account_uid="summary-uid",
+        game="test-game",
+        platform="test-platform",
+        status="success",
+    ),
+)
 
 
 def _run(awaitable):
@@ -567,14 +578,17 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
         }
     )
     task = _Task()
-    summary = "签到情况: 小明: 签到成功"
-    payload = NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None)
+    task.notification_state.results = _COMMUNITY_RESULTS
+    payload = NotifyPayload(title="报告", text="正文", html=None)
 
     notify = _Notify({"send_mail": ["false"]})
     with _service(notifier=notify) as notifications:
+        notifications.read_task_report_policy = lambda: TaskReportPolicy(
+            result_time="任何时刻", community_enabled=True, wait_seconds=0
+        )
         result = _run(
             notifications.prepare_task_report(task).dispatch(
-                payload, [_global_target(config)], summary_text=summary
+                payload, [_global_target(config)]
             )
         )
 
@@ -586,9 +600,12 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
     # 第二次: 只向失败渠道重发含汇总的载荷; 已送达渠道收到不含汇总的载荷
     notify = _Notify()
     with _service(notifier=notify) as notifications:
+        notifications.read_task_report_policy = lambda: TaskReportPolicy(
+            result_time="任何时刻", community_enabled=True, wait_seconds=0
+        )
         result = _run(
             notifications.prepare_task_report(task).dispatch(
-                payload, [_global_target(config)], summary_text=summary
+                payload, [_global_target(config)]
             )
         )
 
@@ -596,20 +613,22 @@ def test_prepared_task_report_retries_only_failed_channels() -> None:
     assert task.notification_state.delivered == {"全局 ServerChan", "全局邮件"}
     # 邮件拿到含汇总的重试版, ServerChan 只拿到去掉汇总的报告
     sent = [kwargs["content"] for kwargs in notify.kwargs]
-    assert "签到情况" in sent[0]
-    assert "签到情况" not in sent[1]
+    assert "summary-account" in sent[0]
+    assert "summary-account" not in sent[1]
 
 
 def test_prepared_task_report_zero_targets_keeps_summary() -> None:
     task = _Task()
-    summary = "签到情况: 小明: 签到成功"
+    task.notification_state.results = _COMMUNITY_RESULTS
 
     with _service() as notifications:
+        notifications.read_task_report_policy = lambda: TaskReportPolicy(
+            result_time="任何时刻", community_enabled=True, wait_seconds=0
+        )
         result = _run(
             notifications.prepare_task_report(task).dispatch(
-                NotifyPayload(title="报告", text=f"正文\n\n{summary}", html=None),
+                NotifyPayload(title="报告", text="正文", html=None),
                 [],
-                summary_text=summary,
             )
         )
 

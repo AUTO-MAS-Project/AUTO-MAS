@@ -39,7 +39,6 @@ from app.models.notification_report import (
     TaskNotificationState,
     TaskReportPolicy,
     TaskReportRequest,
-    TaskReportSummary,
 )
 from app.models.task import TaskItem
 from app.services.notification_report import DefaultReportRenderer
@@ -112,24 +111,17 @@ class PreparedTaskReport:
     policy: TaskReportPolicy
     notifications: HostNotificationService
 
-    def should_send(
-        self, *, uncompleted_count: int, embedded_summary: bool = False
-    ) -> bool:
+    def should_send(self, *, uncompleted_count: int) -> bool:
         return self.coordinator.should_send_result(
             policy=self.policy,
             uncompleted_count=uncompleted_count,
-            embedded_summary=embedded_summary,
         )
-
-    def community_summary(self) -> TaskReportSummary:
-        return self.coordinator.community_summary()
 
     async def dispatch(
         self,
         payload: NotifyPayload,
         targets: list[NotifyTarget],
         *,
-        summary_text: str = "",
         attempts: int = 1,
         retry_delay: float = 0,
     ) -> DispatchResult:
@@ -137,7 +129,6 @@ class PreparedTaskReport:
             payload=payload,
             targets=tuple(targets),
             policy=self.policy,
-            embedded_summary=summary_text,
             attempts=attempts,
             retry_delay=retry_delay,
         )

@@ -489,7 +489,6 @@ class HostNotificationService:
         prepared = self.prepare_task_report(task_info)
         if not prepared.should_send(
             uncompleted_count=report.uncompleted_count,
-            embedded_summary=report.embedded_summary,
         ):
             return DispatchResult()
 
@@ -501,11 +500,6 @@ class HostNotificationService:
         counts = (
             f"已完成用户数: {report.completed_count}, "
             f"未完成用户数: {report.uncompleted_count}"
-        )
-        summary_text = (
-            prepared.community_summary().text
-            if task_info is not None and report.embedded_summary
-            else ""
         )
         # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
         summary_title = report.summary_title or title.replace(
@@ -531,5 +525,4 @@ class HostNotificationService:
                     include_system=include_system, system_timeout_seconds=10
                 )
             ],
-            summary_text=summary_text,
         )

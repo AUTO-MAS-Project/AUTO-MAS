@@ -131,10 +131,7 @@ class TaskReportCoordinator:
         *,
         policy: TaskReportPolicy,
         uncompleted_count: int,
-        embedded_summary: bool = False,
     ) -> bool:
-        if embedded_summary:
-            return True
         if policy.community_enabled and (
             self.community_summary().text
             or (self.community_pending and not self.completed.is_set())
@@ -252,12 +249,7 @@ class TaskReportCoordinator:
             if request.policy.community_enabled
             else TaskReportSummary()
         )
-        clean_payload, payload = self.dependencies.renderer.prepare_payloads(
-            payload,
-            summary=summary,
-            embedded_summary=request.embedded_summary,
-        )
-        if not (request.embedded_summary or summary.text):
+        if not summary.text:
             result = await self.dependencies.dispatch(
                 payload,
                 request.targets,
@@ -270,7 +262,7 @@ class TaskReportCoordinator:
                 ct.id for target in request.targets for _, ct in target.channels
             }
             with_summary = await self.dependencies.dispatch(
-                payload,
+                self.dependencies.renderer.append_summary(payload, summary),
                 request.targets,
                 attempts=request.attempts,
                 retry_delay=request.retry_delay,
@@ -279,7 +271,7 @@ class TaskReportCoordinator:
             # 本轮开始前收到过摘要的渠道只收原始报告，避免同一轮重复投递。
             without_summary = (
                 await self.dependencies.dispatch(
-                    clean_payload,
+                    payload,
                     request.targets,
                     attempts=request.attempts,
                     retry_delay=request.retry_delay,

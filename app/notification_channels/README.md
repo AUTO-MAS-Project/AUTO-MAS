@@ -206,13 +206,14 @@ risk_control / failed 机器状态。旧字典、中文状态及占位过滤仅�
 `tools/community_notify.py` 和 `core.community_notify` 的旧入口已退役，独立社区通知
 由宿主 Service 装配，纯内容生成使用 `services.community_notification`。
 
-共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量、结果和摘要意图
-都是明确字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
+共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量和结果都是明确
+字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
 参与共享发送决策。任务统计入口只接收已生成的 `NotifyPayload`，并保留即时托管、
 事务内同 Task 投递与失败反馈；插件的独立 `send_statistics` 不承担任务托管。
 专项字典只进入正文构造，旧模式路由和 `TaskNoticeMode` 已退役。用户通知配置协议
 描述实际的只读分组属性，不要求配置实例提供旧式
 get/set；渠道仅通过宿主的 `TargetConfigView` 获取字段。
+签到摘要只由协调器消费结构化结果后追加；旧内嵌摘要标记、正文剥离和替换路径已退役。
 
 ## 独立社区通知与日历
 

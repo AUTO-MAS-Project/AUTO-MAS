@@ -21,7 +21,7 @@ from app.models.notification_channel import (
     UserNotificationConfig,
 )
 from app.models.notification_community import CommunityNotificationResult
-from app.models.notification_report import TaskReportSummary, TaskResultReport
+from app.models.notification_report import TaskResultReport
 
 if TYPE_CHECKING:
     from app.models.task import TaskItem
@@ -87,18 +87,13 @@ class LocalNotifier(Protocol):
 
 
 class PreparedReport(Protocol):
-    def should_send(
-        self, *, uncompleted_count: int, embedded_summary: bool = False
-    ) -> bool: ...
-
-    def community_summary(self) -> TaskReportSummary: ...
+    def should_send(self, *, uncompleted_count: int) -> bool: ...
 
     async def dispatch(
         self,
         payload: NotifyPayload,
         targets: list[NotifyTarget],
         *,
-        summary_text: str = "",
         attempts: int = 1,
         retry_delay: float = 0,
     ) -> DispatchResult: ...
