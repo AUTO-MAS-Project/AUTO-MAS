@@ -1011,6 +1011,9 @@ async def fluxdown_server_download(
         if code == 0:
             resumed = True
             logger.info(f"[server] 续传任务: {task_id} ({url})")
+            # 续传成功后立即补写映射（task_id 一致，幂等刷新时间戳），
+            # 强等待保证取消时映射已落盘，CancelledError 才能找到并暂停任务
+            await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
         else:
             # resume 失败（可能任务状态不可恢复）→ 重新 add
             task_id = None
@@ -1053,9 +1056,10 @@ async def fluxdown_server_download(
             # 让上层以可续传语义重试（同 url 会再次尝试 add，已有分段由服务端保留）。
             if new_id:
                 task_id = new_id
-                await asyncio.to_thread(_map_put, cli_exe, key, task_id, url, destination)
+                # 强等待：取消时也必须落盘+暂停，否则 daemon 后台继续下载
+                await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
                 try:
-                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                    await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
                 except Exception:
                     pass
             record.status = "failed"
@@ -1066,8 +1070,10 @@ async def fluxdown_server_download(
         task_id = new_id
         logger.info(f"[server] 新建任务: {url} -> task {task_id}")
 
-    # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）
-    await asyncio.to_thread(_map_put, cli_exe, key, task_id, url, destination)
+    # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）。
+    # 强等待：取消恰好发生在这个 await 时也必须落盘，否则 daemon 任务
+    # 已建/已续但映射丢失，无法 pause 清理，与后续下载双写同一文件。
+    await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
 
     # 轮询进度至终态。timeout 语义 = 停滞上限（持续无新字节的秒数），不是总时长：
     # 正常下载永不超时；速率持续为 0 超过 timeout 才判定中断（断网即属此类）。
@@ -1077,21 +1083,48 @@ async def fluxdown_server_download(
     last_speed_ts = last_change
     last_speed_bytes = 0
     speed = 0.0
+
+    async def _confirm_paused() -> bool:
+        """确认 daemon 任务已停止/已释放输出文件。
+
+        _run_cli 超时不抛异常而返回 124，仅凭调用"发了 pause"不等于成功；
+        再查一次 status：失败(None)说明管理通道仍不通，不能排除后台写入，
+        不允许上层据此降级 --local 双写。
+        """
+        try:
+            code, _ = await _to_thread_strong(
+                _run_cli, cli_exe, env, ["pause", task_id], 10
+            )
+        except Exception:
+            return False
+        if code != 0:
+            return False
+        try:
+            st = await _to_thread_strong(_status, task_id)
+        except Exception:
+            return False
+        return st is not None
+
     try:
         while True:
             st = await asyncio.to_thread(_status, task_id)
             if st is None:
-                # 尽力暂停旧任务再抛错：防止 server 恢复后 daemon 后台继续下载，
-                # 分发层降 --local 时双写同一文件
-                try:
-                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
-                except Exception:
-                    pass
+                # status 查询失败不等于任务已停：daemon 可能仍在写输出文件。
+                # 只有确认已暂停（pause 返回 0 且 status 能查到）才允许上层
+                # 降级 --local；否则保留映射、按可续传中断抛出，避免双写。
                 record.status = "failed"
-                record.error = "status 查询失败（server 可能已退出）"
                 record.duration_ms = int((time.monotonic() - t0) * 1000)
-                logger.warning(f"[server] status 查询失败 (task {task_id}), server 可能已退出")
-                raise RuntimeError("FluxDown server status 查询失败")
+                if await _confirm_paused():
+                    record.error = "status 查询失败（任务已暂停，可安全降级）"
+                    logger.warning(
+                        f"[server] status 查询失败 (task {task_id}), 已确认暂停, 允许降级"
+                    )
+                    raise RuntimeError("FluxDown server status 查询失败")
+                record.error = "status 查询失败且无法确认任务已停止，保留映射待续传"
+                logger.warning(
+                    f"[server] status 查询失败 (task {task_id}), 无法确认已停止, 保留映射续传"
+                )
+                raise RuntimeError("FluxDown server status 查询失败（任务未确认停止）")
 
             status = int(st.get("status") or 0)
             downloaded = int(st.get("downloadedBytes") or 0)

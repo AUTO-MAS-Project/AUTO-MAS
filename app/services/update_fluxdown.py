@@ -179,7 +179,33 @@ async def _download_via_fluxdown(
             return size
         except Exception as exc:
             msg = str(exc)
-            # 进程级异常（server 起不来/连不上/status 查询失败）→ 落 --local 一次性下载
+            # 进程级异常且旧任务已确认停止 → 安全落 --local 一次性下载；
+            # "status 查询失败" 但任务未确认停止时 daemon 可能仍在写输出文件，
+            # 落 --local 会双写，此时保留映射、按可续传中断抛出
+            if "status 查询失败" in msg and "任务未确认停止" in msg:
+                count = fluxdown_server_mark_failure(cli_path, url, destination)
+                hint = (
+                    "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
+                    if count >= _RESUMABLE_HINT_THRESHOLD
+                    else ""
+                )
+                logger.warning(
+                    f"server 任务未确认停止（第 {count} 次）, 保留映射待续传: {msg}"
+                )
+                await _append_history(
+                    FluxdownDownloadRecord(
+                        url=url,
+                        destination=str(destination),
+                        size=0,
+                        duration_ms=0,
+                        segments=segments,
+                        proxy=proxy_str,
+                        checksum=None,
+                        status="interrupted",
+                        error=f"server 任务未确认停止（第 {count} 次）: {msg}",
+                    )
+                )
+                raise FluxdownResumableError(f"{msg}{hint}") from exc
             if (
                 "server 不可用" in msg
                 or "status 查询失败" in msg
