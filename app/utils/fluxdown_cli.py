@@ -1212,14 +1212,14 @@ async def fluxdown_server_download(
             """
             try:
                 code, _ = await _to_thread_strong(
-                    _run_cli, cli_exe, env, ["pause", task_id], 10
+                    _run_cli, cli_exe, env, ["pause", task_id], 10, propagate_cancel=True
                 )
             except Exception:
                 return False
             if code != 0:
                 return False
             try:
-                st = await _to_thread_strong(_status, task_id)
+                st = await _to_thread_strong(_status, task_id, propagate_cancel=True)
             except Exception:
                 return False
             return st is not None
