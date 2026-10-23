@@ -99,7 +99,7 @@ export const featureAnalyticsSchemas = {
   user_config_write_finished: finished({ script_type: script, operation_kind: ['save'] as const }),
   config_mode_changed: finished({
     script_type: script,
-    mode: ['managed', 'native', 'view', 'direct', 'unknown'] as const,
+    mode: ['script', 'user', 'native', 'view', 'direct', 'unknown'] as const,
   }),
   queue_time_set_changed: finished({
     action: ['create', 'delete', 'update', 'reorder'] as const,
@@ -258,4 +258,6 @@ export const mainOnlyFeatureEvents = [
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'appearance_package_finished',
+  'diagnostic_export_finished',
+  'data_backup_export_finished',
 ] as const

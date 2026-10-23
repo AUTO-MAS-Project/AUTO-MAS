@@ -17,6 +17,8 @@ export const PLAN_CONFIG_TYPES = {
 } as const
 
 export interface PlanChangeOptions {
+  /** 批量编辑由外层汇总一次，内部逐日写入不重复计数。 */
+  analyticsBatch?: boolean
   refresh?: boolean
   forceCustomStages?: boolean
   /** 弹出编辑保留草稿时，展示服务端提供的保存失败原因。 */

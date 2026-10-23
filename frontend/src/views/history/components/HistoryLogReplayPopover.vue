@@ -26,6 +26,7 @@
 </template>
 
 <script setup lang="ts">
+import { observeFeature } from '@/utils/featureAnalytics'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { PlayCircleOutlined } from '@ant-design/icons-vue'
@@ -46,7 +47,13 @@ const handleOpenReplay = async (replay: ReplayRecord) => {
     return
   }
   try {
-    const result = await window.electronAPI.openFile(replay.filePath)
+    const filePath = replay.filePath
+    const result = await observeFeature(
+      'replay_tool_finished',
+      { action: 'play' },
+      () => window.electronAPI.openFile(filePath),
+      result => (result.success ? 'accepted' : 'failure')
+    )
     if (result.success) {
       message.success(t('history.replays.played'))
     } else {

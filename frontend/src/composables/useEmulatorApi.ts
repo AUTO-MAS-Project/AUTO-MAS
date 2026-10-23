@@ -151,7 +151,14 @@ export const Service = {
     )
     return request
   },
-  addEmulatorApiEmulatorAddPost: Api.addEmulatorApiEmulatorAddPost,
+  addEmulatorApiEmulatorAddPost() {
+    return observeFeature(
+      'emulator_discovery_finished',
+      { action: 'create', emulator_family: 'unknown', count_bucket: '1' },
+      () => Api.addEmulatorApiEmulatorAddPost(),
+      result => (result.code === 200 && result.emulatorId ? 'success' : 'failure')
+    )
+  },
   deleteEmulatorApiEmulatorDeletePost(
     input: Parameters<typeof Api.deleteEmulatorApiEmulatorDeletePost>[0]
   ) {

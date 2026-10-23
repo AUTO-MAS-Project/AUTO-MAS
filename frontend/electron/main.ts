@@ -1,3 +1,4 @@
+import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
 import { readBackendDocument } from './services/backendConfig'
 import {
@@ -1461,90 +1462,92 @@ ipcMain.handle(
 )
 
 ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
-  try {
-    if (!mainWindow)
-      return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
+  return observeDiagnosticExport('log:export', async () => {
+    try {
+      if (!mainWindow)
+        return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
-    const dialogLabels =
-      rawDialogLabels && typeof rawDialogLabels === 'object'
-        ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
-        : undefined
-    const appRoot = getAppRoot()
-    const debugDir = path.join(appRoot, 'debug')
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
+      const appRoot = getAppRoot()
+      const debugDir = path.join(appRoot, 'debug')
 
-    if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
-    }
+      if (!fs.existsSync(debugDir)) {
+        return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
+      }
 
-    // 选择保存位置
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
-      defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [
-        {
-          name:
-            typeof dialogLabels?.zipFilterName === 'string'
-              ? dialogLabels.zipFilterName
-              : 'ZIP文件',
-          extensions: ['zip'],
-        },
-      ],
-    })
+      // 选择保存位置
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
+        defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
+      })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const zipPath = result.filePath
+      const zipPath = result.filePath
 
-    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
-    const zip = new AdmZip()
-    const state: CollectorState = {
-      zip,
-      entries: [],
-      archiveBytes: 0,
-      maxEntryBytes: Number.POSITIVE_INFINITY,
-      maxArchiveBytes: Number.POSITIVE_INFINITY,
-    }
+      // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
+      const zip = new AdmZip()
+      const state: CollectorState = {
+        zip,
+        entries: [],
+        archiveBytes: 0,
+        maxEntryBytes: Number.POSITIVE_INFINITY,
+        maxArchiveBytes: Number.POSITIVE_INFINITY,
+      }
 
-    // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
-    const hasFiles = addDirectory(state, debugDir, '', {
-      includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
-    })
-    if (!hasFiles) {
-      return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
-    }
+      // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+      const hasFiles = addDirectory(state, debugDir, '', {
+        includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+      })
+      if (!hasFiles) {
+        return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
+      }
 
-    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
-    const skipped = state.entries.filter(entry => entry.status === 'skipped')
-    for (const entry of state.entries) {
-      if (entry.status === 'skipped') {
-        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
-      } else {
-        logger.info(`添加文件到压缩包: ${entry.path}`)
+      // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+      const skipped = state.entries.filter(entry => entry.status === 'skipped')
+      for (const entry of state.entries) {
+        if (entry.status === 'skipped') {
+          logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+        } else {
+          logger.info(`添加文件到压缩包: ${entry.path}`)
+        }
+      }
+
+      // 保存 ZIP 文件
+      zip.writeZip(zipPath)
+      logger.info(`日志压缩包已导出: ${zipPath}`)
+
+      return {
+        success: true,
+        message:
+          skipped.length > 0
+            ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+            : '日志压缩包导出成功',
+        skippedPaths: skipped.map(entry => entry.path),
+        zipPath: zipPath,
+      }
+    } catch (error) {
+      logger.error('导出日志失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       }
     }
-
-    // 保存 ZIP 文件
-    zip.writeZip(zipPath)
-    logger.info(`日志压缩包已导出: ${zipPath}`)
-
-    return {
-      success: true,
-      message:
-        skipped.length > 0
-          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
-          : '日志压缩包导出成功',
-      skippedPaths: skipped.map(entry => entry.path),
-      zipPath: zipPath,
-    }
-  } catch (error) {
-    logger.error('导出日志失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
+  })
 })
 
 interface IssueReportResult {
@@ -1566,43 +1569,45 @@ function registerIssueReportExporter(
   ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
   ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
-    try {
-      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    return observeDiagnosticExport(ipcChannel, async () => {
+      try {
+        if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
-      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
-      const dialogLabels =
-        rawDialogLabels && typeof rawDialogLabels === 'object'
-          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
-          : undefined
-      const appRoot = getAppRoot()
-      const prefix =
-        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
-        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [
-          {
-            name:
-              typeof dialogLabels?.zipFilterName === 'string'
-                ? dialogLabels.zipFilterName
-                : 'ZIP文件',
-            extensions: ['zip'],
-          },
-        ],
-      })
+        const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+        const dialogLabels =
+          rawDialogLabels && typeof rawDialogLabels === 'object'
+            ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+            : undefined
+        const appRoot = getAppRoot()
+        const prefix =
+          typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
+          defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+          filters: [
+            {
+              name:
+                typeof dialogLabels?.zipFilterName === 'string'
+                  ? dialogLabels.zipFilterName
+                  : 'ZIP文件',
+              extensions: ['zip'],
+            },
+          ],
+        })
 
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '用户取消' }
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: '用户取消' }
+        }
+
+        return await create(appRoot, result.filePath, scriptId)
+      } catch (error) {
+        logger.error(`${title}失败:`, error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }
       }
-
-      return await create(appRoot, result.filePath, scriptId)
-    } catch (error) {
-      logger.error(`${title}失败:`, error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }
-    }
+    })
   })
 }
 
@@ -1675,65 +1680,67 @@ ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) =
 })
 
 ipcMain.handle('data:backup', async () => {
-  let partialPath: string | undefined
+  return observeDataBackup(async () => {
+    let partialPath: string | undefined
 
-  try {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { success: false, error: '窗口未初始化' }
-    }
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出数据备份',
-      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
-
-    const zipPath = result.filePath
-    partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
-    const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
-      method: 'GET',
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
-      )
-    }
-    if (!response.body) {
-      throw new Error('后端未返回备份文件内容')
-    }
-
-    const file = await fs.promises.open(partialPath, 'wx')
     try {
-      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-        await file.write(chunk)
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { success: false, error: '窗口未初始化' }
       }
-    } finally {
-      await file.close()
-    }
 
-    await fs.promises.rename(partialPath, zipPath)
-    partialPath = undefined
-    logger.info(`数据备份已导出: ${zipPath}`)
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出数据备份',
+        defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
 
-    return {
-      success: true,
-      message: '数据备份导出成功',
-      zipPath,
-    }
-  } catch (error) {
-    if (partialPath) {
-      await fs.promises.unlink(partialPath).catch(() => undefined)
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`导出数据备份失败: ${errorMsg}`)
-    return { success: false, error: errorMsg }
-  }
+      const zipPath = result.filePath
+      partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
+      const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+        method: 'GET',
+      })
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+        )
+      }
+      if (!response.body) {
+        throw new Error('后端未返回备份文件内容')
+      }
+
+      const file = await fs.promises.open(partialPath, 'wx')
+      try {
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          await file.write(chunk)
+        }
+      } finally {
+        await file.close()
+      }
+
+      await fs.promises.rename(partialPath, zipPath)
+      partialPath = undefined
+      logger.info(`数据备份已导出: ${zipPath}`)
+
+      return {
+        success: true,
+        message: '数据备份导出成功',
+        zipPath,
+      }
+    } catch (error) {
+      if (partialPath) {
+        await fs.promises.unlink(partialPath).catch(() => undefined)
+      }
+
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`导出数据备份失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+  })
 })
 
 // 传了 fromOffset 走增量形态，返回 { content, size, reset }；否则沿用整份字符串

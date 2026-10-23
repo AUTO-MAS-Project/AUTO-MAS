@@ -67,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import { observeFeature } from '@/utils/featureAnalytics'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -92,12 +93,17 @@ const loadReplays = async () => {
   }
 }
 
-const openFile = async (filePath: string) => {
+const openFile = async (filePath: string, action: 'play' | 'open' = 'play') => {
   if (!window.electronAPI?.openFile) {
     message.error(t('history.replays.openFileUnsupported'))
     return
   }
-  const result = await window.electronAPI.openFile(filePath)
+  const result = await observeFeature(
+    'replay_tool_finished',
+    { action },
+    () => window.electronAPI.openFile(filePath),
+    result => (result.success ? 'accepted' : 'failure')
+  )
   if (!result.success) {
     message.error(result.error || t('history.replays.openFileFailed'))
   }
@@ -141,7 +147,7 @@ const locateReplay = async (replay: ReplayRecord) => {
 const openDirectory = async () => {
   if (!directory.value) return
   try {
-    await openFile(directory.value)
+    await openFile(directory.value, 'open')
   } catch (caught) {
     message.error(
       caught instanceof Error ? caught.message : t('history.replays.openDirectoryFailed')

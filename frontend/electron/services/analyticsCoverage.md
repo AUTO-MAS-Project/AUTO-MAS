@@ -27,12 +27,12 @@
 | T019 | connection_incident_finished：断线后多少能自动恢复 | 已有事件，补细分维度中 |
 | T020 | system_resume_recovery_finished：电脑唤醒后能否继续使用 | 本批接入 |
 | T021 | script_create_finished：新增脚本漏斗和导入失败率 | 已接入，持续复核 |
-| T022 | script_manage_finished：复制、删除、重排入口的使用 | 待接入 |
+| T022 | script_manage_finished：复制、删除、重排入口的使用 | 已接入，持续复核 |
 | T023 | user_create_finished：第一次建托管账号是否顺利 | 已接入，持续复核 |
-| T024 | user_manage_finished：删除、启停和批量账号管理 | 待接入 |
+| T024 | user_manage_finished：删除、启停和批量账号管理 | 已接入，持续复核 |
 | T025 | config_write_finished：配置保存失败是否普遍 | 已接入，持续复核 |
 | T026 | user_config_write_finished：用户配置草稿与联动保存是否可靠 | 已接入，持续复核 |
-| T027 | config_mode_changed：托管、原生、查看模式的使用 | 待接入 |
+| T027 | config_mode_changed：托管、原生、查看模式的使用 | 已接入，持续复核 |
 | T028 | native_config_session_finished：原生配置窗口能否打开与保存 | 已接入，持续复核 |
 | T029 | config_restore_finished：配置恢复实际完成率 | 已接入，持续复核 |
 | T030 | task_start_result：从哪个入口开始任务、请求是否受理 | 已接入，持续复核 |
@@ -41,24 +41,24 @@
 | T033 | task_resume_requested：从指定脚本继续、失败范围重试的需求 | 已接入，持续复核 |
 | T034 | queue_manage_finished：队列新增、删除、配置是否顺利 | 已接入，持续复核 |
 | T035 | queue_schedule_changed：定时、间隔、日期集合的使用 | 已接入，持续复核 |
-| T036 | queue_time_set_changed：时间集合管理使用情况 | 待接入 |
+| T036 | queue_time_set_changed：时间集合管理使用情况 | 已接入，持续复核 |
 | T037 | plan_manage_finished：各类计划创建、删除、排序 | 已接入，持续复核 |
-| T038 | plan_edit_finished：简单/复杂视图与轮换计划是否好用 | 待接入 |
+| T038 | plan_edit_finished：简单/复杂视图与轮换计划是否好用 | 已接入，持续复核 |
 | T039 | update_check_finished：手动检查更新能否得到结果 | 已接入，持续复核 |
 | T040 | update_download_started：用户选择更新后的进入率 | 已接入，持续复核 |
 | T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，持续复核 |
 | T042 | update_source_changed：低速后换源能否改善 | 已接入，持续复核 |
 | T043 | update_install_requested：下载后启动安装器还是稍后安装 | 已接入，持续复核 |
-| T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 搜索与路径管理已接入，旧版整段导入待补 |
+| T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |
 | T045 | emulator_operation_result：启停、显示等操作是否被接受 | 本批接入 |
 | T046 | emulator_operation_observed_finished：前端观察到的模拟器操作结局 | 本批接入 |
 | T047 | emulator_instance_manage_finished：实例创建、删除与批量设置 | 本批接入 |
 | T048 | emulator_guard_changed：稳定模式和配置守卫是否解决使用障碍 | 本批接入 |
 | T049 | avd_root_added：自定义 AVD 安装导入完成率 | 本批接入 |
-| T050 | game_sign_requested：手动签到的使用与被占用拒绝 | 待接入 |
-| T051 | community_account_manage_finished：签到账号创建、启停、删除 | 待接入 |
+| T050 | game_sign_requested：手动签到的使用与被占用拒绝 | 已接入，持续复核 |
+| T051 | community_account_manage_finished：签到账号创建、启停、删除 | 已接入，持续复核 |
 | T052 | community_login_finished：扫码登录在生成、确认、保存何处失败 | 已接入，持续复核 |
-| T053 | community_activity_requested：社区活动工具是否有需求 | 待接入 |
+| T053 | community_activity_requested：社区活动工具是否有需求 | 已接入，持续复核 |
 | T054 | notification_test_finished：配置通知后测试是否顺利 | 已接入，持续复核 |
 | T055 | notification_channel_changed：各内置通知渠道的启用情况 | 已接入，持续复核 |
 | T056 | notification_binding_finished：二维码绑定、取消和解绑是否完成 | 已接入，持续复核 |
@@ -71,11 +71,11 @@
 | T063 | mascot_preference_changed：桌宠采用率和性能档位选择 | 待接入 |
 | T064 | home_activity_load_finished：首页活动信息在哪类来源不可用 | 待接入 |
 | T065 | home_layout_changed：首页布局与快速任务入口的使用 | 待接入 |
-| T066 | history_query_finished：历史检索能否帮助定位运行结果 | 待接入 |
-| T067 | diagnostic_export_finished：问题包和普通日志能否导出 | 待接入 |
-| T068 | data_backup_export_finished：用户能否成功备份 MAS 数据 | 待接入 |
-| T069 | replay_tool_finished：失败录屏连接、手动保存、回放的使用 | 待接入 |
-| T070 | help_link_requested：哪些功能需要文档帮助 | 待接入 |
+| T066 | history_query_finished：历史检索能否帮助定位运行结果 | 已接入，持续复核 |
+| T067 | diagnostic_export_finished：问题包和普通日志能否导出 | 已接入，持续复核 |
+| T068 | data_backup_export_finished：用户能否成功备份 MAS 数据 | 已接入，持续复核 |
+| T069 | replay_tool_finished：失败录屏连接、手动保存、回放的使用 | 已接入，持续复核 |
+| T070 | help_link_requested：哪些功能需要文档帮助 | 已接入，持续复核 |
 | T071 | adapter_setup_finished：MAA 配置与原生会话是否顺利 | 公共创建/保存/会话已有，专项引导待补 |
 | T072 | adapter_setup_finished：SRC 配置与会话是否顺利 | 公共创建/保存/会话已有，专项引导待补 |
 | T073 | adapter_setup_finished：MaaEnd 启动器、配置与更新是否完成 | 公共创建/保存/会话已有，专项引导待补 |
@@ -101,3 +101,12 @@
 ## 验证记录
 
 以 PR 评论中的提交编号、实际命令与结果为准。本台账不把源码复核当作真实集成测试。
+
+## 管理与诊断批次补充
+
+- T022/T024/T027：脚本与账号的删除、排序、账号启停、MAS 配置来源保存，以真实接口结果为准；整表重复保存不制造状态切换。T026 沿用 config_write_finished 的 user 口径，不再复制一份保存计数。
+- T036/T038：时间集合按实际写入记录；计划表格按保存批次记录，MAA 整行操作与自定义项改名仍逐日串行保存，但汇总为一条 success/partial/failure。只保留计划类型与简化/复杂视图，不发送单元格内容。
+- T044：旧版模拟器的创建记录与后续写配置合为一个导入结果；配置失败但记录已创建为 partial。保留原有界面刷新和缓存失效顺序。
+- T050/T051/T053：手动签到区分 busy、部分完成和总体完成；社区账号普通保存不假装启停。空模板账号创建不表示已经登录，社区查询只记录类别和结果。
+- T067/T068：主进程在导出实际返回后记录。各问题包透传已存在收集清单的遗漏/截断数量；缺少完整性证据为 unknown，保存对话框取消为 cancelled。只发送完整性标记，不发送数量明细、附件或路径。
+- T066/T069/T070：历史检索仅发送固定筛选类别和数量桶；回放播放只表示系统打开请求受理；内置文档/支持入口显式统计，通用外链函数不采集。

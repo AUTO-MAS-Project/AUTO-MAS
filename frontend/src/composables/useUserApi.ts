@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { beginUserChanges, rememberUserAnalytics } from '@/utils/userAnalytics'
 import { getApiErrorCode, getApiErrorMessage } from '@/utils/apiError'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -17,6 +19,7 @@ import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import {
   analyticsConfigSection,
+  analyticsCountBucket,
   beginAnalyticsOperation,
   getAnalyticsScriptType,
 } from '@/utils/analytics'
@@ -92,6 +95,12 @@ export function useUserApi() {
     userId: string,
     userData: UserUpdateIn['data']
   ): Promise<boolean> => {
+    const finishChanges = beginUserChanges(
+      scriptId,
+      userId,
+      getAnalyticsScriptType(scriptId),
+      userData.Info
+    )
     const operation = beginAnalyticsOperation('config_write_finished')
     const dimensions = {
       owner_kind: 'user' as const,
@@ -99,6 +108,7 @@ export function useUserApi() {
       script_type: getAnalyticsScriptType(scriptId),
     }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      finishChanges('blocked')
       operation.finish({ ...dimensions, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
@@ -126,9 +136,11 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      finishChanges('success')
       operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
+      finishChanges('failure')
       operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
       error.value = errorMsg
@@ -157,6 +169,8 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      for (const [id, user] of Object.entries(response.data))
+        rememberUserAnalytics(scriptId, id, user.Info)
       return response
     } catch (err) {
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userListFailed'))
@@ -186,7 +200,12 @@ export function useUserApi() {
         userId,
       }
 
-      const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        { action: 'delete', script_type: getAnalyticsScriptType(scriptId), count_bucket: '1' },
+        () => Service.deleteUserApiScriptsUserDeletePost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || t('apiErrors.userDeleteFailed')
@@ -226,7 +245,16 @@ export function useUserApi() {
         indexList: userIds,
       }
 
-      const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        {
+          action: 'reorder',
+          script_type: getAnalyticsScriptType(scriptId),
+          count_bucket: analyticsCountBucket(userIds.length),
+        },
+        () => Service.reorderUserApiScriptsUserOrderPost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || t('apiErrors.userOrderFailed')

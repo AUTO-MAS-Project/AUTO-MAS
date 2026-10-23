@@ -82,8 +82,23 @@ export function usePlanApi() {
   }
 
   // 更新计划
-  const updatePlan = async (planId: string, data: PlanUpdateIn['data']) => {
-    // 本批仅统计管理动作；表格和具体计划内容不进入事件。
+  const updatePlan = async (
+    planId: string,
+    data: PlanUpdateIn['data'],
+    viewKind: 'simple' | 'complex' | 'unknown' = 'unknown',
+    analyticsBatch = false
+  ) => {
+    const editOperation =
+      !analyticsBatch &&
+      (Object.keys(data).some(key => key !== 'Info') ||
+        Object.keys(data.Info ?? {}).some(key => key !== 'Name'))
+        ? beginAnalyticsOperation('plan_edit_finished')
+        : null
+    const editProps = {
+      plan_type: planTypes.get(planId) ?? 'unknown',
+      view_kind: viewKind,
+      operation_kind: 'save' as const,
+    }
     const operation =
       data.Info?.Name !== undefined ? beginAnalyticsOperation('plan_manage_finished') : null
     const dimensions = {
@@ -100,9 +115,11 @@ export function usePlanApi() {
         throw new Error(response.message || t('misc.couldNotUpdatePlan'))
       }
       operation?.finish({ ...dimensions, outcome: 'success' })
+      editOperation?.finish({ ...editProps, outcome: 'success' })
       return response
     } catch (error) {
       operation?.finish({ ...dimensions, outcome: 'failure' })
+      editOperation?.finish({ ...editProps, outcome: 'failure' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)
       message.error(t('misc.couldNotUpdatePlan'))
