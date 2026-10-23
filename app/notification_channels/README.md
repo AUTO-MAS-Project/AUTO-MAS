@@ -175,8 +175,7 @@ MAA 喜报 / HSR 云登录提醒 -> NotifyPayload -> dispatch_task_notification
 下一次通知，重新读取策略，关闭签到通知后不再补发。目标仍沿用该报告固定的
 目标快照；没有报告的任务在补发入口准备默认目标。
 
-默认报告和补发使用同一个注入的投递端口。单次显式 notifier 覆盖与本轮目标一起
-绑定到本轮迟到补发；下一轮没有显式覆盖时恢复宿主默认端口。
+报告与补发固定使用服务装配时绑定的投递端口，不再按单次报告更换发送器。
 
 `TaskReportCoordinator` 只持有 `TaskNotificationState`，与任务共享结果、消费标记和
 已送达 ID；失败渠道通过每次投递的 `DispatchResult` 返回。

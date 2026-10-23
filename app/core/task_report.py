@@ -29,7 +29,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from app.core.notification_report import TaskReportCoordinator, TaskReportDependencies
-from app.models.notification_channel import DispatchResult, Notifier, NotifyTarget
+from app.models.notification_channel import DispatchResult, NotifyTarget
 
 if TYPE_CHECKING:
     from app.core.notify import HostNotificationService
@@ -132,7 +132,6 @@ class PreparedTaskReport:
         summary_text: str = "",
         attempts: int = 1,
         retry_delay: float = 0,
-        notifier: Notifier | None = None,
     ) -> DispatchResult:
         request = TaskReportRequest(
             payload=payload,
@@ -142,17 +141,10 @@ class PreparedTaskReport:
             attempts=attempts,
             retry_delay=retry_delay,
         )
-        dispatcher = (
-            partial(self.notifications.dispatch, notifier=notifier)
-            if notifier is not None
-            else None
-        )
 
         async def deliver() -> DispatchResult:
             try:
-                return await self.coordinator.dispatch_report(
-                    request, dispatch=dispatcher
-                )
+                return await self.coordinator.dispatch_report(request)
             finally:
                 self.coordinator.reports_pending -= 1
                 self.coordinator.schedule_supplement()
@@ -164,7 +156,7 @@ class PreparedTaskReport:
         ):
             self.coordinator.reports_pending += 1
             return DispatchResult(queued=True)
-        return await self.coordinator.dispatch_report(request, dispatch=dispatcher)
+        return await self.coordinator.dispatch_report(request)
 
 
 def prepare_task_report(

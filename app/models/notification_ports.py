@@ -16,7 +16,6 @@ from app.models.notification_channel import (
     DispatchResult,
     EmptyPolicy,
     NotificationSourceConfig,
-    Notifier,
     NotifyTarget,
     RecruitmentNotificationConfig,
     UserNotificationConfig,
@@ -102,7 +101,6 @@ class PreparedReport(Protocol):
         summary_text: str = "",
         attempts: int = 1,
         retry_delay: float = 0,
-        notifier: Notifier | None = None,
     ) -> DispatchResult: ...
 
 
