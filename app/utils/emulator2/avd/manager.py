@@ -62,7 +62,7 @@ from ..applaunch import (
 )
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
-from . import host, precheck
+from . import host, precheck, updater
 from .components import (
     component_installed,
     emulator_exe,
@@ -816,6 +816,9 @@ class _AvdCore(DeviceBase):
             if launched:
                 host.BOOTING.discard(serial)
 
+        if launched:
+            # 刚换上的新版第一次开机到 boot_completed：算更新成功，删掉旧版（不在等确认时什么也不做）
+            updater.note_boot_completed(self.root)
         await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
         # 带上 qemu 进程号：开机后模拟器若被显卡驱动重置等原因带走（10-22 生产实例 0 就这样，
@@ -875,6 +878,8 @@ class _AvdCore(DeviceBase):
         return " | ".join(tail)
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
+        if updater.swap_in_progress(self.root):
+            raise RuntimeError("魔改 AVD 正在换上新版或回退，几秒后再开机")
         self._check_components()
         # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
         memory_mb = memory_for(instance_meta(self.root, idx))

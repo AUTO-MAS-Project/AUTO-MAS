@@ -425,6 +425,33 @@ class WSEmulatorOperationData(BaseModel):
     message: str = Field(default="", description="失败原因; 成功时为空")
 
 
+class WSAvdUpdateProgressData(BaseModel):
+    """魔改 AVD 更新进度 (type=emulator2.avd-update.progress, id=EmulatorManager)
+
+    下载、解包、核对、关实例、换上、回退共用；``status`` 为 success / failed / idle 时这一次操作结束，
+    界面据此重新取一次状态快照。
+    """
+
+    root: str = Field(..., description="魔改 AVD 根目录")
+    stage: str = Field(
+        ...,
+        description=(
+            "阶段: downloading / extracting / verifying / staged / closing / installing / "
+            "installed / rolling_back / rolled_back / cancelled / failed"
+        ),
+    )
+    status: str = Field(..., description="running / success / failed / idle")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    percent: Optional[float] = Field(default=None, description="当前阶段进度百分比")
+    downloadedBytes: Optional[int] = Field(
+        default=None, description="已处理字节数（下载 / 解包 / 核对）"
+    )
+    totalBytes: Optional[int] = Field(default=None, description="本阶段总字节数")
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="下载速度 (B/s)，首个采样点为 null"
+    )
+
+
 class WSTaskUserInfoData(BaseModel):
     """任务快照中的用户状态。"""
 
@@ -1442,6 +1469,7 @@ __all__ = [
     "WSTaskNoticeData",
     "WSTaskConfigDiscardedData",
     "WSSystemNoticeData",
+    "WSAvdUpdateProgressData",
     "WSEmulatorOperationData",
     "WSTaskUserInfoData",
     "WSTaskScriptInfoData",

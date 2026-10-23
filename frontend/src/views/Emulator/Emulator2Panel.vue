@@ -8,7 +8,7 @@
  */
 import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
 import {
   AppstoreOutlined,
   DeleteOutlined,
@@ -18,7 +18,6 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   PoweroffOutlined,
-  SearchOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
@@ -27,6 +26,7 @@ import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { useAvdApi } from '@/composables/useAvdApi'
+import { useAvdUpdateApi } from '@/composables/useAvdUpdateApi'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
   WS_EMULATOR_OPERATION_FINISHED,
@@ -47,7 +47,8 @@ import {
   type Pending,
   type PendingOp,
 } from './emulator2Status'
-import { createOptions, defaultAvdOptions, type AvdOptionsForm } from './avdLogic'
+import { createOptions, defaultAvdOptions, versionLabel, type AvdOptionsForm } from './avdLogic'
+import { typeColor, typeLabelOf } from './emulator2Types'
 import {
   alignSettings,
   batchChanges as tierBatchChanges,
@@ -62,6 +63,7 @@ import {
 } from './settingsTiers'
 import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
+import Emulator2PathsDialog from './components/Emulator2PathsDialog.vue'
 import SettingsTierFields from './components/SettingsTierFields.vue'
 import type {
   Emulator2AffectedScript,
@@ -117,21 +119,7 @@ const removeAffected = ref<Emulator2AffectedScript[]>([])
 
 const addableResults = computed(() => searchResults.value.filter(item => item.supported))
 
-/** 模拟器类型 → 用户看得懂的名字。界面上不该出现 ldplayer / mumu 这种内部名。 */
-const typeLabel = (type: string | undefined) => {
-  if (!type) return ''
-  const key = `emulator.type.${type}`
-  const text = t(key)
-  return text === key ? type : text
-}
-
-/** 来源类型固定配色，路径、设备和弹窗保持一致。 */
-const typeColors: Record<string, string> = {
-  ldplayer: 'blue',
-  mumu: 'cyan',
-  avd: 'purple',
-}
-const typeColor = (type: string | undefined) => typeColors[type ?? ''] ?? 'default'
+const typeLabel = (type: string | undefined) => typeLabelOf(t, type)
 
 /** 判定原因枚举 → 用户文案。后端只给枚举，措辞在这里定。 */
 const reasonLabel = (reason: string) => {
@@ -798,6 +786,31 @@ const onOperationFinished = async (data: WSEmulatorOperationData) => {
   await loadDevices({ silent: true, withSettings: true })
   // 只收自己那一次：启动中点了关闭，先结束的是启动，关闭那份过渡态还得留着
   if (pending.value.get(data.index)?.op === data.operate) clearPending(data.index)
+  if (!data.ok && data.operate === 'open') void offerAvdUpdate(data.index)
+}
+
+/** 魔改 AVD 开不了机、而且是版本低于 MAS 的最低要求（开机前检查拒绝）时，直接给出「去更新」 */
+const { getStatus: getAvdUpdateStatus } = useAvdUpdateApi()
+const offerAvdUpdate = async (slot: string) => {
+  const device = devices.value.find(item => item.slot === slot)
+  const root = paths.value.find(item => item.pathId === device?.pathId)
+  if (device?.realType !== 'avd' || root?.type !== 'avd') return
+  try {
+    const status = await getAvdUpdateStatus(root.installPath)
+    if (!status.updatable || !status.belowMinimum) return
+    Modal.confirm({
+      title: t('emulator2.avd.update.outdatedTitle'),
+      content: t('emulator2.avd.update.outdatedContent', {
+        current: versionLabel(status.currentBuild, status.currentVersion),
+        minimum: status.minimumBuild,
+      }),
+      okText: t('emulator2.avd.update.goUpdate'),
+      cancelText: t('emulator.cancel'),
+      onOk: () => openAvdRoot(root.installPath),
+    })
+  } catch (error) {
+    logger.warn(`读取魔改 AVD 更新状态失败 (${root.installPath}): ${String(error)}`)
+  }
 }
 
 const isReachable = (device: Emulator2DeviceItem) => device.availability === 'ok'
@@ -1046,68 +1059,14 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 <template>
   <div class="emulator2-panel">
     <!-- 模拟器路径管理：整块搬进二级弹窗，主页面只留设备表 -->
-    <a-modal
+    <Emulator2PathsDialog
       v-model:open="pathsOpen"
-      :title="t('emulator2.pathsTitle')"
-      width="760px"
-      :footer="null"
-    >
-      <div class="section-header" style="margin-top: 0">
-        <span class="section-hint">{{ t('emulator2.pathsHint') }}</span>
-        <a-space :size="8">
-          <a-button size="small" :icon="h(PlusOutlined)" @click="openAvdRoot()">
-            {{ t('emulator2.avd.add') }}
-          </a-button>
-          <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
-            {{ t('emulator2.searchAndAdd') }}
-          </a-button>
-        </a-space>
-      </div>
-
-      <a-empty v-if="!paths.length" :description="t('emulator2.noPath')">
-        <a-space :size="8">
-          <a-button :icon="h(PlusOutlined)" @click="openAvdRoot()">
-            {{ t('emulator2.avd.add') }}
-          </a-button>
-          <a-button type="primary" :icon="h(SearchOutlined)" @click="openSearch">
-            {{ t('emulator2.searchAndAdd') }}
-          </a-button>
-        </a-space>
-      </a-empty>
-
-      <div v-else class="path-grid">
-        <a-card v-for="path in paths" :key="path.pathId" size="small" class="path-card">
-          <template #title>
-            <a-space :size="6">
-              <a-tag :color="typeColor(path.type)">{{ typeLabel(path.type) }}</a-tag>
-              <span class="path-alias">{{ path.alias }}</span>
-              <span class="path-version">{{ path.version }}</span>
-            </a-space>
-          </template>
-          <template #extra>
-            <a-button
-              v-if="path.type === 'avd'"
-              type="text"
-              size="small"
-              @click="openAvdRoot(path.installPath)"
-            >
-              {{ t('emulator2.avd.manage') }}
-            </a-button>
-            <a-button type="text" size="small" danger @click="openRemove(path)">
-              {{ t('emulator2.removePath') }}
-            </a-button>
-          </template>
-          <div class="path-line">{{ path.installPath }}</div>
-          <div class="path-sub">
-            {{
-              t('emulator2.slotRange', {
-                slots: (path.slots ?? []).map(s => `#${s}`).join(' ') || '—',
-              })
-            }}
-          </div>
-        </a-card>
-      </div>
-    </a-modal>
+      :paths="paths"
+      @add-avd="openAvdRoot()"
+      @search="openSearch"
+      @manage-avd="openAvdRoot"
+      @remove="openRemove"
+    />
 
     <div class="section-header">
       <h3>
@@ -1596,30 +1555,6 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
   font-size: 13px;
   font-weight: 400;
   color: var(--ant-color-text-tertiary);
-}
-
-.path-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-}
-
-.path-alias {
-  font-weight: 600;
-}
-
-.path-version,
-.path-sub {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.path-line {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .source-cell {

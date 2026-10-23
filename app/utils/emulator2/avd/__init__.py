@@ -20,15 +20,18 @@
 
 """Emulator 2.0 的第三种后端：魔改 AVD（基于 Android Emulator 的自编版，随内测包发）。
 
-和雷电 / MuMu 不同，这里没有厂商的管理器程序可调。组件随内测包提供，MAS 不下载：用户把模拟器
-内测包解压到一个根目录（模拟器只认里面 ``sdk\\emulator`` 的自编版，另有平台工具和系统镜像），缺了
-只说缺哪一项、请用完整的内测包。实例（AVD）由我们自己写配置文件管理，
-启动 / 关机 / 状态全部直接驱动 ``emulator.exe`` 和一个私有 adb server（默认端口 20050）。
+和雷电 / MuMu 不同，这里没有厂商的管理器程序可调。用户把 ModAVD 的包解压到一个根目录（模拟器只认
+里面 ``sdk\\emulator`` 的自编版），平台工具和系统镜像由包里的「补全组件」从官方渠道下载，缺了只说
+缺哪一项。模拟器本体的新版本由 MAS 从 GitHub 下载、换上（:mod:`.updater`）。实例（AVD）由我们自己写
+配置文件管理，启动 / 关机 / 状态全部直接驱动 ``emulator.exe`` 和一个私有 adb server（默认端口 20050）。
 
-- :mod:`.constants`   端口、组件位置、实例模板参数
-- :mod:`.components`  组件检查（关键文件、自编版探测、内测包编号）、元数据
-- :mod:`.instances`   AVD 配置文件的增删改查
-- :mod:`.host`        宿主侧：硬件加速检查、内存预检、进程查找、控制台、私有 adb
-- :mod:`.manager`     ``DeviceBase`` 实现（启动调优、首次初始化、冻结看门狗）
-- :mod:`.service`     给 API 用的业务入口
+- :mod:`.constants`      端口、组件位置、实例模板参数
+- :mod:`.components`     组件检查（关键文件、自编版探测、内测包编号）、元数据
+- :mod:`.instances`      AVD 配置文件的增删改查
+- :mod:`.host`           宿主侧：硬件加速检查、内存预检、进程查找、控制台、私有 adb
+- :mod:`.manager`        ``DeviceBase`` 实现（启动调优、首次初始化、冻结看门狗）
+- :mod:`.service`        给 API 用的业务入口
+- :mod:`.update_source`  版本号、更新公告、下载源（GitHub）
+- :mod:`.update_stage`   更新的本机文件操作：解包、核对、换上、回退、崩溃恢复
+- :mod:`.updater`        更新流程：查更新、下载、安装、回退、开机确认、空闲时自动装
 """

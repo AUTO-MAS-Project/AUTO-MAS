@@ -1999,6 +1999,13 @@ class _TaskManager:
         self.task_info.pop(task_uid, None)
         self.task_handler.pop(task_uid, None)
 
+        if len(self.task_handler) == 0 and not self._stopping_all:
+            # 任务都结束了：开着「空闲时自动装」的魔改 AVD 这时才换上新版（实例全关才装，
+            # 不在定时任务开始前装）。只排一个后台检查，不等它。
+            from app.utils.emulator2.avd import updater as avd_updater
+
+            avd_updater.on_tasks_idle()
+
         if (
             power_enabled
             and not self._stopping_all

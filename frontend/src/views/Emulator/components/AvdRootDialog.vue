@@ -2,8 +2,8 @@
 /**
  * 添加魔改 AVD：选根目录（解压好的模拟器内测包）→ 看电脑检查与组件 → 添加。
  *
- * 组件随内测包提供，MAS 不下载；缺了由电脑检查写明缺哪几项、请用完整的内测包。组件齐了点「添加」
- * 走普通的路径纳管。已纳管的根目录也从这里看组件和电脑检查。
+ * 缺组件时由电脑检查写明缺哪几项。组件齐了点「添加」走普通的路径纳管。已纳管的根目录也从这里看
+ * 组件和电脑检查，并在「模拟器更新」里查新版本、下载、安装、回退。
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -15,6 +15,7 @@ import { useAvdApi } from '@/composables/useAvdApi'
 import { isRootAdded, samePath } from '../avdLogic'
 import AvdComponentList from './AvdComponentList.vue'
 import AvdPrecheckList from './AvdPrecheckList.vue'
+import AvdUpdatePanel from './AvdUpdatePanel.vue'
 
 const open = defineModel<boolean>('open', { required: true })
 /** `addedRoots`：这条配置里已经纳管的魔改 AVD 根目录，已在里面的不再给「添加」 */
@@ -118,6 +119,9 @@ watch(open, value => {
           </div>
         </a-form-item>
       </a-form>
+
+      <!-- 已纳管的根目录才能更新（更新会改名目录，后端只认纳管的根目录） -->
+      <AvdUpdatePanel v-if="alreadyAdded && current" :root="checkedRoot" @changed="check()" />
 
       <template v-if="current">
         <AvdPrecheckList :items="current.prechecks ?? []" />
