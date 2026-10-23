@@ -1,3 +1,4 @@
+import { beginSettingsChanges } from '@/utils/settingsAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
@@ -38,6 +39,7 @@ export function useSettingsApi() {
   // 更新设置 - 只发送修改的字段
   const updateSettings = async (settings: GlobalConfig): Promise<boolean> => {
     const channelChanges = beginNotificationChannelChanges(settings.Notify)
+    const settingChanges = beginSettingsChanges(settings)
     // 开关自身不产生保存事件，也不在重新开启后补报。
     const operation =
       settings.Function &&
@@ -65,10 +67,12 @@ export function useSettingsApi() {
 
       operation?.finish({ ...dimensions, outcome: 'success' })
       channelChanges.forEach(finish => finish('success'))
+      settingChanges.forEach(finish => finish('success'))
       return true
     } catch (err) {
       operation?.finish({ ...dimensions, outcome: 'failure' })
       channelChanges.forEach(finish => finish('failure'))
+      settingChanges.forEach(finish => finish('failure'))
       const errorMsg = getApiErrorMessage(err, t('apiErrors.settingsSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)

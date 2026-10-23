@@ -66,6 +66,7 @@ export const useSraActivitySource = (game: string, nameKey: string) => {
   const currentLocale = () => i18n.global.locale.value
 
   const source = useHomeActivitySource<SraSourceData>({
+    isAvailable: () => overview.value.Available,
     label: () => translate(nameKey),
     timeoutMs: FETCH_TIMEOUT_MS,
     requestTag: () => currentLocale(),
@@ -145,6 +146,7 @@ export const useSraActivitySource = (game: string, nameKey: string) => {
   return {
     overview,
     loading: source.loading,
+    whenLoaded: source.whenLoaded,
     start: source.start,
     stop: source.stop,
     refresh: source.refresh,

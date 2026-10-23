@@ -1,10 +1,12 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import type { MascotSummary } from '@/types/mascotPack'
-import { getConfig, saveConfig } from '@/utils/config'
+import { getConfig } from '@/utils/config'
+import { saveMascotPreference as saveConfig } from '@/utils/preferenceAnalytics'
 
 export const MASCOT_MIN_FPS = 1
 export const MASCOT_MAX_FPS = 120
@@ -167,11 +169,16 @@ export function useMascotSettings() {
       return
     }
     saving.value = true
+    const telemetry = beginAnalyticsOperation('appearance_package_finished')
+    let outcome: 'success' | 'failure' | 'cancelled' | 'partial' | 'unknown' = 'unknown'
     try {
       const paths = await window.electronAPI.selectFile([
         { name: t('setting.basic.importMascot'), extensions: ['zip'] },
       ])
-      if (!paths[0]) return
+      if (!paths[0]) {
+        outcome = 'cancelled'
+        return
+      }
       let result = await window.electronAPI.importMascot(paths[0])
       if (result.code === 'DUPLICATE_ID') {
         const confirmed = await new Promise<boolean>(resolve =>
@@ -187,10 +194,14 @@ export function useMascotSettings() {
             onCancel: () => resolve(false),
           })
         )
-        if (!confirmed) return
+        if (!confirmed) {
+          outcome = 'cancelled'
+          return
+        }
         result = await window.electronAPI.importMascot(paths[0], true)
       }
       if (!result.success || !result.mascot) {
+        outcome = 'failure'
         message.error(
           t(
             result.code === 'INVALID_ANIMATION'
@@ -200,13 +211,16 @@ export function useMascotSettings() {
         )
         return
       }
+      outcome = 'partial'
       await saveConfig({ desktopMascotId: result.mascot.id })
+      outcome = 'success'
       await refresh()
       message.success(t('setting.basic.mascotImported'))
     } catch (error) {
       logger.error('导入桌宠失败:', error)
       message.error(t('setting.basic.mascotImportFailed'))
     } finally {
+      telemetry.finish({ package_kind: 'mascot', action: 'import', outcome })
       saving.value = false
     }
   }

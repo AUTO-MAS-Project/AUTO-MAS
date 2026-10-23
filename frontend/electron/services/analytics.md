@@ -8,14 +8,14 @@ Electron 主进程按 Aptabase 的单事件协议向
 
 | 事件 | 含义 | 自定义字段 | 频率 |
 | --- | --- | --- | --- |
-| `app_started` | 主进程进入 ready | 无 | 每进程最多一次 |
-| `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket` | 每进程最多一次 |
+| `app_started` | 主进程进入 ready | `launch_kind`、`runtime_mode`、`release_channel` | 每进程最多一次 |
+| `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket`、`visibility` | 每进程最多一次 |
 | `backend_start_finished` | 串行启动作业的真实结果 | `outcome`、`runtime_mode`、耗时桶 | 合并的启动请求不重复 |
 | `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
 | `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
 | `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
 | `initialization_finished` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
-| `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type` | 相邻同类页面去重 |
+| `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
 | `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功固定 1/10 采样 |
@@ -40,7 +40,53 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `update_download_started` | 本地下载尝试首次获得进度或请求响应 | `source_kind`、`release_channel`、耗时桶 | 与下载终态共用操作前代次，每次尝试最多一次 |
 | `update_source_changed` | 用户确认换源的结果 | `from_kind`、`to_kind`、`trigger_kind`、`outcome`、耗时桶 | 每次实际换源请求，不按速度帧统计 |
 | `update_install_requested` | 立即或稍后安装的选择 | `choice`、`request_outcome`、耗时桶 | 稍后不发安装请求；受理不代表安装器已启动 |
-| `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、耗时桶 | 多轮重连归并为一次 |
+| `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
+
+完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
+新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
+
+| 新增事件族 | 含义 | 固定属性（另含 outcome/耗时桶） |
+| --- | --- | --- |
+| `backend_restart_finished` | 主动更新和故障重启能否恢复 | `reason_kind` |
+| `runtime_alignment_finished` | Runtime 升级、校验、回退是否完成 | `operation`、`release_channel` |
+| `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
+| `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
+| `app_close_finished` | 正常收尾、用户取消、强制关闭占比 | `close_kind` |
+| `tray_action_requested` | 托盘入口是否有实际使用 | `action_kind` |
+| `stop_all_requested` | 紧急停止入口的需求 | `source` |
+| `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
+| `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
+| `system_resume_recovery_finished` | 电脑唤醒后能否继续使用 | `recovery_kind` |
+| `script_manage_finished` | 复制、删除、重排入口的使用 | `action`、`script_type`、`count_bucket` |
+| `user_manage_finished` | 删除、启停和批量账号管理 | `action`、`script_type`、`count_bucket` |
+| `config_mode_changed` | 托管、原生、查看模式的使用 | `script_type`、`mode` |
+| `queue_time_set_changed` | 时间集合管理使用情况 | `action`、`count_bucket` |
+| `plan_edit_finished` | 简单/复杂视图与轮换计划是否好用 | `plan_type`、`view_kind`、`operation_kind` |
+| `emulator_discovery_finished` | 搜索、导入模拟器是否顺利 | `emulator_family`、`action`、`count_bucket` |
+| `emulator_operation_result` | 启停、显示等操作是否被接受 | `emulator_family`、`operation` |
+| `emulator_operation_observed_finished` | 前端观察到的模拟器操作结局 | `emulator_family`、`operation` |
+| `emulator_instance_manage_finished` | 实例创建、删除与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
+| `emulator_guard_changed` | 稳定模式和配置守卫是否解决使用障碍 | `guard_kind`、`action` |
+| `avd_root_added` | 自定义 AVD 安装导入完成率 | `reason_kind` |
+| `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
+| `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
+| `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind` |
+| `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
+| `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
+| `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
+| `appearance_share_finished` | 外观上传与分享是否顺利 | `category_kind` |
+| `mascot_preference_changed` | 桌宠采用率和性能档位选择 | `action`、`fps_preset` |
+| `home_activity_load_finished` | 首页活动信息在哪类来源不可用 | `trigger_kind`、`source_kind`、`cache_kind` |
+| `home_layout_changed` | 首页布局与快速任务入口的使用 | `action`、`layout_preset` |
+| `history_query_finished` | 历史检索能否帮助定位运行结果 | `filter_kind`、`count_bucket` |
+| `diagnostic_export_finished` | 问题包和普通日志能否导出 | `bundle_kind`、`script_type`、`incomplete` |
+| `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |
+| `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
+| `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
+| `adapter_setup_finished` | 奇想盒配置与原生会话 | `script_type`、`operation_kind`、`engine_kind` |
+
 
 耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
 数量区间为 `0`、`1`、`2-5`、`6-20`、`20+`，排序按一批记录，不按对象逐条发送。
@@ -81,7 +127,7 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 恢复耗时包含完整 bootstrap，Runtime 更新后的尝试也包含镜像配置准备。
 脚本模板导入失败时，根据清理结果区分失败与部分完成；项目复用失败但保留基础记录为部分完成。
 脚本和用户写入覆盖共享 API，合并的保存请求不会额外计数；设置遥测开关自身不产生事件。
-原生配置会话内容、独立导入接口、计划等候选事件不在这批共享保存统计范围。
+专项独有保存、导入与计划编辑使用下述显式事件边界，不把配置内容带入共享统计。
 
 四种任务模式独立标记；受理不代表执行成功，跨专项整体结果标为 `multi`，不复制为各专项成功。
 任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
@@ -89,14 +135,14 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 不能以观察完成数除以全部请求数声称全量成功率。
 
 主要页面白名单包含任务台。停止请求受理不表示任务清理完成，最终取消仍看任务观察结果；
-本批不包含全局紧急停止。续跑统计只描述指定脚本起点或用户范围，不推断这是失败重试；
+全局紧急停止单独记录固定入口与请求结果。续跑统计只描述指定脚本起点或用户范围，不推断这是失败重试；
 循环模式忽略的脚本起点不记为续跑，普通配置与更新任务不进入该事件。
 范围只归入全部、脚本用户或队列用户，不发送范围中的 ID 或对象数量明细。
 
 队列配置、循环队列项调度共用显式 API 边界，不改变保存、排序、回读或失败处理；
 “立即运行一次”只是修改下次执行时间，记为 `run_once`，不据此记任务已启动。
 队列和计划类别仅复用已有读取与成功写入，在最多 128 项的本机映射中关联；缺少类别用
-`unknown`，不会额外请求后端。队列时间集合管理、具体日期和计划表格编辑尚未纳入。
+`unknown`，不会额外请求后端。时间集合管理与计划表格编辑已接入，但具体日期和表格内容始终不采集。
 计划 `create` 表示基础记录已创建，默认名称保存另记 `rename`，不是完整配置引导完成；
 名称保存失败不会回改基础记录创建结果，音效或回读失败也不改写已确认的管理结果。
 仅发固定计划类别，不发名称、计划内容、精确时刻、命令或任意字段值。
@@ -122,7 +168,7 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 `saved`；无目标账号仅记 `confirmed_unsaved`。过期、取消、重新生成和卸载分别记录，
 票据、二维码地址、凭据及账号标识均不进入事件。旧会话异步响应和关闭期间的会话不补报。
 通知测试仅记录总体请求的 `accepted/rejected/unknown`，网络异常为结果未知，
-不提供逐渠道送达率，不采集通知渠道配置、收件人或正文。Webhook 测试尚未纳入。
+不提供逐渠道送达率，不采集通知渠道配置、收件人或正文。Webhook 测试只记现有测试接口结果，不采集模板或端点。
 
 在 Aptabase 的 Release Dashboard 选择 `script_run_started`，属性选择 `script_type`，
 可自动得到时间范围内各专项进入执行流程的次数；切换 `script_run_finished` 可查看结束结果。
@@ -147,7 +193,8 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 - 运行中关闭立即中止可取消的请求。开启还须确认后端持久化配置；不补发关闭期间的操作，
   操作开始前取得的代次在关闭后失效。已经到达服务端的数据无法由本地开关撤回。
 - 开发、纯浏览器、CI、单元测试、E2E 与显式禁用遥测的环境不发送生产统计。
-- 仅主窗口的主 frame 和应用本地入口能使用 IPC；主进程验证事件与字段，不接受自由文本、
+- 通用遥测 IPC 仅允许主窗口主 frame 与本地入口。虚拟屏询问窗只使用限定窗口/主 frame 的业务桥，
+  由主进程持有拆除请求及结果，不能发送自由事件。主进程验证事件与字段，不接受自由文本、
   未知字段、嵌套值、账号、路径、配置、日志或网络地址。
 - 固定 HTTPS 目的地，禁止重定向，不携带 Cookie，五秒超时。不排队、不重试、不写磁盘，
   不等待发送来决定业务或退出结果。退出时直接取消，不为遥测延长关闭流程。

@@ -15,6 +15,7 @@ const MAX_RETRIES = 8
 const logger = window.electronAPI.getLogger('活动数据')
 
 export interface HomeActivitySourceOptions<T> {
+  isAvailable?: () => boolean
   /** 日志与失败文案里用的名字，调用方翻译好再传 */
   label: () => string
   /** 取一次数据，失败直接抛；signal 用于超时中止，不需要的可以忽略 */
@@ -45,7 +46,14 @@ export interface HomeActivitySourceOptions<T> {
   isBusy?: () => boolean
 }
 
+export interface ActivityLoadState {
+  outcome: 'success' | 'failure' | 'unknown'
+  cacheUsed: boolean
+  available: boolean
+}
+
 export interface HomeActivitySource {
+  whenLoaded: () => Promise<ActivityLoadState[]>
   loading: Ref<boolean>
   hasData: Ref<boolean>
   /** 模块可见：首次进入时取数，之前挂起的重试在这里补上 */
@@ -75,6 +83,7 @@ export const useHomeActivitySource = <T>(
   let active = false
   let started = false
   let retryPending = false
+  let pendingLoad = Promise.resolve<ActivityLoadState[]>([])
 
   const isObsolete = (tag: unknown) => tag !== undefined && options.isObsolete?.(tag) === true
 
@@ -85,10 +94,7 @@ export const useHomeActivitySource = <T>(
     }
   }
 
-  const load = async () => {
-    if (disposed) return
-    // 同一份数据已经在取：跳过这一轮，别把两个并发请求的结果来回盖
-    if (options.isBusy?.() === true) return
+  const loadOnce = async (state: ActivityLoadState) => {
     const tag = options.requestTag?.()
     let timer: number | null = null
     try {
@@ -103,11 +109,17 @@ export const useHomeActivitySource = <T>(
       hasData.value = true
       retryCount = 0
       options.saveSnapshot?.(data)
+      const available = options.isAvailable?.() ?? true
+      Object.assign(state, { outcome: available ? 'success' : 'failure', available })
     } catch (requestError) {
       if (disposed || isObsolete(tag)) return
       const message = requestError instanceof Error ? requestError.message : String(requestError)
       const label = options.label()
       logger.warn(`获取${label}活动数据失败: ${message}`)
+      Object.assign(state, {
+        outcome: 'failure',
+        available: options.isAvailable?.() ?? hasData.value,
+      })
       if (hasData.value) {
         options.markStale()
       } else {
@@ -129,6 +141,21 @@ export const useHomeActivitySource = <T>(
         loading.value = false
       }
     }
+  }
+
+  const load = () => {
+    if (disposed || options.isBusy?.() === true) return Promise.resolve()
+    const state: ActivityLoadState = {
+      outcome: 'unknown',
+      cacheUsed: hasData.value && (options.isAvailable?.() ?? true),
+      available: options.isAvailable?.() ?? hasData.value,
+    }
+    const request = loadOnce(state)
+    pendingLoad = request.then(
+      () => [{ ...state }],
+      () => [{ ...state, outcome: 'unknown' as const }]
+    )
+    return request
   }
 
   const scheduleRetry = () => {
@@ -192,6 +219,7 @@ export const useHomeActivitySource = <T>(
   })
 
   return {
+    whenLoaded: () => pendingLoad,
     loading,
     hasData,
     start,

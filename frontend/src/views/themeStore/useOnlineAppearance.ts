@@ -1,3 +1,5 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 
@@ -412,11 +414,17 @@ export function useOnlineAppearance(options: {
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
     if (installing.value || preparing.value) return 'cancelled'
+    const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
+    let category_kind = appearanceCategory(options.categoryKey ?? 'theme')
     installing.value = true
     let outcome: OnlineAppearanceInstallOutcome = 'failed'
     try {
       const ready = await prepareSelected()
       if (!ready) return outcome
+      category_kind = appearanceCategory(
+        ready.categoryKey ??
+          (options.categoryKey === 'all' ? undefined : (options.categoryKey ?? 'theme'))
+      )
       outcome = await (options.categoryKey === 'all'
         ? options.install(ready.token, ready.categoryKey)
         : options.install(ready.token))
@@ -424,6 +432,11 @@ export function useOnlineAppearance(options: {
       if (outcome !== 'cancelled' && prepared.value?.token === ready.token) discardPrepared()
       return outcome
     } finally {
+      telemetry.finish({
+        category_kind,
+        outcome:
+          outcome === 'installed' ? 'success' : outcome === 'cancelled' ? 'cancelled' : 'failure',
+      })
       installing.value = false
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
       if (outcome === 'installed') {

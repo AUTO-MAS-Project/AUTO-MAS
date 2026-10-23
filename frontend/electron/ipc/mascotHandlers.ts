@@ -1,3 +1,4 @@
+import { observePackageRemoval } from '../services/appearanceAnalytics'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import type { DesktopMascotRuntime } from '../services/desktopMascotTypes'
 import type {
@@ -59,25 +60,27 @@ export function registerMascotHandlers(onChanged: () => void): void {
     }
     return result
   })
-  ipcMain.handle('mascot:remove', (_event, id: unknown) => {
-    if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }
-    const result = removeMascot(app.getPath('userData'), id)
-    if (result.success) {
-      logger.info(`桌宠已移除: ${id}`)
-      forgetSource(id)
-      try {
-        const configPath = path.join(getAppRoot(), 'config', 'frontend_config.json')
-        const config = fs.existsSync(configPath)
-          ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
-          : {}
-        if (config.desktopMascotId === id) patchConfigFile(configPath, { desktopMascotId: null })
-      } catch (error) {
-        logger.warn('清理已移除桌宠的选择失败:', error)
+  ipcMain.handle('mascot:remove', (_event, id: unknown) =>
+    observePackageRemoval('mascot', () => {
+      if (typeof id !== 'string') return { success: false, error: '桌宠 ID 无效' }
+      const result = removeMascot(app.getPath('userData'), id)
+      if (result.success) {
+        logger.info(`桌宠已移除: ${id}`)
+        forgetSource(id)
+        try {
+          const configPath = path.join(getAppRoot(), 'config', 'frontend_config.json')
+          const config = fs.existsSync(configPath)
+            ? JSON.parse(fs.readFileSync(configPath, 'utf8'))
+            : {}
+          if (config.desktopMascotId === id) patchConfigFile(configPath, { desktopMascotId: null })
+        } catch (error) {
+          logger.warn('清理已移除桌宠的选择失败:', error)
+        }
+        notify()
       }
-      notify()
-    }
-    return result
-  })
+      return result
+    })
+  )
 }
 
 /** 运行时 IPC 与资源包 IPC 分开释放，应用共享的安装器不随主窗口重建。 */

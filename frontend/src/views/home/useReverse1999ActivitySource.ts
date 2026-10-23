@@ -145,6 +145,7 @@ export const useReverse1999ActivitySource = () => {
   const overview = ref<SraActivityOverview>(buildOverview({}, ''))
 
   const source = useHomeActivitySource<SnapshotPayload>({
+    isAvailable: () => overview.value.Available,
     label: () => DISPLAY_NAME,
     timeoutMs: FETCH_TIMEOUT_MS,
     restoreSnapshot: () => {
@@ -193,6 +194,7 @@ export const useReverse1999ActivitySource = () => {
   return {
     overview,
     loading: source.loading,
+    whenLoaded: source.whenLoaded,
     start: source.start,
     stop: source.stop,
     refresh: source.refresh,

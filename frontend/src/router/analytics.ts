@@ -29,6 +29,19 @@ const scriptScreens: Record<string, AnalyticsScreen> = {
   UserEdit: 'user_edit',
 }
 
+/** 目标页与来源页复用四种专项后缀，避免引导或新增用户流量落入 other。 */
+function routeScreen(name: unknown) {
+  if (typeof name !== 'string') return null
+  if (screens[name]) return { screen: screens[name], script_type: 'none' as const }
+  const match =
+    /^(MAA|SRC|MaaEnd|HSR|General|BAAH|MaaFW|M9A|MSS|BetterGI|Okww|OkNte|ZzzOd|Whimbox)(ScriptEdit|SetupWizard|UserAdd|UserEdit)$/.exec(
+      name
+    )
+  return match
+    ? { screen: scriptScreens[match[2]], script_type: analyticsScriptType(match[1]) }
+    : null
+}
+
 export function registerRouterAnalytics(router: Router): void {
   const contexts = new WeakMap<object, Promise<AnalyticsContext>>()
   router.beforeResolve(to => {
@@ -37,35 +50,10 @@ export function registerRouterAnalytics(router: Router): void {
   router.afterEach((to, from, failure) => {
     const context = contexts.get(to)
     contexts.delete(to)
-    if (failure || !context || typeof to.name !== 'string') return
-    const entry_source = !from.name
-      ? ('initial' as const)
-      : (screens[String(from.name)] ??
-        (/ScriptEdit$/.test(String(from.name))
-          ? ('script_edit' as const)
-          : /UserEdit$/.test(String(from.name))
-            ? ('user_edit' as const)
-            : ('other' as const)))
-    const screen = screens[to.name]
-    if (screen) {
-      recordAnalyticsEvent(context, {
-        name: 'screen_view',
-        props: { screen, script_type: 'none', entry_source },
-      })
-      return
-    }
-    const match =
-      /^(MAA|SRC|MaaEnd|HSR|General|BAAH|MaaFW|M9A|MSS|BetterGI|Okww|OkNte|ZzzOd|Whimbox)(ScriptEdit|SetupWizard|UserAdd|UserEdit)$/.exec(
-        to.name
-      )
-    if (!match) return
-    recordAnalyticsEvent(context, {
-      name: 'screen_view',
-      props: {
-        screen: scriptScreens[match[2]],
-        script_type: analyticsScriptType(match[1]),
-        entry_source,
-      },
-    })
+    if (failure || !context) return
+    const target = routeScreen(to.name)
+    if (!target) return
+    const entry_source = !from.name ? 'initial' : (routeScreen(from.name)?.screen ?? 'other')
+    recordAnalyticsEvent(context, { name: 'screen_view', props: { ...target, entry_source } })
   })
 }

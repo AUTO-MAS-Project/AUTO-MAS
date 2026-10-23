@@ -96,7 +96,6 @@ export const featureAnalyticsSchemas = {
     script_type: script,
     count_bucket: count,
   }),
-  user_config_write_finished: finished({ script_type: script, operation_kind: ['save'] as const }),
   config_mode_changed: finished({
     script_type: script,
     mode: ['script', 'user', 'native', 'view', 'direct', 'unknown'] as const,
@@ -142,6 +141,33 @@ export const featureAnalyticsSchemas = {
     operation_kind: ['refresh', 'sign', 'reward', 'action'] as const,
   }),
   settings_change_finished: finished({
+    setting_key: [
+      'auto_start',
+      'start_minimized',
+      'show_tray',
+      'close_to_tray',
+      'hide_close',
+      'history_retention',
+      'allow_sleep',
+      'block_ads',
+      'silent',
+      'mss_personal',
+      'virtual_display',
+      'virtual_display_mode',
+      'replay_enabled',
+      'replay_retention',
+      'replay_connection',
+      'voice',
+      'auto_update',
+      'update_channel',
+      'update_source',
+      'mirror',
+      'update_pause',
+      'proxy',
+      'performance_effects',
+      'other',
+    ] as const,
+    value_kind: ['enabled', 'disabled', 'default', 'custom'] as const,
     setting_kind: [
       'startup',
       'close',
@@ -185,6 +211,7 @@ export const featureAnalyticsSchemas = {
     fps_preset: ['low', 'normal', 'high', 'custom', 'unknown'] as const,
   }),
   home_activity_load_finished: finished({
+    trigger_kind: ['initial', 'manual'] as const,
     source_kind: [
       'arknights',
       'endfield',
@@ -259,7 +286,6 @@ export const mainOnlyFeatureEvents = [
   'renderer_responsiveness_changed',
   'tray_action_requested',
   'virtual_display_prompt_answered',
-  'appearance_package_finished',
   'diagnostic_export_finished',
   'data_backup_export_finished',
 ] as const
