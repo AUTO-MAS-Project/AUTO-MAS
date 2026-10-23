@@ -28,7 +28,8 @@
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
 （每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
 实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、
-客体日志落盘、客体 Vulkan 驱动补丁。
+客体日志落盘、客体 Vulkan 驱动补丁。启动器里没有的一项：数据盘请求密集时不让 vCPU 停机
+（``res/avd/guest/mas-idlepoll.sh``）。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
 关机默认让安卓自己正常关机、等 qemu 自己退出，不成再退回 ``sync`` + 控制台 ``kill``：控制台
@@ -1011,6 +1012,10 @@ class _AvdCore(DeviceBase):
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
         await self._setup_network(idx)
 
+        # 8b) 数据盘请求密集时（游戏下载每 8 KB fsync 一次）不让 vCPU 停机，省掉每次请求等 Hyper-V
+        #     唤醒 vCPU 的时间；平时不动（依据见脚本头注释）
+        await self._setup_idlepoll(idx)
+
         # 9) 客体日志：缓冲调到 16 MB（持久），开机后持续落盘到 <根>\logs，问题包要用
         await self._start_logcat(idx, instance)
 
@@ -1324,6 +1329,26 @@ class _AvdCore(DeviceBase):
             )
         else:
             logger.warning(f"实例 {idx} fastpath 没起来: {status[-300:]}")
+
+    async def _setup_idlepoll(self, idx: str) -> None:
+        remote = f"{GUEST_TMP_DIR}/mas-idlepoll.sh"
+        if not await self._push(idx, guest_script("mas-idlepoll.sh"), remote):
+            return
+        _, started = await self._shell(idx, f"su 0 sh {remote} daemon")
+        _, status = await self._shell(idx, f"su 0 sh {remote} status")
+        lines = {
+            key: value.strip()
+            for key, _, value in (line.partition(":") for line in status.splitlines())
+        }
+        if lines.get("watchers"):
+            logger.info(
+                f"实例 {idx} 密集读写加速: 守护已起（pid {lines['watchers']}，"
+                f"数据盘 {lines.get('disk') or '?'}）"
+            )
+        else:
+            logger.warning(
+                f"实例 {idx} 密集读写加速没起来: {(started.strip() + ' / ' + status)[-300:]}"
+            )
 
     async def _start_logcat(self, idx: str, instance: AvdInstance) -> None:
         await self._shell(
