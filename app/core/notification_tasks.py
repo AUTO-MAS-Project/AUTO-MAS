@@ -32,7 +32,7 @@ def spawn_notification(
 
 
 async def publish_notification_failure(
-    result: DispatchResult, *, task_id: str | None, system_notice: bool = False
+    result: DispatchResult, *, system_notice: bool = False
 ) -> None:
     """统一消费投递失败；页面反馈故障不向业务传播。"""
 
@@ -51,17 +51,6 @@ async def publish_notification_failure(
                 title=title,
                 lines=[f"发送失败的渠道：{'、'.join(failed_channels)}"],
             )
-        elif task_id:
-            from app.core.ws import Publisher, protocol
-            from app.models.schema import WSTaskNoticeData
-
-            await Publisher.send(
-                id=str(task_id),
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(
-                    level="warning", message=f"{title}：{'、'.join(failed_channels)}"
-                ),
-            )
     except Exception as exc:
         logger.warning(f"发送通知失败提示到前端时出现异常: {type(exc).__name__}")
 
@@ -69,7 +58,7 @@ async def publish_notification_failure(
 def consume_notification_result(result: DispatchResult, *, task_id: str | None) -> None:
     if result.failed:
         spawn_notification(
-            publish_notification_failure(result, task_id=task_id, system_notice=True),
+            publish_notification_failure(result, system_notice=True),
             task_id=task_id,
         )
 

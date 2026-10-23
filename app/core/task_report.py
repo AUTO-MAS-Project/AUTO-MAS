@@ -35,9 +35,7 @@ from app.core.notification_report import (
 from app.core.notification_tasks import (
     consume_notification_result,
     current_notification_task_id,
-    drain_notifications,
     publish_notification_failure,
-    shutdown_notifications,
     spawn_notification,
     submit_task_notification,
 )
@@ -104,7 +102,7 @@ def _create_coordinator(
             prepare_targets=_prepare_community_targets,
             report_failure=report_failure
             if report_failure is not None
-            else partial(publish_notification_failure, task_id=task_id),
+            else publish_notification_failure,
             report_supplement_failure=_report_supplement_failure,
             spawn=partial(
                 spawn_notification,
@@ -124,7 +122,6 @@ def create_task_report_coordinator(task_info: TaskItem) -> TaskReportCoordinator
         community_pending=True,
         report_failure=partial(
             publish_notification_failure,
-            task_id=task_info.task_id,
             system_notice=True,
         ),
     )
@@ -214,7 +211,6 @@ def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport
             report_failure=(
                 partial(
                     publish_notification_failure,
-                    task_id=task_id,
                     system_notice=True,
                 )
                 if task_info is not None or batch_task_id
@@ -225,17 +221,6 @@ def prepare_task_report(task_info: TaskItem | None = None) -> PreparedTaskReport
         coordinator=coordinator,
         policy=read_task_report_policy(),
     )
-
-
-async def drain_task_community_notifications(timeout: float) -> bool:
-    """兼容旧入口；电源动作现在同时等待主报告、统计、补发与失败反馈。"""
-    return await drain_notifications(timeout)
-
-
-async def shutdown_community_notifications() -> None:
-    """退出时取消并等待任务报告补发，然后才能释放共享连接。"""
-
-    await shutdown_notifications()
 
 
 async def dispatch_task_notification(

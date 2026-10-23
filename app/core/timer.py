@@ -449,7 +449,7 @@ class _MainTimer:
     ) -> bool:
         """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
 
-        from app.core.task_report import drain_task_community_notifications
+        from app.core.notification_tasks import drain_notifications
 
         deadline = asyncio.get_running_loop().time() + timeout
         while True:
@@ -462,7 +462,7 @@ class _MainTimer:
                 )
                 if pending:
                     return False
-            if not await drain_task_community_notifications(
+            if not await drain_notifications(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False

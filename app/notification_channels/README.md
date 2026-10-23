@@ -141,7 +141,7 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 ```text
 专项边界：既有模式与专项字典 -> TaskResultReport / NotifyPayload
   -> task.notify_core：类型明确的结果或统计投递
-  -> core.task_report：策略快照、状态适配与外部能力装配
+  -> core.task_report：策略快照、独立通知状态与外部能力装配
   -> core.notification_report：等待、摘要去重、迟到补发
        -> ReportRenderer：摘要、正文组合和独立社区内容
        -> 显式 NotificationDispatcher：投递并返回 DispatchResult
@@ -156,16 +156,18 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 默认报告和补发使用同一个注入的投递端口。单次显式 notifier 覆盖与本轮目标一起
 绑定到本轮迟到补发；下一轮没有显式覆盖时恢复宿主默认端口。
 
-`TaskReportCoordinator` 只持有 `TaskNotificationState`。结果、消费标记、已送达 ID
-和失败渠道属于这份状态；任务历史字段映射到同一状态，不保存第二份数据。
+`TaskReportCoordinator` 只持有 `TaskNotificationState`，与任务共享结果、消费标记和
+已送达 ID；失败渠道通过每次投递的 `DispatchResult` 返回。
 协调器不持有完整任务对象，不读取全局 Config/Notify，也不直接访问 Publisher
 或 RuntimeTasks。投递、策略读取、默认目标准备、后台任务注册和失败反馈通过
 `TaskReportDependencies` 注入，配置与任务页面反馈留在 core 入口装配。内容实现
 由该入口装配为 `DefaultReportRenderer`；协调器自身不导入内容服务，且导入
 `app.core` 不再急切加载 Config，因此可以在没有模板、Pillow 或配置实例时运行。
-旧 object 调用的字段兼容集中在该入口，不要求对象允许添加新属性；显式提供的
-通知状态直接复用。投递事实通过 DispatchResult 返回；失败反馈另外交宿主任务
+报告入口只接收 `TaskItem` 或无任务上下文，直接复用任务的通知状态；旧字段别名、
+object 字段投影和同步观察端口已退役。投递事实通过 DispatchResult 返回；失败反馈另外交宿主任务
 所有者持有，反馈异常或延迟不改变投递结果。电源前有限等待、退出回收同时覆盖反馈。
+任务和通知批次的失败通过常驻系统提示发布；无任务、无批次的独立报告失败仍只记录日志。
+电源动作直接等待 `notification_tasks.drain_notifications`，通知回收使用统一任务所有者。
 
 报告与补发共享一把锁；签到先完成时合并进报告，短暂等待超时则先发送带待确认
 提示的报告，签到继续执行。后续报告对已收到签到摘要的渠道只发送原始内容，
@@ -178,6 +180,9 @@ Server 酱、Webhook 和移动消息固定代理。接收者及 Webhook 地址�
 通知消费不可变 `CommunityNotificationResult` 快照，使用 success / already_signed /
 risk_control / failed 机器状态。旧字典、中文状态及占位过滤仅在入口适配；日期、
 `_completed` 判定和 API 保存仍由签到业务处理，不由通知状态反推。
+`community_notification_results` 和 `from_legacy` 是现役业务适配，继续承担上述转换；
+`tools/community_notify.py` 的旧转发门面已退役，独立社区通知从 `core.community_notify`
+装配，纯内容生成使用 `services.community_notification`。
 
 共享结果入口接收不可变 `TaskResultReport`，开始/结束时间、数量、结果和摘要意图
 都是明确字段；`TaskResultData` 标出生产端的公共字段。模板扩展经边界透传，不
