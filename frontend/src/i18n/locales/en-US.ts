@@ -3149,6 +3149,8 @@ export default {
     more: '{p0} more',
     collapse: 'Collapse',
     saveFailed: 'Failed to save, please try again later',
+    completionFailed: 'Failed to load completion status; marks may be inaccurate',
+    retry: 'Retry',
   },
   emulator: {
     title: 'Emulators',

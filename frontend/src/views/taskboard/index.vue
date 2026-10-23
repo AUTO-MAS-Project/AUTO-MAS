@@ -112,6 +112,19 @@ const gameMetas = computed<TaskboardGameOption[]>(() => {
 
 const gameName = (key: string) => gameMetas.value.find(g => g.key === key)?.name || key
 
+/* 本次成功取到数据的游戏：用它判断缓存里的活动是否还该保留。
+ * 不能用“有没有活动”来判断——数据源成功返回空列表时，旧活动仍应保留。 */
+const readyGameKeys = computed(() => {
+  const keys = new Set<string>()
+  for (const [key, module] of gameModules) {
+    if (module.buildPanel(nowTs.value).activities.available) keys.add(key)
+  }
+  for (const server of baSource.servers.value) {
+    if (server.overview.Available) keys.add(`bluearchive-${server.key}`)
+  }
+  return keys
+})
+
 /* 首页各活动卡片当前列出的活动（与卡片上的 items 完全一致） */
 const currentEvents = computed<TaskboardActivity[]>(() => {
   const out: TaskboardActivity[] = []
@@ -153,14 +166,14 @@ watch(
     for (const e of list) map.set(e.id, e)
     const cutoff = Date.now()
     const present = new Set(list.map(e => e.id))
-    const gamesWithData = new Set(list.map(e => e.gameKey))
+    const readyGames = readyGameKeys.value
     cachedEvents.value = [...map.values()].filter(e => {
       const end = parseTs(e.end_time)
       if (!end) return true
       if (end <= cutoff) return end + ARCHIVE_KEEP_DAYS * DAY > cutoff
       // 还没结束、但对应游戏的数据源里已经没有它（比如首页卡片只取前 N 条把它挤掉了），
       // 就不该继续显示；游戏本身没取到数据时保留缓存，避免源临时失败丢内容。
-      return present.has(e.id) || !gamesWithData.has(e.gameKey)
+      return present.has(e.id) || !readyGames.has(e.gameKey)
     })
     saveCache()
     // 活动被清掉后，它的完成日期也没有意义了
@@ -234,6 +247,13 @@ const activityOf = (e: TaskboardActivity) => ({
   endTime: e.end_time,
 })
 const completionOf = (e: TaskboardActivity) => completions.get(e.gameKey)
+const completionError = computed(() => {
+  for (const completion of completions.values()) {
+    const error = completion.errorMessage.value
+    if (error) return error
+  }
+  return ''
+})
 const isCompleted = (e: TaskboardActivity) => completionOf(e)?.isCompleted(activityOf(e)) ?? false
 const isSaving = (e: TaskboardActivity) => completionOf(e)?.isSaving(activityOf(e)) ?? false
 const isCompletionReady = (e: TaskboardActivity) => completionOf(e)?.ready.value ?? false
@@ -356,6 +376,10 @@ const fmtDate = (s?: string) => {
 const setStatus = async (e: TaskboardActivity, s: 'active' | 'done') => {
   const completion = completionOf(e)
   if (!completion || !completion.ready.value) return
+  // 时钟每 5 分钟才走一格，点击前用当前时间再判一次，避免给刚结束的活动打完成。
+  nowTs.value = Date.now()
+  if (s === 'done' && stateOf(e) !== 'active') return
+  if (s === 'active' && stateOf(e) !== 'done') return
   try {
     if (s === 'done') {
       if (!isCompleted(e)) await completion.toggle(activityOf(e))
@@ -390,6 +414,25 @@ const loading = computed(() => {
   return flags.some(Boolean)
 })
 
+const reloadCompletions = async () => {
+  await Promise.all([...completions.values()].map(completion => completion.load(true)))
+  reconcileDoneAt()
+}
+
+/* 首页撤销后本地可能还留着旧的完成日期：加载完按后端记录对一次账。 */
+const reconcileDoneAt = () => {
+  let changed = false
+  for (const [id, date] of Object.entries(doneAt.value)) {
+    const event = allEvents.value.find(item => item.id === id)
+    if (!event) continue
+    if (!isCompleted(event)) {
+      delete doneAt.value[id]
+      changed = true
+    }
+  }
+  if (changed) saveDoneAt()
+}
+
 const load = async () => {
   refreshing.value = true
   try {
@@ -398,6 +441,7 @@ const load = async () => {
       baSource.refresh(),
       ...[...completions.values()].map(completion => completion.load(true)),
     ])
+    reconcileDoneAt()
     updatedAt.value = nowText()
   } finally {
     refreshing.value = false
@@ -410,7 +454,9 @@ let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   updatedAt.value = nowText()
   sources.value.forEach(source => source.start())
-  completions.forEach(completion => void completion.load())
+  void Promise.all([...completions.values()].map(completion => completion.load())).then(
+    reconcileDoneAt
+  )
   timer = setInterval(() => {
     nowTs.value = Date.now()
   }, 300000)
@@ -492,6 +538,18 @@ onUnmounted(() => {
         <a-tab-pane key="archived" :tab="`${t('taskboard.tabArchived')} ${counts.archived}`" />
       </a-tabs>
 
+      <a-alert
+        v-if="completionError"
+        type="warning"
+        show-icon
+        class="tb-alert"
+        :message="t('taskboard.completionFailed')"
+        :description="completionError"
+      >
+        <template #action>
+          <a-button size="small" @click="reloadCompletions">{{ t('taskboard.retry') }}</a-button>
+        </template>
+      </a-alert>
       <div v-if="tab === 'archived'" class="tb-hint">{{ t('taskboard.archiveHint') }}</div>
 
       <a-spin :spinning="loading && !allEvents.length">

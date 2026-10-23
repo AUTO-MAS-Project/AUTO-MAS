@@ -45,18 +45,17 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
 
   const stateOf = (scope: ActivityCompletionScope): ScopeState => {
     const key = scopeKey(scope)
-    let state = states[key]
-    if (!state) {
-      state = {
+    if (!states[key]) {
+      states[key] = {
         items: [],
         loading: false,
         ready: false,
         errorMessage: '',
         pending: [],
       }
-      states[key] = state
     }
-    return state
+    // 必须返回 reactive 里的代理，直接返回刚建好的原始对象不会触发界面更新。
+    return states[key]
   }
 
   const isCompleted = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) => {
@@ -67,11 +66,10 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
   const isSaving = (scope: ActivityCompletionScope, item: GameCalendarActivityInfo) =>
     stateOf(scope).pending.includes(activityKey(item))
 
-  const load = async (scope: ActivityCompletionScope, force = false) => {
+  const inFlight = new Map<string, Promise<void>>()
+
+  const runLoad = async (scope: ActivityCompletionScope) => {
     const state = stateOf(scope)
-    if (state.loading || state.pending.length) return
-    // 同一进程内复用已经取到的结果；手动刷新时传 force 重新拉。
-    if (!force && state.ready) return
     state.loading = true
     // 读取与保存互斥，避免较早的读取结果覆盖刚保存的完成状态。
     state.ready = false
@@ -89,6 +87,29 @@ export const useActivityCompletionStore = defineStore('activityCompletion', () =
       state.errorMessage = completionError(error).message
     } finally {
       state.loading = false
+    }
+  }
+
+  const load = async (scope: ActivityCompletionScope, force = false) => {
+    const key = scopeKey(scope)
+    const state = stateOf(scope)
+    if (state.pending.length) return
+    // 同一进程内复用已经取到的结果；手动刷新时传 force 重新拉。
+    if (!force && state.ready) return
+
+    const current = inFlight.get(key)
+    if (current) {
+      // 刷新撞上正在进行的请求时要等它结束，否则会带着旧数据收尾。
+      await current
+      if (!force) return
+    }
+
+    const task = runLoad(scope)
+    inFlight.set(key, task)
+    try {
+      await task
+    } finally {
+      inFlight.delete(key)
     }
   }
 

@@ -2517,6 +2517,8 @@ export default {
     more: '残り {p0} 件',
     collapse: '折りたたむ',
     saveFailed: '保存に失敗しました。しばらくしてから再試行してください',
+    completionFailed: '達成状態の読み込みに失敗しました。マークが不正確な可能性があります',
+    retry: '再試行',
   },
   emulator: {
     title: 'エミュレーター管理',

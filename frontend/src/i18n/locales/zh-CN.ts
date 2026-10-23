@@ -2985,6 +2985,8 @@ export default {
     more: '还有 {p0} 条',
     collapse: '收起',
     saveFailed: '保存失败，请稍后重试',
+    completionFailed: '完成状态加载失败，标记可能不准确',
+    retry: '重试',
   },
   emulator: {
     title: '模拟器管理',
