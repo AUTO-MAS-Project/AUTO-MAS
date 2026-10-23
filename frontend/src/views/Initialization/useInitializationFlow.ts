@@ -375,6 +375,7 @@ export function useInitializationFlow() {
   }
 
   async function executeRuntimeInitialization(): Promise<boolean> {
+    ensureAnalyticsAttempt()
     try {
       const result = await window.electronAPI.initialize(targetBranch.value, false)
 
@@ -541,6 +542,7 @@ export function useInitializationFlow() {
   }
 
   async function handleRuntimeUpdated() {
+    ensureAnalyticsAttempt()
     // 新 Runtime 从完整 bootstrap 开始，不能沿用失败前的步骤完成标记。
     currentStepIndex.value = 0
     if (flowKind.value === 'startup') flowKind.value = 'update'

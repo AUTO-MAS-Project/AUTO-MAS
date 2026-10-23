@@ -1,4 +1,8 @@
-import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
+import {
+  requestTaskStart,
+  stopNativeConfig,
+  type NativeConfigStopAction,
+} from '@/composables/useTaskApi'
 // ZZZ-OD 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -52,7 +56,10 @@ export function useZzzodGuiSession() {
     }
   }
 
-  const stopSession = async (keepOnFailure = false): Promise<boolean> => {
+  const stopSession = async (
+    keepOnFailure = false,
+    action: NativeConfigStopAction = 'close'
+  ): Promise<boolean> => {
     const taskId = zzzodWebsocketId.value
     if (!taskId) {
       clearSession()
@@ -62,7 +69,7 @@ export function useZzzodGuiSession() {
 
     stoppingZzzodConfig.value = true
     try {
-      const response = await stopNativeConfig(taskId, keepOnFailure ? 'save' : 'close')
+      const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
         throw new Error(response.message || t('edit.zzzodStopFailed'))
       }
@@ -115,13 +122,16 @@ export function useZzzodGuiSession() {
       message.success(viewOnly ? t('edit.zzzodViewOpened') : t('edit.zzzodSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
-        zzzodConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)
+        zzzodConfigTimeout = window.setTimeout(
+          () => void stopSession(false, 'timeout'),
+          SESSION_TIMEOUT_MS
+        )
         return
       }
       zzzodConfigWarningTimeout = window.setTimeout(() => {
         message.warning(t('edit.zzzodSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
-      zzzodConfigTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
+      zzzodConfigTimeout = window.setTimeout(() => void saveSession('timeout'), SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.zzzodStartFailed'))
@@ -131,9 +141,9 @@ export function useZzzodGuiSession() {
     }
   }
 
-  const saveSession = async () => {
+  const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!zzzodWebsocketId.value) return
-    if (await stopSession(true)) {
+    if (await stopSession(true, action)) {
       message.success(t('edit.zzzodSettingsSaved'))
     } else {
       message.error(t('edit.zzzodSettingsSaveFailed'))

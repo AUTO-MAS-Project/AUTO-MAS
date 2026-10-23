@@ -25,7 +25,7 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
       target_kind:
         target === 'mas'
           ? ('mas' as const)
-          : target === 'native'
+          : target === 'native' || target === 'onedragon'
             ? ('native' as const)
             : ('unknown' as const),
       forced: force ? ('yes' as const) : ('no' as const),

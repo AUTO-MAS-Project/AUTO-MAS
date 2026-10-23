@@ -1,4 +1,8 @@
-import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
+import {
+  requestTaskStart,
+  stopNativeConfig,
+  type NativeConfigStopAction,
+} from '@/composables/useTaskApi'
 // BetterGI 原生设置会话（原生 GUI 直控）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -52,7 +56,10 @@ export function useBettergiGuiSession() {
     }
   }
 
-  const stopSession = async (keepOnFailure = false): Promise<boolean> => {
+  const stopSession = async (
+    keepOnFailure = false,
+    action: NativeConfigStopAction = 'close'
+  ): Promise<boolean> => {
     const taskId = bettergiWebsocketId.value
     if (!taskId) {
       clearSession()
@@ -62,7 +69,7 @@ export function useBettergiGuiSession() {
 
     stoppingBettergiConfig.value = true
     try {
-      const response = await stopNativeConfig(taskId, keepOnFailure ? 'save' : 'close')
+      const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
         throw new Error(response.message || t('edit.bettergiStopFailed'))
       }
@@ -114,13 +121,19 @@ export function useBettergiGuiSession() {
       message.success(viewOnly ? t('edit.bettergiViewOpened') : t('edit.bettergiSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
-        bettergiConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)
+        bettergiConfigTimeout = window.setTimeout(
+          () => void stopSession(false, 'timeout'),
+          SESSION_TIMEOUT_MS
+        )
         return
       }
       bettergiConfigWarningTimeout = window.setTimeout(() => {
         message.warning(t('edit.bettergiSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
-      bettergiConfigTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
+      bettergiConfigTimeout = window.setTimeout(
+        () => void saveSession('timeout'),
+        SESSION_TIMEOUT_MS
+      )
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(
@@ -136,14 +149,14 @@ export function useBettergiGuiSession() {
     }
   }
 
-  const saveSession = async () => {
+  const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!bettergiWebsocketId.value) return
     if (currentSessionViewOnly.value) {
       // 查看会话：无保存语义，直接关闭
       await stopSession()
       return
     }
-    if (await stopSession(true)) {
+    if (await stopSession(true, action)) {
       message.success(t('edit.bettergiSettingsSaved'))
     } else {
       message.error(t('edit.bettergiSettingsSaveFailed'))

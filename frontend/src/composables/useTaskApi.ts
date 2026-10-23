@@ -32,11 +32,10 @@ function nativeScriptType(taskId: string, targetId = '') {
   return script ? analyticsScriptType(script.scriptType) : getAnalyticsScriptType(targetId)
 }
 
+export type NativeConfigStopAction = 'save' | 'close' | 'timeout'
+
 /** 仅记录停止请求的受理结果；不能由停止成功推断原生配置已经保存。 */
-export async function stopNativeConfig(
-  taskId: string,
-  action: 'save' | 'close' | 'timeout' = 'close'
-) {
+export async function stopNativeConfig(taskId: string, action: NativeConfigStopAction = 'close') {
   const operation = beginAnalyticsOperation('native_config_action_finished')
   const script_type = nativeScriptType(taskId)
   try {

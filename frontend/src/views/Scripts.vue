@@ -154,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { requestTaskStart } from '@/composables/useTaskApi'
+import { requestTaskStart, stopNativeConfig } from '@/composables/useTaskApi'
 
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
@@ -688,9 +688,7 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
     message.error(t('scripts.toast.noSession'))
     return false
   }
-  const response = await Service.stopTaskApiDispatchStopPost({
-    taskId: connection.taskId,
-  })
+  const response = await stopNativeConfig(connection.taskId, 'save')
   if (response.code !== 200) {
     throw new Error(response.message || t('scripts.toast.saveFailedRaw', { label }))
   }
