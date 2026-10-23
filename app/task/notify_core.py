@@ -22,8 +22,7 @@
 
 投递统一交注入的宿主服务；复杂统计与专项模板扩展由各自的正文适配提供。
 
-失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
-``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
+失败截图的异步准备、模板资源引用与通知截图上限也在这里，供各专项共用。
 """
 
 import asyncio
@@ -116,31 +115,6 @@ NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
 NOTIFY_SCREENSHOT_LIMIT = 4
 
 
-def load_screenshot_images(
-    shots: Sequence[tuple[str, Path | bytes]],
-    *,
-    image_id_prefix: str,
-) -> list[tuple[str, NotificationImage]]:
-    """把失败截图读入通用图片资源，并尽量转成体积更小的 JPEG。
-
-    源文件多为 PNG（MaaFW worker 那边没有编码器），一张 1280 宽的游戏画面
-    动辄 1 MB，几张下来邮件就太胖；这里用 Pillow 转成 JPEG，体积能压到
-    十分之一。转不动（Pillow 异常）就原样带 PNG；文件读不到就跳过这张，
-    通知照发。
-
-    Args:
-        shots: (标签, 图片路径或已编码的图片字节) 序列，标签会显示在图片上方。
-        image_id_prefix: 图片资源 ID 前缀，按专项区分（如 ``maafw`` / ``maa``）。
-
-    Returns:
-        (标签, 图片资源) 序列；读不到的文件被跳过。
-    """
-
-    return _load_screenshot_images(
-        shots, image_id_prefix=image_id_prefix, convert=_screenshot_converter()
-    )
-
-
 def _screenshot_converter() -> Callable[[bytes], bytes] | None:
     try:
         from app.services.notification_image import encode_screenshot
@@ -154,7 +128,10 @@ def _screenshot_converter() -> Callable[[bytes], bytes] | None:
 async def prepare_screenshot_images(
     shots: Sequence[tuple[str, Path | bytes]], *, image_id_prefix: str
 ) -> list[tuple[str, NotificationImage]]:
-    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。"""
+    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。
+
+    尽量转为 JPEG；转码失败保留原图，文件无法读取时跳过该张，通知照发。
+    """
 
     convert = _screenshot_converter()
     return await asyncio.to_thread(
