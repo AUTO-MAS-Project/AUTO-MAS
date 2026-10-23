@@ -1,10 +1,10 @@
-"""MaaFW 通知：任务报告推送与幂等账本。"""
+"""MaaFW 通知：统计正文与幂等账本。"""
 
 from .ledger import MaaFWNotificationClaim, MaaFWNotificationLedger
-from .report import push_notification
+from .report import build_statistics_payload
 
 __all__ = [
     "MaaFWNotificationClaim",
     "MaaFWNotificationLedger",
-    "push_notification",
+    "build_statistics_payload",
 ]

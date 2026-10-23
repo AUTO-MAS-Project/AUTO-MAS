@@ -24,6 +24,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -51,7 +52,6 @@ from .AutoProxy import (
     _okww_config_base,
 )
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 from .Update import WuwaUpdateTask
 
@@ -375,11 +375,9 @@ class OkwwManager(ScriptManagerBase):
                         # 全员维护跳过：推维护通知而非常规代理报告（对齐 MaaEnd）
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                         )
                 except Exception as e:

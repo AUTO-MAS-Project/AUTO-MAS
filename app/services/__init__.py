@@ -26,7 +26,6 @@ _EXPORTS = {
     "ConfigCenter": ".config_center",
     "ConfigCenterError": ".config_center",
     "Matomo": ".matomo",
-    "Notify": ".notification",
     "System": ".system",
     "Updater": ".update",
 }
@@ -40,4 +39,4 @@ def __getattr__(name: str):
     return value
 
 
-__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "Notify", "System", "Updater"]
+__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "System", "Updater"]

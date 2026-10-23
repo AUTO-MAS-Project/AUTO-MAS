@@ -10,11 +10,11 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic import AwareDatetime, TypeAdapter
 
 from app.core.config import Config
-from app.core.notify import dispatch, global_target
 from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
 from app.models.notification_channel import NotifyTarget
@@ -27,6 +27,9 @@ from app.tools.game_calendar import (
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.io import write_file
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 
 logger = get_logger("游戏日历")
 CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
@@ -160,18 +163,20 @@ class _GameCalendar:
         dispatcher: NotificationDispatcher | None = None,
         prepare_target: Callable[[], NotifyTarget] | None = None,
     ) -> None:
-        self._dispatcher = dispatch if dispatcher is None else dispatcher
-        self._prepare_target = (
-            (lambda: global_target(include_system=True, empty_policy="skip"))
-            if prepare_target is None
-            else prepare_target
-        )
+        self._dispatcher = dispatcher
+        self._prepare_target = prepare_target
         self._lock = asyncio.Lock()
         self._loaded = False
         self._reminders: dict[str, CalendarReminder] = {}
         self._completions: dict[str, CalendarActivityCompletion] = {}
         self._dirty = False
         self._save_retry_at: datetime | None = None
+
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
+        self._dispatcher = notifications.dispatch
+        self._prepare_target = lambda: notifications.global_target(
+            include_system=True, empty_policy="skip"
+        )
 
     def _load_schedule(self) -> None:
         """恢复已生成的日程，启动后的推送不等待活动接口。"""
@@ -338,6 +343,8 @@ class _GameCalendar:
 
     async def send_due_reminders(self) -> None:
         """汇总所有游戏已到点的日程，按渠道保存送达状态与重试时刻。"""
+        if self._dispatcher is None or self._prepare_target is None:
+            raise RuntimeError("游戏日历的通知依赖尚未装配")
 
         self._load_schedule()
         async with self._lock:

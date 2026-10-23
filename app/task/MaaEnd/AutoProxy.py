@@ -85,7 +85,7 @@ from .resource_loader import (
     maaend_task_supported,
 )
 from .ScriptConfig import maaend_config_base, maaend_mas_config_dir
-from .tools import push_notification, replace_account_switch_task
+from .tools import build_statistics_payload, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.game_launcher import verify_launcher_signature
 from .tools.launcher_start import (
@@ -2868,6 +2868,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         success_symbol = "√" if completed else "X"
 
+        if history_records:
+            try:
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"推送通知时出现异常: {e}")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送通知时出现异常: {e}"
+                    ),
+                )
         if completed:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0

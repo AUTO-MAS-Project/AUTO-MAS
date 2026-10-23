@@ -264,15 +264,6 @@ class NotifyChannel:
             raise RuntimeError(f"通知渠道 {self.key} 未绑定目标构造器")
         return self.target_builder(config, scope=scope)
 
-    async def send(
-        self, sender: Any, target: ChannelTarget, rendered: RenderedNotification
-    ) -> bool | None:
-        """执行单次发送；None/True 成功，False 失败，取消和异常向上传播。"""
-
-        return await self.delivery().send(
-            sender=sender, target=target, rendered=rendered
-        )
-
     def delivery(self) -> DeliveryChannel:
         return DeliveryChannel(key=self.key, send_adapter=self.send_adapter)
 

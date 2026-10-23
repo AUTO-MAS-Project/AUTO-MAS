@@ -113,6 +113,3 @@ class AsyncNotificationRenderer:
 
         self._closed = True
         self._executor.shutdown(wait=False, cancel_futures=True)
-
-
-NotificationRendering = AsyncNotificationRenderer()

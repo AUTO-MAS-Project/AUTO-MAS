@@ -23,6 +23,7 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services.endfield_launcher import resolve_launcher_exe
@@ -49,7 +50,7 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import collect_recent_error_images, push_notification
+from .tools.notify import collect_recent_error_images
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -513,11 +514,9 @@ class MaaEndManager(ScriptManagerBase):
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                             images=error_images,
                         )

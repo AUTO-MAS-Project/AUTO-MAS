@@ -22,6 +22,5 @@
 
 
 from .ExecuteScript import execute_script_task
-from .notify import push_notification
 
-__all__ = ["push_notification", "execute_script_task"]
+__all__ = ["execute_script_task"]

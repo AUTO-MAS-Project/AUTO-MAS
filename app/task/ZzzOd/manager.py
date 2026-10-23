@@ -24,6 +24,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -33,7 +34,6 @@ from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 
 logger = get_logger("ZZZ-OD 调度器")
 
@@ -317,14 +317,12 @@ class ZzzOdManager(ScriptManagerBase):
                 mirror_report_to_dispatch(self.script_info, user_result_text)
                 result = self.build_proxy_report(result_text=user_result_text)
 
-                # 系统通知由 push_notification 内部的全局目标统一发送
+                # 系统通知由宿主代理结果服务的全局目标统一发送。
                 # （include_system=True），此处不再直接 push_plyer 以免重复
                 try:
-                    await push_notification(
-                        mode="代理结果",
+                    await self.task_info.notifications.push_proxy_result(
                         title=title,
-                        message=result,
-                        user_config=None,
+                        report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
                     )
                 except Exception as e:

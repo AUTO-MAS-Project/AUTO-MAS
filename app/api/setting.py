@@ -41,16 +41,21 @@ from pydantic import (
 from starlette.background import BackgroundTask
 
 import app.models.config as _config_models
+from app.api.notification_dependencies import (
+    get_notification_service,
+    get_webhook_tester,
+)
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
 from app.core.data_backup import create_data_backup
 from app.core.notify import (
+    HostNotificationService,
     get_webhook_tester,
     send_test_notification,
     webhook_test_snapshot,
 )
 from app.models.config import Webhook as WebhookConfig
-from app.models.notification import NotifyPayload
+from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_ports import WebhookTester
 from app.models.schema import (
     ObsReplayCheckOut,
@@ -355,11 +360,16 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def test_notify() -> OutBase:
+async def test_notify(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OutBase:
     """测试通知"""
 
     try:
-        result = await send_test_notification()
+        result = await notifications.send_test_notification()
     except Exception as e:
         logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -567,6 +577,19 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+def _webhook_test_snapshot(webhook: WebhookConfig) -> WebhookTargetSnapshot:
+    """草稿测试固定输入，不按正式目标的启用状态过滤。"""
+
+    return WebhookTargetSnapshot(
+        name=str(webhook.Info.Name),
+        enabled=bool(webhook.Info.Enabled),
+        url=webhook.Data.Url,
+        template=webhook.Data.Template,
+        headers=webhook.Data.Headers,
+        method=webhook.Data.Method,
+    )
+
+
 @router.post(
     "/webhook/test",
     tags=["Action"],
@@ -592,7 +615,7 @@ async def test_webhook(
                 text="这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
                 append_signature=False,
             ),
-            webhook_test_snapshot(webhook_config),
+            _webhook_test_snapshot(webhook_config),
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")

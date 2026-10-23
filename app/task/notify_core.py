@@ -18,13 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""各专项通知工具共用的核心原语：强类型报告投递与失败截图资源转换。
+"""专项共用的简单统计正文、维护提醒与失败截图资源转换。
 
-「代理结果」接收 ``TaskResultReport``；「统计信息」接收已生成的 ``NotifyPayload``。
-模式识别、专项结果字典与模板扩展留在专项边界，共享层只消费明确的报告契约。
+投递统一交注入的宿主服务；复杂统计与专项模板扩展由各自的正文适配提供。
 
-失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
-``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
+失败截图的异步准备、模板资源引用与通知截图上限也在这里，供各专项共用。
 """
 
 import asyncio
@@ -32,22 +30,15 @@ from collections.abc import Callable, Sequence
 from functools import partial
 from html import escape
 from pathlib import Path
-from typing import Any
 
-from app.core.notify import (
-    DispatchResult,
-    global_target,
-    statistic_targets,
-)
-from app.core.task_report import dispatch_task_notification, prepare_task_report
 from app.models.notification import (
     NotificationImage,
     NotificationSummary,
     NotifyPayload,
     image_reference,
 )
-from app.models.notification_channel import UserNotificationConfig
-from app.models.notification_report import ReportScreenshot, TaskResultReport
+from app.models.notification_channel import DispatchResult
+from app.models.notification_report import ReportScreenshot
 from app.models.task import TaskItem
 from app.utils import get_logger
 from app.utils.notification_template import deferred_notification_template
@@ -55,90 +46,42 @@ from app.utils.notification_template import deferred_notification_template
 logger = get_logger("任务通知核心")
 
 
-async def push_statistics_report(
-    *,
-    payload: NotifyPayload,
-    user_config: UserNotificationConfig | None,
-    task_info: TaskItem | None = None,
-) -> DispatchResult:
-    """投递专项已生成的统计内容，不接收模式或专项字典。"""
+def user_statistics_text(message: dict) -> str:
+    """构造用户统计的四字段正文，也供复杂报告作为紧凑摘要。"""
 
-    return await dispatch_task_notification(
-        payload, statistic_targets(user_config), task_info=task_info
+    return (
+        f"用户: {message['user_info']}\n"
+        f"开始时间: {message['start_time']}\n"
+        f"结束时间: {message['end_time']}\n"
+        f"执行结果: {message['user_result']}"
     )
 
 
-async def push_proxy_result(
-    *,
-    title: str,
-    report: TaskResultReport,
-    task_info: TaskItem | None = None,
-    result_template: str = "general_result.html",
-    signature_sep: str = "\n\n",
-    logger: Any | None = None,
-    skip_debug_message: str | None = None,
-    images: Sequence[NotificationImage] = (),
-    include_system: bool = True,
-) -> DispatchResult:
-    """推送全局「代理结果」报告；签到合并和补发由报告协调器承担。
+def build_user_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
+    """构造含用户信息的简单统计通知。"""
 
-    Args:
-        title: 通知标题。
-        report: 已在专项边界固定公共字段的任务报告。
-        task_info: 任务信息，用于签到汇总的渠道级重试。
-        result_template: 结果 HTML 模板名，MAA 用 MAA_result.html。
-        signature_sep: 签名分隔符，默认与 NotifyPayload 缺省一致；MAA 只空一行。
-        logger: 调用方模块 logger，仅用于可选的跳过 debug 日志。
-        skip_debug_message: SendTaskResultTime 不满足时的 debug 文案，仅 M9A 传入。
-        images: 随报告提供的图片资源。HTML 模板通过稳定资源 ID 引用需要展示的图片。
-        include_system: 是否弹系统通知。本轮已由专门的通知弹过（如 MaaFW 的停服维护 /
-            需要更新）时传 False，免得同一件事弹两次。
-    """
+    message_html = deferred_notification_template("general_statistics.html", message)
+    return NotifyPayload(
+        title=title,
+        text=user_statistics_text(message),
+        html=message_html,
+    )
 
-    prepared = prepare_task_report(task_info)
-    if not prepared.should_send(
-        uncompleted_count=report.uncompleted_count,
-        embedded_summary=report.embedded_summary,
-    ):
-        if logger is not None and skip_debug_message:
-            logger.debug(skip_debug_message)
-        return DispatchResult()
 
-    message_text = (
-        f"任务开始时间: {report.start_time}, 结束时间: {report.end_time}\n"
-        f"已完成数: {report.completed_count}, 未完成数: {report.uncompleted_count}\n\n"
-        f"{report.result}"
-    )
-    counts = (
-        f"已完成用户数: {report.completed_count}, "
-        f"未完成用户数: {report.uncompleted_count}"
-    )
-    summary_text = (
-        prepared.community_summary().text
-        if task_info is not None and report.embedded_summary
-        else ""
-    )
-    # 有未完成的用户时摘要标题不能再说「已完成！」；调用方显式给的摘要标题优先
-    summary_title = report.summary_title or title.replace(
-        "报告", "存在异常" if report.uncompleted_count > 0 else "已完成！"
-    )
-    return await prepared.dispatch(
-        NotifyPayload(
-            title=title,
-            text=message_text,
-            html=deferred_notification_template(
-                result_template, report.template_context()
-            ),
-            signature_sep=signature_sep,
-            summary=NotificationSummary(
-                text=counts,
-                title=summary_title,
-                overflow_text=message_text,
-            ),
-            images=tuple(images),
+def build_script_statistics_payload(
+    *, title: str, message: dict, result_label: str
+) -> NotifyPayload:
+    """构造使用专项结果标签的简单统计通知，沿用末尾两次换行。"""
+
+    message_html = deferred_notification_template("general_statistics.html", message)
+    return NotifyPayload(
+        title=title,
+        text=(
+            f"开始时间: {message['start_time']}\n"
+            f"结束时间: {message['end_time']}\n"
+            f"{result_label}: {message['user_result']}\n\n"
         ),
-        [global_target(include_system=include_system, system_timeout_seconds=10)],
-        summary_text=summary_text,
+        html=message_html,
     )
 
 
@@ -146,7 +89,7 @@ async def push_maintenance_notice(
     *, message: str, task_info: TaskItem
 ) -> DispatchResult:
     """维护跳过只推送游戏状态，沿用原有通知时机与渠道。"""
-    report = prepare_task_report(task_info)
+    report = task_info.notifications.prepare_task_report(task_info)
     if not report.should_send(uncompleted_count=0):
         return DispatchResult()
     return await report.dispatch(
@@ -156,7 +99,11 @@ async def push_maintenance_notice(
             html=f"<p>{escape(message)}</p>",
             summary=NotificationSummary(text=message, title=message),
         ),
-        [global_target(include_system=True, system_timeout_seconds=10)],
+        [
+            task_info.notifications.global_target(
+                include_system=True, system_timeout_seconds=10
+            )
+        ],
     )
 
 
@@ -166,31 +113,6 @@ NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
 # 一份通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
 # 邮件里每张 JPEG 约 100~300 KB；MaaFW 的 PNG 原图留在 history 目录里不动。
 NOTIFY_SCREENSHOT_LIMIT = 4
-
-
-def load_screenshot_images(
-    shots: Sequence[tuple[str, Path | bytes]],
-    *,
-    image_id_prefix: str,
-) -> list[tuple[str, NotificationImage]]:
-    """把失败截图读入通用图片资源，并尽量转成体积更小的 JPEG。
-
-    源文件多为 PNG（MaaFW worker 那边没有编码器），一张 1280 宽的游戏画面
-    动辄 1 MB，几张下来邮件就太胖；这里用 Pillow 转成 JPEG，体积能压到
-    十分之一。转不动（Pillow 异常）就原样带 PNG；文件读不到就跳过这张，
-    通知照发。
-
-    Args:
-        shots: (标签, 图片路径或已编码的图片字节) 序列，标签会显示在图片上方。
-        image_id_prefix: 图片资源 ID 前缀，按专项区分（如 ``maafw`` / ``maa``）。
-
-    Returns:
-        (标签, 图片资源) 序列；读不到的文件被跳过。
-    """
-
-    return _load_screenshot_images(
-        shots, image_id_prefix=image_id_prefix, convert=_screenshot_converter()
-    )
 
 
 def _screenshot_converter() -> Callable[[bytes], bytes] | None:
@@ -206,7 +128,10 @@ def _screenshot_converter() -> Callable[[bytes], bytes] | None:
 async def prepare_screenshot_images(
     shots: Sequence[tuple[str, Path | bytes]], *, image_id_prefix: str
 ) -> list[tuple[str, NotificationImage]]:
-    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。"""
+    """先解析图片依赖，再在线程里读取和转码；冻结字节后才能释放业务资源。
+
+    尽量转为 JPEG；转码失败保留原图，文件无法读取时跳过该张，通知照发。
+    """
 
     convert = _screenshot_converter()
     return await asyncio.to_thread(

@@ -32,6 +32,7 @@ from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNotice
 from app.models.task import LogRecord, ScriptItem
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_SHARED,
@@ -49,7 +50,6 @@ from .tools import (
     poor_yaml_read,
     poor_yaml_write,
     promote_src_config_update,
-    push_notification,
     read_overlay_values,
     read_src_webui_port,
     recover_src_user_config,
@@ -857,11 +857,14 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
 
         try:
             await asyncio.wait_for(
-                push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                self.task_info.notifications.push_statistics_report(
+                    payload=build_script_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                        message=statistics,
+                        result_label="SRC脚本执行结果",
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 ),
                 timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
             )

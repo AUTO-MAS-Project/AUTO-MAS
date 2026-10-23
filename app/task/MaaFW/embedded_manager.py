@@ -48,7 +48,7 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceProvider
-from app.models.notification_report import TaskResultData
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.MaaFW.tools.backup_archive import (
@@ -94,7 +94,6 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
-from app.task.MaaFW.tools.notify import push_notification
 from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
@@ -1935,13 +1934,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 image_id_prefix="maafw",
             )
             result["screenshots"] = screenshot_entries(images)
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
                 images=[image for _, image in images],
-                # 本轮有信号通知时系统弹窗由它弹（写明维护 / 需更新），这里不再弹第二次
                 include_system=not self.signal_tracker.records(),
             )
         except Exception as exc:  # noqa: BLE001
@@ -1998,6 +1995,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 self.signal_tracker,
                 script_name=self.script_info.name or "空白",
                 user_config_for=user_config_for,
+                notifications=self.task_info.notifications,
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")
