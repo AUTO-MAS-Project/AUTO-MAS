@@ -886,6 +886,57 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
+def fluxdown_server_task_safe_to_overwrite(
+    cli_exe: Path, url: str, destination: Path, *, timeout: int = 15
+) -> bool:
+    """判断 (url, destination) 对应的 FluxDown server 任务是否已确认停止/不存在。
+
+    用于在改用内置 httpx 等"以 wb 重写 destination"的路径前排除双写：
+    - 无映射：从未经 server 下载过 → 安全
+    - 有映射且 status 能查到（任务在 server 端有明确状态，即便仍在下载，
+      此时应配合暂停；本函数只回答"通道是否可用"）→ 调用方需自行 pause
+    - 有映射且 status 查询失败：管理通道异常，**不能排除 daemon 仍在写**，
+      返回 False，调用方应阻止覆写
+    - 有映射、status 能查到且为终态/暂停态：安全
+    """
+    key = _map_key(url, Path(destination))
+    entry = _load_task_map(cli_exe).get(key) or {}
+    task_id = entry.get("task_id")
+    if not task_id:
+        return True
+    handle = fluxdown_server_ensure(cli_exe)
+    if handle is None:
+        # server 都起不来，无法证明 daemon 是否仍在写 destination，按不安全处理
+        return False
+    env = _cli_env(handle.gateway_port, handle.token)
+    code, out = _run_cli(cli_exe, env, ["status", task_id, "--json"], timeout=timeout)
+    if code != 0:
+        return False
+    data = _parse_cli_json(out)
+    if not isinstance(data, dict):
+        return False
+    try:
+        status = int(data.get("status") or 0)
+    except Exception:
+        return False
+    if status in (1, 2):
+        # 任务仍在跑：先尝试暂停，再确认状态变更
+        pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
+        if pause_code != 0:
+            return False
+        code2, out2 = _run_cli(cli_exe, env, ["status", task_id, "--json"], timeout=timeout)
+        if code2 != 0:
+            return False
+        data2 = _parse_cli_json(out2)
+        if not isinstance(data2, dict):
+            return False
+        try:
+            return int(data2.get("status") or 0) not in (1, 2)
+        except Exception:
+            return False
+    return True
+
+
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:
     """把该 (url, destination) 任务的中断次数 +1 并持久化，返回累计次数。
 
@@ -911,24 +962,44 @@ def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> 
 # --- server 模式下载 -------------------------------------------------------
 
 
-async def _wait_thread_done(task: "asyncio.Task"):
+async def _wait_thread_done(task: "asyncio.Task", *, propagate_cancel: bool = False):
     """等待线程任务结束并返回其结果；等待期间协程被取消也继续等。
 
-    add/resume 这类子进程调用的结果（task_id、退出码）丢了会导致后台残留
-    下载或映射未持久化，故取消时不能直接放弃线程。
+    add/resume/map_put 这类子进程或映射写调用的结果（task_id、退出码、
+    落盘完成）丢了会导致后台残留下载或映射未持久化，故取消时不能直接
+    放弃线程。
+
+    propagate_cancel=True 时，等线程跑完后把暂存的 CancelledError 重新抛出，
+    让调用方感知"用户在我等待期间取消了"，进入统一的取消清理；False 时
+    静默吞掉取消（用于纯补偿性清理，调用方自己决定后续路径）。
     """
+    cancelled: asyncio.CancelledError | None = None
     while True:
         try:
-            return await asyncio.shield(task)
-        except asyncio.CancelledError:
+            result = await asyncio.shield(task)
+            break
+        except asyncio.CancelledError as e:
             if task.done():
-                return task.result()  # 线程异常/被取消时原样抛出
+                # 线程异常/被取消时原样抛出
+                return task.result()
+            if cancelled is None:
+                cancelled = e
             continue
+    if propagate_cancel and cancelled is not None:
+        raise cancelled
+    return result
 
 
-async def _to_thread_strong(func, /, *args):
-    """to_thread 的取消安全版：外层协程被取消也等线程跑完再退出。"""
-    return await _wait_thread_done(asyncio.ensure_future(asyncio.to_thread(func, *args)))
+async def _to_thread_strong(func, /, *args, propagate_cancel: bool = False):
+    """to_thread 的取消安全版：外层协程被取消也等线程跑完再退出。
+
+    propagate_cancel=True 时，若等待期间发生取消，等线程跑完后把
+    CancelledError 重新抛给调用方。
+    """
+    return await _wait_thread_done(
+        asyncio.ensure_future(asyncio.to_thread(func, *args)),
+        propagate_cancel=propagate_cancel,
+    )
 
 
 def _extract_task_id(out: str) -> str | None:
@@ -986,10 +1057,36 @@ async def fluxdown_server_download(
         data = _parse_cli_json(out)
         return data if isinstance(data, dict) else None
 
-    # 既有 task：先确认服务端还在（可能被用户清理过 DB）
-    if task_id and await asyncio.to_thread(_status, task_id) is None:
-        task_id = None
-        await asyncio.to_thread(_map_pop, cli_exe, key)
+    # 既有 task：查询服务端是否仍在；None 既可能是"任务已不存在"，也可能是
+    # "管理通道异常但 daemon 仍在下载"。前者可安全清映射重 add，后者必须先
+    # 尽力暂停再决定是否清除，否则会以同一 destination 启动第二个写入者。
+    if task_id:
+        st0 = await asyncio.to_thread(_status, task_id)
+        if st0 is None:
+            # 状态未知：尽力暂停（pause 失败也不放弃任务），仅当 pause 返回 0
+            # 且重查 status 能拿到响应（任务确已停下）才清映射重新 add；
+            # 否则保留映射抛出，让上层按"任务未确认停止"处理。
+            try:
+                pause_code, _ = await _to_thread_strong(
+                    _run_cli, cli_exe, env, ["pause", task_id], 10
+                )
+            except Exception:
+                pause_code = 1
+            confirmed = False
+            if pause_code == 0:
+                st1 = await asyncio.to_thread(_status, task_id)
+                confirmed = st1 is not None
+            if confirmed:
+                task_id = None
+                await asyncio.to_thread(_map_pop, cli_exe, key)
+            else:
+                record.status = "failed"
+                record.error = "既有任务状态未知且无法确认已停止，保留映射待续传"
+                record.duration_ms = int((time.monotonic() - t0) * 1000)
+                logger.warning(
+                    f"[server] 进入时任务 {task_id} 状态未知,无法确认已停止,保留映射"
+                )
+                raise RuntimeError("FluxDown server status 查询失败（任务未确认停止）")
 
     resumed = False
     if task_id:
@@ -1011,9 +1108,6 @@ async def fluxdown_server_download(
         if code == 0:
             resumed = True
             logger.info(f"[server] 续传任务: {task_id} ({url})")
-            # 续传成功后立即补写映射（task_id 一致，幂等刷新时间戳），
-            # 强等待保证取消时映射已落盘，CancelledError 才能找到并暂停任务
-            await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
         else:
             # resume 失败（可能任务状态不可恢复）→ 重新 add
             task_id = None
@@ -1070,42 +1164,47 @@ async def fluxdown_server_download(
         task_id = new_id
         logger.info(f"[server] 新建任务: {url} -> task {task_id}")
 
-    # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）。
-    # 强等待：取消恰好发生在这个 await 时也必须落盘，否则 daemon 任务
-    # 已建/已续但映射丢失，无法 pause 清理，与后续下载双写同一文件。
-    await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
-
-    # 轮询进度至终态。timeout 语义 = 停滞上限（持续无新字节的秒数），不是总时长：
-    # 正常下载永不超时；速率持续为 0 超过 timeout 才判定中断（断网即属此类）。
-    last_report = 0.0
-    last_downloaded: int | None = None
-    last_change = time.monotonic()  # 最近一次字节数增长的时刻
-    last_speed_ts = last_change
-    last_speed_bytes = 0
-    speed = 0.0
-
-    async def _confirm_paused() -> bool:
-        """确认 daemon 任务已停止/已释放输出文件。
-
-        _run_cli 超时不抛异常而返回 124，仅凭调用"发了 pause"不等于成功；
-        再查一次 status：失败(None)说明管理通道仍不通，不能排除后台写入，
-        不允许上层据此降级 --local 双写。
-        """
-        try:
-            code, _ = await _to_thread_strong(
-                _run_cli, cli_exe, env, ["pause", task_id], 10
-            )
-        except Exception:
-            return False
-        if code != 0:
-            return False
-        try:
-            st = await _to_thread_strong(_status, task_id)
-        except Exception:
-            return False
-        return st is not None
-
+    # 从这里起 task_id 已确定（add 新建 / resume 续用），整个后续阶段
+    # （映射落盘 + 轮询进度）共享同一个取消清理：取消时强等待 pause，
+    # 不吞掉取消，协程立刻退出、不继续走完成路径。
     try:
+        # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）。
+        # propagate_cancel=True：等待期间被取消时，落盘完成后立刻把取消
+        # 抛给下面的 except，由统一清理负责 pause；避免吞掉取消后继续轮询。
+        await _to_thread_strong(
+            _map_put, cli_exe, key, task_id, url, destination, propagate_cancel=True
+        )
+
+        # 轮询进度至终态。timeout 语义 = 停滞上限（持续无新字节的秒数），不是总时长：
+        # 正常下载永不超时；速率持续为 0 超过 timeout 才判定中断（断网即属此类）。
+        last_report = 0.0
+        last_downloaded: int | None = None
+        last_change = time.monotonic()  # 最近一次字节数增长的时刻
+        last_speed_ts = last_change
+        last_speed_bytes = 0
+        speed = 0.0
+
+        async def _confirm_paused() -> bool:
+            """确认 daemon 任务已停止/已释放输出文件。
+
+            _run_cli 超时不抛异常而返回 124，仅凭调用"发了 pause"不等于成功；
+            再查一次 status：失败(None)说明管理通道仍不通，不能排除后台写入，
+            不允许上层据此降级 --local 双写。
+            """
+            try:
+                code, _ = await _to_thread_strong(
+                    _run_cli, cli_exe, env, ["pause", task_id], 10
+                )
+            except Exception:
+                return False
+            if code != 0:
+                return False
+            try:
+                st = await _to_thread_strong(_status, task_id)
+            except Exception:
+                return False
+            return st is not None
+
         while True:
             st = await asyncio.to_thread(_status, task_id)
             if st is None:

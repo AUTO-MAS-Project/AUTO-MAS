@@ -54,6 +54,7 @@ from app.utils.fluxdown_cli import (
     fluxdown_server_download,
     fluxdown_server_forget,
     fluxdown_server_mark_failure,
+    fluxdown_server_task_safe_to_overwrite,
 )
 from app.utils.logger import get_logger
 
@@ -94,6 +95,18 @@ async def download_file(
     if downloader != "fluxdown" or source.lower() == "mirrorchyan":
         if downloader == "fluxdown":
             logger.info("Mirror 酱源跳过 FluxDown,走内置 httpx 下载")
+        if explicit_builtin:
+            # 用户多次失败后显式选择内置 httpx：若此前 FluxDown 任务因
+            # 管理通道异常处于"状态未知"，daemon 可能仍在写 destination，
+            # 此时内置以 wb 打开会双写。仅当任务确认已停止/不存在时才启动
+            # 内置下载；未确认停止则拒绝，引导用户重试或等待。
+            cli = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
+            if cli is not None:
+                if not fluxdown_server_task_safe_to_overwrite(cli, url, destination):
+                    raise FluxdownResumableError(
+                        "存在状态未知的 FluxDown 任务且无法确认已停止，"
+                        "为避免双写已阻止内置下载；请稍后重试或检查 FluxDown 状态"
+                    )
         size = await _httpx_download(
             url, destination, timeout=timeout, proxy=proxy, progress=progress
         )
