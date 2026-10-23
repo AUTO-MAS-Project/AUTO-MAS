@@ -208,10 +208,16 @@ class AutoProxyTask(ScriptAutoProxyBase[WhimboxConfig, WhimboxUserConfig]):
         if running_pids:
             return "奇想盒正在运行，请先关闭奇想盒 app 再执行任务"
 
+        # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
+        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        proxy_times = (
+            self.cur_user_config.Data.ProxyTimes
+            if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") == curdate
+            else 0
+        )
         if (
             self.script_config.Run.ProxyTimesLimit != 0
-            and self.cur_user_config.Data.ProxyTimes
-            >= self.script_config.Run.ProxyTimesLimit
+            and proxy_times >= self.script_config.Run.ProxyTimesLimit
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
