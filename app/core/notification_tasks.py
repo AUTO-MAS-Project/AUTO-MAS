@@ -74,6 +74,18 @@ def consume_notification_result(result: DispatchResult, *, task_id: str | None) 
         )
 
 
+async def _deliver_notification(
+    delivery: NotificationDelivery, *, task_id: str | None
+) -> None:
+    try:
+        await delivery()
+    except Exception as exc:
+        logger.warning(f"任务通知执行失败: {type(exc).__name__}")
+        consume_notification_result(
+            DispatchResult(failed=("任务通知",)), task_id=task_id
+        )
+
+
 @dataclass
 class TaskNotificationBatch:
     task_id: str | None
@@ -83,13 +95,7 @@ class TaskNotificationBatch:
     async def deliver(self) -> None:
         # 暂存的最终报告保持准备顺序；一个通知异常不丢掉后续通知。
         for delivery in self.deliveries:
-            try:
-                await delivery()
-            except Exception as exc:
-                logger.warning(f"任务通知执行失败: {type(exc).__name__}")
-                consume_notification_result(
-                    DispatchResult(failed=("任务通知",)), task_id=self.task_id
-                )
+            await _deliver_notification(delivery, task_id=self.task_id)
         self.deliveries.clear()
 
 
@@ -128,9 +134,7 @@ def submit_task_notification(
         return False
     if immediate:
         spawn_notification(
-            TaskNotificationBatch(
-                task_id=batch.task_id, deliveries=[delivery], closed=True
-            ).deliver(),
+            _deliver_notification(delivery, task_id=batch.task_id),
             task_id=batch.task_id,
         )
     else:
