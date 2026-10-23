@@ -143,11 +143,3 @@ async def drain_notifications(timeout: float) -> bool:
         if pending:
             return False
     return True
-
-
-async def shutdown_notifications() -> None:
-    tasks = [task for task in _PENDING_NOTIFICATIONS if not task.done()]
-    for task in tasks:
-        task.cancel()
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)

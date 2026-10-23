@@ -227,13 +227,15 @@ async def dispatch_task_notification(
     payload: NotifyPayload,
     targets: list[NotifyTarget],
     *,
-    task_info: object | None = None,
+    task_info: TaskItem | None = None,
     immediate: bool = True,
 ) -> DispatchResult:
     """统计与即时提醒准备后立即托管；失败反馈不阻塞业务，最终报告另行暂存。"""
 
     prepared_targets = tuple(targets)
-    task_id = getattr(task_info, "task_id", None) or current_notification_task_id()
+    task_id = (
+        task_info.task_id if task_info is not None else None
+    ) or current_notification_task_id()
 
     async def deliver() -> DispatchResult:
         result = await dispatch(payload, prepared_targets)
