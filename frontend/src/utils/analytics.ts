@@ -1,11 +1,16 @@
 import type {
   AnalyticsContext,
+  AnalyticsCountBucket,
   AnalyticsDurationBucket,
   AnalyticsEventProps,
   AnalyticsOperationName,
   AnalyticsScriptType,
   RendererAnalyticsEvent,
 } from '@/types/analytics'
+
+export function analyticsCountBucket(count: number): AnalyticsCountBucket {
+  return count <= 0 ? '0' : count === 1 ? '1' : count <= 5 ? '2-5' : count <= 20 ? '6-20' : '20+'
+}
 
 /** 在异步操作开始前取得主进程代次；开发和纯浏览器环境不采集。 */
 export function captureAnalyticsContext(): Promise<AnalyticsContext> {

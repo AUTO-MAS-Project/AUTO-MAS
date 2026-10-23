@@ -20,6 +20,7 @@ const screens: Record<string, AnalyticsScreen> = {
   CommunityToolActivity: 'community_activity',
   ThemeStore: 'theme_store',
   Settings: 'settings',
+  Taskboard: 'taskboard',
 }
 const scriptScreens: Record<string, AnalyticsScreen> = {
   ScriptEdit: 'script_edit',

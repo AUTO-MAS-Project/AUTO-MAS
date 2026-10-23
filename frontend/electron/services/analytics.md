@@ -18,6 +18,11 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功固定 1/10 采样 |
 | `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
+| `task_stop_result` | 共享单任务停止请求的受理结果 | `source`、`mode`、`request_outcome`、耗时桶 | 每次实际请求 |
+| `task_resume_requested` | 指定脚本起点或用户范围的启动请求 | `source`、`resume_kind`、`scope_kind`、`request_outcome`、耗时桶 | 与通用启动事件分开说明用途 |
+| `queue_manage_finished` | 队列及队列项创建、删除、配置与排序 | `action`、`queue_kind`、`count_bucket`、`outcome`、耗时桶 | 每次实际写入；整批排序一次 |
+| `queue_schedule_changed` | 定时、循环及启动调度设置 | `schedule_kind`、`action`、`outcome`、耗时桶 | 实际写入结果，不记录日期时刻 |
+| `plan_manage_finished` | 计划基础记录创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket`、`outcome`、耗时桶 | 每次实际管理请求 |
 | `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
 | `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、耗时桶 | 开始、结束都收到的样本 |
 | `native_config_action_finished` | 原生配置打开、查看、保存/关闭请求及丢弃通知 | `script_type`、`operation`、`outcome`、耗时桶 | 每次实际请求；重复丢弃帧去重 |
@@ -28,6 +33,7 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、耗时桶 | 多轮重连归并为一次 |
 
 耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
+数量区间为 `0`、`1`、`2-5`、`6-20`、`20+`，排序按一批记录，不按对象逐条发送。
 系统字段仅含应用版本、系统名称和版本、系统语言、Chromium 版本、传输实现版本与生产标记。
 事件带 UTC 时间和内存中的随机会话 ID，不使用安装标识或对象 ID。会话空闲一小时或满 24 小时更换；
 关闭遥测时也清除会话。会话与匿名估算使用量不等于安装量、真实账号数或长期唯一用户。
@@ -47,6 +53,19 @@ Electron 主进程按 Aptabase 的单事件协议向
 任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
 进程重启或集合淘汰后不保证精确一次。没有完整收到创建和完成的任务不推断结局，
 不能以观察完成数除以全部请求数声称全量成功率。
+
+主要页面白名单包含任务台。停止请求受理不表示任务清理完成，最终取消仍看任务观察结果；
+本批不包含全局紧急停止。续跑统计只描述指定脚本起点或用户范围，不推断这是失败重试；
+循环模式忽略的脚本起点不记为续跑，普通配置与更新任务不进入该事件。
+范围只归入全部、脚本用户或队列用户，不发送范围中的 ID 或对象数量明细。
+
+队列配置、循环队列项调度共用显式 API 边界，不改变保存、排序、回读或失败处理；
+“立即运行一次”只是修改下次执行时间，记为 `run_once`，不据此记任务已启动。
+队列和计划类别仅复用已有读取与成功写入，在最多 128 项的本机映射中关联；缺少类别用
+`unknown`，不会额外请求后端。队列时间集合管理、具体日期和计划表格编辑尚未纳入。
+计划 `create` 表示基础记录已创建，默认名称保存另记 `rename`，不是完整配置引导完成；
+名称保存失败不会回改基础记录创建结果，音效或回读失败也不改写已确认的管理结果。
+仅发固定计划类别，不发名称、计划内容、精确时刻、命令或任意字段值。
 
 逐脚本事件沿用 MAS 现有脚本执行边界与结果判定：混合队列分别记录各专项，循环每轮单独记录；
 原生配置和脚本更新不计入。尚未轮到、被禁用或占用而跳过的条目没有开始事件。

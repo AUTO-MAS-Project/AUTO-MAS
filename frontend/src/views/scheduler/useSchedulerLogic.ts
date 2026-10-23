@@ -981,7 +981,7 @@ export function useSchedulerLogic() {
 
     const taskId = tab.taskId
     try {
-      await taskApi.stopTask(taskId)
+      await taskApi.stopTask(taskId, { source: 'scheduler' })
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()

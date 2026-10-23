@@ -1,4 +1,13 @@
 export type AnalyticsDurationBucket = '<1s' | '1-5s' | '5-30s' | '30-120s' | '>120s'
+export type AnalyticsCountBucket = '0' | '1' | '2-5' | '6-20' | '20+'
+export type AnalyticsQueueKind = 'normal' | 'cycle' | 'unknown'
+export type AnalyticsPlanType =
+  | 'MaaPlanConfig'
+  | 'MaaEndPlanConfig'
+  | 'BAAHPlanConfig'
+  | 'MSSPlanConfig'
+  | 'multi'
+  | 'unknown'
 
 /** 只开放已声明的事件；对象标识和自由文本不进入采集入口。 */
 export type AnalyticsScriptType =
@@ -47,6 +56,7 @@ export type AnalyticsScreen =
   | 'community_activity'
   | 'theme_store'
   | 'settings'
+  | 'taskboard'
 export interface AnalyticsEventProps {
   app_started: Record<string, never>
   renderer_ready: { duration_bucket: AnalyticsDurationBucket }
@@ -100,6 +110,46 @@ export interface AnalyticsEventProps {
     mode: AnalyticsTaskMode
     script_type: AnalyticsScriptType
     outcome: 'success' | 'error' | 'cancelled'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  task_stop_result: {
+    source: AnalyticsTaskSource
+    mode: AnalyticsTaskMode
+    request_outcome: 'accepted' | 'failure'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  task_resume_requested: {
+    source: AnalyticsTaskSource
+    resume_kind: 'from_script' | 'scoped_users' | 'from_script_scoped_users'
+    scope_kind: 'all' | 'script_users' | 'queue_users'
+    request_outcome: 'accepted' | 'failure'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  queue_manage_finished: {
+    action:
+      | 'create'
+      | 'delete'
+      | 'update'
+      | 'item_add'
+      | 'item_remove'
+      | 'item_update'
+      | 'item_reorder'
+    queue_kind: AnalyticsQueueKind
+    count_bucket: AnalyticsCountBucket
+    outcome: 'success' | 'failure'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  queue_schedule_changed: {
+    schedule_kind: 'fixed_time' | 'interval' | 'queue_time' | 'cycle' | 'startup' | 'unknown'
+    action: 'enable' | 'disable' | 'mode' | 'interval' | 'time' | 'days' | 'run_once' | 'configure'
+    outcome: 'success' | 'failure'
+    duration_bucket: AnalyticsDurationBucket
+  }
+  plan_manage_finished: {
+    action: 'create' | 'delete' | 'rename' | 'reorder'
+    plan_type: AnalyticsPlanType
+    count_bucket: AnalyticsCountBucket
+    outcome: 'success' | 'failure'
     duration_bucket: AnalyticsDurationBucket
   }
   script_run_started: {

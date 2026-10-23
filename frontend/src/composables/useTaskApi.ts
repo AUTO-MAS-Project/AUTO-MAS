@@ -63,6 +63,29 @@ export async function requestTaskStart(
       ? beginAnalyticsOperation('native_config_action_finished')
       : null
   const nativeAction = request.viewOnly ? 'view' : 'open'
+  const executable =
+    request.mode === TaskCreateIn.mode.AUTO_PROXY || request.mode === TaskCreateIn.mode.CYCLE_RUN
+  const fromScript =
+    request.mode === TaskCreateIn.mode.AUTO_PROXY && Boolean(request.resumeFromScriptId)
+  const scopeKind =
+    request.queueUserIds && Object.keys(request.queueUserIds).length
+      ? ('queue_users' as const)
+      : request.userId || request.userIds != null
+        ? ('script_users' as const)
+        : ('all' as const)
+  const resumeOperation =
+    executable && (fromScript || scopeKind !== 'all')
+      ? beginAnalyticsOperation('task_resume_requested')
+      : null
+  const resumeDimensions = {
+    source: metadata.source ?? 'unknown',
+    resume_kind: fromScript
+      ? scopeKind === 'all'
+        ? ('from_script' as const)
+        : ('from_script_scoped_users' as const)
+      : ('scoped_users' as const),
+    scope_kind: scopeKind,
+  }
   const dimensions = {
     source: metadata.source ?? 'unknown',
     target_kind:
@@ -73,6 +96,7 @@ export async function requestTaskStart(
   try {
     response = await Service.addTaskApiDispatchStartPost(request)
   } catch (error) {
+    resumeOperation?.finish({ ...resumeDimensions, request_outcome: 'failure' })
     nativeOperation?.finish({
       script_type: getAnalyticsScriptType(request.taskId),
       operation: nativeAction,
@@ -81,6 +105,10 @@ export async function requestTaskStart(
     operation.finish({ ...dimensions, outcome: 'failure' })
     throw error
   }
+  resumeOperation?.finish({
+    ...resumeDimensions,
+    request_outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
+  })
   nativeOperation?.finish({
     script_type: nativeScriptType(response.taskId ?? '', request.taskId),
     operation: nativeAction,
@@ -130,13 +158,24 @@ export function useTaskApi() {
     return response
   }
 
-  const stopTask = async (taskId: string): Promise<void> => {
+  const stopTask = async (
+    taskId: string,
+    metadata: Partial<Pick<AnalyticsEventProps['task_stop_result'], 'source'>> = {}
+  ): Promise<void> => {
+    const operation = beginAnalyticsOperation('task_stop_result')
+    const state = getTaskRuntimeStates().find(task => task.taskId === taskId)
+    const dimensions = {
+      source: metadata.source ?? 'unknown',
+      mode: state?.mode ?? ('unknown' as const),
+    }
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
         throw new Error(response.message)
       }
+      operation.finish({ ...dimensions, request_outcome: 'accepted' })
     } catch (error) {
+      operation.finish({ ...dimensions, request_outcome: 'failure' })
       throw taskRequestError(error)
     }
   }
