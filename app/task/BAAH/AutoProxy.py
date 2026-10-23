@@ -41,9 +41,10 @@ from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
 from app.models.emulator import DeviceBase
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
@@ -887,11 +888,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
+        await self.task_info.local_notifier.send_notice(
+            LocalNotice(
+                title="用户自动代理出现异常！",
+                message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                duration_seconds=3,
+            )
         )
 
     async def final_task(self):

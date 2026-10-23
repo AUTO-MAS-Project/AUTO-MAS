@@ -30,6 +30,7 @@ from app.config import config_manager
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
     CommandExecutor,
+    NotificationSourceConfig,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -90,7 +91,7 @@ _registry: ChannelRegistry | None = None
 class TargetConfigView:
     """只将 Notify 字段和目标集合暴露给内置渠道。"""
 
-    def __init__(self, config: Any) -> None:
+    def __init__(self, config: NotificationSourceConfig) -> None:
         self.__config = config
 
     def get(self, group: str, name: str) -> Any:
@@ -164,6 +165,26 @@ def get_notify_channel_failures() -> tuple[str, ...]:
     return tuple(f"通知渠道目录未确认（{key}）" for key in _get_registry().unresolved)
 
 
+def read_notification_proxy() -> str | None:
+    """读取并校验当前通知代理，不记录含凭据的代理地址。"""
+    import httpx
+
+    from app.core.config import Config
+    from app.utils import get_logger
+
+    # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
+    url = Config.proxy_url
+    if not url:
+        return None
+    try:
+        # 只校验格式，HTTP 与 WebSocket 共用原始代理地址。
+        httpx.Proxy(url)
+        return url
+    except Exception as exc:
+        get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
+        return None
+
+
 def initialize_notification_channels(
     *, command_executor: CommandExecutor | None = None
 ) -> None:
@@ -189,21 +210,6 @@ def initialize_notification_channels(
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
-    def read_proxy() -> str | None:
-        import httpx
-
-        # 沿用 Config.proxy 的校验/无效值回退，但不记录含凭据的代理地址。
-        url = Config.proxy_url
-        if not url:
-            return None
-        try:
-            # 只校验格式，HTTP 与 WebSocket 共用原始代理地址。
-            httpx.Proxy(url)
-            return url
-        except Exception as exc:
-            get_logger("通知服务").warning(f"通知代理配置无效: {type(exc).__name__}")
-            return None
-
     def http_client(**kwargs: Any) -> Any:
         import httpx
 
@@ -221,7 +227,7 @@ def initialize_notification_channels(
 
     dependencies = ChannelDependencies(
         config=RuntimeConfigView(Config.setting),
-        read_proxy=read_proxy,
+        read_proxy=read_notification_proxy,
         smtp_factory=smtplib.SMTP_SSL,
         http_factory=http_client,
         websocket_connect=websocket_connect,

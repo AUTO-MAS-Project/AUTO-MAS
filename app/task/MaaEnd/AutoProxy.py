@@ -29,9 +29,10 @@ from app.core.ws import Publisher, protocol
 from app.log_box import log_box
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.services import System
 from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
@@ -1623,11 +1624,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 await self.kill_managed_process()
 
                 try:
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="用户自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
@@ -1662,11 +1665,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         await self.kill_managed_process(kill_game=kill_game)
 
         try:
-            await Notify.push_plyer(
-                "用户自动代理出现异常！",
-                f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-                f"{self.cur_user_item.name}的自动代理出现异常",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="用户自动代理出现异常！",
+                    message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                    duration_seconds=3,
+                )
             )
         except Exception:
             pass
@@ -2829,11 +2834,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             await self.cur_user_config.commit()
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
-                3,
+            await self.task_info.local_notifier.send_notice(
+                LocalNotice(
+                    title="成功完成一个自动代理任务！",
+                    message=f"已完成用户 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
+                    ticker=f"已完成 {self.cur_user_item.name} 的 MaaEnd 自动代理任务",
+                    duration_seconds=3,
+                )
             )
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"

@@ -27,12 +27,14 @@ from app.models.notification import (
     NOTIFICATION_IMAGE_SCHEME,
     NOTIFICATION_IMAGE_URI_PATTERN,
     NOTIFICATION_SIGNATURE,
+    DeferredContent,
     NotificationCapabilities,
     NotificationFormat,
     NotificationImage,
     NotifyPayload,
     RenderedNotification,
     SummaryPolicy,
+    resolve_content,
 )
 
 _HTML_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
@@ -54,19 +56,22 @@ def render_for_target(
 ) -> RenderedNotification:
     """依据一份消息和目标能力准备本次投递内容。
 
-    This function is deterministic: it reads no configuration, performs no network
-    requests, and leaves the input message unchanged.
+    可选正文和图片只在需要时生成并缓存；不读取配置或发起网络请求。
     """
 
-    selected_format, content = _select_format(payload, capabilities)
+    diagnostics: list[str] = []
     title = payload.title
     used_summary = False
 
-    if payload.summary is not None:
-        if summary_policy == "preferred" and payload.summary.text:
-            selected_format = "text"
-            content = payload.summary.text
-            used_summary = True
+    if (
+        payload.summary is not None
+        and summary_policy == "preferred"
+        and payload.summary.text
+    ):
+        selected_format, content = "text", payload.summary.text
+        used_summary = True
+    else:
+        selected_format, content = _select_format(payload, capabilities, diagnostics)
 
     if (
         used_summary
@@ -76,8 +81,21 @@ def render_for_target(
     ):
         title = payload.summary.title
 
-    image_by_id = {image.id: image for image in payload.images}
-    content, referenced_images, diagnostics = _render_content(
+    images = payload.images
+    if isinstance(images, DeferredContent):
+        needs_images = (
+            bool(capabilities.image_presentations & {"base64", "rich_media"})
+            or NOTIFICATION_IMAGE_URI_PATTERN.search(content) is not None
+        )
+        try:
+            images = images.resolve() if needs_images else ()
+        except Exception as exc:
+            images = ()
+            diagnostics.append(f"通知图片生成失败，已保留文字: {type(exc).__name__}")
+    if len(images) > 1 and len({image.id for image in images}) != len(images):
+        raise ValueError("通知图片资源 ID 必须唯一")
+    image_by_id = {image.id: image for image in images}
+    content, referenced_images, content_diagnostics = _render_content(
         payload,
         capabilities,
         selected_format,
@@ -85,6 +103,7 @@ def render_for_target(
         title,
         image_by_id,
     )
+    diagnostics.extend(content_diagnostics)
 
     byte_limit = capabilities.max_content_utf8_bytes
     over_limit = (
@@ -105,7 +124,7 @@ def render_for_target(
             used_summary = True
             if use_summary_title and payload.summary.title:
                 title = payload.summary.title
-            content, referenced_images, diagnostics = _render_content(
+            content, referenced_images, content_diagnostics = _render_content(
                 payload,
                 capabilities,
                 selected_format,
@@ -113,6 +132,7 @@ def render_for_target(
                 title,
                 image_by_id,
             )
+            diagnostics.extend(content_diagnostics)
             diagnostics.append(
                 f"正文为 {full_size} UTF-8 字节，超过目标上限 "
                 f"{byte_limit}；已改用超限备用内容"
@@ -135,16 +155,14 @@ def render_for_target(
                 )
 
     if "base64" in capabilities.image_presentations:
-        target_images = tuple(
-            image for image in payload.images if image.data is not None
-        )
-        for image in payload.images:
+        target_images = tuple(image for image in images if image.data is not None)
+        for image in images:
             if image.data is None:
                 diagnostics.append(
                     f"图片 {image.id} 只有 URL，当前图片槽位需要本地数据；已保留正文"
                 )
     elif "rich_media" in capabilities.image_presentations:
-        target_images = payload.images
+        target_images = images
     else:
         target_images = tuple(referenced_images.values())
 
@@ -166,7 +184,7 @@ def render_for_target(
         images=target_images,
         text_fallback=text_fallback,
         summary_used=used_summary,
-        diagnostics=tuple(dict.fromkeys(diagnostics)),
+        diagnostics=tuple(dict.fromkeys(diagnostics)) if diagnostics else (),
     )
 
 
@@ -234,6 +252,7 @@ def _render_content(
 def _select_format(
     payload: NotifyPayload,
     capabilities: NotificationCapabilities,
+    diagnostics: list[str],
 ) -> tuple[NotificationFormat, str]:
     """按目标给出的优先级，选择业务实际提供的第一种正文。"""
 
@@ -244,7 +263,12 @@ def _select_format(
             else getattr(payload, content_format)
         )
         if content is not None:
-            return content_format, content
+            try:
+                return content_format, resolve_content(content)
+            except Exception as exc:
+                diagnostics.append(
+                    f"{content_format} 正文生成失败: {type(exc).__name__}"
+                )
     raise ValueError("通知目标未声明可用的纯文本正文")
 
 

@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from app.models.notification_ports import LocalNotifier
+from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils.logger import get_logger
 
@@ -161,8 +163,12 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
-    game_sign_summary_consumed: bool = field(default=False, repr=False)
+    notification_state: TaskNotificationState = field(
+        default_factory=TaskNotificationState, init=False, repr=False
+    )
+    _local_notifier: LocalNotifier | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -175,24 +181,10 @@ class TaskItem(ABC):
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
-    def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，底层继续使用历史任务字段。"""
-
-        return self.game_sign_results
-
-    @community_results.setter
-    def community_results(self, value: list[dict[str, object]]) -> None:
-        self.game_sign_results = value
-
-    @property
-    def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
-
-        return self.game_sign_summary_consumed
-
-    @community_summary_consumed.setter
-    def community_summary_consumed(self, value: bool) -> None:
-        self.game_sign_summary_consumed = value
+    def local_notifier(self) -> LocalNotifier:
+        if self._local_notifier is None:
+            raise RuntimeError("任务的本地通知依赖尚未装配")
+        return self._local_notifier
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)

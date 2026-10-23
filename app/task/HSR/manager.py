@@ -31,8 +31,10 @@ from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.notification_report import TaskResultData
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import atomic_write, replace_dir
@@ -124,7 +126,7 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
     logger.info(f"{label} 已恢复：{source}")
 
 
-class HSRManager(TaskExecuteBase):
+class HSRManager(NotificationTaskBase):
     """HSR 调度器，管理星穹铁道 M7A/SRA 双脚本任务。"""
 
     wait_for_finalizer_on_cancel = True
@@ -1424,7 +1426,7 @@ class HSRManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{task_mode}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,

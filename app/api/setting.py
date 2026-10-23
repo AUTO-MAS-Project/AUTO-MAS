@@ -25,6 +25,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from typing import (
+    Annotated,
     Dict,
     List,
     Literal,
@@ -32,7 +33,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import (
     BaseModel,
@@ -43,8 +44,14 @@ from starlette.background import BackgroundTask
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
-from app.core.notify import send_test_notification
+from app.core.notify import (
+    get_webhook_tester,
+    send_test_notification,
+    webhook_test_snapshot,
+)
 from app.models.config import Webhook as WebhookConfig
+from app.models.notification import NotifyPayload
+from app.models.notification_ports import WebhookTester
 from app.models.schema import (
     ObsReplayCheckOut,
     OutBase,
@@ -65,7 +72,6 @@ from app.models.schema import (
 from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
-from app.services import Notify
 from app.services.data_backup import create_data_backup
 from app.utils import debug_pattern, get_logger
 
@@ -574,7 +580,11 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
+async def test_webhook(
+    webhook: WebhookTestIn = Body(...),
+    *,
+    tester: Annotated[WebhookTester, Depends(get_webhook_tester)],
+) -> OutBase:
     """测试自定义Webhook"""
 
     try:
@@ -582,10 +592,13 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
             payload=webhook.data.model_dump(exclude_unset=True)
         )
         await webhook_config.activate()
-        await Notify.WebhookPush(
-            "AUTO-MAS Webhook测试",
-            "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
-            webhook_config,
+        await tester.test_webhook(
+            NotifyPayload(
+                title="AUTO-MAS Webhook测试",
+                text="这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
+                append_signature=False,
+            ),
+            webhook_test_snapshot(webhook_config),
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")
