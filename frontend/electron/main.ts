@@ -1,3 +1,4 @@
+import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -127,12 +128,13 @@ function showShortcutNotification(title: string, body: string): void {
   }
 }
 
-async function stopAllTasksByShortcut(): Promise<void> {
+async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'): Promise<void> {
   if (isStoppingAllTasks) {
     logger.info('全部任务正在停止中，忽略重复快捷键')
     return
   }
 
+  const telemetry = beginMainFeature('stop_all_requested')
   isStoppingAllTasks = true
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
@@ -147,19 +149,23 @@ async function stopAllTasksByShortcut(): Promise<void> {
     })
 
     if (!response.ok) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(`停止请求返回错误: ${response.status}`)
     }
 
     const result = (await response.json()) as ApiResult
     if (result.code !== undefined && result.code !== 200) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(result.message || `停止请求失败: ${result.code}`)
     }
 
+    telemetry.finish({ source, outcome: 'accepted' })
     logger.info('所有任务已停止')
     showShortcutNotification('AUTO-MAS', '所有任务已停止')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局快捷键停止所有任务失败: ${errorMsg}`)
+    telemetry.finish({ source, outcome: 'unknown' })
     showShortcutNotification('AUTO-MAS', `停止所有任务失败: ${errorMsg}`)
   } finally {
     isStoppingAllTasks = false
@@ -228,6 +234,8 @@ function isRunningAsAdmin(): boolean {
 let tray: Tray | null = null
 let coordinatedQuit = false
 let forceQuitInProgress = false
+let closeTelemetry: ReturnType<typeof beginMainFeature<'app_close_finished'>> | null = null
+let closeTelemetryKind: 'user' | 'backend' = 'user'
 let quitRequestInFlight = false
 let quitConfirmationPending = false
 let relaunchAfterQuit = false
@@ -445,6 +453,10 @@ function rebuildTrayMenu(items: TrayItem[]): void {
 
 // 执行托盘菜单项动作
 function handleTrayAction(item: TrayItem): void {
+  beginMainFeature('tray_action_requested').finish({
+    action_kind: item.action,
+    outcome: 'accepted',
+  })
   switch (item.action) {
     case 'show':
       showMainWindow()
@@ -453,7 +465,7 @@ function handleTrayAction(item: TrayItem): void {
       hideMainWindow()
       break
     case 'stopAll':
-      void stopAllTasksByShortcut()
+      void stopAllTasksByShortcut('tray')
       break
     case 'startTask':
       // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
@@ -514,6 +526,9 @@ function cancelQuitRequest(token?: number): void {
   if (coordinatedQuit || forceQuitInProgress) return
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
+  closeTelemetry?.finish({ close_kind: closeTelemetryKind, outcome: 'cancelled' })
+  closeTelemetry = null
+  closeTelemetryKind = 'user'
   activeQuitPreparation = null
   quitConfirmationPending = false
   quitPreparationExpired = false
@@ -524,6 +539,11 @@ function cancelQuitRequest(token?: number): void {
 
 function finishCoordinatedQuit(): void {
   if (coordinatedQuit) return
+  closeTelemetry?.finish({
+    close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
+    outcome: 'accepted',
+  })
+  closeTelemetry = null
   coordinatedQuit = true
   quitRequestInFlight = false
   clearQuitFallback()
@@ -548,6 +568,7 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   forceQuitInProgress = true
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
@@ -565,6 +586,8 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
+    closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
+    closeTelemetry = null
     logger.error(`最终强制清理失败: ${errorMsg}`)
     const retryableState = markForceQuitFailed({
       coordinatedQuit,
@@ -596,6 +619,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
     void forceQuitAfterRendererTimeout(`${reason}（renderer 不可用）`)
@@ -873,18 +897,45 @@ function createWindow() {
       detail: decision.detail,
     })
 
+    beginMainFeature('renderer_recovery_decided').finish({
+      reason_kind:
+        details.reason === 'crashed'
+          ? 'crashed'
+          : details.reason === 'oom'
+            ? 'oom'
+            : details.reason === 'killed'
+              ? 'killed'
+              : details.reason === 'launch-failed'
+                ? 'launch_failed'
+                : 'other',
+      recovery_action: decision.action === 'give-up' ? 'give_up' : 'reload',
+      count_bucket: mainCountBucket(decision.crashCount),
+      outcome: 'accepted',
+    })
     if (decision.action === 'give-up') return
 
     keepHiddenAfterRecovery = !win.isVisible()
     win.webContents.reload()
   })
 
+  let responseIncident: ReturnType<
+    typeof beginMainFeature<'renderer_responsiveness_changed'>
+  > | null = null
   win.on('unresponsive', () => {
+    if (!responseIncident) {
+      responseIncident = beginMainFeature('renderer_responsiveness_changed')
+      beginMainFeature('renderer_responsiveness_changed').finish({
+        state: 'unresponsive',
+        outcome: 'accepted',
+      })
+    }
     logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
     recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
   })
 
   win.on('responsive', () => {
+    responseIncident?.finish({ state: 'responsive', outcome: 'success' })
+    responseIncident = null
     logger.info('渲染进程已恢复响应')
   })
 
@@ -1821,6 +1872,12 @@ ipcMain.handle('app-restart-on-quit', () => {
 })
 
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
+ipcMain.on('app-backend-close-observed', event => {
+  if (!isAnalyticsSender(event)) return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
+  closeTelemetryKind = 'backend'
+})
+
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
@@ -1842,6 +1899,7 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
   quitConfirmationPending = false
   quitRequestInFlight = true

@@ -95,6 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appObserveBackendClose: () => ipcRenderer.send('app-backend-close-observed'),
   appWaitForQuitConfirmation: () => ipcRenderer.invoke('app-wait-for-quit-confirmation'),
   appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
@@ -330,7 +331,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
   backendStart: () => ipcRenderer.invoke('backend-start'),
-  backendRestart: () => ipcRenderer.invoke('backend-restart'),
+  backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 

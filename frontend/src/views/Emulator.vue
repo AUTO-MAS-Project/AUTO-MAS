@@ -16,7 +16,7 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { EmulatorOperateIn, Service } from '@/api'
+import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'

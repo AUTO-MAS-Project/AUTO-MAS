@@ -1,4 +1,5 @@
 import type { AnalyticsEvent, AnalyticsEventName } from '../../src/types/analytics'
+import { featureAnalyticsSchemas, mainOnlyFeatureEvents } from './analyticsFeaturePolicy'
 
 const duration = ['<1s', '1-5s', '5-30s', '30-120s', '>120s']
 const script = [
@@ -24,6 +25,7 @@ const runtime = ['off', 'managed', 'development', 'unknown']
 const updateSource = ['cnb', 'github', 'mirrorchyan', 'autosite', 'unknown']
 const mode = ['AutoProxy', 'ScriptConfig', 'Update', 'CycleRun', 'unknown']
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
+  ...featureAnalyticsSchemas,
   app_started: {},
   renderer_ready: { duration_bucket: duration },
   initialization_decided: {
@@ -316,7 +318,12 @@ export function validateAnalyticsEvent(value: unknown, renderer: boolean): Analy
     return null
   if (
     renderer &&
-    ['app_started', 'backend_start_finished', 'initialization_stage_finished'].includes(value.name)
+    [
+      'app_started',
+      'backend_start_finished',
+      'initialization_stage_finished',
+      ...mainOnlyFeatureEvents,
+    ].includes(value.name)
   )
     return null
   const schema = schemas[value.name as AnalyticsEventName]

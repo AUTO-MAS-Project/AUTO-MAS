@@ -540,6 +540,7 @@ const runCloseFlow = async (): Promise<void> => {
 }
 
 const runBackendRequestedClose = async (restart = false): Promise<void> => {
+  window.electronAPI?.appObserveBackendClose?.()
   backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
@@ -708,7 +709,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
     try {
       let result: { success: boolean; error?: string; logs?: string } | undefined
       if (window.electronAPI?.backendRestart) {
-        result = await window.electronAPI.backendRestart()
+        result = await window.electronAPI.backendRestart('recovery')
       } else {
         await window.electronAPI?.stopBackend?.()
         if (isClosing()) return
@@ -927,28 +928,42 @@ const handleSystemResume = (): Promise<void> => {
   if (resumeRecoveryPromise) return resumeRecoveryPromise
   resumeRecoveryPromise = (async () => {
     if (isClosing() || isIntentionalRestart()) return
-    logger.info('检测到系统恢复，检查后端和主 WebSocket')
-
-    const running = await queryBackendRunning()
-    let httpReachable = false
+    const telemetry = beginAnalyticsOperation('system_resume_recovery_finished')
+    let recovery_kind: 'reconnect' | 'backend_restart' = 'reconnect'
     try {
-      await Service.getWsMetaApiCoreWsMetaGet()
-      httpReachable = true
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.warn(`系统恢复后 ws_meta 检查失败: ${errorMsg}`)
-    }
-    if (isClosing()) return
+      logger.info('检测到系统恢复，检查后端和主 WebSocket')
 
-    if (running === false || !httpReachable) {
-      // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
-      await restartBackendFlow()
-      return
-    }
+      const running = await queryBackendRunning()
+      let httpReachable = false
+      try {
+        await Service.getWsMetaApiCoreWsMetaGet()
+        httpReachable = true
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`系统恢复后 ws_meta 检查失败: ${errorMsg}`)
+      }
+      if (isClosing()) return
 
-    // 后端确实可达：终态下也照常重连，连上后由 handleConnected 撤掉终态与失败弹窗，
-    // 不能让「仍无法连接」的弹窗留在已经恢复的应用上
-    await reconnectNow('系统从睡眠恢复')
+      if (running === false || !httpReachable) {
+        // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
+        recovery_kind = 'backend_restart'
+        await restartBackendFlow()
+        return
+      }
+
+      // 后端确实可达：终态下也照常重连，连上后由 handleConnected 撤掉终态与失败弹窗，
+      // 不能让「仍无法连接」的弹窗留在已经恢复的应用上
+      await reconnectNow('系统从睡眠恢复')
+    } finally {
+      telemetry.finish({
+        recovery_kind,
+        outcome: isClosing()
+          ? 'cancelled'
+          : connectionState().value === 'open'
+            ? 'success'
+            : 'unknown',
+      })
+    }
   })().finally(() => {
     resumeRecoveryPromise = null
   })

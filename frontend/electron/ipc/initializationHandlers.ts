@@ -552,7 +552,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return result
   })
 
-  ipcMain.handle('backend-restart', async event => {
+  ipcMain.handle('backend-restart', async (event, reason?: unknown) => {
     logger.info('重启后端服务')
 
     const backend = getBackendService()
@@ -562,7 +562,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       sendToSender(event, 'backend-status', status)
     })
 
-    const result = await backend.restartBackend()
+    const result = await backend.restartBackend(
+      undefined,
+      reason === 'recovery' ? 'recovery' : 'manual'
+    )
 
     if (!result.success) {
       logger.error(`后端重启失败: ${result.error}`)

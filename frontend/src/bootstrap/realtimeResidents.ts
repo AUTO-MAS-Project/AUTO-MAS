@@ -16,6 +16,7 @@ import {
 } from '@/views/scheduler/useSchedulerLogic'
 import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemNotices'
 import { bootstrapTaskAnalytics, disposeTaskAnalytics } from '@/services/taskAnalytics'
+import { bootstrapEmulatorAnalytics, disposeEmulatorAnalytics } from '@/composables/useEmulatorApi'
 import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
@@ -30,6 +31,10 @@ let registered = false
  */
 export function bootstrapRealtimeResidents(): void {
   if (!registered) {
+    registerResidentResource('emulator-analytics', {
+      bootstrap: bootstrapEmulatorAnalytics,
+      dispose: disposeEmulatorAnalytics,
+    })
     registerResidentResource('task-analytics', {
       bootstrap: bootstrapTaskAnalytics,
       dispose: disposeTaskAnalytics,

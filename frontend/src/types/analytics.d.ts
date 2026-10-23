@@ -1,3 +1,8 @@
+import type {
+  FeatureAnalyticsEventProps,
+  mainOnlyFeatureEvents,
+} from '../../electron/services/analyticsFeaturePolicy'
+
 export type AnalyticsDurationBucket = '<1s' | '1-5s' | '5-30s' | '30-120s' | '>120s'
 export type AnalyticsCountBucket = '0' | '1' | '2-5' | '6-20' | '20+'
 export type AnalyticsQueueKind = 'normal' | 'cycle' | 'unknown'
@@ -88,7 +93,7 @@ export type AnalyticsScreen =
   | 'theme_store'
   | 'settings'
   | 'taskboard'
-export interface AnalyticsEventProps {
+export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   app_started: Record<string, never>
   renderer_ready: { duration_bucket: AnalyticsDurationBucket }
   backend_start_finished: {
@@ -313,7 +318,10 @@ export interface AnalyticsEventProps {
 export type AnalyticsEventName = keyof AnalyticsEventProps
 export type RendererAnalyticsEventName = Exclude<
   AnalyticsEventName,
-  'app_started' | 'backend_start_finished' | 'initialization_stage_finished'
+  | 'app_started'
+  | 'backend_start_finished'
+  | 'initialization_stage_finished'
+  | (typeof mainOnlyFeatureEvents)[number]
 >
 export type AnalyticsEvent = {
   [K in AnalyticsEventName]: { name: K; props: AnalyticsEventProps[K] }

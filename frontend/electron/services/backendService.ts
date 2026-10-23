@@ -1,3 +1,4 @@
+import { beginMainFeature } from './featureAnalytics'
 /**
  * 后端服务管理
  * 重构版本 - 只负责后端进程的启动、停止和管理
@@ -1022,8 +1023,12 @@ export class BackendService {
   /**
    * 重启后端服务
    */
-  restartBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+  restartBackend(
+    options?: BackendStartOptions,
+    reason: 'manual' | 'recovery' = 'manual'
+  ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
+    const telemetry = beginMainFeature('backend_restart_finished')
     const operation = this.enqueueOperation(async () => {
       if (this.forceStopRequested) {
         return { success: false, error: '强制停止已请求，取消后端重启' }
@@ -1041,6 +1046,11 @@ export class BackendService {
       return this.startBackendInternal(options)
     })
     this.restartFlight = operation
+    void operation.then(
+      result =>
+        telemetry.finish({ reason_kind: reason, outcome: result.success ? 'success' : 'failure' }),
+      () => telemetry.finish({ reason_kind: reason, outcome: 'unknown' })
+    )
     void operation.then(
       () => {
         if (this.restartFlight === operation) this.restartFlight = null
