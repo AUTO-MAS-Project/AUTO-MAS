@@ -53,7 +53,6 @@ from app.models.notification_channel import (
     EmptyPolicy,
     NotificationSourceConfig,
     NotificationTransportSnapshot,
-    Notifier,
     NotifyChannel,
     NotifyTarget,
     RecruitmentNotificationConfig,
@@ -425,7 +424,6 @@ class HostNotificationService:
         attempts: int = 1,
         retry_delay: float = 0,
         skip_channel_ids: Iterable[str] = (),
-        notifier: Notifier | None = None,
     ) -> DispatchResult:
         """使用本实例的发送器与渲染器，底层投递只接受显式依赖。"""
         return await dispatch_notification(
@@ -434,7 +432,7 @@ class HostNotificationService:
             attempts=attempts,
             retry_delay=retry_delay,
             skip_channel_ids=skip_channel_ids,
-            notifier=self._transport if notifier is None else notifier,
+            notifier=self._transport,
             renderer=self._renderer,
             concurrent=not self.transactions.in_transaction,
         )

@@ -176,6 +176,7 @@ MAA 喜报 / HSR 云登录提醒 -> NotifyPayload -> dispatch_task_notification
 目标快照；没有报告的任务在补发入口准备默认目标。
 
 报告与补发固定使用服务装配时绑定的投递端口，不再按单次报告更换发送器。
+发送器统一在服务构造时注入；底层投递器仍接收显式依赖，不提供全局默认实例。
 
 `TaskReportCoordinator` 只持有 `TaskNotificationState`，与任务共享结果、消费标记和
 已送达 ID；失败渠道通过每次投递的 `DispatchResult` 返回。
