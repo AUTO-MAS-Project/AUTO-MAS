@@ -318,11 +318,9 @@ export const useTaskboardData = (t: Composer['t']) => {
     updatedAt.value = nowText()
   }
 
-  // 初次加载里“源还在用快照/仍在加载”会先后结束，条件一旦满足就补写更新时间。
+  // 初次加载不走 load()：源与状态各自结束时由这里按同一套条件补写更新时间。
   watchEffect(() => {
-    if (loading.value || completionLoading.value) return
-    if (completionError.value || sourceIssues.value.length) return
-    updatedAt.value = nowText()
+    stampUpdatedAt()
   })
 
   const load = async () => {

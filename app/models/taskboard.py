@@ -21,8 +21,6 @@
 
 from pydantic import BaseModel, Field
 
-from app.models.schema import OutBase
-
 
 class TaskboardArchivedActivity(BaseModel):
     id: str = Field(..., min_length=1, max_length=300, description="任务台活动 id")
@@ -48,27 +46,4 @@ class TaskboardState(BaseModel):
     )
     done_at: dict[str, TaskboardDoneRecord] = Field(
         default_factory=dict, description="活动完成日期，key 为游戏与活动的组合键"
-    )
-
-
-class TaskboardStateOut(OutBase):
-    data: TaskboardState = Field(default_factory=TaskboardState)
-
-
-class TaskboardSelectionIn(BaseModel):
-    games: list[str] = Field(
-        default_factory=list, max_length=100, description="勾选的游戏"
-    )
-
-
-class TaskboardArchiveIn(BaseModel):
-    archived: list[TaskboardArchivedActivity] = Field(
-        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
-    )
-
-
-class TaskboardDoneAtIn(BaseModel):
-    key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
-    record: TaskboardDoneRecord | None = Field(
-        default=None, description="为空表示删除该记录"
     )

@@ -65,10 +65,9 @@ from app.models.schema import (
     PlanComboxConsumer,
 )
 from app.models.taskboard import (
-    TaskboardArchiveIn,
-    TaskboardDoneAtIn,
-    TaskboardSelectionIn,
-    TaskboardStateOut,
+    TaskboardArchivedActivity,
+    TaskboardDoneRecord,
+    TaskboardState,
 )
 from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import classify_activity_name, fetch_official_activities
@@ -159,6 +158,29 @@ class GetStageIn(BaseModel):
 
 class PlanComboxIn(BaseModel):
     consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
+
+
+class TaskboardStateOut(OutBase):
+    data: TaskboardState = Field(default_factory=TaskboardState)
+
+
+class TaskboardSelectionIn(BaseModel):
+    games: list[str] = Field(
+        default_factory=list, max_length=100, description="勾选的游戏"
+    )
+
+
+class TaskboardArchiveIn(BaseModel):
+    archived: list[TaskboardArchivedActivity] = Field(
+        default_factory=list, max_length=2000, description="已归档活动的展示缓存"
+    )
+
+
+class TaskboardDoneAtIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=400, description="完成日期记录键")
+    record: TaskboardDoneRecord | None = Field(
+        default=None, description="为空表示删除该记录"
+    )
 
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
