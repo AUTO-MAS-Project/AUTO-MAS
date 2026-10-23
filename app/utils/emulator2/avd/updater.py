@@ -53,15 +53,21 @@ import httpx
 
 from app.services.update_transport import download_resumable
 from app.utils import get_logger
-from app.utils.update_files import native_path
+from app.utils.update_files import native_path, replace_file
 
 from . import first_install, update_range
 from . import update_stage as stage
-from .components import emulator_self_built, local_sdk_root, manager_key_exe, root_key
+from .components import (
+    MetadataUnreadable,
+    emulator_self_built,
+    local_sdk_root,
+    manager_key_exe,
+    read_metadata_strict,
+    root_key,
+)
 from .constants import (
     MIN_MOD_AVD_BUILD,
     MODAVD_FORCE_FULL_PACKAGE_ENV,
-    MODAVD_MANIFEST_FILE,
     POWER_CLOSE_TIMEOUT_SECONDS,
     UPDATE_CHECK_CACHE_SECONDS,
     UPDATE_DIR,
@@ -75,7 +81,6 @@ from .update_source import (
     local_version,
     newer_changes,
     parse_version,
-    read_manifest_file,
     update_sources,
 )
 
@@ -228,6 +233,11 @@ async def _managed(root: str) -> Path:
 
 
 def _not_updatable_reason(root: Path) -> str:
+    try:
+        # mas-avd.json 读不出时看不到 sdkRoot，换上最后还要改它：先修好再更新
+        read_metadata_strict(root)
+    except MetadataUnreadable as e:
+        return f"{e}，先修好或删掉它再更新"
     if local_sdk_root(root) is not None:
         return "这个根目录在 mas-avd.json 里设了 sdkRoot（开发用的本地 SDK），不更新"
     if not os.path.isfile(native_path(stage.emulator_dir(root) / "emulator.exe")):
@@ -239,6 +249,30 @@ def _tasks_running() -> bool:
     from app.core import TaskManager
 
     return bool(TaskManager.task_handler)
+
+
+def _opening_instances(root: Path) -> list[str]:
+    """这个根目录下正在开机（``open`` 还没做完，含开机前检查到拉起 emulator.exe 之间那几秒）的实例。"""
+    from .manager import _OPENING
+
+    prefix = f"{root_key(root)}|"
+    return sorted(
+        key[len(prefix) :] for key in list(_OPENING) if key.startswith(prefix)
+    )
+
+
+def _swap_blocker(root: Path, *, manual: bool) -> str:
+    """现在不能换上 / 回退的原因；能换返回空串。
+
+    有实例在开机就不换：开机前检查到拉起 emulator.exe 之间有几秒，进程表里还看不到它。手动安装时
+    只要有任何 MAS 任务在跑也不换（任务随时可能去开实例）；自动安装本来就只在空闲时装。
+    """
+    opening = _opening_instances(root)
+    if opening:
+        return f"实例 {'、'.join(opening)} 正在开机，等它开完、关掉后再装"
+    if manual and _tasks_running():
+        return "有任务正在运行，请等任务都结束后再装"
+    return ""
 
 
 def _running_instances(root: Path) -> list[str]:
@@ -329,7 +363,7 @@ def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
     newer = not reason and _newer(release, local)
     running = _running_instances(root) if not reason else []
     busy = (
-        [f"{item['name']}（pid {item['pid']}）" for item in stage.processes_using(root)]
+        [stage.describe_processes([item]) for item in stage.processes_using(root)]
         if not reason and not running
         else []
     )
@@ -550,31 +584,20 @@ def _verify_and_stage(
     files: int,
     mode: str,
 ) -> dict[str, Any]:
-    """``pkg`` 已经拼好（整包解出来或按区间拼出来）：按清单核对，再把 ``sdk\\emulator`` 改名进 ``stage``。"""
+    """``pkg`` 已经拼好（整包解出来或按区间拼出来）：核对（新写法版本必须有清单、逐文件比；模拟器的
+    构建号与自编版标志），再把 ``sdk\\emulator`` 改名进 ``stage``。不写状态，由调用方核对通过后写。"""
     root = runtime.root
     version = parse_version(target["version"])
     assert version is not None
-    manifest = read_manifest_file(stage.pkg_dir(root) / MODAVD_MANIFEST_FILE)
-    if manifest is not None:
-        stage.check_package_manifest(manifest, version)
-        problems = stage.verify_tree(
-            stage.pkg_dir(root),
-            manifest,
-            progress=verifying,
-            cancelled=_cancelled(runtime),
-        )
-        if problems:
-            stage.remove_tree(stage.pkg_dir(root))
-            shown = "；".join(problems[:5])
-            more = f" 等 {len(problems)} 项" if len(problems) > 5 else ""
-            raise stage.PackageError(f"包里的文件和清单对不上：{shown}{more}")
+    verified = stage.verify_package(
+        stage.pkg_dir(root),
+        version,
+        tag=target["tag"],
+        progress=verifying,
+        cancelled=_cancelled(runtime),
+    )
     stage.build_stage(root, version)
-    return {
-        "verified": "manifest" if manifest is not None else "zip",
-        "files": files,
-        "mode": mode,
-        "version": target["version"],
-    }
+    return {"verified": verified, "files": files, "mode": mode}
 
 
 def _range_allowed(root: Path, release: RemoteRelease) -> bool:
@@ -655,67 +678,75 @@ async def _prepare_by_range(
         logger.info(f"{root} 这次不按区间取，改下整包：{e}")
     except Exception as e:  # noqa: BLE001 - 区间这一路任何意外都退回整包
         logger.opt(exception=True).warning(f"{root} 按区间取出错，改下整包：{e}")
+    # 状态这时是「正在准备」，丢掉半成品不会留下可以安装的东西
     await asyncio.to_thread(stage.remove_tree, stage.pkg_dir(root))
+    await asyncio.to_thread(stage.remove_tree, stage.stage_emulator_dir(root).parent)
     return None
 
 
+class _NothingToDo(Exception):
+    """拿到锁以后发现前提已经不成立（已经是最新、已经拼好同一版）。"""
+
+
 async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
-    """下载并拼好 ``release``，结束时 ``state`` 停在 ``staged``。"""
+    """下载并拼好 ``release``，结束时 ``state`` 停在 ``staged``。调用方拿着这个根目录的锁。
+
+    前提在拿到锁之后重新判断（排队期间可能已经装上了别的版本）。动 ``pkg`` / ``stage`` 之前先把状态
+    改成「正在准备」，核对通过、``stage`` 拼好后才写 ``staged``；中途取消、失败都丢掉暂存、回到空闲。
+    """
     root = runtime.root
     state = await asyncio.to_thread(stage.read_state, root)
     target = release.as_dict()
+    if state.get("phase") in (stage.PHASE_SWAPPING, stage.PHASE_ROLLING_BACK):
+        raise RuntimeError("上一次换上 / 回退还没收尾，请重启 MAS 后再试")
+    local = await asyncio.to_thread(local_version, root)
+    if not _newer(release, local):
+        raise _NothingToDo(f"已经是最新版本（{local}）")
     if (
         state.get("phase") == stage.PHASE_STAGED
         and (state.get("target") or {}).get("version") == target["version"]
         and stage.stage_emulator_dir(root).is_dir()
     ):
-        return
-    if state.get("phase") in (stage.PHASE_SWAPPING, stage.PHASE_ROLLING_BACK):
-        raise RuntimeError("上一次换上 / 回退还没收尾，请重启 MAS 后再试")
+        raise _NothingToDo(f"{release.version} 已经下载并核对过，可以安装")
     free = (await asyncio.to_thread(shutil.disk_usage, root)).free
     if free < UPDATE_MIN_FREE_BYTES:
         raise RuntimeError(
             f"{root.anchor or root} 剩余空间 {free / 1024**3:.1f} GB，更新要临时占用约 "
             f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理"
         )
-    previous = state.get("previous")
-    staged = None
-    if await asyncio.to_thread(_range_allowed, root, release):
-        staged = await _prepare_by_range(runtime, release, target)
-    if staged is None:
-        _set(
-            runtime,
-            "downloading",
-            message=f"正在下载 {release.asset.name}",
-            totalBytes=release.asset.size,
+    await asyncio.to_thread(stage.begin_staging, root, target)
+    try:
+        staged = None
+        if await asyncio.to_thread(_range_allowed, root, release):
+            staged = await _prepare_by_range(runtime, release, target)
+        if staged is None:
+            _set(
+                runtime,
+                "downloading",
+                message=f"正在下载 {release.asset.name}",
+                totalBytes=release.asset.size,
+            )
+            await _publish(runtime)
+            archive = await _download(runtime, release)
+            _set(runtime, "extracting", message="正在解包")
+            await _publish(runtime)
+            staged = await asyncio.to_thread(
+                _stage_sync,
+                runtime,
+                archive,
+                target,
+                _thread_progress(runtime, "extracting", "正在解包"),
+                _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+            )
+        staged = await asyncio.to_thread(stage.finish_staging, root, target, staged)
+    except BaseException as e:
+        reason = (
+            "已取消"
+            if isinstance(e, (stage.UpdateCancelled, asyncio.CancelledError))
+            else str(e)
         )
-        await _publish(runtime)
-        archive = await _download(runtime, release)
-        await asyncio.to_thread(
-            stage.write_state,
-            root,
-            {"phase": stage.PHASE_DOWNLOADED, "target": target, "previous": previous},
-        )
-        _set(runtime, "extracting", message="正在解包")
-        await _publish(runtime)
-        staged = await asyncio.to_thread(
-            _stage_sync,
-            runtime,
-            archive,
-            target,
-            _thread_progress(runtime, "extracting", "正在解包"),
-            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
-        )
-    await asyncio.to_thread(
-        stage.write_state,
-        root,
-        {
-            "phase": stage.PHASE_STAGED,
-            "target": target,
-            "staged": staged,
-            "previous": previous,
-        },
-    )
+        await asyncio.shield(asyncio.to_thread(stage.abort_staging, root, reason))
+        raise
     checked = (
         "按清单逐文件核对"
         if staged["verified"] == "manifest"
@@ -735,6 +766,10 @@ async def _prepare_job(
         runtime.cancel_requested = False
         try:
             await _prepare(runtime, release)
+        except _NothingToDo as e:
+            _set(runtime, "idle", "idle", str(e))
+            await _publish(runtime)
+            return
         except stage.UpdateCancelled:
             _set(runtime, "cancelled", "idle", "已取消，下次接着下")
             await _publish(runtime)
@@ -781,6 +816,9 @@ async def start_download(root: str) -> dict[str, Any]:
             "ok": False,
             "message": f"{release.version} 需要 AUTO-MAS {required} 或更新的版本，请先更新 AUTO-MAS",
         }
+    # 上面有 await：并发的请求可能已经起了任务，起任务前再看一次（这里到 create_task 之间没有 await）
+    if runtime.busy:
+        return {"ok": False, "message": "正在下载或安装，请稍候"}
     runtime.job = asyncio.create_task(
         _prepare_job(runtime, release, auto=False), name=f"avd-update-prepare:{path}"
     )
@@ -823,28 +861,36 @@ async def _close_instances(root: Path) -> None:
         await close_instances(targets, timeout=POWER_CLOSE_TIMEOUT_SECONDS * 2)
 
 
-async def _swap_job(runtime: _Runtime, *, action: str, close: bool) -> None:
+async def _swap_job(
+    runtime: _Runtime, *, action: str, close: bool, manual: bool
+) -> None:
     root = runtime.root
+    key = root_key(root)
     verb = "安装" if action == "install" else "回退"
     async with runtime.lock:
         try:
-            if close:
-                _set(runtime, "closing", message="正在关闭实例（安卓正常关机）")
-                await _publish(runtime)
-                await _close_instances(root)
-            _set(
-                runtime,
-                "installing" if action == "install" else "rolling_back",
-                message=f"正在{verb}",
-            )
-            await _publish(runtime)
-            _swapping.add(root_key(root))
+            # 拿到锁之后重新判断：排队期间可能有实例开始开机、有任务开始跑。判断和登记「正在换上」
+            # 之间没有 await，和开机（open 先登记自己、_launch 再看「正在换上」）互斥，先占先得
+            blocker = _swap_blocker(root, manual=manual)
+            if blocker:
+                raise stage.SwapBlocked(blocker)
+            _swapping.add(key)
             try:
+                if close:
+                    _set(runtime, "closing", message="正在关闭实例（安卓正常关机）")
+                    await _publish(runtime)
+                    await _close_instances(root)
+                _set(
+                    runtime,
+                    "installing" if action == "install" else "rolling_back",
+                    message=f"正在{verb}",
+                )
+                await _publish(runtime)
                 version = await asyncio.to_thread(
                     stage.swap_in if action == "install" else stage.rollback, root
                 )
             finally:
-                _swapping.discard(root_key(root))
+                _swapping.discard(key)
             if action == "install":
                 message = (
                     f"已换上 {version}。新版第一次开机成功后删除旧版；开不了机可以回退"
@@ -884,13 +930,15 @@ async def _start_swap(
             "message": "还没有下载好的新版，请先下载",
             "runningInstances": 0,
         }
-    if action == "rollback" and not await asyncio.to_thread(stage.can_rollback, path):
-        return {
-            "ok": False,
-            "reason": "no_previous",
-            "message": "没有可以回退的旧版",
-            "runningInstances": 0,
-        }
+    if action == "rollback":
+        problem = await asyncio.to_thread(stage.previous_problem, path)
+        if problem:
+            return {
+                "ok": False,
+                "reason": "no_previous",
+                "message": problem,
+                "runningInstances": 0,
+            }
     running = await asyncio.to_thread(_running_instances, path)
     if running and not close_instances:
         return {
@@ -899,15 +947,23 @@ async def _start_swap(
             "message": f"需要先关闭 {len(running)} 台实例",
             "runningInstances": len(running),
         }
-    if running and _tasks_running():
+    blocker = _swap_blocker(path, manual=True)
+    if blocker:
         return {
             "ok": False,
-            "reason": "tasks_running",
-            "message": "有任务正在运行，要关实例的话请等任务结束后再装",
+            "reason": "tasks_running" if _tasks_running() else "instances_booting",
+            "message": blocker,
             "runningInstances": len(running),
         }
+    if runtime.busy:
+        return {
+            "ok": False,
+            "reason": "busy",
+            "message": "正在下载或安装，请稍候",
+            "runningInstances": 0,
+        }
     runtime.job = asyncio.create_task(
-        _swap_job(runtime, action=action, close=bool(running)),
+        _swap_job(runtime, action=action, close=bool(running), manual=True),
         name=f"avd-update-{action}:{path}",
     )
     return {
@@ -953,6 +1009,8 @@ async def _auto_install(root: Path, reason: str) -> None:
         local = await asyncio.to_thread(local_version, root)
         if _newer(_remote, local) and not _automas_block(_remote):
             assert _remote is not None
+            if runtime.busy:
+                return
             logger.info(
                 f"{root} 开着空闲时自动装，开始下载 {_remote.version}（{reason}）"
             )
@@ -966,11 +1024,14 @@ async def _auto_install(root: Path, reason: str) -> None:
     ):
         logger.info(f"{root} 有实例或程序在用模拟器，先不自动安装（{reason}）")
         return
+    # 上面有 await：再看一次任务、开机和占用（这里到 create_task 之间没有 await）
+    if runtime.busy or _tasks_running() or _swap_blocker(root, manual=False):
+        return
     logger.info(
         f"{root} 空闲，自动安装 {(state.get('target') or {}).get('version')}（{reason}）"
     )
     runtime.job = asyncio.create_task(
-        _swap_job(runtime, action="install", close=False),
+        _swap_job(runtime, action="install", close=False, manual=False),
         name=f"avd-update-auto-install:{root}",
     )
 
@@ -1024,12 +1085,20 @@ async def startup() -> None:
 
 
 def note_boot_completed(root: str | Path) -> None:
-    """实例冷启动到 ``sys.boot_completed`` 时调：新版第一次开机成功就删掉旧版。"""
+    """实例冷启动到 ``sys.boot_completed`` 时调：新版第一次开机成功就删掉旧版。
+
+    和下载、安装、回退一样拿着这个根目录的更新锁读改写 ``state.json``，不会和它们交错。
+    """
     previous = stage.read_state(root).get("previous")
-    if isinstance(previous, dict) and previous.get("awaitingBoot"):
-        _spawn(
-            asyncio.to_thread(stage.confirm_boot, Path(root)), "avd-update-confirm-boot"
-        )
+    if not isinstance(previous, dict) or not previous.get("awaitingBoot"):
+        return
+    runtime = _runtime(Path(root))
+
+    async def confirm() -> None:
+        async with runtime.lock:
+            await asyncio.to_thread(stage.confirm_boot, runtime.root)
+
+    _spawn(confirm(), "avd-update-confirm-boot")
 
 
 # ---- 首次安装 --------------------------------------------------------------
@@ -1051,8 +1120,13 @@ async def sdk_license() -> dict[str, str]:
     return result
 
 
+def _first_install_marker(root: Path) -> Path:
+    """首次安装开始往根目录里挪文件前写下、挪完删掉：中途中断时据此认出「装到一半」，再点就重做。"""
+    return stage.update_dir(root) / "first-install.json"
+
+
 def _first_install_mode(root: Path) -> str:
-    """``full``：空目录（或只有上次没装完留下的 ``.update``），下包再补全组件；
+    """``full``：空目录（或只有上次没装完留下的 ``.update``、或首次安装挪文件挪到一半），下包再补全组件；
     ``components``：已经是解压好的魔改 AVD（自编版模拟器在、组件缺着），只补全组件。"""
     from app.utils.emulator2.avd.precheck import path_item
 
@@ -1063,6 +1137,8 @@ def _first_install_mode(root: Path) -> str:
         raise ValueError(f"{root} 不是文件夹")
     if any(root_key(root) == root_key(managed) for managed in _managed_roots()):
         raise ValueError("这个目录已经加进模拟器管理了")
+    if _first_install_marker(root).is_file():
+        return "full"
     if not root.exists() or not any(
         child.name != UPDATE_DIR for child in root.iterdir()
     ):
@@ -1106,19 +1182,26 @@ async def _install_package_into(runtime: _Runtime, release: RemoteRelease) -> No
             progress=extracting,
             cancelled=_cancelled(runtime),
         )
-        manifest = read_manifest_file(pkg / MODAVD_MANIFEST_FILE)
-        if manifest is not None:
-            stage.check_package_manifest(manifest, release.version)
-            problems = stage.verify_tree(
-                pkg, manifest, progress=verifying, cancelled=_cancelled(runtime)
+        # 和更新同一套核对：新写法版本必须有清单、逐文件比；模拟器的构建号与自编版标志
+        try:
+            stage.verify_package(
+                pkg,
+                release.version,
+                tag=release.tag,
+                progress=verifying,
+                cancelled=_cancelled(runtime),
             )
-            if problems:
-                stage.remove_tree(pkg)
-                raise stage.PackageError(
-                    "包里的文件和清单对不上：" + "；".join(problems[:5])
-                )
-        for child in sorted(pkg.iterdir()):
-            os.replace(child, root / child.name)
+        except stage.PackageError:
+            stage.remove_tree(pkg)
+            raise
+        # 往根目录挪之前写下标记：挪到一半中断，再点「下载并安装」会认出来、重做（逐个文件覆盖）
+        marker = _first_install_marker(root)
+        stage.write_json_atomic(
+            marker, {"version": str(release.version), "asset": release.asset.name}
+        )
+        for rel in sorted(stage.walk_files(pkg)):
+            replace_file(pkg / rel, root / rel)
+        marker.unlink()
         stage.remove_tree(stage.update_dir(root))
 
     await asyncio.to_thread(
@@ -1129,11 +1212,13 @@ async def _install_package_into(runtime: _Runtime, release: RemoteRelease) -> No
     logger.info(f"已把 {release.version}（{release.asset.name}）装进 {root}")
 
 
-async def _first_install_job(runtime: _Runtime, mode: str) -> None:
+async def _first_install_job(runtime: _Runtime) -> None:
     root = runtime.root
     async with runtime.lock:
         runtime.cancel_requested = False
         try:
+            # 拿到锁之后重新判断：排队期间目录可能变了（另一次安装做完了、被加进管理了）
+            mode = await asyncio.to_thread(_first_install_mode, root)
             if mode == "full":
                 release = await _latest(force=False)
                 required = _automas_block(release)
@@ -1190,7 +1275,7 @@ async def start_first_install(root: str, *, accept_license: bool) -> dict[str, A
     if runtime.busy:
         return {"ok": False, "message": "正在安装，请稍候"}
     runtime.job = asyncio.create_task(
-        _first_install_job(runtime, mode), name=f"avd-first-install:{path}"
+        _first_install_job(runtime), name=f"avd-first-install:{path}"
     )
     return {
         "ok": True,

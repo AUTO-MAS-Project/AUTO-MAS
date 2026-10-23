@@ -91,6 +91,12 @@ def parse_version(text: object) -> ModAvdVersion | None:
     return None
 
 
+def requires_manifest(tag: object) -> bool:
+    """新写法的版本（``vX.Y.Z``，下一个公开版本 v33.0.0 起）必须带 ``modavd-manifest.json``；
+    只有旧 tag ``v37.2.10-masN`` 的包没有清单。"""
+    return _NEW_TAG.fullmatch(str(tag or "").strip()) is not None
+
+
 def read_manifest_file(path: Path) -> dict[str, Any] | None:
     """读一份 ``modavd-manifest.json``；不在、读不出、不是对象都返回 ``None``。"""
     try:
@@ -382,5 +388,6 @@ __all__ = [
     "parse_version",
     "read_manifest_file",
     "release_from_github",
+    "requires_manifest",
     "update_sources",
 ]

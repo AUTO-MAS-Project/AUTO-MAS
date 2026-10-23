@@ -20,7 +20,7 @@ export type Emulator2AvdUpdateActionOut = {
      */
     ok?: boolean;
     /**
-     * started 已开始 / instances_running 有实例开着 (看 runningInstances) / tasks_running 有任务在跑 / busy 正在下载或安装 / not_prepared 还没下载好 / no_previous 没有旧版可回退
+     * started 已开始 / instances_running 有实例开着 (看 runningInstances) / instances_booting 有实例正在开机 / tasks_running 有任务在跑 (手动安装 / 回退要等任务都结束) / busy 正在下载或安装 / not_prepared 还没下载好 / no_previous 没有旧版或旧版不完整
      */
     reason?: string;
     /**

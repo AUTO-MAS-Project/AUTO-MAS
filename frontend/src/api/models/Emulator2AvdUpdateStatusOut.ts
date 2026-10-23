@@ -95,7 +95,7 @@ export type Emulator2AvdUpdateStatusOut = {
      */
     assetSize?: number;
     /**
-     * idle / downloaded 已下载 / staged 已拼好可安装 / swapping 换上中 / rolling_back 回退中
+     * idle / preparing 正在下载、拼新版 (不可安装) / staged 已拼好、核对过、可安装 / swapping 换上中 / rolling_back 回退中
      */
     phase?: string;
     /**

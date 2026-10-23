@@ -190,13 +190,34 @@ def root_from_manager_exe(manager_exe: str | Path) -> Path:
 
 
 def read_metadata(root: str | Path) -> dict[str, Any]:
-    """读 ``mas-avd.json``。不存在或读不出按空字典处理。"""
-    path = Path(root) / METADATA_FILE
+    """读 ``mas-avd.json``。不存在或读不出按空字典处理。
+
+    用 ``utf-8-sig`` 读：Windows PowerShell 5.1 写的 UTF-8 带 BOM，按 ``utf-8`` 读会整份解析失败。
+    要写回整份文件的地方用 :func:`read_metadata_strict`，读不出时不能拿空字典盖掉原文件。
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return read_metadata_strict(root)
+    except MetadataUnreadable:
         return {}
-    return data if isinstance(data, dict) else {}
+
+
+class MetadataUnreadable(RuntimeError):
+    """``mas-avd.json`` 在，但读不出或不是 JSON 对象。"""
+
+
+def read_metadata_strict(root: str | Path) -> dict[str, Any]:
+    """读 ``mas-avd.json``：不存在返回空字典；存在却读不出（被占用、不是 JSON、不是对象）抛
+    :class:`MetadataUnreadable`。"""
+    path = Path(root) / METADATA_FILE
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        raise MetadataUnreadable(f"{path} 读不出：{e}") from e
+    if not isinstance(data, dict):
+        raise MetadataUnreadable(f"{path} 不是 JSON 对象")
+    return data
 
 
 def write_metadata(root: str | Path, data: dict[str, Any]) -> None:
@@ -495,7 +516,9 @@ __all__ = [
     "missing_components_message",
     "mod_build_label",
     "read_emulator_version",
+    "MetadataUnreadable",
     "read_metadata",
+    "read_metadata_strict",
     "read_mod_build",
     "read_mod_build_at",
     "replace_with_retry",

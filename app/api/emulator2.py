@@ -505,7 +505,8 @@ class Emulator2AvdUpdateProgress(BaseModel):
 
 class Emulator2AvdUpdateResult(BaseModel):
     action: str = Field(
-        ..., description="update 更新 / rollback 回退 / boot 新版开机确认"
+        ...,
+        description="update 更新 / rollback 回退 / boot 新版开机确认 / prepare 准备新版没成 (取消或失败)",
     )
     ok: bool = Field(default=True, description="是否成功")
     version: str = Field(default="", description="涉及的版本号")
@@ -552,7 +553,10 @@ class Emulator2AvdUpdateStatusOut(OutBase):
     assetSize: int = Field(default=0, description="包的大小 (字节)")
     phase: str = Field(
         default="idle",
-        description="idle / downloaded 已下载 / staged 已拼好可安装 / swapping 换上中 / rolling_back 回退中",
+        description=(
+            "idle / preparing 正在下载、拼新版 (不可安装) / staged 已拼好、核对过、可安装 / "
+            "swapping 换上中 / rolling_back 回退中"
+        ),
     )
     preparedVersion: str = Field(default="", description="已下载并核对、等着安装的版本")
     runningInstances: int = Field(
@@ -583,8 +587,8 @@ class Emulator2AvdUpdateActionOut(OutBase):
         default="",
         description=(
             "started 已开始 / instances_running 有实例开着 (看 runningInstances) / "
-            "tasks_running 有任务在跑 / busy 正在下载或安装 / not_prepared 还没下载好 / "
-            "no_previous 没有旧版可回退"
+            "instances_booting 有实例正在开机 / tasks_running 有任务在跑 (手动安装 / 回退要等任务都结束) / "
+            "busy 正在下载或安装 / not_prepared 还没下载好 / no_previous 没有旧版或旧版不完整"
         ),
     )
     runningInstances: int = Field(default=0, description="需要先关的实例台数")
