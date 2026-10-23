@@ -658,7 +658,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         self.cur_user_config
                     ),
                     task_info=self.task_info,
-                    immediate=True,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")

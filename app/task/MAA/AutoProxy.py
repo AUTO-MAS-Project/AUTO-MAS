@@ -3084,7 +3084,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         self.cur_user_config
                     ),
                     task_info=self.task_info,
-                    immediate=True,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送六星通知时出现异常: {e}")

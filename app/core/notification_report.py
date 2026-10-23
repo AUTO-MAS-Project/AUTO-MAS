@@ -253,8 +253,6 @@ class TaskReportCoordinator:
             result = await self.dependencies.dispatch(
                 payload,
                 request.targets,
-                attempts=request.attempts,
-                retry_delay=request.retry_delay,
             )
         else:
             delivered = set(self.state.delivered)
@@ -264,8 +262,6 @@ class TaskReportCoordinator:
             with_summary = await self.dependencies.dispatch(
                 self.dependencies.renderer.append_summary(payload, summary),
                 request.targets,
-                attempts=request.attempts,
-                retry_delay=request.retry_delay,
                 skip_channel_ids=delivered,
             )
             # 本轮开始前收到过摘要的渠道只收原始报告，避免同一轮重复投递。
@@ -273,8 +269,6 @@ class TaskReportCoordinator:
                 await self.dependencies.dispatch(
                     payload,
                     request.targets,
-                    attempts=request.attempts,
-                    retry_delay=request.retry_delay,
                     skip_channel_ids=channels - delivered,
                 )
                 if delivered & channels

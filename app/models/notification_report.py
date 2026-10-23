@@ -119,8 +119,6 @@ class TaskReportRequest:
     payload: NotifyPayload
     targets: tuple[NotifyTarget, ...]
     policy: TaskReportPolicy
-    attempts: int = 1
-    retry_delay: float = 0
 
 
 class NotificationDispatcher(Protocol):

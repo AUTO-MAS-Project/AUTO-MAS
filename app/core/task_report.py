@@ -121,16 +121,11 @@ class PreparedTaskReport:
         self,
         payload: NotifyPayload,
         targets: list[NotifyTarget],
-        *,
-        attempts: int = 1,
-        retry_delay: float = 0,
     ) -> DispatchResult:
         request = TaskReportRequest(
             payload=payload,
             targets=tuple(targets),
             policy=self.policy,
-            attempts=attempts,
-            retry_delay=retry_delay,
         )
 
         async def deliver() -> DispatchResult:
@@ -189,7 +184,6 @@ async def dispatch_task_notification(
     *,
     notifications: HostNotificationService,
     task_info: TaskItem | None = None,
-    immediate: bool = True,
 ) -> DispatchResult:
     """统计与即时提醒准备后立即托管；失败反馈不阻塞业务，最终报告另行暂存。"""
 
@@ -205,7 +199,7 @@ async def dispatch_task_notification(
 
     if (
         not notifications.transactions.in_transaction
-        and notifications.tasks.submit_task_notification(deliver, immediate=immediate)
+        and notifications.tasks.submit_task_notification(deliver, immediate=True)
     ):
         return DispatchResult(queued=True)
     return await deliver()

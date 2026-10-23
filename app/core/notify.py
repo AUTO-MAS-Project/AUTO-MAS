@@ -198,7 +198,6 @@ class HostNotificationService:
         targets: list[NotifyTarget],
         *,
         task_info: TaskItem | None = None,
-        immediate: bool = True,
     ) -> DispatchResult:
         from app.core.task_report import dispatch_task_notification
 
@@ -207,7 +206,6 @@ class HostNotificationService:
             targets,
             notifications=self,
             task_info=task_info,
-            immediate=immediate,
         )
 
     def task_notification_batch(

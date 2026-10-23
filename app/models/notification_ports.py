@@ -93,9 +93,6 @@ class PreparedReport(Protocol):
         self,
         payload: NotifyPayload,
         targets: list[NotifyTarget],
-        *,
-        attempts: int = 1,
-        retry_delay: float = 0,
     ) -> DispatchResult: ...
 
 
@@ -147,7 +144,6 @@ class TaskNotifications(NotificationService, LocalNotifier, Protocol):
         targets: list[NotifyTarget],
         *,
         task_info: TaskItem | None = None,
-        immediate: bool = True,
     ) -> DispatchResult: ...
 
     def task_notification_batch(
