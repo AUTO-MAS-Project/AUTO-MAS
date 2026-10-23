@@ -4,11 +4,29 @@ import { queryOptions, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Emulator20Service, Service, type ComboBoxItem, type Emulator2DeviceItem } from '@/api'
 import { queryClient } from '@/services/queryClient'
 import { queryRequest } from '@/utils/queryRequest'
-import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 const DEVICE_QUERY_KEY = ['emulator-device-options'] as const
 
 export type EmulatorDeviceOption = ComboBoxItem & { disabled?: boolean }
+
+/**
+ * 魔改 AVD 目前只支持 MFW 脚本和 MAA：不支持的脚本，设备下拉里的魔改 AVD 实例置灰并在名称后写明原因。
+ * ``isModAvd`` 判断某个设备号是不是魔改 AVD；``allowed`` 为 true（MAA）时原样返回。MFW 脚本页不经过这里。
+ * 后端保存与运行时也会拦，这里只是让用户选之前就看到。
+ */
+const markModAvdOptions = <T extends ComboBoxItem>(
+  options: T[],
+  isModAvd: (value: string | null) => boolean,
+  allowed: boolean,
+  hint: string
+): (T & { disabled?: boolean })[] => {
+  if (allowed) return options
+  return options.map(option =>
+    isModAvd(option.value)
+      ? { ...option, label: `${option.label}（${hint}）`, disabled: true }
+      : option
+  )
+}
 
 const loadEmulatorType = async (emulatorId: string, parentSignal: AbortSignal) => {
   const queryKey = [...DEVICE_QUERY_KEY, emulatorId, 'type']
