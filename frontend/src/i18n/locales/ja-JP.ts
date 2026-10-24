@@ -3169,6 +3169,9 @@ export default {
       azurlane: '開催中のアズールレーンのイベントはありません',
       noData: 'データなし',
     },
+    azurlane: {
+      sourceName: 'アズールレーン Wiki',
+    },
     stella: {
       sourceName: '公式サイト',
       permanent: '常設イベント',

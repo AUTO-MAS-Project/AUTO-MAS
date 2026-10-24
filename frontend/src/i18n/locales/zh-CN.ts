@@ -3692,6 +3692,9 @@ export default {
       azurlane: '暂无进行中的碧蓝航线活动',
       noData: '无数据',
     },
+    azurlane: {
+      sourceName: '碧蓝海事局 WIKI',
+    },
     stella: {
       sourceName: '官网',
       permanent: '常驻活动',

@@ -3821,6 +3821,9 @@ export default {
       azurlane: 'No Azur Lane events running',
       noData: 'No data',
     },
+    azurlane: {
+      sourceName: 'Azur Lane Wiki',
+    },
     stella: {
       sourceName: 'Official site',
       permanent: 'Permanent events',

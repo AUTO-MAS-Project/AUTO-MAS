@@ -43,7 +43,14 @@ const buildOverview = (raw: AzurlaneActivity[]): SraActivityOverview => {
   )
   const upcoming = activities.filter(activity => toTimestamp(activity.startTime) > now)
   const ended = activities.filter(activity => toTimestamp(activity.endTime) <= now)
-  const current = running[0] ?? upcoming[0] ?? ended[ended.length - 1]
+  // 碧蓝航线会同时开着好几期：世界巡游、信标这类是长期玩法，当期海域活动才是主线，
+  // 所以横幅报「最新开的那一场」而不是最早开的那一场。同一时刻开的（如海域活动与
+  // 它的故事集）保持日历里的先后，取先出现的那个
+  const current = running.length
+    ? running.reduce((best, item) =>
+        toTimestamp(item.startTime) > toTimestamp(best.startTime) ? item : best
+      )
+    : (upcoming[0] ?? ended[ended.length - 1])
 
   return {
     Available: true,
