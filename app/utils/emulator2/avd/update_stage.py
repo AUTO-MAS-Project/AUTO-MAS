@@ -82,6 +82,7 @@ from .constants import (
     LOGS_DIR,
     METADATA_FILE,
     MODAVD_MANIFEST_FILE,
+    MODAVD_PLATFORM,
     SHADER_CACHE_DIR,
     UPDATE_DIR,
     UPDATE_HISTORY_KEEP,
@@ -418,11 +419,23 @@ def verify_tree(
 
 
 def check_package_manifest(manifest: dict[str, Any], target: ModAvdVersion) -> None:
-    """包里清单的版本号要和要装的版本一致。"""
+    """包里清单的版本号要和要装的版本一致，``platform`` 要和本机一致（``win-x64``）。
+
+    带清单的都是新写法的版本，清单必须写 ``platform``：缺了、写的是别的平台都拒装。
+    """
     declared = parse_version(manifest.get("version"))
     if declared != target:
         raise PackageError(
             f"包里清单的版本（{manifest.get('version')}）和要装的版本（{target}）不一致"
+        )
+    platform = manifest.get("platform")
+    if not isinstance(platform, str) or not platform.strip():
+        raise PackageError(
+            f"包里清单没写 platform，确认不了是 {MODAVD_PLATFORM} 的包，不装"
+        )
+    if platform.strip().lower() != MODAVD_PLATFORM:
+        raise PackageError(
+            f"这是 {platform} 平台的包，本机要的是 {MODAVD_PLATFORM}，不装"
         )
 
 

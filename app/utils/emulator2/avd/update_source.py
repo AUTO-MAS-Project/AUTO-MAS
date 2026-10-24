@@ -31,7 +31,11 @@ P 是重新打包的次数。GitHub 上的旧 tag ``v37.2.10-masN`` 当作 ``(N,
 
 **下载源可插拔**：:class:`UpdateSource` 只回答「最新一版是什么、包在哪、多大、哈希多少」；
 下载、拼新版、换上都和源无关（:mod:`.updater`、:mod:`.update_stage`）。现在只有 GitHub
-（:class:`GitHubReleaseSource`），以后接别的源时加进 :func:`update_sources` 的列表即可。
+（:class:`GitHubReleaseSource`），以后接别的源时加进 :func:`update_sources` 的列表即可；接 Mirror 酱时
+按 ``os=win``、``arch=x64`` 请求（``constants.MODAVD_MIRROR_OS`` / ``MODAVD_MIRROR_ARCH``）。
+
+**平台**：主包、更新包的文件名和清单的 ``platform`` 带平台（现在只有 ``win-x64``，见
+``constants.MODAVD_PLATFORM``），源码包不带。只认本机平台的包（:func:`package_candidates`）。
 """
 
 from __future__ import annotations
@@ -51,6 +55,7 @@ from app.utils import get_logger
 from .components import read_mod_build
 from .constants import (
     MODAVD_MANIFEST_FILE,
+    MODAVD_PLATFORM,
     MODAVD_RELEASE_API,
     MODAVD_RELEASE_API_ENV,
     UPDATE_API_TIMEOUT_SECONDS,
@@ -226,8 +231,9 @@ class UpdateSourceError(RuntimeError):
 
 @dataclass(frozen=True)
 class RemoteAsset:
-    """要下载的那个包。``top_dir`` 是包里的顶层目录（GitHub 主包 ``ModAVD-<版本>``），
-    更新包没有顶层目录时为空串。``sha256`` 拿不到时为 ``None``（只靠 zip 自带的 CRC）。"""
+    """要下载的那个包。``top_dir`` 是包里的顶层目录（GitHub 主包 ``ModAVD-<ver>-win-x64``，旧版
+    ``ModAVD-37.2.10-masN``），更新包没有顶层目录时为空串。``sha256`` 拿不到时为 ``None``（只靠 zip
+    自带的 CRC）。"""
 
     name: str
     url: str
@@ -291,30 +297,43 @@ def _asset_from_github(item: dict[str, Any], top_dir: str) -> RemoteAsset:
     )
 
 
-def release_from_github(data: object) -> RemoteRelease:
-    """GitHub ``releases/latest`` 的响应 → :class:`RemoteRelease`。
+def package_candidates(tag: str) -> list[tuple[str, str]]:
+    """``tag`` 这一版可以拿来装的包，按优先顺序：``[(附件名, 包里的顶层目录)]``。
 
-    包优先挑 ``ModAVD-<版本>-update.zip``（没有顶层目录）；没有就用主包 ``ModAVD-<版本>.zip``
-    （旧版 ``ModAVD-37.2.10-masN.zip`` 同理），解压时剥掉同名的顶层目录。
+    - 新写法（``vX.Y.Z``）的包名带平台：先要更新包 ``ModAVD-<ver>-win-x64-update.zip``（没有顶层目录），
+      其次主包 ``ModAVD-<ver>-win-x64.zip``（剥掉顶层目录 ``ModAVD-<ver>-win-x64/``）。不带平台的
+      ``ModAVD-<ver>.zip`` / ``-update.zip`` 从没发布过，不认；别的平台的包也不认。
+    - 旧 tag ``v37.2.10-masN`` 只有主包 ``ModAVD-37.2.10-masN.zip``（顶层目录同名）。
     """
+    ver = tag.strip().removeprefix("v")
+    if requires_manifest(tag):
+        stem = f"ModAVD-{ver}-{MODAVD_PLATFORM}"
+        return [(f"{stem}-update.zip", ""), (f"{stem}.zip", stem)]
+    return [(f"ModAVD-{ver}.zip", f"ModAVD-{ver}")]
+
+
+def release_from_github(data: object) -> RemoteRelease:
+    """GitHub ``releases/latest`` 的响应 → :class:`RemoteRelease`。包按 :func:`package_candidates` 的
+    顺序挑第一个有的，解压时剥掉它的顶层目录。"""
     if not isinstance(data, dict):
         raise UpdateSourceError("GitHub 返回的不是 Release 对象")
     tag = str(data.get("tag_name") or "")
     parsed = parse_version(tag)
     if parsed is None:
         raise UpdateSourceError(f"认不出最新版本的 tag: {tag!r}")
-    stem = f"ModAVD-{tag.removeprefix('v')}"
     assets = {
         str(item.get("name")): item
         for item in data.get("assets") or []
         if isinstance(item, dict)
     }
-    if f"{stem}-update.zip" in assets:
-        asset = _asset_from_github(assets[f"{stem}-update.zip"], "")
-    elif f"{stem}.zip" in assets:
-        asset = _asset_from_github(assets[f"{stem}.zip"], stem)
-    else:
-        raise UpdateSourceError(f"{tag} 里没有 {stem}-update.zip 或 {stem}.zip")
+    candidates = package_candidates(tag)
+    found = next(((name, top) for name, top in candidates if name in assets), None)
+    if found is None:
+        wanted = " 或 ".join(name for name, _ in candidates)
+        raise UpdateSourceError(
+            f"{tag} 里没有本机（{MODAVD_PLATFORM}）能用的包 {wanted}"
+        )
+    asset = _asset_from_github(assets[found[0]], found[1])
     return RemoteRelease(
         source="github",
         tag=tag,
@@ -384,6 +403,7 @@ __all__ = [
     "automas_too_old",
     "local_version",
     "newer_changes",
+    "package_candidates",
     "parse_release_body",
     "parse_version",
     "read_manifest_file",

@@ -145,6 +145,16 @@ MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
 MODAVD_FORCE_FULL_PACKAGE_ENV = "AUTO_MAS_MODAVD_FORCE_FULL_PACKAGE"
 #: 包根上的逐文件清单（下一个公开版本 v33.0.0 起才有）。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
+#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑魔改 AVD）。主包、更新包的文件名和清单的
+#: ``platform`` 都带它：``ModAVD-<ver>-win-x64.zip``、``ModAVD-<ver>-win-x64-update.zip``；源码包
+#: ``ModAVD-<ver>-sources.zip`` 不带。以后可能有 ``linux-x64``，更新器只装和这里一致的包。
+MODAVD_PLATFORM_OS = "win"
+MODAVD_PLATFORM_ARCH = "x64"
+MODAVD_PLATFORM = f"{MODAVD_PLATFORM_OS}-{MODAVD_PLATFORM_ARCH}"
+#: 以后接 Mirror 酱时请求带的 ``os`` / ``arch``：ModAVD 按 win / x64 上传（不是 AUTO-MAS 自己的
+#: windows / amd64），请求时必须和上传的完全一致。现在还没接，先留在这里。
+MODAVD_MIRROR_OS = MODAVD_PLATFORM_OS
+MODAVD_MIRROR_ARCH = MODAVD_PLATFORM_ARCH
 #: 更新器在根目录里的工作目录：下载、解包、暂存、上一版都在这里。和根目录同一个盘，换上靠改名。
 UPDATE_DIR = ".update"
 #: 查更新的结果缓存多久（秒），和 MAS 自己检查更新一样 4 小时；用户点「检查更新」不走缓存。
