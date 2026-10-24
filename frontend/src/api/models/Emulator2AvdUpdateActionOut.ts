@@ -20,11 +20,11 @@ export type Emulator2AvdUpdateActionOut = {
      */
     ok?: boolean;
     /**
-     * started 已开始 / instances_running 有实例开着 (看 runningInstances) / busy 正在更新 / up_to_date 已是最新 / automas_too_old 要先更新 AUTO-MAS / check_failed 查不到最新版本 / cancelling 正在取消 / not_cancellable 没有可以取消的下载
+     * started 已开始 / instances_running 有实例开着或正在开机, 什么都没动, 要先关掉 (看 runningInstances) / busy 正在更新 / up_to_date 已是最新 / automas_too_old 要先更新 AUTO-MAS / check_failed 查不到最新版本
      */
     reason?: string;
     /**
-     * 需要先关的实例台数
+     * 开着或正在开机、要先关掉的实例台数
      */
     runningInstances?: number;
 };

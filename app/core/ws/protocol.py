@@ -90,7 +90,7 @@ EMULATOR_NOTICE = "emulator.notice"
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
 
-# 魔改 AVD 更新（下载 / 解包 / 核对 / 关实例 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+# 魔改 AVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
 AVD_UPDATE_PROGRESS = "emulator2.avd-update.progress"
 
 # 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废

@@ -6,10 +6,10 @@ import type { Emulator2AvdUpdateActionOut, Emulator2AvdUpdateStatusOut } from '@
 import { t } from '@/i18n'
 
 /**
- * 魔改 AVD 更新客户端：状态快照（可顺带查更新）、一键更新、取消。
+ * 魔改 AVD 更新客户端：状态快照（可顺带查更新）、一键更新。
  *
  * 业务失败走 ``code !== 200`` + ``message``，HTTP 失败走 ``ApiError``，两种都抛带说明的 Error。
- * 更新「没开始」（如需要先关实例、已是最新）不算接口失败，``ok=false`` 原样返回。
+ * 更新「没开始」（如有实例开着、已是最新）不算接口失败，``ok=false`` 原样返回。
  * ``loading`` 表示有请求在飞，``error`` 是最近一次失败的说明。
  */
 export function useAvdUpdateApi() {
@@ -45,18 +45,12 @@ export function useAvdUpdateApi() {
       'emulator2.avd.update.toast.statusFailed'
     )
 
-  /** ``closeInstances``：有实例开着时换上前先正常关掉；为 false 时只返回要关几台 */
-  const update = (root: string, closeInstances: boolean): Promise<Emulator2AvdUpdateActionOut> =>
+  /** 有实例开着或正在开机时后端什么都不动，返回 ``instances_running`` */
+  const update = (root: string): Promise<Emulator2AvdUpdateActionOut> =>
     call(
-      () => Emulator20Service.avdUpdateApiEmulator2AvdUpdatePost({ root, closeInstances }),
+      () => Emulator20Service.avdUpdateApiEmulator2AvdUpdatePost({ root }),
       'emulator2.avd.update.toast.actionFailed'
     )
 
-  const cancel = (root: string): Promise<Emulator2AvdUpdateActionOut> =>
-    call(
-      () => Emulator20Service.avdUpdateCancelApiEmulator2AvdUpdateCancelPost({ root }),
-      'emulator2.avd.update.toast.actionFailed'
-    )
-
-  return { loading, error, getStatus, update, cancel }
+  return { loading, error, getStatus, update }
 }

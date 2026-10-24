@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type Emulator2AvdUpdateResult = {
     /**
-     * update 换上新版 / prepare 准备新版没成 (取消或失败)
+     * update 换上新版 / prepare 准备新版没成
      */
     action: string;
     /**

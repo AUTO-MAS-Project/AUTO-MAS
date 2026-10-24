@@ -339,7 +339,7 @@ async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event:
 
     一次置位会唤醒所有等待者，所以要循环：醒来后标记已被另一个等待者抢先登记，就接着等它。
     跳出循环和登记之间没有 ``await``，不会有两个同时登记。总共最多等 ``timeout`` 秒，
-    超时记日志、照样登记自己（顶替前一次的标记）再继续：「开机中」这张表是更新器判断能不能换上的
+    超时记日志、照样登记自己（顶替前一次的标记）再继续：「开机中」这张表是更新器判断能不能开始更新的
     依据，不能有开机却不在表里的时候。前一次做完时只删仍是它自己的标记，不会删掉这一次的。
     """
     deadline = time.monotonic() + timeout
@@ -876,8 +876,9 @@ class _AvdCore(DeviceBase):
         return " | ".join(tail)
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
-        if updater.swap_in_progress(self.root):
-            raise RuntimeError("魔改 AVD 正在换上新版，几秒后再开机")
+        # 从点「更新」到更新结束都不许开机：sdk\emulator 会被换掉；用到它的脚本也就不会在更新中途启动
+        if updater.update_in_progress(self.root):
+            raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
         self._check_components()
         # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
         memory_mb = memory_for(instance_meta(self.root, idx))

@@ -135,12 +135,7 @@ class SwapBlocked(RuntimeError):
     """换上前还有程序在用 ``sdk\\emulator``（或第一次改名失败）。什么都没动。"""
 
 
-class UpdateCancelled(RuntimeError):
-    """用户取消了下载 / 解包。"""
-
-
 Progress = Callable[[int, int], None]
-Cancelled = Callable[[], bool]
 
 
 # ---- 目录与状态 ------------------------------------------------------------
@@ -314,7 +309,6 @@ def extract_package(
     *,
     top_dir: str,
     progress: Progress | None = None,
-    cancelled: Cancelled | None = None,
 ) -> int:
     """把整个包解到 ``dest``（先清空），返回文件数。zip 的 CRC 在读完每个条目时由标准库核对。"""
     remove_tree(dest)
@@ -328,8 +322,6 @@ def extract_package(
             target.parent.mkdir(parents=True, exist_ok=True)
             with archive.open(info) as source, open(native_path(target), "wb") as sink:
                 while block := source.read(_COPY_CHUNK):
-                    if cancelled is not None and cancelled():
-                        raise UpdateCancelled("已取消")
                     sink.write(block)
                     done += len(block)
                     if progress is not None:
@@ -374,7 +366,6 @@ def verify_tree(
     manifest: dict[str, Any],
     *,
     progress: Progress | None = None,
-    cancelled: Cancelled | None = None,
 ) -> list[str]:
     """拿清单逐文件比 ``tree``（大小 + SHA-256）。返回对不上的项，全对返回空列表。"""
     expected = manifest_files(manifest)
@@ -394,8 +385,6 @@ def verify_tree(
     def advance(count: int) -> None:
         nonlocal done
         done += count
-        if cancelled is not None and cancelled():
-            raise UpdateCancelled("已取消")
         if progress is not None:
             progress(done, total)
 
@@ -462,7 +451,6 @@ def verify_package(
     *,
     tag: str,
     progress: Progress | None = None,
-    cancelled: Cancelled | None = None,
 ) -> str:
     """核对解开（或按区间拼好）的包：返回 ``manifest``（按清单逐文件核对）或 ``zip``（旧版包没有清单）。
 
@@ -474,7 +462,7 @@ def verify_package(
         raise PackageError(f"{tag} 的包里没有 {MODAVD_MANIFEST_FILE}，不装")
     if manifest is not None:
         check_package_manifest(manifest, target)
-        problems = verify_tree(pkg, manifest, progress=progress, cancelled=cancelled)
+        problems = verify_tree(pkg, manifest, progress=progress)
         if problems:
             shown = "；".join(problems[:5])
             more = f" 等 {len(problems)} 项" if len(problems) > 5 else ""
@@ -569,7 +557,6 @@ def build_patched_package(
     base: ModAvdVersion | None,
     *,
     progress: Progress | None = None,
-    cancelled: Cancelled | None = None,
 ) -> int:
     """用 Mirror 酱的增量包在 ``pkg`` 里拼出新版整包的样子，之后和整包一样按新版清单逐文件核对、拼 ``stage``。
 
@@ -619,8 +606,6 @@ def build_patched_package(
 
         def advance(count: int) -> None:
             nonlocal done
-            if cancelled is not None and cancelled():
-                raise UpdateCancelled("已取消")
             done += count
             if progress is not None:
                 progress(done, total)
@@ -677,7 +662,7 @@ def _staged_marker(root: str | Path) -> Path:
 def begin_staging(root: str | Path, target: dict[str, Any]) -> None:
     """开始准备 ``target``：先把状态改成「正在准备」（不可安装），再动 ``pkg`` / ``stage``。
 
-    之前拼好、还没装的那一版就此作废：准备到一半取消、失败、崩溃，都不会留下一个「可以安装」的
+    之前拼好、还没装的那一版就此作废：准备到一半失败、崩溃，都不会留下一个「可以安装」的
     半成品。
     """
     state = read_state(root)
@@ -721,7 +706,7 @@ def finish_staging(
 
 
 def abort_staging(root: str | Path, reason: str) -> None:
-    """准备没成（取消、失败）：丢掉暂存，状态回到空闲（下载的包留着，下次接着用）。"""
+    """准备没成（失败、MAS 退出）：丢掉暂存，状态回到空闲（下载的包留着，下次接着用）。"""
     state = read_state(root)
     if state.get("phase") not in (PHASE_PREPARING, PHASE_STAGED):
         return
@@ -1244,7 +1229,6 @@ __all__ = [
     "PHASE_SWAPPING",
     "PackageError",
     "SwapBlocked",
-    "UpdateCancelled",
     "abort_staging",
     "begin_staging",
     "build_patched_package",

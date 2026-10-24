@@ -82,11 +82,11 @@ export type Emulator2AvdUpdateStatusOut = {
      */
     preparedVersion?: string;
     /**
-     * 开着的实例台数 (换上前要先关掉)
+     * 开着或正在开机的实例台数; 有就不能更新, 要先关掉
      */
     runningInstances?: number;
     /**
-     * 正在更新
+     * 正在更新 (这段时间这个根目录不许开机)
      */
     busy?: boolean;
     /**

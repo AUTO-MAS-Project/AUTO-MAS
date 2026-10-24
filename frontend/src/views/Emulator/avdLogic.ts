@@ -1,5 +1,5 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮与标记。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -102,28 +102,8 @@ export const isRootAdded = (addedRoots: string[], root: string) =>
  */
 export const versionText = (version?: string | null) => (version ?? '').replace(/^v(?=\d)/, '')
 
-/** 还能取消的阶段（换上一旦开始就不能取消）。 */
-const CANCELLABLE_STAGES = new Set(['downloading', 'extracting', 'verifying'])
-
-/** 更新区的两个按钮：有新版本（或已经下好一版）时能点「更新」；下载、解包、核对中能「取消」。 */
-export const updateActions = (status: Emulator2AvdUpdateStatusOut) => {
-  const busy = Boolean(status.busy)
-  return {
-    update:
-      !busy &&
-      Boolean(status.updatable) &&
-      (Boolean(status.preparedVersion) ||
-        (Boolean(status.updateAvailable) && !status.requiredAutoMas)),
-    cancel: busy && CANCELLABLE_STAGES.has(status.progress?.stage ?? ''),
-  }
-}
-
-/** 路径卡片上的更新标记：低于最低要求 → 需要更新；有新版本 → 有新版本；否则不标。 */
-export const updateBadge = (status: Emulator2AvdUpdateStatusOut) => {
-  if (!status.updatable) return null
-  if (status.belowMinimum)
-    return { kind: 'outdated' as const, version: versionText(status.minimumVersion) }
-  if (status.updateAvailable)
-    return { kind: 'available' as const, version: versionText(status.latestVersion) }
-  return null
-}
+/** 能不能点「更新」：不在更新中，且有新版本（不要求更新 AUTO-MAS）或已经下好一版。 */
+export const canUpdate = (status: Emulator2AvdUpdateStatusOut) =>
+  !status.busy &&
+  Boolean(status.updatable) &&
+  (Boolean(status.preparedVersion) || (Boolean(status.updateAvailable) && !status.requiredAutoMas))

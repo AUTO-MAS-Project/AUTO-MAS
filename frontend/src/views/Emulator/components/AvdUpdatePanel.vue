@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
  * 魔改 AVD 根目录的「模拟器更新」：当前 / 最新版本，一个「更新」按钮（下载、核对、换上一次做完），
- * 进度、结果和取消。
+ * 进度和结果。
  *
- * 有实例开着时后端先返回要关几台，问一句、同意后再让后端只走正常关机关掉它们。进度由后端经 WebSocket
- * 推，操作结束后重新取一次状态。
+ * 点「更新」：有实例开着（或正在开机）就提示先关掉，什么都不动；没有时先确认「更新期间不会启动用到
+ * 这个魔改 AVD 的脚本和实例」，再让后端开始。进度由后端经 WebSocket 推，操作结束后重新取一次状态。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -19,7 +19,7 @@ import {
   type WSAvdUpdateProgressData,
 } from '@/services/websocket/types'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
-import { samePath, updateActions, versionText } from '../avdLogic'
+import { canUpdate, samePath, versionText } from '../avdLogic'
 
 const props = defineProps<{ root: string }>()
 /** 换上成功：组件与电脑检查要跟着刷新 */
@@ -40,9 +40,7 @@ let pollTimer: ReturnType<typeof setTimeout> | null = null
 /** 卸载后在途请求回来，不再更新状态、也不再排下一次轮询 */
 let disposed = false
 
-const actions = computed(() =>
-  status.value ? updateActions(status.value) : { update: false, cancel: false }
-)
+const updatable = computed(() => (status.value ? canUpdate(status.value) : false))
 const current = computed(() => versionText(status.value?.currentVersion))
 const latest = computed(() => versionText(status.value?.latestVersion))
 const minimum = computed(() => versionText(status.value?.minimumVersion))
@@ -100,22 +98,12 @@ const onProgress = (data: WSAvdUpdateProgressData) => {
   }
 }
 
-/** 更新；有实例开着时后端不动手、返回要关几台，问过用户再带 ``closeInstances`` 重来 */
-const run = async (closeInstances: boolean) => {
+/** 确认后开始更新；后端发现有实例开着等原因没开始时把原因提示出来 */
+const start = async () => {
   acting.value = true
   try {
-    const response = await api.update(props.root, closeInstances)
-    if (response.reason === 'instances_running') {
-      Modal.confirm({
-        title: t('emulator2.avd.update.confirmCloseTitle'),
-        content: t('emulator2.avd.update.confirmClose', { count: response.runningInstances }),
-        okText: t('emulator2.avd.update.confirmOk'),
-        cancelText: t('emulator.cancel'),
-        onOk: () => run(true),
-      })
-    } else if (!response.ok) {
-      message.warning(response.message)
-    }
+    const response = await api.update(props.root)
+    if (!response.ok) message.warning(response.message)
   } catch (error) {
     logger.error(`魔改 AVD 更新失败 (${props.root}): ${describe(error)}`)
     message.error(describe(error))
@@ -125,13 +113,33 @@ const run = async (closeInstances: boolean) => {
   }
 }
 
-const cancel = async () => {
+/** 点「更新」：先取一次最新状态，有实例开着（或正在开机）就提示先关掉；没有再确认 */
+const run = async () => {
+  const root = props.root
+  acting.value = true
+  let fresh: Emulator2AvdUpdateStatusOut
   try {
-    const response = await api.cancel(props.root)
-    if (!response.ok) message.warning(response.message)
+    fresh = await api.getStatus(root)
   } catch (error) {
     message.error(describe(error))
+    return
+  } finally {
+    acting.value = false
   }
+  if (disposed || root !== props.root) return
+  status.value = fresh
+  if (fresh.runningInstances) {
+    message.warning(t('emulator2.avd.update.instancesRunning', { count: fresh.runningInstances }))
+    return
+  }
+  if (!canUpdate(fresh)) return
+  Modal.confirm({
+    title: t('emulator2.avd.update.confirmTitle'),
+    content: t('emulator2.avd.update.confirmContent'),
+    okText: t('emulator2.avd.update.confirmOk'),
+    cancelText: t('emulator.cancel'),
+    onOk: start,
+  })
 }
 
 watch(
@@ -212,7 +220,7 @@ onBeforeUnmount(() => {
       </div>
       <a-alert v-else-if="resultType" :type="resultType" show-icon :message="shown?.message" />
       <div class="update-actions">
-        <a-button v-if="actions.update" type="primary" :loading="acting" @click="run(false)">
+        <a-button v-if="updatable" type="primary" :loading="acting" @click="run">
           {{
             prepared
               ? t('emulator2.avd.update.install', { version: prepared })
@@ -223,9 +231,6 @@ onBeforeUnmount(() => {
                   })
                 : t('emulator2.avd.update.updateNoSize', { version: latest })
           }}
-        </a-button>
-        <a-button v-if="actions.cancel" @click="cancel">
-          {{ t('emulator2.avd.update.cancel') }}
         </a-button>
       </div>
     </div>

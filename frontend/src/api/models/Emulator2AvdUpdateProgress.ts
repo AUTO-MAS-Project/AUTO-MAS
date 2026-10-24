@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type Emulator2AvdUpdateProgress = {
     /**
-     * idle / downloading / extracting / verifying / staged (已下载好但这次没换上) / closing / installing / installed / cancelled / failed
+     * idle / downloading / extracting / verifying / staged (已下载好但这次没换上) / installing / installed / failed
      */
     stage?: string;
     /**

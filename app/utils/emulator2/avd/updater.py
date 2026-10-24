@@ -24,21 +24,24 @@
 
 1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问
    GitHub；MAS 设置的「更新源」选了 GitHub 时只问 GitHub），结果缓存 4 小时，更新源设置一改就作废；
-   MAS 启动时在后台查一次，界面打开更新区时按缓存再查。失败只记日志、写在状态里，不弹窗、不挡启动。
-2. **更新**（:func:`update`）：用户点一下，依次
+   界面打开「管理与更新」时查（走缓存）。失败只记日志、写在状态里，不弹窗。
+2. **更新**（:func:`update`）：本根目录有实例开着或正在开机就直接拒绝、请用户先关掉，什么都不动；
+   界面在用户确认「更新期间不会启动用到这个魔改 AVD 的脚本和实例」后才调。开始以后到结束（成功、
+   失败都算）这个根目录一律不许开机（:func:`update_in_progress`，``manager._launch`` 据此拒绝），依次
    - 再查一次最新版本（不走缓存）；
    - 选包（:func:`_pick_package`）：「更新源」不是 GitHub、又填了 Mirror 酱 CDK（MAS 全局的
      ``Update.MirrorChyanCDK``）就向 Mirror 酱现要下载地址，本地正好是起点时要增量包；CDK 过期、
      无效、次数用完、不含此资源，或 Mirror 酱出错时给出提示、改用 GitHub 的整包（8001「这个平台
      没有包」不提示）。「更新源」选 GitHub 时填了 CDK 也不用，只走 GitHub；
-   - 下载到 ``<根>\\.update\\download``（同盘、续传、可取消），按发布记录 / Mirror 酱给的 SHA-256 核对；
+   - 下载到 ``<根>\\.update\\download``（同盘、断了下次续传），按发布记录 / Mirror 酱给的 SHA-256 核对；
      Mirror 酱的地址过期就重新要一次；
    - 整包解到 ``pkg``；增量包按本地清单抄现有文件、按 ``changes.json`` 删改加，拼成整包的样子。然后按
      清单逐文件核对（旧版包没有清单，靠包的 SHA-256 + zip CRC），``sdk\\emulator`` 改名进 ``stage``
      （:mod:`.update_stage`）。增量包拼出来核对不过就丢掉，改下全量包（只退这一次）；
-   - 换上。本根目录有实例开着时先返回要关几台，用户确认后才只走现有的 ``close``（安卓正常关机，
-     不行再 sync + kill）关掉，不硬杀。有实例在开机、有任务在跑、还有程序开着模拟器文件时不换，
+   - 换上。换上前再按进程查一次（挡 MAS 之外手动开的模拟器），还有程序开着模拟器文件就不换，
      停在「已下载好」，下次再点直接换上，不重新下载。
+   有 MAS 任务在跑不再挡更新：开着的实例一开始就拒绝，更新中开机一律被拒，跑着的任务也开不了这个
+   根目录的实例（那一步会失败并写明原因），用别的模拟器的任务不受影响。
 3. **启动恢复**：MAS 启动时（主定时器之前）按 ``state.json`` 补完或退回上次没做完的换上。
 
 设了 ``sdkRoot``（开发用的本地 SDK）的根目录不更新。进度经主 WebSocket 推
@@ -79,7 +82,6 @@ from .components import (
 )
 from .constants import (
     MIN_MOD_AVD_BUILD,
-    POWER_CLOSE_TIMEOUT_SECONDS,
     UPDATE_CHECK_CACHE_SECONDS,
     UPDATE_MIN_FREE_BYTES,
 )
@@ -111,8 +113,6 @@ _DOWNLOAD_ATTEMPTS = 3
 _DOWNLOAD_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 #: 进度消息最密多久发一条。
 _PUBLISH_INTERVAL_SECONDS = 0.5
-#: 还能取消的阶段（换上一旦开始就不能取消）。
-_CANCELLABLE_STAGES = ("downloading", "extracting", "verifying")
 #: Mirror 酱的下载地址过期 / 用过时可能回的状态码：遇到就重新要一次地址。
 _EXPIRED_URL_STATUS = frozenset({401, 403, 404, 410})
 
@@ -138,7 +138,6 @@ class _Runtime:
         self.lock = asyncio.Lock()
         self.job: asyncio.Task[None] | None = None
         self.progress = _Progress()
-        self.cancel_requested = False
         self.published_at = 0.0
         #: 上次没做完的换上已经按 ``state.json`` 收拾过（拿着 ``lock`` 做，见 :func:`_ensure_recovered`）
         self.recovered = False
@@ -151,10 +150,9 @@ class _Runtime:
 
 
 _runtimes: dict[str, _Runtime] = {}
-#: 正在换上的根目录：这段时间不许开机。
-_swapping: set[str] = set()
-#: 后台小任务（启动时查更新）的引用，免得被回收。
-_background: set[asyncio.Task[Any]] = set()
+#: 正在更新的根目录（从点「更新」开始到结束，成功失败都算）：这段时间不许开机，
+#: 用到它的脚本也就不会在更新中途启动它。
+_updating: set[str] = set()
 
 _remote: RemoteRelease | None = None
 _remote_at = 0.0
@@ -171,12 +169,6 @@ def _runtime(root: Path) -> _Runtime:
     if runtime is None:
         runtime = _runtimes[key] = _Runtime(root)
     return runtime
-
-
-def _spawn(coroutine: Any, name: str) -> None:
-    task = asyncio.get_running_loop().create_task(coroutine, name=name)
-    _background.add(task)
-    task.add_done_callback(_background.discard)
 
 
 # ---- 进度 ------------------------------------------------------------------
@@ -234,10 +226,6 @@ def _thread_progress(
     return report
 
 
-def _cancelled(runtime: _Runtime) -> stage.Cancelled:
-    return lambda: runtime.cancel_requested
-
-
 # ---- 根目录 ----------------------------------------------------------------
 
 
@@ -278,12 +266,6 @@ def _ensure_updatable(root: Path) -> None:
         raise ValueError(reason)
 
 
-def _tasks_running() -> bool:
-    from app.core import TaskManager
-
-    return bool(TaskManager.task_handler)
-
-
 def _opening_instances(root: Path) -> list[str]:
     """这个根目录下正在开机（``open`` 还没做完，含开机前检查到拉起 emulator.exe 之间那几秒）的实例。"""
     from .manager import _OPENING
@@ -294,25 +276,11 @@ def _opening_instances(root: Path) -> list[str]:
     )
 
 
-def _swap_blocker(root: Path) -> str:
-    """现在不能换上的原因；能换返回空串。
-
-    有实例在开机就不换：开机前检查到拉起 emulator.exe 之间有几秒，进程表里还看不到它。有任何 MAS
-    任务在跑也不换（任务随时可能去开实例）。
-    """
-    opening = _opening_instances(root)
-    if opening:
-        return f"实例 {'、'.join(opening)} 正在开机，等它开完再更新"
-    if _tasks_running():
-        return "有任务正在运行，请等任务都结束后再更新"
-    return ""
-
-
 def _running_instances(root: Path) -> list[str]:
     """这个根目录下开着的实例（原生索引）。
 
     实例按 AVD 名 + 控制台端口认，各根目录的名字和端口是同一套；只算 qemu 可执行文件就在
-    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来、关掉。
+    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
     """
     from .manager import AvdManager
 
@@ -321,9 +289,14 @@ def _running_instances(root: Path) -> list[str]:
     return sorted(idx for idx, process in running.items() if process.pid in ours)
 
 
-def swap_in_progress(root: str | Path) -> bool:
-    """正在换上：这段时间 ``sdk\\emulator`` 可能不在，开机前检查据此拒绝开机。"""
-    return root_key(root) in _swapping
+def _busy_instances(root: Path) -> list[str]:
+    """开着或正在开机的实例：有就不能更新。"""
+    return sorted(set(_running_instances(root)) | set(_opening_instances(root)))
+
+
+def update_in_progress(root: str | Path) -> bool:
+    """这个根目录正在更新（从点「更新」开始到结束）：开机一律拒绝（``manager._launch``）。"""
+    return root_key(root) in _updating
 
 
 # ---- 查更新 ----------------------------------------------------------------
@@ -466,7 +439,8 @@ def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
         "assetSize": release.asset.size if release and release.asset else 0,
         "phase": state.get("phase", stage.PHASE_IDLE),
         "preparedVersion": _staged_version(root) if not reason else "",
-        "runningInstances": len(_running_instances(root)) if not reason else 0,
+        # 开着或正在开机的实例：有就不能更新（界面据此先提示关掉，不弹确认）
+        "runningInstances": len(_busy_instances(root)) if not reason else 0,
         "busy": runtime.busy,
         "progress": asdict(runtime.progress),
         "lastResult": state.get("lastResult") or None,
@@ -621,7 +595,7 @@ async def _download(
     *,
     refresh: Callable[[], Awaitable[str]] | None = None,
 ) -> Path:
-    """下载 ``release`` 的包（续传、可取消），按发布记录 / Mirror 酱给的 SHA-256 核对。``refresh`` 是
+    """下载 ``release`` 的包（断了续传），按发布记录 / Mirror 酱给的 SHA-256 核对。``refresh`` 是
     Mirror 酱下载地址过期时重新要地址的办法（只用一次）。"""
     root, asset = runtime.root, release.asset
     assert asset is not None
@@ -654,8 +628,6 @@ async def _download(
 
     async def on_bytes(count: int) -> None:
         nonlocal received, window_bytes, window_start, speed
-        if runtime.cancel_requested:
-            raise stage.UpdateCancelled("已取消下载")
         received = max(received + count, 0)
         window_bytes += max(count, 0)
         elapsed = time.monotonic() - window_start
@@ -766,7 +738,6 @@ def _stage_sync(
             archive,
             parse_version(asset.get("base")),
             progress=extracting,
-            cancelled=_cancelled(runtime),
         )
     else:
         files = stage.extract_package(
@@ -774,7 +745,6 @@ def _stage_sync(
             stage.pkg_dir(root),
             top_dir=asset["topDir"],
             progress=extracting,
-            cancelled=_cancelled(runtime),
         )
     version = parse_version(target["version"])
     assert version is not None
@@ -783,7 +753,6 @@ def _stage_sync(
         version,
         tag=target["tag"],
         progress=verifying,
-        cancelled=_cancelled(runtime),
     )
     stage.build_stage(root, version)
     return {"verified": verified, "files": files}
@@ -812,7 +781,7 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
     """下载 ``release`` 的包、拼好核对过，``state`` 停在 ``staged``，返回写进状态的 ``staged``。
 
     动 ``pkg`` / ``stage`` 之前先把状态改成「正在准备」，核对通过、``stage`` 拼好后才写 ``staged``；
-    中途取消、失败都丢掉暂存、回到空闲（下载的包留着，下次接着下；包本身核对不过的才丢）。
+    中途失败（含 MAS 退出）都丢掉暂存、回到空闲（下载的包留着，下次接着下；包本身核对不过的才丢）。
     """
     root = runtime.root
     assert release.asset is not None
@@ -848,12 +817,8 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
         )
         return await asyncio.to_thread(stage.finish_staging, root, target, staged)
     except BaseException as e:
-        reason = (
-            "已取消"
-            if isinstance(e, (stage.UpdateCancelled, asyncio.CancelledError))
-            else str(e)
-        )
-        # 取消、断网留着下载（.part 下次续传）；包本身核对不过的才丢
+        reason = "MAS 退出，没做完" if isinstance(e, asyncio.CancelledError) else str(e)
+        # 断网、MAS 退出留着下载（.part 下次续传）；包本身核对不过的才丢
         if archive is not None and isinstance(e, _BAD_PACKAGE_ERRORS):
             await asyncio.shield(asyncio.to_thread(_discard_download, archive))
         await asyncio.shield(asyncio.to_thread(stage.abort_staging, root, reason))
@@ -914,44 +879,21 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
 # ---- 换上 ------------------------------------------------------------------
 
 
-async def _close_instances(root: Path) -> None:
-    """只走现有的 ``close``（安卓正常关机，不行再 sync + kill），不硬杀。"""
-    from .manager import AvdManager
-    from .service import close_instances
+async def _swap(runtime: _Runtime) -> str:
+    """换上拼好的新版，返回版本号。现在不能换就抛 :class:`~.update_stage.SwapBlocked`，暂存原样留着。
 
-    manager = AvdManager(manager_key_exe(root), 60, False)
-    running = await asyncio.to_thread(_running_instances, root)
-    targets = [
-        (f"{root}#{idx}", lambda m=manager, i=idx: m.close(i)) for idx in running
-    ]
-    if targets:
-        logger.info(f"更新前正常关闭 {root} 的 {len(targets)} 台魔改 AVD 实例")
-        await close_instances(targets, timeout=POWER_CLOSE_TIMEOUT_SECONDS * 2)
-
-
-async def _swap(runtime: _Runtime, *, close: bool) -> str:
-    """换上拼好的新版，返回版本号。现在不能换就抛 :class:`~.update_stage.SwapBlocked`，暂存原样留着。"""
+    更新期间 MAS 不会开这个根目录的实例（:func:`update_in_progress`），这里再查一次进程，挡的是 MAS
+    之外手动开的模拟器；``swap_in`` 改名前还会按可执行文件路径再查一遍。
+    """
     root = runtime.root
-    key = root_key(root)
-    # 判断和登记「正在换上」之间没有 await，和开机（open 先登记自己、_launch 再看「正在换上」）互斥，
-    # 先占先得
-    blocker = _swap_blocker(root)
-    if blocker:
-        raise stage.SwapBlocked(blocker)
-    _swapping.add(key)
-    try:
-        running = await asyncio.to_thread(_running_instances, root)
-        if running and not close:
-            raise stage.SwapBlocked(f"有 {len(running)} 台实例开着")
-        if running:
-            _set(runtime, "closing", message="正在关闭实例（安卓正常关机）")
-            await _publish(runtime)
-            await _close_instances(root)
-        _set(runtime, "installing", message="正在换上新版")
-        await _publish(runtime)
-        return await asyncio.to_thread(stage.swap_in, root)
-    finally:
-        _swapping.discard(key)
+    running = await asyncio.to_thread(_running_instances, root)
+    if running:
+        raise stage.SwapBlocked(
+            f"还有 {len(running)} 台实例开着（不是 MAS 开的），请先关掉"
+        )
+    _set(runtime, "installing", message="正在换上新版")
+    await _publish(runtime)
+    return await asyncio.to_thread(stage.swap_in, root)
 
 
 async def _ensure_recovered(runtime: _Runtime) -> None:
@@ -968,12 +910,19 @@ async def _ensure_recovered(runtime: _Runtime) -> None:
         logger.warning(f"{runtime.root} 的魔改 AVD 更新：{done}")
 
 
-async def _update_job(
-    runtime: _Runtime, release: RemoteRelease | None, *, close: bool
-) -> None:
+async def _update_job(runtime: _Runtime, release: RemoteRelease | None) -> None:
+    """一次更新。调用方（:func:`update`）已经把根目录登记成「正在更新」，这里结束时（成功、失败、
+    MAS 退出都算）撤掉。"""
+    root = runtime.root
+    try:
+        await _run_update(runtime, release)
+    finally:
+        _updating.discard(root_key(root))
+
+
+async def _run_update(runtime: _Runtime, release: RemoteRelease | None) -> None:
     root = runtime.root
     async with runtime.lock:
-        runtime.cancel_requested = False
         runtime.notice = ""
         version = ""
         try:
@@ -990,7 +939,7 @@ async def _update_job(
                 version = await asyncio.to_thread(_staged_version, root)
             if not version:
                 raise _NothingToDo(f"已经是最新版本（{_shown(local)}）")
-            installed = await _swap(runtime, close=close)
+            installed = await _swap(runtime)
             done = f"已更新到 {display_version(installed)}"
             _set(
                 runtime,
@@ -1000,8 +949,6 @@ async def _update_job(
             )
         except _NothingToDo as e:
             _set(runtime, "idle", "idle", str(e))
-        except stage.UpdateCancelled:
-            _set(runtime, "cancelled", "idle", "已取消，下次点「更新」接着下")
         except stage.SwapBlocked as e:
             shown = display_version(version)
             logger.info(f"{root} 的 {shown} 已下载好，这次没换上: {e}")
@@ -1035,12 +982,13 @@ def _action(
     }
 
 
-async def update(root: str, *, close_instances: bool = False) -> dict[str, Any]:
+async def update(root: str) -> dict[str, Any]:
     """「更新」：查最新版、选包下载（Mirror 酱或 GitHub，整包或增量包）、拼新版、按清单核对，然后换上。
     立刻返回，进度看 WebSocket / 状态快照。
 
-    本根目录有实例开着且 ``close_instances`` 为假时不动手，返回要关几台；为真时换上前只走现有的
-    ``close`` 关掉它们。已经下好、核对过的新版不重新下载；查不到最新版本时也照样换上它。
+    本根目录有实例开着或正在开机就什么都不动，返回 ``instances_running``，请用户先关掉。开始以后到
+    结束（成功、失败都算），这个根目录一律不许开机（:func:`update_in_progress`），用到它的脚本也就不会
+    在更新中途把它开起来。已经下好、核对过的新版不重新下载；查不到最新版本时也照样换上它。
     """
     path = await _managed(root)
     _ensure_updatable(path)
@@ -1067,58 +1015,30 @@ async def update(root: str, *, close_instances: bool = False) -> dict[str, Any]:
     else:
         release = None  # 只换上已经下好的那一版
     running = await asyncio.to_thread(_running_instances, path)
-    if running and not close_instances:
-        return _action(
-            "instances_running",
-            f"需要先关闭 {len(running)} 台实例",
-            running=len(running),
-        )
-    # 上面有 await：并发的请求可能已经起了任务，起任务前再看一次（这里到 create_task 之间没有 await）
+    # 从这里到 create_task 之间没有 await：再看一次有没有并发的更新，登记「正在更新」（之后开机一律被拒），
+    # 再看有没有正在开机的。和开机（open 先登记自己、_launch 再看「正在更新」）互斥，两边总有一边看得见
+    # 另一边；开着的实例上面已经按进程查过，开机要几十秒，查完到这里不会冒出一台开好的。
     if runtime.busy:
         return _action("busy", "正在更新，请稍候")
+    busy = sorted(set(running) | set(_opening_instances(path)))
+    if busy:
+        return _action(
+            "instances_running",
+            f"这个魔改 AVD 还有 {len(busy)} 台实例开着，请先关闭再更新",
+            running=len(busy),
+        )
+    _updating.add(root_key(path))
     runtime.job = asyncio.create_task(
-        _update_job(runtime, release, close=close_instances),
-        name=f"avd-update:{path}",
+        _update_job(runtime, release), name=f"avd-update:{path}"
     )
-    return _action("started", "已开始", ok=True, running=len(running))
-
-
-async def cancel(root: str) -> dict[str, Any]:
-    """取消下载 / 解包 / 核对（已下的部分留着，下次接着下）。换上一旦开始不能取消。"""
-    runtime = _runtimes.get(root_key(str(root or "").strip()))
-    if (
-        runtime is None
-        or not runtime.busy
-        or runtime.progress.stage not in _CANCELLABLE_STAGES
-    ):
-        return _action("not_cancellable", "现在没有可以取消的下载")
-    runtime.cancel_requested = True
-    return _action("cancelling", "正在取消", ok=True)
+    return _action("started", "已开始", ok=True)
 
 
 # ---- 启动 ------------------------------------------------------------------
 
 
-async def _startup_check(roots: list[Path]) -> None:
-    targets = [root for root in roots if not _not_updatable_reason(root)]
-    if not targets:
-        return
-    try:
-        current = await asyncio.to_thread(local_version, targets[0])
-        release = await _latest(force=False, current=current)
-    except Exception as e:  # noqa: BLE001 - 启动时查不到只记日志，不弹窗、不挡启动
-        logger.warning(f"启动时检查魔改 AVD 更新失败: {e}")
-        return
-    for root in targets:
-        local = await asyncio.to_thread(local_version, root)
-        if _newer(release, local):
-            logger.info(
-                f"{root} 的魔改 AVD 有新版本：{_shown(local)} → {release.version.display}"
-            )
-
-
 async def startup() -> None:
-    """MAS 启动时：先收拾上次没做完的换上（要在定时器拉起实例之前），再在后台查更新。"""
+    """MAS 启动时收拾上次没做完的换上（要在定时器拉起实例之前）。查更新等用户打开「管理与更新」时再查。"""
     roots = await asyncio.to_thread(_managed_roots)
     for root in roots:
         runtime = _runtime(root)
@@ -1128,13 +1048,11 @@ async def startup() -> None:
                 await _ensure_recovered(runtime)
         except Exception as e:  # noqa: BLE001 - 一个根目录恢复失败不影响别的
             logger.opt(exception=True).error(f"{root} 的魔改 AVD 更新恢复失败: {e}")
-    _spawn(_startup_check(roots), "avd-update-startup-check")
 
 
 __all__ = [
-    "cancel",
     "startup",
     "status",
-    "swap_in_progress",
     "update",
+    "update_in_progress",
 ]

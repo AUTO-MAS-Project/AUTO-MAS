@@ -197,7 +197,6 @@ export type { Emulator2AvdUpdateActionOut } from './models/Emulator2AvdUpdateAct
 export type { Emulator2AvdUpdateIn } from './models/Emulator2AvdUpdateIn';
 export type { Emulator2AvdUpdateProgress } from './models/Emulator2AvdUpdateProgress';
 export type { Emulator2AvdUpdateResult } from './models/Emulator2AvdUpdateResult';
-export type { Emulator2AvdUpdateRootIn } from './models/Emulator2AvdUpdateRootIn';
 export type { Emulator2AvdUpdateStatusIn } from './models/Emulator2AvdUpdateStatusIn';
 export type { Emulator2AvdUpdateStatusOut } from './models/Emulator2AvdUpdateStatusOut';
 export type { Emulator2BatchResult } from './models/Emulator2BatchResult';
