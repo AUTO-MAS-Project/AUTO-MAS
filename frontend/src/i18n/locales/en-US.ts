@@ -3764,6 +3764,7 @@ export default {
       bluearchive: 'Blue Archive events',
       stellasora: 'Stella Sora events',
       infinitynikki: 'Infinity Nikki events',
+      azurlane: 'Azur Lane events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -3778,6 +3779,7 @@ export default {
       bluearchive: 'Blue Archive',
       stellasora: 'Stella Sora',
       infinitynikki: 'Infinity Nikki',
+      azurlane: 'Azur Lane',
       arknights: 'Arknights',
     },
     carousel: {
@@ -3816,6 +3818,7 @@ export default {
       reverse1999: 'No Reverse: 1999 events running',
       stellasora: 'No Stella Sora events running',
       infinitynikki: 'No Infinity Nikki events running',
+      azurlane: 'No Azur Lane events running',
       noData: 'No data',
     },
     stella: {

@@ -69,6 +69,7 @@ from app.models.taskboard import (
     TaskboardDoneRecord,
     TaskboardState,
 )
+from app.tools.azurlane_activity import fetch_azurlane_activities
 from app.tools.bluearchive_activity_source import (
     GAMEKEE_HEADERS,
     fetch_bluearchive_activities,
@@ -107,6 +108,7 @@ class GameCalendarActivityScopeIn(BaseModel):
         "arknights",
         "stellasora",
         "infinitynikki",
+        "azurlane",
     ] = Field(..., description="首页游戏标识")
     server: Literal["cn", "jp", "global"] = Field(
         default="cn", description="碧蓝档案服务器，其它游戏忽略此字段"
@@ -1093,5 +1095,42 @@ async def get_stella_activity() -> InfoOut:
             item["kind"] = classify_activity_name(str(item["name"]))
         logger.info("星塔旅人活动数据改用 SRA 兜底")
         data = fallback
+
+    return InfoOut(data=data)
+
+
+@router.post(
+    "/azurlane/activity",
+    tags=["Get"],
+    summary="获取碧蓝航线活动数据（BWIKI 中转）",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_azurlane_activity() -> InfoOut:
+    """取回碧蓝航线的活动一览。
+
+    数据来自碧蓝海事局 WIKI 的活动日历页：官方站与日服站都是纯前端渲染，HTML 里
+    没有活动内容，GameKee 也没开放这条线，能稳定拿到的只有这份维基文本。日历只写
+    月日，时刻由取数模块按当天 10:00 开始、23:59 结束落到北京时间。
+
+    Returns:
+        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+    """
+
+    try:
+        data = await fetch_azurlane_activities()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_azurlane_activity失败: {type(e).__name__}: {e}"
+        )
+        data = None
+
+    if data is None:
+        return InfoOut(
+            code=500,
+            status="error",
+            message="碧蓝航线活动数据暂不可用",
+            data={},
+        )
 
     return InfoOut(data=data)
