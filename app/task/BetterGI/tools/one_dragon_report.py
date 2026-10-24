@@ -110,6 +110,15 @@ def _clean_step_task(line: str) -> str:
     return s.strip() or "未知任务"
 
 
+def _append_step_warning(step: dict, text: str) -> None:
+    """保留同一节点的不同警告原因，重复日志不反复加入汇总。"""
+    previous = step.get("warning_text")
+    if not previous:
+        step["warning_text"] = text
+    elif text not in previous:
+        step["warning_text"] = f"{previous}；{text}"
+
+
 def _note_step_issue(step: dict, line: str, *, fatal: bool = False) -> None:
     """把一条异常行记入步内问题；命中「致命」信号时额外把该步标记为失败。
 
@@ -131,7 +140,7 @@ def _note_step_issue(step: dict, line: str, *, fatal: bool = False) -> None:
         step.pop("warning_text", None)
     elif warning and not step["fatal"]:
         # 子操作异常或跳过不等同于上游任务失败，作为白名单警告保留。
-        step["warning_text"] = line
+        _append_step_warning(step, line)
 
 
 def _note_step_result(step: dict, line: str) -> bool:
@@ -143,9 +152,49 @@ def _note_step_result(step: dict, line: str) -> bool:
         if match.group(1) == "Skipped":
             step["skipped"] = True
             step.pop("warning_text", None)
+        elif match.group(1) == "Unverified" and step.get("skip_text"):
+            # 已明确无需合成时，没有需要确认的产出，保留跳过原因即可。
+            pass
         else:
             # 结果说明不是执行报错；自定义项目按 issue 判失败，不能混入警告。
-            step["warning_text"] = line
+            _append_step_warning(step, line)
+    return True
+
+
+def _note_step_warning_or_skip(step: dict, line: str, logger_name: str) -> bool:
+    """承接上游明确打印的局部失败、指定次数提前停止和无需合成说明。"""
+    if step.get("fatal"):
+        return False
+    text = line.replace('"', "").replace("：", ":")
+    task, _, detail = text.partition(":")
+    reason = detail.strip()
+    if (
+        logger_name.endswith(".TaskControl")
+        and task == "领取尘歌壶奖励"
+        and reason == "寻找阿圆失败"
+    ):
+        _append_step_warning(step, reason)
+    elif (
+        logger_name.endswith(".AutoBossTask")
+        and task == "自动首领讨伐"
+        and reason
+        in (
+            "指定讨伐次数模式未开启补充树脂，停止讨伐",
+            "补充树脂未成功，停止讨伐",
+        )
+    ):
+        # 只认指定次数模式的停止说明；正常刷到树脂耗尽不额外警告。
+        _append_step_warning(step, reason)
+    elif (
+        logger_name.endswith(".TaskControl")
+        and line == "无需合成浓缩树脂"
+        and not step.get("bgi_project")
+    ):
+        step["skipped"] = True
+        step["skip_text"] = line
+        step.pop("warning_text", None)
+    else:
+        return False
     return True
 
 
@@ -176,11 +225,11 @@ def parse_one_dragon_report(
     """解析「一条龙」分步执行报告，按执行顺序返回步骤字典列表。
 
     每步字段：``index``/``total``（第几条/共几条）、``task``（任务名）、``start``/``end``
-    （起止时间 HH:MM:SS）、``ok``（是否正常收尾且无任务级失败或明确未领取结果）、
+    （起止时间 HH:MM:SS）、``ok``（是否正常收尾且无任务级失败）、
     ``issue_count``/``issue_text``
     （步内可恢复异常数目与首条原因摘要，无异常为空串）。
     ``warning_text`` 保留未确认/部分完成或白名单异常，``skipped`` 保留上游正常跳过；
-    两者均不替上游判负，呈现时也不显示为已确认成功。
+    两者均不替上游判负，呈现时也不显示为已确认成功；收尾领取状态检查仅作警告。
     没有步骤与奖励检查失败时返回 None，调用方据此省略分步区块。
 
     Args:
@@ -291,6 +340,8 @@ def parse_one_dragon_report(
         else:
             if not cur["task"]:
                 cur["task"] = _clean_step_task(line)
+            if _note_step_warning_or_skip(step=cur, line=line, logger_name=logger_name):
+                continue
             if any(h in line for h in _BGI_STEP_ISSUE_HINTS):
                 _note_step_issue(cur, line)
 
@@ -315,6 +366,7 @@ def parse_one_dragon_report(
                     s
                     for s in reversed(steps)
                     if s["task"] in ("领取每日奖励", "前往冒险家协会领取奖励")
+                    and not s.get("skipped")
                 ),
                 None,
             )
@@ -330,18 +382,21 @@ def parse_one_dragon_report(
                 "end": reward_time,
                 "issue": [],
                 "fatal": False,
+                "ok": True,
             }
             steps.append(reward_step)
             for s in steps:
                 s["total"] = len(steps)
-        if reward_uncertain:
-            # 检查报错不是领取失败；保留上游已结束的结果，独立提示无法确认。
-            reward_step["issue"].append(reward_issue)
-            reward_step["warning_text"] = f"奖励领取结果未确认：{reward_issue}"
-            reward_step["ok"] = True
-        else:
-            _note_step_issue(reward_step, reward_issue, fatal=True)
-            reward_step["ok"] = False
+        # BGI 的「未领取」也可能来自尚不可领取、已领取但未识别或检查界面未打开。
+        # 保留检查原文作警告，不据此判执行失败，也不覆盖领取阶段已明确报出的失败。
+        reward_step["issue"].append(reward_issue)
+        if reward_step["ok"]:
+            warning = (
+                f"奖励领取结果未确认：{reward_issue}"
+                if reward_uncertain
+                else reward_issue
+            )
+            _append_step_warning(reward_step, warning)
         reward_step["issue_count"] = len(reward_step["issue"])
         reward_step["issue_text"] = reward_step["issue"][0]
     for s in steps:
@@ -433,8 +488,6 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
                     "issue_text": project["issue"][0].strip()
                     if project["issue"]
                     else "",
-                    # 标记来源：调用方据此单独累加自定义项失败，避免与 MAS 步重复计数。
-                    "bgi_project": True,
                 }
             )
         project = None
@@ -464,8 +517,13 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
                 _note_step_issue(cur, line, fatal=pending_fatal)
             continue
 
+        target = cur if cur is not None else project
+        if target is not None and _note_step_warning_or_skip(
+            step=target, line=line, logger_name=logger_name
+        ):
+            continue
+
         if logger_name.endswith(".TaskRunner"):
-            target = cur if cur is not None else project
             if target is not None and _note_step_result(target, line):
                 continue
 
@@ -528,6 +586,8 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
                 "end": "",
                 "ok": True,
                 "issue": [],
+                # 自定义项失败单独计数；其子操作无需合成，不代表整个项目已跳过。
+                "bgi_project": True,
             }
             project_has_mas = False
             continue

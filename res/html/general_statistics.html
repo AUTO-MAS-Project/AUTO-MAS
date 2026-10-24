@@ -27,7 +27,7 @@
                 {% elif user_result == '代理失败' %}
                 <span class="redhighlight">{{ user_result }}</span>
                 {% else %}
-                {{ user_result }}
+                <span style="white-space: pre-line">{{ user_result }}</span>
                 {% endif %}
             </p>
 
@@ -59,7 +59,9 @@
                         {% else %}
                         <span class="redhighlight">✗ 未完成</span>
                         {% endif %}
-                        {% if s.ok and s.warning_text %}
+                        {% if s.ok and s.skipped and s.skip_text %}
+                        <br><small>{{ s.skip_text }}</small>
+                        {% elif s.ok and s.warning_text %}
                         <br><small>{{ s.warning_text }}</small>
                         {% elif s.issue_text %}<br><small>{{ s.issue_text }}</small>{% endif %}
                     </td>

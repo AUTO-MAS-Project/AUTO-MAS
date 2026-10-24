@@ -84,6 +84,8 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
             text = f"❌ 失败: {task}"
         elif step.get("skipped"):
             text = f"⏭ 跳过: {task}"
+            if step.get("skip_text"):
+                text += f"（{step['skip_text']}）"
         elif step.get("warning_text"):
             text = f"⚠ 异常: {task}（{step['warning_text']}）"
         else:
