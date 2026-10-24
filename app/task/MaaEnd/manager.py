@@ -30,6 +30,7 @@ from app.models.task import ScriptItem, UserItem
 from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
+from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
@@ -512,6 +513,10 @@ class MaaEndManager(ScriptManagerBase):
                     else ()
                 )
                 result = self.build_proxy_report(result_text=user_result_text)
+                if error_images:
+                    result["screenshots"] = screenshot_entries(
+                        [(image.alt, image) for image in error_images]
+                    )
 
                 try:
                     if self.all_users_maintenance_skipped:
