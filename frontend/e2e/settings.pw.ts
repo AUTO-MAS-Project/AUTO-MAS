@@ -1,25 +1,15 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
-// 被驱动的设置项：设置页「Interface」标签的「隐藏关闭按钮」开关。
-// 控件见 frontend/src/views/setting/TabBasic.vue 的 a-switch（字段 UI.IfHideCloseButton），
+// 被驱动的设置项：设置页「Interface」标签的「隐藏关闭按钮」下拉框。
+// 控件见 frontend/src/views/setting/TabBasic.vue:333-341（字段 UI.IfHideCloseButton），
 // 保存路径为 POST /api/setting/update（frontend/src/composables/useSettingsApi.ts:38-65），
 // 后端落盘见 app/api/setting.py:177-198 与 app/core/config.py:3689-3704。
 const closeButtonField = (page: Page) =>
   page.locator('.form-item-vertical').filter({ hasText: 'Hide the close button' })
 
-const closeButtonSwitch = (page: Page) => closeButtonField(page).locator('.ant-switch')
-
-const isChecked = async (page: Page) =>
-  (await closeButtonSwitch(page).getAttribute('class'))?.includes('ant-switch-checked') ?? false
-
-const expectChecked = async (page: Page, checked: boolean) => {
-  if (checked) {
-    await expect(closeButtonSwitch(page)).toHaveClass(/ant-switch-checked/)
-  } else {
-    await expect(closeButtonSwitch(page)).not.toHaveClass(/ant-switch-checked/)
-  }
-}
+const closeButtonValue = (page: Page) =>
+  closeButtonField(page).locator('.ant-select-selection-item')
 
 const waitForSave = (page: Page, ok: boolean) =>
   page.waitForResponse(
@@ -30,11 +20,12 @@ const waitForSave = (page: Page, ok: boolean) =>
     { timeout: 10000 }
   )
 
-// a-switch 是翻转控件：点击前先读当前状态，只在需要时点击。
-const setCloseButton = async (page: Page, checked: boolean) => {
-  if ((await isChecked(page)) !== checked) {
-    await closeButtonSwitch(page).click()
-  }
+const pickCloseButtonValue = async (page: Page, label: string) => {
+  await closeButtonField(page).locator('.ant-select-selector').click()
+  await page
+    .locator('.ant-select-dropdown:visible .ant-select-item-option-content')
+    .filter({ hasText: label })
+    .click()
 }
 
 test.describe('@settings persistence', () => {
@@ -42,39 +33,39 @@ test.describe('@settings persistence', () => {
     await app.goto('/settings')
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
 
-    // 修改设置：隐藏关闭按钮（开关渲染出来即表示设置已加载）
-    await expect(closeButtonSwitch(page)).toBeVisible()
-    const initialState = await isChecked(page)
+    // 修改设置：隐藏关闭按钮（下拉框渲染出当前值即表示设置已加载）
+    await expect(closeButtonValue(page)).toBeVisible()
+    const initialState = (await closeButtonValue(page).innerText()).trim()
+    const nextState = initialState === 'Yes' ? 'No' : 'Yes'
 
     const saved = waitForSave(page, true)
-    await closeButtonSwitch(page).click()
+    await pickCloseButtonValue(page, nextState)
     await saved
 
     // 验证状态已改变
-    await expectChecked(page, !initialState)
+    await expect(closeButtonValue(page)).toHaveText(nextState)
 
     await app.evidence('settings-modified')
 
     // 刷新页面，验证持久化
     await page.reload()
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
-    await expectChecked(page, !initialState)
+    await expect(closeButtonValue(page)).toHaveText(nextState)
 
     await app.evidence('settings-persisted')
 
     // 恢复原状态，避免影响后续用例
     const restored = waitForSave(page, true)
-    await closeButtonSwitch(page).click()
+    await pickCloseButtonValue(page, initialState)
     await restored
-    await expectChecked(page, initialState)
+    await expect(closeButtonValue(page)).toHaveText(initialState)
   })
 
   test('handles save failure gracefully', async ({ app, page }) => {
-    // 保存接口被故意打成 500，属于被测行为：5xx 兜底断言按接口放行
-    app.ignore({ serverError: [/\/api\/setting\/update$/] })
     await app.goto('/settings')
-    await expect(closeButtonSwitch(page)).toBeVisible()
-    const initialState = await isChecked(page)
+    await expect(closeButtonValue(page)).toBeVisible()
+    const initialState = (await closeButtonValue(page).innerText()).trim()
+    const nextState = initialState === 'Yes' ? 'No' : 'Yes'
 
     // 拦截保存请求，模拟后端 500
     // 跨域 POST 会先走 OPTIONS 预检：预检放行，500 响应保留 CORS 头，
@@ -95,15 +86,15 @@ test.describe('@settings persistence', () => {
     })
 
     const failed = waitForSave(page, false)
-    await setCloseButton(page, !initialState)
+    await pickCloseButtonValue(page, nextState)
     await failed
 
     // 等待用户可见的错误提示
     await expect(page.locator('.ant-message-error')).toHaveCount(1)
     await expect(page.locator('.ant-message-error')).toContainText('Internal server error')
 
-    // 界面不假装成功：开关受控于设置对象，保存失败后保持原值
-    await expectChecked(page, initialState)
+    // 界面不假装成功：控件保持原值
+    await expect(closeButtonValue(page)).toHaveText(initialState)
 
     await app.evidence('settings-save-failed')
 
@@ -111,6 +102,6 @@ test.describe('@settings persistence', () => {
     await page.unroute('**/api/setting/update')
     await page.reload()
     await expect(page.getByText('Settings', { exact: true }).first()).toBeVisible()
-    await expectChecked(page, initialState)
+    await expect(closeButtonValue(page)).toHaveText(initialState)
   })
 })

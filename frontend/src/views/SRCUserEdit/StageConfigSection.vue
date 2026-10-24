@@ -334,8 +334,9 @@
               </span>
             </a-tooltip>
           </template>
-          <a-switch
-            v-model:checked="formData.Stage.ExtractReservedTrailblazePower"
+          <BooleanSelect
+            v-model:value="formData.Stage.ExtractReservedTrailblazePower"
+            size="large"
             @change="
               emitSave(
                 'Stage.ExtractReservedTrailblazePower',
@@ -355,8 +356,9 @@
               </span>
             </a-tooltip>
           </template>
-          <a-switch
-            v-model:checked="formData.Stage.UseFuel"
+          <BooleanSelect
+            v-model:value="formData.Stage.UseFuel"
+            size="large"
             @change="emitSave('Stage.UseFuel', formData.Stage.UseFuel)"
           />
         </a-form-item>
@@ -387,6 +389,7 @@
 </template>
 
 <script setup lang="ts">
+import BooleanSelect from '@/components/BooleanSelect.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
