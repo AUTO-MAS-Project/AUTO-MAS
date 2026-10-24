@@ -20,8 +20,8 @@
 
 """魔改 AVD（Android Emulator）后端的固定参数。
 
-模拟器本体由 MAS 从 ModAVD 的 GitHub Release 下载、更新（:mod:`.updater`）；平台工具与系统镜像
-受 Android SDK 许可约束，由包里的「补全组件」脚本从官方渠道下载。这里记它们在根目录里的位置。
+模拟器、平台工具、系统镜像都随模拟器内测包提供，MAS 不下载；只有模拟器本体可以由 MAS 从 ModAVD 的
+GitHub Release 更新（:mod:`.updater`）。这里记它们在根目录里的位置。
 """
 
 from dataclasses import dataclass
@@ -141,8 +141,6 @@ MODAVD_REPOSITORY = "ModAVD/ModAVD"
 MODAVD_RELEASE_API = f"https://api.github.com/repos/{MODAVD_REPOSITORY}/releases/latest"
 #: 只供测试：把上面的查询地址换成本地模拟服务（不进配置、不上界面）。
 MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
-#: 设成 1 时不按区间取、一律下整包（验收比对与应急用，不进配置、不上界面）。
-MODAVD_FORCE_FULL_PACKAGE_ENV = "AUTO_MAS_MODAVD_FORCE_FULL_PACKAGE"
 #: 包根上的逐文件清单（下一个公开版本 v33.0.0 起才有）。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
 #: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑魔改 AVD）。主包、更新包的文件名和清单的
@@ -157,7 +155,7 @@ MODAVD_MIRROR_OS = MODAVD_PLATFORM_OS
 MODAVD_MIRROR_ARCH = MODAVD_PLATFORM_ARCH
 #: 更新器在根目录里的工作目录：下载、解包、暂存、上一版都在这里。和根目录同一个盘，换上靠改名。
 UPDATE_DIR = ".update"
-#: 查更新的结果缓存多久（秒），和 MAS 自己检查更新一样 4 小时；用户点「检查更新」不走缓存。
+#: 查更新的结果缓存多久（秒），和 MAS 自己检查更新一样 4 小时；用户点「更新」时不走缓存。
 UPDATE_CHECK_CACHE_SECONDS = 4 * 3600
 UPDATE_API_TIMEOUT_SECONDS = 15.0
 #: 下载前根目录所在盘至少要剩这么多：暂存约 0.7 GB、下载约 0.3 GB，再留出余量（旧版是改名过去的，

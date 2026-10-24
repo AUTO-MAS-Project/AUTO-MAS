@@ -16,11 +16,11 @@ export type Emulator2AvdUpdateActionOut = {
      */
     message?: string;
     /**
-     * 是否已开始 (或已办成)
+     * 是否已开始
      */
     ok?: boolean;
     /**
-     * started 已开始 / instances_running 有实例开着 (看 runningInstances) / instances_booting 有实例正在开机 / tasks_running 有任务在跑 (手动安装 / 回退要等任务都结束) / busy 正在下载或安装 / not_prepared 还没下载好 / no_previous 没有旧版或旧版不完整
+     * started 已开始 / instances_running 有实例开着 (看 runningInstances) / busy 正在更新 / up_to_date 已是最新 / automas_too_old 要先更新 AUTO-MAS / check_failed 查不到最新版本 / cancelling 正在取消 / not_cancellable 没有可以取消的下载
      */
     reason?: string;
     /**

@@ -4,18 +4,14 @@
 /* eslint-disable */
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
-import type { Emulator2AvdInstallIn } from '../models/Emulator2AvdInstallIn';
-import type { Emulator2AvdInstallStatusOut } from '../models/Emulator2AvdInstallStatusOut';
 import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdLicenseOut } from '../models/Emulator2AvdLicenseOut';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
-import type { Emulator2AvdUpdateActionIn } from '../models/Emulator2AvdUpdateActionIn';
 import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
-import type { Emulator2AvdUpdateCheckIn } from '../models/Emulator2AvdUpdateCheckIn';
-import type { Emulator2AvdUpdateOptionsIn } from '../models/Emulator2AvdUpdateOptionsIn';
+import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
 import type { Emulator2AvdUpdateRootIn } from '../models/Emulator2AvdUpdateRootIn';
+import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
 import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
@@ -392,13 +388,14 @@ export class Emulator20Service {
     }
     /**
      * 查询魔改 AVD 根目录的更新状态
-     * 装着的版本、缓存里的最新版本与公告、下载 / 安装进度、能否回退。不联网。
+     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（现在是
+     * GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。
      * @param requestBody
      * @returns Emulator2AvdUpdateStatusOut Successful Response
      * @throws ApiError
      */
     public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
-        requestBody: Emulator2AvdUpdateRootIn,
+        requestBody: Emulator2AvdUpdateStatusIn,
     ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -411,40 +408,21 @@ export class Emulator20Service {
         });
     }
     /**
-     * 检查魔改 AVD 更新
-     * 问下载源（现在是 GitHub）最新版本，4 小时缓存（``force`` 不走缓存）。查不到不算接口失败，
-     * 原因写在 ``checkError``。返回同状态查询。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateCheckApiEmulator2AvdUpdateCheckPost(
-        requestBody: Emulator2AvdUpdateCheckIn,
-    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 下载魔改 AVD 新版本
-     * 后台下载最新版本、按发布记录的 SHA-256 核对、解包并按清单逐文件核对，拼好等着安装。
-     * 实例开着也能下。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
+     * 更新魔改 AVD
+     * 一键更新：查最新版本，下载整包并按发布记录的 SHA-256 核对，解包后按清单逐文件核对，再换上。
+     * 有实例开着且 ``closeInstances`` 为 false 时不动手，返回 ``instances_running`` 和要关几台。
+     * 现在不能换上（有实例在开机、有任务在跑、文件被占用）时停在「已下载好」，下次直接换上。
+     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
      * @param requestBody
      * @returns Emulator2AvdUpdateActionOut Successful Response
      * @throws ApiError
      */
-    public static avdUpdateDownloadApiEmulator2AvdUpdateDownloadPost(
-        requestBody: Emulator2AvdUpdateRootIn,
+    public static avdUpdateApiEmulator2AvdUpdatePost(
+        requestBody: Emulator2AvdUpdateIn,
     ): CancelablePromise<Emulator2AvdUpdateActionOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/avd/update/download',
+            url: '/api/emulator2/avd/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -454,7 +432,7 @@ export class Emulator20Service {
     }
     /**
      * 取消魔改 AVD 更新下载
-     * 取消下载 / 解包，已下载的部分留着，下次接着下。换上一旦开始不能取消。
+     * 取消下载 / 解包 / 核对，已下载的部分留着，下次接着下。换上一旦开始不能取消。
      * @param requestBody
      * @returns Emulator2AvdUpdateActionOut Successful Response
      * @throws ApiError
@@ -465,123 +443,6 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/update/cancel',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 安装已下载的魔改 AVD 新版本
-     * 把拼好的新版换上：两次目录改名，还有程序开着模拟器文件时什么都不动。有实例开着且
-     * ``closeInstances`` 为 false 时不动手，返回 ``instances_running`` 和要关几台。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateActionOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateInstallApiEmulator2AvdUpdateInstallPost(
-        requestBody: Emulator2AvdUpdateActionIn,
-    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/install',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 魔改 AVD 回到上一版
-     * 新版开不了机时回到上一版（只留一代，新版第一次开机成功后旧版就删了）。实例规则同安装。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateActionOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateRollbackApiEmulator2AvdUpdateRollbackPost(
-        requestBody: Emulator2AvdUpdateActionIn,
-    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/rollback',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 设置魔改 AVD 空闲时自动更新
-     * 「空闲时自动装」开关，存在根目录的 ``.update\prefs.json``。返回同状态查询。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateOptionsApiEmulator2AvdUpdateOptionsPost(
-        requestBody: Emulator2AvdUpdateOptionsIn,
-    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 取《Android SDK 许可协议》全文
-     * 首次安装要补全 adb 与系统镜像（属于 Google，不能再分发），先在界面上展示许可协议全文，
-     * 用户同意后才开始。按补全组件脚本的镜像顺序取。
-     * @returns Emulator2AvdLicenseOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallLicenseApiEmulator2AvdInstallLicensePost(): CancelablePromise<Emulator2AvdLicenseOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/install/license',
-        });
-    }
-    /**
-     * 安装魔改 AVD 到空文件夹
-     * 空文件夹：从 GitHub 下载最新的 ModAVD、核对后装进去，再运行包里的「补全组件」
-     * （tools\fetch-components.ps1 -AcceptLicense）从官方渠道下载 adb 与系统镜像。已经解压好、只缺组件的
-     * 根目录只补全组件。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。装好后走
-     * 原有的添加流程。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateActionOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallStartApiEmulator2AvdInstallStartPost(
-        requestBody: Emulator2AvdInstallIn,
-    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/install/start',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询魔改 AVD 首次安装进度
-     * 首次安装的进度快照（WebSocket 没连上时兜底）。
-     * @param requestBody
-     * @returns Emulator2AvdInstallStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallStatusApiEmulator2AvdInstallStatusPost(
-        requestBody: Emulator2AvdUpdateRootIn,
-    ): CancelablePromise<Emulator2AvdInstallStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/install/status',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

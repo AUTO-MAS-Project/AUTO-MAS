@@ -372,7 +372,7 @@ def main():
             async def init_avd_update() -> None:
                 from app.utils.emulator2.avd import updater as avd_updater
 
-                # 先收拾上次没做完的魔改 AVD 换上 / 回退（几次改名，很快），查更新放后台
+                # 先收拾上次没做完的魔改 AVD 换上（几次改名，很快），查更新放后台
                 await avd_updater.startup()
 
             async def init_stage_info() -> None:

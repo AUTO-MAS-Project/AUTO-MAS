@@ -1,10 +1,9 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新区的按钮。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮与标记。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
 import type {
-  Emulator2AvdChangeEntry,
   Emulator2AvdComponentItem,
   Emulator2AvdPrecheckItem,
   Emulator2AvdUpdateStatusOut,
@@ -104,28 +103,18 @@ export const versionLabel = (build?: string | null, version?: string | null) =>
 /** 还能取消的阶段（换上一旦开始就不能取消）。 */
 const CANCELLABLE_STAGES = new Set(['downloading', 'extracting', 'verifying'])
 
-/** 更新区里哪几个按钮能点。 */
+/** 更新区的两个按钮：有新版本（或已经下好一版）时能点「更新」；下载、解包、核对中能「取消」。 */
 export const updateActions = (status: Emulator2AvdUpdateStatusOut) => {
   const busy = Boolean(status.busy)
-  const updatable = Boolean(status.updatable)
-  const prepared = status.phase === 'staged' && Boolean(status.preparedVersion)
   return {
-    // 已经拼好最新版就不用再下；拼好的是旧一些的版本（之后又出了新版）时可以重下
-    download:
+    update:
       !busy &&
-      updatable &&
-      Boolean(status.updateAvailable) &&
-      !status.requiredAutoMas &&
-      !(prepared && status.preparedVersion === status.latestVersion),
+      Boolean(status.updatable) &&
+      (Boolean(status.preparedVersion) ||
+        (Boolean(status.updateAvailable) && !status.requiredAutoMas)),
     cancel: busy && CANCELLABLE_STAGES.has(status.progress?.stage ?? ''),
-    install: !busy && updatable && prepared,
-    rollback: !busy && updatable && Boolean(status.canRollback),
   }
 }
-
-/** 跳了几版才把机读行里各版的摘要合起来显示：只新一版时，公告正文里已经写着同样的内容。 */
-export const showMergedChanges = (changes: Emulator2AvdChangeEntry[] | undefined) =>
-  (changes ?? []).length > 1
 
 /** 路径卡片上的更新标记：低于最低要求 → 需要更新；有新版本 → 有新版本；否则不标。 */
 export const updateBadge = (status: Emulator2AvdUpdateStatusOut) => {

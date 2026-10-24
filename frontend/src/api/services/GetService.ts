@@ -15,14 +15,11 @@ import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
-import type { Emulator2AvdInstallStatusOut } from '../models/Emulator2AvdInstallStatusOut';
 import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdLicenseOut } from '../models/Emulator2AvdLicenseOut';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
-import type { Emulator2AvdUpdateCheckIn } from '../models/Emulator2AvdUpdateCheckIn';
-import type { Emulator2AvdUpdateRootIn } from '../models/Emulator2AvdUpdateRootIn';
+import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
 import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
@@ -933,71 +930,18 @@ export class GetService {
     }
     /**
      * 查询魔改 AVD 根目录的更新状态
-     * 装着的版本、缓存里的最新版本与公告、下载 / 安装进度、能否回退。不联网。
+     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（现在是
+     * GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。
      * @param requestBody
      * @returns Emulator2AvdUpdateStatusOut Successful Response
      * @throws ApiError
      */
     public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
-        requestBody: Emulator2AvdUpdateRootIn,
+        requestBody: Emulator2AvdUpdateStatusIn,
     ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/update/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查魔改 AVD 更新
-     * 问下载源（现在是 GitHub）最新版本，4 小时缓存（``force`` 不走缓存）。查不到不算接口失败，
-     * 原因写在 ``checkError``。返回同状态查询。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateCheckApiEmulator2AvdUpdateCheckPost(
-        requestBody: Emulator2AvdUpdateCheckIn,
-    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 取《Android SDK 许可协议》全文
-     * 首次安装要补全 adb 与系统镜像（属于 Google，不能再分发），先在界面上展示许可协议全文，
-     * 用户同意后才开始。按补全组件脚本的镜像顺序取。
-     * @returns Emulator2AvdLicenseOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallLicenseApiEmulator2AvdInstallLicensePost(): CancelablePromise<Emulator2AvdLicenseOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/install/license',
-        });
-    }
-    /**
-     * 查询魔改 AVD 首次安装进度
-     * 首次安装的进度快照（WebSocket 没连上时兜底）。
-     * @param requestBody
-     * @returns Emulator2AvdInstallStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallStatusApiEmulator2AvdInstallStatusPost(
-        requestBody: Emulator2AvdUpdateRootIn,
-    ): CancelablePromise<Emulator2AvdInstallStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/install/status',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

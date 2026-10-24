@@ -448,40 +448,20 @@ class Emulator2AvdUpdateRootIn(BaseModel):
     )
 
 
-class Emulator2AvdUpdateCheckIn(Emulator2AvdUpdateRootIn):
-    force: bool = Field(
+class Emulator2AvdUpdateStatusIn(Emulator2AvdUpdateRootIn):
+    check: bool = Field(
         default=False,
-        description="不走 4 小时缓存重新查; 用户点「检查更新」时传 true",
+        description="先查一次最新版本 (走 4 小时缓存); 查不到不算失败, 原因写在 checkError",
     )
 
 
-class Emulator2AvdUpdateActionIn(Emulator2AvdUpdateRootIn):
+class Emulator2AvdUpdateIn(Emulator2AvdUpdateRootIn):
     closeInstances: bool = Field(
         default=False,
         description=(
-            "有实例开着时先关掉它们 (安卓正常关机, 不行再 sync + kill, 不硬杀); "
+            "有实例开着时, 换上前先关掉它们 (安卓正常关机, 不行再 sync + kill, 不硬杀); "
             "为 false 时不动手, 只返回要关几台"
         ),
-    )
-
-
-class Emulator2AvdUpdateOptionsIn(Emulator2AvdUpdateRootIn):
-    autoInstall: bool = Field(
-        ...,
-        description="空闲时自动装: 任务都结束、实例全关时才装 (任务跑完后或 MAS 启动时), 默认关",
-    )
-
-
-class Emulator2AvdChangeGroup(BaseModel):
-    category: str = Field(..., description="分类: 新增 / 变更 / 修复 / 移除 / 说明")
-    items: List[str] = Field(default_factory=list, description="一条一句的摘要")
-
-
-class Emulator2AvdChangeEntry(BaseModel):
-    version: str = Field(..., description="版本号, 如 v34.0.0")
-    label: str = Field(..., description="构建号写法, 如 mas-34")
-    groups: List[Emulator2AvdChangeGroup] = Field(
-        default_factory=list, description="按分类排好的摘要"
     )
 
 
@@ -489,8 +469,8 @@ class Emulator2AvdUpdateProgress(BaseModel):
     stage: str = Field(
         default="idle",
         description=(
-            "idle / downloading / extracting / verifying / staged / closing / installing / "
-            "installed / rolling_back / rolled_back / cancelled / failed"
+            "idle / downloading / extracting / verifying / staged (已下载好但这次没换上) / "
+            "closing / installing / installed / cancelled / failed"
         ),
     )
     status: str = Field(default="idle", description="running / success / failed / idle")
@@ -505,8 +485,7 @@ class Emulator2AvdUpdateProgress(BaseModel):
 
 class Emulator2AvdUpdateResult(BaseModel):
     action: str = Field(
-        ...,
-        description="update 更新 / rollback 回退 / boot 新版开机确认 / prepare 准备新版没成 (取消或失败)",
+        ..., description="update 换上新版 / prepare 准备新版没成 (取消或失败)"
     )
     ok: bool = Field(default=True, description="是否成功")
     version: str = Field(default="", description="涉及的版本号")
@@ -517,7 +496,8 @@ class Emulator2AvdUpdateStatusOut(OutBase):
     root: str = Field(default="", description="根目录")
     updatable: bool = Field(default=False, description="能不能更新")
     notUpdatableReason: str = Field(
-        default="", description="不能更新的原因 (设了 sdkRoot、没有 sdk\\emulator)"
+        default="",
+        description="不能更新的原因 (设了 sdkRoot、mas-avd.json 读不出、没有 sdk\\emulator)",
     )
     currentVersion: str = Field(
         default="",
@@ -529,93 +509,47 @@ class Emulator2AvdUpdateStatusOut(OutBase):
         description="装着的低于 MAS 要求的最低构建号, 开机前检查会拒绝开机",
     )
     minimumBuild: str = Field(default="", description="MAS 要求的最低构建号")
-    checkedAt: Optional[str] = Field(
-        default=None, description="上次查更新的时间; 没查过为 null"
-    )
     checkError: str = Field(default="", description="上次查更新失败的原因")
     latestVersion: str = Field(default="", description="最新版本号; 没查到为空")
     latestBuild: str = Field(default="", description="最新构建号")
-    latestTitle: str = Field(default="", description="最新版本的 Release 标题")
-    releaseUrl: str = Field(default="", description="最新版本的 Release 页面")
     updateAvailable: bool = Field(default=False, description="有比装着的新的版本")
     requiredAutoMas: str = Field(
         default="",
         description="最新版本要求的 AUTO-MAS 最低版本比当前高时给出; 这时不装, 要先更新 AUTO-MAS",
     )
-    announcement: str = Field(
-        default="", description="最新版本的更新公告 (Markdown, 只含分隔行以上)"
-    )
-    changes: List[Emulator2AvdChangeEntry] = Field(
-        default_factory=list,
-        description="比装着的新的各版摘要 (跳版本时合起来), 从新到旧",
-    )
-    assetName: str = Field(default="", description="要下载的包")
-    assetSize: int = Field(default=0, description="包的大小 (字节)")
+    assetSize: int = Field(default=0, description="要下载的包的大小 (字节)")
     phase: str = Field(
         default="idle",
         description=(
-            "idle / preparing 正在下载、拼新版 (不可安装) / staged 已拼好、核对过、可安装 / "
-            "swapping 换上中 / rolling_back 回退中"
+            "idle / preparing 正在下载、拼新版 / staged 已下载并核对好、等着换上 / swapping 换上中"
         ),
     )
-    preparedVersion: str = Field(default="", description="已下载并核对、等着安装的版本")
+    preparedVersion: str = Field(
+        default="", description="已下载并核对好、下次点「更新」直接换上的版本"
+    )
     runningInstances: int = Field(
-        default=0, description="开着的实例台数 (安装前要先关掉)"
+        default=0, description="开着的实例台数 (换上前要先关掉)"
     )
-    busyProcesses: List[str] = Field(
-        default_factory=list,
-        description="没有实例开着、却还有程序在用 sdk\\emulator 里的文件时列出来 (要用户自己关)",
-    )
-    canRollback: bool = Field(default=False, description="能不能回到上一版")
-    previousVersion: str = Field(default="", description="上一版的版本号")
-    awaitingBoot: bool = Field(
-        default=False, description="刚换上的新版还没开过机 (开机成功后删旧版)"
-    )
-    autoInstall: bool = Field(default=False, description="空闲时自动装")
-    busy: bool = Field(default=False, description="正在下载 / 安装 / 回退")
+    busy: bool = Field(default=False, description="正在更新")
     progress: Emulator2AvdUpdateProgress = Field(
-        default_factory=Emulator2AvdUpdateProgress, description="最近一次操作的进度"
+        default_factory=Emulator2AvdUpdateProgress, description="最近一次更新的进度"
     )
     lastResult: Optional[Emulator2AvdUpdateResult] = Field(
-        default=None, description="最近一次换上 / 回退 / 开机确认的结果"
+        default=None, description="最近一次换上 / 准备的结果"
     )
 
 
 class Emulator2AvdUpdateActionOut(OutBase):
-    ok: bool = Field(default=False, description="是否已开始 (或已办成)")
+    ok: bool = Field(default=False, description="是否已开始")
     reason: str = Field(
         default="",
         description=(
             "started 已开始 / instances_running 有实例开着 (看 runningInstances) / "
-            "instances_booting 有实例正在开机 / tasks_running 有任务在跑 (手动安装 / 回退要等任务都结束) / "
-            "busy 正在下载或安装 / not_prepared 还没下载好 / no_previous 没有旧版或旧版不完整"
+            "busy 正在更新 / up_to_date 已是最新 / automas_too_old 要先更新 AUTO-MAS / "
+            "check_failed 查不到最新版本 / cancelling 正在取消 / not_cancellable 没有可以取消的下载"
         ),
     )
     runningInstances: int = Field(default=0, description="需要先关的实例台数")
-
-
-class Emulator2AvdLicenseOut(OutBase):
-    text: str = Field(default="", description="《Android SDK 许可协议》全文")
-    source: str = Field(default="", description="从哪个镜像取到的")
-
-
-class Emulator2AvdInstallIn(BaseModel):
-    root: str = Field(
-        ...,
-        description="要装进去的文件夹: 空文件夹 (下载 ModAVD 再补全组件), 或已经解压好、只缺组件的魔改 AVD 根目录",
-    )
-    acceptLicense: bool = Field(
-        default=False,
-        description="用户已在界面上阅读并同意《Android SDK 许可协议》; 为 false 时拒绝",
-    )
-
-
-class Emulator2AvdInstallStatusOut(OutBase):
-    busy: bool = Field(default=False, description="是否正在安装")
-    progress: Emulator2AvdUpdateProgress = Field(
-        default_factory=Emulator2AvdUpdateProgress,
-        description="最近一次安装的进度; 补全组件时 message 是脚本最新的一行输出",
-    )
 
 
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
@@ -1025,11 +959,12 @@ async def avd_install_apk(
     status_code=200,
 )
 async def avd_update_status(
-    payload: Emulator2AvdUpdateRootIn = Body(...),
+    payload: Emulator2AvdUpdateStatusIn = Body(...),
 ) -> Emulator2AvdUpdateStatusOut:
-    """装着的版本、缓存里的最新版本与公告、下载 / 安装进度、能否回退。不联网。"""
+    """装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（现在是
+    GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。"""
     try:
-        result = await avd_updater.status(payload.root)
+        result = await avd_updater.status(payload.root, check=payload.check)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"avd_update_status失败: {type(e).__name__}: {e}"
@@ -1039,45 +974,25 @@ async def avd_update_status(
 
 
 @router.post(
-    "/avd/update/check",
-    tags=["Get"],
-    summary="检查魔改 AVD 更新",
-    response_model=Emulator2AvdUpdateStatusOut,
-    status_code=200,
-)
-async def avd_update_check(
-    payload: Emulator2AvdUpdateCheckIn = Body(...),
-) -> Emulator2AvdUpdateStatusOut:
-    """问下载源（现在是 GitHub）最新版本，4 小时缓存（``force`` 不走缓存）。查不到不算接口失败，
-    原因写在 ``checkError``。返回同状态查询。"""
-    try:
-        result = await avd_updater.check(payload.root, force=payload.force)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_update_check失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdUpdateStatusOut(**_error(e))
-    return Emulator2AvdUpdateStatusOut(**result)
-
-
-@router.post(
-    "/avd/update/download",
+    "/avd/update",
     tags=["Action"],
-    summary="下载魔改 AVD 新版本",
+    summary="更新魔改 AVD",
     response_model=Emulator2AvdUpdateActionOut,
     status_code=200,
 )
-async def avd_update_download(
-    payload: Emulator2AvdUpdateRootIn = Body(...),
+async def avd_update(
+    payload: Emulator2AvdUpdateIn = Body(...),
 ) -> Emulator2AvdUpdateActionOut:
-    """后台下载最新版本、按发布记录的 SHA-256 核对、解包并按清单逐文件核对，拼好等着安装。
-    实例开着也能下。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。"""
+    """一键更新：查最新版本，下载整包并按发布记录的 SHA-256 核对，解包后按清单逐文件核对，再换上。
+    有实例开着且 ``closeInstances`` 为 false 时不动手，返回 ``instances_running`` 和要关几台。
+    现在不能换上（有实例在开机、有任务在跑、文件被占用）时停在「已下载好」，下次直接换上。
+    立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。"""
     try:
-        result = await avd_updater.start_download(payload.root)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_update_download失败: {type(e).__name__}: {e}"
+        result = await avd_updater.update(
+            payload.root, close_instances=payload.closeInstances
         )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"avd_update失败: {type(e).__name__}: {e}")
         return Emulator2AvdUpdateActionOut(**_error(e))
     return Emulator2AvdUpdateActionOut(**result)
 
@@ -1092,7 +1007,7 @@ async def avd_update_download(
 async def avd_update_cancel(
     payload: Emulator2AvdUpdateRootIn = Body(...),
 ) -> Emulator2AvdUpdateActionOut:
-    """取消下载 / 解包，已下载的部分留着，下次接着下。换上一旦开始不能取消。"""
+    """取消下载 / 解包 / 核对，已下载的部分留着，下次接着下。换上一旦开始不能取消。"""
     try:
         result = await avd_updater.cancel(payload.root)
     except Exception as e:
@@ -1101,143 +1016,3 @@ async def avd_update_cancel(
         )
         return Emulator2AvdUpdateActionOut(**_error(e))
     return Emulator2AvdUpdateActionOut(**result)
-
-
-@router.post(
-    "/avd/update/install",
-    tags=["Action"],
-    summary="安装已下载的魔改 AVD 新版本",
-    response_model=Emulator2AvdUpdateActionOut,
-    status_code=200,
-)
-async def avd_update_install(
-    payload: Emulator2AvdUpdateActionIn = Body(...),
-) -> Emulator2AvdUpdateActionOut:
-    """把拼好的新版换上：两次目录改名，还有程序开着模拟器文件时什么都不动。有实例开着且
-    ``closeInstances`` 为 false 时不动手，返回 ``instances_running`` 和要关几台。"""
-    try:
-        result = await avd_updater.install(
-            payload.root, close_instances=payload.closeInstances
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_update_install失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdUpdateActionOut(**_error(e))
-    return Emulator2AvdUpdateActionOut(**result)
-
-
-@router.post(
-    "/avd/update/rollback",
-    tags=["Action"],
-    summary="魔改 AVD 回到上一版",
-    response_model=Emulator2AvdUpdateActionOut,
-    status_code=200,
-)
-async def avd_update_rollback(
-    payload: Emulator2AvdUpdateActionIn = Body(...),
-) -> Emulator2AvdUpdateActionOut:
-    """新版开不了机时回到上一版（只留一代，新版第一次开机成功后旧版就删了）。实例规则同安装。"""
-    try:
-        result = await avd_updater.rollback(
-            payload.root, close_instances=payload.closeInstances
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_update_rollback失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdUpdateActionOut(**_error(e))
-    return Emulator2AvdUpdateActionOut(**result)
-
-
-@router.post(
-    "/avd/update/options",
-    tags=["Action"],
-    summary="设置魔改 AVD 空闲时自动更新",
-    response_model=Emulator2AvdUpdateStatusOut,
-    status_code=200,
-)
-async def avd_update_options(
-    payload: Emulator2AvdUpdateOptionsIn = Body(...),
-) -> Emulator2AvdUpdateStatusOut:
-    """「空闲时自动装」开关，存在根目录的 ``.update\\prefs.json``。返回同状态查询。"""
-    try:
-        result = await avd_updater.set_options(
-            payload.root, auto_install=payload.autoInstall
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_update_options失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdUpdateStatusOut(**_error(e))
-    return Emulator2AvdUpdateStatusOut(**result)
-
-
-# ---- 魔改 AVD 首次安装 ------------------------------------------------------
-
-
-@router.post(
-    "/avd/install/license",
-    tags=["Get"],
-    summary="取《Android SDK 许可协议》全文",
-    response_model=Emulator2AvdLicenseOut,
-    status_code=200,
-)
-async def avd_install_license() -> Emulator2AvdLicenseOut:
-    """首次安装要补全 adb 与系统镜像（属于 Google，不能再分发），先在界面上展示许可协议全文，
-    用户同意后才开始。按补全组件脚本的镜像顺序取。"""
-    try:
-        result = await avd_updater.sdk_license()
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_install_license失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdLicenseOut(**_error(e))
-    return Emulator2AvdLicenseOut(**result)
-
-
-@router.post(
-    "/avd/install/start",
-    tags=["Action"],
-    summary="安装魔改 AVD 到空文件夹",
-    response_model=Emulator2AvdUpdateActionOut,
-    status_code=200,
-)
-async def avd_install_start(
-    payload: Emulator2AvdInstallIn = Body(...),
-) -> Emulator2AvdUpdateActionOut:
-    """空文件夹：从 GitHub 下载最新的 ModAVD、核对后装进去，再运行包里的「补全组件」
-    （tools\\fetch-components.ps1 -AcceptLicense）从官方渠道下载 adb 与系统镜像。已经解压好、只缺组件的
-    根目录只补全组件。立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。装好后走
-    原有的添加流程。"""
-    try:
-        result = await avd_updater.start_first_install(
-            payload.root, accept_license=payload.acceptLicense
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_install_start失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdUpdateActionOut(**_error(e))
-    return Emulator2AvdUpdateActionOut(**result)
-
-
-@router.post(
-    "/avd/install/status",
-    tags=["Get"],
-    summary="查询魔改 AVD 首次安装进度",
-    response_model=Emulator2AvdInstallStatusOut,
-    status_code=200,
-)
-async def avd_install_status(
-    payload: Emulator2AvdUpdateRootIn = Body(...),
-) -> Emulator2AvdInstallStatusOut:
-    """首次安装的进度快照（WebSocket 没连上时兜底）。"""
-    try:
-        result = avd_updater.first_install_progress(payload.root)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"avd_install_status失败: {type(e).__name__}: {e}"
-        )
-        return Emulator2AvdInstallStatusOut(**_error(e))
-    return Emulator2AvdInstallStatusOut(**result)

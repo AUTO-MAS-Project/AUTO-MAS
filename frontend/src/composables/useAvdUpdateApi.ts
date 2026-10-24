@@ -2,20 +2,14 @@ import { ref } from 'vue'
 
 import { Emulator20Service } from '@/api'
 import { getApiErrorMessage } from '@/utils/apiError'
-import type {
-  Emulator2AvdInstallStatusOut,
-  Emulator2AvdLicenseOut,
-  Emulator2AvdUpdateActionOut,
-  Emulator2AvdUpdateStatusOut,
-} from '@/api'
+import type { Emulator2AvdUpdateActionOut, Emulator2AvdUpdateStatusOut } from '@/api'
 import { t } from '@/i18n'
 
 /**
- * 魔改 AVD 更新客户端：状态快照、检查更新、下载、取消、安装、回退、「空闲时自动装」，以及首次安装
- * （许可协议、装进空文件夹、进度）。
+ * 魔改 AVD 更新客户端：状态快照（可顺带查更新）、一键更新、取消。
  *
  * 业务失败走 ``code !== 200`` + ``message``，HTTP 失败走 ``ApiError``，两种都抛带说明的 Error。
- * 下载 / 安装 / 回退「没开始」（如需要先关实例、已是最新）不算接口失败，``ok=false`` 原样返回。
+ * 更新「没开始」（如需要先关实例、已是最新）不算接口失败，``ok=false`` 原样返回。
  * ``loading`` 表示有请求在飞，``error`` 是最近一次失败的说明。
  */
 export function useAvdUpdateApi() {
@@ -44,23 +38,17 @@ export function useAvdUpdateApi() {
     }
   }
 
-  /** 不联网：装着的版本、缓存里的最新版本、进度 */
-  const getStatus = (root: string): Promise<Emulator2AvdUpdateStatusOut> =>
+  /** ``check``：先查一次最新版本（走后端 4 小时缓存）；不传只读本地状态和缓存 */
+  const getStatus = (root: string, check = false): Promise<Emulator2AvdUpdateStatusOut> =>
     call(
-      () => Emulator20Service.avdUpdateStatusApiEmulator2AvdUpdateStatusPost({ root }),
+      () => Emulator20Service.avdUpdateStatusApiEmulator2AvdUpdateStatusPost({ root, check }),
       'emulator2.avd.update.toast.statusFailed'
     )
 
-  /** ``force``：用户点「检查更新」时不走 4 小时缓存 */
-  const check = (root: string, force = false): Promise<Emulator2AvdUpdateStatusOut> =>
+  /** ``closeInstances``：有实例开着时换上前先正常关掉；为 false 时只返回要关几台 */
+  const update = (root: string, closeInstances: boolean): Promise<Emulator2AvdUpdateActionOut> =>
     call(
-      () => Emulator20Service.avdUpdateCheckApiEmulator2AvdUpdateCheckPost({ root, force }),
-      'emulator2.avd.update.toast.checkFailed'
-    )
-
-  const download = (root: string): Promise<Emulator2AvdUpdateActionOut> =>
-    call(
-      () => Emulator20Service.avdUpdateDownloadApiEmulator2AvdUpdateDownloadPost({ root }),
+      () => Emulator20Service.avdUpdateApiEmulator2AvdUpdatePost({ root, closeInstances }),
       'emulator2.avd.update.toast.actionFailed'
     )
 
@@ -70,73 +58,5 @@ export function useAvdUpdateApi() {
       'emulator2.avd.update.toast.actionFailed'
     )
 
-  /** ``closeInstances``：有实例开着时先正常关掉；为 false 时只返回要关几台 */
-  const install = (root: string, closeInstances: boolean): Promise<Emulator2AvdUpdateActionOut> =>
-    call(
-      () =>
-        Emulator20Service.avdUpdateInstallApiEmulator2AvdUpdateInstallPost({
-          root,
-          closeInstances,
-        }),
-      'emulator2.avd.update.toast.actionFailed'
-    )
-
-  const rollback = (root: string, closeInstances: boolean): Promise<Emulator2AvdUpdateActionOut> =>
-    call(
-      () =>
-        Emulator20Service.avdUpdateRollbackApiEmulator2AvdUpdateRollbackPost({
-          root,
-          closeInstances,
-        }),
-      'emulator2.avd.update.toast.actionFailed'
-    )
-
-  const setAutoInstall = (
-    root: string,
-    autoInstall: boolean
-  ): Promise<Emulator2AvdUpdateStatusOut> =>
-    call(
-      () =>
-        Emulator20Service.avdUpdateOptionsApiEmulator2AvdUpdateOptionsPost({ root, autoInstall }),
-      'emulator2.avd.update.toast.actionFailed'
-    )
-
-  /** 首次安装：《Android SDK 许可协议》全文 */
-  const getLicense = (): Promise<Emulator2AvdLicenseOut> =>
-    call(
-      () => Emulator20Service.avdInstallLicenseApiEmulator2AvdInstallLicensePost(),
-      'emulator2.avd.install.toast.licenseFailed'
-    )
-
-  /** 首次安装：``acceptLicense`` 必须是用户在界面上亲手同意的 */
-  const startInstall = (
-    root: string,
-    acceptLicense: boolean
-  ): Promise<Emulator2AvdUpdateActionOut> =>
-    call(
-      () =>
-        Emulator20Service.avdInstallStartApiEmulator2AvdInstallStartPost({ root, acceptLicense }),
-      'emulator2.avd.install.toast.startFailed'
-    )
-
-  const getInstallStatus = (root: string): Promise<Emulator2AvdInstallStatusOut> =>
-    call(
-      () => Emulator20Service.avdInstallStatusApiEmulator2AvdInstallStatusPost({ root }),
-      'emulator2.avd.install.toast.startFailed'
-    )
-
-  return {
-    loading,
-    error,
-    getLicense,
-    startInstall,
-    getInstallStatus,
-    getStatus,
-    check,
-    download,
-    cancel,
-    install,
-    rollback,
-    setAutoInstall,
-  }
+  return { loading, error, getStatus, update, cancel }
 }

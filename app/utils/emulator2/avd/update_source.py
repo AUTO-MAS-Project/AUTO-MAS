@@ -18,16 +18,14 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新：版本号、版本更新公告与下载源。
+"""魔改 AVD 更新：版本号与下载源。
 
 **版本号**（ModAVD 发版规则）：``v<N>.0.<P>``，N 是构建号（与 ``Pkg.BuildId=mas-N`` 同一个数），
 P 是重新打包的次数。GitHub 上的旧 tag ``v37.2.10-masN`` 当作 ``(N, 0, 0)``。本地版本有清单
 （``modavd-manifest.json``）读清单的 ``version``，没有就把 ``Pkg.BuildId=mas-N`` 当作 ``vN.0.0``。
 
-**公告**（Release 正文）：第一行是机读行 ``<!-- modavd: {...} -->``，分隔行
-``<!-- modavd:github-only -->`` 以上是给 MAS 显示的更新公告，以下只在 GitHub 上看。跳了几版时，
-机读行 ``changes`` 里比本地新的各版摘要合在一起显示。旧版本（mas32 及更早）没有机读行、没有
-分隔行，整篇正文就是公告。
+**Release 正文**只读第一行的机读行 ``<!-- modavd: {...} -->`` 里的 ``min_automas``：比当前 MAS 新就不装、
+提示先更新 MAS。公告不在 MAS 里显示。
 
 **下载源可插拔**：:class:`UpdateSource` 只回答「最新一版是什么、包在哪、多大、哈希多少」；
 下载、拼新版、换上都和源无关（:mod:`.updater`、:mod:`.update_stage`）。现在只有 GitHub
@@ -43,7 +41,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -141,85 +139,22 @@ def automas_too_old(min_automas: object, current: str) -> bool:
         return False
 
 
-# ---- 公告 ------------------------------------------------------------------
-
 _MACHINE_LINE = re.compile(r"<!--\s*modavd:\s*(\{.*\})\s*-->")
-#: 分隔行：以上是更新公告（MAS、Mirror 酱显示），以下只在 GitHub 上看。
-NOTES_SEPARATOR = "<!-- modavd:github-only -->"
-#: 机读行 ``changes`` 里的分类，按这个顺序显示。
-CHANGE_CATEGORIES = ("新增", "变更", "修复", "移除", "说明")
 
 
-@dataclass(frozen=True)
-class ReleaseNotes:
-    """一版的公告：机读行（没有或解析不了时为空字典）与分隔行以上的正文（不含机读行）。"""
-
-    machine: dict[str, Any] = field(default_factory=dict)
-    announcement: str = ""
-
-
-def parse_release_body(body: object) -> ReleaseNotes:
-    """拆 Release 正文：第一行的机读行、分隔行以上的公告。
-
-    没有机读行的是旧版本（mas32 及更早），没有摘要；没有分隔行时整篇都算公告。
-    """
+def parse_min_automas(body: object) -> str:
+    """Release 正文第一行机读行里的 ``min_automas``；没有机读行（mas32 及更早）、没写、解析不了都返回空串。"""
     lines = str(body or "").replace("\r\n", "\n").split("\n")
-    machine: dict[str, Any] = {}
-    if lines and (match := _MACHINE_LINE.fullmatch(lines[0].strip())):
-        try:
-            data = json.loads(match.group(1))
-        except ValueError as e:
-            logger.warning(f"ModAVD 公告的机读行解析失败，按没有摘要处理: {e}")
-        else:
-            if isinstance(data, dict):
-                machine = data
-        lines = lines[1:]
-    upper: list[str] = []
-    for line in lines:
-        if line.strip() == NOTES_SEPARATOR:
-            break
-        upper.append(line)
-    return ReleaseNotes(machine=machine, announcement="\n".join(upper).strip())
-
-
-def newer_changes(
-    machine: dict[str, Any], current: ModAvdVersion | None
-) -> list[dict[str, Any]]:
-    """机读行 ``changes`` 里比本地新的各版摘要，按版本从新到旧：
-    ``[{"version": "v35.0.0", "label": "mas-35", "groups": [{"category": "修复", "items": [...]}]}]``。
-
-    认不出的版本号、形状不对的段直接跳过：公告内容坏掉时只丢摘要，不影响「有新版本」的结论。
-    """
-    changes = machine.get("changes")
-    if not isinstance(changes, dict):
-        return []
-    result: list[tuple[ModAvdVersion, dict[str, Any]]] = []
-    for raw, section in changes.items():
-        parsed = parse_version(raw)
-        if parsed is None or not isinstance(section, dict):
-            continue
-        if current is not None and parsed <= current:
-            continue
-        groups = [
-            {
-                "category": str(category),
-                "items": [item for item in items if isinstance(item, str)],
-            }
-            for category, items in section.items()
-            if isinstance(items, list)
-        ]
-        groups.sort(
-            key=lambda group: (
-                CHANGE_CATEGORIES.index(group["category"])
-                if group["category"] in CHANGE_CATEGORIES
-                else len(CHANGE_CATEGORIES)
-            )
-        )
-        result.append(
-            (parsed, {"version": str(parsed), "label": parsed.label, "groups": groups})
-        )
-    result.sort(key=lambda item: item[0], reverse=True)
-    return [entry for _, entry in result]
+    match = _MACHINE_LINE.fullmatch(lines[0].strip()) if lines else None
+    if not match:
+        return ""
+    try:
+        data = json.loads(match.group(1))
+    except ValueError as e:
+        logger.warning(f"ModAVD 公告的机读行解析失败，按不限制 AUTO-MAS 版本处理: {e}")
+        return ""
+    value = data.get("min_automas") if isinstance(data, dict) else None
+    return value.strip() if isinstance(value, str) else ""
 
 
 # ---- 下载源 ----------------------------------------------------------------
@@ -244,15 +179,12 @@ class RemoteAsset:
 
 @dataclass(frozen=True)
 class RemoteRelease:
-    """下载源报出的最新一版。"""
+    """下载源报出的最新一版。``min_automas`` 是它要求的最低 AUTO-MAS 版本（没要求为空串）。"""
 
     source: str
     tag: str
     version: ModAvdVersion
-    title: str
-    page_url: str
-    published_at: str
-    notes: ReleaseNotes
+    min_automas: str
     asset: RemoteAsset
 
     def as_dict(self) -> dict[str, Any]:
@@ -333,16 +265,12 @@ def release_from_github(data: object) -> RemoteRelease:
         raise UpdateSourceError(
             f"{tag} 里没有本机（{MODAVD_PLATFORM}）能用的包 {wanted}"
         )
-    asset = _asset_from_github(assets[found[0]], found[1])
     return RemoteRelease(
         source="github",
         tag=tag,
         version=parsed,
-        title=str(data.get("name") or tag),
-        page_url=str(data.get("html_url") or ""),
-        published_at=str(data.get("published_at") or ""),
-        notes=parse_release_body(data.get("body")),
-        asset=asset,
+        min_automas=parse_min_automas(data.get("body")),
+        asset=_asset_from_github(assets[found[0]], found[1]),
     )
 
 
@@ -391,20 +319,16 @@ def update_sources() -> list[UpdateSource]:
 
 
 __all__ = [
-    "CHANGE_CATEGORIES",
-    "NOTES_SEPARATOR",
     "GitHubReleaseSource",
     "ModAvdVersion",
-    "ReleaseNotes",
     "RemoteAsset",
     "RemoteRelease",
     "UpdateSource",
     "UpdateSourceError",
     "automas_too_old",
     "local_version",
-    "newer_changes",
     "package_candidates",
-    "parse_release_body",
+    "parse_min_automas",
     "parse_version",
     "read_manifest_file",
     "release_from_github",

@@ -18,32 +18,30 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 更新的本机文件操作：解包、拼新版、核对、换上、回退、崩溃恢复。不联网。
+"""魔改 AVD 更新的本机文件操作：解包、拼新版、核对、换上、崩溃恢复。不联网。
 
 根目录里更新器只用自己的 ``.update``（和根目录同一个盘，换上靠改名）::
 
     .update\\state.json          阶段与换上计划（先写临时文件再替换）
-    .update\\prefs.json          「空闲时自动装」
     .update\\download\\          下载的包（``.part`` 续传）
     .update\\pkg\\               包解开后的样子（已剥掉顶层目录）
     .update\\stage\\emulator\\   拼好、核对过的新 ``sdk\\emulator``（``stage\\staged.json`` 记版本与摘要）
-    .update\\previous\\          上一版：``emulator\\`` 与被替换的包内文件（``root\\``），只留一代
-    .update\\previous-old\\      换上时临时挪开的上一代旧版，换上成功后删
-    .update\\discard\\           回退时换下来的新版，回退完就删
+    .update\\previous\\          换上中的旧版：``emulator\\`` 与被替换的包内文件（``root\\``），换完就删
     .update\\trash\\             要删的目录先改名到这里、写好状态后再删
 
 根目录里不属于包的东西一律不碰：``avd\\``、``mas-avd.json``（只改 ``components.emulator`` 并记一条
 ``updateHistory``，读不出时不写）、``sdk\\`` 下 ``emulator`` 以外的目录、``downloads\\``、``logs\\`` 等。
 
 准备新版时先把状态改成「正在准备」（不可安装），核对通过、``stage`` 拼好后才写 ``staged``，并给暂存
-记下「路径 + 大小 + 修改时间」摘要；换上前按摘要核对暂存没被动过。上一版同样记摘要，残缺了不能回退。
+记下「路径 + 大小 + 修改时间」摘要；换上前按摘要核对暂存没被动过。
 
 换上只有两次目录改名（``sdk\\emulator`` → ``previous``、``stage`` → ``sdk\\emulator``）。改名前先按
 进程的可执行文件路径确认没有程序在用 ``sdk\\emulator``（正在运行的 exe 不挡目录改名，见
-:func:`ensure_not_in_use`）；还有文件被不带共享删除地打开着时，第一次改名失败，什么都没动。包里其他文件（``tools``、``LICENSES``、
-``components``、两个 bat、``说明.txt``、清单）逐个从 ``pkg`` 替换过去（``pkg`` 里的就是写好的临时
-文件），替换前先备份进 ``previous\\root``。每一步之前都把下一步写进 ``state.json``，MAS 中途退出时
-:func:`recover` 按它补完或退回。
+:func:`ensure_not_in_use`）；还有文件被不带共享删除地打开着时，第一次改名失败，什么都没动。包里其他
+文件（``tools``、``LICENSES``、``components``、两个 bat、``说明.txt``、清单）逐个从 ``pkg`` 替换过去
+（``pkg`` 里的就是写好的临时文件），替换前先备份进 ``previous\\root``。每一步之前都把下一步写进
+``state.json``，MAS 中途退出时 :func:`recover` 按它补完或退回；``previous`` 留到换上做完、写好状态
+之后才挪进 ``trash`` 删掉。不留旧版、不能回退。
 """
 
 from __future__ import annotations
@@ -99,12 +97,11 @@ from .update_source import (
 logger = get_logger("魔改 AVD 更新")
 
 #: ``state.json`` 的 ``phase``：idle 没有待装的 / preparing 正在下载、拼新版（不可安装）/
-#: staged 新版已拼好核对过、可以安装 / swapping 换上中 / rolling_back 回退中
+#: staged 新版已拼好核对过、可以安装 / swapping 换上中
 PHASE_IDLE = "idle"
 PHASE_PREPARING = "preparing"
 PHASE_STAGED = "staged"
 PHASE_SWAPPING = "swapping"
-PHASE_ROLLING_BACK = "rolling_back"
 
 _EMULATOR_REL = "sdk/emulator"
 #: 包里不许出现、更新器也绝不碰的顶层目录（小写比较）：实例、下载的 Google 组件、日志、MAS 运行期产物。
@@ -133,7 +130,7 @@ class PackageError(RuntimeError):
 
 
 class SwapBlocked(RuntimeError):
-    """换上 / 回退前还有程序在用 ``sdk\\emulator``（或第一次改名失败）。什么都没动。"""
+    """换上前还有程序在用 ``sdk\\emulator``（或第一次改名失败）。什么都没动。"""
 
 
 class UpdateCancelled(RuntimeError):
@@ -213,14 +210,6 @@ def read_state(root: str | Path) -> dict[str, Any]:
 def write_state(root: str | Path, state: dict[str, Any]) -> None:
     state["updatedAt"] = datetime.now().isoformat(timespec="seconds")
     write_json_atomic(update_dir(root) / "state.json", state)
-
-
-def read_prefs(root: str | Path) -> dict[str, Any]:
-    return _read_json(update_dir(root) / "prefs.json")
-
-
-def write_prefs(root: str | Path, prefs: dict[str, Any]) -> None:
-    write_json_atomic(update_dir(root) / "prefs.json", prefs)
 
 
 # ---- 包内路径 --------------------------------------------------------------
@@ -523,7 +512,7 @@ def begin_staging(root: str | Path, target: dict[str, Any]) -> None:
     """开始准备 ``target``：先把状态改成「正在准备」（不可安装），再动 ``pkg`` / ``stage``。
 
     之前拼好、还没装的那一版就此作废：准备到一半取消、失败、崩溃，都不会留下一个「可以安装」的
-    半成品。上一版（回退用）的记录原样保留。
+    半成品。
     """
     state = read_state(root)
     write_state(
@@ -531,7 +520,6 @@ def begin_staging(root: str | Path, target: dict[str, Any]) -> None:
         {
             "phase": PHASE_PREPARING,
             "target": target,
-            "previous": state.get("previous"),
             "lastResult": state.get("lastResult"),
         },
     )
@@ -560,7 +548,6 @@ def finish_staging(
             "phase": PHASE_STAGED,
             "target": target,
             "staged": staged,
-            "previous": state.get("previous"),
             "lastResult": state.get("lastResult"),
         },
     )
@@ -577,7 +564,6 @@ def abort_staging(root: str | Path, reason: str) -> None:
         root,
         {
             "phase": PHASE_IDLE,
-            "previous": state.get("previous"),
             "lastResult": {"action": "prepare", "ok": False, "error": reason},
         },
     )
@@ -680,7 +666,7 @@ def ensure_not_in_use(root: str | Path, verb: str) -> None:
 
 
 def ensure_metadata_readable(root: str | Path) -> None:
-    """``mas-avd.json`` 在却读不出时不动手：换上 / 回退最后要改它，读不出就会拿空内容盖掉原文件。"""
+    """``mas-avd.json`` 在却读不出时不动手：换上最后要改它，读不出就会拿空内容盖掉原文件。"""
     try:
         read_metadata_strict(root)
     except MetadataUnreadable as e:
@@ -689,7 +675,7 @@ def ensure_metadata_readable(root: str | Path) -> None:
 
 def plan_root_files(root: str | Path) -> dict[str, list[str]]:
     """包里 ``sdk\\emulator`` 以外的文件怎么换：``replace`` 覆盖、``delete`` 删（旧清单里有、新包里没有的；
-    没有旧清单就不删）、``created`` 是原来没有、这次新建的（回退时删掉）。"""
+    没有旧清单就不删）、``created`` 是原来没有、这次新建的（换上中途退回旧版时删掉）。"""
     root = Path(root)
     new = sorted(walk_files(pkg_dir(root)))
     new_keys = {rel.lower() for rel in new}
@@ -877,11 +863,11 @@ def trash_bytes(root: str | Path) -> int:
 
 
 def _finish_install(root: Path, state: dict[str, Any]) -> None:
-    """换上的收尾：记 ``mas-avd.json``，暂存与下载改名进 ``trash``，写状态（记下上一版和它的摘要，等第一次
-    开机确认），最后才真删。
+    """换上的收尾：记 ``mas-avd.json``，写状态（空闲），再把旧版（``previous``：换下来的 ``sdk\\emulator``
+    与被替换的包内文件备份）、暂存与下载改名进 ``trash``，最后才真删。
 
-    暂存、下载、上一代旧版这些挪不走（比如杀软正开着下载的包）不算失败：新版已经换上，只记日志留到
-    下次清理（:func:`_tidy_up`），照样写好状态，回退也照样可用。
+    旧版留到写完状态才挪走：在那之前 MAS 退出，:func:`recover` 还能按 ``previous`` 补完或退回。这些
+    挪不走（比如杀软正开着下载的包）不算失败：新版已经换上，只记日志、留到下次清理（:func:`_tidy_up`）。
     """
     target = state["target"]
     _record_history(
@@ -893,29 +879,12 @@ def _finish_install(root: Path, state: dict[str, Any]) -> None:
             "to": target["version"],
             "source": target.get("source", ""),
             "asset": target.get("asset", {}).get("name", ""),
-            "mode": (state.get("staged") or {}).get("mode", "full"),
         },
-    )
-    # 装好了，下载的包不再要（别的根目录要用时已经链接 / 复制走了）
-    _tidy_up(
-        root,
-        pkg_dir(root),
-        stage_emulator_dir(root).parent,
-        update_dir(root) / "previous-old",
-        download_dir(root),
     )
     write_state(
         root,
         {
             "phase": PHASE_IDLE,
-            "previous": {
-                "version": state.get("from") or "",
-                "installed": target["version"],
-                "installedAt": datetime.now().isoformat(timespec="seconds"),
-                "awaitingBoot": True,
-                "plan": state["plan"],
-                "fingerprint": tree_fingerprint((previous_dir(root), "")),
-            },
             "lastResult": {
                 "action": "update",
                 "ok": True,
@@ -923,30 +892,30 @@ def _finish_install(root: Path, state: dict[str, Any]) -> None:
             },
         },
     )
+    # 装好了，下载的包也不再要
+    _tidy_up(
+        root,
+        previous_dir(root),
+        pkg_dir(root),
+        stage_emulator_dir(root).parent,
+        download_dir(root),
+    )
     purge_trash(root)
 
 
-def _restore_older(root: Path) -> bool:
-    """换上没成：这次换上之前挪开的上一代旧版（``previous-old``）挪回 ``previous``。
-
-    ``previous`` 里这时只有这次刚做的包内文件备份，先丢进 ``trash``。没有 ``previous-old`` 时也把这些备份丢掉。
-    返回是否挪回了上一代旧版。
-    """
-    older = update_dir(root) / "previous-old"
-    _to_trash(root, previous_dir(root))
-    restored = False
-    if os.path.lexists(native_path(older)):
-        _rename(older, previous_dir(root))
-        restored = True
+def _back_to_staged(root: Path, state: dict[str, Any]) -> None:
+    """第一次改名没成或已复原（``sdk\\emulator`` 还是旧版）：写回「待安装」，再丢掉这次做的包内文件备份。"""
+    state.update(phase=PHASE_STAGED, swap=None, plan=None)
+    write_state(root, state)
+    _tidy_up(root, previous_dir(root))
     purge_trash(root)
-    return restored
 
 
 def swap_in(root: str | Path) -> str:
     """把 ``staged`` 的新版换上。返回换上的版本号。
 
     换上前核对暂存确是 ``state.json`` 记的那一版（不对就丢掉暂存、拒装）、``mas-avd.json`` 读得出、
-    没有程序在用 ``sdk\\emulator``；第一次改名失败抛 :class:`SwapBlocked`，什么都没动。
+    没有程序在用 ``sdk\\emulator``；第一次改名失败抛 :class:`SwapBlocked`，什么都没动、还是「待安装」。
     调用方要先确认没有实例在跑、在开机（只走 MAS 的 close 关实例，不硬杀）。
     """
     root = Path(root)
@@ -955,27 +924,20 @@ def swap_in(root: str | Path) -> str:
     ensure_metadata_readable(root)
     ensure_not_in_use(root, "装")
     current = local_version(root)
-    # 只留一代旧版：上一次更新留下、还没等到开机确认的那份先挪开（记在 previousBefore），换上成功
-    # 后再删；第一次改名失败、或中途崩溃退回旧版时挪回来，等于什么都没动
-    older = update_dir(root) / "previous-old"
+    # 上次收尾没挪走的旧版（不在换上中，留着没用）先丢掉，免得和这次的备份混在一起
     try:
-        _to_trash(root, older, update_dir(root) / "discard")
+        _to_trash(root, previous_dir(root))
     except OSError as e:
         raise SwapBlocked(
             f"上次留下、要删的旧版文件还被占用（{e.strerror or e}），什么都没动，稍后再试"
         ) from e
     purge_trash(root)
-    saved_previous = state.get("previous")
-    if os.path.lexists(native_path(previous_dir(root))):
-        _rename(previous_dir(root), older)
     plan = plan_root_files(root)
     _backup_root_files(root, plan)
     state.update(
         phase=PHASE_SWAPPING,
         plan=plan,
         swap={"step": "begin"},
-        previous=None,
-        previousBefore=saved_previous,
         **{"from": str(current) if current else ""},
     )
     write_state(root, state)
@@ -985,15 +947,7 @@ def swap_in(root: str | Path) -> str:
     try:
         _rename(emulator_dir(root), old_target)
     except OSError as e:
-        _restore_older(root)
-        state.update(
-            phase=PHASE_STAGED,
-            swap=None,
-            plan=None,
-            previous=saved_previous,
-            previousBefore=None,
-        )
-        write_state(root, state)
+        _back_to_staged(root, state)
         raise SwapBlocked(
             f"模拟器文件还在被占用（{e.strerror or e}），什么都没动。请先关掉所有实例和用到"
             "模拟器的程序再装"
@@ -1005,15 +959,7 @@ def swap_in(root: str | Path) -> str:
             _rename(stage_emulator_dir(root), emulator_dir(root))
         except OSError as e:
             _rename(old_target, emulator_dir(root))
-            _restore_older(root)
-            state.update(
-                phase=PHASE_STAGED,
-                swap=None,
-                plan=None,
-                previous=saved_previous,
-                previousBefore=None,
-            )
-            write_state(root, state)
+            _back_to_staged(root, state)
             raise SwapBlocked(f"换上新版失败，已恢复原样: {e}") from e
         state["swap"] = {"step": "new_moved"}
         write_state(root, state)
@@ -1038,34 +984,8 @@ def _recover_now(root: Path) -> str:
         return f"当场恢复也失败了（{error}），重启 MAS 时会再按记录恢复"
 
 
-# ---- 回退与开机确认 ----------------------------------------------------------
-
-
-def previous_problem(root: str | Path, state: dict[str, Any] | None = None) -> str:
-    """上一版能不能拿来回退：返回不能的原因，能用返回空串。
-
-    除了目录在不在，还要和换上时记下的摘要（文件、大小、修改时间）一致：删上一版删到一半
-    （文件被占用、进程被杀）留下的残缺目录不能换回去。
-    """
-    state = read_state(root) if state is None else state
-    previous = state.get("previous")
-    if not isinstance(previous, dict) or not previous:
-        return "没有可以回退的旧版"
-    if not os.path.isdir(native_path(previous_dir(root) / "emulator")):
-        return "旧版已经删掉了"
-    fingerprint = previous.get("fingerprint")
-    if not fingerprint:
-        return "换上时没有记下旧版的文件摘要，确认不了旧版完整，不能回退"
-    if fingerprint != tree_fingerprint((previous_dir(root), "")):
-        return "旧版和换上时记下的不一致（文件被删改过，或删到一半），不能回退"
-    return ""
-
-
-def can_rollback(root: str | Path) -> bool:
-    return not previous_problem(root)
-
-
 def _restore_root_files(root: Path, plan: dict[str, list[str]]) -> None:
+    """换上到一半退回旧版：删掉这次新建的包内文件，被覆盖 / 删掉的从 ``previous\\root`` 还原。"""
     backup = previous_dir(root) / "root"
     for rel in plan.get("created", []):
         target = resolve_within(root, rel, resolve_links=False)
@@ -1082,134 +1002,6 @@ def _restore_root_files(root: Path, plan: dict[str, list[str]]) -> None:
             )
 
 
-def _finish_rollback(root: Path, state: dict[str, Any]) -> None:
-    """回退的收尾：包内文件从备份还原、记 ``mas-avd.json``，换下来的新版、旧版目录与暂存改名进
-    ``trash``，写状态，最后才真删。"""
-    previous = state.get("previous") or {}
-    _restore_root_files(root, previous.get("plan") or {})
-    _record_history(
-        root,
-        {
-            "action": "rollback",
-            "at": datetime.now().isoformat(timespec="seconds"),
-            "from": previous.get("installed", ""),
-            "to": previous.get("version", ""),
-        },
-    )
-    # 回退前若还拼好了更新的一版，它的暂存一并丢掉（下载的包还在，再装时重新拼）。挪不走的只记日志、
-    # 留到下次清理，不影响回退结果
-    _tidy_up(
-        root,
-        update_dir(root) / "discard",
-        previous_dir(root),
-        pkg_dir(root),
-        stage_emulator_dir(root).parent,
-    )
-    write_state(
-        root,
-        {
-            "phase": PHASE_IDLE,
-            "lastResult": {
-                "action": "rollback",
-                "ok": True,
-                "version": previous.get("version", ""),
-            },
-        },
-    )
-    purge_trash(root)
-
-
-def rollback(root: str | Path) -> str:
-    """反过来改名两次，回到上一版；包内其他文件从 ``previous\\root`` 恢复。返回回到的版本号。
-
-    上一版要和换上时记下的摘要一致才回退；第一次改名失败抛 :class:`SwapBlocked`，什么都没动。
-    """
-    root = Path(root)
-    state = read_state(root)
-    if state.get("phase") in (PHASE_SWAPPING, PHASE_ROLLING_BACK):
-        raise PackageError("上一次换上 / 回退还没收尾，请重启 MAS 后再试")
-    problem = previous_problem(root, state)
-    if problem:
-        raise PackageError(problem)
-    ensure_metadata_readable(root)
-    ensure_not_in_use(root, "回退")
-    old = previous_dir(root) / "emulator"
-    discard = update_dir(root) / "discard"
-    try:
-        _to_trash(root, discard)
-    except OSError as e:
-        raise SwapBlocked(
-            f"上次回退换下来、要删的文件还被占用（{e.strerror or e}），什么都没动，稍后再试"
-        ) from e
-    purge_trash(root)
-    discard.mkdir(parents=True)
-    resume_phase = state.get("phase")
-    state.update(
-        phase=PHASE_ROLLING_BACK, rollback={"step": "begin", "resume": resume_phase}
-    )
-    write_state(root, state)
-    try:
-        _rename(emulator_dir(root), discard / "emulator")
-    except OSError as e:
-        state.update(phase=resume_phase, rollback=None)
-        write_state(root, state)
-        raise SwapBlocked(
-            f"模拟器文件还在被占用（{e.strerror or e}），什么都没动。请先关掉所有实例和用到"
-            "模拟器的程序再回退"
-        ) from e
-    version = (state.get("previous") or {}).get("version", "")
-    try:
-        state["rollback"] = {"step": "new_moved_out", "resume": resume_phase}
-        write_state(root, state)
-        try:
-            _rename(old, emulator_dir(root))
-        except OSError as e:
-            _rename(discard / "emulator", emulator_dir(root))
-            state.update(phase=resume_phase, rollback=None)
-            write_state(root, state)
-            raise SwapBlocked(f"回退失败，已恢复原样: {e}") from e
-        _finish_rollback(root, state)
-    except SwapBlocked:
-        raise
-    except Exception as e:
-        raise PackageError(f"回退中途出错（{e}）；{_recover_now(root)}") from e
-    logger.info(f"{root} 的魔改 AVD 已回退到 {version or '上一版'}")
-    return version
-
-
-def confirm_boot(root: str | Path) -> bool:
-    """新版第一次开机成功：删掉上一版。返回是否删了。
-
-    先把 ``previous`` 整个改名进 ``trash``（一步完成），再写状态，最后才真删：删到一半失败或被杀，
-    状态里也不会留着一个指向残缺目录、还能「回退」的上一版。改名都失败（文件被占用）就什么都不动，
-    下次开机再试。调用方要拿着这个根目录的更新锁。
-    """
-    state = read_state(root)
-    previous = state.get("previous")
-    if not isinstance(previous, dict) or not previous.get("awaitingBoot"):
-        return False
-    if state.get("phase") in (PHASE_SWAPPING, PHASE_ROLLING_BACK):
-        return False
-    try:
-        _to_trash(root, previous_dir(root))
-    except OSError as e:
-        logger.warning(f"{root} 删旧版没成（{e}），旧版还留着，下次开机再试")
-        return False
-    state["previous"] = None
-    state["lastResult"] = {
-        "action": "boot",
-        "ok": True,
-        "version": previous.get("installed", ""),
-    }
-    write_state(root, state)
-    purge_trash(root)
-    logger.info(
-        f"{root} 的魔改 AVD {previous.get('installed', '')} 第一次开机成功，已删除旧版 "
-        f"{previous.get('version', '')}"
-    )
-    return True
-
-
 # ---- 崩溃恢复 --------------------------------------------------------------
 
 
@@ -1218,13 +1010,9 @@ def recover(root: str | Path) -> str | None:
 
     - 准备新版到一半（``preparing``）：丢掉暂存，回到空闲（下载的包还在）。
     - 换上中、``sdk\\emulator`` 不在了：``stage`` 已核对过 → 把 ``stage`` 改名过去、补完；否则把
-      ``previous`` 改回去，并把上一代旧版（``previous-old``）挪回。两次改名都做完了只差包内文件 → 补完。
-      第一次改名都没成 → 回到「待安装」，上一代旧版挪回。
-    - 回退中：同理补完或恢复。
-    - 不在换上中却还有 ``previous-old``：和状态里记的上一版摘要一致（挪开上一代旧版之后、写下「换上中」
-      之前就退出了）就挪回去；不一致（换上收尾时没挪走的）就丢掉。
-    - 状态里还记着上一版、``previous\\emulator`` 却不在了（开机确认把它挪进 ``trash`` 后、写状态前退出）：
-      去掉这条回退记录。
+      ``previous\\emulator`` 改回去、包内文件从 ``previous\\root`` 还原，回到空闲。两次改名都做完了只差
+      包内文件 → 补完。第一次改名都没成 → 回到「待安装」。
+    - 不在换上中却还有 ``previous``（换上收尾写完状态、还没挪走旧版就退出了，或当时挪不走）：丢掉。
     - 上次没删完的 ``trash`` 再删一次。
     """
     root = Path(root)
@@ -1233,7 +1021,6 @@ def recover(root: str | Path) -> str | None:
     current = emulator_dir(root)
     old = previous_dir(root) / "emulator"
     stage = stage_emulator_dir(root)
-    older = update_dir(root) / "previous-old"
     present = os.path.isdir(native_path(current))
     done: str | None = None
     if phase == PHASE_PREPARING:
@@ -1251,18 +1038,18 @@ def recover(root: str | Path) -> str | None:
             if os.path.isdir(native_path(old)):
                 _rename(old, current)
                 _restore_root_files(root, state.get("plan") or {})
-                restored = _restore_older(root)
-                abort = {
-                    "phase": PHASE_IDLE,
-                    "previous": state.get("previousBefore") if restored else None,
-                    "lastResult": {
-                        "action": "update",
-                        "ok": False,
-                        "error": "上次更新没装完，已退回旧版",
+                write_state(
+                    root,
+                    {
+                        "phase": PHASE_IDLE,
+                        "lastResult": {
+                            "action": "update",
+                            "ok": False,
+                            "error": "上次更新没装完，已退回旧版",
+                        },
                     },
-                }
-                write_state(root, abort)
-                _tidy_up(root, pkg_dir(root), stage.parent)
+                )
+                _tidy_up(root, previous_dir(root), pkg_dir(root), stage.parent)
                 purge_trash(root)
                 return "上次更新没装完，已退回旧版"
             return "sdk\\emulator 不见了，也没有可用的新版或旧版"
@@ -1272,70 +1059,19 @@ def recover(root: str | Path) -> str | None:
             _apply_root_files(root, state["plan"])
             _finish_install(root, state)
             return f"补完了上次没装完的更新（{state['target']['version']}）"
-        restored = _restore_older(root)
-        state.update(
-            phase=PHASE_STAGED,
-            swap=None,
-            plan=None,
-            previous=state.get("previousBefore") if restored else None,
-            previousBefore=None,
-        )
-        write_state(root, state)
+        _back_to_staged(root, state)
         return "上次更新还没开始换，已回到「待安装」"
-    elif phase == PHASE_ROLLING_BACK:
-        resume = (state.get("rollback") or {}).get("resume") or PHASE_IDLE
-        discard = update_dir(root) / "discard" / "emulator"
-        if not present:
-            if os.path.isdir(native_path(old)):
-                _rename(old, current)
-                _finish_rollback(root, state)
-                return "补完了上次没做完的回退"
-            if os.path.isdir(native_path(discard)):
-                _rename(discard, current)
-                state.update(phase=resume, rollback=None)
-                write_state(root, state)
-                return "上次回退没做完，已恢复成回退前的版本"
-            return "sdk\\emulator 不见了，也没有可用的旧版"
-        if not os.path.isdir(native_path(old)) and os.path.isdir(native_path(discard)):
-            _finish_rollback(root, state)
-            return "补完了上次没做完的回退"
-        state.update(phase=resume, rollback=None)
-        write_state(root, state)
-        return "上次回退还没开始，已恢复原状"
-    if os.path.lexists(native_path(older)):
-        recorded = (state.get("previous") or {}).get("fingerprint")
-        if recorded and recorded == tree_fingerprint((older, "")):
-            # 挪开上一代旧版之后、写下「换上中」之前退出：previous 里只有这次做到一半的备份
-            _restore_older(root)
-            done = _join(done, "上次换上前挪开的旧版已挪回")
-        else:
-            # 换上收尾时没挪走的上一代旧版（状态里记的上一版不是它），留着没用
-            _tidy_up(root, older)
-            done = _join(done, "丢掉了上次没挪走的上一代旧版")
-    state = read_state(root)  # 上面可能已经改过状态（丢掉暂存）
-    previous = state.get("previous")
-    if (
-        isinstance(previous, dict)
-        and previous
-        and not os.path.isdir(native_path(previous_dir(root) / "emulator"))
-    ):
-        # 开机确认已经把旧版挪进 trash、还没来得及写状态就退出了：旧版没了，记录也去掉
-        state["previous"] = None
-        write_state(root, state)
-        done = _join(done, "上一版已经删掉，去掉了它的回退记录")
+    if os.path.lexists(native_path(previous_dir(root))):
+        _tidy_up(root, previous_dir(root))
+        done = f"{done}；丢掉了上次没删掉的旧版" if done else "丢掉了上次没删掉的旧版"
     if os.path.lexists(native_path(_trash_dir(root))):
         purge_trash(root)
     return done
 
 
-def _join(done: str | None, more: str) -> str:
-    return f"{done}；{more}" if done else more
-
-
 __all__ = [
     "PHASE_IDLE",
     "PHASE_PREPARING",
-    "PHASE_ROLLING_BACK",
     "PHASE_STAGED",
     "PHASE_SWAPPING",
     "PackageError",
@@ -1344,10 +1080,8 @@ __all__ = [
     "abort_staging",
     "begin_staging",
     "build_stage",
-    "can_rollback",
     "check_emulator",
     "check_package_manifest",
-    "confirm_boot",
     "describe_processes",
     "download_dir",
     "emulator_dir",
@@ -1362,14 +1096,11 @@ __all__ = [
     "pkg_dir",
     "plan_root_files",
     "previous_dir",
-    "previous_problem",
     "processes_using",
     "purge_trash",
-    "read_prefs",
     "read_state",
     "recover",
     "remove_tree",
-    "rollback",
     "stage_emulator_dir",
     "staged_fingerprint",
     "swap_in",
@@ -1380,6 +1111,5 @@ __all__ = [
     "verify_tree",
     "walk_files",
     "write_json_atomic",
-    "write_prefs",
     "write_state",
 ]

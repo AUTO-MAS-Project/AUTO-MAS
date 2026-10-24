@@ -20,15 +20,10 @@
 
 """魔改 AVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
 
-组件的来源分两类：
-
-- **模拟器本体**（``sdk\\emulator``）连同轻量桌面、脚本、许可证，是 ModAVD 在 GitHub 上发布的包。
-  MAS 的更新器（:mod:`.updater`）查新版本、下载、核对后换上，旧版可以回退。
-- **平台工具（adb）与系统镜像**属于 Google、受《Android SDK 许可协议》约束、不能再分发，MAS 不下载、
-  也不随包发；由包里的「补全组件」脚本在用户同意许可协议后从官方渠道下载。
-
+组件全部随模拟器内测包提供（模拟器、平台工具、系统镜像，可选的轻量桌面），MAS 不下载组件；
+只有模拟器本体（``sdk\\emulator``）可以由 MAS 的更新器（:mod:`.updater`）换成 GitHub 上的新版。
 这里只检查根目录里它们在不在：关键文件、模拟器是不是我们的自编版、内测包编号够不够新。
-缺了就明确说缺哪一项；模拟器太旧时让用户在 MAS 里更新。
+缺了就明确说缺哪一项，让用户换完整的内测包。
 """
 
 from __future__ import annotations
@@ -72,8 +67,8 @@ _KEY_FILES = {
     "system-image": ("system.img", "vendor.img", "kernel-ranchu", "ramdisk.img"),
 }
 
-#: 组件不全时给用户的建议（adb 与系统镜像由包里的「补全组件」从官方渠道下载）。
-FULL_PACKAGE_ADVICE = "缺 adb 或系统镜像时，在「添加魔改 AVD」里点「补全组件」，或运行根目录里的「补全组件.bat」"
+#: 组件不全时给用户的建议（MAS 不下载组件）。
+FULL_PACKAGE_ADVICE = "请使用完整的模拟器内测包"
 
 
 # ---- 根目录与元数据 --------------------------------------------------------
@@ -498,7 +493,7 @@ def install_status(root: str | Path) -> dict[str, Any]:
 
 
 def missing_components_message(missing: list[str]) -> str:
-    """缺组件时给用户的一句话：缺哪几项 + 用完整的包、补全组件。"""
+    """缺组件时给用户的一句话：缺哪几项 + 用完整的内测包。"""
     return f"这个目录里缺少：{'、'.join(missing)}。{FULL_PACKAGE_ADVICE}"
 
 

@@ -428,7 +428,7 @@ class WSEmulatorOperationData(BaseModel):
 class WSAvdUpdateProgressData(BaseModel):
     """魔改 AVD 更新进度 (type=emulator2.avd-update.progress, id=EmulatorManager)
 
-    下载、解包、核对、关实例、换上、回退共用；``status`` 为 success / failed / idle 时这一次操作结束，
+    下载、解包、核对、关实例、换上共用；``status`` 为 success / failed / idle 时这一次操作结束，
     界面据此重新取一次状态快照。
     """
 
@@ -437,7 +437,7 @@ class WSAvdUpdateProgressData(BaseModel):
         ...,
         description=(
             "阶段: downloading / extracting / verifying / staged / closing / installing / "
-            "installed / rolling_back / rolled_back / cancelled / failed"
+            "installed / cancelled / failed"
         ),
     )
     status: str = Field(..., description="running / success / failed / idle")

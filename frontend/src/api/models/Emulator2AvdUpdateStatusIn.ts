@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type Emulator2AvdUpdateOptionsIn = {
+export type Emulator2AvdUpdateStatusIn = {
     /**
      * 魔改 AVD 根目录; 必须已加进 Emulator 2.0, 别的目录一律拒绝
      */
     root: string;
     /**
-     * 空闲时自动装: 任务都结束、实例全关时才装 (任务跑完后或 MAS 启动时), 默认关
+     * 先查一次最新版本 (走 4 小时缓存); 查不到不算失败, 原因写在 checkError
      */
-    autoInstall: boolean;
+    check?: boolean;
 };
 
