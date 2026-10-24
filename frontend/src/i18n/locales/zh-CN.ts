@@ -3263,9 +3263,9 @@ export default {
         belowMinimum:
           '当前版本 {current} 低于 AUTO-MAS 要求的 {minimum}，开机前检查会拒绝开机，请更新',
         requiredAutoMas: '这一版需要 AUTO-MAS {version} 或更新的版本，请先更新 AUTO-MAS',
-        update: '更新到 {version}（{size}）',
+        update: '更新到 {version}，约 {size}',
         install: '换上已下载好的 {version}',
-        cancel: '取消下载',
+        cancel: '取消',
         confirmCloseTitle: '更新魔改 AVD',
         confirmClose: '要先关闭 {count} 台正在运行的实例（安卓正常关机），再换模拟器。确定吗？',
         confirmOk: '确定',

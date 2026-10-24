@@ -110,11 +110,13 @@ const openPaths = () => {
   pathsOpen.value = true
 }
 
-/** 魔改 AVD 路径卡片上的更新标记（有新版本 / 版本过旧），按 pathId 存；打开路径弹窗时取一次 */
+/**
+ * 魔改 AVD 路径卡片上的更新标记（有新版本 / 版本过旧），按 pathId 存。打开路径弹窗时取一次，
+ * 从卡片进「管理与更新」更新完回来时再取一次（见 avdRootOpen 的 watch）。
+ */
 const avdUpdateApi = useAvdUpdateApi()
 const updateBadges = ref<Record<string, ReturnType<typeof updateBadge>>>({})
-watch(pathsOpen, async value => {
-  if (!value) return
+const loadUpdateBadges = async () => {
   const result: Record<string, ReturnType<typeof updateBadge>> = {}
   for (const path of paths.value.filter(item => item.type === 'avd')) {
     try {
@@ -124,6 +126,9 @@ watch(pathsOpen, async value => {
     }
   }
   updateBadges.value = result
+}
+watch(pathsOpen, value => {
+  if (value) void loadUpdateBadges()
 })
 
 const searchOpen = ref(false)
@@ -362,6 +367,10 @@ const openAvdRoot = (root = '') => {
   avdRootInitial.value = root
   avdRootOpen.value = true
 }
+// 从路径弹窗进去更新完回来，卡片上的标记跟着刷新
+watch(avdRootOpen, value => {
+  if (!value && pathsOpen.value) void loadUpdateBadges()
+})
 
 const avdRoots = computed(() =>
   paths.value.filter(item => item.type === 'avd').map(item => item.installPath)
