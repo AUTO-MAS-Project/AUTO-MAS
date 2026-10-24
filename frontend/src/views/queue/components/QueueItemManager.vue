@@ -235,6 +235,8 @@ import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/api'
+import { comboxLabel } from '@/utils/comboxLabel'
+import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('队列项管理')
@@ -407,8 +409,11 @@ const loadOptions = async () => {
 
     if (scriptsResponse.code === 200) {
       logger.debug(`脚本API响应数据: ${JSON.stringify(scriptsResponse.data)}`)
-      // 直接使用接口返回的combox选项
-      scriptOptions.value = scriptsResponse.data || []
+      // combox 选项按当前界面语言重拼占位/类型前缀（utils/comboxLabel.ts）
+      scriptOptions.value = (scriptsResponse.data || []).map((item: ComboBoxItem) => ({
+        ...item,
+        label: comboxLabel(item),
+      }))
       logger.debug(`处理后的脚本选项: ${JSON.stringify(scriptOptions.value)}`)
     } else {
       logger.error(`脚本API响应错误: ${JSON.stringify(scriptsResponse)}`)

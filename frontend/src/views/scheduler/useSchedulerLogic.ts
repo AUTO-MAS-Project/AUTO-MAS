@@ -1,4 +1,5 @@
-import { translate as t } from '@/i18n'
+import { comboxLabel, isQueueTaskOption, isMaaEndTaskOption } from '@/utils/comboxLabel'
+import { i18n, translate as t } from '@/i18n'
 import { h, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
@@ -133,6 +134,8 @@ const clearPendingLogUpdate = (tabKey: string) => {
 const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   key: tab.key,
   title: tab.title,
+  titleKey: tab.titleKey,
+  titleParams: tab.titleParams ? { ...tab.titleParams } : undefined,
   closable: tab.closable,
   status: tab.status,
   selectedTaskId: tab.selectedTaskId,
@@ -179,6 +182,11 @@ const normalizePersistedTab = (
   logMode: tab.logMode || 'follow',
 })
 
+// 按当前界面语言重算按词表生成的标题；用户自己起名的标签（没有 titleKey）保持原样
+const retitleTab = (tab: SchedulerTab): void => {
+  if (tab.titleKey) tab.title = t(tab.titleKey, tab.titleParams ?? {})
+}
+
 // 从 sessionStorage 加载调度台状态
 const loadTabsFromStorage = (): SchedulerTab[] => {
   try {
@@ -188,7 +196,11 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       // 验证数据格式
       if (Array.isArray(parsed) && parsed.length > 0) {
         logger.info(`从 sessionStorage 恢复调度台状态: ${parsed.length} 个调度台`)
-        return parsed.map(normalizePersistedTab)
+        // 上次的会话可能是在另一门语言下存的，标题要按当前语言重算
+        return parsed.map(normalizePersistedTab).map(tab => {
+          retitleTab(tab)
+          return tab
+        })
       }
     }
   } catch (error) {
@@ -204,6 +216,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
     {
       key: 'main',
       title: t('scheduler.mainTab'),
+      titleKey: 'scheduler.mainTab',
       closable: false,
       status: '空闲',
       selectedTaskId: null,
@@ -337,7 +350,8 @@ export function useSchedulerLogic() {
     const newTab =
       reusedTab ??
       addSchedulerTab({
-        title: t('scheduler.tabName', { n: tabCounter }),
+        titleKey: 'scheduler.tabName',
+        titleParams: { n: tabCounter },
         status: '运行',
         taskId,
         selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
@@ -379,9 +393,20 @@ export function useSchedulerLogic() {
   // 初始化监听
   watchTabsChanges()
 
+  // 切换界面语言后重算标题：不然主调度台会一直显示上一门语言的名字
+  watch(
+    () => i18n.global.locale.value,
+    () => {
+      schedulerTabs.value.forEach(retitleTab)
+      saveTabsToStorage(schedulerTabs.value)
+    }
+  )
+
   // Tab 管理
   const addSchedulerTab = (options?: {
     title?: string
+    titleKey?: string
+    titleParams?: Record<string, unknown>
     status?: string
     taskId?: string
     selectedTaskId?: string
@@ -393,9 +418,16 @@ export function useSchedulerLogic() {
       ? (status as SchedulerStatus)
       : '空闲'
 
+    // 没显式给标题时统一走词表：这样界面语言切换后标题还能跟着变
+    const titleKey = options?.titleKey ?? (options?.title ? undefined : 'scheduler.tabName')
+    const titleParams =
+      options?.titleParams ?? (titleKey === 'scheduler.tabName' ? { n: tabCounter } : undefined)
+
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
-      title: options?.title || t('scheduler.tabName', { n: tabCounter }),
+      title: options?.title || t(titleKey ?? 'scheduler.tabName', titleParams ?? {}),
+      titleKey,
+      titleParams,
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.taskId || null,
@@ -573,11 +605,11 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
-  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
-  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
+  // 队列/脚本靠后端给的 kind 区分（ComboBoxItem.kind），不再解析 label 文案前缀——
+  // label 已按界面语言本地化（utils/comboxLabel.ts），前缀判断在非中文界面必然失效。
   const isQueueTask = (tab: SchedulerTab) => {
     const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
-    return Boolean(taskOption?.label.startsWith('队列 - '))
+    return isQueueTaskOption(taskOption)
   }
 
   // 任务下拉里只有队列和脚本两类，所以「找得到且不是队列」即脚本任务
@@ -593,7 +625,7 @@ export function useSchedulerLogic() {
         const mapped: Record<string, string> = {}
         response.data.forEach(item => {
           if (item.value && item.label) {
-            mapped[item.value] = item.label
+            mapped[item.value] = comboxLabel(item)
           }
         })
         scriptOptionsMap.value = mapped
@@ -1156,11 +1188,13 @@ export function useSchedulerLogic() {
 
     if (data.level === 'error') {
       const errorMsg = String(data.message).toLowerCase()
-      const taskLabel =
-        taskOptions.value.find(item => item.value === tab.selectedTaskId)?.label || ''
-      const isMaaEndTask = [taskLabel, tab.runningTaskLabel, tab.runningModeLabel]
-        .filter(Boolean)
-        .some(value => value?.toLowerCase().includes('maaend') ?? false)
+      const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
+      // MaaEnd 判定：优先用后端给的 scriptType（kind=script 项），运行中标签文案仅作兜底
+      const isMaaEndTask =
+        isMaaEndTaskOption(taskOption) ||
+        [tab.runningTaskLabel, tab.runningModeLabel]
+          .filter(Boolean)
+          .some(value => value?.toLowerCase().includes('maaend') ?? false)
 
       // 根据错误内容匹配具体的 noisy 模式音频
       if (
@@ -1427,8 +1461,9 @@ export function useSchedulerLogic() {
     try {
       taskOptionsLoading.value = true
       const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-      if (response.code === 200) {
-        taskOptions.value = response.data
+      if (response.code === 200 && Array.isArray(response.data)) {
+        // label 按当前界面语言重拼（占位/队列前缀/脚本类型），kind/scriptType 等结构字段原样保留
+        taskOptions.value = response.data.map(item => ({ ...item, label: comboxLabel(item) }))
       } else {
         message.error(t('scheduler.toast.fetchTaskListFailed'))
       }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { comboxLabel } from '@/utils/comboxLabel'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Modal, message, type TableColumnsType } from 'ant-design-vue'
 import {
@@ -112,7 +113,7 @@ const loadTaskOptions = async () => {
       // 过滤「未选择」占位项（value 为 null）
       taskOptions.value = (response.data || [])
         .filter(item => item.value)
-        .map(item => ({ label: item.label, value: item.value as string }))
+        .map(item => ({ label: comboxLabel(item), value: item.value as string }))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

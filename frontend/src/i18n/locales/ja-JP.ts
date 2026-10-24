@@ -35,6 +35,28 @@ export default {
     userLoadRetry: 'アカウントの読み込みに失敗しました：{reason}',
     retry: '再試行',
   },
+
+  // 后端 combox 下拉选项的本地化拼装（ComboBoxItem.labelKey/kind/name，见 utils/comboxLabel.ts）
+  combox: {
+    queue: 'キュー - {name}',
+    scriptType: {
+      MAA: 'MAA',
+      SRC: 'SRC',
+      MaaEnd: 'MaaEnd',
+      General: '汎用',
+      Okww: 'ok-ww',
+      OkNte: 'OK-NTE',
+      M9A: 'M9A',
+      MaaFW: 'MFW',
+      HSR: 'HSR',
+      BetterGI: 'BetterGI',
+      ZzzOd: 'ZZZ-OD',
+      BAAH: 'BAAH',
+      Whimbox: '奇想盒',
+      MSS: 'MSS',
+    },
+  },
+
   eventDepotPreview: {
     runtimeUnresolved:
       '一部のイベントステージ・素材・目標が利用できないため今回はスキップします。保存済み設定は保持されます。',
@@ -89,6 +111,7 @@ export default {
     close: '閉じる',
     doc: 'ドキュメント',
     unknown: '不明',
+    notSelected: '未選択',
   },
   comp: {
     currentConfig: '使用設定：{source}',
@@ -106,7 +129,7 @@ export default {
     enabled: 'オン',
     disabled: 'オフ',
     updateDownloadTest: '更新ダウンロードのテスト',
-    otherOperators: '= < > ! などの演算子',
+    otherOperators: '= <> ! などの演算子',
     debugLevel: 'DEBUG レベル',
     errorFatalCriticalLevel: 'ERROR/FATAL/CRITICAL レベル',
     exceptionErrorFailedSimilar: 'Exception/Error/Failed など',
@@ -355,6 +378,9 @@ export default {
     colors: '色の設定',
     extraScripts: '追加スクリプト',
     highlightColorsPreview: 'ハイライト色とプレビュー',
+    backendUpdateReady: 'バックエンドの更新の準備ができました。次回起動時に適用されます',
+    backendUpdateReadyConfirm:
+      'バックエンドの更新をダウンロードしました。次回起動時に適用されます。今すぐソフトを再起動しますか？',
   },
   edit: {
     configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
@@ -1006,7 +1032,8 @@ export default {
     shellImportFailedHead: '{count} 件の設定を取り込めませんでした：',
     shellImportFailedLine: '「{name}」：{reason}',
     shellImportSkippedLine: '「{name}」で {count} 項目をスキップしました：{items}',
-    shellImportSkippedLineMore: '「{name}」で {items} など {count} 項目をスキップしました',
+    shellImportSkippedLineMore:
+      '「{name}」で {items} など {count} 項目をスキップしました（他 {rest} 項目は省略）',
     shellImportListSeparator: '、',
     shellImportAllFailed: '既存の設定を取り込めなかったため、空のアカウントを作成します',
     shellImportAllFailedWithReason:
@@ -1991,7 +2018,7 @@ export default {
       'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
     maafwUnselectableTaskNotice: '「{tasks}」{reason}。MAS は実行時にスキップします',
     maafwUnselectableTaskSeparator: '、',
-    m9aFlavorScriptTitle: 'M9A マネージドスクリプトを編集',
+    m9aFlavorScriptTitle: 'M9A スクリプト設定',
     m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
     m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',
     m9aFlavorSourcePlaceholder: 'interface.json を含む M9A ディレクトリを選択',
@@ -2007,7 +2034,7 @@ export default {
       '「{tasks}」は上の情報をもとに MAS が自動で追加するため、キューに残す必要はありません（実行時も固定の順序で実行されます）。次にタスクキューを保存するか AUTO-MAS を再起動するとキューから外れます（アカウント切替の対象アカウントは上の「アカウント」に入ります）',
     m9aFlavorGameUpdateHint:
       'エミュレーター起動後、ゲームクライアントを公式サイトの最新版と比較します。公式サーバーのみ対象です（bilibili サーバーなど他のリソースは確認しません）。古い場合：「確認のみ」は今回の実行を失敗にして手動更新を案内し、「自動でダウンロードしてインストール」は約 2 GB の公式インストーラーをダウンロードして上書きインストールします（ゲームデータは保持されます）',
-    mssFlavorScriptTitle: 'MSS マネージドスクリプトを編集',
+    mssFlavorScriptTitle: 'MSS スクリプト設定',
     mssFlavorSourceDirectory: 'MSS プログラムディレクトリ',
     mssFlavorSourceHint: 'interface.json を含む MaaStellaSora ディレクトリを選択します',
     mssFlavorSourcePlaceholder: 'interface.json を含む MaaStellaSora ディレクトリを選択',
@@ -2473,6 +2500,673 @@ export default {
       '「スクリプトを追加」で他のスクリプトと設定グループにまとめられます',
     bettergiProjectUnselect: '選択解除',
     bettergiProjectZoom: 'ズーム',
+    share: {
+      loginRequired: '先に設定共有サイトへのログインが必要です',
+      loginRequiredDesc:
+        '共有者の身分はログインアカウントで決まります。ログイン後すぐに送信でき、作者を手入力する必要はありません。',
+      startLogin: '設定共有サイトにログイン',
+      startFailed: '設定共有サイトのログインを開始できませんでした',
+      pendingDesc:
+        'ブラウザーで認証ページを開きました。下のショートコードを確認してから「認証」をクリックしてください：',
+      reopenBrowser: '認証ページを開き直す',
+      cancelAuth: 'ログインをキャンセル',
+      authorized: '設定共有サイトにログイン済み：{name}',
+      signedInAs: '{name} として共有します',
+      signedInDesc:
+        '送信後は設定共有サイトの審査待ちフローに入ります。審査を通過すると他のユーザーに表示されます。',
+      switchAccount: '別のアカウントに切り替え',
+      riskTitle: 'これらの設定項目には公開すべきでない内容が残っている可能性があります',
+      riskConfirm: '上記の内容を公開共有してよいことを確認しました',
+      privacyNotice:
+        'スクリプトのルートディレクトリやスクリプトパスなどの既知のパスは、アップロード前に自動でプレースホルダーに置き換えられます。ユーザーデータはアップロードされません。送信後は設定共有サイトの審査待ちフローに入り、審査を通過すると他のユーザーがダウンロードして利用できます。',
+    },
+    hardTimeoutMinutes: '1アカウントあたりの総実行時間制限（分）',
+    hardTimeoutHint:
+      '起動・待機・すべてのリトライを含みます。ログが更新され続けても制限時間は延長されません。タイムアウト後は今回の実行を終了し、終了処理が完了してから後続のアカウントを続行します。',
+    close: '閉じる',
+    maaCustomInfrastPlanHintPeriod:
+      'シフト表に時間帯が含まれています。MAA が時間帯に応じて自動でシフトを切り替えるため、手動でのシフト選択には対応していません',
+    maaCustomInfrastPlanHintRotate:
+      'シフト表に時間帯がありません。「自動シフト切替」は最初のシフトから順にローテーションします。特定のシフトを選ぶとそのシフトからローテーションを開始します',
+    maaCustomInfrastPlanHintMixed:
+      'シフト表の時間帯設定が一致していません。実行時は通常の基地モードを使用します',
+    maaCustomInfrastPlanAuto: '自動シフト切替',
+    maaCustomInfrastPlanAutoPeriod: '自動シフト切替（時間帯別）',
+    maaCustomInfrastPlanAutoRotate: '自動シフト切替（最初のシフトから）',
+    maaCustomInfrastPlanWithPeriod: '{name}（{period}）',
+    maaCustomInfrastPlanManualHint:
+      '{name} から順にローテーションしています。「自動シフト切替」を選ぶとデフォルトに戻ります',
+    maaCustomInfrastPlanManualHintIndex:
+      '{index} 番目から順にローテーションしています。「自動シフト切替」を選ぶとデフォルトに戻ります',
+    maaCustomInfrastPlanSelected: '{name} からローテーションするよう選択しました',
+    maaCustomInfrastPlanSelectFailed: '基地シフトの設定に失敗しました',
+    maaEndAutoCollectConfig: '自動採集の設定',
+    maaEndAutoCollectOptionsUnavailable:
+      '採集ルートを読み込めませんでした。MaaEnd のパスとリソースを確認してからこのページを開き直してください',
+    maaEndAutoCollectEnabled: '自動採集',
+    maaEndAutoCollectEnabledHint:
+      '自動採集は独立した段階として実行されます。オフにすると下のスケジュールは適用されません',
+    maaEndAutoCollectMode: '採集スケジュール',
+    maaEndAutoCollectModeDistributed: '分散採集',
+    maaEndAutoCollectModeConcentrated: '集中採集',
+    maaEndAutoCollectModeDistributedHint:
+      '3日周期でルートをローテーションし、毎日そのうち1グループを実行します',
+    maaEndAutoCollectModeConcentratedHint: '3日ごとに有効な全ルートをまとめて実行します',
+    maaEndAutoCollectRoutes: 'エリア資源ルート',
+    maaEndAutoCollectCommonRoutes: '汎用資源ルート',
+    maaEndAutoCollectRoute1: 'ルート$1：武陵城-受蚀玉华叶',
+    maaEndAutoCollectRoute2: 'ルート$1：武陵城-岩天使叶',
+    maaEndAutoCollectRoute3: 'ルート$1：武陵城-至晶多齿叶',
+    maaEndAutoCollectRoute4: 'ルート4：四号谷地-纯晶多齿叶',
+    maaEndAutoCollectRoute5: 'ルート5：四号谷地-轻黯石',
+    maaEndAutoCollectRoute6: 'ルート6：四号谷地-轻红柱状菌',
+    maaEndAutoCollectRoute7: 'ルート7：武陵城-血菌武陵石',
+    maaEndAutoCollectRoute8: 'ルート8：武陵城-星门菌',
+    maaEndAutoCollectRoute9: 'ルート9：武陵城-燎石',
+    maaEndAutoCollectRoute10: 'ルート10：武陵-重红柱状菌',
+    maaEndAutoCollectRoute11: 'ルート11：武陵-重黯石',
+    maaEndAutoCollectRoute12: 'ルート12：武陵-中红柱状菌',
+    maaEndAutoCollectRoute13: 'ルート13：四号谷地-中黯石',
+    maaEndAutoCollectRoute14: 'ルート14：四号谷地-晶化多齿叶',
+    maaEndAutoCollectRoute15: 'ルート15：武陵-红矛叶',
+    maaEndAutoCollectCommonRoute1: 'ルート$1：映火荞花',
+    maaEndAutoCollectCommonRoute2: 'ルート$1：黯银柑实',
+    maaEndAutoCollectCommonRoute3: 'ルート$1：灼壳虫',
+    maaEndAutoCollectCommonRoute4: 'ルート$1：萤壳虫',
+    maaEndAutoCollectCommonRoute5: 'ルート$1：蓬茸锦草',
+    maaEndAutoCollectCommonRoute6: 'ルート$1：琼叶参',
+    maaEndAutoCollectCommonRoute7: 'ルート$1：荆刺芽针',
+    maaEndAutoCollectCommonRoute8: 'ルート$1：金石稻',
+    maaEndDeliveryConfig: '配達の設定',
+    maaEndSeizeDeliveryJobs: '依頼奪取配達',
+    maaEndSeizeDeliveryJobsHint:
+      '配達段階で依頼奪取配達タスクを独立して実行します。日課タスクのスイッチとは別に制御します',
+    maaEndSeizeDeliveryJobsReward: '最低受注価格（万）',
+    maaEndSeizeDeliveryJobsRewardHint: 'この価格を下回らない依頼のみ受注します',
+    maaEndDeliveryCommissionSource: '依頼の受取地点',
+    maaEndRegionWulingCity: '武陵城',
+    maaEndRegionValleyNo4: '四号谷地',
+    maaEndRegionWuling: '武陵',
+    maaEndRouteSelectAll: 'すべて選択',
+    maaEndRouteClear: 'クリア',
+    maaEndRouteSelectedCount: '選択中 {n}/{m}',
+    maaEndEnableSanity: '理性タスクを有効化',
+    maaEndSanitySection: '理性タスク（基質周回 / プロトコル空間）',
+    maaEndGroupEnabled: '{n} / {m} 件のタスクが有効',
+    maaEndEnableGroup: 'グループ全体を有効化',
+    maaendConfigRestoreScriptDesc:
+      'MaaEnd ネイティブ設定のバックアップです。復元すると MaaEnd 本体に直接適用されます。この編集ページを開く、MaaEnd を実行する、または設定画面を開く前に重複を排除して自動作成され、最新10件を保持します',
+    generalConfigRestoreUserDesc:
+      'このアカウントのスクリプト設定のバックアップです。復元すると MAS の設定ページに直接適用されます。実行または設定画面を開く前に重複を排除して自動作成され、最新10件を保持します',
+    generalConfigRestoreScriptDesc:
+      'スクリプト設定パスのバックアップです。復元するとスクリプト本体に直接適用されます。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    generalViewingTitle: 'スクリプト設定を閲覧中',
+    generalViewingDesc: 'このバックアップのスクリプト設定を読み取り専用で開いています。',
+    generalViewingDesc2:
+      '閲覧が終わったら「閲覧を閉じる」ボタンをクリックして閲覧セッションを終了してください。スクリプト設定はそのまま保持されます。',
+    generalViewClose: '閲覧を閉じる',
+    baahConfigRestoreUserDesc:
+      'MAS 編集ページの設定（設定ファイルのバインドなど）のバックアップです。復元すると MAS の設定ページに直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    baahConfigRestoreScriptDesc:
+      '現在バインドされている設定ファイルのバックアップです。復元すると BAAH 内の同名の設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    srcConfigRestoreUserDesc:
+      'MAS 設定のバックアップ（ステージ設定などのページ項目とアカウント設定ディレクトリ）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    srcConfigRestoreScriptDesc:
+      'SRC インストールディレクトリの config フォルダーのバックアップです。復元すると SRC 本体の設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    srcViewingTitle: 'SRC 設定を閲覧中',
+    srcViewingDesc: 'SRC の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    srcViewingDesc2:
+      '閲覧中は設定が一時的に切り替わります。閲覧が終わったら「閲覧を閉じる」をクリックして終了してください。',
+    srcViewClose: '閲覧を閉じる',
+    srcViewOpened: 'SRC の閲覧を開きました',
+    srcViewStartFailed: 'SRC の閲覧を開けませんでした',
+    maaendSessionOpened: 'MaaEnd の設定を開きました',
+    maaendSessionStartFailed: 'MaaEnd 設定の起動に失敗しました',
+    maaendSessionStopFailed: 'MaaEnd 設定の停止に失敗しました',
+    maaendSessionSaveFailed: 'MaaEnd 設定の保存に失敗しました',
+    maaendViewOpened: 'MaaEnd の閲覧を開きました',
+    maaendSessionTimeoutWarn:
+      'MaaEnd 設定セッションがまもなくタイムアウトします。30秒後に自動で保存します',
+    maaendViewingTitle: 'MaaEnd 設定を閲覧中',
+    maaendViewingDesc:
+      'MaaEnd の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    maaendViewingDesc2:
+      '閲覧中は設定が一時的に切り替わります。閲覧が終わったら「閲覧を閉じる」をクリックして終了してください。',
+    maaendViewClose: '閲覧を閉じる',
+    accountSwitch16x9Only: '16:9 のみ対応しています。16:9 以外では切り替えの成功は保証されません',
+    accountSwitch16x9ArgHint:
+      '16:9 以外の画面では切り替えに失敗する場合があります。起動引数で解像度を指定することをお勧めします。例：{p0}',
+    okwwAccountSwitchHint:
+      'オンにすると、ゲームの起動成功後、ok-ww の実行前にユーザーの電話番号の下4桁でログインアカウントを強制的に切り替えます。ユーザーがアカウントを入力していない場合は切り替えません',
+    oknteAccountSwitchHint:
+      '「タスク前にゲームを起動」をオンにした場合、ゲームの起動成功後、ok-nte の実行前にユーザーの電話番号の下4桁でログインアカウントを強制的に切り替えます。ユーザーがアカウントを入力していない場合は切り替えません。「タスク前にゲームを起動」がオフの場合、このスイッチは使用できません',
+    updateSource: '更新ソース',
+    updateChannel: '更新チャンネル',
+    taskTransitionMethod: 'タスクの切り替え方式',
+    taskTransitionHint:
+      '配達・日課・自動採集の各段階の間でゲームを同時に再起動するかどうか。「MaaEnd のみ再起動」の場合ゲームは起動したままにし、「Endfield.exe/エミュレーターを再起動」の場合各段階の終了時に閉じて次の段階で再起動します',
+    restartMaaendOnly: 'MaaEnd のみ再起動',
+    restartEndfield: 'Endfield.exe/エミュレーターを再起動',
+    maaEndLaunchTypeHint:
+      'ランチャー起動：MAS が公式ランチャーを操作します。MAS 起動：MAS がゲームプロセスを作成します。MaaEnd 起動：MaaEnd 内蔵の起動入口を呼び出します。対応状況は現在のインストールとコントローラーの認識によって決まります。',
+    maaEndLaunchViaMas: 'MAS 起動',
+    maaEndLaunchViaMaaEnd: 'MaaEnd 起動',
+    maaEndRecommendedLaunch: '{name}（推奨）',
+    maaEndLauncherModeHint: 'MAS が公式ランチャーを操作します。新旧の MaaEnd と互換性があります。',
+    maaEndMasModeHint: 'MAS がゲームプロセスを直接作成します。公式ランチャーは引き続き必要です。',
+    maaEndNativeModeHint: 'MaaEnd 内蔵の入口からゲームを起動し、対応するゲーム設定を適用します。',
+    maaEndLaunchCapabilitiesUnknown:
+      'MaaEnd 起動が利用できるか確認するには、先に有効な MaaEnd のパスを選択し、リソースの読み込みが完了するまでお待ちください。',
+    maaEndNativeLaunchUnsupported:
+      '現在の MaaEnd またはコントローラーにはネイティブ起動入口がないため、MaaEnd 起動は選択できません。ランチャー起動または MAS 起動を使用できます。',
+    maaEndNativeLauncherHint:
+      'MaaEnd 起動は MaaEnd 自身のランチャー検出方式を使用し、ここのパスは使用しません。',
+    maaEndNativeManualLauncherHint:
+      'ネイティブ設定は MaaEnd の自動検出または手動パスを引き継ぎます。ここで指定したパスは今回の起動のみ有効で、公式ランチャー版のサーバーに限られます。',
+    maaEndNativeLauncherHelp: 'MaaEnd に保存されたランチャー設定を引き継ぎます。',
+    maaEndManualLauncherHelp: '今回の起動ではここで指定したパスを使用します。',
+    maaEndLauncherSourceNative: 'MaaEnd のネイティブ設定を使用',
+    maaEndArgumentsUnsupported:
+      'ここの起動引数は MAS 起動専用です。その他の方式では公式ランチャーが対応する設定を使用してください。',
+    maaEndResolutionUnsupported:
+      '現在の MaaEnd と起動方式は解像度の個別設定に対応していないため、ゲームの既存設定を使用します。保存済みの設定は保持されます。',
+    maaEndResolutionRequiresNative:
+      '現在のバージョンでは MaaEnd 起動のみが解像度設定に対応しています。起動方式を切り替えてください。保存済みの設定は保持されます。',
+    maaEndLauncherPath: 'エンドフィールド公式ランチャー',
+    maaEndLauncherPathSource: 'ランチャーのパス取得方法',
+    maaEndLauncherSourceAuto: '自動検出',
+    maaEndLauncherSourceManual: '手動指定',
+    maaEndRefreshLauncher: '再検出',
+    maaEndChangeLauncher: 'ファイルを変更',
+    maaEndLauncherAutoHint:
+      '実行のたびにゲームのパスに合わせて自動検出するため、ランチャーのパスを手動で管理する必要はありません',
+    maaEndLauncherManualHint:
+      'Hypergryph 公式ランチャー Launcher.exe または Games.exe を手動で指定します（自動検出に失敗した場合のフォールバック）。自動検出に戻すこともできます',
+    maaEndLauncherDetectFailed:
+      'エンドフィールド公式ランチャーが見つかりません。手動指定に切り替えてください',
+    maaEndPickClientBeforeLauncher: '先にゲームのパスを選択してください',
+    maaEndPickLauncherExeError:
+      'Hypergryph 公式ランチャー Launcher.exe または Games.exe を選択してください',
+    maaEndLauncherSaveFailed:
+      'ランチャー設定の保存に失敗しました。元の設定を保持しています。再試行してください',
+    maaEndLauncherArgumentsHint:
+      'ランチャー起動の場合、ゲームの起動引数は公式ランチャーで設定してください',
+    maaEndAutoUpdateLauncherHint:
+      'ランチャー起動の場合、ゲームの更新は公式ランチャーが行うため、別途オンにする必要はありません',
+    bettergiConfigRestoreUserDesc:
+      'MAS 設定のバックアップ（アカウント設定のコピーとページ項目）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    bettergiConfigRestoreScriptDesc:
+      'BetterGI グローバルメイン設定（config.json）のバックアップです。復元すると BetterGI のグローバル設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    bettergiViewingTitle: 'BetterGI 設定を閲覧中',
+    bettergiViewingDesc:
+      'BetterGI の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    bettergiViewingDesc2:
+      '閲覧中は設定が一時的に開かれます。閲覧が終わったら「閲覧を閉じる」をクリックして終了してください。',
+    bettergiViewClose: '閲覧を閉じる',
+    bettergiViewOpened: 'BetterGI の閲覧を開きました',
+    bettergiViewStartFailed: 'BetterGI の閲覧を開けませんでした',
+    maafwConfigRestoreUserDesc:
+      'MAS 設定のバックアップ（タスクスナップショットやデバイス上書きなどのページ項目）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    maafwConfigRestoreScriptDesc:
+      'MaaFW プロジェクト設定（config フォルダー）のバックアップです。復元するとプロジェクト設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    hsrConfigRestoreUserDesc:
+      'MAS 設定のバックアップ（タスクマッピングやマネージド上書きなどのページ項目）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    hsrConfigRestoreScriptDesc:
+      'HSR ネイティブ設定のバックアップ（三月なのか config.yaml と SRA settings/cache/configs）です。復元するとネイティブ設定を直接上書きします。この編集ページに入る、または実行する前に重複を排除して自動作成され、最新10件を保持します',
+    whimboxScriptConfiguration: '奇想盒スクリプト設定',
+    whimboxInstanceNameHint: '異なる奇想盒マネージドを区別するために使用します',
+    whimboxPath: '奇想盒インストールディレクトリ',
+    whimboxPickExeDir:
+      'whimbox_app.exe があるディレクトリを選択します（奇想盒のデフォルトインストールディレクトリ）。configs と logs ディレクトリはその同じ階層にあります',
+    whimboxPickExeDirPlaceholder:
+      '奇想盒インストールディレクトリ（whimbox_app.exe があるディレクトリ）を選択してください',
+    whimboxPathRequired: '奇想盒インストールディレクトリを選択してください',
+    whimboxRootPathSaved: '奇想盒インストールディレクトリを保存しました',
+    whimboxInvalidDirectory: '選択したディレクトリは無効です',
+    whimboxExeNotFound:
+      '選択したディレクトリに {p0} が見つかりません。奇想盒のインストールルートディレクトリを選択してください',
+    whimboxNotWhimboxScript: 'スクリプトタイプが奇想盒ではありません',
+    whimboxRetryLimitHint:
+      '1回の実行が失敗した後のリトライ回数の上限です。一条龍ステップ内の回復可能な失敗はリトライを消費しません',
+    whimboxRunTimeoutHint:
+      'ログがこの時間（分）新しい進展がなければ、スタックと判定して中止します。一条龍のマルチアカウント全ループは時間がかかるため、必要に応じて大きくしてください',
+    whimboxUseAdmin: '管理者権限で実行',
+    whimboxUseAdminHint:
+      '奇想盒バックエンドは管理者権限が必須のため、オンのままにしてください。本ソフトが既に管理者権限で実行されている場合、UAC は再度表示されません',
+    whimboxUserTag: 'アカウントタグ',
+    whimboxUserTagHint: '本ソフトが実行状況に応じて自動生成します。閲覧のみ',
+    whimboxOneDragonSection: '一条龍フロー',
+    whimboxTaskSection: 'タスク設定',
+    whimboxFlowNodes: 'フローノード',
+    whimboxStepsEmpty: 'ステップスイッチを読み込めませんでした',
+    whimboxOptionsEmpty: 'ターゲットまたはパラメーターを読み込めませんでした',
+    whimboxOptionsSection: '詳細パラメーター',
+    whimboxRunAllAccounts: '全ゲームアカウントをループ',
+    whimboxRunAllAccountsHint:
+      'オンにすると、一条龍がゲーム内にログイン済みの全アカウントを順に切り替えて1つずつ実行します。アカウントリストは奇想盒が自動認識するため、MAS に登録する必要はありません',
+    whimboxStepHint:
+      'ステップとターゲットのリストは奇想盒のバージョンから自動で配信されます（奇想盒をアップグレードした後、このページを更新すると新しいステップが表示されます）。ゲームの起動・ゲームへの進入などの必須ステップは奇想盒が固定で実行するため、ここには含まれません',
+    whimboxSelectPlaceholder: '選択してください',
+    whimboxMultiSelectPlaceholder: '複数選択可',
+    whimboxTextPlaceholder: '入力してください',
+    whimboxConfigRestoreUserDesc:
+      'MAS パネルのタスクスイッチとターゲットパラメーター（実行時に奇想盒へ書き込み）のバックアップです。復元すると MAS の設定ページに直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',
+    whimboxConfigRestoreScriptDesc:
+      '奇想盒ネイティブ設定（configs/config.json）の実行前スナップショット',
+    whimboxConfigSourceHint:
+      '「共有/独立」：共有/独立設定としてこのページの設定を使用し、奇想盒に書き込みます。「ネイティブ」：奇想盒標準の設定を直接使用し、MAS は書き込みません（「通常設定を上書き」をオンにすると、タスク前にパネルの上書きセットを書き込み、タスク終了後に復元します）。LLM モデル、キー設定、マップ周回ルートなどは「ネイティブ」を選んで奇想盒アプリで設定してください。',
+    whimboxModeScriptDesc: '共有設定：このページの設定を使用し、実行時に奇想盒に書き込みます',
+    whimboxModeUserDesc:
+      '独立設定：このページの設定を使用し、実行時に奇想盒に書き込みます（現在は共有と同じ動作）',
+    whimboxModeDirectDesc: 'ネイティブ設定：奇想盒標準の設定を直接使用し、MAS は書き込みません',
+    whimboxCatalogFetchFailed: '奇想盒タスクカタログの取得に失敗しました',
+    zzzodScriptConfiguration: 'ZZZ-OD スクリプト設定',
+    zzzodScriptNameHint: '異なる ZZZ-OD マネージドを区別するために使用します',
+    zzzodRootPath: 'ZZZ-OD インストールディレクトリ',
+    zzzodRootPathHint:
+      'ゼンレスゾーンゼロ一条龍のインストールルートディレクトリ（OneDragon ランチャーと config ディレクトリを含む）を選択します',
+    zzzodRootPathPlaceholder:
+      'ゼンレスゾーンゼロ一条龍のインストールルートディレクトリを選択してください',
+    zzzodRootPathRequired: 'ZZZ-OD インストールディレクトリを選択してください',
+    zzzodRootPathSaved: 'ZZZ-OD インストールディレクトリを保存しました',
+    zzzodInvalidDirectory: '選択したディレクトリは無効です',
+    zzzodLauncherNotFound:
+      '選択したディレクトリに {p0} または {p1} が見つかりません。完全なゼンレスゾーンゼロ一条龍のインストールルートディレクトリを選択してください。',
+    zzzodNotZzzodScript: 'スクリプトタイプが ZZZ-OD ではありません',
+    zzzodCloseGameOnFinish: 'タスク終了後にゲームを閉じる',
+    zzzodAccountSwitch: 'アカウント切り替え方式',
+    zzzodAccountSwitchHint:
+      'マルチアカウント実行時、選択した方式で各アカウントの切り替えを順に実行します。ドロップダウンの各項目にホバーすると方式の詳細な説明が表示されます',
+    zzzodAccountSwitchSingle: '単一インスタンス切替（推奨）',
+    zzzodAccountSwitchSingleHint:
+      '各アカウントが独立した一条龍セッション：そのアカウントの設定を注入 → 単一インスタンスで実行（スロット間切り替えなし）→ 完了後に閉じる → 次のアカウントへ。失敗した場合は失敗したアカウントだけを再起動し、アカウント間は完全に隔離されます',
+    zzzodAccountSwitchMulti: '複数インスタンス切替（非推奨）',
+    zzzodAccountSwitchMultiHint:
+      '全アカウントを1回のマルチアカウント実行にまとめ、一条龍内部で順にアカウントを切り替えます。総時間は最短ですが、1つのスロットの失敗や切り替え失敗があるとラウンド全体がリトライされ、アカウント間は隔離されません',
+    zzzodAccountSwitchMas: 'MAS 切替（未対応）',
+    zzzodAccountSwitchMasHint:
+      'MAS がゲームを操作してアカウント切り替えを完了してから一条龍に引き継ぎます。現在未対応です',
+    zzzodCloseGameOnFinishHint:
+      'タスク終了後に MAS がゲームを閉じます。スケジュール実行を手動停止した場合も一緒にゲームを閉じます（マルチアカウント連続実行時はオンを推奨）',
+    zzzodLaunchBeforeTaskHint:
+      '実行前に MAS がゲームを起動します。ゲームが既に起動している場合はスキップし、重複起動しません',
+    zzzodGameArgumentsHint: 'ゲームの起動引数（一条龍ランチャーの引数ではありません）',
+    zzzodRetryLimitHint:
+      'この回数を超えても失敗する場合は終了します。再実行時は完了済みのタスクを自動でスキップします',
+    zzzodRunTimeoutHint:
+      'ログが長時間変化しない場合はタイムアウトと判定します。一条龍の全フローはデフォルトで180分以上を推奨します',
+    zzzodDuplicateUserName:
+      'このマネージドには同名のアカウントが既に存在します。別の名前に変更してください',
+    zzzodTaskConfigHint:
+      'クリックすると通常設定を上書きできます。このページの項目は実行時に適用されます',
+    zzzodTaskConfigLoadFailed: 'タスク設定の読み込みに失敗しました',
+    zzzodTaskConfigSaveFailed: 'タスク設定の保存に失敗しました',
+    zzzodTaskConfigSaved: 'タスク設定を保存しました',
+    zzzodTaskJumpHint: 'クリックすると一条龍で詳細設定を行えます',
+    zzzodPlanAdd: '計画を追加',
+    zzzodPlanDelete: '計画を削除',
+    zzzodPlanRunTimes: '{count} 回実行済み',
+    zzzodPredefinedTeams: '予備編成',
+    zzzodPredefinedTeamsHint:
+      '一条龍の編成ページと同じ20の編成です。編成名はゲーム内の編成と一致させる必要があります。関連タスクの実行時に名前で編成を照合し、バインドされた編成案とメンバーを適用します。',
+    zzzodTeamNamePlaceholder: '編成名（ゲーム内と一致）',
+    zzzodTeamBattleConfig: '戦闘設定',
+    zzzodTeamAgentEmpty: 'エージェント',
+    zzzodTeamsSaved: '予備編成を保存しました',
+    zzzodTeamsLoadFailed: '予備編成の読み込みに失敗しました',
+    zzzodTeamsSaveFailed: '予備編成の保存に失敗しました',
+    zzzodTeamsSaveButton: '保存',
+    zzzodLauncherMode: '一条龍ランチャー',
+    zzzodLauncherAuto: '自動',
+    zzzodLauncherOriginal: 'オリジナル',
+    zzzodLauncherIntegrated: '統合',
+    zzzodLauncherAutoHint:
+      '前回成功したランチャーを優先します。起動に失敗した場合は自動でもう一方に切り替えて再試行し、次回成功した方を記憶します',
+    zzzodLauncherOriginalHint:
+      'オリジナルランチャー（OneDragon-Launcher.exe、旧インストーラー版）に固定します',
+    zzzodLauncherIntegratedHint:
+      '統合ランチャー（OneDragon-RuntimeLauncher.exe、ランタイム同梱版）に固定します',
+    zzzodLauncherLoadFailed: 'ランチャーのインストール状況の取得に失敗しました',
+    zzzodQuickImport: '設定のクイックインポート',
+    zzzodImport: 'インポート',
+    zzzodImportPlaceholder: 'クリックしてマスター設定を選択',
+    zzzodImportConfigHint: '既存の一条龍インスタンスを基に設定ファイルをすばやく生成します',
+    zzzodImportConfirmTitle: '現在のアカウント設定を上書き',
+    zzzodImportConfirmDesc:
+      '選択したインスタンスのアカウント情報と有効なタスクフローで現在の独立設定を上書きします。インポート前に現在の設定は自動でバックアップされ、「設定の復元」でいつでも戻せます。インポートしますか？',
+    zzzodImportSuccess: '選択したインスタンスを基に設定を生成しました',
+    zzzodImportFailed: '設定のインポートに失敗しました',
+    configRestoreTitle: '設定の復元',
+    configRestoreTargetMas: 'MAS アカウント設定を復元',
+    configRestoreTargetScript: '{script} ネイティブ設定を復元',
+    configRestoreMasDesc:
+      'MAS 独立設定のバックアップです。復元すると MAS の設定ページに直接適用されます。{script} の実行または設定を開く前に重複を排除して自動作成され、最新10件を保持します',
+    configRestoreScriptDesc:
+      '{script} ネイティブ設定のバックアップです。復元すると {script} 本体に直接適用されます。{script} の実行、ネイティブモードでの変更、または設定を開く前に重複を排除して自動作成され、最新10件を保持します',
+    configRestoreEmpty: 'バックアップはまだありません。実行または設定を開くと自動で作成されます',
+    configRestorePreview: '設定をプレビュー',
+    configRestorePreviewTitle: '設定プレビュー',
+    configRestorePreviewFailed: '設定プレビューの読み込みに失敗しました',
+    configRestorePreviewTasks: 'タスクフロー',
+    configRestorePreviewNoTasks: 'このバックアップにタスクフローはありません',
+    configRestorePreviewEmpty: 'このバックアップには表示できる設定サマリーがありません',
+    configRestorePreviewActive: 'アクティブ',
+    configRestoreListFailed: 'バックアップ一覧の読み込みに失敗しました',
+    configRestoreEnsureFailed:
+      '設定の自動バックアップに失敗しました。今回の変更には復元ポイントがない可能性があります',
+    configRestoreBackupFiles: 'バックアップファイル',
+    configRestoreCopy: 'コピー',
+    configRestoreCopied: 'クリップボードにコピーしました',
+    configRestoreFileFailed: 'バックアップファイルの読み取りに失敗しました',
+    configRestoreFileUnsupported: 'このバックアップのカテゴリではファイル内容を表示できません',
+    configRestoreDetailView: '詳細設定を表示',
+    configRestoreDetailHint:
+      'マネージドスクリプトのページで詳細設定を表示します。同名のマネージドスクリプトが実行中でないことを確認してください！',
+    configRestoreDetailConfirm:
+      '設定を表示するためにマネージドスクリプトのページを開きます。現在の設定は一時的に上書きされます。表示中は同名のマネージドスクリプトを実行しないでください。設定の競合が発生する可能性があります。問題が起きた場合は「設定の復元」機能で復元できます。',
+    configRestoreConfirmOk: 'OK',
+    configRestoreAction: 'ワンクリック復元',
+    configRestoreSuccess: '設定を復元しました',
+    configRestoreFailed: '設定の復元に失敗しました',
+    configRestoreConfirmTitle: '現在の設定を上書き',
+    configRestoreConfirmDesc:
+      'この時点の設定を対応する場所に復元します。復元前に現在の設定は自動でバックアップされ、いつでも「設定の復元」から取り戻せます。復元しますか？',
+    configRestoreCorruptedTitle: '復元元の設定ファイルが破損しています',
+    configRestoreCorruptedDesc:
+      '強制復元はこのファイルに関する保護チェック（復元前バックアップ・使用中チェック）をスキップし、既存の設定を上書きする可能性があります。続行しますか？',
+    configRestoreForceAction: '強制復元',
+    configRestoreModeScript: '共有',
+    configRestoreModeUser: '独立',
+    configRestoreModeDirect: 'ネイティブ',
+    configRestoreCurrentSource: '現在の設定ソース：{mode}',
+    configRestoreCrossSourceTitle: '設定ソースをまたいだ復元',
+    configRestoreCrossSourceDesc:
+      'このバックアップは{backup}設定のもので、現在は{current}です。復元を続けると設定ソースが{backup}に切り替わり、対応する設定に書き込まれます。',
+    configRestoreCrossSourceShared:
+      '共有設定はこのマネージドスクリプトの全アカウントで共有されるため、復元すると他のアカウントが現在使用している設定も上書きされます。',
+    configSessionDiscardedTitle: '設定は保存されませんでした',
+    configSessionDiscardedStructure:
+      '今回のセッションでタスクキューの構造（タスクの追加・削除、順序の変更、設定プランの切り替え）が変更され、設定を開いた時点と一致しなくなったため、今回の変更はすべて保存されませんでした。\n次の手順：設定を開き直し、タスクのオン/オフと高度な設定だけを調整して保存してください。',
+    configSessionDiscardedUnreadable:
+      'ネイティブプログラムがディスクに書き出した設定の読み取りに失敗したため、今回の変更はすべて保存されませんでした。\n次の手順：プログラムのディレクトリにアクセスできることを確認し、設定を開き直してもう一度変更してください。',
+    configSessionDiscardedNotWritten:
+      'ネイティブプログラムが完全な設定を書き出しませんでした（強制終了された可能性があります）。今回の変更はすべて保存されませんでした。\n次の手順：設定を開き直してもう一度変更し、終了時はプログラムが自分で閉じるのを待ってください。',
+    configSessionDiscardedUnknown:
+      '今回の変更はすべて保存されませんでした。\n次の手順：設定を開き直してもう一度変更してください。',
+    oknteConfigRestoreScriptDesc:
+      'ok-nte ネイティブ設定のバックアップです。復元は ok-nte 本体に直接適用されます。この編集ページを開く、ok-nte を実行する、設定画面を開く前に重複を除いて自動作成され、直近 10 件を保持します',
+    oknteSessionStopFailed: 'OK-NTE 設定の停止に失敗しました',
+    oknteSessionStartFailed: 'OK-NTE 設定の起動に失敗しました',
+    oknteSessionFailed: 'OK-NTE 設定に失敗しました: {p0}',
+    oknteSessionOpened: 'OK-NTE 設定を開きました',
+    oknteViewOpened: 'OK-NTE の表示を開きました',
+    oknteSessionTimeoutWarn:
+      'OK-NTE 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
+    oknteViewingTitle: 'OK-NTE 設定を表示中',
+    oknteViewingDesc:
+      'ok-nte の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    oknteViewingDesc2:
+      '表示中は設定が一時的に切り替わります。確認が終わったら「表示を閉じる」をクリックして終了してください。',
+    oknteViewClose: '表示を閉じる',
+    okwwConfigRestoreScriptDesc:
+      'ok-ww ネイティブ設定のバックアップです。復元は ok-ww 本体に直接適用されます。この編集ページを開く、ok-ww を実行する、設定画面を開く前に重複を除いて自動作成され、直近 10 件を保持します',
+    okwwSessionOpened: 'ok-ww 設定を開きました',
+    okwwSessionStartFailed: 'ok-ww 設定の起動に失敗しました',
+    okwwSessionStopFailed: 'ok-ww 設定の停止に失敗しました',
+    okwwViewOpened: 'ok-ww の表示を開きました',
+    okwwSessionTimeoutWarn:
+      'ok-ww 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
+    okwwViewingTitle: 'ok-ww 設定を表示中',
+    okwwViewingDesc: 'ok-ww の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    okwwViewingDesc2:
+      '表示中は設定が一時的に切り替わります。確認が終わったら「表示を閉じる」をクリックして終了してください。',
+    okwwViewClose: '表示を閉じる',
+    maaConfigRestoreScriptDesc:
+      'MAA ネイティブ設定のバックアップです。復元は MAA 本体に直接適用されます。この編集ページを開く、MAA を実行する、設定画面を開く前に重複を除いて自動作成され、直近 10 件を保持します',
+    maaSessionOpened: 'MAA 設定を開きました',
+    maaSessionStartFailed: 'MAA 設定の起動に失敗しました',
+    maaSessionStopFailed: 'MAA 設定の停止に失敗しました',
+    maaViewOpened: 'MAA の表示を開きました',
+    maaSessionTimeoutWarn:
+      'MAA 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
+    maaViewingTitle: 'MAA 設定を表示中',
+    maaViewingDesc: 'MAA の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    maaViewingDesc2:
+      '表示中は設定が一時的に切り替わります。確認が終わったら「表示を閉じる」をクリックして終了してください。',
+    maaViewClose: '表示を閉じる',
+    configRestorePreviewMode: '設定モード',
+    configRestorePreviewLauncher: 'ランチャー',
+    configRestorePreviewRegion: 'ゲームサーバー',
+    configRestorePreviewGamePath: 'ゲームのパス',
+    configRestorePreviewLanguage: 'ゲーム言語',
+    configRestorePreviewAccount: 'アカウント',
+    configRestorePreviewPassword: 'パスワード',
+    configRestorePreviewBilibili: 'bilibiliサーバーのアカウント名',
+    configRestorePreviewUseCustomWinTitle: 'カスタムウィンドウタイトル',
+    configRestorePreviewCustomWinTitle: 'ウィンドウタイトル',
+    zzzodPreviewUnlimited: '制限なし',
+    zzzodOpenNativeConfig: '一条龍内で設定',
+    zzzodOpenNativeConfigHint:
+      'zzz-od のネイティブ画面を開いて編成などの複雑な設定を行います。このページの設定をベースに、そのアカウントに紐づく専用インスタンス（MAS-アカウント名）を開き、GUI 内のタスク編成とアカウント変更は自動でこのページに読み戻されます。閉じると元のアクティブインスタンスに戻ります',
+    zzzodConfiguringTitle: 'ZZZ-OD を設定中',
+    zzzodConfiguringDesc:
+      'このアカウントに紐づく専用インスタンスに切り替えました。編成などの設定を完了してください。',
+    zzzodConfiguringDesc2:
+      'GUI 内のタスクとアカウントの変更は自動でこのページに読み戻されます。完了したら「設定を保存」をクリックしてこのセッションを終了してください。',
+    zzzodScriptFallbackName: 'ZZZ-OD マネージドスクリプト',
+    zzzodScriptNotFound: 'ZZZ-OD マネージドスクリプトが存在しないか、読み込みに失敗しました',
+    zzzodStopFailed: 'ZZZ-OD 設定の停止に失敗しました',
+    zzzodStartFailed: 'ZZZ-OD 設定の起動に失敗しました',
+    zzzodSessionFailed: 'ZZZ-OD 設定に失敗しました: {p0}',
+    zzzodSessionOpened: 'ZZZ-OD 設定を開きました',
+    zzzodViewOpened: 'ZZZ-OD の表示を開きました',
+    zzzodSessionTimeoutWarn:
+      'ZZZ-OD 設定セッションがまもなくタイムアウトします。30 秒後に自動保存されます',
+    zzzodViewingTitle: 'ZZZ-OD 設定を表示中',
+    zzzodViewingDesc:
+      '一条龍の画面には選択したバックアップの内容が表示されています。閲覧専用です。',
+    zzzodViewingDesc2:
+      '表示中は設定が一時的に切り替わります。確認が終わったら「表示を閉じる」をクリックして終了してください。',
+    zzzodViewClose: '表示を閉じる',
+    zzzodSettingsSaved: 'ZZZ-OD 設定を保存しました',
+    zzzodSettingsSaveFailed: 'ZZZ-OD 設定の保存に失敗しました',
+    zzzodUserNameHint:
+      'アカウントを区別するための名前です。同じ名前のアカウントは同一アカウントとして集計されます',
+    zzzodConfigSourceUserAlert:
+      'アカウントとタスク編成はこのページの設定が優先され、実行時は AUTO-MAS が一条龍に注入して実行します',
+    zzzodConfigSourceDirectAlert:
+      'ネイティブ設定では選択した一条龍インスタンスの設定を直接編集します。実行時はそのインスタンスの設定どおりに実行され、MAS は注入も干渉もしません',
+    zzzodModeUser: '独立設定',
+    zzzodModeUserDesc: 'このアカウント専用の独立設定を使用し、ネイティブ設定から隔離されます。',
+    zzzodModeDirectDesc:
+      '一条龍のネイティブ設定を直接編集します。複数アカウントはこのページのインスタンス管理で設定します\n（マネージドスクリプトごとにネイティブアカウントは 1 つまで）',
+    zzzodDirectInstance: '設定するインスタンスを選択',
+    zzzodDirectInstanceHint:
+      '直接編集する一条龍アカウント（インスタンス）を選択します。編集はそのインスタンス自体にのみ影響します。実行するアカウントはインスタンス管理で「アクティブに設定」し、複数アカウントは「インスタンスを起動」+「アカウント切り替え」の組み合わせで実行します',
+    zzzodDirectPickInstance: '編集するインスタンスを選択',
+    zzzodDirectPickInstanceFirst: '先に上でインスタンスを選択してください',
+    zzzodDirectModeLimit:
+      'マネージドスクリプトごとにネイティブアカウントは 1 つのみです。複数アカウントが必要な場合は、そのアカウントのインスタンス管理で直接設定してください',
+    zzzodDirectInstanceRun: '実行インスタンス',
+    zzzodDirectInstanceRunHint:
+      '現在のみ実行 = 現在選択中のアカウントのみ実行。有効な全インスタンス = 「インスタンスを起動」スイッチがオンの全アカウントを順に実行',
+    zzzodInstanceRunCurrent: '現在のみ実行',
+    zzzodInstanceRunAll: '有効な全インスタンス',
+    zzzodDirectBindAlert:
+      'アカウント欄は「設定を保存」を押した時点でのみ書き戻されます。タスクのオン/オフと実行インスタンスの変更は即時反映されます。ネイティブへの出入り時に自動バックアップされ、「設定の復元」から取り戻せます',
+    zzzodDirectTasksDesc:
+      'タスクのオン/オフと順序は選択したインスタンスのネイティブタスク編成に直接書き戻されます。オンにすると即座に追加され、カードのハンドルをドラッグして実行順を調整できます。無効な項目は任意の位置に置けます。',
+    zzzodSortTasks: 'ワンクリック整理',
+    zzzodSortTasksHint:
+      '有効なタスクを無効なタスクより前に並べ（それぞれ元の相対順序を維持）、書き戻します',
+    zzzodDragSortHint: 'ドラッグして実行順を調整',
+    zzzodInstancesManage: 'アカウント管理',
+    zzzodInstancesManageHint:
+      '一条龍ネイティブインスタンスを管理します。各インスタンスは「インスタンスを起動」を個別に切り替えられ、実行インスタンスが「有効な全インスタンス」の場合はスイッチがオンのアカウントのみ実行します。追加・名前変更・削除に対応し、変更はリアルタイムで one_dragon.yml に書き戻されます。削除するとそのインスタンスの設定ディレクトリも同時に削除されるため、慎重に操作してください。',
+    zzzodInstanceActiveInOd:
+      'インスタンスを起動：実行インスタンスが「有効な全インスタンス」の場合、このインスタンスが実行に参加します',
+    zzzodInstanceRunAllSwitch: 'インスタンスを起動',
+    zzzodInstanceForceLoginSwitch: '実行前にアカウントを切り替え',
+    zzzodInstanceSetActiveTag: 'アクティブに設定',
+    zzzodInstanceForceLoginHint:
+      '実行前にアカウントを切り替え：一条龍の複数アカウント実行がこのインスタンスに到達する前に、そのアカウントに強制ログインして切り替えを完了します（一条龍のネイティブ機能で、MAS は干渉しません）',
+    zzzodInstanceForceLoginFailed: 'アカウント切り替えスイッチの更新に失敗しました',
+    zzzodAccountRequiredTip:
+      'アカウント切り替え（実行前の切り替え/複数アカウント実行）には完全なログイン情報が必要です。中国サーバー/グローバルサーバーはアカウント＋パスワード、bilibiliサーバーは bilibiliサーバーのアカウント名です',
+    zzzodDirectPasswordPlaceholder: 'パスワードを入力してください（アカウント切り替えに必要）',
+    zzzodInstanceActiveTag: '現在アクティブ',
+    zzzodInstanceActiveTagHint:
+      'アクティブインスタンスです。「現在のみ実行」ではこのインスタンスのみ実行されます',
+    zzzodInstanceFlagFailed: 'インスタンスの参加状態の更新に失敗しました',
+    zzzodSetActiveInstanceFailed: '現在のアクティブインスタンスの設定に失敗しました',
+    zzzodSetInstanceActive: 'クリックして現在のアクティブに設定',
+    zzzodSetInstanceActiveSuccess: '{name} を現在のアクティブインスタンスに設定しました',
+    zzzodAddInstance: 'インスタンスを追加',
+    zzzodAddInstanceFailed: 'インスタンスの追加に失敗しました',
+    zzzodAddInstanceSuccess: 'インスタンスを追加しました',
+    zzzodInstanceName: 'インスタンス名',
+    zzzodInstanceNameHint:
+      '複数インスタンスで識別しやすいよう、サーバーやアカウント名を入力することをおすすめします',
+    zzzodInstanceNamePlaceholder: 'インスタンス名を入力してください',
+    zzzodInstanceNameRequired: 'インスタンス名は必須です',
+    zzzodRenameInstance: '名前を変更',
+    zzzodRenameInstanceFailed: '名前の変更に失敗しました',
+    zzzodRenameInstanceSuccess: 'インスタンス名を変更しました',
+    zzzodDeleteInstance: 'インスタンスを削除',
+    zzzodDeleteInstanceConfirm:
+      'インスタンス {inst} を削除すると設定ディレクトリも一緒に削除され、元に戻せません（変更前にネイティブ設定は自動バックアップされます）。削除しますか？',
+    zzzodDeleteInstanceFailed: 'インスタンスの削除に失敗しました',
+    zzzodDeleteInstanceSuccess: 'インスタンスを削除しました',
+    zzzodNativeLoadFailed: 'インスタンスのネイティブ設定の読み込みに失敗しました',
+    zzzodNativeSaveFailed: 'インスタンスのネイティブ設定の保存に失敗しました',
+    zzzodNativeSaved: '選択したインスタンスの一条龍ネイティブ設定に保存しました',
+    zzzodBackupFailed:
+      'ネイティブ設定のバックアップに失敗しました。「設定の復元」で利用可能な復元ポイントを確認してください',
+    zzzodLoadInstancesFailed: 'インスタンス一覧の読み込みに失敗しました',
+    zzzodSlotsManage: '予約スロット（上級）',
+    zzzodSlotsManageHint:
+      'これらは MAS が一条龍ディレクトリ内にアカウント用に予約した独立したデータスロットです（一条龍自体からは見えません）。ここには各予約スロットの所有者と使用状況が表示されます。紐づけ済みだが未実行のアカウントは番号のみでデータはありません。使われていない古いデータはアカウント削除時や実行前に自動で回収され、ここで手動クリーンアップもできます。',
+    zzzodSlotsRefresh: '更新',
+    zzzodSlotsClean: '使われていない古いデータをクリーンアップ',
+    zzzodSlotsCleanConfirm:
+      '所有者なしスロットを {count} 件回収します（内容は先に回収プールにアーカイブされ、復元可能です）。クリーンアップしますか？',
+    zzzodSlotsCleanDone: '所有者なしスロットを {count} 件回収しました',
+    zzzodSlotsCleanNone: 'クリーンアップできる所有者なしスロットはありません',
+    zzzodSlotsCleanFailed: '所有者なしスロットのクリーンアップに失敗しました',
+    zzzodSlotsLoadFailed: 'インスタンススロットの読み込みに失敗しました',
+    zzzodSlotTabSlots: 'インスタンススロット',
+    zzzodSlotTabRecycle: '回収プール',
+    zzzodSlotColIdx: 'スロット番号',
+    zzzodSlotColKind: '種別',
+    zzzodSlotColOwner: '所有者',
+    zzzodSlotColDir: 'ディレクトリ',
+    zzzodSlotColSize: '使用量',
+    zzzodSlotKindNative: 'ネイティブインスタンス',
+    zzzodSlotKindMas: 'MAS 紐づけ',
+    zzzodSlotKindOrphan: '使われていない古いデータ',
+    zzzodSlotOwnerModeScript: '共有設定',
+    zzzodSlotOwnerModeUser: '独立設定',
+    zzzodSlotOwnerModeDirect: 'ネイティブ',
+    zzzodSlotNativeConflict: 'MAS 紐づけの競合',
+    zzzodSlotOwnerItem: '{user}（{script}·{mode}）',
+    zzzodSlotOwnerJoiner: '、',
+    zzzodSlotNativeConflictHint:
+      'このスロット番号は一条龍ネイティブインスタンスに占有されています（一条龍は新規インスタンス追加時にディスクをスキャンしないため、MAS スロットの番号を空き番号と見なします）。MAS アカウントは次回実行時に上位の空きスロットへ自動で紐づけ直され、元のスロット内の MAS データはその際に回収プールにアーカイブされ、回収プールから取り戻せます。',
+    zzzodSlotHasDir: 'あり',
+    zzzodSlotNoDir: 'なし',
+    zzzodSlotEmpty: 'インスタンススロットがありません',
+    zzzodRecycleColSlot: 'スロット番号',
+    zzzodRecycleColKind: '種別',
+    zzzodRecycleColTime: 'アーカイブ日時',
+    zzzodRecycleColFiles: 'ファイル',
+    zzzodRecycleColSize: '使用量',
+    zzzodRecycleColOps: '操作',
+    zzzodRecycleKindSlot: 'スロット内容',
+    zzzodRecycleKindMas: 'バックアッププール',
+    zzzodRecycleHint:
+      '削除されたアカウント/マネージドスクリプトや手動でクリーンアップされたデータはここに一時保管されます（予約スロット番号ごとにグループ化され、マネージドスクリプト間で共有）。「復元」はデータをあるアカウントの予約スロットに戻します（新しいアカウントを作成して受け取ることもできます）。アカウントが残っている状態で設定をロールバックしたい場合は、そのアカウントページの「設定の復元」を使ってください。',
+    zzzodRecycleEmpty: '回収プールは空です',
+    zzzodRecycleRestore: '復元',
+    zzzodRecycleOpen: '表示',
+    zzzodRecycleOpenFailed: 'ディレクトリを開けませんでした',
+    zzzodRecycleClear: '回収プールを空にする',
+    zzzodRecycleClearConfirm:
+      '回収プールの全 {count} 件のレコード（合計 {size}）を削除します。復元履歴もすべて消去され、元に戻せません。空にしますか？',
+    zzzodRecycleClearDone: '回収プールを空にしました（{count} 件）',
+    zzzodRecycleClearFailed: '回収プールの消去に失敗しました',
+    zzzodRecycleRestoreConfirm:
+      'このスナップショット（スロット {slot}）をあるアカウントのスロットに復元しますか？対象アカウントに紐づくスロットが既にある場合、その現在の内容は先にアーカイブされます。',
+    zzzodRecycleRestoreTargetHint: 'スナップショット：スロット {slot} · {ts}',
+    zzzodRecycleRestoreToUser: '既存のアカウントに復元',
+    zzzodRecycleRestoreToNewUser: '新しいアカウントを作成',
+    zzzodRecycleRestoreUserPlaceholder: 'アカウントを選択',
+    zzzodRecycleRestoreNewUserName: '新しいアカウント名',
+    zzzodRecycleRestoreNewUserNameDefault: '復元されたアカウント',
+    zzzodRecycleRestoreOverwriteHint:
+      'このアカウントは現在スロット {slot} に紐づいています。復元するとその内容が置き換えられます（置き換え前にアーカイブされ、回収プールから取り戻せます）。',
+    zzzodRecycleRestoreUserRequired: '先に対象アカウントを選択してください',
+    zzzodRecycleRestoreNameRequired: '新しいアカウント名を入力してください',
+    zzzodRecycleRestoreDone: '復元が完了しました',
+    zzzodRecycleRestoreFailed: 'スロット内容の復元に失敗しました',
+    zzzodGameRegion: 'ゲームサーバー',
+    zzzodGameRegionHint:
+      'アカウントが所属するサーバーです。サーバーごとにゲームクライアントと更新時刻が異なります',
+    zzzodRegionCn: '中国サーバー',
+    zzzodRegionCnB: 'bilibiliサーバー',
+    zzzodRegionUs: '北米サーバー',
+    zzzodRegionEu: '欧州サーバー',
+    zzzodRegionAsia: 'アジアサーバー',
+    zzzodRegionTwHkMo: '台湾・香港・マカオサーバー',
+    zzzodGameLanguage: 'ゲーム言語',
+    zzzodGameLanguageHint: 'ゲーム画面の言語（中国語/英語）',
+    zzzodLanguageCn: '中国語',
+    zzzodLanguageEn: '英語',
+    zzzodGamePath: 'ゲームのパス',
+    zzzodGamePathHint: 'ゼンレスゾーンゼロクライアント ZenlessZoneZero.exe のフルパス',
+    zzzodGamePathPlaceholder: 'ZenlessZoneZero.exe を選択してください',
+    zzzodPickGameExe: 'ZenlessZoneZero.exe を選択してください',
+    zzzodAccount: 'アカウント',
+    zzzodEnterAccount: 'ログインアカウント（電話番号/メール）を入力してください',
+    zzzodAccountHint:
+      'グローバルサーバー/中国サーバーでアカウント＋パスワードログインする場合に入力します。一条龍がゲームに自動ログインする際に使用します',
+    zzzodPasswordHint:
+      'アカウント＋パスワードでログインする場合に入力します。空欄の場合は zzz-od が保存済みのログイン状態を使用します',
+    zzzodEnterPasswordPlaceholder:
+      'パスワードを入力してください（空欄の場合は保存済みのログイン状態を使用）',
+    zzzodBilibiliAccount: 'bilibiliサーバーのアカウント名',
+    zzzodEnterBilibiliAccount: 'bilibiliサーバーのログインアカウント名を入力してください',
+    zzzodBilibiliAccountHint: 'bilibiliサーバーのログインパネルに保存されているアカウント名',
+    zzzodUseCustomWinTitle: 'カスタムウィンドウタイトル',
+    zzzodCustomWinTitle: 'ウィンドウタイトル',
+    zzzodOneDragonConfig: 'タスク設定',
+    zzzodOneDragonConfigHint:
+      'このアカウントの設定に保存され、実行時に MAS が一条龍に書き込みます。スイッチがオンのタスクは順番どおりに実行されます',
+    zzzodOneDragonDesc:
+      '一条龍シリーズのタスクが一覧で確認できます。スイッチをオンにすると即座に追加され順番どおりに実行され、オフにしても元の位置に残ります。カードのハンドルをドラッグして実行順を調整できます。',
+    zzzodLoadOneDragonFailed: '一条龍タスクの読み込みに失敗しました',
+    zzzodAfterDone: 'ゲーム終了後の動作',
+    zzzodAfterDoneHint:
+      '一条龍の実行終了後に行う動作で、一条龍の「終了後」ドロップダウンと同義です。独立モードでは設定セッションを通じて一条龍画面と双方向に同期し、ネイティブモードでは一条龍のネイティブ設定を直接読み書きします。実行時は MAS が起動パラメーターとして渡します（実行が正常終了した場合のみ有効）',
+    zzzodAfterDoneNone: 'なし',
+    zzzodAfterDoneCloseGame: 'ゲームを閉じる',
+    zzzodAfterDoneShutdown: 'シャットダウン',
+    zzzodLaunchArgsTitle: '起動パラメーター',
+    zzzodLaunchArgsDetail: 'パラメーター詳細',
+    zzzodLaunchArgsDesc:
+      '一条龍がゲームを起動する際に使うパラメーターです（一条龍の「ゲーム設定」の起動パラメーターと同じソース）。メインスイッチがオフの場合、ゲームはパラメーターなしで起動します',
+    zzzodLaunchArgsSwitchHint:
+      '起動パラメーターのメインスイッチ：オフの場合、一条龍はゲームをパラメーターなし（高度なパラメーターを含む）で起動します',
+    zzzodScreenSize: 'ウィンドウサイズ',
+    zzzodFullScreen: 'フルスクリーン',
+    zzzodFullScreenWindowed: 'ウィンドウモード',
+    zzzodFullScreenFullscreen: 'フルスクリーン',
+    zzzodPopupWindow: 'ボーダーレスウィンドウ',
+    zzzodMonitor: 'ディスプレイ番号',
+    zzzodAdvanceArgs: '高度なパラメーター',
+    zzzodAdvanceArgsPlaceholder: 'その他のカスタムパラメーター（DX12 は上のスイッチを使用）',
+    zzzodDx12: 'DX12',
+    zzzodDx12Hint:
+      'DX12 モードでゲームを起動します（-use-d3d12）。解像度などのパラメーターと同階層で、注入時に一条龍の高度なパラメーターへ自動でマージされます。起動パラメーターのメインスイッチがオンの場合のみ有効です',
   },
   taskboard: {
     title: 'タスクボード',
@@ -2534,6 +3228,7 @@ export default {
       mumu: 'MuMu Player',
       ldplayer: 'LDPlayer',
       emulator2: '自動認識（推奨）',
+      avd: '改造 AVD',
     },
     deviceStatus: {
       online: 'オンライン',
@@ -2545,6 +3240,7 @@ export default {
       unknown: '不明',
     },
     unnamed: '名称未設定',
+    defaultName: '新しいシミュレーター',
     configTitle: 'エミュレーター設定',
     deleteConfirm: 'このエミュレーター設定を削除しますか？',
     ok: 'OK',
@@ -2590,6 +3286,8 @@ export default {
     autoSearch: 'エミュレーターを検索',
     manualAdd: '手動で追加',
     manualAddMulti: 'マルチインスタンス管理ツールを追加',
+    emptyIndexHint:
+      'シミュレーター設定がまだありません。インストール済みのシミュレーターを自動検索するか、手動で追加してください。',
     searchModalTitle: '見つかったエミュレーター',
     searchEmpty: 'エミュレーターが見つかりませんでした',
     import: 'インポート',
@@ -2753,6 +3451,11 @@ export default {
       already_added: '追加済み',
       not_found: 'エミュレーター本体が見つかりません',
       probe_failed: 'バージョンを判別できません',
+      components_missing:
+        'コンポーネントが不足しています。完全なエミュレーターベータパッケージを使用してください',
+      test_package_required: '改造 AVD ベータパッケージが必要です',
+      test_package_outdated:
+        '改造 AVD ベータパッケージが古すぎます。新しいパッケージに更新してください',
     },
     toast: {
       guardOk: '{count} 台のデバイスの基準を記録しました',
@@ -2777,6 +3480,42 @@ export default {
       addOk: '{count} 個のエミュレーターを追加しました',
       removeOk: 'エミュレーターのパスを削除しました',
       removeFailed: 'エミュレーターのパスの削除に失敗しました',
+    },
+    avd: {
+      add: '改造 AVD を追加（ベータ）',
+      manage: 'コンポーネントとチェック',
+      title: '改造 AVD（ベータ）',
+      root: 'ルートディレクトリ',
+      rootPlaceholder:
+        'エミュレーターベータパッケージを解凍したフォルダーを選択または入力します。インスタンスもここに配置されます',
+      check: 'チェック',
+      unsupportedScript: '改造 AVD は現在 MFW スクリプトと MAA のみサポートしています',
+      prechecks: 'PC チェック',
+      precheck: {
+        ok: '合格',
+        error: '不合格',
+        warning: '不合格',
+        unknown: '未チェック',
+      },
+      components: 'コンポーネント',
+      optional: 'オプション',
+      localSdk: 'ローカル SDK',
+      testPackage: 'ベータパッケージ',
+      needsTestPackage: 'ベータパッケージが必要です',
+      outdatedTestPackage: 'ベータパッケージが古い',
+      testPackageVersion: 'ベータパッケージ {build}（{version}）',
+      close: '閉じる',
+      componentReady: '準備完了',
+      componentMissing: '不足',
+      softwareRenderer:
+        'このインスタンスはソフトウェアレンダリングを使用しているため、ゲームが CPU を使い切ります。グラフィックスドライバーを更新してください',
+      fieldMemory: 'メモリ',
+      memoryRecommend: '推奨：1999 {reverse1999} GB',
+      toast: {
+        statusFailed: '改造 AVD の状態を読み込めませんでした',
+        addFailed: '改造 AVD の追加に失敗しました',
+        optionsLoadFailed: 'インスタンスオプションを読み込めませんでした',
+      },
     },
   },
   gamesign: {
@@ -2818,6 +3557,11 @@ export default {
         starrail: '崩壊：スターレイル',
         zenless: 'ゼンレスゾーンゼロ',
       },
+      edit: '編集',
+      editTitle: '表示するゲームを選択',
+      editGame: '{game}のデイリーノートを表示',
+      switchTitle: 'ゲームを切り替えてデイリーノートを表示',
+      allHidden: 'すべてのゲームをオフにしました。「編集」から再度オンにできます',
     },
     statusInvalid: 'チェックインの状態レスポンスが不正です',
     resultInvalid: 'ログインボーナスの結果レスポンスが不正です',
@@ -2826,6 +3570,7 @@ export default {
       risk: '制限中',
       failed: '失敗',
       unsigned: '未受取',
+      partialFailure: '一部失敗',
     },
     unknownUser: '不明なアカウント',
     defaultUserName: 'アカウント',
@@ -2849,6 +3594,9 @@ export default {
       lastSign: '前回のチェックイン',
       lastSignDesc: '最後に受け取りが完了した日付',
       neverSigned: '履歴なし',
+      homeActivityEnable: 'ホームにチェックイン状況とノートを表示',
+      homeActivityEnableDesc:
+        'オンにすると、ホームのイベントカルーセルのゲームの下にチェックイン状況とデイリーノートを表示します。オフにすると表示しません',
     },
     list: {
       title: 'アカウント一覧',
@@ -2864,6 +3612,8 @@ export default {
       del: '削除',
       empty: 'アカウントがありません',
       emptyGuide: '右上の「アカウントを追加」から作成してください',
+      gameSignTask: '{game}ゲームチェックイン',
+      kuroCoinSign: '庫洛コインチェックイン',
     },
     edit: {
       title: '編集 — {name}',
@@ -2935,6 +3685,8 @@ export default {
       signDone: '受け取りが完了しました',
       signError: '受け取りに失敗しました: {error}',
       externalLinkFailed: '外部リンクを開けませんでした。しばらくしてからお試しください',
+      homeActivityEnableSaveFailed:
+        'ホームのチェックイン状況とノート表示スイッチの保存に失敗しました',
     },
   },
   history: {
@@ -3232,6 +3984,7 @@ export default {
       title: 'クイックスタート',
       placeholder: 'タスクを選択',
       start: '開始',
+      refresh: '別の一言',
     },
     proxy: {
       aria: '代行状況',
@@ -3266,6 +4019,10 @@ export default {
         '管理中のスクリプトに対応するゲームを初期表示します。手動設定が優先されます。',
       carouselAutoplay: '自動切り替え',
       carouselAutoplayVisibility: 'イベントカルーセルの自動切り替え',
+      activityNotesGroup: 'ホームのチェックイン状況とノート',
+      activityNoteVisibility: '{name}のチェックイン状況とノートを表示',
+      activityNotesMasterOff:
+        'マスタースイッチは「ゲームコミュニティ」設定にあります。オンにすると有効になります',
     },
     scrollHint: {
       aria: '下にスクロールするともっと見られます',
@@ -3290,6 +4047,22 @@ export default {
       startFailed: 'タスクを開始できませんでした',
       startFailedItems: '次のタスクを開始できませんでした: {p0}',
       startError: 'タスクを開始できませんでした。スケジューラの状態を確認してください',
+    },
+    activityNotes: {
+      title: 'デイリーノート',
+      selectUser: 'ノートのアカウントまたはキャラクターを選択',
+      sign: 'チェックイン状況（{signed}/{total}）',
+      user: 'アカウント',
+      signed: 'チェックイン成功',
+      alreadySigned: 'チェックイン済み',
+      failed: 'チェックイン失敗',
+      noRecord: 'チェックイン記録はありません',
+      expand: '残り {count} 件のアカウントを展開',
+      collapse: '折りたたむ',
+      latestResult: '最新のチェックイン記録',
+      loading: 'デイリーノートを読み込んでいます…',
+      unknown: '{count} 件のアカウントにチェックイン記録がありません',
+      signFailed: 'チェックイン記録を読み込めませんでした。再読み込みしてください',
     },
   },
   launch: {
@@ -3322,6 +4095,22 @@ export default {
       details: '詳細',
       mirrorTitle: '別のダウンロード元で再試行',
       mirrorRecommended: '推奨',
+      restoreWorkspace: 'プログラムファイルを復元して再試行',
+      restoringWorkspace: 'プログラムファイルを復元し、実行環境を準備しています...',
+      updateRuntime: 'Runtime を更新',
+      runtimeUpdating: 'Runtime を確認・更新しています...',
+      runtimeVersion: '現在の Runtime バージョン：{version}。',
+      runtimeVersionUnknown: '不明',
+      runtimeUpdateAvailable:
+        '現在の Runtime バージョン：{current}。新しいバージョン {latest} が見つかりました。更新してから再試行できます。',
+      runtimeUpdated: 'Runtime を {version} に更新しました。再初期化しています。',
+      runtimeRestarting: 'Runtime の更新が完了しました。最初から再初期化しています...',
+      runtimeCurrent:
+        'Runtime {version} はすでに最新バージョンです。再試行するかログを確認してください。',
+      runtimeUpdateSkipped: '今回は Runtime を更新しませんでした。',
+      runtimeUpdateFailed: 'Runtime の更新に失敗しました：{error}',
+      joinGroupHint:
+        '再試行しても解決しない場合は、QQ グループに参加してログを添えてサポートを求めてください。',
     },
     steps: {
       environment: '実行環境',
@@ -3449,6 +4238,12 @@ export default {
     noData: 'データがありません',
     emptyTitle: 'プランがありません',
     emptyDesc: 'プランはまだ作成されていません',
+    defaultName: {
+      maa: '新規 MAA プラン',
+      maaEnd: '新規 MaaEnd プラン',
+      baah: '新規 BAAH プラン',
+      mss: '新規 MSS プラン',
+    },
     selectLabel: 'プラン選択',
     drag: 'ドラッグして並び替え',
     rename: '名前の変更',
@@ -3696,6 +4491,7 @@ export default {
       deleteFailed: 'キューを削除できませんでした: {error}',
       saveFailed: '保存に失敗しました',
       saveQueueFailed: 'キューを保存できませんでした: {error}',
+      loadQueueFailed: 'キューの詳細を読み込めませんでした',
     },
   },
   logs: {
@@ -3717,6 +4513,15 @@ export default {
       packageError: 'ログの書き出しでエラーが発生しました: {error}',
       openFolderFailed: 'アーカイブの保存先フォルダーを開けませんでした',
     },
+    realTimeOn: '自動更新',
+    realTimeOff: '更新を停止',
+    realTimeEnabledToast: '自動更新を有効にしました',
+    realTimeDisabledToast: '自動更新を停止しました',
+    loadFailed: 'ログの読み込みに失敗しました',
+    loadingTip: 'ログを読み込み中...',
+    emptyBackend:
+      'バックエンドログはまだ空です。バックエンドがこの起動で立ち上がっていない可能性があります。まず「フロントエンドログ」を確認してください。',
+    emptyFrontend: 'フロントエンドログはまだ空です。',
   },
   scheduler: {
     title: 'スケジューラ',
@@ -3774,6 +4579,9 @@ export default {
       empty: 'データがありません',
       truncated:
         'ログが長いため、実行パネルには直近の内容のみ表示しています。完全なログは履歴に記録されます。',
+      theme: 'ログテーマ',
+      followTheme: 'テーマ色に従う',
+      saveThemeFailed: 'ログテーマの設定を保存できませんでした',
     },
     overview: {
       title: 'タスク概要',
@@ -3859,6 +4667,7 @@ export default {
       Whimbox: '奇想盒',
       MSS: 'MSS',
       General: '汎用',
+      ZzzOd: 'ZZZ-OD スクリプト',
     },
     typeDesc: {
       MAA: 'アークナイツの自動化。複数アカウントの日課代行に対応',
@@ -3874,6 +4683,7 @@ export default {
       Whimbox: '『インフィニティニキ』 奇想盒（Whimbox）専用。一条龍デイリーの定時代行に対応',
       MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
+      ZzzOd: 'ゼンレスゾーンゼロ一条龍 · デイリー自動化とアカウント管理',
     },
     mask: {
       maaTitle: 'MAA の設定中です',
@@ -4006,6 +4816,7 @@ export default {
         BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
         Whimbox: '『インフィニティニキ』 奇想盒（Whimbox）専用。一条龍デイリーの定時代行に対応',
         MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化と複数アカウント管理',
+        ZzzOd: 'ゼンレスゾーンゼロ一条龍 · デイリー自動化とアカウント管理',
       },
     },
     toast: {
@@ -4357,6 +5168,30 @@ export default {
       hideCloseTip:
         '誤操作を防ぐため、右上の閉じるボタンを隠します。Alt+F4、タスクバーのウィンドウメニュー、トレイメニューからは終了できます。',
       logStyle: 'ログの表示スタイル',
+      customBackgroundSection: 'カスタム背景',
+      customBackground: '背景画像',
+      customBackgroundTip:
+        'ローカルの画像をメイン画面の背景に選択します。テーマパックの背景が優先されます。',
+      customBackgroundSelect: '画像を選択',
+      customBackgroundClear: '背景を削除',
+      customBackgroundEmpty: 'カスタム背景は未設定です',
+      customBackgroundFileTypeName: '画像ファイル',
+      customBackgroundUnsupported: 'この画像形式はまだサポートされていません',
+      customBackgroundTooLarge: '背景画像が大きすぎます。8 MB 以内の画像を選択してください',
+      customBackgroundDimensionsUnsupported: '背景画像のサイズが大きすぎるか、ファイルが無効です',
+      customBackgroundReadFailed: '背景画像を読み込めませんでした',
+      customBackgroundLoadFailed: '背景画像を一時的に読み込めません',
+      customBackgroundRetry: '再読み込み',
+      customBackgroundImported: '背景画像を適用しました',
+      customBackgroundRemoved: 'カスタム背景を削除しました',
+      customBackgroundImportFailed: '背景画像の設定に失敗しました',
+      customBackgroundRemoveFailed: '背景画像の削除に失敗しました',
+      customBackgroundPackageActive:
+        '現在テーマパックの背景が優先されているため、カスタム背景は一時的に無効です',
+      customSurfaceOpacity: 'UI の不透明度',
+      customSurfaceOpacityTip:
+        'カスタム背景上の UI コンポーネントの不透明度を調整します。最低 10%。',
+      customSurfaceOpacitySaveFailed: 'UI の不透明度を保存できませんでした',
     },
     func: {
       startupSection: '起動',
@@ -4469,6 +5304,23 @@ export default {
         openable: 'ドライバー呼び出し',
         effective: '実際の接続',
       },
+      prompt: {
+        title: '実際のモニターが復帰しました',
+        body: 'モニター {devices} が接続されたことを検出しましたが、タスクが実行中のため、MAS は仮想ディスプレイをまだ取り外していません。今取り外すとウィンドウが接続されたモニターに移動し、サイズも変わる可能性があるため、PC ゲームタスクがエラーになります。残すを選択すると、このタスク終了後に自動で取り外します。',
+        keep: '残す（タスク終了後に自動で取り外す）',
+        detach: '今すぐ取り外す',
+        detaching: '取り外しています…',
+        detachFailed: '取り外しに失敗しました：{reason}',
+      },
+      detach: '今すぐ取り外す',
+      detachTip:
+        'MAS が現在接続している仮想ディスプレイを手動で取り外します。タスクの実行中でも取り外せます——PC ゲームタスクの実行中に取り外すとゲームウィンドウが移動し、このタスクがエラーになる可能性があります。取り外した後もデスクトップに実際の映像出力がない場合、次の巡回チェックで再接続されます。完全に無効にするには上のスイッチをオフにしてください。',
+      detachAction: '仮想ディスプレイを取り外す',
+      detachDone: '仮想ディスプレイを取り外しました',
+      detachNothing: '現在仮想ディスプレイは接続されていません',
+      detachFailed: '取り外しリクエストに失敗しました',
+      holdingNow: '現在の接続：{holding}',
+      holdingNone: '現在仮想ディスプレイは接続されていません',
     },
     notify: {
       contentSection: '通知の内容',
@@ -4551,6 +5403,44 @@ export default {
       openclawQqQrInvalid: 'QR コードの応答が無効です。後でもう一度お試しください。',
       openclawQqQrError: 'QR コードログインに失敗しました。後でもう一度お試しください。',
       openclawQqQrRetry: 'QR コードを再取得',
+      summary: {
+        system: 'システムポップアップでタスク通知を送信します',
+        mail: 'SMTP: {SMTPServerAddress} · 受信: {ToAddress}',
+        mailEmpty: 'メール設定が不完全です',
+        serverchan: 'SendKey 設定済み',
+        serverchanEmpty: 'SendKey 未設定',
+        koishi: '{KoishiServerAddress}',
+        koishiEmpty: 'サーバーアドレスが未設定です',
+        cmcc: 'API Key 設定済み',
+        cmccEmpty: 'API Key 未設定',
+        webhookEmpty: 'Webhook はまだ追加されていません',
+      },
+      usageDoc: '使い方ドキュメント',
+      channelsGroup: '内蔵',
+      customGroup: 'カスタム',
+      countTemplate: '{n} 件有効化済み',
+      activeEmpty:
+        '有効なチャンネルはまだありません。下のチャンネルで設定を入力してから有効にしてください',
+      idleSection: '未有効',
+      idleEmpty: 'すべてのチャンネルが有効です',
+      customSection: 'カスタムチャンネル',
+      customEmpty: 'カスタムチャンネルはありません',
+      stateEnabled: '有効',
+      stateDisabled: '無効',
+      stateUnbound: '未バインド',
+      configure: 'クリックして設定',
+      manage: 'クリックして管理',
+      webhookCount: '{n} 件',
+      instantHint: '変更は即時反映されます。保存は不要です',
+      bindStatus: 'バインド状態',
+      loadFailed: '通知チャンネルの説明を読み込めませんでした',
+      retryLoad: '再試行',
+      koishiToken: 'Koishi Token',
+      koishiWsPlaceholder: 'ws://localhost:5140/AUTO_MAS',
+      cmccNewMsgName: '中国移動 5G SMS',
+      webhookName: 'カスタム Webhook',
+      webhookDesc:
+        'URL、リクエストヘッダー、メッセージテンプレートを自分で組み立てるプッシュ先。内蔵チャンネルと並行して送信されます',
     },
     advanced: {
       backupSection: 'データのバックアップ',
@@ -4581,6 +5471,8 @@ export default {
       runtimeLaunchModeEffective: '現在の適用値: {mode}',
       runtimeLaunchModeRestartHint: 'アプリの再起動後に反映されます',
       runtimeLaunchModeSaveFailed: 'バックエンドの起動方式の保存に失敗しました',
+      exportZzzOd: 'ZZZ-OD 問題パッケージをエクスポート',
+      exportWhimbox: 'Whimbox 問題パッケージをエクスポート',
     },
     others: {
       updateSection: '更新',
@@ -4637,6 +5529,7 @@ export default {
       copyBackendHash: 'バックエンドのハッシュ：{hash}',
       viewChangelog: '更新履歴',
       changelogTitle: '{version} の更新履歴',
+      cdkGetLink: 'MirrorChyan CDK を取得',
     },
     tray: {
       section: 'トレイメニューのカスタマイズ',
@@ -4705,5 +5598,53 @@ export default {
     'zh-CN': '简体中文',
     'en-US': 'English',
     'ja-JP': '日本語',
+  },
+  mystery: {
+    entry: '隠し入口',
+    back: '機能設定に戻る',
+    backToOverview: '隠し入口に戻る',
+    unlockTitle: 'アクセスコードを入力してください',
+    accessCode: 'アクセスコード',
+    accessCodePlaceholder: 'アクセスコードを入力してください',
+    accessCodeRequired: 'アクセスコードを入力してください',
+    accessCodeInvalid: 'アクセスコードが正しくありません',
+    unlock: 'ロック解除',
+    lock: '再ロック',
+    tokens: {
+      title: 'Token 取得',
+      entryDescription:
+        '米游社、森空島、Taygedo の認証情報を取得します。庫街区は BMT をご利用ください。',
+      description:
+        '米游社、森空島、Taygedo の取得に成功すると、選択したコミュニティアカウントグループに自動で保存されます。',
+      account: 'アカウントグループに保存',
+      accountPlaceholder: 'Token を保存するコミュニティアカウントグループを選択',
+      loadFailed: 'コミュニティアカウントグループを読み込めませんでした。再試行してください',
+      noAccounts: '先にゲームコミュニティでアカウントグループを追加してください',
+      manageAccounts: 'ゲームコミュニティへ移動',
+      miyousheDescription:
+        '米游社アプリで QR コードをスキャンしてログインし、完全な Cookie を取得します。',
+      sklandDescription:
+        '森空島アプリで QR コードをスキャンしてログインし、コミュニティのログイン認証情報を取得します。',
+      taygedoDescription:
+        'Taygedo のアカウントとパスワードでログインし、Taygedo と Cloud NTE の認証情報を取得します。',
+      kuroDescription:
+        '庫街区の Token 取得は BMT に移行しました。BMT 本体でログインして認証情報をコピーし、ゲームコミュニティのアカウント編集ページに戻って貼り付けて保存してください。',
+      openBmt: 'Better-MAS-Tools（BMT）を開く',
+      openFailed: 'BMT プロジェクトを開けませんでした。再試行してください',
+      privacyNotice:
+        '電話番号とパスワードは今回のログインにのみ使用され、設定・ログ・通知には書き込まれません。取得した認証情報は暗号化してこの端末に保存されます。',
+      saved: '{platform} Token を「{name}」に保存しました',
+      taygedoFailed: 'Taygedo のログインに失敗しました。再試行してください',
+    },
+    personalMss: {
+      title: '隠し入口ではありません',
+      hint: '北晨の個人版 MSS サポートを有効にする',
+      on: '個人版 MaaStellaSora 専用オーケストレーションを有効にしました',
+      off: '個人版 MaaStellaSora 専用オーケストレーションを無効にしました',
+      failed: '設定に失敗しました。再試行してください',
+    },
+    loadFailed: 'ロック解除状態を読み込めませんでした。再試行してください',
+    retry: '再試行',
+    saveFailed: 'ロック解除状態を保存できませんでした。再試行してください',
   },
 }

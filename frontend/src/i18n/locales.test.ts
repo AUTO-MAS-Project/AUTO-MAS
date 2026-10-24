@@ -29,6 +29,42 @@ describe('词表', () => {
     }
   })
 
+  // 中文是源语言，新增文案总是先写中文；另外两语漏翻时界面会静默回落成中文，
+  // 只有切到英文/日文的眼睛能发现。这条把「漏翻」变成一条会红的断言。
+  it('中文词表的每条 key 在其它语言里都有译文', () => {
+    const missing: string[] = []
+    for (const [locale, entries] of TRANSLATIONS) {
+      const keys = new Set(entries.map(([k]) => k))
+      for (const [key] of zhEntries) {
+        if (!keys.has(key)) missing.push(`${locale} 缺 ${key}`)
+      }
+    }
+    expect(missing).toEqual([])
+  })
+
+  // 占位符漏抄时 t() 不报错，只是参数没了：日文里少个 {n} 就变成「共 条」。
+  it('同一 key 的占位符在各语言里一致', () => {
+    const placeholders = (value: string) =>
+      [...value.matchAll(/\{([A-Za-z_]\w*)\}/g)]
+        .map(match => match[1])
+        .sort()
+        .join(',')
+    const zhMap = new Map(zhEntries)
+    const offenders: string[] = []
+    for (const [locale, entries] of TRANSLATIONS) {
+      for (const [key, value] of entries) {
+        const source = zhMap.get(key)
+        if (source === undefined) continue
+        if (placeholders(source) !== placeholders(value)) {
+          offenders.push(
+            `${locale} ${key}: 中文 [${placeholders(source)}] vs ${locale} [${placeholders(value)}]`
+          )
+        }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
   // 复数消息，| 是有意的分隔符；其余词条里的 | 都必须转义
   const PLURAL_KEYS = new Set([
     'home.endfield.ongoing',
@@ -50,6 +86,21 @@ describe('词表', () => {
         if (/[|{}]/.test(rest) || /@[:.]/.test(rest)) {
           offenders.push(`${locale} ${key}: ${value}`)
         }
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  // vue-i18n 会对疑似 HTML 的词条刷控制台警告（@intlify/message-compiler 的
+  // RE_HTML_TAG：'= < > !' 里的 '< >' 就被误判成标签）。警告不致命但会淹没真问题；
+  // 词表一律当纯文本渲染，需要富文本的场景走后端 markdown，不经词表。
+  it('词条不触发 vue-i18n 的 HTML 检测（避免控制台警告）', () => {
+    // 与 @intlify/message-compiler 的 detectHtmlTag 同一条正则
+    const RE_HTML_TAG = /<\/?[\w\s="/.':;#-/]+>/
+    const offenders: string[] = []
+    for (const [locale, entries] of [['zh-CN', zhEntries], ...TRANSLATIONS] as const) {
+      for (const [key, value] of entries) {
+        if (RE_HTML_TAG.test(value)) offenders.push(`${locale} ${key}: ${value}`)
       }
     }
     expect(offenders).toEqual([])

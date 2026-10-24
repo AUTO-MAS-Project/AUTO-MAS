@@ -32,9 +32,11 @@ export type PlanChangeHandler = (
 interface PlanTypeDescriptor {
   configType: PlanConfigType
   createType: PlanCreateType
-  /** 词表 key；defaultName 刻意不走词表，见下方注释 */
   displayNameKey: string
-  defaultName: string
+  /** 默认计划名的词表 key：默认名会被写进计划名，必须跟随界面语言 */
+  defaultNameKey: string
+  /** 历史版本写进数据的默认名（中文），加载时用它识别「还是默认名」 */
+  legacyDefaultName: string
   selectorTag: string
   reloadAfterSave: boolean
   /** 是否提供「简化视图」；没提供的类型隐藏视图切换，避免留下点了没反应的控件 */
@@ -49,8 +51,8 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     configType: PLAN_CONFIG_TYPES.MAA,
     createType: PlanCreateIn.type.MAA_PLAN,
     displayNameKey: 'plan.type.maa',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 MAA 计划表',
+    defaultNameKey: 'plan.defaultName.maa',
+    legacyDefaultName: '新 MAA 计划表',
     selectorTag: 'MAA',
     reloadAfterSave: true,
     supportsSimpleView: true,
@@ -60,7 +62,8 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,
     displayNameKey: 'plan.type.maaEnd',
-    defaultName: '新 MaaEnd 计划表',
+    defaultNameKey: 'plan.defaultName.maaEnd',
+    legacyDefaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,
     supportsSimpleView: true,
@@ -70,8 +73,8 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     configType: PLAN_CONFIG_TYPES.BAAH,
     createType: PlanCreateIn.type.BAAHPLAN,
     displayNameKey: 'plan.type.baah',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 BAAH 计划表',
+    defaultNameKey: 'plan.defaultName.baah',
+    legacyDefaultName: '新 BAAH 计划表',
     selectorTag: 'BAAH',
     reloadAfterSave: false,
     // BAAH 两种排法都是一格一个控件，但要按行说明每一位是什么，转置成简化视图只会更难读
@@ -82,8 +85,8 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     configType: PLAN_CONFIG_TYPES.MSS,
     createType: PlanCreateIn.type.MSSPLAN,
     displayNameKey: 'plan.type.mss',
-    // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 MSS 计划表',
+    defaultNameKey: 'plan.defaultName.mss',
+    legacyDefaultName: '新 MSS 计划表',
     selectorTag: 'MSS',
     reloadAfterSave: false,
     supportsSimpleView: true,

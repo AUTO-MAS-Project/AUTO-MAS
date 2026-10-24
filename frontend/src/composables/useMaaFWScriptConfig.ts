@@ -1,4 +1,5 @@
 import { translate as t } from '@/i18n'
+import { comboxOptions } from '@/utils/comboxLabel'
 import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
@@ -364,7 +365,7 @@ export function useMaaFWControlConfig(
     try {
       const options = await request
       if (options && maafwConfig.Emulator.Id === emulatorId) {
-        emulatorDeviceOptions.value = [...options]
+        emulatorDeviceOptions.value = comboxOptions([...options])
       }
     } finally {
       if (emulatorDeviceRequests.get(emulatorId) === request) {

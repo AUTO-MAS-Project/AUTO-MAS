@@ -236,6 +236,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { comboxLabel } from '@/utils/comboxLabel'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -616,7 +617,7 @@ const loadSanityModeOptions = async () => {
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
         .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
-        .map(item => ({ label: item.label, value: item.value }))
+        .map(item => ({ label: comboxLabel(item), value: item.value }))
     }
   } catch (error) {
     logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)

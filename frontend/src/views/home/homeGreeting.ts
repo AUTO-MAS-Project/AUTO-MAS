@@ -72,15 +72,75 @@ export const HOME_GREETING_MESSAGES: HomeGreetingMessage[] = [
   { text: '一个bug是bug，一堆bug能work', author: '凉白开' },
 ]
 
+/** 非中文界面用的问候语。中文那批是社区梗，直译过去只剩莫名其妙，各语言给一份自己的文案。 */
+export const HOME_GREETING_MESSAGES_EN: HomeGreetingMessage[] = [
+  { text: 'Sit back — the script is doing its best.', author: 'AUTO-MAS Team' },
+  {
+    text: 'Check your script paths first; a lost script cannot find itself.',
+    author: 'AUTO-MAS Team',
+  },
+  {
+    text: 'Please do not force-close AUTO-MAS. It is handling something.',
+    author: 'AUTO-MAS Team',
+  },
+  { text: 'Something good is coming. Nothing has gone wrong yet.', author: 'AUTO-MAS Team' },
+  { text: 'Matching this device with a dedicated script profile.', author: 'AUTO-MAS Team' },
+  { text: 'Script restarts are normal. No need to panic.', author: 'AUTO-MAS Team' },
+  { text: 'Your device is ready. Ready to run the script?', author: 'AUTO-MAS Team' },
+  { text: 'Please be patient — the progress bar only looks stuck.', author: 'AUTO-MAS Team' },
+  {
+    text: 'Applying the script settings best suited to this universe version.',
+    author: 'AUTO-MAS Team',
+  },
+  { text: 'Everything is normal, unless it stops being normal later.', author: 'AUTO-MAS Team' },
+  { text: 'Thanks for using AUTO-MAS. You can always trust the script.', author: 'AUTO-MAS Team' },
+  { text: 'A bug is a bug, but enough bugs and it works.', author: 'AUTO-MAS Team' },
+]
+
+/** 日本語インターフェース用のあいさつ。中国語版はコミュニティ内のネタなので直訳せず、日本語で書き直す。 */
+export const HOME_GREETING_MESSAGES_JA: HomeGreetingMessage[] = [
+  { text: 'そのままお待ちください。スクリプトが全力で動いています。', author: 'AUTO-MAS チーム' },
+  {
+    text: '起動前にスクリプトのパスを確認してください。迷子になります。',
+    author: 'AUTO-MAS チーム',
+  },
+  { text: 'AUTO-MAS を強制終了しないでください。処理中です。', author: 'AUTO-MAS チーム' },
+  { text: 'もうすぐ良いことがあります。まだ何も壊れていません。', author: 'AUTO-MAS チーム' },
+  { text: 'このデバイス専用のスクリプト設定を適用しています。', author: 'AUTO-MAS チーム' },
+  { text: 'スクリプトの再起動は正常な動作です。慌てないでください。', author: 'AUTO-MAS チーム' },
+  { text: 'デバイスの準備ができました。スクリプトを実行しますか？', author: 'AUTO-MAS チーム' },
+  {
+    text: 'しばらくお待ちください。プログレスバーが止まって見えるだけです。',
+    author: 'AUTO-MAS チーム',
+  },
+  { text: 'この宇宙バージョンに最適なスクリプト設定を適用しています。', author: 'AUTO-MAS チーム' },
+  { text: 'すべて正常です。あとで正常でなくなるまでは。', author: 'AUTO-MAS チーム' },
+  {
+    text: 'AUTO-MAS をご利用いただきありがとうございます。スクリプトは裏切りません。',
+    author: 'AUTO-MAS チーム',
+  },
+  { text: 'バグはバグですが、数が揃えば動きます。', author: 'AUTO-MAS チーム' },
+]
+
+/** 界面语言 → 问候语候选集。中文之外的界面不再显示中文彩蛋。 */
+const GREETINGS_BY_LOCALE_PREFIX: Record<string, HomeGreetingMessage[]> = {
+  zh: HOME_GREETING_MESSAGES,
+  ja: HOME_GREETING_MESSAGES_JA,
+  en: HOME_GREETING_MESSAGES_EN,
+}
+
+export const greetingsForLocale = (locale: string): HomeGreetingMessage[] =>
+  GREETINGS_BY_LOCALE_PREFIX[locale.slice(0, 2).toLowerCase()] ?? HOME_GREETING_MESSAGES_EN
+
 /**
  * 随机抽一条问候语
  *
+ * @param locale 界面语言，决定用哪一份候选集（非中文界面不显示中文彩蛋）
  * @param excludeText 当前已在展示的文案，传入后会从候选里剔除，保证「换一句」必然换掉
  */
-export const pickHomeGreeting = (excludeText?: string): HomeGreetingMessage => {
-  const filtered = excludeText
-    ? HOME_GREETING_MESSAGES.filter(message => message.text !== excludeText)
-    : HOME_GREETING_MESSAGES
-  const candidates = filtered.length ? filtered : HOME_GREETING_MESSAGES
+export const pickHomeGreeting = (locale: string, excludeText?: string): HomeGreetingMessage => {
+  const all = greetingsForLocale(locale)
+  const filtered = excludeText ? all.filter(message => message.text !== excludeText) : all
+  const candidates = filtered.length ? filtered : all
   return candidates[Math.floor(Math.random() * candidates.length)]
 }

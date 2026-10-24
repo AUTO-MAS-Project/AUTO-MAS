@@ -4,6 +4,7 @@ import { queryOptions, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Emulator20Service, Service, type ComboBoxItem, type Emulator2DeviceItem } from '@/api'
 import { queryClient } from '@/services/queryClient'
 import { queryRequest } from '@/utils/queryRequest'
+import { comboxOptions } from '@/utils/comboxLabel'
 
 const DEVICE_QUERY_KEY = ['emulator-device-options'] as const
 
@@ -112,7 +113,7 @@ export const useEmulatorDeviceOptions = ({
       devices.filter(device => device.realType === 'avd').map(device => device.slot)
     )
     return markModAvdOptions(
-      options,
+      comboxOptions(options),
       value => value !== null && modAvdSlots.has(value),
       allowModAvd,
       t('emulator2.avd.unsupportedScript')

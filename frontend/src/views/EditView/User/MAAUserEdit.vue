@@ -231,6 +231,7 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
+import { comboxLabel } from '@/utils/comboxLabel'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -1198,7 +1199,7 @@ const loadStageModeOptions = async () => {
       consumer: PlanComboxIn.consumer.MAA,
     })
     if (response && response.code === 200 && response.data) {
-      stageModeOptions.value = response.data
+      stageModeOptions.value = response.data.map(item => ({ ...item, label: comboxLabel(item) }))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

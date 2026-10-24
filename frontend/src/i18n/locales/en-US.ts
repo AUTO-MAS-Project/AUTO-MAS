@@ -33,6 +33,27 @@ export default {
     userLoadRetry: 'Could not load accounts: {reason}',
     retry: 'Retry',
   },
+
+  // 后端 combox 下拉选项的本地化拼装（ComboBoxItem.labelKey/kind/name，见 utils/comboxLabel.ts）
+  combox: {
+    queue: 'Queue - {name}',
+    scriptType: {
+      MAA: 'MAA',
+      SRC: 'SRC',
+      MaaEnd: 'MaaEnd',
+      General: 'General',
+      Okww: 'ok-ww',
+      OkNte: 'OK-NTE',
+      M9A: 'M9A',
+      MaaFW: 'MFW',
+      HSR: 'HSR',
+      BetterGI: 'BetterGI',
+      ZzzOd: 'ZZZ-OD',
+      BAAH: 'BAAH',
+      Whimbox: 'Whimbox',
+      MSS: 'MSS',
+    },
+  },
   eventDepotPreview: {
     runtimeUnresolved:
       'Some event stages, materials or targets are unavailable and skipped this run. Saved settings are retained.',
@@ -87,6 +108,7 @@ export default {
     close: 'Close',
     doc: 'Docs',
     unknown: 'Unknown',
+    notSelected: 'Not selected',
   },
   comp: {
     currentConfig: 'Configuration: {source}',
@@ -104,7 +126,7 @@ export default {
     enabled: 'On',
     disabled: 'Off',
     updateDownloadTest: 'Update download test',
-    otherOperators: '= < > ! and other operators',
+    otherOperators: '= <> ! and other operators',
     debugLevel: 'DEBUG level',
     errorFatalCriticalLevel: 'ERROR/FATAL/CRITICAL level',
     exceptionErrorFailedSimilar: 'Exception/Error/Failed and similar',
@@ -352,6 +374,9 @@ export default {
     colors: 'Colors',
     extraScripts: 'Extra scripts',
     highlightColorsPreview: 'Highlight colors and preview',
+    backendUpdateReady: 'Backend update is ready and takes effect on the next launch',
+    backendUpdateReadyConfirm:
+      'The backend update has been downloaded and will be applied on the next launch. Restart now?',
   },
   edit: {
     configLocked: 'A task is running, so this configuration is locked until it finishes',
@@ -1932,7 +1957,7 @@ export default {
     envRuntimeExternal: 'External program',
     previousStep: 'Previous',
     maafwPageTitleSetup: '{name} project setup',
-    maafwPageTitleConfig: '{name} project settings',
+    maafwPageTitleConfig: '{name} project configuration',
     maafwUpdateChannelStable: 'Stable',
     maafwUpdateChannelBeta: 'Beta',
     maafwEmulatorTypeGeneral: 'Generic emulator',
@@ -2060,6 +2085,7 @@ export default {
       'Via launcher: MAS operates the official launcher. Via MAS: MAS creates the game process. Via MaaEnd: use its native launch entry. Availability depends on the installed resources and controller.',
     maaEndLaunchViaMas: 'Via MAS',
     maaEndLaunchViaMaaEnd: 'Via MaaEnd',
+    maaEndRecommendedLaunch: '{name} (recommended)',
     maaEndLauncherModeHint:
       'MAS operates the official launcher, supporting both old and new MaaEnd versions.',
     maaEndMasModeHint:
@@ -2071,10 +2097,17 @@ export default {
       'This MaaEnd installation or controller has no native launch entry. Use the launcher or MAS instead.',
     maaEndNativeLauncherHint:
       'This MaaEnd installation or controller has no native launch entry. Use MAS or launcher mode instead.',
+    maaEndNativeManualLauncherHint:
+      'Native config follows MaaEnd auto-detection or its manual path; a path set here overrides this run only and is limited to official-launcher regions.',
+    maaEndNativeLauncherHelp: 'Reuse the launcher settings stored in MaaEnd.',
+    maaEndManualLauncherHelp: 'Use the path specified here for this run.',
+    maaEndLauncherSourceNative: 'Use MaaEnd native config',
     maaEndArgumentsUnsupported:
       'These arguments apply only to MAS launch. For other modes, use settings supported by the official launcher.',
     maaEndResolutionUnsupported:
       'This MaaEnd installation and launch mode cannot apply resolution independently. Existing game settings are used; saved preferences are retained.',
+    maaEndResolutionRequiresNative:
+      'Only MaaEnd launch supports resolution settings in this version. Switch the launch mode; saved preferences are retained.',
     maaEndLauncherPath: 'Official Endfield launcher',
     maaEndLauncherPathSource: 'Launcher path source',
     maaEndLauncherSourceAuto: 'Automatic',
@@ -2147,7 +2180,7 @@ export default {
       'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
     maafwUnselectableTaskNotice: 'Skipped at run time: "{tasks}" ({reason})',
     maafwUnselectableTaskSeparator: ', ',
-    m9aFlavorScriptTitle: 'Edit M9A managed script',
+    m9aFlavorScriptTitle: 'M9A script configuration',
     m9aFlavorSourceDirectory: 'M9A program directory',
     m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',
     m9aFlavorSourcePlaceholder: 'Pick the M9A directory that contains interface.json',
@@ -2163,7 +2196,7 @@ export default {
       '"{tasks}" are added by MAS from the info above and do not need to stay in the queue; runs use the fixed order anyway. They are removed the next time the queue is saved or AUTO-MAS restarts (a switch-account target goes into "Account" above)',
     m9aFlavorGameUpdateHint:
       'After the emulator starts, compare the game client with the latest version on the official site. Official server only (Bilibili and other resources are not checked). When outdated: "Check only" fails this run and asks you to update manually; "Download and install automatically" downloads the official package (about 2 GB) and installs it over the old client, keeping game data',
-    mssFlavorScriptTitle: 'Edit MSS managed script',
+    mssFlavorScriptTitle: 'MSS script configuration',
     mssFlavorSourceDirectory: 'MSS program directory',
     mssFlavorSourceHint: 'Pick the MaaStellaSora directory that contains interface.json',
     mssFlavorSourcePlaceholder: 'Pick the MaaStellaSora directory that contains interface.json',
@@ -2221,7 +2254,7 @@ export default {
     wutheringWavesUpdateTimed: 'The Wuthering Waves update timed out and was stopped',
     k60SecondsRecommendedDefault: '60 seconds is the recommended default wait.',
     // BetterGI 专项
-    bettergiScriptConfiguration: 'BetterGI script settings',
+    bettergiScriptConfiguration: 'BetterGI script configuration',
     bettergiInstanceNameHint: 'Used to tell different BetterGI managed scripts apart',
     bettergiPath: 'BetterGI path',
     bettergiPickExeDir: 'Pick the folder that contains BetterGI.exe',
@@ -2450,7 +2483,7 @@ export default {
     hsrConfigRestoreScriptDesc:
       'Backups of the HSR native config (March7th Assistant config.yaml and SRA settings/cache/configs); restoring overwrites the native config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // BAAH dedicated adapter
-    baahScriptConfiguration: 'BAAH script settings',
+    baahScriptConfiguration: 'BAAH script configuration',
     baahScriptNameHint: 'Distinguishes this BAAH managed script from others',
     baahScriptPathHint:
       'Full path of the BAAH main program (BAAH.exe); the program directory and its config and log directories are all derived from it',
@@ -2469,7 +2502,7 @@ export default {
     baahRunTimeLimitHint:
       'Longest the run may go without new log output, in minutes; exceeding it counts as a failed run',
     baahConfigName: 'Default config name',
-    baahConfigNameHint: 'The config used normally; this app launches it as BAAH.exe <name>.json',
+    baahConfigNameHint: 'The config used normally; this app launches it as BAAH.exe [name].json',
     baahConfigNamePlaceholder: 'Pick the config used normally',
     baahStageMode: 'Stage plan',
     baahStageModeHint:
@@ -2493,7 +2526,7 @@ export default {
     baahProxyTimes: 'Run count',
     baahDataReadOnlyHint: 'Tracked by this app automatically, read-only',
     // Whimbox dedicated adapter
-    whimboxScriptConfiguration: 'Whimbox script settings',
+    whimboxScriptConfiguration: 'Whimbox script configuration',
     whimboxInstanceNameHint: 'Distinguishes this Whimbox managed script from others',
     whimboxPath: 'Whimbox install directory',
     whimboxPickExeDir:
@@ -2540,7 +2573,7 @@ export default {
     whimboxModeDirectDesc: "Native base: use Whimbox's own configuration; MAS writes nothing",
     whimboxCatalogFetchFailed: 'Failed to load the Whimbox OneDragon task catalog',
     // ZZZ-OD dedicated adapter
-    zzzodScriptConfiguration: 'ZZZ-OD script settings',
+    zzzodScriptConfiguration: 'ZZZ-OD script configuration',
     zzzodScriptNameHint: 'Distinguishes this ZZZ-OD managed script from others',
     zzzodRootPath: 'ZZZ-OD install directory',
     zzzodRootPathHint:
@@ -2738,7 +2771,7 @@ export default {
     zzzodPreviewUnlimited: 'Unlimited',
     zzzodOpenNativeConfig: 'Configure in OneDragon',
     zzzodOpenNativeConfigHint:
-      'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<account>) seeded from this page, task list and account changes made in the GUI read back here automatically. The previous active instance is restored on close',
+      'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-[account]) seeded from this page, task list and account changes made in the GUI read back here automatically. The previous active instance is restored on close',
     zzzodConfiguringTitle: 'ZZZ-OD setup in progress',
     zzzodConfiguringDesc:
       'Switched to the dedicated instance bound to this account; finish team setup there.',
@@ -3105,6 +3138,33 @@ export default {
       'Click "Add script" to combine it with more scripts into a config group',
     bettergiProjectUnselect: 'Unselect',
     bettergiProjectZoom: 'Zoom',
+    hardTimeoutMinutes: 'Per-account total run limit (minutes)',
+    hardTimeoutHint:
+      'Covers startup, waiting, and all retries; an actively updating log does not extend the limit. On timeout this run is terminated, and the next account starts after cleanup completes.',
+    maaEndAutoCollectOptionsUnavailable:
+      'Could not read collection routes; check the MaaEnd path and resources, then reopen this page',
+    maaEndDeliveryConfig: 'Delivery configuration',
+    maaEndSeizeDeliveryJobs: 'Seize delivery commissions',
+    maaEndSeizeDeliveryJobsHint:
+      'Runs seize-commission delivery tasks in a separate delivery stage, controlled independently from the daily task switches',
+    maaEndSeizeDeliveryJobsReward: 'Minimum commission price (10k)',
+    maaEndSeizeDeliveryJobsRewardHint: 'Only accept commissions priced at or above this value',
+    maaEndDeliveryCommissionSource: 'Commission pickup point',
+    maaEndRegionWulingCity: 'Wuling City',
+    maaEndRegionValleyNo4: 'Valley No.4',
+    maaEndRegionWuling: 'Wuling',
+    maaEndRouteSelectAll: 'Select all',
+    maaEndRouteClear: 'Clear',
+    maaEndRouteSelectedCount: 'Selected {n}/{m}',
+    maaEndEnableSanity: 'Enable sanity tasks',
+    maaEndSanitySection: 'Sanity tasks (matrix farming / protocol space)',
+    maaEndGroupEnabled: '{n} / {m} tasks enabled',
+    maaEndEnableGroup: 'Enable whole group',
+    taskTransitionMethod: 'Task transition method',
+    taskTransitionHint:
+      'Whether to also restart the game between the delivery, daily, and auto-collect stages; with "Restart MaaEnd only" the game keeps running, while with "Restart Endfield.exe/emulator" it closes after each stage and relaunches for the next',
+    restartMaaendOnly: 'Restart MaaEnd only',
+    restartEndfield: 'Restart Endfield.exe/emulator',
   },
   taskboard: {
     title: 'Taskboard',
@@ -3166,6 +3226,7 @@ export default {
       mumu: 'MuMu Player',
       ldplayer: 'LDPlayer',
       emulator2: 'Automatic detection (recommended)',
+      avd: 'Modded AVD',
     },
     deviceStatus: {
       online: 'Online',
@@ -3177,6 +3238,7 @@ export default {
       unknown: 'Unknown',
     },
     unnamed: 'Unnamed',
+    defaultName: 'New emulator',
     configTitle: 'Emulator settings',
     deleteConfirm: 'Delete this emulator configuration?',
     ok: 'OK',
@@ -3222,6 +3284,8 @@ export default {
     autoSearch: 'Search for emulators',
     manualAdd: 'Add manually',
     manualAddMulti: 'Add a multi-instance manager',
+    emptyIndexHint:
+      'No emulator configuration yet. Search for emulators installed on this machine, or add one manually.',
     searchModalTitle: 'Emulators found',
     searchEmpty: 'No emulators found',
     import: 'Import',
@@ -3385,6 +3449,9 @@ export default {
       already_added: 'Already added',
       not_found: 'Emulator program not found',
       probe_failed: 'Version not recognised',
+      components_missing: 'Components incomplete; please use a complete emulator test package',
+      test_package_required: 'Requires the modded AVD test package',
+      test_package_outdated: 'The modded AVD test package is too old; please get a newer one',
     },
     toast: {
       guardOk: 'Baseline recorded for {count} device(s)',
@@ -3409,6 +3476,42 @@ export default {
       addOk: 'Added {count} emulator(s)',
       removeOk: 'Emulator path removed',
       removeFailed: 'Failed to remove the emulator path',
+    },
+    avd: {
+      add: 'Add modded AVD (test)',
+      manage: 'Components & checks',
+      title: 'Modded AVD (test)',
+      root: 'Root directory',
+      rootPlaceholder:
+        'Select or enter the folder where the emulator test package is extracted; instances live here too',
+      check: 'Check',
+      unsupportedScript: 'Modded AVD currently only supports MFW scripts and MAA',
+      prechecks: 'PC checks',
+      precheck: {
+        ok: 'Passed',
+        error: 'Failed',
+        warning: 'Failed',
+        unknown: 'Not checked',
+      },
+      components: 'Components',
+      optional: 'Optional',
+      localSdk: 'Local SDK',
+      testPackage: 'Test package',
+      needsTestPackage: 'Test package required',
+      outdatedTestPackage: 'Test package outdated',
+      testPackageVersion: 'Test package {build} ({version})',
+      close: 'Close',
+      componentReady: 'Ready',
+      componentMissing: 'Missing',
+      softwareRenderer:
+        'This instance is using software rendering, so the game will hog the CPU; please update your GPU driver',
+      fieldMemory: 'Memory',
+      memoryRecommend: 'Recommended: 1999 {reverse1999} GB',
+      toast: {
+        statusFailed: 'Failed to read modded AVD status',
+        addFailed: 'Failed to add modded AVD',
+        optionsLoadFailed: 'Failed to load instance options',
+      },
     },
   },
   gamesign: {
@@ -3458,7 +3561,13 @@ export default {
     },
     statusInvalid: 'The check-in status response was invalid',
     resultInvalid: 'The check-in result response was invalid',
-    signStatus: { signed: 'Done', risk: 'Blocked', failed: 'Failed', unsigned: 'Pending' },
+    signStatus: {
+      signed: 'Done',
+      risk: 'Blocked',
+      failed: 'Failed',
+      unsigned: 'Pending',
+      partialFailure: 'Partially failed',
+    },
     unknownUser: 'Unknown account',
     defaultUserName: 'Account',
     newUserName: 'Account {n}',
@@ -3499,6 +3608,8 @@ export default {
       del: 'Delete',
       empty: 'No accounts yet',
       emptyGuide: 'Use "Add an account" in the top right',
+      gameSignTask: '{game} sign-in',
+      kuroCoinSign: 'Kuro coin sign-in',
     },
     edit: {
       title: 'Edit — {name}',
@@ -3884,6 +3995,7 @@ export default {
       title: 'Quick start',
       placeholder: 'Pick a task',
       start: 'Start',
+      refresh: 'Another one',
     },
     proxy: {
       aria: 'Automation status',
@@ -3978,6 +4090,22 @@ export default {
       details: 'Details',
       mirrorTitle: 'Retry with a different source',
       mirrorRecommended: 'Recommended',
+      restoreWorkspace: 'Restore program files and retry',
+      restoringWorkspace: 'Restoring program files and preparing the runtime environment...',
+      updateRuntime: 'Update Runtime',
+      runtimeUpdating: 'Checking and updating Runtime...',
+      runtimeVersion: 'Current Runtime version: {version}.',
+      runtimeVersionUnknown: 'Unknown',
+      runtimeUpdateAvailable:
+        'Current Runtime version: {current}; new version {latest} detected. You can update and retry.',
+      runtimeUpdated: 'Runtime updated to {version}; reinitializing.',
+      runtimeRestarting: 'Runtime update complete; reinitializing from scratch...',
+      runtimeCurrent:
+        'Runtime {version} is already the latest release. Please retry or check the logs.',
+      runtimeUpdateSkipped: 'Runtime was not updated this time.',
+      runtimeUpdateFailed: 'Failed to update Runtime: {error}',
+      joinGroupHint:
+        'If retrying does not solve it, join the QQ group and ask for help with your logs.',
     },
     steps: {
       environment: 'Environment',
@@ -4105,6 +4233,12 @@ export default {
     noData: 'No data',
     emptyTitle: 'No plans yet',
     emptyDesc: 'You have not created any plans',
+    defaultName: {
+      maa: 'New MAA plan',
+      maaEnd: 'New MaaEnd plan',
+      baah: 'New BAAH plan',
+      mss: 'New MSS plan',
+    },
     selectLabel: 'Plans',
     drag: 'Drag to reorder',
     rename: 'Rename',
@@ -4357,6 +4491,15 @@ export default {
     followLatest: 'Follow latest',
     freeBrowse: 'Free scroll',
     package: 'Package logs',
+    realTimeOn: 'Auto-update',
+    realTimeOff: 'Stop updating',
+    realTimeEnabledToast: 'Auto-update enabled',
+    realTimeDisabledToast: 'Auto-update stopped',
+    loadFailed: 'Failed to load logs',
+    loadingTip: 'Loading logs...',
+    emptyBackend:
+      'The backend log is still empty. The backend may not have started for this session — check the frontend log.',
+    emptyFrontend: 'The frontend log is still empty.',
     toast: {
       packageNoResponse: 'Packaging logs did not respond. Check the app.',
       packageExported: 'Log archive exported',
@@ -4983,6 +5126,31 @@ export default {
       hideCloseTip:
         'Hides the close button in the top-right corner to avoid accidental clicks. You can still quit with Alt+F4, the taskbar window menu, or the tray menu.',
       logStyle: 'Log style',
+      customBackgroundSection: 'Custom background',
+      customBackground: 'Background image',
+      customBackgroundTip:
+        'Pick a local image as the main window background; theme-pack backgrounds take precedence.',
+      customBackgroundSelect: 'Choose image',
+      customBackgroundClear: 'Remove background',
+      customBackgroundEmpty: 'No custom background set',
+      customBackgroundFileTypeName: 'Image files',
+      customBackgroundUnsupported: 'This image format is not supported yet',
+      customBackgroundTooLarge: 'Background image too large; please pick one under 8 MB',
+      customBackgroundDimensionsUnsupported:
+        'Background image dimensions too large or the file is invalid',
+      customBackgroundReadFailed: 'Failed to read background image',
+      customBackgroundLoadFailed: 'Background image is temporarily unreadable',
+      customBackgroundRetry: 'Read again',
+      customBackgroundImported: 'Background image applied',
+      customBackgroundRemoved: 'Custom background removed',
+      customBackgroundImportFailed: 'Failed to set background image',
+      customBackgroundRemoveFailed: 'Failed to remove background image',
+      customBackgroundPackageActive:
+        'A theme-pack background takes precedence, so the custom background is temporarily inactive',
+      customSurfaceOpacity: 'Interface opacity',
+      customSurfaceOpacityTip:
+        'Adjust the opacity of interface components over the custom background; minimum 10%.',
+      customSurfaceOpacitySaveFailed: 'Failed to save interface opacity',
     },
     func: {
       startupSection: 'Startup',
@@ -5193,6 +5361,43 @@ export default {
       openclawQqQrInvalid: 'The QR code response was invalid. Try again later.',
       openclawQqQrError: 'QR-code login failed. Try again later.',
       openclawQqQrRetry: 'Get a new QR code',
+      summary: {
+        system: 'Push task notifications with system popups',
+        mail: 'SMTP: {SMTPServerAddress} · To: {ToAddress}',
+        mailEmpty: 'Mail configuration incomplete',
+        serverchan: 'SendKey configured',
+        serverchanEmpty: 'SendKey not configured',
+        koishi: '{KoishiServerAddress}',
+        koishiEmpty: 'Server address not configured',
+        cmcc: 'API key configured',
+        cmccEmpty: 'API key not configured',
+        webhookEmpty: 'No webhook added yet',
+      },
+      usageDoc: 'Usage docs',
+      channelsGroup: 'Built-in',
+      customGroup: 'Custom',
+      countTemplate: '{n} active',
+      activeEmpty: 'No channels enabled yet; pick one below, fill in its config, then enable it',
+      idleSection: 'Inactive',
+      idleEmpty: 'All channels are enabled',
+      customSection: 'Custom channels',
+      customEmpty: 'No custom channels yet',
+      stateEnabled: 'Enabled',
+      stateDisabled: 'Disabled',
+      stateUnbound: 'Unbound',
+      configure: 'Click to configure',
+      manage: 'Click to manage',
+      webhookCount: '{n} entries',
+      instantHint: 'Changes take effect immediately; no save needed',
+      bindStatus: 'Binding status',
+      loadFailed: 'Failed to load notification channel descriptions',
+      retryLoad: 'Retry',
+      koishiToken: 'Koishi Token',
+      koishiWsPlaceholder: 'ws://localhost:5140/AUTO_MAS',
+      cmccNewMsgName: 'China Mobile 5G SMS',
+      webhookName: 'Custom webhook',
+      webhookDesc:
+        'A push target where you assemble the URL, headers, and message template yourself; sent in parallel with the built-in channels',
     },
     advanced: {
       backupSection: 'Data backup',
@@ -5350,5 +5555,53 @@ export default {
     'zh-CN': '简体中文',
     'en-US': 'English',
     'ja-JP': '日本語',
+  },
+  mystery: {
+    entry: 'Mystery entrance',
+    back: 'Back to feature settings',
+    backToOverview: 'Back to mystery entrance',
+    unlockTitle: 'Enter the access code',
+    accessCode: 'Access code',
+    accessCodePlaceholder: 'Enter the access code',
+    accessCodeRequired: 'Access code required',
+    accessCodeInvalid: 'Incorrect access code',
+    unlock: 'Unlock',
+    lock: 'Lock again',
+    tokens: {
+      title: 'Token acquisition',
+      entryDescription:
+        'Get Miyoushe, Skland, and Taygedo credentials; for Kuro communities use BMT.',
+      description:
+        'Once Miyoushe, Skland, or Taygedo succeeds, the token is saved automatically to the selected community account group.',
+      account: 'Save to account group',
+      accountPlaceholder: 'Choose the community account group to save the token to',
+      loadFailed: 'Failed to load community account groups; please retry',
+      noAccounts: 'Add an account group in Game Community first',
+      manageAccounts: 'Go to Game Community',
+      miyousheDescription:
+        'Scan the QR code with the Miyoushe app to log in and get the full cookie.',
+      sklandDescription:
+        'Scan the QR code with the Skland app to log in and get community credentials.',
+      taygedoDescription:
+        'Log in with your Taygedo account and password to get Taygedo and Cloud Yihuan credentials.',
+      kuroDescription:
+        'Kuro token acquisition has moved to BMT; log in with the BMT app itself and copy the credentials, then go back to the account edit page in Game Community to paste and save them.',
+      openBmt: 'Open Better-MAS-Tools (BMT)',
+      openFailed: 'Failed to open the BMT project; please retry',
+      privacyNotice:
+        'Phone number and password are used only for this login and are never written to config, logs, or notifications. The obtained credentials are stored encrypted on this device.',
+      saved: '{platform} token saved to "{name}"',
+      taygedoFailed: 'Taygedo login failed; please retry',
+    },
+    personalMss: {
+      title: 'Not actually a mystery entrance',
+      hint: "Enable support for Beichen's personal MSS build",
+      on: 'Exclusive orchestration for personal MaaStellaSora enabled',
+      off: 'Exclusive orchestration for personal MaaStellaSora disabled',
+      failed: 'Setting failed; please retry',
+    },
+    loadFailed: 'Failed to load unlock state; please retry',
+    retry: 'Retry',
+    saveFailed: 'Failed to save unlock state; please retry',
   },
 }

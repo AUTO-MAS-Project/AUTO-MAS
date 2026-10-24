@@ -119,6 +119,9 @@ from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
+# 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
+_SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
@@ -4370,12 +4373,23 @@ class AppConfig:
         """获取脚本下拉框信息"""
 
         logger.info("开始获取脚本下拉框信息")
-        data = [{"label": "未选择", "value": "-"}]
+        data = [
+            {
+                "label": "未选择",
+                "value": "-",
+                "labelKey": "common.notSelected",
+                "kind": "placeholder",
+            }
+        ]
         for uid, script in self.ScriptConfig.items():
+            class_name = type(script).__name__
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                    "label": f"{TYPE_BOOK[class_name]} - {script.Info.Name}",
                     "value": str(uid),
+                    "kind": "script",
+                    "scriptType": _SCRIPT_TYPE_BY_CLASS.get(class_name),
+                    "name": script.Info.Name,
                 }
             )
         logger.success("脚本下拉框信息获取成功")
@@ -4386,15 +4400,33 @@ class AppConfig:
         """获取任务下拉框信息"""
 
         logger.info("开始获取任务下拉框信息")
-        data = [{"label": "未选择", "value": None}]
+        data = [
+            {
+                "label": "未选择",
+                "value": None,
+                "labelKey": "common.notSelected",
+                "kind": "placeholder",
+            }
+        ]
         for uid, queue in self.QueueConfig.items():
-            data.append({"label": f"队列 - {queue.Info.Name}", "value": str(uid)})
+            data.append(
+                {
+                    "label": f"队列 - {queue.Info.Name}",
+                    "value": str(uid),
+                    "kind": "queue",
+                    "name": queue.Info.Name,
+                }
+            )
         for uid, script in self.ScriptConfig.items():
             if not script.is_locked:
+                class_name = type(script).__name__
                 data.append(
                     {
-                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                        "label": f"脚本 - {TYPE_BOOK[class_name]} - {script.Info.Name}",
                         "value": str(uid),
+                        "kind": "script",
+                        "scriptType": _SCRIPT_TYPE_BY_CLASS.get(class_name),
+                        "name": script.Info.Name,
                     }
                 )
         logger.success("任务下拉框信息获取成功")
@@ -4412,7 +4444,14 @@ class AppConfig:
 
         plan_class = consumer_config["config_class"]
         logger.info(f"开始获取 {consumer} 计划下拉框信息")
-        data = [{"label": "固定", "value": "Fixed"}]
+        data = [
+            {
+                "label": "固定",
+                "value": "Fixed",
+                "labelKey": "plan.fixed",
+                "kind": "fixed",
+            }
+        ]
         for uid, plan in self.PlanConfig.items():
             if isinstance(plan, plan_class):
                 data.append({"label": plan.Info.Name, "value": str(uid)})
@@ -4424,7 +4463,14 @@ class AppConfig:
         """获取模拟器下拉框信息"""
 
         logger.info("开始获取模拟器下拉框信息")
-        data = [{"label": "未选择", "value": "-"}]
+        data = [
+            {
+                "label": "未选择",
+                "value": "-",
+                "labelKey": "common.notSelected",
+                "kind": "placeholder",
+            }
+        ]
         for uid, emulator in self.EmulatorConfig.items():
             data.append({"label": emulator.Info.Name, "value": str(uid)})
         logger.success("模拟器下拉框信息获取成功")
@@ -4442,7 +4488,14 @@ class AppConfig:
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
             return []
 
-        data = [{"label": "未选择", "value": "-"}]
+        data = [
+            {
+                "label": "未选择",
+                "value": "-",
+                "labelKey": "common.notSelected",
+                "kind": "placeholder",
+            }
+        ]
 
         from .emulator_manager import EmulatorManager
 
