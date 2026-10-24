@@ -1,5 +1,9 @@
 import type { DesktopMascotTaskHostAPI } from '@/types/desktopMascot'
-import type { ElectronAPI } from '@/types/electron'
+import type {
+  ElectronAPI,
+  RuntimeLaunchModeSetting,
+  RuntimeLaunchModeState,
+} from '@/types/electron'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
 
 type BrowserDevWindow = Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }
@@ -52,7 +56,11 @@ const desktopMascotTaskBridge = {
   setDesktopMascotTaskActionResult: async () => undefined,
 } satisfies DesktopMascotTaskHostAPI
 
-const browserDevElectronAPI = {
+// 浏览器预览只覆盖桌面应用的一部分能力，所以这里标注为 Partial：
+// 标注让「写了的一定签名正确、键名一定存在」由 typecheck 保证，
+// 没写的成员要求调用方用可选调用兜住（例如 TitleBar 的 onWindowMaximizedChange?.()）。
+// 以前这里写 as unknown as ElectronAPI，把签名错误和缺成员一起藏掉了。
+const browserDevElectronAPI: Partial<ElectronAPI> = {
   ...desktopMascotTaskBridge,
   getLogger,
   getApiEndpoint: async (key: string) =>
@@ -62,11 +70,39 @@ const browserDevElectronAPI = {
     return { success: true }
   },
   windowFocus: async () => window.focus(),
+  // 浏览器预览没有原生窗口：标题栏读到的状态恒为「未最大化」，窗口控制是显式空实现。
+  // TitleBar 在 mounted 里无条件读取 onWindowMaximizedChange / windowIsMaximized，漏实现会抛 TypeError。
+  isMacOS: false,
+  windowIsMaximized: async () => false,
+  onWindowMaximizedChange: () => () => undefined,
+  windowMinimize: async () => undefined,
+  windowMaximize: async () => undefined,
+  windowClose: async () => undefined,
+  appQuit: async () => undefined,
+  openDevTools: async () => undefined,
+  onWindowActivityChange: () => () => undefined,
+  onTrayActionRequest: () => () => undefined,
+  // 浏览器预览没有 Electron 的 Runtime 监督链路，等价于「不启用」。
+  // 不实现会被调用方当成异常打一条警告（useBackendRuntimeUpdate 每次进页面都调一次）。
+  getRuntimeLaunchMode: async (): Promise<RuntimeLaunchModeState> => ({
+    persisted: 'off',
+    mode: 'off',
+    source: 'default',
+  }),
+  setRuntimeLaunchMode: async (
+    mode: RuntimeLaunchModeSetting
+  ): Promise<RuntimeLaunchModeState> => ({
+    persisted: mode,
+    mode: mode === 'auto' ? 'off' : mode,
+    source: 'setting',
+  }),
   selectFolder: async () => null,
   selectFile: async () => [],
-  saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
+  saveConfig: async (config, defaults) => {
     const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY)
-    localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...defaults, ...current, ...config }))
+    const patch = (config ?? {}) as Record<string, unknown>
+    const base = (defaults ?? {}) as Record<string, unknown>
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...base, ...current, ...patch }))
   },
   loadConfig: async () => readJsonStorage(CONFIG_KEY),
   resetConfig: async () => {
@@ -107,9 +143,9 @@ const browserDevElectronAPI = {
   onAppearanceChanged: () => () => undefined,
   onThemeConfigChanged: () => () => undefined,
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
-} as unknown as ElectronAPI
+}
 
 if (import.meta.env.DEV && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
-  window.electronAPI = browserDevElectronAPI
+  window.electronAPI = browserDevElectronAPI as ElectronAPI
 }

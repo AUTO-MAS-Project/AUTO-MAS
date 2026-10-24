@@ -455,7 +455,7 @@ onMounted(async () => {
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   // 双击标题栏或系统快捷键也会改变窗口状态。
-  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
+  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange?.(maximized => {
     isMaximized.value = maximized
   })
 
