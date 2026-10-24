@@ -143,9 +143,9 @@ MODAVD_RELEASE_API = f"https://api.github.com/repos/{MODAVD_REPOSITORY}/releases
 MODAVD_RELEASE_API_ENV = "AUTO_MAS_MODAVD_RELEASE_API"
 #: 包根上的逐文件清单（新写法版本 v0.32.1 起才有）。
 MODAVD_MANIFEST_FILE = "modavd-manifest.json"
-#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑魔改 AVD）。主包、更新包的文件名和清单的
-#: ``platform`` 都带它：``ModAVD-<ver>-win-x64.zip``、``ModAVD-<ver>-win-x64-update.zip``；源码包
-#: ``ModAVD-<ver>-sources.zip`` 不带。以后可能有 ``linux-x64``，更新器只装和这里一致的包。
+#: 本机要装的 ModAVD 平台（MAS 只在 Windows x64 上跑魔改 AVD）。主包的文件名和清单的 ``platform``
+#: 都带它：``ModAVD-<ver>-win-x64.zip``；源码包 ``ModAVD-<ver>-sources.zip`` 不带。以后可能有
+#: ``linux-x64``，更新器只装和这里一致的包。
 MODAVD_PLATFORM_OS = "win"
 MODAVD_PLATFORM_ARCH = "x64"
 MODAVD_PLATFORM = f"{MODAVD_PLATFORM_OS}-{MODAVD_PLATFORM_ARCH}"

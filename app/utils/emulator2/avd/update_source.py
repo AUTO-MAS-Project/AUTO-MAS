@@ -34,8 +34,10 @@
 （:class:`GitHubReleaseSource`），以后接别的源时加进 :func:`update_sources` 的列表即可；接 Mirror 酱时
 按 ``os=win``、``arch=x64`` 请求（``constants.MODAVD_MIRROR_OS`` / ``MODAVD_MIRROR_ARCH``）。
 
-**平台**：主包、更新包的文件名和清单的 ``platform`` 带平台（现在只有 ``win-x64``，见
-``constants.MODAVD_PLATFORM``），源码包不带。只认本机平台的包（:func:`package_candidates`）。
+**包**：从 0.32.1 起每版只发主包 ``ModAVD-<ver>-win-x64.zip``（没有顶层目录，包根就是 ModAVD 根目录，
+根上有 ``modavd-manifest.json``）、源码包 ``ModAVD-<ver>-sources.zip`` 和 ``SHA256SUMS.txt``。主包的文件名
+和清单的 ``platform`` 带平台（现在只有 ``win-x64``，见 ``constants.MODAVD_PLATFORM``），只认本机平台的
+包（:func:`package_candidates`）。旧 tag 的主包 ``ModAVD-37.2.10-masN.zip`` 带同名顶层目录，解包时剥掉。
 """
 
 from __future__ import annotations
@@ -177,9 +179,8 @@ class UpdateSourceError(RuntimeError):
 
 @dataclass(frozen=True)
 class RemoteAsset:
-    """要下载的那个包。``top_dir`` 是包里的顶层目录（GitHub 主包 ``ModAVD-<ver>-win-x64``，旧版
-    ``ModAVD-37.2.10-masN``），更新包没有顶层目录时为空串。``sha256`` 拿不到时为 ``None``（只靠 zip
-    自带的 CRC）。"""
+    """要下载的那个包。``top_dir`` 是解包时要剥掉的顶层目录：只有旧 tag 的主包有（``ModAVD-37.2.10-masN``），
+    新写法的主包没有顶层目录，为空串。``sha256`` 拿不到时为 ``None``（只靠 zip 自带的 CRC）。"""
 
     name: str
     url: str
@@ -241,23 +242,22 @@ def _asset_from_github(item: dict[str, Any], top_dir: str) -> RemoteAsset:
 
 
 def package_candidates(tag: str) -> list[tuple[str, str]]:
-    """``tag`` 这一版可以拿来装的包，按优先顺序：``[(附件名, 包里的顶层目录)]``。
+    """``tag`` 这一版可以拿来装的包：``[(附件名, 解包时要剥掉的顶层目录)]``。
 
-    - 新写法（``vX.Y.Z``）的包名带平台：先要更新包 ``ModAVD-<ver>-win-x64-update.zip``（没有顶层目录），
-      其次主包 ``ModAVD-<ver>-win-x64.zip``（剥掉顶层目录 ``ModAVD-<ver>-win-x64/``）。不带平台的
-      ``ModAVD-<ver>.zip`` / ``-update.zip`` 从没发布过，不认；别的平台的包也不认。
-    - 旧 tag ``v37.2.10-masN`` 只有主包 ``ModAVD-37.2.10-masN.zip``（顶层目录同名）。
+    - 新写法（``vX.Y.Z``）只认带平台的主包 ``ModAVD-<ver>-win-x64.zip``，没有顶层目录（包根就是 ModAVD
+      根目录）。不带平台的 ``ModAVD-<ver>.zip``、``-update.zip`` 从没正式发布过，不认；别的平台的包也不认。
+      有人把带顶层目录的新写法主包传上来时，解包后根上没有 ``sdk/emulator`` 和清单，按现有核对拒装。
+    - 旧 tag ``v37.2.10-masN`` 只有主包 ``ModAVD-37.2.10-masN.zip``（顶层目录同名），照旧剥掉。
     """
     ver = tag.strip().removeprefix("v")
     if requires_manifest(tag):
-        stem = f"ModAVD-{ver}-{MODAVD_PLATFORM}"
-        return [(f"{stem}-update.zip", ""), (f"{stem}.zip", stem)]
+        return [(f"ModAVD-{ver}-{MODAVD_PLATFORM}.zip", "")]
     return [(f"ModAVD-{ver}.zip", f"ModAVD-{ver}")]
 
 
 def release_from_github(data: object) -> RemoteRelease:
-    """GitHub ``releases/latest`` 的响应 → :class:`RemoteRelease`。包按 :func:`package_candidates` 的
-    顺序挑第一个有的，解压时剥掉它的顶层目录。"""
+    """GitHub ``releases/latest`` 的响应 → :class:`RemoteRelease`。包按 :func:`package_candidates` 挑，
+    解压时剥掉它的顶层目录（只有旧 tag 的主包有）。"""
     if not isinstance(data, dict):
         raise UpdateSourceError("GitHub 返回的不是 Release 对象")
     tag = str(data.get("tag_name") or "")
