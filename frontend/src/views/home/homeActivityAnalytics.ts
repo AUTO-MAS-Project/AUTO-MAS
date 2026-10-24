@@ -42,6 +42,7 @@ export function observeHomeActivitySource<
       : 'unknown'
   let started = false
   const observe = (trigger_kind: 'initial' | 'manual', run: () => void | Promise<void>) => {
+    const previousBatch = source.whenLoaded()
     const telemetry = beginAnalyticsOperation('home_activity_load_finished')
     const finish = (states: ActivityLoadState[]) =>
       telemetry.finish({
@@ -50,11 +51,11 @@ export function observeHomeActivitySource<
         ...activityBatchResult(states),
       })
     const request = run()
-    void source
-      .whenLoaded()
-      .then(finish, () =>
-        telemetry.finish({ source_kind, trigger_kind, cache_kind: 'unknown', outcome: 'unknown' })
-      )
+    const batch = source.whenLoaded()
+    if (batch === previousBatch) return request
+    void batch.then(finish, () =>
+      telemetry.finish({ source_kind, trigger_kind, cache_kind: 'unknown', outcome: 'unknown' })
+    )
     return request
   }
   return {

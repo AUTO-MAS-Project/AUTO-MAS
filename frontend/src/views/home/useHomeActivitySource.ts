@@ -53,6 +53,7 @@ export interface ActivityLoadState {
 }
 
 export interface HomeActivitySource {
+  /** 当前实际加载批次的稳定 Promise；跳过请求时保持不变。 */
   whenLoaded: () => Promise<ActivityLoadState[]>
   loading: Ref<boolean>
   hasData: Ref<boolean>
@@ -70,6 +71,20 @@ export interface HomeActivitySource {
   resetRetry: () => void
   /** 重新尝试用快照顶上，返回是否恢复成功 */
   restore: () => boolean
+}
+
+/** 多来源共用一个批次标识，只有子来源真正开始新加载时才替换结果 Promise。 */
+export function combineActivityLoads(sources: readonly Pick<HomeActivitySource, 'whenLoaded'>[]) {
+  let batches: Promise<ActivityLoadState[]>[] = []
+  let combined = Promise.resolve<ActivityLoadState[]>([])
+  return () => {
+    const current = sources.map(source => source.whenLoaded())
+    if (current.some((batch, index) => batch !== batches[index])) {
+      batches = current
+      combined = Promise.all(current).then(states => states.flat())
+    }
+    return combined
+  }
 }
 
 export const useHomeActivitySource = <T>(

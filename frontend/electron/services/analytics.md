@@ -4,6 +4,10 @@ Electron 主进程按 Aptabase 的单事件协议向
 `https://telemetry.auto-mas.top/api/v0/event` 发送数据。App Key 是公开的客户端写入标识，
 不包含管理或查询凭据。Vue 通过受限 preload / IPC 交给主进程，不初始化 Web 或 Electron SDK。
 
+后续新增或修改可观察业务流程时，按 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)
+主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；
+OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固定脚本类型，标识不进入事件属性。
+
 ## 当前采集范围
 
 | 事件 | 含义 | 自定义字段 | 频率 |
@@ -86,7 +90,6 @@ Electron 主进程按 Aptabase 的单事件协议向
 | `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
 | `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
 | `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
-
 
 耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
 数量区间为 `0`、`1`、`2-5`、`6-20`、`20+`，排序按一批记录，不按对象逐条发送。

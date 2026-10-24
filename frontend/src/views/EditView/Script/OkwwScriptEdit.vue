@@ -766,7 +766,7 @@ const startUpdate = async () => {
   if (!updateModal.selectedUserId) return
   updateModal.starting = true
   try {
-    const response = await requestScriptUpdateStart(updateModal.selectedUserId)
+    const response = await requestScriptUpdateStart(updateModal.selectedUserId, 'Okww')
     if (response.code !== 200 || !response.taskId) {
       throw new Error(response.message || '启动鸣潮更新失败')
     }

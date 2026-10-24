@@ -10,7 +10,7 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import type { Ref } from 'vue'
-import { useHomeActivitySource } from './useHomeActivitySource'
+import { combineActivityLoads, useHomeActivitySource } from './useHomeActivitySource'
 import type { HomeActivitySource } from './useHomeActivitySource'
 
 /** 请求超时；重试节奏与快照调度交给公共骨架 */
@@ -413,8 +413,7 @@ export const useBlueArchiveActivitySource = () => {
   })
 
   return {
-    whenLoaded: () =>
-      Promise.all(SERVER_KEYS.map(key => sources[key].whenLoaded())).then(states => states.flat()),
+    whenLoaded: combineActivityLoads(SERVER_KEYS.map(key => sources[key])),
     servers: computed<BlueArchiveServerOverview[]>(() =>
       SERVER_KEYS.map(key => ({
         key,

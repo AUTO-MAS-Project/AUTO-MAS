@@ -137,11 +137,14 @@ export function requestScriptConfigStart(
   )
 }
 
-export function requestScriptUpdateStart(taskId: string): Promise<TaskCreateOut> {
+export function requestScriptUpdateStart(
+  taskId: string,
+  scriptType: AnalyticsEventProps['adapter_setup_finished']['script_type']
+): Promise<TaskCreateOut> {
   return observeFeature(
     'adapter_setup_finished',
     {
-      script_type: getAnalyticsScriptType(taskId),
+      script_type: scriptType,
       operation_kind: 'update',
       engine_kind: 'unknown',
     },

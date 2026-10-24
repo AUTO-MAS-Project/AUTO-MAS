@@ -10,7 +10,7 @@ import {
 import { parseEndfieldSraData } from './endfieldSraTransform'
 import { withEndfieldActivityImages } from './endfieldActivityImages'
 import { createEmptyEndfieldActivityOverview, type EndfieldActivityOverview } from '@/types/home'
-import { useHomeActivitySource } from './useHomeActivitySource'
+import { combineActivityLoads, useHomeActivitySource } from './useHomeActivitySource'
 
 const AKEDATA_BASE_URL = 'https://data.akedata.wiki'
 const AKEDATA_MANIFEST_URL = AKEDATA_BASE_URL + '/manifest.json'
@@ -256,8 +256,7 @@ export const useEndfieldActivitySource = () => {
   })
 
   return {
-    whenLoaded: () =>
-      Promise.all([sra.whenLoaded(), ake.whenLoaded()]).then(states => states.flat()),
+    whenLoaded: combineActivityLoads([sra, ake]),
     overview,
     // 卡池加载不会挡住已可用的版本和活动。
     loading: computed(() => !overview.value.Available && sra.loading.value),
