@@ -108,7 +108,8 @@ logger = get_logger("魔改 AVD 更新")
 
 #: 查更新失败后多久之内不再自动重试（用户点「更新」不受限）。
 _CHECK_FAILURE_BACKOFF_SECONDS = 600.0
-#: 下载失败自动重试的次数（续传接着下）。
+#: 一个下载地址最多试几次（含第一次）：GitHub 每次接着续传；Mirror 酱不支持续传，每次从头下，
+#: 也不为重试另要地址（要一次地址可能就算一次下载），只有地址过期才重新要一次（见 ``_EXPIRED_URL_STATUS``）。
 _DOWNLOAD_ATTEMPTS = 3
 _DOWNLOAD_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 #: 进度消息最密多久发一条。
@@ -595,10 +596,18 @@ async def _download(
     *,
     refresh: Callable[[], Awaitable[str]] | None = None,
 ) -> Path:
-    """下载 ``release`` 的包（断了续传），按发布记录 / Mirror 酱给的 SHA-256 核对。``refresh`` 是
-    Mirror 酱下载地址过期时重新要地址的办法（只用一次）。"""
+    """下载 ``release`` 的包，按发布记录 / Mirror 酱给的 SHA-256 核对。
+
+    - GitHub：断了续传（``.part`` 留着，下次点「更新」接着下）。请求带了 Range 而服务器回 200 时，
+      :func:`~app.services.update_transport.download_resumable` 从 0 重写，不追加。
+    - Mirror 酱不支持续传：不发 Range，之前留下的半截直接丢掉从头下；中途断了在同一个地址上从头重试，
+      一共最多 :data:`_DOWNLOAD_ATTEMPTS` 次，仍不行就结束（下次点「更新」重新下载）。``refresh`` 是地址
+      过期（401/403/404/410）时重新要地址的办法，只用一次。两个来源的包名不同（Mirror 酱的带
+      ``-mirrorchyan``），半截的不会被另一边拿去续传。
+    """
     root, asset = runtime.root, release.asset
     assert asset is not None
+    mirror = release.source == MIRROR_SOURCE
     label = _download_label(release)
     folder = stage.download_dir(root)
     folder.mkdir(parents=True, exist_ok=True)
@@ -622,6 +631,8 @@ async def _download(
 
     from app.core import Config
 
+    if mirror:
+        part.unlink(missing_ok=True)
     received = max(part.stat().st_size, 0) if part.is_file() else 0
     window_bytes, window_start = 0, time.monotonic()
     speed: float | None = None
@@ -665,6 +676,10 @@ async def _download(
     ) as client:
         while True:
             attempt += 1
+            if mirror and part.exists():
+                # 从头下：不留半截，download_resumable 也就不发 Range
+                part.unlink()
+                received = 0
             digest = hashlib.sha256() if asset.sha256 else None
             try:
                 size = await download_resumable(
@@ -686,11 +701,18 @@ async def _download(
                     if attempt >= _DOWNLOAD_ATTEMPTS:
                         # 不串上 httpx 的状态错误：它的消息里有完整地址
                         cause = None if isinstance(e, httpx.HTTPStatusError) else e
+                        if mirror:
+                            part.unlink(missing_ok=True)
+                            raise RuntimeError(
+                                "下载中断，再点一次更新会重新下载"
+                                f"（从 Mirror 酱下载 {attempt} 次都没成：{_error_text(e)}）"
+                            ) from cause
                         raise RuntimeError(
                             f"下载 {asset.name} 失败: {_error_text(e)}"
                         ) from cause
+                    again = "从头重下" if mirror else "续传"
                     logger.warning(
-                        f"下载 {asset.name} 出错，{attempt} 秒后续传: {_error_text(e)}"
+                        f"下载 {asset.name} 出错，{attempt} 秒后{again}: {_error_text(e)}"
                     )
                     await asyncio.sleep(attempt)
                     continue
