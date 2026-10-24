@@ -46,6 +46,7 @@ from app.task.emulator_core import (
     resolve_host_adb,
     script_process_env,
 )
+from app.task.failure_capture_core import FailureCapture
 from app.task.notify_core import prepare_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
@@ -130,7 +131,7 @@ from .tools.native_config import (
 )
 from .tools.screenshot import (
     AdbCapture,
-    capture_current_screen,
+    capture_current_image,
     collect_maa_failure_image,
 )
 from .tools.software_package import read_pending_update, save_deferred_update
@@ -1157,7 +1158,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.user_config = user_config
         self.emulator_manager = emulator_manager
         self.capture_adb = capture_adb
-        self._failure_capture_task: asyncio.Task[Path | None] | None = None
+        self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
@@ -2938,12 +2939,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
-    def _on_finalize_cancel_requested(self) -> None:
-        self.stopped_manually = True
-        if self._failure_capture_task is not None:
-            self._failure_capture_task.cancel()
-
     async def _take_failure_shot(self) -> Path | None:
+        return await self._failure_capture.run(self._capture_failure_shot)
+
+    async def _capture_failure_shot(self) -> Path | None:
         """取一张失败现场画面：上游 debug/interface 图优先，adb 补截兜底。
 
         上游图是 MAA 在任务链失败/停止瞬间落的缓存帧；登录链失败、进程超时
@@ -2951,42 +2950,26 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         退游戏后的桌面）。诊断旁路：任何失败只记日志并返回 ``None``。
         """
 
-        try:
-            shot: Path | None = await asyncio.to_thread(
-                collect_maa_failure_image,
-                self.maa_root_path,
-                not_before=self.log_start_time,
-            )
-            if shot is None and not self.stopped_manually:
-                # 魔改 AVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）
-                host_adb = await resolve_host_adb(self)
-                if self.stopped_manually:
-                    return None
-                self._failure_capture_task = asyncio.create_task(
-                    capture_current_screen(
-                        capture_adb=self.capture_adb,
-                        adb_path=self.emulator_manager.get_adb_path(),
-                        adb_address=self.emulator_info.adb_address
-                        if self.emulator_info is not None
-                        else "",
-                        png_reader=host_adb.screencap_png
-                        if host_adb is not None
-                        else None,
-                    ),
-                )
-                shot = await asyncio.wait_for(self._failure_capture_task, timeout=60)
-                if self.stopped_manually:
-                    return None
-        except asyncio.CancelledError:
-            if not self.stopped_manually:
-                raise
-            return None
-        except Exception as e:
-            logger.warning(f"获取失败画面失败: {e}")
-            return None
-        finally:
-            self._failure_capture_task = None
-        return shot
+        shot = await asyncio.to_thread(
+            collect_maa_failure_image,
+            self.maa_root_path,
+            not_before=self.log_start_time,
+        )
+        if shot is not None:
+            return shot
+        # 魔改 AVD 实例：截图走 MAS 私有 server（它的 adb 不能落到 5037）。
+        host_adb = await resolve_host_adb(self)
+        image = await capture_current_image(
+            capture_adb=self.capture_adb,
+            adb_path=self.emulator_manager.get_adb_path(),
+            adb_address=self.emulator_info.adb_address
+            if self.emulator_info is not None
+            else "",
+            png_reader=host_adb.screencap_png if host_adb is not None else None,
+        )
+        return await asyncio.to_thread(
+            self._failure_capture.save, image, dir_name="maa-failure"
+        )
 
     async def final_task(self):
         if self.check_result != "Pass":

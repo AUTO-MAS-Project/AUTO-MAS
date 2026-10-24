@@ -1,7 +1,7 @@
 """MAS 自持的轻量 MaaFramework 截图，不加载 Resource / Tasker。"""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from threading import Event, Lock
 from typing import TYPE_CHECKING
@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from PIL import Image
 
 logger = get_logger("MaaFramework 截图")
+
+type AdbCapture = Callable[[Path | str, str], Awaitable["Image.Image | None"]]
+type Win32Capture = Callable[[int], Awaitable["Image.Image | None"]]
 
 # 原生 Job.wait 无法取消；跨用户/任务只允许一份在途工作，直到原生句柄销毁。
 _CAPTURE_BUSY = Lock()

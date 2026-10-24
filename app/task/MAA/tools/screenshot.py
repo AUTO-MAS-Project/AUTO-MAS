@@ -40,12 +40,10 @@ from pathlib import Path
 
 from PIL import Image
 
-from app.tools.error_screenshot import save_error_screenshot
+from app.core.maa_capture import AdbCapture
 from app.utils import get_logger
 
 logger = get_logger("MAA 失败截图")
-
-type AdbCapture = Callable[[Path | str, str], Awaitable[Image.Image | None]]
 
 _FAILURE_IMAGE_SUFFIXES = frozenset({".png"})
 
@@ -99,14 +97,14 @@ def collect_maa_failure_image(
     return image_path
 
 
-async def capture_current_screen(
+async def capture_current_image(
     *,
     adb_path: Path | str | None,
     adb_address: str,
     capture_adb: AdbCapture,
     png_reader: Callable[[], Awaitable[bytes]] | None = None,
-) -> Path | None:
-    """通过 adb 补截当前画面并保存为诊断图片，上游没留图时的兜底。
+) -> Image.Image | None:
+    """读取当前 ADB 画面，上游没留图时的兜底；保存由公共补截控制负责。
 
     只在 MAA 已退出之后调用（如收尾阶段）：登录链失败、进程超时这些上游
     不落图的场景，截到的是"此刻的屏幕"，不保证是异常发生瞬间——MAA 的
@@ -114,45 +112,15 @@ async def capture_current_screen(
 
     adb 路径传模拟器自带的 adb（MAA 自动探测的通常也是它，同一份二进制
     不会触发 adb server 版本重启）；路径取不到、地址为空或截图/画面异常
-    （空、纯色——雷电上普通 adb 截图拿不到游戏渲染层）时返回 ``None``。
-    截图是诊断旁路，任何失败只记日志，不抛出。
+    时返回 ``None``；纯色检查与异常兜底交给公共补截控制。
 
     ``png_reader`` 给魔改 AVD 实例用：由 MAS 私有 adb server 取 PNG 字节（它的 adb 不能落到
     5037，``adb_path`` 对它也是 ``None``），给了就不走 ``adb_path`` / ``adb_address``。
     """
 
     if png_reader is not None:
-        try:
-            data = await png_reader()
-            image = await asyncio.to_thread(lambda: Image.open(io.BytesIO(data)).copy())
-            low, high = image.convert("L").getextrema()
-            if high - low < 8:
-                raise RuntimeError("截图为纯色画面，放弃")
-            return await asyncio.to_thread(
-                save_error_screenshot,
-                image=image,
-                dir_name="maa-failure",
-                file_prefix="failure",
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"MAA 补截当前画面失败，通知不带图: {exc}")
-            return None
-
+        data = await png_reader()
+        return await asyncio.to_thread(lambda: Image.open(io.BytesIO(data)).copy())
     if not adb_path or adb_address in ("", "Unknown"):
         return None
-    try:
-        image = await capture_adb(adb_path, adb_address)
-        if image is None:
-            return None
-        low, high = image.convert("L").getextrema()
-        if high - low < 8:
-            raise RuntimeError("截图为纯色画面（疑似未取到游戏渲染层），放弃")
-        return await asyncio.to_thread(
-            save_error_screenshot,
-            image=image,
-            dir_name="maa-failure",
-            file_prefix="failure",
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"MAA 补截当前画面失败，通知不带图: {exc}")
-        return None
+    return await capture_adb(adb_path, adb_address)

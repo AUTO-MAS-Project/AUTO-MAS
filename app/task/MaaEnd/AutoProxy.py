@@ -27,6 +27,7 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.maa_capture import AdbCapture, Win32Capture
 from app.core.ws import Publisher, protocol
 from app.log_box import log_box
 from app.models.config import MaaEndConfig, MaaEndUserConfig
@@ -42,6 +43,7 @@ from app.task.emulator_core import (
     resolve_device_ref,
     resolve_host_adb,
 )
+from app.task.failure_capture_core import FailureCapture
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -58,7 +60,6 @@ from app.task.proxy_helpers import (
     kill_pids,
     push_dispatch_log,
 )
-from app.tools.error_screenshot import save_error_screenshot
 from app.utils import (
     LogMonitor,
     ProcessManager,
@@ -98,7 +99,6 @@ from .tools.launcher_start import (
     find_launcher_pids,
 )
 from .tools.notify import collect_recent_error_images
-from .tools.screenshot import AdbCapture, Win32Capture, capture_game_window
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -438,8 +438,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.on_error_screenshot = on_error_screenshot
         self._attempt_start_ns: int | None = None
         self._attempt_screenshot_paths: list[Path] = []
-        self._failure_capture_attempted = False
-        self._failure_capture_task: asyncio.Task[None] | None = None
+        self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -1504,7 +1503,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             i += 1
             self._attempt_start_ns = time_ns()
             self._attempt_screenshot_paths.clear()
-            self._failure_capture_attempted = False
+            self._failure_capture.reset()
             self.emulator_info = None
             self.retryable = True
             logger.info(
@@ -2733,14 +2732,57 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.on_error_screenshot is not None:
             self.on_error_screenshot(path)
 
-    def _on_finalize_cancel_requested(self) -> None:
-        self.stopped_manually = True
-        if self._failure_capture_task is not None:
-            self._failure_capture_task.cancel()
+    async def _failure_window_handle(self) -> int | None:
+        """按终末地既有主窗口标识确认目标，不把同进程弹窗计为另一个游戏。"""
+        import psutil
+        import win32gui
+        import win32process
 
-    async def _capture_failure_shot(self) -> None:
-        if self._attempt_start_ns is None or self.stopped_manually:
-            return
+        game_path = Path(str(self.script_config.Game.Path or ""))
+
+        def find() -> int | None:
+            expected_path = game_path.resolve()
+            if not expected_path.is_file():
+                return None
+            candidates: list[tuple[int, psutil.Process]] = []
+
+            def collect(hwnd: int, _: int) -> bool:
+                try:
+                    if (
+                        not win32gui.IsWindowVisible(hwnd)
+                        or win32gui.GetClassName(hwnd) != "UnityWndClass"
+                        or win32gui.GetWindowText(hwnd) != "Endfield"
+                    ):
+                        return True
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    process = psutil.Process(pid)
+                    if Path(process.exe()).resolve() != expected_path:
+                        return True
+                    left, top, right, bottom = win32gui.GetClientRect(hwnd)
+                    if right > left and bottom > top:
+                        candidates.append((hwnd, process))
+                except (OSError, psutil.Error):
+                    pass
+                return True
+
+            win32gui.EnumWindows(collect, 0)
+            if len(candidates) != 1:
+                return None
+            hwnd, process = candidates[0]
+            if (
+                not process.is_running()
+                or not win32gui.IsWindow(hwnd)
+                or win32process.GetWindowThreadProcessId(hwnd)[1] != process.pid
+                or Path(process.exe()).resolve() != expected_path
+            ):
+                return None
+            return hwnd
+
+        return await asyncio.to_thread(find)
+
+    async def _capture_failure_shot(self) -> Path | None:
+        if self._attempt_start_ns is None:
+            return None
         existing = await asyncio.to_thread(
             collect_recent_error_images,
             self.maaend_root_path,
@@ -2748,20 +2790,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             ended_at_ns=time_ns(),
             diagnostic_paths=tuple(self._attempt_screenshot_paths),
         )
-        if existing or self.stopped_manually:
-            return
+        if existing:
+            return None
 
         if self.emulator_manager is None:
-            image = await capture_game_window(
-                Path(self.script_config.Game.Path), self.capture_win32
-            )
+            hwnd = await self._failure_window_handle()
+            if hwnd is None:
+                return None
+            image = await self.capture_win32(hwnd)
         else:
             if self.emulator_info is None:
-                return
+                return None
             index = self.script_config.Game.EmulatorIndex
             host_adb = await resolve_host_adb(self, index=index)
-            if self.stopped_manually:
-                return
             if host_adb is not None:
                 from PIL import Image
 
@@ -2772,42 +2813,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 device_ref = resolve_device_ref(self.emulator_manager, index)
                 if device_ref is not None and device_ref.emulator_type == "avd":
                     # 私有通道不可用时不能回落到共享 ADB server。
-                    return
+                    return None
                 adb_path = self.emulator_manager.get_adb_path()
                 if not adb_path:
-                    return
+                    return None
                 image = await self.capture_adb(adb_path, self.emulator_info.adb_address)
-        if image is None or self.stopped_manually:
-            return
-        low, high = image.convert("L").getextrema()
-        if high - low < 8:
-            logger.warning("MaaEnd 失败补截为纯色画面，放弃保存")
-            return
         # 此后同步保存并回调，避免取消后后台保存线程交回迟到的图片。
-        shot = save_error_screenshot(
-            image=image, dir_name="maaend-failure", file_prefix="failure"
-        )
-        if shot is not None:
-            self._record_error_screenshot(shot)
+        return self._failure_capture.save(image, dir_name="maaend-failure")
 
     async def _take_failure_shot(self) -> None:
-        """诊断旁路：每次尝试最多补截一次，不改变任务的原始失败结论。"""
-        if self.stopped_manually or self._failure_capture_attempted:
-            return
-        self._failure_capture_attempted = True
-        self._failure_capture_task = asyncio.create_task(self._capture_failure_shot())
-        try:
-            await asyncio.wait_for(self._failure_capture_task, timeout=60)
-        except asyncio.CancelledError:
-            if not self.stopped_manually:
-                self._failure_capture_attempted = False
-                raise
-        except TimeoutError:
-            logger.warning("MaaEnd 失败补截超过 60 秒，放弃等待")
-        except Exception as error:
-            logger.warning(f"MaaEnd 获取失败画面失败: {error}")
-        finally:
-            self._failure_capture_task = None
+        shot = await self._failure_capture.run(self._capture_failure_shot, once=True)
+        if shot is not None:
+            self._record_error_screenshot(shot)
 
     async def final_task(self):
 
