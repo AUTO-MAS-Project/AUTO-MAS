@@ -151,6 +151,17 @@ def local_version(root: str | Path) -> ModAvdVersion | None:
     return declared
 
 
+def local_version_text(root: str | Path) -> str | None:
+    """组件列表、电脑检查里显示的本地版本 ``0.32.1``，和 :func:`local_version` 同一规则。
+
+    模拟器的 ``Pkg.BuildId`` 读不到时返回 ``None``：这份模拟器本身认不出版本，光凭清单写的不算。
+    """
+    if read_mod_build(root) is None:
+        return None
+    version = local_version(root)
+    return version.display if version is not None else None
+
+
 def automas_too_old(min_automas: object, current: str) -> bool:
     """``min_automas``（机读行）高于当前 MAS 版本时为真；没写或认不出都按不限制。"""
     if not isinstance(min_automas, str) or not min_automas.strip():
@@ -351,6 +362,7 @@ __all__ = [
     "automas_too_old",
     "display_version",
     "local_version",
+    "local_version_text",
     "package_candidates",
     "parse_min_automas",
     "parse_version",

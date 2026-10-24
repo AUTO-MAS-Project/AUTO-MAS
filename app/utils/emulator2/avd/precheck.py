@@ -63,9 +63,7 @@ from .components import (
     emulator_exe,
     emulator_present,
     emulator_self_built,
-    mod_build_label,
     read_emulator_version,
-    read_mod_build,
 )
 from .constants import (
     DEFAULT_MEMORY_MB,
@@ -77,6 +75,7 @@ from .constants import (
     VULKAN_PROBE_TIMEOUT_CACHE_SECONDS,
     VULKAN_PROBE_TIMEOUT_SECONDS,
 )
+from .update_source import ModAvdVersion, local_version_text
 
 logger = get_logger("魔改 AVD 电脑检查")
 
@@ -192,19 +191,21 @@ def emulator_item(root: str | Path) -> PrecheckItem:
         )
     version = read_emulator_version(root) or "版本未知"
     if emulator_self_built(root):
-        # 能力探测过了，还要内测包编号够新（Pkg.BuildId=mas-<编号>），两项都要满足
-        label = mod_build_label(read_mod_build(root))
+        # 能力探测过了，还要内测包编号够新（Pkg.BuildId=mas-<编号>），两项都要满足。
+        # 给人看的版本一律写 0.32.1（和更新器同一规则），不写 mas-N
+        shown = local_version_text(root)
         if emulator_build_ok(root):
             return PrecheckItem(
-                "emulator", title, True, True, f"内测包 {label}（{version}）"
+                "emulator", title, True, True, f"内测包 {shown}（{version}）"
             )
+        minimum = ModAvdVersion.of_build(MIN_MOD_AVD_BUILD).display
         return PrecheckItem(
             "emulator",
             title,
             False,
             True,
-            f"内测包版本过旧（{label or '未标版本号'}）",
-            f"请更新到 {mod_build_label(MIN_MOD_AVD_BUILD)} 或更新的版本：在模拟器页这个魔改 AVD "
+            f"内测包版本过旧（{shown or '未标版本号'}）",
+            f"请更新到 {minimum} 或更新的版本：在模拟器页这个魔改 AVD "
             "的「管理与更新」里点「更新」，实例和游戏数据不受影响",
         )
     return PrecheckItem(

@@ -415,11 +415,6 @@ def read_mod_build_at(emulator_dir: str | Path) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def mod_build_label(build: int | None) -> str | None:
-    """``19`` → ``mas-19``；读不到编号返回 ``None``。"""
-    return None if build is None else f"{MOD_AVD_BUILD_PREFIX}{build}"
-
-
 def emulator_build_ok(root: str | Path) -> bool:
     """内测包编号读得到、且不低于 :data:`~.constants.MIN_MOD_AVD_BUILD`。"""
     build = read_mod_build(root)
@@ -433,6 +428,9 @@ def emulator_ready(root: str | Path) -> bool:
 
 def _emulator_item(root: Path, local: bool) -> dict[str, Any]:
     """组件清单里的「Android 模拟器」一项：根目录里有没有够新的内测包自编版。"""
+    # update_source 要引用本模块的 read_mod_build，放在这里引用，免得循环引用
+    from .update_source import local_version_text
+
     self_built = emulator_self_built(root)
     ready = self_built and emulator_build_ok(root)
     return {
@@ -441,8 +439,8 @@ def _emulator_item(root: Path, local: bool) -> dict[str, Any]:
         "version": (read_emulator_version(root) or "")
         if emulator_present(root)
         else "",
-        # 只有自编版才报编号；谷歌原版的构建号不是内测包编号
-        "build": mod_build_label(read_mod_build(root)) if self_built else None,
+        # 只有自编版才报内测包版本（0.32.1）；谷歌原版的构建号不是内测包编号
+        "build": local_version_text(root) if self_built else None,
         "outdatedTestPackage": self_built and not ready,
         "installed": ready,
         "optional": False,
@@ -529,7 +527,6 @@ __all__ = [
     "local_sdk_root",
     "manager_key_exe",
     "missing_components_message",
-    "mod_build_label",
     "read_emulator_version",
     "MetadataUnreadable",
     "read_metadata",

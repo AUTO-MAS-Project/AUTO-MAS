@@ -83,7 +83,7 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
     version: item.version ?? '',
     localSdk: installed && Boolean(item.localSdk),
     testPackage: installed && Boolean(item.testPackage),
-    /** 内测包编号（``mas-19``），只有自编版才有 */
+    /** 装着的内测包版本（``0.32.1``，后端已按更新器的规则算好），只有自编版才有 */
     build: item.build ?? '',
     /** 是自编版但内测包编号太旧或读不到 */
     outdated: Boolean(item.outdatedTestPackage),
