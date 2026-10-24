@@ -38,6 +38,7 @@ import app.models.config as _config_models
 from app.api.ws_command import ws_command
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
+from app.core.config import QueueItemNotFoundError, QueueNotFoundError
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -200,6 +201,8 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
         index, config = await Config.get_queue(queue.queueId)
         index = [QueueIndexItem(**_) for _ in index]
         data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
+    except QueueNotFoundError as e:
+        return QueueGetOut(code=404, status="error", message=str(e), index=[], data={})
     except Exception as e:
         logger.opt(exception=True).warning(f"get_queues失败: {type(e).__name__}: {e}")
         return QueueGetOut(
@@ -369,6 +372,10 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
         index, data = await Config.get_queue_item(item.queueId, item.queueItemId)
         index = [QueueItemIndexItem(**_) for _ in index]
         data = {uid: QueueItem(**cfg) for uid, cfg in data.items()}
+    except (QueueNotFoundError, QueueItemNotFoundError) as e:
+        return QueueItemGetOut(
+            code=404, status="error", message=str(e), index=[], data={}
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"get_item失败: {type(e).__name__}: {e}")
         return QueueItemGetOut(
