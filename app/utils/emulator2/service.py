@@ -365,7 +365,7 @@ async def add_path(
     await _save(emulator_id, paths, manager.slots)
 
     if record.type == "avd":
-        # 组件随内测包提供，MAS 不下载；解压出来的根目录可能还没有 mas-avd.json：补一份
+        # MAS 不下载组件；解压出来的根目录可能还没有 mas-avd.json：补一份
         from .avd.components import ensure_metadata
 
         try:

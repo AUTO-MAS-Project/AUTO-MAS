@@ -20,10 +20,10 @@
 
 """魔改 AVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
 
-组件全部随模拟器内测包提供（模拟器、平台工具、系统镜像，可选的轻量桌面），MAS 不下载组件；
-只有模拟器本体（``sdk\\emulator``）可以由 MAS 的更新器（:mod:`.updater`）换成 GitHub 上的新版。
+模拟器和轻量桌面随魔改 AVD 发布包提供；平台工具、系统镜像是 Google 的，由包里的「补全组件.bat」从官方渠道
+下载。MAS 不下载组件，只有模拟器本体（``sdk\\emulator``）可以由更新器（:mod:`.updater`）换成 GitHub 上的新版。
 这里只检查根目录里它们在不在：关键文件、模拟器是不是我们的自编版、内测包编号够不够新。
-缺了就明确说缺哪一项，让用户换完整的内测包。
+缺了就明确说缺哪一项、怎么补。
 """
 
 from __future__ import annotations
@@ -67,8 +67,17 @@ _KEY_FILES = {
     "system-image": ("system.img", "vendor.img", "kernel-ranchu", "ramdisk.img"),
 }
 
-#: 组件不全时给用户的建议（MAS 不下载组件）。
-FULL_PACKAGE_ADVICE = "请使用完整的模拟器内测包"
+#: 平台工具（adb）、系统镜像不全时给用户的指引（MAS 不下载组件）：Google 的组件不随魔改 AVD 发布包分发，
+#: 由包里的「补全组件.bat」（``tools\fetch-components.ps1``）从官方渠道下载。
+FETCH_COMPONENTS_ADVICE = (
+    "双击魔改 AVD 根目录里的「补全组件.bat」：它会先显示《Android 软件开发套件许可协议》，输入 y 同意后"
+    "从官方渠道下载 adb 和系统镜像（约 1.5 GB，中断了再运行会接着下），看到「完成」后回来点「检查」"
+)
+#: 模拟器本身缺着时：发布包要整个解压到这个根目录
+PACKAGE_ADVICE = (
+    "模拟器要用魔改 AVD 的发布包：从 https://github.com/ModAVD/ModAVD/releases 下载 "
+    "ModAVD-<版本>-win-x64.zip，整个解压到这个目录"
+)
 
 
 # ---- 根目录与元数据 --------------------------------------------------------
@@ -493,12 +502,16 @@ def install_status(root: str | Path) -> dict[str, Any]:
 
 
 def missing_components_message(missing: list[str]) -> str:
-    """缺组件时给用户的一句话：缺哪几项 + 用完整的内测包。"""
-    return f"这个目录里缺少：{'、'.join(missing)}。{FULL_PACKAGE_ADVICE}"
+    """缺组件时给用户的一句话：缺哪几项 + 怎么补（模拟器本身要放发布包，其余用「补全组件.bat」）。"""
+    advice = [PACKAGE_ADVICE] if EMULATOR_COMPONENT_NAME in missing else []
+    if any(name != EMULATOR_COMPONENT_NAME for name in missing):
+        advice.append(FETCH_COMPONENTS_ADVICE)
+    return f"这个目录里缺少：{'、'.join(missing)}。{'；'.join(advice)}"
 
 
 __all__ = [
-    "FULL_PACKAGE_ADVICE",
+    "FETCH_COMPONENTS_ADVICE",
+    "PACKAGE_ADVICE",
     "adb_exe",
     "adb_server_port",
     "avd_home",

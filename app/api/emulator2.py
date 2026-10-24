@@ -61,7 +61,7 @@ class Emulator2SearchItem(BaseModel):
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
             "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
-            "components_missing 魔改 AVD 根目录里组件不全 (要用完整的模拟器内测包) / "
+            "components_missing 魔改 AVD 根目录里组件不全 (用包里的「补全组件.bat」补齐) / "
             "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版 / "
             "test_package_outdated 魔改 AVD 内测包编号太旧或读不到, 要换新包"
         ),
@@ -383,7 +383,7 @@ class Emulator2AvdStatusOut(OutBase):
     )
     missing: List[str] = Field(
         default_factory=list,
-        description="缺着的必需组件名称 (含不合格的模拟器); 要用完整的模拟器内测包",
+        description="缺着的必需组件名称 (含不合格的模拟器); adb 和系统镜像用包里的「补全组件.bat」补齐",
     )
     accelerationOk: Optional[bool] = Field(
         default=None, description="硬件加速 (WHPX) 是否可用; null 表示还查不了"

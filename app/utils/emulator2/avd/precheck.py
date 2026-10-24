@@ -24,7 +24,7 @@
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
 - **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
-- **组件**：平台工具、系统镜像都要在（随内测包提供，MAS 不下载）；缺了写明缺哪一项。拦截。
+- **组件**：平台工具、系统镜像都要在（MAS 不下载，由包里的「补全组件.bat」补齐）；缺了写明缺哪一项、怎么补。拦截。
 - **模拟器版本**：只支持魔改 AVD 内测包里的自编版（``components.emulator_self_built``），且内测包编号
   （``Pkg.BuildId=mas-<编号>``）不低于 ``MIN_MOD_AVD_BUILD``；谷歌原版
   与没有模拟器都拒绝。拦截。
@@ -56,7 +56,7 @@ from app.utils import get_logger
 
 from . import host
 from .components import (
-    FULL_PACKAGE_ADVICE,
+    FETCH_COMPONENTS_ADVICE,
     avd_home,
     component_installed,
     emulator_build_ok,
@@ -218,7 +218,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
 
 
 def components_item(root: str | Path) -> PrecheckItem:
-    """平台工具、系统镜像都要在（随内测包提供，MAS 不下载）。模拟器本身见 :func:`emulator_item`。拦截。"""
+    """平台工具、系统镜像都要在（MAS 不下载，由包里的「补全组件.bat」补齐）。模拟器本身见 :func:`emulator_item`。拦截。"""
     title = "组件"
     missing = [c.name for c in REQUIRED_COMPONENTS if not component_installed(root, c)]
     if not missing:
@@ -235,7 +235,7 @@ def components_item(root: str | Path) -> PrecheckItem:
         False,
         True,
         f"这个目录里缺少：{'、'.join(missing)}",
-        FULL_PACKAGE_ADVICE,
+        FETCH_COMPONENTS_ADVICE,
     )
 
 

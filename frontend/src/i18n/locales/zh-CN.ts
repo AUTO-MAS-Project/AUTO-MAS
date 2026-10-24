@@ -3216,7 +3216,7 @@ export default {
       already_added: '已添加',
       not_found: '找不到模拟器程序',
       probe_failed: '版本认不出',
-      components_missing: '组件不全，请使用完整的模拟器内测包',
+      components_missing: '组件不全：双击根目录里的「补全组件.bat」补齐 adb 和系统镜像后再检查',
       test_package_required: '需要魔改 AVD 内测包',
       test_package_outdated: '魔改 AVD 内测包太旧，请换新包',
     },
