@@ -68,6 +68,8 @@ import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { SettingMirrorCdkIn } from '../models/SettingMirrorCdkIn';
+import type { SettingMirrorCdkOut } from '../models/SettingMirrorCdkOut';
 import type { ShareAppearanceCategoryIn } from '../models/ShareAppearanceCategoryIn';
 import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
 import type { ShareAppearanceCoverOut } from '../models/ShareAppearanceCoverOut';
@@ -271,11 +273,8 @@ export class GetService {
      * 获取碧蓝档案活动数据（GameKee 中转）
      * 按服务器取回碧蓝档案的活动。
      *
-     * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
-     * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
-     *
-     * GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
-     * 的字段形状再交给前端，省得让前端认识第二套数据源。
+     * 共享取数模块负责 GameKee 请求与 SRA 兜底，这里只包装响应。
+     * 前端继续接收 GameKee 字段，活动筛选与展示格式保持不变。
      * @param requestBody
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -1101,6 +1100,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/get',
+        });
+    }
+    /**
+     * 查询全局 Mirror 酱 CDK 状态与到期时间
+     * @param requestBody
+     * @returns SettingMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static querySettingMirrorCdkApiSettingMirrorCdkPost(
+        requestBody: SettingMirrorCdkIn,
+    ): CancelablePromise<SettingMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

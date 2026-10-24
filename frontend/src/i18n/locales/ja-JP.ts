@@ -4615,6 +4615,10 @@ export default {
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
       cdkHint:
         'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
+      cdkValid: 'CDK は有効です',
+      cdkChecking: 'CDK を確認中…',
+      cdkCheckFailed: '現在 CDK を確認できません。再試行してください',
+      cdkGetLink: 'MirrorChyan CDK を入手',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

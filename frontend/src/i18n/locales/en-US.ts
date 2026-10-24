@@ -5259,6 +5259,9 @@ export default {
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
         'Used only for updating MAS itself; MAA and MaaFW script project updates take their own CDK on their script edit pages',
+      cdkValid: 'CDK is valid',
+      cdkChecking: 'Validating CDK…',
+      cdkCheckFailed: 'Unable to validate CDK right now. Please retry.',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',

@@ -73,6 +73,7 @@ from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
 from app.services.data_backup import create_data_backup
+from app.services.update_transport import query_mirror_cdk_status
 from app.utils import debug_pattern, get_logger
 
 GlobalConfig = ConfigPayload[_config_models.GlobalConfig]
@@ -190,6 +191,24 @@ class SettingUpdateIn(BaseModel):
     data: GlobalConfigInput = Field(..., description="全局设置需要更新的数据")
 
 
+class SettingMirrorCdkIn(BaseModel):
+    cdk: str = Field(..., repr=False, description="待校验的 Mirror 酱 CDK")
+
+
+class SettingMirrorCdkData(BaseModel):
+    status: str = Field(
+        ...,
+        description="CDK 状态：ok / absent / error / expired / invalid / quota / mismatched / blocked",
+    )
+    expiredTime: int | None = Field(
+        default=None, description="CDK 到期时间（unix 秒）；未返回时为空"
+    )
+
+
+class SettingMirrorCdkOut(OutBase):
+    data: SettingMirrorCdkData
+
+
 class PatternDebugIn(BaseModel):
     """日志模式调试请求"""
 
@@ -222,6 +241,29 @@ class PatternDebugOut(OutBase):
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
+
+
+@router.post(
+    "/mirror-cdk",
+    tags=["Get"],
+    summary="查询全局 Mirror 酱 CDK 状态与到期时间",
+    response_model=SettingMirrorCdkOut,
+)
+async def query_setting_mirror_cdk(request: SettingMirrorCdkIn) -> SettingMirrorCdkOut:
+    try:
+        result = await query_mirror_cdk_status(
+            "AUTO_MAS",
+            cdk=request.cdk,
+            channel=Config.setting.Update.Channel,
+            proxy=Config.proxy,
+        )
+    except Exception as error:
+        # 网络异常可能包含带 CDK 的请求 URL，只记录异常类型。
+        logger.warning(f"全局 Mirror 酱 CDK 状态查询失败: {type(error).__name__}")
+        return SettingMirrorCdkOut(data=SettingMirrorCdkData(status="error"))
+    return SettingMirrorCdkOut(
+        data=SettingMirrorCdkData(status=result.status, expiredTime=result.expired_time)
+    )
 
 
 @router.post(
