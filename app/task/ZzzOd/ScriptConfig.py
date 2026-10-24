@@ -29,11 +29,10 @@ import asyncio
 import json
 import uuid
 from contextlib import suppress
-from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
@@ -82,7 +81,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: ZzzOdConfig,
-        user_config: MultipleConfig[ZzzOdUserConfig],
+        user_config: ConfigCollection[ZzzOdUserConfig],
         view_only: bool = False,
         instance_idx: int | None = None,
     ):
@@ -111,7 +110,10 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        root_path = self.script_config.Info.RootPath
+        if root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.root_path = root_path
         self.exe_path = find_launcher_exe(self.root_path)
         # 用户会话使用的绑定槽（回读用；脚本级会话为 None）
         self._session_slot: int | None = None
@@ -152,17 +154,11 @@ class ScriptConfigTask(TaskExecuteBase):
             self._session_slot = slot
             write_instance_view(
                 self.root_path,
-                [(slot, f"MAS-{self.cur_user_config.get('Info', 'Name')}")],
+                [(slot, f"MAS-{self.cur_user_config.Info.Name}")],
                 active_idx=slot,
-                # 会话注入 MAS 侧「游戏结束后操作」：GUI 所见即本页下拉；
-                # 查看会话不注入（槽内即恢复的备份，所见即备份）
-                after_done=(
-                    None
-                    if self.view_only
-                    else str(
-                        self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
-                    )
-                ),
+                after_done=None
+                if self.view_only
+                else str(self.cur_user_config.OneDragon.AfterDone or "关闭游戏"),
             )
             if self.view_only:
                 logger.info(
@@ -238,41 +234,59 @@ class ScriptConfigTask(TaskExecuteBase):
             return
         slot_dir = instance_dir(self.root_path, slot)
         account = read_game_account(slot_dir)
-        await cfg.set("Game", "GameRegion", str(account.get("game_region") or "cn"))
-        await cfg.set("Game", "GamePath", str(account.get("game_path") or ""))
-        await cfg.set("Game", "GameLanguage", str(account.get("game_language") or "cn"))
-        await cfg.set(
-            "Game",
-            "BilibiliAccountName",
-            str(account.get("bilibili_account_name") or ""),
+        account_fields = type(cfg.Game).model_validate(
+            {
+                "GameRegion": str(account.get("game_region") or "cn"),
+                "GamePath": str(account.get("game_path") or ""),
+                "GameLanguage": str(account.get("game_language") or "cn"),
+                "BilibiliAccountName": str(account.get("bilibili_account_name") or ""),
+            }
         )
+        cfg.Game.GameRegion = account_fields.GameRegion
+        cfg.Game.GamePath = account_fields.GamePath
+        cfg.Game.GameLanguage = account_fields.GameLanguage
+        cfg.Game.BilibiliAccountName = account_fields.BilibiliAccountName
+        await cfg.commit()
         if str(account.get("account") or "").strip():
-            await cfg.set("Game", "Account", str(account.get("account")))
+            cfg.Game.Account = str(account.get("account"))
+            await cfg.commit()
         if str(account.get("password") or "").strip():
-            await cfg.set("Game", "Password", str(account.get("password")))
+            cfg.Game.Password = str(account.get("password"))
+            await cfg.commit()
         # 启动参数：客观字段无条件回读（GUI 内改了 -use-d3d12 等也要同步回
         # MAS 字段，否则下次注入会被本页旧值覆盖）；缺失键合并上游默认值；
         # -use-d3d12 拆到 Dx12 开关，高级参数只存其余部分（勾选框为唯一权威）
         game_cfg = read_game(slot_dir)
-        await cfg.set(
-            "Game", "LaunchArgument", bool(game_cfg.get("launch_argument", False))
+        cfg.Game.LaunchArgument = bool(game_cfg.get("launch_argument", False))
+        await cfg.commit()
+        launch_fields = type(cfg.Game).model_validate(
+            {
+                "ScreenSize": str(game_cfg.get("screen_size") or "1920x1080"),
+                "FullScreen": str(game_cfg.get("full_screen") or "0"),
+                "Monitor": str(game_cfg.get("monitor") or "1"),
+            }
         )
-        await cfg.set(
-            "Game", "ScreenSize", str(game_cfg.get("screen_size") or "1920x1080")
-        )
-        await cfg.set("Game", "FullScreen", str(game_cfg.get("full_screen") or "0"))
-        await cfg.set("Game", "PopupWindow", bool(game_cfg.get("popup_window", False)))
+        cfg.Game.ScreenSize = launch_fields.ScreenSize
+        cfg.Game.FullScreen = launch_fields.FullScreen
+        cfg.Game.PopupWindow = bool(game_cfg.get("popup_window", False))
         has_dx12, advance_rest = split_dx12_argument(
             str(game_cfg.get("launch_argument_advance") or "")
         )
-        await cfg.set("Game", "Dx12", has_dx12)
-        await cfg.set("Game", "LaunchArgumentAdvance", advance_rest)
-        await cfg.set("Game", "Monitor", str(game_cfg.get("monitor") or "1"))
+        cfg.Game.Dx12 = has_dx12
+        cfg.Game.LaunchArgumentAdvance = advance_rest
+        cfg.Game.Monitor = launch_fields.Monitor
+        await cfg.commit()
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
-        await cfg.set("OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False))
+        cfg.OneDragon.AppList = json.dumps(all_apps, ensure_ascii=False)
+        await cfg.commit()
         # 「结束后」：视图由会话注入该键，GUI 所见即可回读；必须在
         # restore_instance_view 还原前执行（本函数由 final_task 在还原前调用）
-        await cfg.set("OneDragon", "AfterDone", read_after_done(self.root_path))
+        cfg.OneDragon.AfterDone = (
+            type(cfg.OneDragon)
+            .model_validate({"AfterDone": read_after_done(self.root_path)})
+            .AfterDone
+        )
+        await cfg.commit()
         logger.info(
             f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
         )

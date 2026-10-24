@@ -1,6 +1,6 @@
 ---
 name: mas-schema-naming
-description: Define canonical naming for future backend schema domains. Use when creating new specialized schema models or extending Pydantic contracts in app/models/schema.py, standardizing shared Info/Data/Notify/Run semantics, and avoiding new naming drift without forcing retroactive changes on legacy modules.
+description: Define canonical naming for new backend config groups and API contracts, including endpoint-local and shared models, while preserving established business field names.
 ---
 
 # MAS Schema Naming
@@ -26,21 +26,9 @@ Apply these constraints while using this skill.
 5. When touching legacy modules, prefer compatibility-first edits and avoid broad rename-only refactors.
 
 ## Canonical Structure For New Domains
-Use this top-level structure for new script/user schema models.
+New script config entries use semantic groups such as `Info`, `Run` and, when meaningful, `Emulator`; user entries use `Info`, `Data`, `Notify` and domain-specific `Task/Stage/Game` groups. Entries derive from `ConfigEntry`/`DomainEntry`, groups from `ConfigGroup`, with fields/defaults/descriptions declared once.
 
-```python
-class XxxConfig(BaseModel):
-    Info: XxxConfig_Info | None
-    Run: XxxConfig_Run | None
-    Emulator: XxxConfig_Emulator | None  # only if emulator semantics exist
-
-
-class XxxUserConfig(BaseModel):
-    Info: XxxUserConfig_Info | None
-    Data: XxxUserConfig_Data | None
-    Notify: XxxUserConfig_Notify | None
-    # optional domain blocks, e.g. Task/Stage/Game
-```
+API projections derive from these classes through `ConfigInput[T]`/`ConfigPayload[T]`; omission/null representation is a contract concern, not a reason to duplicate optional group declarations. Existing business field names remain stable. See [the configuration framework reference](../mas-data-model/references/config-framework.md) for declarations and [API contracts](../mas-api-contract/SKILL.md) for endpoint-local/shared model placement.
 
 ## Shared Naming Matrix
 Use these names when semantics are the same.

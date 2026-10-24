@@ -9,7 +9,7 @@ description: Define and enforce backend module boundaries for Python services. U
 Keep backend code maintainable by enforcing clear ownership, dependency direction, and placement rules across modules.
 
 ## Layer Model
-1. `models/schema`: external API contract and typed data structure.
+1. `models/schema.py`: cross-module external contracts and shared typed payloads; `models/config/`: domain config declarations; `config/`: framework behavior and contract derivation.
 2. `api`: request parsing, response shaping, transport concerns.
 3. `core`: orchestration, lifecycle, task scheduling, state coordination.
 4. `task`: script-domain execution flow.
@@ -19,15 +19,16 @@ Keep backend code maintainable by enforcing clear ownership, dependency directio
 ## Current Dev Map
 1. API routes: `app/api/*.py`
 2. Runtime orchestration: `app/core/*.py`
-3. Schema/config/runtime models: `app/models/schema.py`, `app/models/config.py`, `app/models/task.py`, `app/models/ConfigBase.py`
+3. Shared/config/runtime models: `app/models/schema.py`, `app/models/config/`, `app/models/task.py`; config framework: `app/config/`
 4. Script domains: `app/task/MAA`, `app/task/general`, `app/task/SRC`
 
 ## Dependency Direction
-1. `api -> core/services/models.schema`
+1. `api -> core/services/models/config.wire`; endpoint-local models are declared in the owning API module.
 2. `core -> services/task/models/utils`
 3. `task -> core/services/models/utils`
 4. `services -> utils/models`
 5. `models -> none of api/core/services/task`
+6. `models.config -> config/utils/shared models`; `config -> utils` for low-level capabilities. Config framework, models and business code do not import routers; shared contracts are extracted to `schema.py`, not another API module.
 
 Disallowed examples:
 1. `models/schema` importing `core` or `services`
@@ -36,7 +37,7 @@ Disallowed examples:
 4. `api` embedding long-running workflow loops directly
 
 ## Ownership Rules
-1. `app/models/schema.py`: naming, typing, field descriptions only. No filesystem, network, process, or business branching.
+1. `app/models/schema.py`: shared transport contracts and payloads only. Endpoint-specific models belong at the top of their owning API module; config fields are declared once in `app/models/config/` and projected through `app/config/wire.py`.
 2. `app/api/*`: accept `*In`, return `*Out`/`OutBase`, validate input, call `core/services`, shape response.
 3. `app/core/*`: own global coordination, lifecycle, config composition, task scheduling, and broadcast.
 4. `app/task/*`: own per-script execution lifecycle (`check/prepare/run/final`) and domain task decisions.
@@ -46,7 +47,7 @@ Disallowed examples:
 8. Script success/failure heuristics based on log text, log timestamp, and process exit belong to orchestrators and log-monitor helpers, not to schema models or transport handlers.
 
 ## Placement Decision Tree
-1. Request/response contract or DTO typing -> `models/schema`
+1. Endpoint-specific request/response contract -> owning `api` module; cross-module or business-shared contract -> single-file `models/schema.py`; config field/default/constraint -> `models/config/`
 2. Endpoint parsing and response mapping -> `api`
 3. Cross-task orchestration or global runtime state -> `core`
 4. Script-domain run logic -> `task/<domain>`
@@ -63,8 +64,9 @@ Disallowed examples:
 7. Do not create standalone `builder`, `loader`, or helper-service modules for a feature that has no second call site and no real ownership boundary.
 8. If a domain can be expressed as one task class plus nearby local helpers, prefer that over creating a mini-subsystem inside the domain folder.
 9. When adding support for a new external script, preserve the product's config-copy plus log-monitor architecture instead of embedding script-specific state machines into shared layers.
-10. Script-specific adaptation is cross-layer by design: add the script config/user config in `app/models/config.py`, expose schema types in `app/models/schema.py`, add endpoints in `app/api/scripts.py`, extend global config orchestration in `app/core/config.py`, and add task dispatch in `app/core/task_manager.py`. `app/api/scripts.py` holds endpoints only: parse the request, call a function exposed by the owning `app/task/<Xxx>/` module, shape the response model. Directory handling, import, update, validation, and group propagation belong in the script domain; do not define script-private helpers in the API layer. The MaaFW engine under `app/task/MaaFW/` is the exception: its `tools/core/` packages must stay host-agnostic and its worker subprocess must not import host modules — see `app/task/MaaFW/AGENTS.md` before touching it.
+10. Script-specific adaptation is cross-layer by design: add script/user declarations in `app/models/config/script.py`, update the owning registry/public exports in `app/models/config/__init__.py`, derive endpoint config payloads, extend startup orchestration and task dispatch. API modules own endpoint contracts and thin handlers: parse, call the owning `app/task/<Xxx>/` function, shape the response. Directory handling, import, update and group propagation belong in the script domain. The MaaFW engine's `tools/core/` packages stay host-agnostic and its worker subprocess does not import host modules — see `app/task/MaaFW/AGENTS.md`.
 11. For a new script domain, start from the closest existing task folder shape, commonly `app/task/general`, then rename and adapt domain-specific config, run, manual-review, and manager code in place.
+12. Config field declarations, framework lifecycle and business configuration ownership are separate responsibilities. Use [the configuration framework reference](../mas-data-model/references/config-framework.md) for framework contracts; external script file snapshots remain owned by task/restore orchestration.
 
 ## Anti-Patterns
 1. Business rules inside schema definitions.

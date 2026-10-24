@@ -302,7 +302,11 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input :value="formData.Data.LastProxyDate" readonly size="large" />
+                <a-input
+                  :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
+                  readonly
+                  size="large"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -372,6 +376,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -396,6 +401,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -410,8 +416,9 @@ const {
   loading: userLoading,
   openUserConfigFolder,
   loading: folderLoading,
+  error: userApiError,
 } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
@@ -448,7 +455,7 @@ const getDefaultBAAHUserData = () => ({
     Tag: '',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
   },
   Notify: {
@@ -614,7 +621,7 @@ const handleFieldSave = async (key: string, value: any) => {
       userData = { Info: { Name: value } }
     }
 
-    await updateUser(scriptId, userId, userData)
+    if (!(await updateUser(scriptId, userId, userData))) return
     logger.info(`用户配置已保存: ${key}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -639,13 +646,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -667,13 +674,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -711,13 +718,13 @@ const loadUserData = async () => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
   }
 }
 
@@ -737,21 +744,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -789,20 +786,7 @@ const handleRestored = async (target: string) => {
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档 BAAH 原生配置当前状态
 // （用户可能刚在 BAAH jsoneditor 里改过），退出归档 MAS 编辑页字段终态；
 // 运行前归档挂在 AutoProxy.prepare（托管写入前）
-const ensureBAAHBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureBAAHBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {

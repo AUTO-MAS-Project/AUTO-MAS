@@ -21,7 +21,7 @@ import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOu
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
-import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebhookUpdateIn_WebhookInput_ } from '../models/WebhookUpdateIn_WebhookInput_';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -166,7 +166,7 @@ export class UpdateService {
      * @throws ApiError
      */
     public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -377,7 +377,7 @@ export class UpdateService {
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

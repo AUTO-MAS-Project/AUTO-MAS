@@ -82,9 +82,9 @@ def _avd_roots() -> list[Path]:
     roots: dict[str, Path] = {}
     for config in list(Config.EmulatorConfig.values()):
         try:
-            if config.get("Info", "Type") != "emulator2":
+            if config.Info.Type != "emulator2":
                 continue
-            paths = load_paths(config.get("Info", "Paths"))
+            paths = load_paths(config.Info.Paths)
         except Exception as e:  # noqa: BLE001 - 一条配置读不出不影响其余
             logger.warning(f"读取模拟器配置失败，跳过: {e}")
             continue

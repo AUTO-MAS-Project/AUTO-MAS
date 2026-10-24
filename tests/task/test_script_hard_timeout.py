@@ -1,16 +1,15 @@
+from tests.config_support import activate_config, group_view
 import asyncio
 import ast
 from datetime import datetime
 from pathlib import Path
-
 import pytest
-
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.base import ScriptAutoProxyBase
 
 
 class Proxy(ScriptAutoProxyBase):
-    run_timeout_seconds = 0.025
+    run_timeout_seconds = 0.1
 
     def __init__(self, behavior="hang", user=None):
         super().__init__()
@@ -50,6 +49,7 @@ async def run(proxy):
 
 
 def test_progress_does_not_extend_deadline_and_cleanup_precedes_next_account():
+
     async def scenario():
         first = Proxy()
         second = Proxy("success")
@@ -58,15 +58,16 @@ def test_progress_does_not_extend_deadline_and_cleanup_precedes_next_account():
         assert first.ticks > 1
         assert first.cur_user_item.status == "异常"
         assert "已终止" in first.saved_status
-        assert not first.stopped_manually and not first.crashes
+        assert not first.stopped_manually and (not first.crashes)
         await run(second)
-        assert second.finalized and not second.cancelled
+        assert second.finalized and (not second.cancelled)
         assert "已终止" not in second.saved_status
 
     asyncio.run(scenario())
 
 
 def test_internal_timeout_is_a_crash():
+
     async def scenario():
         proxy = Proxy("error")
         await run(proxy)
@@ -78,6 +79,7 @@ def test_internal_timeout_is_a_crash():
 
 
 def test_manual_cancel_is_not_reported_as_timeout():
+
     async def scenario():
         proxy = Proxy()
         proxy.run_timeout_seconds = 10
@@ -93,6 +95,7 @@ def test_manual_cancel_is_not_reported_as_timeout():
 
 
 def test_timeout_before_log_creation_still_records_reason():
+
     async def scenario():
         proxy = Proxy()
         proxy.cur_user_item.log_record.clear()
@@ -121,7 +124,11 @@ def test_adapter_coverage_and_exemptions():
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and any(
-                isinstance(base, ast.Name) and base.id == "ScriptAutoProxyBase"
+                isinstance(
+                    origin := base.value if isinstance(base, ast.Subscript) else base,
+                    ast.Name,
+                )
+                and origin.id == "ScriptAutoProxyBase"
                 for base in node.bases
             ):
                 actual.add(path.relative_to(root).parts[0])
@@ -135,6 +142,7 @@ def test_adapter_coverage_and_exemptions():
 
 
 def test_repeated_cancel_waits_for_finalizer():
+
     async def scenario():
         proxy = Proxy()
         proxy.run_timeout_seconds = 10
@@ -179,22 +187,25 @@ def test_repeated_cancel_waits_for_finalizer():
 )
 def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
     from app.models import config as configs
-    from app.models import schema
+    from app.config.wire import config_contract
 
     async def scenario():
         cls = getattr(configs, f"{name}Config")
         config = cls()
-        path = tmp_path / f"{name}.json"
-        await config.connect(path)
-        assert config.get("Run", "HardTimeLimit") == 120
-        await config.set("Run", "HardTimeLimit", 240)
+        path = tmp_path / f"{name}.yaml"
+        await activate_config(config, path)
+        assert config.Run.HardTimeLimit == 120
+        await config.update(
+            type(config).model_validate({"Run": {"HardTimeLimit": 240}}),
+            check_visibility=False,
+        )
         loaded = cls()
-        await loaded.connect(path)
-        assert loaded.get("Run", "HardTimeLimit") == 240
+        await activate_config(loaded, path)
+        assert loaded.Run.HardTimeLimit == 240
         proxy = Proxy()
         proxy.script_config = loaded
         assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
-        model = getattr(schema, f"{name}Config")
+        model = config_contract(getattr(configs, f"{name}Config"))
         assert (
             model.model_validate({"Run": {"HardTimeLimit": 240}}).Run.HardTimeLimit
             == 240
@@ -210,11 +221,11 @@ def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
 
 def test_exempt_configs_do_not_expose_hard_timeout():
     from app.models import config as configs
-    from app.models import schema
+    from app.config.wire import config_contract
 
     for name in ("MaaFW", "M9A", "MSS", "HSR"):
         config = getattr(configs, f"{name}Config")()
         assert not hasattr(config, "Run_HardTimeLimit")
-        model = getattr(schema, f"{name}Config")
+        model = config_contract(getattr(configs, f"{name}Config"))
         run_model = model.model_fields["Run"].annotation.__args__[0]
         assert "HardTimeLimit" not in run_model.model_fields

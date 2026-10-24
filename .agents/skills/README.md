@@ -21,7 +21,7 @@
 - `mas-frontend-standards`：用于约束 Vue 3、TypeScript、Vite、Electron renderer、路由、API composable、状态、样式、表单与前端验证。
 - `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。
-- `mas-data-model`：用于规范后端数据模型的结构、类型、默认值和兼容性演进。
+- `mas-data-model`：用于规范后端数据模型及配置声明、调用点、事务、信号、锁、持久化和兼容性演进；配置任务加载其中的[配置框架参考](mas-data-model/references/config-framework.md)。
 - `mas-function-design`：用于规范后端函数的职责划分、参数设计、返回约定和副作用控制。
 - `mas-module-boundary`：用于约束后端模块分层、依赖方向和代码归属边界。
 - `mas-code-standards`：用于应用 AUTO-MAS 的代码规范，规范内容主要从当前 `dev` 的代表性提交和现有模块中提炼，尤其适用于 Electron 初始化与服务层代码。

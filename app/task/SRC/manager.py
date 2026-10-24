@@ -1,25 +1,18 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import shutil
 import uuid
@@ -28,11 +21,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
-from app.models.config import SrcConfig, SrcUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.config import SrcConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.emulator_core import close_emulator
@@ -54,7 +48,6 @@ from .tools import (
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
-    push_notification,
     read_src_config_snapshot_state,
     read_src_installation_id,
     read_src_process_state,
@@ -120,32 +113,16 @@ class SrcManager(ScriptManagerBase):
             Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], SrcConfig
         ):
             return "脚本配置类型错误, 不是SRC脚本类型"
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Emulator", "Id"
-        ) == "-" or Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Emulator", "Index"
-        ) in (
-            "",
-            "-",
-        ):
+        if Config.ScriptConfig[
+            uuid.UUID(self.script_info.script_id)
+        ].Emulator.Id == "-" or Config.ScriptConfig[
+            uuid.UUID(self.script_info.script_id)
+        ].Emulator.Index in ("", "-"):
             return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        if not (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
-                )
-            )
-            / "src.exe"
-        ).exists():
+        root_path = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].Info.Path
+        if root_path is None or not (root_path / "src.exe").exists():
             return "src.exe文件不存在, 请检查SRC路径设置！"
-        src_set_path = (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
-                )
-            )
-            / "config"
-        )
+        src_set_path = root_path / "config"
         temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         temp_ready_path = temp_path.with_name(temp_path.name + ".ready")
         src_config_available = self._is_src_config_available(src_set_path)
@@ -187,15 +164,12 @@ class SrcManager(ScriptManagerBase):
         await self._recover_previous_run()
 
         # 加载用户配置
-        self.user_config = MultipleConfig([SrcUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
+        self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
         # 初始化模拟器管理器和用户列表
         device_provider = self._device_provider or EmulatorManager.get_emulator_instance
-        self.emulator_manager = await device_provider(
-            self.script_config.get("Emulator", "Id")
-        )
+        self.emulator_manager = await device_provider(self.script_config.Emulator.Id)
         if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
                 UserItem(
@@ -232,11 +206,13 @@ class SrcManager(ScriptManagerBase):
             script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
             self.script_config = script_config
         if not getattr(self, "config_lock_acquired", False):
-            # ConfigBase.lock 会在首个 await 前置锁；先记录以便取消时仍能解锁。
+            self.config_locks[script_config.uid] = await script_config.lock_x()
             self.config_lock_acquired = True
-        await script_config.lock()
 
-        locked_root_path = Path(self.script_config.get("Info", "Path")).resolve()
+        locked_root_path = self.script_config.Info.Path
+        if locked_root_path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        locked_root_path = locked_root_path.resolve()
         reserved_root_path = self._reserved_src_root_path
         if (
             reserved_root_path is None
@@ -528,9 +504,7 @@ class SrcManager(ScriptManagerBase):
         if user_id == "Default":
             return False
         try:
-            base = str(
-                self.user_config[uuid.UUID(user_id)].get("Info", "Base") or ""
-            ).strip()
+            base = str(self.user_config[uuid.UUID(user_id)].Info.Base or "").strip()
         except (KeyError, ValueError, TypeError):
             return False
         return base == CONFIG_BASE_NATIVE
@@ -834,55 +808,63 @@ class SrcManager(ScriptManagerBase):
 
     async def final_task(self):
         """运行结束后的收尾工作"""
-
-        lock_acquired = getattr(
-            self,
-            "config_lock_acquired",
-            getattr(self, "prepared", False),
-        )
-        if not lock_acquired:
-            self.script_info.status = "异常"
-            return self.check_result if self.check_result != "Pass" else None
-
-        logger.info("SRC 主任务已结束, 开始执行后续操作")
-        script_config = getattr(self, "script_config", None)
-        if script_config is None:
-            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        should_notify = False
         try:
-            if not self.prepared:
-                if not getattr(self, "recovery_completed", False):
-                    await self._recover_previous_run()
-                if self.check_result == "Pass" and not getattr(
-                    self, "current_cleanup_completed", False
-                ):
-                    await self._cleanup_current_src_root()
+            lock_acquired = getattr(
+                self,
+                "config_lock_acquired",
+                getattr(self, "prepared", False),
+            )
+            if not lock_acquired:
                 self.script_info.status = "异常"
                 return self.check_result if self.check_result != "Pass" else None
 
-            # 持锁完成快照处置，避免下一任务与当前收尾交叉操作同一目录。
-            if self.process_cleanup_success:
-                if not self._is_src_config_available(self.temp_path):
-                    raise RuntimeError(
-                        f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
-                    )
-                # 原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
-                if not self._keep_script_config_changes():
-                    self._restore_src_config_from_temp(
-                        expected_installation_id=self.src_installation_id,
-                    )
-                self._retire_src_config_snapshot()
-            else:
-                logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")
-            if self.task_info.mode in ["AutoProxy"]:
-                should_notify = await self._complete_locked_final_task()
-        finally:
-            await script_config.unlock()
-            self.config_lock_acquired = False
-            logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
+            logger.info("SRC 主任务已结束, 开始执行后续操作")
+            script_config = getattr(self, "script_config", None)
+            if script_config is None:
+                script_config = Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ]
+            should_notify = False
+            try:
+                if not self.prepared:
+                    if not getattr(self, "recovery_completed", False):
+                        await self._recover_previous_run()
+                    if self.check_result == "Pass" and not getattr(
+                        self, "current_cleanup_completed", False
+                    ):
+                        await self._cleanup_current_src_root()
+                    self.script_info.status = "异常"
+                    return self.check_result if self.check_result != "Pass" else None
 
-        if should_notify:
-            await self._send_final_notification()
+                # 持锁完成快照处置，避免下一任务与当前收尾交叉操作同一目录。
+                if self.process_cleanup_success:
+                    if not self._is_src_config_available(self.temp_path):
+                        raise RuntimeError(
+                            f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
+                        )
+                    # 原生来源配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                    if not self._keep_script_config_changes():
+                        self._restore_src_config_from_temp(
+                            expected_installation_id=self.src_installation_id,
+                        )
+                    self._retire_src_config_snapshot()
+                else:
+                    logger.warning(
+                        f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}"
+                    )
+                if self.task_info.mode in ["AutoProxy"]:
+                    should_notify = await self._complete_locked_final_task()
+            finally:
+                self.config_lock_acquired = False
+
+            if should_notify:
+                await self._send_final_notification()
+        finally:
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def _complete_locked_final_task(self) -> bool:
         """在脚本仍锁定时写回任务结果。"""
@@ -900,16 +882,11 @@ class SrcManager(ScriptManagerBase):
         if not await close_emulator(self, timeout=_EMULATOR_CLOSE_TIMEOUT_SECONDS):
             self.script_info.status = "异常"
 
-        # 根配置保持锁定以阻止外部编辑；仅临时开放内部用户集合写回。
-        await self.script_config.UserData.unlock()
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].UserData.load(
-            await self.user_config.toDict()
-        )
-        await Config.ScriptConfig.save()
+        await config_manager.flush()
         return True
 
     async def _send_final_notification(self) -> None:
-        """解锁配置后限时发送任务完成通知。"""
+        """限时发送任务完成通知。"""
 
         title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
         result = self.build_proxy_report()
@@ -922,11 +899,9 @@ class SrcManager(ScriptManagerBase):
         result = {**result, "summary_title": completion_title}
         try:
             await asyncio.wait_for(
-                push_notification(
-                    mode="代理结果",
+                self.task_info.notifications.push_proxy_result(
                     title=title,
-                    message=result,
-                    user_config=None,
+                    report=TaskResultReport.from_message(result),
                     task_info=self.task_info,
                 ),
                 timeout=_NOTIFICATION_TIMEOUT_SECONDS,

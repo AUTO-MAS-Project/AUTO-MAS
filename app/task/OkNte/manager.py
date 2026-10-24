@@ -15,17 +15,17 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import OkNteConfig, OkNteUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -43,7 +43,6 @@ from app.utils.io import (
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 
 logger = get_logger("OK-NTE 调度器")
@@ -69,7 +68,7 @@ class OkNteManager(ScriptManagerBase):
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.script_config: OkNteConfig | None = None
-        self.user_config: MultipleConfig[OkNteUserConfig] | None = None
+        self.user_config: ConfigCollection[OkNteUserConfig] | None = None
         self.game_manager: ProcessManager | None = None
         self.had_original_script_config = False
         self.crashed = False
@@ -84,11 +83,17 @@ class OkNteManager(ScriptManagerBase):
             return "脚本配置类型错误, 不是 OK-NTE 类型"
 
         if self.task_info.mode == "ScriptConfig":
-            if not Path(script_config.get("Info", "RootPath")).is_dir():
+            if (
+                not script_config.Info.RootPath
+                or not script_config.Info.RootPath.is_dir()
+            ):
                 return "请设置 OK-NTE 脚本路径"
-            if not Path(script_config.get("Script", "ScriptPath")).is_file():
+            if (
+                not script_config.Script.ScriptPath
+                or not script_config.Script.ScriptPath.is_file()
+            ):
                 return "请设置 OK-NTE 脚本路径"
-            if not str(script_config.get("Script", "ConfigPath") or "").strip():
+            if not str(script_config.Script.ConfigPath or "").strip():
                 return "请设置 OK-NTE 配置路径"
             if self.task_info.user_id and self.task_info.user_id != "Default":
                 try:
@@ -113,15 +118,16 @@ class OkNteManager(ScriptManagerBase):
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         script_uid = uuid.UUID(self.script_info.script_id)
-        await Config.ScriptConfig[script_uid].lock()
+        self.config_locks[
+            Config.ScriptConfig[script_uid].uid
+        ] = await Config.ScriptConfig[script_uid].lock_x()
         script_config = Config.ScriptConfig[script_uid]
         if not isinstance(script_config, OkNteConfig):
             raise TypeError("脚本配置类型错误")
 
         self.script_config = script_config
-        # 任务期使用独立副本，避免在 ScriptConfig 已锁时写 UserData（对齐 General）
-        self.user_config = MultipleConfig([OkNteUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
+        # X 锁覆盖用户集合，运行时直接修改原配置。
+        self.user_config = self.script_config.UserData
         logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 用户配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
@@ -130,9 +136,7 @@ class OkNteManager(ScriptManagerBase):
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
-                    target_user_name = self.user_config[target_user_uid].get(
-                        "Info", "Name"
-                    )
+                    target_user_name = self.user_config[target_user_uid].Info.Name
             self.script_info.user_list = [
                 UserItem(user_id=target_user_id, name=target_user_name, status="等待")
             ]
@@ -145,27 +149,28 @@ class OkNteManager(ScriptManagerBase):
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
         self.game_manager = None
-        if self.script_config.get("Game", "Enabled") and (
-            self.script_config.get("Game", "LaunchBeforeTask")
-            or self.script_config.get("Game", "CloseOnFinish")
+        if self.script_config.Game.Enabled and (
+            self.script_config.Game.LaunchBeforeTask
+            or self.script_config.Game.CloseOnFinish
         ):
             self.game_manager = ProcessManager()
 
         if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
-            self.script_config_path = Path(
-                self.script_config.get("Script", "ConfigPath")
-            )
+            script_config_path = self.script_config.Script.ConfigPath
+            if script_config_path is None:
+                raise ValueError("ConfigPath未配置，请检查路径设置")
+            self.script_config_path = script_config_path
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             self._recover_previous_run()
             if self.script_config_path.exists():
                 self.had_original_script_config = True
-                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                if self.script_config.Script.ConfigPathMode == "Folder":
                     commit_native_config_snapshot(
                         self.temp_path,
                         self.script_config_path,
                         script_id=self.script_info.script_id,
                     )
-                elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                elif self.script_config.Script.ConfigPathMode == "File":
                     self.temp_path.mkdir(parents=True, exist_ok=True)
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
@@ -175,8 +180,7 @@ class OkNteManager(ScriptManagerBase):
             # MAS 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
             with suppress(Exception):
                 archive_native_backup(
-                    self.script_config_path,
-                    self.script_config.get("Script", "ConfigPathMode"),
+                    self.script_config_path, self.script_config.Script.ConfigPathMode
                 )
 
     def _recover_previous_run(self) -> None:
@@ -215,7 +219,7 @@ class OkNteManager(ScriptManagerBase):
                     cfg = self.user_config[uuid.UUID(user_id)]
                     if user_uses_native_base(cfg) and not user_uses_quick_config(cfg):
                         return
-            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if self.script_config.Script.ConfigPathMode == "Folder":
                 if not self.had_original_script_config:
                     logger.info(
                         f"清理任务期写入的 OK-NTE 脚本配置目录: {self.script_config_path}"
@@ -224,7 +228,7 @@ class OkNteManager(ScriptManagerBase):
                 else:
                     logger.info(f"复原 OK-NTE 脚本配置文件: {self.temp_path}")
                     swap_in_dir(self.temp_path, self.script_config_path)
-            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            elif self.script_config.Script.ConfigPathMode == "File":
                 if (self.temp_path / "config.temp").exists():
                     logger.info(
                         f"复原 OK-NTE 脚本配置文件: {self.temp_path / 'config.temp'}"
@@ -290,23 +294,13 @@ class OkNteManager(ScriptManagerBase):
 
     async def final_task(self):
         if self.maintenance_only:
-            # 公告通道在运行前整体跳过：main_task 未执行，无配置锁与临时目录
-            # 可收尾，维护通知已由 _run_main_task 发出（对齐 MaaEnd）
             return
-
-        script_uid = uuid.UUID(self.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
 
         try:
             await self._restore_script_config_from_temp()
 
-            # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-            if script_cfg.is_locked:
-                await script_cfg.unlock()
-
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+                await config_manager.flush()
 
             if self.crashed:
                 self.script_info.status = "异常"
@@ -350,11 +344,9 @@ class OkNteManager(ScriptManagerBase):
                         # 全员维护跳过：推维护通知而非常规代理报告（对齐 MaaEnd）
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                         )
                 except Exception as e:
@@ -368,32 +360,24 @@ class OkNteManager(ScriptManagerBase):
                         ),
                     )
         finally:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
         self.crashed = True
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"OK-NTE任务出现异常: {e}")
-        script_uid = uuid.UUID(self.script_info.script_id)
 
         await self._restore_script_config_from_temp()
 
-        # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-        script_cfg = Config.ScriptConfig[script_uid]
-        if script_cfg.is_locked:
-            with suppress(Exception):
-                await script_cfg.unlock()
-
         try:
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+                await config_manager.flush()
         except Exception:
-            logger.opt(exception=True).warning(
-                "on_crash 写回 UserConfig 失败，放弃本次状态变更"
-            )
+            logger.opt(exception=True).warning("on_crash 保存用户配置失败")
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,

@@ -15,15 +15,13 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import uuid
 from contextlib import suppress
-from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
@@ -44,7 +42,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: BetterGIConfig,
-        user_config: MultipleConfig[BetterGIUserConfig],
+        user_config: ConfigCollection[BetterGIUserConfig],
         *,
         view_only: bool = False,
     ):
@@ -64,14 +62,17 @@ class ScriptConfigTask(TaskExecuteBase):
         # 脚本级配置（"Default"）强制使用 MAS 配置；真实用户按配置来源决定。
         self.use_mas_config = True
         if self.cur_user_item.user_id != "Default":
-            user_config = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            current_user = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
             # 原生来源 = 用 BGI 原生配置，MAS 不接管（与 AutoProxy 同口径；快速配置不参与）
-            base = read_config_base(user_config)
+            base = read_config_base(current_user)
             self.use_mas_config = base != CONFIG_BASE_NATIVE
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        root_path = self.script_config.Info.RootPath
+        if root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.root_path = root_path
         self.exe_path = self.root_path / _BGI_REL_EXE
 
     def _cleanup_leftover_slot(self) -> None:
@@ -99,7 +100,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
         await self.process_manager.open_process(
             self.exe_path,
-            elevated=self.script_config.get("Run", "UseAdmin") and not IS_ELEVATED,
+            elevated=self.script_config.Run.UseAdmin and (not IS_ELEVATED),
         )
         await self.wait_event.wait()
 

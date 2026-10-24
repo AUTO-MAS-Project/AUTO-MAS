@@ -4,40 +4,40 @@
 /* eslint-disable */
 export type MaaConfig_Run = {
     /**
+     * 剿灭时间限制（分钟）
+     */
+    AnnihilationTimeLimit?: (number | null);
+    /**
+     * 游戏更新时间限制（分钟）
+     */
+    GameUpdateTimeLimit?: (number | null);
+    /**
      * 单账号运行总时限（分钟），包含等待和全部重试
      */
     HardTimeLimit?: (number | null);
     /**
-     * 简洁任务间切换方式
-     */
-    TaskTransitionMethod?: ('NoAction' | 'ExitGame' | 'ExitEmulator' | null);
-    /**
-     * 每日代理次数限制
-     */
-    ProxyTimesLimit?: (number | null);
-    /**
-     * 重试次数限制
-     */
-    RunTimesLimit?: (number | null);
-    /**
-     * 剿灭超时限制
-     */
-    AnnihilationTimeLimit?: (number | null);
-    /**
-     * 日常超时限制
-     */
-    RoutineTimeLimit?: (number | null);
-    /**
-     * 启动 MAA 前检查游戏更新
-     */
-    IfCheckGameUpdate?: (boolean | null);
-    /**
-     * 自动下载并安装游戏安装包（仅官服）
+     * 是否允许自动下载并安装游戏安装包（仅官服）
      */
     IfAutoInstallGameApk?: (boolean | null);
     /**
-     * 游戏更新超时限制
+     * 是否在启动 MAA 前检查游戏更新
      */
-    GameUpdateTimeLimit?: (number | null);
+    IfCheckGameUpdate?: (boolean | null);
+    /**
+     * 代理次数限制
+     */
+    ProxyTimesLimit?: (number | null);
+    /**
+     * 日常时间限制（分钟）
+     */
+    RoutineTimeLimit?: (number | null);
+    /**
+     * 运行次数限制
+     */
+    RunTimesLimit?: (number | null);
+    /**
+     * 任务切换方式
+     */
+    TaskTransitionMethod?: ('NoAction' | 'ExitGame' | 'ExitEmulator' | null);
 };
 

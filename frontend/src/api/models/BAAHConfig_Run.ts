@@ -8,12 +8,12 @@ export type BAAHConfig_Run = {
      */
     HardTimeLimit?: (number | null);
     /**
-     * 重试次数限制
-     */
-    RunTimesLimit?: (number | null);
-    /**
-     * 运行时间限制
+     * 运行时间限制（分钟）
      */
     RunTimeLimit?: (number | null);
+    /**
+     * 运行次数限制
+     */
+    RunTimesLimit?: (number | null);
 };
 

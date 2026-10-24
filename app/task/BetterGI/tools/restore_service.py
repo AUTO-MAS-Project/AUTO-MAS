@@ -71,7 +71,7 @@ def _user_guard(ctx: RestoreContext) -> None:
 def _root_path(ctx: RestoreContext) -> Path | None:
     """BetterGI 安装根目录；未配置脚本路径返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     return Path(raw) if raw else None
 
 
@@ -113,7 +113,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     if restored_overlay:
         # 页面字段回填（对齐 ok-ww 模式）：副本回滚的同时把页面配置回到
         # 备份时点，否则旧表单值下次保存会静默覆盖回滚结果
-        await user.update(group_overlay(restored_overlay))
+        await user.update(type(user).model_validate(group_overlay(restored_overlay)))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

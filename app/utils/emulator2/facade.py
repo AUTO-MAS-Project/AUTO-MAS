@@ -110,14 +110,14 @@ class Emulator2Manager(DeviceBase):
     """纳管多条模拟器安装的设备管理器。"""
 
     def __init__(self, config: EmulatorConfig) -> None:
-        if config.get("Info", "Type") != "emulator2":
+        if config.Info.Type != "emulator2":
             raise ValueError("配置的模拟器类型不是 emulator2")
 
         self.config = config
-        self.paths: list[PathRecord] = load_paths(config.get("Info", "Paths"))
-        self.slots: SlotTable = SlotTable.from_json(config.get("Info", "Slots"))
+        self.paths: list[PathRecord] = load_paths(config.Info.Paths)
+        self.slots: SlotTable = SlotTable.from_json(config.Info.Slots)
         #: 配置守卫的基准：{设备号: {字段: 值}}。只读，写由服务层负责。
-        self.baselines = load_baselines(config.get("Info", "Baselines"))
+        self.baselines = load_baselines(config.Info.Baselines)
 
         self._managers: dict[str, Backend] = {}
         self._manager_lock = asyncio.Lock()
@@ -188,8 +188,8 @@ class Emulator2Manager(DeviceBase):
                 raise DeviceUnavailableError("-", f"暂不支持的模拟器类型: {path.type}")
             manager = await builder(
                 str(manager_exe),
-                max_wait_time=int(self.config.get("Info", "MaxWaitTime")),
-                force_kill_on_close=bool(self.config.get("Info", "ForceKillOnClose")),
+                max_wait_time=int(self.config.Info.MaxWaitTime),
+                force_kill_on_close=bool(self.config.Info.ForceKillOnClose),
             )
             self._managers[path.path_id] = manager
             return manager
@@ -209,7 +209,7 @@ class Emulator2Manager(DeviceBase):
         （升级、崩溃恢复、在多开器里手滑，某些版本关机时还会按内存态整体写回）。
         没开守卫、或这台没有基准时什么都不做。
         """
-        if not self.config.get("Info", "ConfigGuard"):
+        if not self.config.Info.ConfigGuard:
             return []
         baseline = self.baselines.get(str(slot))
         if not baseline:
@@ -265,7 +265,7 @@ class Emulator2Manager(DeviceBase):
         # 稳定模式是配置级开关，启动前顺带确保一次：这样在模拟器自己那边新建的实例，
         # 或者用户后来改回去的项，都会在真正跑任务之前被压住，而不是只在点开关的
         # 那一刻生效。已经安全时 apply 不写任何键，代价只是一次读。
-        if self.config.get("Info", "StableMode"):
+        if self.config.Info.StableMode:
             try:
                 changed = await manager.apply_stable_mode(native_index)
                 if changed:

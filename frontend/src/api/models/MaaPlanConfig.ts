@@ -2,48 +2,86 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaPlanConfig_ALL } from './MaaPlanConfig_ALL';
+import type { MaaPlanConfig_Day1 } from './MaaPlanConfig_Day1';
+import type { MaaPlanConfig_Day10 } from './MaaPlanConfig_Day10';
+import type { MaaPlanConfig_Day11 } from './MaaPlanConfig_Day11';
+import type { MaaPlanConfig_Day12 } from './MaaPlanConfig_Day12';
+import type { MaaPlanConfig_Day13 } from './MaaPlanConfig_Day13';
+import type { MaaPlanConfig_Day14 } from './MaaPlanConfig_Day14';
+import type { MaaPlanConfig_Day15 } from './MaaPlanConfig_Day15';
+import type { MaaPlanConfig_Day16 } from './MaaPlanConfig_Day16';
+import type { MaaPlanConfig_Day17 } from './MaaPlanConfig_Day17';
+import type { MaaPlanConfig_Day18 } from './MaaPlanConfig_Day18';
+import type { MaaPlanConfig_Day19 } from './MaaPlanConfig_Day19';
+import type { MaaPlanConfig_Day2 } from './MaaPlanConfig_Day2';
+import type { MaaPlanConfig_Day20 } from './MaaPlanConfig_Day20';
+import type { MaaPlanConfig_Day21 } from './MaaPlanConfig_Day21';
+import type { MaaPlanConfig_Day22 } from './MaaPlanConfig_Day22';
+import type { MaaPlanConfig_Day23 } from './MaaPlanConfig_Day23';
+import type { MaaPlanConfig_Day24 } from './MaaPlanConfig_Day24';
+import type { MaaPlanConfig_Day25 } from './MaaPlanConfig_Day25';
+import type { MaaPlanConfig_Day26 } from './MaaPlanConfig_Day26';
+import type { MaaPlanConfig_Day27 } from './MaaPlanConfig_Day27';
+import type { MaaPlanConfig_Day28 } from './MaaPlanConfig_Day28';
+import type { MaaPlanConfig_Day29 } from './MaaPlanConfig_Day29';
+import type { MaaPlanConfig_Day3 } from './MaaPlanConfig_Day3';
+import type { MaaPlanConfig_Day30 } from './MaaPlanConfig_Day30';
+import type { MaaPlanConfig_Day31 } from './MaaPlanConfig_Day31';
+import type { MaaPlanConfig_Day4 } from './MaaPlanConfig_Day4';
+import type { MaaPlanConfig_Day5 } from './MaaPlanConfig_Day5';
+import type { MaaPlanConfig_Day6 } from './MaaPlanConfig_Day6';
+import type { MaaPlanConfig_Day7 } from './MaaPlanConfig_Day7';
+import type { MaaPlanConfig_Day8 } from './MaaPlanConfig_Day8';
+import type { MaaPlanConfig_Day9 } from './MaaPlanConfig_Day9';
+import type { MaaPlanConfig_Friday } from './MaaPlanConfig_Friday';
 import type { MaaPlanConfig_Info } from './MaaPlanConfig_Info';
-import type { MaaPlanConfig_Item } from './MaaPlanConfig_Item';
+import type { MaaPlanConfig_Monday } from './MaaPlanConfig_Monday';
+import type { MaaPlanConfig_Saturday } from './MaaPlanConfig_Saturday';
+import type { MaaPlanConfig_Sunday } from './MaaPlanConfig_Sunday';
+import type { MaaPlanConfig_Thursday } from './MaaPlanConfig_Thursday';
+import type { MaaPlanConfig_Tuesday } from './MaaPlanConfig_Tuesday';
+import type { MaaPlanConfig_Wednesday } from './MaaPlanConfig_Wednesday';
 export type MaaPlanConfig = {
-    /**
-     * 基础信息
-     */
+    ALL?: (MaaPlanConfig_ALL | null);
+    Friday?: (MaaPlanConfig_Friday | null);
+    Day1?: (MaaPlanConfig_Day1 | null);
+    Day2?: (MaaPlanConfig_Day2 | null);
+    Day3?: (MaaPlanConfig_Day3 | null);
+    Day4?: (MaaPlanConfig_Day4 | null);
+    Day5?: (MaaPlanConfig_Day5 | null);
+    Day6?: (MaaPlanConfig_Day6 | null);
+    Day7?: (MaaPlanConfig_Day7 | null);
+    Day8?: (MaaPlanConfig_Day8 | null);
+    Day9?: (MaaPlanConfig_Day9 | null);
+    Day10?: (MaaPlanConfig_Day10 | null);
+    Day11?: (MaaPlanConfig_Day11 | null);
+    Day12?: (MaaPlanConfig_Day12 | null);
+    Day13?: (MaaPlanConfig_Day13 | null);
+    Day14?: (MaaPlanConfig_Day14 | null);
+    Day15?: (MaaPlanConfig_Day15 | null);
+    Day16?: (MaaPlanConfig_Day16 | null);
+    Day17?: (MaaPlanConfig_Day17 | null);
+    Day18?: (MaaPlanConfig_Day18 | null);
+    Day19?: (MaaPlanConfig_Day19 | null);
+    Day20?: (MaaPlanConfig_Day20 | null);
+    Day21?: (MaaPlanConfig_Day21 | null);
+    Day22?: (MaaPlanConfig_Day22 | null);
+    Day23?: (MaaPlanConfig_Day23 | null);
+    Day24?: (MaaPlanConfig_Day24 | null);
+    Day25?: (MaaPlanConfig_Day25 | null);
+    Day26?: (MaaPlanConfig_Day26 | null);
+    Day27?: (MaaPlanConfig_Day27 | null);
+    Day28?: (MaaPlanConfig_Day28 | null);
+    Day29?: (MaaPlanConfig_Day29 | null);
+    Day30?: (MaaPlanConfig_Day30 | null);
+    Day31?: (MaaPlanConfig_Day31 | null);
     Info?: (MaaPlanConfig_Info | null);
-    /**
-     * 全局
-     */
-    ALL?: (MaaPlanConfig_Item | null);
-    /**
-     * 每天的槽位：周计划用 Monday~Sunday 做键，多天轮换用 "1"~"N" 做键
-     */
-    Days?: Record<string, MaaPlanConfig_Item>;
-    /**
-     * 周一（兼容旧接口）
-     */
-    Monday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周二（兼容旧接口）
-     */
-    Tuesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周三（兼容旧接口）
-     */
-    Wednesday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周四（兼容旧接口）
-     */
-    Thursday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周五（兼容旧接口）
-     */
-    Friday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周六（兼容旧接口）
-     */
-    Saturday?: (MaaPlanConfig_Item | null);
-    /**
-     * 周日（兼容旧接口）
-     */
-    Sunday?: (MaaPlanConfig_Item | null);
+    Monday?: (MaaPlanConfig_Monday | null);
+    Saturday?: (MaaPlanConfig_Saturday | null);
+    Sunday?: (MaaPlanConfig_Sunday | null);
+    Thursday?: (MaaPlanConfig_Thursday | null);
+    Tuesday?: (MaaPlanConfig_Tuesday | null);
+    Wednesday?: (MaaPlanConfig_Wednesday | null);
 };
 

@@ -82,7 +82,6 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
-import { Service } from '@/api'
 import type { WhimboxOptionCatalogItem, WhimboxTaskCatalogItem } from '@/api'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -92,6 +91,7 @@ import TaskConfigSection from '@/views/WhimboxUserEdit/TaskConfigSection.vue'
 import WhimboxUserEditHeader from '@/views/WhimboxUserEdit/WhimboxUserEditHeader.vue'
 import { WHIMBOX_CONFIG_MODES } from '@/views/WhimboxUserEdit/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -99,8 +99,8 @@ const logger = window.electronAPI.getLogger('奇想盒用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript } = useScriptApi()
+const { addUser, updateUser, getUsers, error: userApiError } = useUserApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const {
   loading: catalogLoading,
   error: catalogError,
@@ -159,7 +159,7 @@ const getDefaultWhimboxUserData = () => ({
     Options: '{ }',
   },
   Data: {
-    LastProxyDate: '2000-01-01',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
     LastProxyStatus: '未知',
   },
@@ -289,7 +289,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
   await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId, userData)
+      if (!(await updateUser(scriptId, userId, userData))) return
       logger.info(`用户配置已保存: ${key}`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -307,21 +307,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensure: ensureConfigBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 const openRestoreModal = () => {
   restoreOpen.value = true
@@ -370,11 +360,7 @@ const handleRestored = async (target: string) => {
 const ensureBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
+    const resp = await ensureConfigBackup(target)
     if (resp.code !== 200) {
       const detail = resp.message || t('edit.configRestoreEnsureFailed')
       logger.warn(`编辑页归档失败（不阻断编辑）: ${detail}`)
@@ -410,13 +396,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（对齐 loadUserData 的 catch）
     isInitializing.value = false
   }
@@ -438,13 +424,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -498,13 +484,13 @@ const loadUserData = async () => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
     // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（只能刷新页面）
     isInitializing.value = false
   }

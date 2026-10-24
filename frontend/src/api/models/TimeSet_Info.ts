@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type TimeSet_Info = {
     /**
+     * 执行周期
+     */
+    Days?: (Array<'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'> | null);
+    /**
      * 是否启用
      */
     Enabled?: (boolean | null);
     /**
-     * 执行周期, 可多选
-     */
-    Days?: (Array<'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'> | null);
-    /**
-     * 时间设置, 格式为HH:MM
+     * 执行时间
      */
     Time?: (string | null);
 };

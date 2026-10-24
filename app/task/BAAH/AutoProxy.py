@@ -35,16 +35,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
@@ -60,7 +62,6 @@ from .tools import (
     apply_managed_config,
     baah_resolve,
     latest_log_file,
-    push_notification,
     read_json,
     resolve_config_name,
     resolve_log_time_range,
@@ -215,14 +216,14 @@ def prioritize_event_quest(
     return new_order_group, action + note
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     """自动代理模式"""
 
     def __init__(
         self,
         script_info: ScriptItem,
         script_config: BAAHConfig,
-        user_config: MultipleConfig[BAAHUserConfig],
+        user_config: ConfigCollection[BAAHUserConfig],
         emulator_manager: DeviceBase | None,
     ):
         super().__init__()
@@ -265,7 +266,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         项写进 BAAH 根本不读的文件，或每次都等满 60 秒「未找到日志文件」。
         """
 
-        self.baah_path = Path(self.script_config.get("Script", "BAAHPath"))
+        baah_path = self.script_config.Script.BAAHPath
+        if baah_path is None:
+            raise ValueError("BAAH路径未配置，请检查路径设置")
+        self.baah_path = baah_path
         self.root_path = self.baah_path.parent
         self.config_dir = self.root_path / CONFIG_DIR_NAME
         self.log_dir = self.root_path / LOG_DIR_RELATIVE
@@ -289,7 +293,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         ## or "" 兜住 None：str(None) 会得到 "None"，被当成配置名去找 None.json
         self.effective_config_name = resolve_config_name(
-            str(self.cur_user_config.get("Info", "ConfigName") or "")
+            str(self.cur_user_config.Info.ConfigName or "")
         )
         return self.effective_config_name
 
@@ -334,12 +338,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.log_monitor = None
 
         ## 配置托管总开关：关闭时照常启动 BAAH，但不改动它的任何配置文件
-        self.if_manage_config = bool(self.script_config.get("Script", "IfManageConfig"))
+        self.if_manage_config = bool(self.script_config.Script.IfManageConfig)
         ## BAAH 没有用户快速配置面板，模拟器等托管项只受脚本级总开关控制。
         ## 推送任务节点详情开关：关闭时**不创建 log_box**（不读日志、不匹配），
         ## 该用户 push_log 保持为空，报告自然不含 BAAH 的任务节点；任务日志记录
         ## 与结果判定都不受它影响，照常进行
-        self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
+        self.push_log_enabled = bool(self.script_config.Script.PushLogEnabled)
         self.log_collect = None
 
         ## 配置文件名在 check() 里已解析并缓存，这里复用同一结果
@@ -354,9 +358,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         ## 每日重置：跨天后代理次数归零，用户标签里的「任务」状态才会重新变成
         ## 「未代理」（通用脚本同一套口径）
         curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != curdate:
+            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = 0
+            await self.cur_user_config.commit()
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -376,13 +382,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+        for i in range(self.script_config.Run.RunTimesLimit):
             if self.run_book:
                 break
 
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: "
-                f"{i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
             self.log_start_time = datetime.now()
             self.log_start_at = time.monotonic()
@@ -421,7 +426,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         try:
             device_info = await self.emulator_manager.open(
-                str(self.script_config.get("Emulator", "Index"))
+                str(self.script_config.Emulator.Index)
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
@@ -477,7 +482,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         关卡列表去跑，而不是「今天不打」。
         """
 
-        stage_mode = str(self.cur_user_config.get("Info", "StageMode"))
+        stage_mode = str(self.cur_user_config.Info.StageMode)
         if stage_mode == "Fixed":
             return {}
 
@@ -535,12 +540,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         排期获取失败保留原有计划下发行为，不将未知状态当成没有活动。
         """
 
-        if not bool(self.cur_user_config.get("Info", "IfEventFirst")):
+        if not bool(self.cur_user_config.Info.IfEventFirst):
             return self._plan_stage_runtime_values()
 
-        line_type: BlueArchiveLineType = self.cur_user_config.get(
-            "Info", "ActivityLineType"
-        )
+        line_type: BlueArchiveLineType = self.cur_user_config.Info.ActivityLineType
         running = await has_running_activity(line_type)
         if running is None:
             logger.warning("未取到碧蓝档案活动排期, 本次沿用计划表或 BAAH 原生配置")
@@ -827,7 +830,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.success_log.search(log) is not None:
             self.cur_user_log.status = "Success!"
         elif self.is_log_stalled(
-            latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
             self.cur_user_log.status = "脚本进程超时"
         elif self.error_log.search(log) is not None:
@@ -885,11 +888,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
+        await self.task_info.local_notifier.send_notice(
+            LocalNotice(
+                title="用户自动代理出现异常！",
+                message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                duration_seconds=3,
+            )
         )
 
     async def final_task(self):
@@ -926,19 +931,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
             ## 不更新的话用户标签会一直停在「任务：未代理」、剩余天数也不减
             if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
+                self.cur_user_config.Data.ProxyTimes == 0
+                and self.cur_user_config.Info.RemainedDay != -1
             ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                self.cur_user_config.Info.RemainedDay = (
+                    self.cur_user_config.Info.RemainedDay - 1
                 )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+                await self.cur_user_config.commit()
+            self.cur_user_config.Data.ProxyTimes = (
+                self.cur_user_config.Data.ProxyTimes + 1
             )
+            await self.cur_user_config.commit()
 
         await self._push_statistic()
 
@@ -964,7 +967,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
         try:
-            await push_notification("统计信息", title, statistics, self.cur_user_config)
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=title, message=statistics, result_label="BAAH 执行结果"
+                ),
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 

@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
-import {
-  WS_BACKEND_SHUTDOWN_READY,
-  WS_FRONTEND_CLOSE_REQUESTED,
-  type WSJsonObject,
-} from '@/services/websocket/types'
+import { WS_BACKEND_SHUTDOWN_READY, type WSJsonObject } from '@/services/websocket/types'
 
 // ==================== 全局桩 ====================
 
@@ -148,19 +144,6 @@ describe('useAppLifecycle 关闭流程', () => {
       expect(killAllProcesses).not.toHaveBeenCalled()
       expect(closePost).not.toHaveBeenCalled()
     })
-
-    it('后端主动请求前端关闭时同样经 Runtime 收口，避免后端自行退出后被 Runtime 重启', async () => {
-      const { closeApp } = await loadLifecycle()
-
-      pushMessage(WS_FRONTEND_CLOSE_REQUESTED)
-      // closeApp 返回在途的关闭流程
-      await closeApp()
-
-      expect(closePost).not.toHaveBeenCalled()
-      expect(stopBackend).toHaveBeenCalledTimes(1)
-      expect(appQuit).toHaveBeenCalledTimes(1)
-      expect(callOrder(stopBackend)).toBeLessThan(callOrder(appQuit))
-    })
   })
 
   describe('旧链路（AUTO_MAS_RUNTIME_MODE=off）', () => {
@@ -183,50 +166,6 @@ describe('useAppLifecycle 关闭流程', () => {
       // 先 POST /close 收 ready，再确认进程退出，最后才收连接、退前端。
       expect(callOrder(closePost)).toBeLessThan(callOrder(connectionMocks.shutdown))
       expect(callOrder(connectionMocks.shutdown)).toBeLessThan(callOrder(appQuit))
-    })
-
-    it('开发模式后端收到 ready 即直接退出前端，不 taskkill、不经 Runtime', async () => {
-      connectionMocks.isBackendDevMode.mockReturnValue(true)
-      backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: false })
-      closePost.mockImplementation(async () => {
-        pushMessage(WS_BACKEND_SHUTDOWN_READY)
-      })
-      const { closeApp } = await loadLifecycle()
-
-      await closeApp()
-
-      expect(closePost).toHaveBeenCalledTimes(1)
-      expect(stopBackend).not.toHaveBeenCalled()
-      expect(killAllProcesses).not.toHaveBeenCalled()
-      expect(appQuit).toHaveBeenCalledTimes(1)
-    })
-
-    it('后端主动请求前端关闭时直接退出，不再停止后端', async () => {
-      backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: false })
-      const { closeApp } = await loadLifecycle()
-
-      pushMessage(WS_FRONTEND_CLOSE_REQUESTED)
-      await closeApp()
-
-      expect(closePost).not.toHaveBeenCalled()
-      expect(stopBackend).not.toHaveBeenCalled()
-      expect(killAllProcesses).not.toHaveBeenCalled()
-      expect(appQuit).toHaveBeenCalledTimes(1)
-    })
-
-    it('查询链路的 IPC 失败时按旧链路处理', async () => {
-      backendStatus.mockRejectedValueOnce(new Error('IPC 不可用'))
-      backendStatus.mockResolvedValue({ isRunning: false, runtimeSupervised: false })
-      closePost.mockImplementation(async () => {
-        pushMessage(WS_BACKEND_SHUTDOWN_READY)
-      })
-      const { closeApp } = await loadLifecycle()
-
-      await closeApp()
-
-      expect(closePost).toHaveBeenCalledTimes(1)
-      expect(stopBackend).not.toHaveBeenCalled()
-      expect(appQuit).toHaveBeenCalledTimes(1)
     })
   })
 })

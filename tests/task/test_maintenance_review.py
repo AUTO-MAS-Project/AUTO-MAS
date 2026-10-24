@@ -1,12 +1,11 @@
-"""#1297 本地验证：区服、跳过状态和冲突整合。"""
+from tests.config_support import activate_config, group_view
 
+"""#1297 本地验证：区服、跳过状态和冲突整合。"""
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-
 import pytest
-
 from app.core import Config
 from app.core.task_manager import TaskInfo
 from app.models.config import (
@@ -55,8 +54,11 @@ def manager(mode="AutoProxy"):
 )
 async def test_server_matching(monkeypatch, cls, field, value, game):
     user = cls()
+    await activate_config(user)
     if field:
-        await user.set("Info", field, value)
+        await user.update(
+            type(user).model_validate({"Info": {field: value}}), check_visibility=False
+        )
     lookup = AsyncMock(return_value=object())
     monkeypatch.setattr(maintenance.GameMaintenance, "get_active", lookup)
     result = await maintenance.get_user_maintenance(user, proxy=None)
@@ -144,17 +146,13 @@ async def test_maa_resource_update_keeps_takeover_credentials(
 
     script_id = uuid.uuid4()
     config = MaaConfig()
-    await config.set("Update", "TakeoverEnabled", enabled)
-    # 本地平台不提供 Windows 凭据加密，只替换凭据读取，接管解析仍用真实实现。
-    original_get = config.get
-    monkeypatch.setattr(
-        config,
-        "get",
-        lambda group, name: (
-            cdk
-            if (group, name) == ("Update", "MirrorChyanCDK")
-            else original_get(group, name)
-        ),
+    await activate_config(config)
+    await config.update(
+        type(config).model_validate({"Update": {"TakeoverEnabled": enabled}}),
+        check_visibility=False,
+    )
+    await config.update(
+        type(config).model_validate({"Update": {"MirrorChyanCDK": cdk}})
     )
     monkeypatch.setattr(Config, "ScriptConfig", {script_id: config})
     info = TaskInfo("AutoProxy", "test", None, str(script_id), None)
@@ -176,6 +174,7 @@ async def test_bettergi_report_keeps_nodes_and_summary(monkeypatch):
 
     script_id = uuid.uuid4()
     config = BetterGIConfig()
+    await activate_config(config)
     monkeypatch.setattr(Config, "ScriptConfig", {script_id: config})
     info = TaskInfo("AutoProxy", "test", None, str(script_id), None)
     monkeypatch.setattr(info, "schedule_on_change", lambda: None)
@@ -187,10 +186,10 @@ async def test_bettergi_report_keeps_nodes_and_summary(monkeypatch):
     script.user_list[0].push_log = [("info", "node-A", 0.0)]
     script.user_list[1].push_log = [("info", "node-B", 0.0)]
     push = AsyncMock()
-    monkeypatch.setattr(bgi, "push_notification", push)
+    info.bind_notifications(SimpleNamespace(push_proxy_result=push))
     await instance.final_task()
-    report = push.await_args.args[2]
-    assert report["completed_count"] == 1
-    assert report["uncompleted_count"] == 1
-    assert "node-A" in report["result"] and "node-B" in report["result"]
-    assert report["result"] in script.log
+    report = push.await_args.kwargs["report"]
+    assert report.completed_count == 1
+    assert report.uncompleted_count == 1
+    assert "node-A" in report.result and "node-B" in report.result
+    assert report.result in script.log

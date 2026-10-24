@@ -21,6 +21,8 @@ import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
+import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
+import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -334,6 +336,7 @@ const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
+      await invalidateEmulatorOptions()
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
@@ -440,6 +443,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
 
     if (response.code === 200) {
       logger.info(`配置已保存: ${key}`)
+      if (key === 'name' || key === 'type') await invalidateEmulatorOptions()
+      if (key === 'path' || key === 'type') await invalidateEmulatorDeviceOptions(uuid)
       // 保存成功后重新获取最新配置
       await refreshEmulatorConfig(uuid)
     } else {
@@ -461,6 +466,8 @@ const handleDelete = async (uuid: string) => {
       emulatorId: uuid,
     })
     if (response.code === 200) {
+      await invalidateEmulatorOptions()
+      await invalidateEmulatorDeviceOptions(uuid)
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
         const currentIndex = emulatorIndex.value.findIndex(e => e.uid === uuid)
@@ -514,9 +521,11 @@ const handleSearch = async () => {
 
 // 从搜索结果导入
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
+  let added = false
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
+      added = true
       // 更新新添加的模拟器配置，使用分组结构
       const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
         emulatorId: response.emulatorId,
@@ -544,6 +553,9 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`导入模拟器失败: ${errorMsg}`)
     message.error(t('emulator.toast.importEmulatorFailed'))
+  } finally {
+    // 添加已成功时，即使后续配置失败，列表也需要反映新建的模拟器。
+    if (added) await invalidateEmulatorOptions()
   }
 }
 
@@ -1375,7 +1387,10 @@ const handleBossKeyInputChange = (uuid: string) => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(
+    --app-page-title-color,
+    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1649,17 +1664,6 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* 暗色模式支持 */
-html.dark .config-section,
-html.dark .devices-section {
-  background: #1a1a1a;
-}
-
-html.dark .page-content {
-  background: #0a0a0a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* 响应式 - 移动端适配 */

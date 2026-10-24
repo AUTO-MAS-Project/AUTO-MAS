@@ -1,30 +1,22 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
-
 #   This file is part of AUTO-MAS.
-
 #   AUTO-MAS is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU Affero General Public License as
 #   published by the Free Software Foundation, either version 3 of
 #   the License, or (at your option) any later version.
-
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
 #   the GNU Affero General Public License for more details.
-
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 #   Contact: DLmaster_361@163.com
-
-
 import asyncio
 import re
 import shlex
 import time
-from pathlib import Path
 from typing import Dict
 
 import psutil
@@ -52,14 +44,15 @@ class GeneralDeviceManager(DeviceBase):
 
     def __init__(self, config: EmulatorConfig) -> None:
 
-        if not Path(config.get("Info", "Path")).exists():
-            raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")
+        emulator_path = config.Info.Path
+        if emulator_path is None or not emulator_path.exists():
+            raise FileNotFoundError(f"模拟器文件不存在: {emulator_path}")
 
-        if config.get("Info", "Type") != "general":
+        if config.Info.Type != "general":
             raise ValueError("配置的模拟器类型不是通用类型")
 
         self.config = config
-        self.emulator_path = Path(config.get("Info", "Path"))
+        self.emulator_path = emulator_path
         self.process_managers: Dict[str, ProcessManager] = {}
         # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
         self._audio_mute_states: dict[str, AudioMuteRecord] = {}
@@ -84,7 +77,7 @@ class GeneralDeviceManager(DeviceBase):
         )
 
         # 等待进程启动
-        await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
+        await asyncio.sleep(self.config.Info.MaxWaitTime)
 
         await apply_launch_audio_mute(
             states_store=self._audio_mute_states,
@@ -118,7 +111,7 @@ class GeneralDeviceManager(DeviceBase):
         await self.process_managers[idx].kill()
 
         # 等待进程完全停止
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        deadline = time.monotonic() + self.config.Info.MaxWaitTime
         while time.monotonic() < deadline:
             if not await self.process_managers[idx].is_running():
                 return DeviceStatus.OFFLINE
@@ -147,7 +140,7 @@ class GeneralDeviceManager(DeviceBase):
             if idx is not None and index != idx:
                 continue
             data[index] = DeviceInfo(
-                title=f"{self.config.get('Info', 'Name')}_{index}",
+                title=f"{self.config.Info.Name}_{index}",
                 status=await self.getStatus(index),
                 adb_address=self.parse_index(index)[1],
             )
@@ -169,7 +162,7 @@ class GeneralDeviceManager(DeviceBase):
             idx, lambda: asyncio.to_thread(self._resolve_target_hwnd, idx)
         )
         await apply_window_visibility(
-            hwnd, idx, is_visible, self.config.get("Info", "MaxWaitTime")
+            hwnd, idx, is_visible, self.config.Info.MaxWaitTime
         )
         return status
 

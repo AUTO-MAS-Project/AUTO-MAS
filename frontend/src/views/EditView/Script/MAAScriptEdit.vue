@@ -1,29 +1,5 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scriptTypes.MAA" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="MAA" :title="t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.maaScriptConfiguration')" :loading="pageLoading" class="config-card">
@@ -438,12 +414,12 @@
 </template>
 
 <script setup lang="ts">
+import { createMaaScriptDraft } from './maaScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
-import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -451,12 +427,8 @@ import type { MAAScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import { Service, type ComboBoxItem } from '@/api'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 
@@ -464,7 +436,7 @@ const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -491,37 +463,7 @@ const formData = reactive({
 })
 
 // MAA配置
-const maaConfig = reactive<MAAScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '.',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    TaskTransitionMethod: 'ExitEmulator',
-    ProxyTimesLimit: 0,
-    ADBSearchRange: 0,
-    RunTimesLimit: 3,
-    AnnihilationTimeLimit: 40,
-    RoutineTimeLimit: 10,
-    IfCheckGameUpdate: false,
-    IfAutoInstallGameApk: false,
-    GameUpdateTimeLimit: 60,
-  },
-  Emulator: {
-    Id: '',
-    Index: '',
-  },
-  Update: {
-    TakeoverEnabled: false,
-    MirrorChyanCDK: '',
-  },
-  SubConfigsInfo: {
-    UserData: {
-      instances: [],
-    },
-  },
-})
+const maaConfig = reactive(createMaaScriptDraft())
 
 const rules = {
   name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
@@ -530,8 +472,7 @@ const rules = {
 }
 
 // 模拟器相关状态
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
@@ -604,7 +545,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        message.error(t('edit.scriptDoesNotExist'))
+        if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -622,7 +563,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -634,24 +575,6 @@ const handleCancel = () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    if (response && response.code === 200) {
-      emulatorOptions.value = response.data || []
-    } else {
-      message.error(t('edit.couldNotLoadEmulator'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorSelectChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   maaConfig.Emulator.Index = ''
@@ -704,86 +627,11 @@ const selectMAAPath = async () => {
 }
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
+<style scoped src="@/styles/scriptEdit.css"></style>
+
 <style scoped>
-/* 头部区域 */
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-  transition: all 0.3s ease;
-}
-
-/* 内容区域 */
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-head-title) {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-  background: var(--ant-color-bg-container);
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
-}
-
 .notice-alert {
   margin-bottom: 24px;
   border-radius: 8px;
@@ -795,303 +643,5 @@ const selectMAAPath = async () => {
 
 .notice-content p + p {
   margin-top: 4px;
-}
-
-/* 表单样式 */
-.config-form {
-  max-width: none;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-/* 表单标签 */
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
-  background: var(--ant-color-bg-container) !important;
-  transition: all 0.3s ease;
-}
-
-.modern-select:hover :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary-hover) !important;
-}
-
-.modern-select.ant-select-focused :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary) !important;
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
-}
-
-.modern-number-input {
-  border-radius: 8px;
-}
-
-.modern-number-input :deep(.ant-input-number) {
-  border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-number-input :deep(.ant-input-number:hover) {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-number-input :deep(.ant-input-number-focused) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-/* 路径输入组 */
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
-  transform: none;
-}
-
-/* 表单项间距 */
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
-.config-form :deep(.ant-form-item-label) {
-  padding-bottom: 8px;
-}
-
-.config-form :deep(.ant-form-item-label > label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
-html.dark .config-card {
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.3),
-    0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-html.dark .path-input-group:focus-within {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-input:focus,
-html.dark .modern-input.ant-input-focused {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-}
-
-html.dark .modern-number-input :deep(.ant-input-number-focused) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 24px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-head) {
-    padding: 16px 20px;
-  }
-
-  .config-card :deep(.ant-card-head-title) {
-    font-size: 20px;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
-
-  .section-header h3 {
-    font-size: 18px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-
-  .path-button {
-    padding: 0 16px;
-    font-size: 14px;
-  }
-
-  .cancel-button,
-  .save-button {
-    height: 44px;
-    font-size: 14px;
-    padding: 0 20px;
-  }
-}
-
-/* 动画效果 */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.form-section {
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.form-section:nth-child(2) {
-  animation-delay: 0.1s;
-}
-
-.form-section:nth-child(3) {
-  animation-delay: 0.2s;
-}
-
-.form-section:nth-child(4) {
-  animation-delay: 0.3s;
-}
-
-/* Tooltip样式优化 */
-:deep(.ant-tooltip-inner) {
-  background: var(--ant-color-bg-elevated);
-  color: var(--ant-color-text);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-:deep(.ant-tooltip-arrow::before) {
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border);
-}
-
-.float-button {
-  width: 60px;
-  height: 60px;
 }
 </style>

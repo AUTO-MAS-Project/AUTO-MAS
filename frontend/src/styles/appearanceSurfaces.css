@@ -1,6 +1,7 @@
 :root {
   --app-appearance-surface-bg: var(--ant-color-bg-container);
   --app-appearance-elevated-surface-bg: var(--ant-color-bg-elevated);
+  --app-appearance-background-image: none;
 }
 
 /* 仅有背景图片时透出主界面表面。弹窗、抽屉、下拉菜单仍使用不透明 Ant token。 */
@@ -13,9 +14,12 @@ html.appearance-background-custom
     .ant-tree,
     .ant-descriptions-view,
     .settings-content,
+    .tb-content,
     .gamesign-content,
+    .theme-store-content,
     .logs-content,
     .script-card,
+    .emulator-tabs,
     .home-activity-notes,
     .banner-switcher,
     .statistics-card,
@@ -44,9 +48,12 @@ html.appearance-background-custom
     .ant-card,
     .ant-collapse,
     .settings-content,
+    .tb-content,
     .gamesign-content,
+    .theme-store-content,
     .logs-content,
     .script-card,
+    .emulator-tabs,
     .home-activity-notes,
     .overview-panel,
     .task-control,
@@ -59,6 +66,16 @@ html.appearance-background-custom
     .ant-tree,
     .ant-descriptions-view,
     .script-card,
+    .emulator-tabs .config-section,
+    .theme-store-content .online-card,
+    .theme-store-content .mine-card,
+    .user-edit-content .form-section,
+    .user-edit-content .optional-section,
+    .user-edit-content .notify-channel-list,
+    .user-edit-content .global-option-panel,
+    .user-edit-content .task-option-panel,
+    .user-edit-content .module-panel,
+    .user-edit-content .bettergi-groups-pane,
     .link-card,
     .tool-intro,
     .chan-card,
@@ -89,6 +106,8 @@ html.appearance-background-custom
     .ant-table-content,
     .ant-table-placeholder,
     .ant-table-footer,
+    .emulator-page,
+    .user-edit-container,
     .launch-page,
     .queue-container
   ):not(

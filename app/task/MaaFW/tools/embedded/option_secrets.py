@@ -290,7 +290,7 @@ def _user_sealed_values(user_config: Any) -> list[str]:
     """用户任务快照两处选项值里全部带 ``SECRET_PREFIX`` 的值，解开后去重；解不开的跳过。"""
 
     try:
-        raw = user_config.get("Task", "TaskSnapshot")
+        raw = user_config.Task.TaskSnapshot
         snapshot = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:  # noqa: BLE001 - 坏快照就没有可收的
         return []
@@ -367,7 +367,7 @@ def collect_script_password_values(
         return values
     for _, user in users:
         try:
-            raw = user.get("Task", "TaskSnapshot")
+            raw = user.Task.TaskSnapshot
             snapshot = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:  # noqa: BLE001 - 坏快照跳过
             continue

@@ -21,10 +21,12 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from app.models.notification_community import community_notification_results
+from app.models.notification_ports import CommunityNotifier
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
@@ -39,6 +41,9 @@ from .community_scheduler import (
 from .config import Config
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 
 logger = get_logger("主业务定时器")
 
@@ -55,7 +60,7 @@ def _local_now() -> datetime:
 
 
 def _timed_slots_in_window(
-    prev_wall: datetime, now_wall: datetime, time_str: str
+    prev_wall: datetime, now_wall: datetime, time_str: str | time | datetime
 ) -> list[datetime]:
     """列出本地墙钟区间 ``(prev_wall, now_wall]`` 内的 ``HH:MM`` 计划时刻。
 
@@ -63,7 +68,12 @@ def _timed_slots_in_window(
     """
 
     try:
-        slot_time = datetime.strptime(time_str, "%H:%M").time()
+        if isinstance(time_str, datetime):
+            slot_time = time_str.time()
+        else:
+            slot_time = (
+                time_str if isinstance(time_str, time) else time.fromisoformat(time_str)
+            )
     except (TypeError, ValueError):
         return []
 
@@ -78,7 +88,9 @@ def _timed_slots_in_window(
 
 
 class _MainTimer:
-    def __init__(self):
+    def __init__(self, *, community_notifier: CommunityNotifier | None = None):
+        self._community_notifier = community_notifier
+        self._drain_notifications: Callable[[float], Awaitable[bool]] | None = None
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
@@ -94,6 +106,16 @@ class _MainTimer:
         # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
         self._loop_errors: dict[str, str] = {}
 
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
+        self._community_notifier = notifications.community
+        self._drain_notifications = notifications.tasks.drain_notifications
+
+    @property
+    def community_notifier(self) -> CommunityNotifier:
+        if self._community_notifier is None:
+            raise RuntimeError("定时器的通知依赖尚未装配")
+        return self._community_notifier
+
     async def start(self):
         """启动定时器"""
 
@@ -106,8 +128,9 @@ class _MainTimer:
         self.calendar_timer = asyncio.create_task(self.calendar_task())
         self.started = True
 
-        if Config.ToolsConfig.get("GameSign", "Enabled") and (
-            Config.ToolsConfig.get("GameSign", "RunOnStartup")
+        if (
+            Config.ToolsConfig.GameSign.Enabled
+            and Config.ToolsConfig.GameSign.RunOnStartup
         ):
             self.schedule_community_for_startup()
 
@@ -153,31 +176,32 @@ class _MainTimer:
         logger.info("每小时定期任务启动")
 
         async def upload_statistics() -> None:
-            if (
-                datetime.strptime(
-                    Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
-                ).date()
-                != datetime.now().date()
-            ):
+            if Config.setting.Data.LastStatisticsUpload.date() != datetime.now().date():
                 await Matomo.send_event(
                     "App",
                     "Version",
                     Config.VERSION,
                     1 if "beta" in Config.VERSION else 0,
                 )
-                await Config.set(
-                    "Data",
-                    "LastStatisticsUpload",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                await Config.setting.update(
+                    type(Config.setting).model_validate(
+                        {"Data": {"LastStatisticsUpload": datetime.now().astimezone()}}
+                    ),
+                    check_visibility=False,
                 )
 
         async def record_telemetry_active() -> None:
             # 按 UTC 日期去重：Sentry 按 UTC 自然日聚合，跨日最多晚一小时记上
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            if Config.get("Data", "LastTelemetryActive") == today:
+            if Config.setting.Data.LastTelemetryActive.strftime("%Y-%m-%d") == today:
                 return
             if record_daily_active():
-                await Config.set("Data", "LastTelemetryActive", today)
+                await Config.setting.update(
+                    type(Config.setting).model_validate(
+                        {"Data": {"LastTelemetryActive": datetime.now(timezone.utc)}}
+                    ),
+                    check_visibility=False,
+                )
 
         async def clean_expired_data() -> None:
             # 每天一轮：把过期的历史记录、诊断文件与 MFW 原生日志备份清掉。
@@ -303,13 +327,16 @@ class _MainTimer:
                     str(uid),
                     new_task_info={
                         "queueId": str(uid),
-                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                        "taskName": f"队列 - {queue.Info.Name}",
                         "taskType": "定时代理",
                     },
                     trigger_source="scheduled_task",
                 )
-                await queue.set(
-                    "Data", "LastTimedStart", planned.strftime("%Y-%m-%d %H:%M")
+                await queue.update(
+                    type(queue).model_validate(
+                        {"Data": {"LastTimedStart": planned.replace(tzinfo=now.tzinfo)}}
+                    ),
+                    check_visibility=False,
                 )
             except Exception as e:
                 logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
@@ -325,31 +352,29 @@ class _MainTimer:
         """列出队列在本次检查区间内到点、且仍在补跑窗口内的 (时间槽, 计划时刻)。"""
 
         # 循环队列由队列项各自的周期驱动，定时设置对它不生效
-        if queue.get("Info", "CycleEnabled"):
+        if queue.Info.CycleEnabled:
             return []
 
-        if not queue.get("Info", "TimeEnabled"):
+        if not queue.Info.TimeEnabled:
             return []
 
-        last_timed_start = queue.get("Data", "LastTimedStart")
+        last_timed_start = queue.Data.LastTimedStart.replace(tzinfo=None)
         due: list[tuple[str, datetime]] = []
 
         for time_set_id, time_set in queue.TimeSet.items():
-            if not time_set.get("Info", "Enabled"):
+            if not time_set.Info.Enabled:
                 continue
 
             for planned in _timed_slots_in_window(
-                prev_wall, now_wall, time_set.get("Info", "Time")
+                prev_wall, now_wall, time_set.Info.Time
             ):
-                if planned.strftime("%A") not in time_set.get("Info", "Days"):
+                if planned.strftime("%A") not in time_set.Info.Days:
                     continue
 
                 key = (str(uid), str(time_set_id), planned)
                 # 避免重复调起任务：本次运行内按时间槽与计划时刻去重（当天改了时间的
                 # 槽按新时刻照常触发），重启后靠持久化的 LastTimedStart 兜住同一分钟
-                if key in self._timed_fired or (
-                    planned.strftime("%Y-%m-%d %H:%M") == last_timed_start
-                ):
+                if key in self._timed_fired or (planned == last_timed_start):
                     continue
 
                 # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
@@ -370,8 +395,8 @@ class _MainTimer:
         """Schedule one background community sign-in after application startup."""
 
         if not (
-            Config.ToolsConfig.get("GameSign", "Enabled")
-            and (Config.ToolsConfig.get("GameSign", "RunOnStartup"))
+            Config.ToolsConfig.GameSign.Enabled
+            and Config.ToolsConfig.GameSign.RunOnStartup
         ):
             return
 
@@ -432,8 +457,6 @@ class _MainTimer:
     ) -> bool:
         """电源动作前结清后台签到及补发；超时不取消仍在进行的工作。"""
 
-        from app.core.notify import drain_task_community_notifications
-
         deadline = asyncio.get_running_loop().time() + timeout
         while True:
             signing = self.community_sign_task
@@ -445,7 +468,13 @@ class _MainTimer:
                 )
                 if pending:
                     return False
-            if not await drain_task_community_notifications(
+            if self._drain_notifications is None:
+                raise RuntimeError("定时器的通知等待能力尚未装配")
+            if not await self._drain_notifications(
+                max(0, deadline - asyncio.get_running_loop().time())
+            ):
+                return False
+            if not await self.community_notifier.drain(
                 max(0, deadline - asyncio.get_running_loop().time())
             ):
                 return False
@@ -478,7 +507,12 @@ class _MainTimer:
                     if all_community_accounts_signed(
                         Config.ToolsConfig.GameSign_Accounts, today
                     ):
-                        await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                        await Config.ToolsConfig.update(
+                            type(Config.ToolsConfig).model_validate(
+                                {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                            ),
+                            check_visibility=False,
+                        )
                     return []
 
                 # 格式化并合并结果
@@ -489,18 +523,21 @@ class _MainTimer:
                 if all_community_accounts_signed(
                     Config.ToolsConfig.GameSign_Accounts, today
                 ):
-                    await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                    await Config.ToolsConfig.update(
+                        type(Config.ToolsConfig).model_validate(
+                            {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                        ),
+                        check_visibility=False,
+                    )
 
             logger.success("游戏社区签到执行完成")
 
             # 任务触发的结果由任务完成通知消费；其它自动来源单独发送。
-            if source not in TASK_COMMUNITY_SOURCES and Config.ToolsConfig.get(
-                "GameSign", "NotifyEnabled"
-            ):
-                from app.tools.community_notify import push_community_notification
-
+            if source not in TASK_COMMUNITY_SOURCES:
                 try:
-                    failed_channels = await push_community_notification(results)
+                    failed_channels = await self.community_notifier.send(
+                        community_notification_results(results)
+                    )
                 except Exception as exc:
                     logger.warning(f"游戏社区签到完成，但通知服务异常: {exc}")
                 else:
@@ -540,8 +577,8 @@ class _MainTimer:
         """共享后台派发和直接执行的触发条件，未启用或今日已完成时立即跳过。"""
 
         if not should_run_community_for_source(
-            enabled=Config.ToolsConfig.get("GameSign", "Enabled"),
-            run_on_startup=Config.ToolsConfig.get("GameSign", "RunOnStartup"),
+            enabled=Config.ToolsConfig.GameSign.Enabled,
+            run_on_startup=Config.ToolsConfig.GameSign.RunOnStartup,
             source=source,
         ):
             return False

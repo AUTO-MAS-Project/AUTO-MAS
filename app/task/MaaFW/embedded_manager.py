@@ -43,13 +43,14 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
+from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -94,10 +95,10 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
-from app.task.MaaFW.tools.notify import push_notification
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
-    load_screenshot_images,
+    prepare_screenshot_images,
     screenshot_entries,
 )
 from app.utils import get_logger
@@ -356,7 +357,7 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     return None
 
 
-class MaaFWEmbeddedManager(TaskExecuteBase):
+class MaaFWEmbeddedManager(NotificationTaskBase):
     """MaaFW 内置运行（第二层）管理器。
 
     只负责把脚本配置、用户配置和模拟器实例装配好，运行编排全部交给
@@ -382,11 +383,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         self.script_config: MaaFWConfig | None = None
-        self.user_config: MultipleConfig[MaaFWUserConfig] | None = None
+        self.user_config: ConfigCollection[MaaFWUserConfig] | None = None
         self.runnable_user_uids: list[uuid.UUID] = []
         self.emulator_manager: DeviceBase | None = None
         self._device_provider = device_provider
-        # check() 建副本前锁住脚本配置，final_task 写回用户配置前再解开；只解一次。
+        # check() 获取 X 锁，运行及用户收尾直接修改原配置，最后释放。
         self._script_locked = False
         # 当前正在跑的那一位用户的 AutoProxy 任务；每个用户各建一个。
         self.inner_task: "MaaFWPluginAutoProxyTask | None" = None
@@ -534,25 +535,18 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 读到的同一份，跑的东西不变。要在上锁之前：锁住后配置写不进去。
         await fill_default_task_snapshots(script_id, script_config)
 
-        # 与其他专项同一口径：运行期间锁住脚本配置，界面上的改动会被拒绝。
-        # 先锁再建副本，两步之间不能有让出点——改动一旦落在副本之外，final_task
-        # 整表写回时就会被覆盖。后面的校验没通过也要靠 final_task 解锁。
-        await script_config.lock()
+        # X 锁阻止外部编辑；任务及其子任务直接更新原用户集合。
+        self.config_locks[script_config.uid] = await script_config.lock_x()
         self._script_locked = True
-        # 用户类跟着脚本类走：特调类型（M9A）的用户 type 是它自己的同形子类，
-        # 写死 MaaFWUserConfig 会把用户全部丢掉、报「没有可运行的用户」。
-        user_config: MultipleConfig[MaaFWUserConfig] = MultipleConfig(
-            [type(script_config).USER_CONFIG_CLASS]
-        )
-        await user_config.load(await script_config.UserData.toDict())
+        user_config = script_config.UserData
         self.user_config = user_config
 
         # 只跑「已启用且剩余天数未耗尽」的用户；单独运行指定了用户时只保留该用户。
         self.runnable_user_uids = [
             uid
             for uid, cfg in user_config.data.items()
-            if cfg.get("Info", "Status")
-            and cfg.get("Info", "RemainedDay") != 0
+            if cfg.Info.Status
+            and cfg.Info.RemainedDay != 0
             and self.task_info.is_target_user(str(uid))
         ]
         if not self.runnable_user_uids:
@@ -642,7 +636,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         controller 类型 —— 判定要读 interface，属于运行编排的职责。
         """
 
-        emulator_id = str(script_config.get("Emulator", "Id") or "").strip()
+        emulator_id = str(script_config.Emulator.Id or "").strip()
         if not emulator_id or emulator_id == "-":
             return None
 
@@ -1014,7 +1008,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         try:
             config = Config.ScriptConfig[uuid.UUID(str(script_id))]
-            return str(config.get("Info", "Name") or str(script_id)[:8])
+            return str(config.Info.Name or str(script_id)[:8])
         except (KeyError, ValueError, TypeError, AttributeError):
             return "迁移" if str(script_id) == "迁移" else str(script_id)[:8] or "未知"
 
@@ -1130,7 +1124,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     async def _post_run_view_maintenance(self) -> None:
         """收尾：组同步（跑完回落，§3.1 第 9 步）、写穿巡检、原生日志备份清理。
 
-        放在 ``_commit_user_data`` 之后：用户配置已解锁写回；AfterRun 更新之前。任何一步
+        放在 ``_commit_user_data`` 之后：用户配置已保存并解锁；AfterRun 更新之前。任何一步
         失败只记日志。
 
         组同步只在用户全部正常跑完时做：被停止 / 崩溃时收尾是受保护的，切了版本就得接着
@@ -1189,7 +1183,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     script_id=str(uid),
                     channel=effective_channel(str(uid), config),
                     busy=bool(getattr(config, "is_locked", False)),
-                    name=str(config.get("Info", "Name") or ""),
+                    name=str(config.Info.Name or ""),
                     proxy_url=resolve_update_proxy_url(config) or None,
                 )
             )
@@ -1639,9 +1633,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         assert self.script_config is not None
         self.script_info.user_list = [
             UserItem(
-                user_id=str(uid),
-                name=self.user_config[uid].get("Info", "Name"),
-                status="等待",
+                user_id=str(uid), name=self.user_config[uid].Info.Name, status="等待"
             )
             for uid in self.runnable_user_uids
         ]
@@ -1805,35 +1797,26 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 self._missing_task_user_ids.add(user_item.user_id)
 
     async def _commit_user_data(self) -> None:
-        """解锁脚本配置，并把用户配置副本整表写回、落盘；只做一次。
-
-        ``runner_task`` 结算的代理次数、剩余天数、上次运行状态与周期任务记录都写在
-        ``check()`` 建的那份副本上，不写回就随任务结束一起丢（#720）。整表写回与
-        其他专项同一口径，所以副本必须始终包含脚本下全部用户，不能按可运行用户裁剪。
-        """
-
+        """保存已提交的运行状态，并在异常或取消时也释放 X 锁。"""
         if not self._script_locked:
             return
-        self._script_locked = False
         assert self.script_config is not None
-        assert self.user_config is not None
-        # MultipleConfig.load 在锁定状态下会直接拒绝，先解锁再写回。
-        await self.script_config.unlock()
-        if self.check_result != "Pass":
-            # 校验没过就没跑过任何用户，副本与脚本配置一致，只解锁不写回。
-            return
         try:
-            await self.script_config.UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
+            await config_manager.flush()
         except Exception as exc:  # noqa: BLE001
-            logger.opt(exception=True).warning(f"MFW 用户配置写回失败：{exc}")
+            logger.opt(exception=True).warning(f"MFW 用户配置保存失败：{exc}")
+        finally:
+            ticket = self.config_locks.pop(self.script_config.uid, None)
+            if ticket is not None:
+                await self.script_config.unlock(ticket)
+            self._script_locked = False
 
     async def final_task(self) -> None:
         # 正常路径下每个用户跑完就已收尾；这里只兜取消与异常路径的最后一位用户。
         try:
             await self._finalize_inner_task()
         finally:
-            # 最后一位用户收尾完，副本上的数据才齐；取消与崩溃路径也从这里写回。
+            # 最后一位用户收尾后保存状态；取消与崩溃路径也从这里释放锁。
             await self._commit_user_data()
         # 手动停止时还没轮到的用户保留「等待」（与其他专项一致），汇总里算未完成；
         # 只有正在跑的那位按中断记「异常」。崩溃路径照旧全记「异常」。
@@ -1874,7 +1857,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             return
-        # 用户表已写回、脚本已解锁：跑完回落到组版本（兄弟在本轮期间更新了的话）、
+        # 用户状态已保存、脚本已解锁：跑完回落到组版本（兄弟在本轮期间更新了的话）、
         # 巡检写穿、清原生日志备份。只做一次（final_task 可能被取消路径再调）。
         if not self._view_maintained:
             self._view_maintained = True
@@ -1945,7 +1928,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
@@ -1972,19 +1955,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if summary_title:
             result["summary_title"] = summary_title
         try:
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
                 image_id_prefix="maafw",
             )
             result["screenshots"] = screenshot_entries(images)
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
                 images=[image for _, image in images],
-                # 本轮有信号通知时系统弹窗由它弹（写明维护 / 需更新），这里不再弹第二次
                 include_system=not self.signal_tracker.records(),
             )
         except Exception as exc:  # noqa: BLE001
@@ -2041,6 +2021,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 self.signal_tracker,
                 script_name=self.script_info.name or "空白",
                 user_config_for=user_config_for,
+                notifications=self.task_info.notifications,
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")

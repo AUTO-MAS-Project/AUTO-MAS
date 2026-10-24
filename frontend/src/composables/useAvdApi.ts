@@ -1,33 +1,13 @@
 import { ref } from 'vue'
 
-import { ApiError, Emulator20Service } from '@/api'
+import { Emulator20Service } from '@/api'
+import { getApiErrorMessage } from '@/utils/apiError'
 import type {
   Emulator2AvdInstanceOptionsOut,
   Emulator2AvdStatusOut,
   Emulator2PathAddOut,
 } from '@/api'
 import { t } from '@/i18n'
-
-/**
- * 生成客户端在非 2xx 时抛 ``ApiError``，后端的说明在 ``error.body.message``；取不到就用兜底文案。
- * 其余异常（网络断开等）用它自己的消息。
- */
-const errorMessage = (error: unknown, fallback: string): string => {
-  if (error instanceof ApiError) {
-    const body: unknown = error.body
-    if (
-      body &&
-      typeof body === 'object' &&
-      'message' in body &&
-      typeof body.message === 'string' &&
-      body.message
-    ) {
-      return body.message
-    }
-  }
-  if (error instanceof Error && error.message) return error.message
-  return fallback
-}
 
 /**
  * 魔改 AVD 客户端：根目录的组件状态与开机前检查、添加根目录、读实例选项。
@@ -54,7 +34,7 @@ export function useAvdApi() {
       if (response.code !== 200) throw new Error(response.message || t(fallbackKey))
       return response
     } catch (caught) {
-      const detail = errorMessage(caught, t(fallbackKey))
+      const detail = getApiErrorMessage(caught, t(fallbackKey))
       error.value = detail
       throw new Error(detail)
     } finally {

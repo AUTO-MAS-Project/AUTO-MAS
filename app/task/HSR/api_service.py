@@ -169,9 +169,9 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
         if not root:
             return HSRApiReply.error(400, f"未配置{engine_label(engine)}路径")
 
-        source = str(script_config.get("Update", f"{engine}Source") or "")
-        channel = str(script_config.get("Update", "Channel") or "stable")
-        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+        source = str(getattr(script_config.Update, f"{engine}Source") or "")
+        channel = str(script_config.Update.Channel or "stable")
+        cdk = str(script_config.Update.MirrorChyanCDK or "")
 
         if action == "check":
             result = await check_engine_update(
@@ -266,7 +266,7 @@ async def cloud_login(script_id: str, user_id: str) -> HSRApiReply:
                 script_config,
                 script_id=script_id,
                 user_id=user_id,
-                user_name=str(user_config.get("Info", "Name") or user_id),
+                user_name=str(user_config.Info.Name or user_id),
             )
         except HSRCloudLoginBusyError as e:
             return HSRApiReply.error(409, str(e))

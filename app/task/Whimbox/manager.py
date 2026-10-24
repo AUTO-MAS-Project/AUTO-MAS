@@ -28,10 +28,11 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -40,7 +41,6 @@ from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .tools.notify import push_notification
 from .tools.upstream import APP_EXE_NAME
 
 logger = get_logger("奇想盒 调度器")
@@ -58,7 +58,7 @@ class WhimboxManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
-        self.user_config: MultipleConfig[WhimboxUserConfig] | None = None
+        self.user_config: ConfigCollection[WhimboxUserConfig] | None = None
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
@@ -69,10 +69,12 @@ class WhimboxManager(ScriptManagerBase):
             return "脚本配置类型错误, 不是奇想盒类型"
 
         if self.task_info.mode == "ScriptConfig":
+            if not script_config.Info.RootPath:
+                return "请先设置有效的奇想盒安装目录"
             # 只查 app 单哨兵：会话仅拉起 whimbox_app.exe、不依赖 Python 后端，
             # 后端未初始化（首启未完成）时也要能进设置会话去修环境；
             # AutoProxy 走 surface.check_install() 三哨兵——跑一条龙需要完整后端
-            root_path = Path(str(script_config.get("Info", "RootPath") or ""))
+            root_path = Path(str(script_config.Info.RootPath or ""))
             if not root_path.is_dir() or not (root_path / APP_EXE_NAME).is_file():
                 return "请先设置有效的奇想盒安装目录"
             target_user_id = self.task_info.user_id or "Default"
@@ -98,15 +100,16 @@ class WhimboxManager(ScriptManagerBase):
 
     async def prepare(self):
         script_uid = uuid.UUID(self.script_info.script_id)
-        await Config.ScriptConfig[script_uid].lock()
+        self.config_locks[
+            Config.ScriptConfig[script_uid].uid
+        ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
-        # 任务期使用独立副本，避免在 ScriptConfig 已锁时写 UserData（对齐 General）
-        self.user_config = MultipleConfig([WhimboxUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
-        logger.success(f"{self.script_info.script_id} 已锁定，奇想盒用户配置已提取")
-
         if not isinstance(self.script_config, WhimboxConfig):
             raise TypeError("脚本配置类型错误")
+
+        # X 锁覆盖用户集合，运行时直接修改原配置。
+        self.user_config = self.script_config.UserData
+        logger.success(f"{self.script_info.script_id} 已锁定，奇想盒用户配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
@@ -114,9 +117,7 @@ class WhimboxManager(ScriptManagerBase):
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
-                    target_user_name = self.user_config[target_user_uid].get(
-                        "Info", "Name"
-                    )
+                    target_user_name = self.user_config[target_user_uid].Info.Name
             self.script_info.user_list = [
                 UserItem(
                     user_id=target_user_id,
@@ -142,6 +143,7 @@ class WhimboxManager(ScriptManagerBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        assert self.user_config is not None
 
         if self.task_info.mode == "ScriptConfig":
             self.script_info.current_index = 0
@@ -178,26 +180,17 @@ class WhimboxManager(ScriptManagerBase):
             await self.run_user_task(current_user, method)
 
     async def final_task(self):
-        script_uid = uuid.UUID(self.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
-
         try:
-            # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-            if script_cfg.is_locked:
-                await script_cfg.unlock()
-
             if self.check_result != "Pass" and not any(
                 user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
+                    await config_manager.flush()
                 self.script_info.status = "异常"
                 return
 
             if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                await script_cfg.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+                await config_manager.flush()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
@@ -213,8 +206,10 @@ class WhimboxManager(ScriptManagerBase):
                 result = self.build_proxy_report()
 
                 try:
-                    await push_notification(
-                        "代理结果", title, result, task_info=self.task_info
+                    await self.task_info.notifications.push_proxy_result(
+                        title=title,
+                        report=TaskResultReport.from_message(result),
+                        task_info=self.task_info,
                     )
                 except Exception as e:
                     logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")
@@ -227,9 +222,11 @@ class WhimboxManager(ScriptManagerBase):
                         ),
                     )
         finally:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
@@ -242,18 +239,11 @@ class WhimboxManager(ScriptManagerBase):
             script_cfg = None
 
         if script_cfg is not None:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
-
             try:
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
+                    await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning(
-                    "on_crash 写回 UserConfig 失败，放弃本次状态变更"
-                )
+                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
 
         with suppress(Exception):
             await Publisher.send(

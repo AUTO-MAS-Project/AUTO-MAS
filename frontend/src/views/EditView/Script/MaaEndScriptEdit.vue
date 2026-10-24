@@ -270,7 +270,15 @@
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
-                :help="!canSetResolution ? t('edit.maaEndResolutionUnsupported') : undefined"
+                :help="
+                  !canSetResolution
+                    ? t(
+                        maaEndLaunchSupported
+                          ? 'edit.maaEndResolutionRequiresNative'
+                          : 'edit.maaEndResolutionUnsupported'
+                      )
+                    : undefined
+                "
               >
                 <a-select
                   :value="canSetResolution && maaEndConfig.Game.SetResolution"
@@ -649,6 +657,7 @@ import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_TASK_COMPLETED,
@@ -673,7 +682,7 @@ const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, getMaaEndOptions, updateScript } = useScriptApi()
+const { getScript, getMaaEndOptions, updateScript, error: scriptApiError } = useScriptApi()
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -706,7 +715,7 @@ const formData = reactive({
   get path() {
     return maaEndConfig.Info.Path
   },
-  set path(value: string) {
+  set path(value: string | null) {
     maaEndConfig.Info.Path = value
   },
 })
@@ -815,8 +824,7 @@ const accountSwitchMethodOptions = [
   { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
 ]
 
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
 
 const controllerProtocol = computed(
   () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
@@ -853,7 +861,11 @@ const {
   game: maaEndConfig.Game,
   getScriptId: () => scriptId,
   enabled: () =>
-    !isInitializing.value && isWinController.value && effectiveLaunchMode.value !== 'MaaEnd',
+    !isInitializing.value &&
+    launchCapabilitiesReady.value &&
+    isWinController.value &&
+    (effectiveLaunchMode.value !== 'MaaEnd' || maaEndLaunchSupported.value),
+  autoDetect: () => effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
 const isAdbController = computed(() => controllerProtocol.value === 'Adb')
@@ -975,19 +987,10 @@ const refreshScript = async () => {
   formData.name = scriptDetail.name
 }
 
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    if (response.code === 200) {
-      emulatorOptions.value = response.data || []
-    }
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
+let maaEndOptionsGeneration = 0
 const loadMaaEndOptions = async () => {
+  const generation = ++maaEndOptionsGeneration
+  const requestedPath = maaEndConfig.Info.Path
   launchCapabilitiesReady.value = false
   launchGameControllers.value = []
   gameSettingControllers.value = []
@@ -995,10 +998,14 @@ const loadMaaEndOptions = async () => {
   originalDisplayType.value = null
   controllerOptions.value = []
   controllerProtocols.value = {}
-  if (!maaEndConfig.Info.Path?.trim()) return
+  if (!requestedPath?.trim()) {
+    maaEndOptionsLoading.value = false
+    return
+  }
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)
+    if (generation !== maaEndOptionsGeneration || requestedPath !== maaEndConfig.Info.Path) return
     if (response?.code !== 200) return
 
     launchGameControllers.value = response.launchGameControllers ?? []
@@ -1020,7 +1027,9 @@ const loadMaaEndOptions = async () => {
       }
     }
   } finally {
-    maaEndOptionsLoading.value = false
+    if (generation === maaEndOptionsGeneration && requestedPath === maaEndConfig.Info.Path) {
+      maaEndOptionsLoading.value = false
+    }
   }
 }
 
@@ -1036,7 +1045,7 @@ const loadScript = async () => {
 
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       router.push('/scripts')
       return
     }
@@ -1242,39 +1251,27 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  maaEndOptionsGeneration += 1
   cleanupConfigSession()
 })
 </script>
 
-<style scoped>
-.script-edit-content {
-  flex: 1;
-}
+<style scoped src="@/styles/scriptEditForm.css"></style>
 
+<style scoped>
 .config-card {
   border-radius: 16px;
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
 }
 
 .config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
   border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
 }
 
 .type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
   border: 1px solid var(--ant-color-primary-border);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
@@ -1292,19 +1289,7 @@ onBeforeUnmount(() => {
 }
 
 .form-section {
-  margin-bottom: 12px;
   animation: fadeInUp 0.6s ease-out;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
 }
 
 .control-hint {
@@ -1313,11 +1298,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   font-weight: 400;
   color: var(--ant-color-text-tertiary);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
 }
 
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
@@ -1344,30 +1324,8 @@ onBeforeUnmount(() => {
 }
 
 .path-input-group {
-  display: flex;
   border-radius: 8px;
-  overflow: hidden;
   border: 2px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
 }
 
 .maaend-config-mask {
@@ -1410,12 +1368,6 @@ onBeforeUnmount(() => {
 .mask-actions {
   display: flex;
   justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 
 @keyframes fadeInUp {

@@ -4,10 +4,21 @@ import asyncio
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
-from pathlib import Path
 
 from app.core.ws import Publisher, protocol
-from app.models.ConfigBase import ConfigBase
+from app.models.config import (
+    BAAHConfig,
+    BetterGIConfig,
+    GeneralConfig,
+    MaaConfig,
+    MaaEndConfig,
+    OkNteConfig,
+    OkwwConfig,
+    SrcConfig,
+    UserConfigType,
+    WhimboxConfig,
+    ZzzOdConfig,
+)
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.proxy_helpers import push_dispatch_log
@@ -42,15 +53,29 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
     return None
 
 
-class ScriptAutoProxyBase(TaskExecuteBase):
+type ProxyScriptConfigType = (
+    MaaConfig
+    | MaaEndConfig
+    | SrcConfig
+    | OkwwConfig
+    | OkNteConfig
+    | GeneralConfig
+    | BetterGIConfig
+    | ZzzOdConfig
+    | BAAHConfig
+    | WhimboxConfig
+)
+
+
+class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
     wait_for_finalizer_on_cancel = True
 
     script_info: ScriptItem
-    script_config: ConfigBase
+    script_config: S
     cur_user_item: UserItem
-    cur_user_config: ConfigBase
-    # main_task 尝试循环内赋值的当前日志记录，维护跳过等运行期记账会写入。
+    cur_user_config: U
+    # 当前尝试的日志记录用于维护跳过等运行期记账。
     cur_user_log: LogRecord
     # 用户级前/后脚本成对标记：前置跑过才收尾后置，且每用户只收尾一次。
     _user_scripts_started: bool = False
@@ -66,7 +91,7 @@ class ScriptAutoProxyBase(TaskExecuteBase):
 
     @property
     def run_timeout_seconds(self) -> float:
-        return self.script_config.get("Run", "HardTimeLimit") * 60
+        return self.script_config.Run.HardTimeLimit * 60
 
     async def run_user_scripts_before(self) -> None:
         """执行用户级任务前脚本；每用户一次，先于全部重试。"""
@@ -75,9 +100,9 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         from app.task.general.tools import execute_script_task
 
         self._user_scripts_started = True
-        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+        if getattr(self.cur_user_config.Info, "IfScriptBeforeTask", False):
             await execute_script_task(
-                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                getattr(self.cur_user_config.Info, "ScriptBeforeTask", None),
                 "脚本前任务",
             )
 
@@ -89,9 +114,9 @@ class ScriptAutoProxyBase(TaskExecuteBase):
         if not self._user_scripts_started:
             return
         self._user_scripts_started = False
-        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+        if getattr(self.cur_user_config.Info, "IfScriptAfterTask", False):
             await execute_script_task(
-                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                getattr(self.cur_user_config.Info, "ScriptAfterTask", None),
                 "脚本后任务",
             )
 

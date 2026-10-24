@@ -74,7 +74,7 @@ async def _set_base(ctx: RestoreContext, base: str) -> None:
     """
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    await user.update({"Info": {"Base": base}})
+    await user.update(type(user).model_validate({"Info": {"Base": base}}))
 
 
 def _mas_owner(ctx: RestoreContext) -> str | None:
@@ -92,7 +92,7 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
 
     try:
         uid = uuid.UUID(ctx.user_id)
-        base = _okww_config_base(ctx.script_config.UserData[uid].get("Info", "Base"))
+        base = _okww_config_base(ctx.script_config.UserData[uid].Info.Base)
     except (ValueError, KeyError, TypeError):
         return None
     return owner_for_mode(base, ctx.user_id)
@@ -101,7 +101,7 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
 def _native_config_path(ctx: RestoreContext) -> Path | None:
     """ok-ww 原生 working 配置目录；未配置脚本路径返回 ``None``。"""
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     return Path(raw) / _OKWW_REL_CONFIG_DIR if raw else None
 
 
@@ -184,14 +184,13 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
         ts,
         _mas_dir_for_owner(ctx, owner),
         overlay=read_overlay_values(user),
-        # force 存底标注恢复时点来源（跨来源时 set_base 已切回备份来源）
-        base=str(user.get("Info", "Base") or "").strip() or None,
+        base=str(user.Info.Base or "").strip() or None,
     )
     if restored_overlay:
         # 侧车字段按段分组回填（Info 账号 / Task 覆盖层，对齐 MAA 分组回填）：
         # 文件回滚的同时把表单字段回到备份时点，否则旧表单值下次保存会静默
         # 覆盖回滚结果
-        await user.update(group_overlay(restored_overlay))
+        await user.update(type(user).model_validate(group_overlay(restored_overlay)))
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

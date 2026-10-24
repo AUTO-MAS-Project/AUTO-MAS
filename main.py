@@ -91,16 +91,26 @@ BACKGROUND_WARNINGS_MAX = 20
 
 class InterceptHandler(logging.Handler):
     def emit(self, record):
+        message = record.getMessage()
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        # 过滤 httpcore 正常阶段流水，失败事件提为 WARNING，保留到 app.log
+        if record.levelno == logging.DEBUG and (
+            record.name == "httpcore" or record.name.startswith("httpcore.")
+        ):
+            event = message.partition(" ")[0]
+            if event.endswith((".started", ".complete")):
+                return
+            if event.endswith(".failed"):
+                level = "WARNING"
         # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
         if record.name == "uvicorn.access":
             level = "DEBUG"
         # 过滤敏感信息并转发日志
-        sanitized_message = sanitize_log_message(record.getMessage())
+        sanitized_message = sanitize_log_message(message)
         logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)
 
 
@@ -270,7 +280,7 @@ def main():
     init_sentry(
         release=Config.VERSION,
         development=development_environment,
-        enabled=is_telemetry_enabled(Path.cwd() / "config" / "Config.json"),
+        enabled=is_telemetry_enabled(Path.cwd() / "config" / "setting.yaml"),
         dist=resolve_sentry_dist(current_dir),
     )
 
@@ -293,9 +303,21 @@ def main():
         await Config.init_config()
 
         from app.api.ws_command import execute_ws_command
-        from app.core.notify_channels import initialize_notification_channels
+        from app.config import config_manager
+        from app.core.game_calendar import GameCalendar
+        from app.core.notify_channels import create_notification_service
+        from app.runtime_tasks import RuntimeTasks
 
-        initialize_notification_channels(command_executor=execute_ws_command)
+        notifications = create_notification_service(
+            config=Config,
+            transactions=config_manager,
+            runtime=RuntimeTasks,
+            command_executor=execute_ws_command,
+        )
+        app.state.notifications = notifications
+        TaskManager.bind_notifications(notifications)
+        MainTimer.bind_notifications(notifications)
+        GameCalendar.bind_notifications(notifications)
 
         background_task: asyncio.Task | None = None
 
@@ -348,8 +370,10 @@ def main():
                 await DesktopGuard.start()
 
             async def init_stage_info() -> None:
+                from app.task.MAA.tools.stage_service import maa_stage_service
+
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
-                await Config.get_stage(wait_stale=False)
+                await maa_stage_service.get_stage(wait_stale=False)
 
             app.state.background_status = "running"
             try:
@@ -383,9 +407,7 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
-                from app.services.notification import Notify
-
-                await run_optional_step("通知渠道", Notify.start)
+                await run_optional_step("通知渠道", notifications.start)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -474,14 +496,12 @@ def main():
             from app.services.obs_replay import ObsReplay
 
             await ObsReplay.stop()
+            # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await RuntimeTasks.shutdown()
-            from app.core.notify import shutdown_community_notifications
+            await notifications.close()
+            from app.config import config_manager
 
-            await shutdown_community_notifications()
-            from app.services.notification import Notify
-
-            # 通知任务结束后才释放渠道拥有的连接。
-            await Notify.stop()
+            await config_manager.flush()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 

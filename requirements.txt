@@ -1,5 +1,6 @@
 loguru==0.7.3
-fastapi==0.116.1
+fastapi==0.133.1
+starlette==1.9.0
 pydantic==2.11.7
 uvicorn==0.35.0
 websockets==15.0.1
@@ -10,7 +11,6 @@ plyer==2.1.0
 psutil==7.0.0
 jinja2==3.1.6
 pywin32==310; sys_platform == "win32"
-keyboard==0.13.5; sys_platform == "win32"
 comtypes==1.4.17; sys_platform == "win32"
 pycaw==20260927; sys_platform == "win32"
 pycryptodome==3.23.0
@@ -18,14 +18,13 @@ truststore==0.10.1
 pillow==12.1.1
 packaging==25.0
 rapidocr_onnxruntime==1.2.3
-pygetwindow==0.0.9
 pyautogui==0.9.54
-pynput==1.8.1
 numpy==2.3.4
 opencv-python==4.10.0.84
 maafw>=5.12,<6.0
 mss==9.0.2
 fastapi-mcp==0.4.0
+mcp==1.30.0
 json5==0.14.0
 protobuf==7.36.1
 PyYAML==6.0.3
@@ -34,3 +33,4 @@ tomli_w==1.2.0
 tzdata==2026.3
 zstandard==0.25.0
 pyzipper==0.4.0
+blinker>=1.9.0

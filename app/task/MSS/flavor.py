@@ -16,9 +16,9 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MSS（MaaStellaSora / 星塔旅人）特调：运行前的「活动 → 日常 → 周常」队列装饰。
+"""MSS（MaaStellaSora / 星塔旅人）特调：队列装饰与重试任务声明。
 
-运行前在用户勾选的任务实例列表上做三件事，其余与通用 MaaFW 没有任何运行期差别：
+以下差异均通过 MaaFW 的既有钩子声明，执行与重试流程仍由通用引擎负责：
 
 1. 活动：队列里有「活动快速战斗」（entry ``活动快速战斗_入口``）时查一次活动排期
    （``app/tools/stella_official.py``，只认会开活动关的「版本活动」）。有进行中的活动
@@ -32,6 +32,8 @@
 4. 个人版的「灾变防线」（entry ``灾变防线_入口``，只在个人版项目里有）：一期只打得到一次，
    打没打过由 MAS 自己按「这一期开没开过」记账，见 ``_arrange_defense``。这一段只在设置页把
    个人版开关打开、且项目确实是个人版时生效，普通版 MSS 一行都不走。
+5. 已确认的日常与挑战任务在本次运行中成功过后，重试不再补跑；登录仍每次执行。
+   仅使用引擎收集的 ``completedTasks``，不额外解析上游日志或判断游戏状态。
 
 按 entry 找任务、按 interface 里真实的选项名与 case 名写值（取自 MaaStellaSora v1.4.4 的
 ``resource/tasks/{activity,fight,climb_tower}.json``）；找不到就写一行用户日志跳过那一项。
@@ -195,7 +197,7 @@ def personal_mss_enabled() -> bool:
     from app.core.config import Config
 
     try:
-        return bool(Config.get("Function", "IfPersonalMss"))
+        return bool(Config.setting.Function.IfPersonalMss)
     except AttributeError:
         ## 配置对象里还没有这一项（旧配置遇上热更新）：当作没开，不动队列
         return False
@@ -205,6 +207,27 @@ class MSSFlavor:
     """满足 ``MaaFWFlavor`` 协议的 MSS 特调对象。"""
 
     type_key = TYPE_KEY
+    # 本次运行已成功的日常、挑战不再补跑。登录不列：重试重新启动游戏后仍要登录。
+    # 逐项声明已确认的公开 entry；上游新增任务默认保留重跑行为。
+    skip_on_retry_entries = frozenset(
+        {
+            ACTIVITY_ENTRY,
+            TRIBULATION_ENTRY,
+            CLIMB_ENTRY,
+            DEFENSE_ENTRY,
+            "活动挑战_入口",
+            "好友_入口",
+            "基金_入口",
+            "邀约_入口",
+            "邮箱_入口",
+            "猎影合围_入口",
+            "真格挑战_入口",
+            "委托_入口",
+            "采购_入口",
+            "心链_入口",
+            "任务_入口",
+        }
+    )
 
     def __init__(
         self,
@@ -244,6 +267,23 @@ class MSSFlavor:
 
         ids = list(task_ids)
         options = dict(task_options)
+        # 自动编排也要尊重队列里这一份实例的红灯，尤其不能给未执行的防线记账。
+        raw_snapshot = _get(user_config, "Task", "TaskSnapshot")
+        if isinstance(raw_snapshot, str):
+            try:
+                raw_snapshot = json.loads(raw_snapshot)
+            except (ValueError, TypeError):
+                raw_snapshot = {}
+        skipped_ids: set[str] = set()
+        if isinstance(raw_snapshot, dict) and raw_snapshot.get("keepUnchecked") is True:
+            checked = raw_snapshot.get("taskChecked")
+            order = raw_snapshot.get("taskOrder")
+            if isinstance(checked, dict) and isinstance(order, list):
+                skipped_ids = {
+                    task_id
+                    for task_id in order
+                    if isinstance(task_id, str) and checked.get(task_id) is False
+                }
 
         activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)
@@ -265,7 +305,10 @@ class MSSFlavor:
         if not ids and plan_key is None and defense is None:
             return list(ids), dict(options)
 
-        if plan_key is not None:
+        if plan_key is not None and (
+            tribulation not in skipped_ids
+            or any(name_of(task_id) == tribulation for task_id in ids)
+        ):
             ids, options = _apply_plan(
                 interface_model, ids, options, tribulation, plan_key, name_of, log
             )
@@ -276,6 +319,7 @@ class MSSFlavor:
         added = False
         if (
             activity is not None
+            and activity not in skipped_ids
             and not any(name_of(i) == activity for i in ids)
             and _get(user_config, "Info", "IfActivityFirst") is not False
             and self._activity_probe() is True
@@ -330,6 +374,8 @@ class MSSFlavor:
                 self._defense_period_probe,
                 name_of,
                 log,
+                skip_task=defense in skipped_ids
+                and not any(name_of(task_id) == defense for task_id in ids),
             )
 
         if climb is not None and any(name_of(i) == climb for i in ids):
@@ -445,6 +491,8 @@ def _arrange_defense(
     period_probe: Callable[[], str | None],
     name_of: Callable[[str], str],
     log: Callable[[str], None],
+    *,
+    skip_task: bool = False,
 ) -> list[str]:
     """按「这一期打没打过」决定个人版灾变防线的去留。
 
@@ -475,12 +523,16 @@ def _arrange_defense(
     整轮陪葬；宁可漏打一轮。
     """
 
-    period = period_probe()
+    record = _load_defense_record(user_config)
+    was_armed = bool(record.get("armed"))
+    # 红灯只结算已存的上轮欠账，不依赖本轮官网排期，也不编排新一轮。
+    if skip_task and not was_armed:
+        return ids
+    period = record["period"] if skip_task else period_probe()
     if period is None:
         log(f"[MSS] 取不到「{defense}」这一期的开始时间，本轮按队列原样执行")
         return ids
 
-    record = _load_defense_record(user_config)
     if str(record.get("period") or "") != period:
         ## 换期了：上一期那份整个丢掉
         record = {"period": period, "done": False, "armed": False, "failed_days": []}
@@ -515,6 +567,14 @@ def _arrange_defense(
                         failed_days.append(today)
                     record["failed_days"] = failed_days
             ## now == seen：这一轮没进过 run()，什么都不算，下一轮照常再编排
+
+    if skip_task:
+        # 先结清上轮；即使上轮只建过计划、还没进 run，也清掉 armed，避免本轮
+        # 其它绿灯的成功在下次被误当成防线完成。
+        record["armed"] = False
+        if settled or was_armed:
+            _commit_defense_record(user_config, record, defense, log)
+        return ids
 
     present = any(name_of(task_id) == defense for task_id in ids)
 
@@ -593,26 +653,25 @@ def _load_defense_record(user_config: Any) -> dict[str, Any]:
 
 def _as_text(value: Any) -> str:
     """配置项可能给 None 或数字，比较两轮状态前统一成字符串。"""
+    if isinstance(value, datetime):
+        # 周期记录只比较游戏日期；保留旧 seen_date 的语义和历史记录。
+        return value.strftime("%Y-%m-%d")
 
     return "" if value is None else str(value)
 
 
 def _save_defense_record(user_config: Any, record: dict[str, Any]) -> Exception | None:
-    """写回 ``Data.PersonalMssDefense``；成功返回 None，失败返回那个异常。
+    """从建计划的工作线程提交周期记录，沿用任务持有的 X 锁上下文。"""
+    from app.core import Config
 
-    这里在工作线程里跑（``check()`` 经 ``asyncio.to_thread`` 建计划），没有事件循环可 await，
-    自己起一个跑完就收。配置写盘失败只影响这一轮，不能让整份运行计划建不出来。
-    """
+    async def save() -> None:
+        user_config.Data.PersonalMssDefense = json.dumps(record, ensure_ascii=False)
+        await user_config.commit()
 
     try:
-        asyncio.run(
-            user_config.set(
-                "Data",
-                "PersonalMssDefense",
-                json.dumps(record, ensure_ascii=False),
-            )
-        )
-    except Exception as exc:  # noqa: BLE001 - 配置锁了 / 写盘失败都退回「按队列原样」
+        loop = Config.loop
+        asyncio.run_coroutine_threadsafe(save(), loop).result()
+    except Exception as exc:  # noqa: BLE001 - 保存失败时仍沿用原队列
         return exc
     return None
 
@@ -652,7 +711,7 @@ def _insert_before_climb(
 
 def _get(config: Any, group: str, name: str) -> Any:
     try:
-        return config.get(group, name)
+        return getattr(getattr(config, group), name)
     except Exception:  # noqa: BLE001 - 假配置对象缺项时按空处理
         return None
 

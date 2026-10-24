@@ -89,7 +89,7 @@ def collect_live_project_paths() -> list[str]:
         if copy_dir.is_dir():
             paths.append(str(copy_dir))
             continue
-        source = str(config.get("Info", "Path") or "").strip()
+        source = str(config.Info.Path or "").strip()
         if source and Path(source).is_dir():
             paths.append(source)
     return paths

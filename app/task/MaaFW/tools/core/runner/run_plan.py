@@ -133,6 +133,9 @@ class MaaFWRunPlanError(ValueError):
 
 #: 选中的任务一个都跑不了时的报错；宿主据此判断要不要补上「interface 内已无」的任务名。
 NO_RUNNABLE_TASKS_MESSAGE = "当前 controller/resource 下没有可执行任务"
+#: 新版队列明确保留了 false 实例、且所有非前置任务都被用户设为跳过时的报错。
+ALL_TASKS_SKIPPED_MESSAGE = "任务队列里的任务都设为了跳过，没有要运行的任务"
+QUEUE_SKIPPED_TASK_REASON = "队列里设为跳过"
 
 
 def _secret_input_pairs(raw: Any) -> list[tuple[str, str]]:
@@ -188,6 +191,8 @@ def build_maafw_run_plan(
     """
 
     interface = _coerce_interface(interface_model)
+    if _all_explicit_common_tasks_skipped(task_snapshot):
+        raise MaaFWRunPlanError(ALL_TASKS_SKIPPED_MESSAGE)
     resolved_base_dir = Path(base_dir).resolve()
     controller = _select_controller(interface, controller_name)
     resource = _select_resource(interface, resource_name, controller)
@@ -224,6 +229,9 @@ def build_maafw_run_plan(
         no_default_fallback_inputs=_secret_input_pairs(no_default_fallback_inputs),
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
+    queue_skipped_tasks = _build_queue_skipped_tasks(
+        task_snapshot, interface, i18n_mapping
+    )
     option_defaults, _ = _build_option_defaults(interface.option)
     resource_bundle = _build_resource_bundle_plan(
         resolved_base_dir, resource, controller
@@ -408,11 +416,91 @@ def build_maafw_run_plan(
         ),
         piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
-        skippedTasks=skipped_tasks,
+        skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
         globalOptions=copy.deepcopy(global_values),
         warnings=plan_warnings,
         i18n=i18n_mapping,
     )
+
+
+def _all_explicit_common_tasks_skipped(
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+) -> bool:
+    """新版队列里有非前置任务、但全被显式设为跳过。
+
+    只看原始顺序，不能把运行归一化补齐的 false 当作用户设的红灯。
+    """
+
+    raw = _normalize_raw_snapshot(task_snapshot)
+    if not raw["keepUnchecked"]:
+        return False
+    common_task_ids = [
+        task_id
+        for task_id in raw["taskOrder"]
+        if isinstance(task_id, str) and not is_pretask_task_name(task_id)
+    ]
+    return bool(common_task_ids) and all(
+        raw["taskChecked"].get(task_id) is False for task_id in common_task_ids
+    )
+
+
+def _build_queue_skipped_tasks(
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    interface: MaaFWInterface,
+    i18n_mapping: dict[str, Any],
+) -> list[MaaFWSkippedTaskPlan]:
+    """把新版队列里显式保留的红灯实例记进计划的跳过项。
+
+    不读归一化补齐的实例；interface 已没有的任务仍由 missing_skips 处理。
+    """
+
+    raw = _normalize_raw_snapshot(task_snapshot)
+    if not raw["keepUnchecked"]:
+        return []
+
+    task_map = {task.name: task for task in interface.task}
+    valid_task_names = {
+        *task_map,
+        *(build_pretask_task_name(pretask) for pretask in iter_pretasks(interface)),
+    }
+    labels = raw["taskLabels"]
+    skipped: list[MaaFWSkippedTaskPlan] = []
+    seen_ids: set[str] = set()
+    for task_id in raw["taskOrder"]:
+        if not isinstance(task_id, str) or raw["taskChecked"].get(task_id) is not False:
+            continue
+        # 同一实例 id 重复出现只记一次（运行归一化同样按实例 id 去重）
+        if task_id in seen_ids:
+            continue
+        seen_ids.add(task_id)
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
+        if task_name not in valid_task_names:
+            continue
+        label_override = labels.get(task_id)
+        label = label_override.strip() if isinstance(label_override, str) else ""
+        task = task_map.get(task_name)
+        if task is not None:
+            label = label or _resolve_i18n_label(task.label, task.name, i18n_mapping)
+            entry = task.entry
+        else:
+            pretask = find_pretask_by_task_name(interface, task_name)
+            if pretask is None:
+                continue
+            label = label or _resolve_i18n_label(
+                pretask.label,
+                pretask.name or pretask.exec,
+                i18n_mapping,
+            )
+            entry = None
+        skipped.append(
+            MaaFWSkippedTaskPlan(
+                name=task_name,
+                label=label,
+                entry=entry,
+                reason=QUEUE_SKIPPED_TASK_REASON,
+            )
+        )
+    return skipped
 
 
 def _describe_checkbox_count_error(
@@ -801,6 +889,9 @@ def select_snapshot_tasks(
     建计划之前装饰列表，再以 ``task_ids`` / ``task_options`` / ``global_options`` 建计划。
     """
 
+    # 特调会自动补任务；全红必须在装饰前停下，不能被补入的任务掩盖。
+    if _all_explicit_common_tasks_skipped(task_snapshot):
+        raise MaaFWRunPlanError(ALL_TASKS_SKIPPED_MESSAGE)
     snapshot = _resolve_snapshot(
         interface_model,
         selected_preset=selected_preset,
@@ -936,6 +1027,15 @@ def _select_tasks(
     """``(勾选的实例 id, 各实例自己的选项, 用户的全局表, 特调给各实例写的只属于全局的选项)``。"""
 
     if task_ids is not None:
+        raw = _normalize_raw_snapshot(task_snapshot)
+        if raw["keepUnchecked"]:
+            # 特调自动补入的实例也必须尊重用户这轮显式设的红灯。
+            skipped_ids = {
+                task_id
+                for task_id in raw["taskOrder"]
+                if raw["taskChecked"].get(task_id) is False
+            }
+            task_ids = [task_id for task_id in task_ids if task_id not in skipped_ids]
         selected_ids, selected_options = normalize_task_execution_payload(
             task_ids,
             task_options,

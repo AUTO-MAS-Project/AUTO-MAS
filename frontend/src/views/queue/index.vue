@@ -475,14 +475,7 @@ const refreshTimeSets = async () => {
 
           const timeSetData = response.data[timeSetId]
           if (timeSetData?.Info) {
-            // 解析时间字符串 "HH:mm"
-            const originalTimeString = timeSetData.Info.Time || '00:00'
-            const [hours = 0, minutes = 0] = originalTimeString.split(':').map(Number)
-
-            // 创建标准化的时间字符串
-            const validHours = Math.max(0, Math.min(23, hours))
-            const validMinutes = Math.max(0, Math.min(59, minutes))
-            const timeString = `${validHours.toString().padStart(2, '0')}:${validMinutes.toString().padStart(2, '0')}`
+            const timeString = timeSetData.Info.Time || '00:00'
 
             timeSets.push({
               id: timeSetId,
@@ -862,7 +855,10 @@ onUnmounted(() => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(
+    --app-page-title-color,
+    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

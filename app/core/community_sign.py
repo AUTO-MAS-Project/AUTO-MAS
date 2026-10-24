@@ -180,8 +180,8 @@ async def _run_configured_community_sign_in(
 
     providers = get_community_sign_providers()
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        account_name = account.get("GameSignAccount", "Name") or "默认账号"
-        account_enabled = account.get("GameSignAccount", "Enabled")
+        account_name = account.GameSignAccount.Name or "默认账号"
+        account_enabled = account.GameSignAccount.Enabled
         account_uid = str(uid)
 
         # 跳过已禁用的用户。
@@ -190,7 +190,7 @@ async def _run_configured_community_sign_in(
 
         # 非强制模式：跳过今日已签到的用户。
         if not force:
-            user_last_sign = account.get("GameSignAccount", "LastSignDate")
+            user_last_sign = account.GameSignAccount.LastSignDate.strftime("%Y-%m-%d")
             if user_last_sign == today:
                 logger.debug(f"[{account_name}] 今日已签到，跳过")
                 continue
@@ -235,11 +235,13 @@ async def _run_configured_community_sign_in(
             attempts = 2 if retry else 1
             for attempt in range(attempts):
                 try:
-                    # 直接 set 不重置 LastSignDate；刷新凭据不应改变签到去重语义。
-                    changed = await account.set("GameSignAccount", field, updated_token)
-                    if changed is False and field in credential_update_failures:
-                        # ConfigBase 先改内存再提交；前次提交失败后同值 set 不会重写磁盘。
-                        await account._commit_changes()
+                    # 更新凭据不重置 LastSignDate；提交失败时事务回滚，可直接重试。
+                    await account.update(
+                        type(account).model_validate(
+                            {"GameSignAccount": {field: updated_token}}
+                        ),
+                        check_visibility=False,
+                    )
                 except Exception as error:
                     if attempt + 1 < attempts:
                         logger.warning(
@@ -339,8 +341,12 @@ async def _run_configured_community_sign_in(
             try:
                 # 多账号串行签到可能跨越 0 点，写入时重新取当前日期，
                 # 避免把新一天的签到记成旧日期导致次日误判。
-                sign_date = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
-                await account.set("GameSignAccount", "LastSignDate", sign_date)
+                await account.update(
+                    type(account).model_validate(
+                        {"GameSignAccount": {"LastSignDate": datetime.now(tz=UTC8)}}
+                    ),
+                    check_visibility=False,
+                )
             except Exception as error:
                 logger.warning(f"[{account_name}] 保存签到完成日期失败: {error}")
 

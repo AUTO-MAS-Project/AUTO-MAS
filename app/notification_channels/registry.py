@@ -6,11 +6,13 @@ import inspect
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 from types import MappingProxyType
 from typing import Any
 
 from app.models.notification_channel import (
     ChannelDependencies,
+    NotificationTransportSnapshot,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -97,6 +99,15 @@ def validate_channel(channel: NotifyChannel) -> None:
                 raise ValueError("渠道配置字段元数据无效")
     if not callable(channel.target_builder) or not callable(channel.sender_factory):
         raise ValueError("渠道目标构造器或发送器工厂缺失")
+    if channel.transport_fields is not None and (
+        not isinstance(channel.transport_fields, tuple)
+        or any(
+            not isinstance(name, str) or not name for name in channel.transport_fields
+        )
+        or channel.start_adapter is not None
+        or channel.stop_adapter is not None
+    ):
+        raise ValueError("传输快照只适用于无会话渠道及其配置字段")
     if not inspect.iscoroutinefunction(channel.send_adapter):
         raise ValueError("渠道发送入口必须为异步函数")
     inspect.signature(channel.target_builder).bind(object(), scope="global")
@@ -146,9 +157,7 @@ class ChannelRegistry:
                 dependencies.logger.warning(
                     f"通知渠道 {entry.key} 装配失败: {type(exc).__name__}"
                 )
-        return BoundChannels(
-            senders, channels=self.channels, logger=dependencies.logger
-        )
+        return BoundChannels(senders, channels=self.channels, dependencies=dependencies)
 
 
 class BoundChannels:
@@ -157,13 +166,14 @@ class BoundChannels:
         senders: dict[str, Any],
         *,
         channels: tuple[NotifyChannel, ...],
-        logger: Any,
+        dependencies: ChannelDependencies,
     ) -> None:
         self._senders = MappingProxyType(senders)
         self._channels = tuple(
             sorted(channels, key=lambda c: (c.lifecycle_order, c.key))
         )
-        self._logger = logger
+        self._dependencies = dependencies
+        self._logger = dependencies.logger
         self._started = False
 
     async def start(self) -> None:
@@ -194,8 +204,21 @@ class BoundChannels:
                 )
         self._started = False
 
-    def sender(self, key: str) -> Any:
+    def sender(
+        self, key: str, *, transport: NotificationTransportSnapshot | None = None
+    ) -> Any:
         try:
-            return self._senders[key]
+            sender = self._senders[key]
         except KeyError as exc:
             raise RuntimeError(f"通知渠道 {key} 不可用") from exc
+        if transport is None:
+            return sender
+        channel = next(channel for channel in self._channels if channel.key == key)
+        if channel.transport_fields is None or channel.sender_factory is None:
+            raise RuntimeError(f"通知渠道 {key} 不支持无会话传输快照")
+        dependencies = replace(
+            self._dependencies,
+            transport=transport,
+            read_proxy=lambda: transport.proxy,
+        )
+        return channel.sender_factory(dependencies)

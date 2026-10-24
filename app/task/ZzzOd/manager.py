@@ -19,12 +19,12 @@
 import uuid
 from contextlib import suppress
 from datetime import datetime
-from pathlib import Path
 
+from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
@@ -34,7 +34,6 @@ from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask
-from .tools import push_notification
 
 logger = get_logger("ZZZ-OD 调度器")
 
@@ -51,7 +50,7 @@ class ZzzOdManager(ScriptManagerBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
-        self.user_config: MultipleConfig[ZzzOdUserConfig] | None = None
+        self.user_config: ConfigCollection[ZzzOdUserConfig] | None = None
 
     async def check(self) -> str:
         if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
@@ -61,7 +60,9 @@ class ZzzOdManager(ScriptManagerBase):
         if not isinstance(script_config, ZzzOdConfig):
             return "脚本配置类型错误, 不是 ZZZ-OD 类型"
 
-        root_path = Path(script_config.get("Info", "RootPath"))
+        if not script_config.Info.RootPath:
+            return "请先设置有效的绝区零一条龙安装目录"
+        root_path = script_config.Info.RootPath
         if not root_path.is_dir():
             return "请先设置有效的绝区零一条龙安装目录"
         try:
@@ -93,15 +94,16 @@ class ZzzOdManager(ScriptManagerBase):
 
     async def prepare(self):
         script_uid = uuid.UUID(self.script_info.script_id)
-        await Config.ScriptConfig[script_uid].lock()
+        self.config_locks[
+            Config.ScriptConfig[script_uid].uid
+        ] = await Config.ScriptConfig[script_uid].lock_x()
         self.script_config = Config.ScriptConfig[script_uid]
-        # 任务期使用独立副本，避免在 ScriptConfig 已锁时写 UserData（对齐 General）
-        self.user_config = MultipleConfig([ZzzOdUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
-        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 用户配置已提取")
-
         if not isinstance(self.script_config, ZzzOdConfig):
             raise TypeError("脚本配置类型错误")
+
+        # X 锁覆盖用户集合，运行时直接修改原配置。
+        self.user_config = self.script_config.UserData
+        logger.success(f"{self.script_info.script_id} 已锁定，ZZZ-OD 用户配置已提取")
 
         if self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
@@ -109,9 +111,7 @@ class ZzzOdManager(ScriptManagerBase):
             with suppress(ValueError):
                 target_user_uid = uuid.UUID(target_user_id)
                 if target_user_uid in self.user_config:
-                    target_user_name = self.user_config[target_user_uid].get(
-                        "Info", "Name"
-                    )
+                    target_user_name = self.user_config[target_user_uid].Info.Name
             self.script_info.user_list = [
                 UserItem(
                     user_id=target_user_id,
@@ -137,6 +137,7 @@ class ZzzOdManager(ScriptManagerBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
+        assert self.user_config is not None
 
         if self.task_info.mode == "ScriptConfig":
             self.script_info.current_index = 0
@@ -156,24 +157,20 @@ class ZzzOdManager(ScriptManagerBase):
         inject_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
-            != BASE_NATIVE
+            if self.user_config[uuid.UUID(user.user_id)].Info.Base != BASE_NATIVE
         ]
         direct_users = [
             user
             for user in self.script_info.user_list
-            if self.user_config[uuid.UUID(user.user_id)].get("Info", "Base")
-            == BASE_NATIVE
+            if self.user_config[uuid.UUID(user.user_id)].Info.Base == BASE_NATIVE
         ]
-        account_switch = str(
-            self.script_config.get("Game", "AccountSwitch") or "单实例切换"
-        )
+        account_switch = str(self.script_config.Game.AccountSwitch or "单实例切换")
 
         # 「多实例切换」（不推荐）：注入模式用户合并为一轮多账号注入运行
         # （一条龙内部切换账号），原生来源用户在其后逐个原生裸跑。
         # 失败域耦合：单槽失败/切换失败会终止整轮并全量重走（已完成任务按
         # 运行记录跳过，不重复执行，但会话重启与重新登录的代价仍在）
-        if self.script_config.get("Game", "AccountSwitch") == "多实例切换":
+        if self.script_config.Game.AccountSwitch == "多实例切换":
             inject_users = [
                 user
                 for user in inject_users
@@ -285,27 +282,18 @@ class ZzzOdManager(ScriptManagerBase):
             )
 
     async def final_task(self):
-        script_uid = uuid.UUID(self.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
-
         try:
-            # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
-            if script_cfg.is_locked:
-                await script_cfg.unlock()
-
             if self.check_result != "Pass" and not any(
                 user.status in ("完成", "跳过") for user in self.script_info.user_list
             ):
                 # ScriptConfig 会话也可能产生绑定槽（Info.SlotIdx）写回
                 if self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
+                    await config_manager.flush()
                 self.script_info.status = "异常"
                 return
 
             if self.user_config is not None:
-                await script_cfg.UserData.load(await self.user_config.toDict())
-                await Config.ScriptConfig.save()
+                await config_manager.flush()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
@@ -329,14 +317,12 @@ class ZzzOdManager(ScriptManagerBase):
                 mirror_report_to_dispatch(self.script_info, user_result_text)
                 result = self.build_proxy_report(result_text=user_result_text)
 
-                # 系统通知由 push_notification 内部的全局目标统一发送
+                # 系统通知由宿主代理结果服务的全局目标统一发送。
                 # （include_system=True），此处不再直接 push_plyer 以免重复
                 try:
-                    await push_notification(
-                        mode="代理结果",
+                    await self.task_info.notifications.push_proxy_result(
                         title=title,
-                        message=result,
-                        user_config=None,
+                        report=TaskResultReport.from_message(result),
                         task_info=self.task_info,
                     )
                 except Exception as e:
@@ -350,9 +336,11 @@ class ZzzOdManager(ScriptManagerBase):
                         ),
                     )
         finally:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
+            script_config = getattr(self, "script_config", None)
+            if script_config is not None:
+                ticket = self.config_locks.pop(script_config.uid, None)
+                if ticket is not None:
+                    await script_config.unlock(ticket)
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
@@ -365,18 +353,11 @@ class ZzzOdManager(ScriptManagerBase):
             script_cfg = None
 
         if script_cfg is not None:
-            if script_cfg.is_locked:
-                with suppress(Exception):
-                    await script_cfg.unlock()
-
             try:
                 if self.task_info.mode == "AutoProxy" and self.user_config is not None:
-                    await script_cfg.UserData.load(await self.user_config.toDict())
-                    await Config.ScriptConfig.save()
+                    await config_manager.flush()
             except Exception:
-                logger.opt(exception=True).warning(
-                    "on_crash 写回 UserConfig 失败，放弃本次状态变更"
-                )
+                logger.opt(exception=True).warning("on_crash 保存用户配置失败")
 
         with suppress(Exception):
             await Publisher.send(

@@ -22,7 +22,10 @@
      「灾变防线」算当期，队列里没有就往爬塔之前插一条 entry `灾变防线_入口`，结果记进该用户的
      `Data.PersonalMssDefense`（`armed` / `done` / 失败日）。同一期打过了就不再插；记账**只在确认跑过
      一轮之后**才结算，失败按天累计、攒够就放弃本期，口径见 `_arrange_defense` 的 docstring。
-   按 entry 找不到就写一行用户日志跳过。**不**碰重试 / 周期 / 超时 / 更新 / 游戏启停。
+   按 entry 找不到就写一行用户日志跳过。**不重写**重试 / 周期 / 超时 / 更新 / 游戏启停。
+3. `skip_on_retry_entries`：按公开 task entry 声明已确认的日常与挑战任务，复用 MaaFW 的
+   「前面的尝试已完成」过滤。本次运行成功过的任务不再补跑，失败、超时和未执行的任务保留；
+   登录不在声明内，每次尝试仍执行。同名重复任务沿用引擎的保守重跑策略，不额外推断完成的是哪份。
 
 `api_service.py` 只有一个只读函数 `defense_status()`：把 `Data.PersonalMssDefense` 摊开给用户页看。
 「这一期」与 `flavor.py` 里那份**同一处**（`permanent_activity_window("灾变防线")`），前端不复刻一套；

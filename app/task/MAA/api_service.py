@@ -37,23 +37,17 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping
 
 from app.core import Config
-from app.models.config import (
-    MaaConfig,
-    infrast_format_problem,
-    infrast_plan_state,
-    load_infrast_plans,
-    maa_scheme_name,
-    maa_task_queue,
-    read_maa_config,
-)
+from app.models.config import MaaConfig
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
     read_config_base,
 )
 from app.utils import get_logger
-from app.utils.constants import MAA_DEPOT_EXCLUDED_ITEM_IDS, game_now
+from app.utils.constants import game_now
 from app.utils.io import write_file
+
+from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
 logger = get_logger("脚本管理 API")
 
@@ -74,7 +68,10 @@ def _maa_script_config(script_id: str) -> MaaConfig:
 def _load_item_index(script_config: MaaConfig) -> dict[str, Any]:
     """读 MAA 物品资源表 resource/item_index.json（按文件 mtime 缓存）。"""
 
-    path = Path(script_config.get("Info", "Path")) / "resource" / "item_index.json"
+    root_path = script_config.Info.Path
+    if root_path is None:
+        raise ValueError("Path未配置，请检查路径设置")
+    path = root_path / "resource" / "item_index.json"
     if not path.exists():
         raise FileNotFoundError(f"未找到 MAA 物品资源: {path}，请更新 MAA 后重试")
     mtime_ns = path.stat().st_mtime_ns
@@ -89,6 +86,8 @@ def _load_item_index(script_config: MaaConfig) -> dict[str, Any]:
 
 
 async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> None:
+    from .tools.native_config import infrast_format_problem
+
     logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
 
     script_uid = uuid.UUID(script_id)
@@ -102,7 +101,9 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
         raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
     try:
-        infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
+        infrast_data = json.loads(
+            json_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+        )
     except json.JSONDecodeError as e:
         raise ValueError("排班表不是有效的 JSON") from e
 
@@ -117,7 +118,16 @@ async def set_infrastructure(script_id: str, user_id: str, jsonFile: str) -> Non
     await (
         Config.ScriptConfig[script_uid]
         .UserData[user_uid]
-        .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
+        .update(
+            type(Config.ScriptConfig[script_uid].UserData[user_uid]).model_validate(
+                {
+                    "Data": {
+                        "CustomInfrast": json.dumps(infrast_data, ensure_ascii=False)
+                    }
+                }
+            ),
+            check_visibility=False,
+        )
     )
 
 
@@ -136,7 +146,10 @@ def _infrast_config_dir(script_id: str, user_id: str) -> Path:
         if base == CONFIG_BASE_SHARED:
             return Path.cwd() / f"data/{script_id}/Default/ConfigFile"
         if base == CONFIG_BASE_NATIVE:
-            return Path(script_config.get("Info", "Path")) / "config"
+            root_path = script_config.Info.Path
+            if root_path is None:
+                raise ValueError("Path未配置，请检查路径设置")
+            return root_path / "config"
     return Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile"
 
 
@@ -150,12 +163,21 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
     空存档误拒; 反过来在原生来源+快速配置下读原生配置, 又会与运行时不一致。
     """
 
+    from .tools.native_config import (
+        infrast_plan_state,
+        load_infrast_plans,
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
+
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    if read_config_base(user_config) != CONFIG_BASE_NATIVE or user_config.get(
-        "Info", "IfQuickConfig"
+    if (
+        read_config_base(user_config) != CONFIG_BASE_NATIVE
+        or user_config.Info.IfQuickConfig
     ):
-        raw = user_config.get("Data", "CustomInfrast")
+        raw = user_config.Data.CustomInfrast
         plans, problem = load_infrast_plans(raw)
         return plans, problem, infrast_plan_state(raw)
 
@@ -163,7 +185,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return [], "未找到或无法读取 MAA 原生配置", "empty"
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return [], "MAA 原生配置缺少任务队列", "empty"
     for task in queue:
@@ -178,7 +200,7 @@ def _infrast_plans(script_id: str, user_id: str) -> tuple[list[dict], str | None
         if not path.is_file():
             return [], f"MAA 原生排班文件不存在: {path.name}", "empty"
         try:
-            text = path.read_text(encoding="utf-8")
+            text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         except OSError:
             logger.opt(exception=True).warning(f"读取 MAA 原生排班文件失败: {path}")
             return [], f"MAA 原生排班文件无法读取: {path.name}", "empty"
@@ -197,7 +219,7 @@ def _infrast_plan_owned_by_mas(script_id: str, user_id: str) -> bool:
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    return bool(user_config.get("Info", "IfQuickConfig"))
+    return bool(user_config.Info.IfQuickConfig)
 
 
 async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> int:
@@ -208,6 +230,12 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     MAS 在基建换班完成后做), 带时段表只接受 -1; 原生来源且关快速配置时写 MAA
     原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
     """
+
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
 
     script_uid = uuid.UUID(script_id)
     user_uid = uuid.UUID(user_id)
@@ -239,8 +267,11 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
             return -1
         # 无时段表: -1(自动)即从第一班起, 指针只存 0..n-1
         next_index = max(index, 0)
-        await script_config.UserData[user_uid].set(
-            "Data", "InfrastPlanIndex", next_index
+        await script_config.UserData[user_uid].update(
+            type(script_config.UserData[user_uid]).model_validate(
+                {"Data": {"InfrastPlanIndex": next_index}}
+            ),
+            check_visibility=False,
         )
         return next_index
 
@@ -248,7 +279,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         raise ValueError("未找到或无法读取该用户的 MAA 配置, 无法设置基建班次")
-    scheme = maa_scheme_name(config_dir, data)
+    scheme = maa_scheme_name(data)
     queue = maa_task_queue(data, scheme)
     if not isinstance(queue, list):
         raise ValueError(f"MAA 配置的方案「{scheme}」缺少任务队列, 无法设置基建班次")
@@ -274,6 +305,12 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
     原生来源且关快速配置时读 MAA 原生配置。
     """
 
+    from .tools.native_config import (
+        maa_scheme_name,
+        maa_task_queue,
+        read_maa_config,
+    )
+
     script_uid = uuid.UUID(script_id)
     if script_uid not in Config.ScriptConfig:
         return -1
@@ -287,14 +324,12 @@ async def get_infrast_plan_select(script_id: str, user_id: str) -> int:
         plans, problem, state = _infrast_plans(script_id, user_id)
         if problem is not None or state != "rotate":
             return -1
-        return int(
-            script_config.UserData[user_uid].get("Data", "InfrastPlanIndex")
-        ) % len(plans)
+        return int(script_config.UserData[user_uid].Data.InfrastPlanIndex) % len(plans)
     config_dir = _infrast_config_dir(script_id, user_id)
     data = read_maa_config(config_dir / "gui.new.json")
     if data is None:
         return -1
-    queue = maa_task_queue(data, maa_scheme_name(config_dir, data))
+    queue = maa_task_queue(data, maa_scheme_name(data))
     if not isinstance(queue, list):
         return -1
     for task in queue:
@@ -321,7 +356,7 @@ async def get_user_combox_infrastructure(script_id: str, user_id: str) -> dict:
     user_config = script_config.UserData[user_uid]
     plans, problem, state = _infrast_plans(script_id, user_id)
     # 仅自定义模式下不可用才值得提醒; 普通模式空排班表是正常状态
-    if problem is not None and user_config.get("Task", "InfrastMode") == "Custom":
+    if problem is not None and user_config.Task.InfrastMode == "Custom":
         logger.warning(f"自定义基建排班不可用, 下拉选项按空返回: {problem}")
     data = []
     for i, plan in enumerate(plans):
@@ -383,6 +418,20 @@ async def get_depot_stage_candidates(
     )
 
 
+async def get_depot_stage_candidates_batch(
+    *, script_id: str, item_ids: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """一次返回编辑页所需材料的关卡候选。"""
+
+    _maa_script_config(script_id)
+
+    from app.task.MAA.tools.cultivate import depot_cultivate_service
+
+    return await depot_cultivate_service.stage_candidates_batch(
+        config_path=Config.config_path, item_ids=item_ids, proxy=Config.proxy
+    )
+
+
 async def get_depot_inventory(
     script_id: str, user_id: str
 ) -> tuple[list[dict[str, str]], str | None]:
@@ -439,8 +488,7 @@ async def get_cultivate_operators(
     # 来源，被过滤掉的干员会让已存目标显示成内部 ID（决策 40）
     try:
         raw_targets = json.loads(
-            script_config.UserData[uuid.UUID(user_id)].get("Task", "CultivateTargets")
-            or "[]"
+            script_config.UserData[uuid.UUID(user_id)].Task.CultivateTargets or "[]"
         )
     except (KeyError, TypeError, ValueError):
         raw_targets = []
@@ -506,7 +554,7 @@ def _cultivate_skland_callbacks() -> tuple[
             account = Config.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
         except (KeyError, ValueError):
             return None
-        raw = account.get("GameSignAccount", "SklandToken")
+        raw = account.GameSignAccount.SklandToken
         return str(raw) if raw else None
 
     async def save_credential(account_uid: str, serialized: str) -> None:
@@ -514,7 +562,12 @@ def _cultivate_skland_callbacks() -> tuple[
             account = Config.ToolsConfig.GameSign_Accounts[uuid.UUID(account_uid)]
         except (KeyError, ValueError):
             return
-        await account.set("GameSignAccount", "SklandToken", serialized)
+        await account.update(
+            type(account).model_validate(
+                {"GameSignAccount": {"SklandToken": serialized}}
+            ),
+            check_visibility=False,
+        )
 
     return load_credential, save_credential
 
@@ -525,8 +578,8 @@ def _cultivate_skland_ref(
     """读用户配置的森空岛绑定；未绑定时返回 None。"""
 
     user_config = script_config.UserData[uuid.UUID(user_id)]
-    account_uid = str(user_config.get("Task", "CultivateSklandAccount") or "").strip()
-    game_uid = str(user_config.get("Task", "CultivateSklandUid") or "").strip()
+    account_uid = str(user_config.Task.CultivateSklandAccount or "").strip()
+    game_uid = str(user_config.Task.CultivateSklandUid or "").strip()
     if not account_uid or not game_uid:
         return None
     return account_uid, game_uid
@@ -574,7 +627,7 @@ async def get_cultivate_skland_bindings() -> list[dict[str, str]]:
     load_credential, save_credential = _cultivate_skland_callbacks()
     candidates: list[str] = []
     for account_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-        raw = str(account.get("GameSignAccount", "SklandToken") or "")
+        raw = str(account.GameSignAccount.SklandToken or "")
         if raw:
             candidates.append(str(account_uid))
     if not candidates:
@@ -631,18 +684,12 @@ async def get_cultivate_preview(
     archive_dir = Path.cwd() / f"data/{uuid.UUID(script_id)}/{uuid.UUID(user_id)}"
     # 森空岛练度走 TTL 缓存（预览不打网络；决策 38），未绑定/失败降级 None
     skland = await get_cultivate_skland_progression(script_id, user_id)
-    (
-        plan,
-        availability,
-        progressions,
-    ) = await depot_cultivate_service.preview_cultivate(
+    plan, availability, progressions = await depot_cultivate_service.preview_cultivate(
         targets=parse_cultivate_targets(raw_targets),
         maa_data_dir=archive_dir,
         config_path=Config.config_path,
         proxy=Config.proxy,
-        today=game_now(
-            script_config.UserData[uuid.UUID(user_id)].get("Info", "Server")
-        ).date(),
+        today=game_now(script_config.UserData[uuid.UUID(user_id)].Info.Server).date(),
         skland=skland,
     )
     # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；

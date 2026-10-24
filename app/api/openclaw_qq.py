@@ -22,20 +22,163 @@
 
 """QQ 官方机器人扫码绑定 API。"""
 
-from fastapi import APIRouter, Body
+from datetime import datetime
+from typing import Annotated, Literal
 
-from app.core.notify_channels import get_channel_sender
-from app.models.schema import (
-    OpenClawQQQrCheckIn,
-    OpenClawQQQrCheckOut,
-    OpenClawQQQrStartOut,
-    OpenClawQQStatusOut,
-    OutBase,
-)
+from fastapi import APIRouter, Body, Depends
+from pydantic import BaseModel, Field
+
+from app.api.notification_dependencies import get_notification_service
+from app.core.notify import HostNotificationService
+from app.models.schema import OutBase
+from app.notification_channels.openclaw_qq.transport import Sender
 from app.utils import get_logger
+
+
+class OpenClawQQQrStartOut(OutBase):
+    """QQ 官方机器人二维码创建响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
+
+
+class OpenClawQQQrCheckIn(BaseModel):
+    """QQ 官方机器人二维码状态查询请求。"""
+
+    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
+
+
+class OpenClawQQQrCheckOut(OutBase):
+    """QQ 官方机器人二维码及消息网关状态查询响应。"""
+
+    sessionId: str = Field(default="", description="二维码登录会话 ID")
+    state: str = Field(
+        default="",
+        description="轮询状态：waiting、scanned、connecting（已绑定，网关连接中）、connected（网关已就绪）、expired 或 error",
+    )
+    connected: bool = Field(
+        default=False, description="消息网关是否已就绪；绑定成功但仍在连接时为 false"
+    )
+
+
+class OpenClawQQStatusOut(OutBase):
+    """QQ 官方机器人通知绑定状态，不返回任何凭据。"""
+
+    enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
+    connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
+    state: str = Field(
+        default="disconnected",
+        description="消息网关状态：disconnected、connecting、connected 或 reconnecting",
+    )
+
+
+class OpenClawQQGroup(BaseModel):
+    """自动记录的群，不包含聊天内容。"""
+
+    openId: str = Field(description="机器人收到事件的群 OpenID")
+    lastSeen: datetime | None = Field(default=None, description="最近发现时间（UTC）")
+
+
+class OpenClawQQGroupsOut(OutBase):
+    """QQ 通知接收位置及自动记录的群。"""
+
+    bindingId: str = Field(default="", description="绑定版本，用于拒绝旧页面保存")
+    targetType: Literal["c2c", "group", "all"] = Field(
+        default="c2c", description="通知接收位置"
+    )
+    groups: list[OpenClawQQGroup] = Field(
+        default_factory=list, description="自动记录的群"
+    )
+    errorCode: str = Field(default="", description="可本地化的错误标识")
+
+
+class OpenClawQQTargetIn(BaseModel):
+    """选择私聊、全部群聊或两者。"""
+
+    bindingId: str = Field(min_length=1, description="查询群列表时返回的绑定版本")
+    targetType: Literal["c2c", "group", "all"] = Field(description="通知接收位置")
+
 
 router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人通知"])
 logger = get_logger("QQ 机器人通知 API")
+
+
+def _groups_out(sender: Sender) -> OpenClawQQGroupsOut:
+    snapshot = sender.groups()
+    return OpenClawQQGroupsOut(
+        bindingId=snapshot.binding_id,
+        targetType=snapshot.target_type,
+        groups=[
+            OpenClawQQGroup(openId=group.openid, lastSeen=group.last_seen)
+            for group in snapshot.groups
+        ],
+    )
+
+
+@router.post(
+    "/groups",
+    summary="查询 QQ 通知接收位置及自动记录的群",
+    response_model=OpenClawQQGroupsOut,
+)
+async def get_groups(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OpenClawQQGroupsOut:
+    """只返回自动记录的群和已保存的模式，不枚举 QQ 联系人。"""
+
+    try:
+        return _groups_out(notifications.channel_sender("openclaw_qq"))
+    except Exception:
+        logger.opt(exception=True).warning("查询 QQ 群状态失败")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="查询 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
+
+
+@router.post(
+    "/target", summary="选择 QQ 通知接收位置", response_model=OpenClawQQGroupsOut
+)
+async def set_target(
+    body: OpenClawQQTargetIn = Body(...),
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OpenClawQQGroupsOut:
+    """验证绑定版本后保存通知模式，无需选择群。"""
+
+    try:
+        sender = notifications.channel_sender("openclaw_qq")
+        await sender.set_target(
+            binding_id=body.bindingId,
+            target_type=body.targetType,
+        )
+        return _groups_out(sender)
+    except ValueError as exc:
+        error_code = str(exc)
+        messages = {
+            "binding_changed": "机器人绑定已变化，请刷新群列表后重新选择",
+            "not_bound": "请先扫码绑定 QQ 官方机器人",
+        }
+        return OpenClawQQGroupsOut(
+            code=400,
+            status="error",
+            message=messages.get(error_code, "保存 QQ 通知接收位置失败"),
+            errorCode=error_code,
+        )
+    except Exception:
+        logger.opt(exception=True).warning("保存 QQ 通知接收位置失败")
+        return OpenClawQQGroupsOut(
+            code=500,
+            status="error",
+            message="保存 QQ 通知接收位置失败",
+            errorCode="request_failed",
+        )
 
 
 @router.post(
@@ -43,14 +186,19 @@ logger = get_logger("QQ 机器人通知 API")
     summary="查询 QQ 官方机器人绑定状态",
     response_model=OpenClawQQStatusOut,
 )
-async def get_status() -> OpenClawQQStatusOut:
+async def get_status(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OpenClawQQStatusOut:
     """返回 QQ 绑定及网关状态，不返回协议凭据。
 
     connected 表示凭据已绑定；state 表示网关是连接中、已连接还是重连中。
     """
 
     try:
-        state = get_channel_sender("openclaw_qq").status()
+        state = notifications.channel_sender("openclaw_qq").status()
     except Exception as exc:
         logger.opt(exception=True).warning(
             f"get_status失败: {type(exc).__name__}: {exc}"
@@ -73,11 +221,16 @@ async def get_status() -> OpenClawQQStatusOut:
     summary="创建 QQ 官方机器人登录二维码",
     response_model=OpenClawQQQrStartOut,
 )
-async def start_login() -> OpenClawQQQrStartOut:
+async def start_login(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OpenClawQQQrStartOut:
     """创建二维码；App ID 和客户端密钥只在后台登录确认后保存。"""
 
     try:
-        result = await get_channel_sender("openclaw_qq").start_login()
+        result = await notifications.channel_sender("openclaw_qq").start_login()
     except ValueError as exc:
         return OpenClawQQQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
@@ -103,6 +256,10 @@ async def start_login() -> OpenClawQQQrStartOut:
 )
 async def check_login(
     body: OpenClawQQQrCheckIn = Body(...),
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
 ) -> OpenClawQQQrCheckOut:
     """轮询二维码与消息网关状态。
 
@@ -112,7 +269,7 @@ async def check_login(
     """
 
     try:
-        result = await get_channel_sender("openclaw_qq").check_login(
+        result = await notifications.channel_sender("openclaw_qq").check_login(
             session_id=body.sessionId
         )
     except Exception as exc:
@@ -139,11 +296,16 @@ async def check_login(
     summary="解除 QQ 官方机器人绑定",
     response_model=OutBase,
 )
-async def unbind() -> OutBase:
+async def unbind(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OutBase:
     """解除绑定并清理本地保存的 QQ 协议状态。"""
 
     try:
-        await get_channel_sender("openclaw_qq").unbind()
+        await notifications.channel_sender("openclaw_qq").unbind()
     except Exception as exc:
         logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(

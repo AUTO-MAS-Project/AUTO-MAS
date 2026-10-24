@@ -80,7 +80,7 @@ _CODECS: dict[str, tuple[Any, Any]] = {
         lambda d, encoding: json.dumps(d, ensure_ascii=False, indent=2).encode(
             encoding
         ),
-        lambda data: json.loads(decode_bytes(data)),
+        lambda data: json.loads(decode_bytes(data).removeprefix("\ufeff")),
     ),
     ".json5": (
         lambda d, encoding: json5.dumps(d, indent=2).encode(encoding),

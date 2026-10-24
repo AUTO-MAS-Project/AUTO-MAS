@@ -44,6 +44,7 @@ mxu-MaaEnd.json 的任务开关与选项，不在 ConfigFile 中——侧车让�
 import json
 from pathlib import Path
 
+from app.config import ConfigEntry
 from app.utils import get_logger
 from app.utils.config_archive import (
     META_FILE_NAMES,
@@ -286,16 +287,21 @@ _REWARDS_OPTION_REWARDS_FLAG = {
 }
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的快速配置覆盖层字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config: ConfigEntry) -> dict:
+    """按配置分组的 JSON 导出规则读取快速配置字段，UUID 引用导出为字符串。
 
     值为 ``None``（配置项不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
+        fields = getattr(config, group).model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := fields[key]) is not None:
                 values[key] = value
     return values
 
@@ -732,7 +738,9 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
         if "/" in rel or rel != NATIVE_CONFIG_FILE:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):

@@ -13,12 +13,12 @@ interface DebugResult {
 }
 
 interface UseLogPatternDebugOptions {
-  logPath?: string | (() => string | undefined)
+  logPath?: string | null | (() => string | null | undefined)
 }
 
 export function useLogPatternDebug(options: UseLogPatternDebugOptions = {}) {
   const { logPath } = options
-  const resolveLogPath = (): string | undefined =>
+  const resolveLogPath = (): string | null | undefined =>
     typeof logPath === 'function' ? logPath() : logPath
 
   const modalOpen = ref(false)

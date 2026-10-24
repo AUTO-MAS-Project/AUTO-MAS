@@ -1,29 +1,5 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scriptTypes.Okww" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="Okww" :title="t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
@@ -521,14 +497,12 @@
 <script setup lang="ts">
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS } from '@/utils/openExternal'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
-  ArrowLeftOutlined,
   FolderOpenOutlined,
   ImportOutlined,
   QuestionCircleOutlined,
@@ -536,7 +510,7 @@ import {
 } from '@ant-design/icons-vue'
 import { Service, TaskCreateIn } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
@@ -554,15 +528,19 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
-const { getUsers } = useUserApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getUsers, error: userApiError } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({ scriptId, isInitializing, logger })
 const isDiscoveringOkww = ref(false)
 const isDiscoveringGame = ref(false)
 
@@ -721,6 +699,7 @@ const handleCheckUpdate = async () => {
   if (updateModal.running) return
   try {
     const resp = await getUsers(scriptId)
+    if (!resp) return
     const data = (resp?.data || {}) as Record<string, any>
     const users: UpdateUserOption[] = Object.entries(data)
       .filter(([, user]) => user?.Info?.Status !== false)
@@ -740,7 +719,7 @@ const handleCheckUpdate = async () => {
     updateModal.open = true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
   }
 }
 
@@ -860,22 +839,6 @@ const openCandidateModal = (kind: DiscoveryKind, candidates: PathDiscoveryCandid
 
 const handleCancel = () => router.push('/scripts')
 
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      logger.error(msg)
-    }
-  }, `${category}.${key}`)
-}
-
 const validateGamePath = async (launcherPath: string) => {
   const normalized = launcherPath.replace(/\\/g, '/').replace(/\/+$/g, '')
   const executable = normalized.split('/').pop()?.toLowerCase()
@@ -971,7 +934,7 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
@@ -995,7 +958,7 @@ const loadScript = async () => {
     persistedGamePath = okwwConfig.Game.Path
     persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -1230,91 +1193,11 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
 <style scoped>
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
 .section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
 }
 
 .label-hint {
@@ -1336,22 +1219,12 @@ onUnmounted(() => {
   color: var(--ant-color-text-secondary);
 }
 
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
-}
-
 .path-input-group {
-  display: flex;
-  overflow: hidden;
   border: 1px solid var(--ant-color-border);
 }
 
 .path-input {
-  flex: 1;
   min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
 }
 
 .auto-import-button {
@@ -1362,13 +1235,6 @@ onUnmounted(() => {
 
 .path-button {
   flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  border-left: 1px solid var(--ant-color-border-secondary);
 }
 
 .path-validation-alert {
@@ -1408,27 +1274,11 @@ onUnmounted(() => {
   color: var(--ant-color-text);
 }
 
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
 .game-control-row {
   margin-bottom: 8px;
 }
 
 .game-control-row :deep(.ant-form-item) {
   margin-bottom: 0;
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

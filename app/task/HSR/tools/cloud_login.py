@@ -111,7 +111,7 @@ async def run_cloud_login(
             "三月七正被其他 HSR 任务使用，请结束任务后再登录云游戏"
         ) from e
 
-    m7a_root = Path(str(script_config.get("Info", "M7APath") or "").strip())
+    m7a_root = Path(str(script_config.Info.M7APath or "").strip())
     config_path = m7a_root / "config.yaml"
     runtime = HSRRuntimeState(log_lines=[], completion_writebacks=[])
     switcher = HSRAccountSwitcher(

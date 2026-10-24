@@ -28,12 +28,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
+from app.task.notify_core import build_script_statistics_payload
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
 
@@ -42,7 +44,6 @@ from .task_mapping import (
     engine_label,
     resolve_script_assignment,
 )
-from .tools import push_notification
 from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
@@ -155,7 +156,9 @@ def _server_day_clock(now_dt: datetime | None = None) -> datetime:
 def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
     """判断计划是否启用了指定周期的任一 HSR 模块。"""
 
-    return any(bool(plan.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase])
+    return any(
+        (bool(getattr(plan.TaskSwitch, key)) for key in MODULE_KEYS_BY_PHASE[phase])
+    )
 
 
 class HSRAutoProxyTask(TaskExecuteBase):
@@ -165,7 +168,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: HSRConfig,
-        user_config: MultipleConfig[HSRUserConfig],
+        user_config: ConfigCollection[HSRUserConfig],
         user_item: UserItem,
         runtime: HSRRuntimeState,
     ) -> None:
@@ -395,7 +398,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _get_run_times_limit(self) -> int:
         """读取脚本页最大尝试次数，最小为 1。"""
 
-        value = self.script_config.get("Run", "RunTimesLimit")
+        value = self.script_config.Run.RunTimesLimit
         return max(1, int(value or 3))
 
     @staticmethod
@@ -446,17 +449,17 @@ class HSRAutoProxyTask(TaskExecuteBase):
         now_dt = _server_day_clock(now_dt)
 
         today = now_dt.strftime("%Y-%m-%d")
-        last_proxy_date = str(user_config.get("Data", "LastProxyDate") or "")
-        proxy_times = int(user_config.get("Data", "ProxyTimes") or 0)
+        last_proxy_date = str(user_config.Data.LastProxyDate.strftime("%Y-%m-%d") or "")
+        proxy_times = int(user_config.Data.ProxyTimes or 0)
         next_proxy_times = proxy_times + 1 if last_proxy_date == today else 1
 
         fields: list[tuple[str, str, object]] = [
-            ("Data", "LastProxyDate", today),
+            ("Data", "LastProxyDate", now_dt),
             ("Data", "ProxyTimes", next_proxy_times),
         ]
 
         if last_proxy_date != today:
-            remained_day = int(user_config.get("Info", "RemainedDay") or 0)
+            remained_day = int(user_config.Info.RemainedDay or 0)
             if remained_day != -1:
                 fields.append(("Info", "RemainedDay", remained_day - 1))
 
@@ -551,14 +554,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
         success_symbol = "√" if self.cur_user_item.status == "完成" else "X"
 
         try:
-            await push_notification(
-                "统计信息",
-                (
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 HSR 自动代理统计报告"
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 HSR 自动代理统计报告",
+                    message=statistics,
+                    result_label="HSR执行结果",
                 ),
-                statistics,
-                self.cur_user_config,
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
             )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送 HSR 用户统计通知时出现异常: {e}")
@@ -642,11 +645,19 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self._append_log(message)
             await self._send_task_notice("warning", message)
             try:
-                await push_notification(
-                    "云登录提醒",
-                    f"{user_name} 需要登录云·星穹铁道",
-                    {"message": message},
-                    self.cur_user_config,
+                # 需人工介入的提醒立即托管，让离开电脑的用户及时知道要登录。
+                logger.info(
+                    f"开始推送通知, 模式: 云登录提醒, 标题: {user_name} 需要登录云·星穹铁道"
+                )
+                await self.task_info.notifications.dispatch_task_notification(
+                    NotifyPayload(
+                        title=f"{user_name} 需要登录云·星穹铁道",
+                        text=message,
+                    ),
+                    self.task_info.notifications.statistic_targets(
+                        self.cur_user_config
+                    ),
+                    task_info=self.task_info,
                 )
             except Exception as e:  # noqa: BLE001
                 logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")
@@ -729,7 +740,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             fields=[
                 ("Data", "EchoOfWarCompletedThisWeek", True),
                 ("Data", "EchoOfWarLastResetWeek", current_week),
-                ("Data", "EchoOfWarLastCompletionDate", today),
+                ("Data", "EchoOfWarLastCompletionDate", _server_day_clock()),
             ],
         )
 
@@ -749,7 +760,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             fields=[
                 ("Data", "WeeklyCompletedThisWeek", True),
                 ("Data", "WeeklyLastResetWeek", current_week),
-                ("Data", "WeeklyLastCompletionDate", today),
+                ("Data", "WeeklyLastCompletionDate", _server_day_clock()),
             ],
         )
 
@@ -776,7 +787,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             "Saturday",
             "Sunday",
         ]
-        eow_target = plan.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
+        eow_target = plan.TaskOpt.EchoOfWarWeekday or "Monday"
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
@@ -785,12 +796,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
-        last_reset_week = (
-            user_config.get("Data", "EchoOfWarLastResetWeek") or "2000-W01"
-        )
+        last_reset_week = user_config.Data.EchoOfWarLastResetWeek or "2000-W01"
         eow_is_new_week = last_reset_week != now_week
         eow_completed_this_week = not eow_is_new_week and bool(
-            user_config.get("Data", "EchoOfWarCompletedThisWeek")
+            user_config.Data.EchoOfWarCompletedThisWeek
         )
 
         today = now_dt.strftime("%A")
@@ -828,8 +837,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
-        last_reset_week = user_config.get("Data", "WeeklyLastResetWeek") or "2000-W01"
-        weekly_done_stored = bool(user_config.get("Data", "WeeklyCompletedThisWeek"))
+        last_reset_week = user_config.Data.WeeklyLastResetWeek or "2000-W01"
+        weekly_done_stored = bool(user_config.Data.WeeklyCompletedThisWeek)
 
         if last_reset_week != now_week:
             is_new_week_in_mem = True
@@ -931,7 +940,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             # 三月七每日任务从在线码表取兑换码、按 already_used_codes 自行去重，
             # 不读用户手填的 redemption_code；按手填列表算指纹会让在线新码永远不兑。
             return True, None
-        only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
+        only_when_changed = self.script_config.Game.RedeemCodesOnlyWhenChanged
         if only_when_changed is False:
             return True, None
         try:
@@ -942,7 +951,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 f"保守执行：{exc}"
             )
             return True, None
-        previous = str(user_cfg.get("Data", f"{engine}RedeemCodeFingerprint") or "")
+        previous = str(getattr(user_cfg.Data, f"{engine}RedeemCodeFingerprint") or "")
         if previous == fingerprint:
             self._append_log(
                 f"用户「{user_name}」{engine_label(engine, left=False)}兑换码未变化，"
@@ -1018,7 +1027,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         for module in HSR_TASK_MODULES:
             if module.category != phase:
                 continue
-            if not plan.get("TaskSwitch", module.key):
+            if not getattr(plan.TaskSwitch, module.key):
                 continue
 
             # shared 来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
@@ -1846,7 +1855,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_item = self.cur_user_item
         uid = user_item.user_id
         user_cfg = self.cur_user_config
-        user_name = user_cfg.get("Info", "Name")
+        user_name = user_cfg.Info.Name
         # 原生来源用户由 HSRManager._run_direct_user 执行，不会进这里。
         plan = resolve_plan(user_cfg, self.script_config)
         if plan is None:

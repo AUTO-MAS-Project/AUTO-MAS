@@ -20,7 +20,7 @@
 
 v5.5.0 及更早的 HSR 用户配置带一组 ``Direct``：``SRAConfig`` / ``M7AConfig`` 是导入进来的
 原生配置快照（DPAPI 密文），直控时跑它而不是脚本当前的活配置。三态收敛删掉了这组字段，
-而 ``ConfigBase.load`` 只认类里声明的条目，按新类加载的那一刻快照就被丢掉并写回盘；字段
+而 ``ConfigEntry.load`` 只认类里声明的条目，按新类加载的那一刻快照就被丢掉并写回盘；字段
 侧车备份从不收快照内容，丢了就找不回来。
 
 所以启动时在连接之前扫一遍：HSR 脚本下快照非空的用户，把整组 ``Direct`` 原样（密文不解）
@@ -178,7 +178,7 @@ def _existing_archive(item: LegacyDirectSnapshot) -> Path | None:
         return None
     for path in sorted(root.glob(f"{item.user_id}-*.json")):
         try:
-            saved = json.loads(path.read_text(encoding="utf-8"))
+            saved = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         except (OSError, ValueError):
             continue
         if isinstance(saved, dict) and saved.get(LEGACY_GROUP) == item.direct:
@@ -239,7 +239,7 @@ def archive_legacy_direct_snapshots(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"跳过 HSR 旧直控快照留档：ScriptConfig.json 读取失败：{exc}")

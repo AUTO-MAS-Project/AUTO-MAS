@@ -16,7 +16,7 @@ export function useMaaFWEnvPrepare(
   channel: MaaFWProgressChannel
 ) {
   const { t } = useI18n()
-  const { prepareMaaFWAgentEnv } = useScriptApi()
+  const { prepareMaaFWAgentEnv, error: scriptApiError } = useScriptApi()
   const { ensureEnvSubscription } = channel
 
   const envPreparing = ref(false)
@@ -49,7 +49,7 @@ export function useMaaFWEnvPrepare(
   const envPreparedPath = ref('')
 
   const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
-    const path = (targetPath ?? maafwConfig.Info.Path).trim()
+    const path = (targetPath ?? maafwConfig.Info.Path)?.trim() ?? ''
     if (!path) return
     if (envPreparing.value) return
     // 同一个项目已经备好过就不重复跑；换了目录才重新准备。
@@ -67,7 +67,7 @@ export function useMaaFWEnvPrepare(
       const response = await prepareMaaFWAgentEnv(path, scriptId, force)
       if (!response || response.code !== 200 || !response.data) {
         envFailed.value = true
-        envMessage.value = response?.message || t('edit.envStatusFailed')
+        envMessage.value = response?.message || scriptApiError.value || t('edit.envStatusFailed')
         // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
         // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
         if (response?.data?.logs?.length) envLogs.value = response.data.logs

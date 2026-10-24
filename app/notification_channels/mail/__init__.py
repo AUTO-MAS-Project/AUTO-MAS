@@ -29,6 +29,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    MailDependencies,
     NotifyChannel,
     NotifyChannelField,
 )
@@ -128,5 +129,12 @@ def register() -> NotifyChannel:
         fields=_MAIL_FIELDS,
         target_builder=_mail_targets,
         send_adapter=_mail_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            MailDependencies(
+                config=deps.transport or deps.config,
+                smtp_factory=deps.smtp_factory,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=("SMTPServerAddress", "FromAddress", "AuthorizationCode"),
     )

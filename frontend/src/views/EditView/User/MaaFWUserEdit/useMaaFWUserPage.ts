@@ -64,13 +64,15 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW用户编辑')
   const router = useRouter()
-  const { addUser, getUsers } = useUserApi()
-  const { getScript } = useScriptApi()
+  const { addUser, getUsers, error: userApiError } = useUserApi()
+  const { getScript, error: scriptApiError } = useScriptApi()
   const { loading: interfaceLoading, previewInterface } = useMaaFWApi()
 
   const pageLoading = ref(true)
   const loading = computed(() => pageLoading.value)
   const isInitializing = ref(true)
+  /** 用户数据回填成功，页面真正能用了（与 isInitializing 不同，加载出错离页时保持 false） */
+  const userLoaded = ref(false)
   const {
     isSaving,
     hasUnsavedChanges,
@@ -163,7 +165,14 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   })
   const { presentQueuedTasks } = queue
 
-  const menu = useMaaFWAddTaskMenu({ scriptId, previewData, taskSnapshot, context, queue })
+  const menu = useMaaFWAddTaskMenu({
+    scriptId,
+    previewData,
+    taskSnapshot,
+    context,
+    queue,
+    ready: userLoaded,
+  })
 
   const userImport = useMaaFWUserQueueImport({ scriptId, userIdHolder, queue })
   const templates = useMaaFWQueueTemplates({ scriptId, scriptConfig, taskSnapshot, queue })
@@ -216,7 +225,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const initialScript = host?.takeInitialScript()
       const script = initialScript !== undefined ? initialScript : await getScript(scriptId)
       if (!script) {
-        message.error(t('edit.scriptDoesNotExist2'))
+        if (!scriptApiError.value && !host?.scriptLoadError.value)
+          message.error(t('edit.scriptDoesNotExist2'))
         handleCancel()
         return
       }
@@ -246,7 +256,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本信息失败: ${errorMsg}`)
-      message.error(t('edit.couldNotLoadScript2'))
+      if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
       handleCancel()
     } finally {
       pageLoading.value = false
@@ -267,13 +277,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
         )
         await loadUserData()
       } else {
-        message.error(t('edit.couldNotCreateUser'))
+        if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建用户失败: ${errorMsg}`)
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   }
@@ -305,18 +315,19 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           // 页面上的值换成了后端这一份：之前没存上的改动已不在，失败账一并清掉
           resetSaveFailures()
           isInitializing.value = false
+          userLoaded.value = true
         } else {
           message.error(t('edit.userDoesNotExist'))
           handleCancel()
         }
       } else {
-        message.error(t('edit.couldNotFetchUser'))
+        if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
         handleCancel()
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载用户数据失败: ${errorMsg}`)
-      message.error(t('edit.couldNotLoadUser2'))
+      if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
       isInitializing.value = false
       handleCancel()
     }

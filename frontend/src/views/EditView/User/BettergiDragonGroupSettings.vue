@@ -797,6 +797,13 @@
 </template>
 
 <script setup lang="ts">
+import type {
+  DragonSettingField,
+  DragonSettingSection,
+  WeeklyDomainTableRow,
+  WeeklyFieldTableRow as WeeklyFieldRow,
+} from './BetterGIUserEdit/bettergiGroupSettingsSchema'
+
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
@@ -809,66 +816,12 @@ import type { BetterGIDomainCatalogItem } from '@/api'
 
 // 允许模板内通过文件名自引用（放大弹窗内再次渲染同组件）
 defineOptions({ name: 'BettergiDragonGroupSettings' })
-
-type SettingFieldOption = { label: string; value: string }
+type SettingFieldOption = NonNullable<DragonSettingField['options']>[number]
 /** 讨伐首领目录项（后端无此目录，随 schema 由父组件静态传入） */
 type BetterGIBossCatalogItem = {
   region: string
   name: string
   label: string
-}
-type DragonSettingField = {
-  key: string
-  label: string
-  type: 'text' | 'number' | 'bool' | 'select' | 'multi' | 'strategy' | 'boss'
-  min?: number
-  max?: number
-  step?: number
-  options?: SettingFieldOption[]
-  /** select 开启搜索过滤（首领等大候选集用） */
-  searchable?: boolean
-  help?: string
-  invert?: boolean
-  /** dragon=一条龙 per-user 副本；globalDomain=全局 config.json 秘境段；globalStygian=全局 config.json 幽境段 */
-  source?: 'dragon' | 'globalDomain' | 'globalStygian'
-  /** 供模板 v-for key 去重：同一数据 key 可派生出多个界面字段（如互斥双开关） */
-  id?: string
-  masterKey?: string
-  masterValue?: unknown
-  masterInvert?: boolean
-  hideWhenDisabled?: boolean
-}
-/** 每周秘境表格行：一行 = 默认或某一天，队伍/策略/秘境/奖励/执行 五个 key 与 BGI 一条龙顶层键一致。
-    strategyKey / runKey 为 MAS 扩展（BGI 原生一条龙无 per-任务策略键与 per-天执行开关），走执行层直传。
-    runKey 仅周一~周日行持有（default 行无此列）；留空表示该行不渲染执行开关。 */
-type WeeklyDomainTableRow = {
-  uid: string
-  label: string
-  partyKey: string
-  strategyKey: string
-  domainKey: string
-  rewardKey: string
-  runKey?: string
-}
-/** 通用周表行：每行若干字段（如地脉花每周刷取：地区/任务类型/执行） */
-type WeeklyFieldRow = {
-  uid: string
-  label: string
-  fields: DragonSettingField[]
-}
-
-type DragonSettingSection = {
-  title: string
-  fields: DragonSettingField[]
-  /** 每周秘境表格模式（开关 + 默认/周一~周日逐行表格）、地脉花「每周刷取」表格模式、
-      或地脉花「每日地脉花」单日统一配置模式 */
-  kind?: 'weekly-table' | 'weekly-field-table' | 'daily-leyline'
-  enableField?: DragonSettingField
-  weeklyRows?: WeeklyDomainTableRow[]
-  /** 通用周表模式（每行 = 周几 + 若干字段列），如地脉花「每周刷取」 */
-  weeklyFieldRows?: WeeklyFieldRow[]
-  /** 地脉花「每日地脉花」模式：单行配置（队伍/策略/地区/任务类型/执行） */
-  dailyFieldRow?: WeeklyFieldRow
 }
 
 const props = withDefaults(

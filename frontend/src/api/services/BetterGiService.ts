@@ -25,7 +25,7 @@ import { request as __request } from '../core/request';
 export class BetterGiService {
     /**
      * 获取 BetterGI 自动战斗策略选项
-     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt`` 文件名。
+     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt``、``*.json`` 文件名。
      * @param scriptId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError

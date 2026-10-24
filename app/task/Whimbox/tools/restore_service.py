@@ -68,7 +68,7 @@ _INFO_SECTION = "Info"
 def _surface(ctx: RestoreContext) -> WheelAssetsConfigSurface:
     """从脚本配置取安装根构造配置面；根路径未配置时报可操作错误。"""
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     if not raw:
         raise ValueError("请先在脚本设置中填入奇想盒安装目录")
     return WheelAssetsConfigSurface(Path(raw))
@@ -82,7 +82,7 @@ def _surface_or_none(ctx: RestoreContext) -> WheelAssetsConfigSurface | None:
     那是显式用户操作，报错合理）。
     """
 
-    raw = str(ctx.script_config.get("Info", "RootPath") or "").strip()
+    raw = str(ctx.script_config.Info.RootPath or "").strip()
     return WheelAssetsConfigSurface(Path(raw)) if raw else None
 
 
@@ -98,13 +98,11 @@ def _read_overlay(ctx: RestoreContext) -> dict:
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     return {
-        _INFO_SECTION: {"Base": user.get("Info", "Base")},
-        "OneDragon": {
-            "IfRunAllAccounts": bool(user.get("OneDragon", "IfRunAllAccounts")),
-        },
+        _INFO_SECTION: {"Base": user.Info.Base},
+        "OneDragon": {"IfRunAllAccounts": bool(user.OneDragon.IfRunAllAccounts)},
         "Task": {
-            "Tasks": str(user.get("Task", "Tasks") or "{}"),
-            "Options": str(user.get("Task", "Options") or "{}"),
+            "Tasks": str(user.Task.Tasks or "{}"),
+            "Options": str(user.Task.Options or "{}"),
         },
     }
 
@@ -287,7 +285,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
 
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 回填后前端重拉表单，否则旧表单值下次保存会静默覆盖恢复结果
-    await user.update(_group_restore(restored))
+    await user.update(type(user).model_validate(_group_restore(restored)))
     logger.info(f"用户 {ctx.user_id} 的 MAS 字段已恢复备份 {ts}")
 
 
@@ -324,7 +322,7 @@ async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
     for name, path in sorted(surface.backup_dir_files(ts).items()):
         summary = ""
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
             if isinstance(data, dict):
                 sections = sum(1 for v in data.values() if isinstance(v, dict) and v)
                 keys = sum(len(v) for v in data.values() if isinstance(v, dict))

@@ -112,7 +112,7 @@ async def resolve_host_adb(
     if host_adb is None:
         return None
     if index is None:
-        index = owner.script_config.get(config_key, "Index")
+        index = getattr(getattr(owner.script_config, config_key), "Index")
     try:
         return await host_adb(index)
     except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
@@ -146,7 +146,7 @@ async def close_emulator(
         return True
 
     if index is None:
-        index = owner.script_config.get(config_key, "Index")
+        index = getattr(getattr(owner.script_config, config_key), "Index")
 
     started_at = time.monotonic()
     logger.info(

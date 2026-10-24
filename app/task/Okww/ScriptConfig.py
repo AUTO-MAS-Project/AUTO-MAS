@@ -15,15 +15,14 @@
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
 import asyncio
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core.ws import Publisher, protocol
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
@@ -61,7 +60,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: OkwwConfig,
-        user_config: MultipleConfig[OkwwUserConfig],
+        user_config: ConfigCollection[OkwwUserConfig],
         view_only: bool = False,
     ):
         super().__init__()
@@ -77,14 +76,17 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(self.script_config.get("Info", "RootPath"))
+        root_path = self.script_config.Info.RootPath
+        if root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.root_path = root_path
         self.exe_path = self.root_path / _OKWW_REL_EXE
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
         mode = BASE_SHARED
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
-            mode = _okww_config_base(target_user_config.get("Info", "Base"))
+            mode = _okww_config_base(target_user_config.Info.Base)
         self.use_mas_config = mode != BASE_NATIVE
         # MAS 配置目录 owner（shared 共享 Default、independent 独立目录；native 无 MAS 配置）
         self.mas_owner = (

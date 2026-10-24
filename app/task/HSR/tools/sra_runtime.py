@@ -77,10 +77,10 @@ SRA_REWARD_REDEEM_CODE_LEGACY_KEY = "rewards.6"
 
 
 def _managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
-    """读取 ConfigBase JSONValidator 的 Managed.Options（字符串或对象）。"""
+    """读取 ConfigEntry JSONValidator 的 Managed.Options（字符串或对象）。"""
 
     try:
-        raw = user_config.get("Managed", "Options")
+        raw = user_config.Managed.Options
     except (AttributeError, KeyError, TypeError):
         raw = {}
     if isinstance(raw, str):
@@ -291,7 +291,7 @@ def build_sra_start_game_config(
     config = _build_sra_base_config(name)
     config["startGame"]["enabled"] = True
     config["startGame"]["game.channel"] = SRA_GAME_CHANNEL_CLIENT
-    config["startGame"]["game.path"] = str(script_config.get("Game", "Path"))
+    config["startGame"]["game.path"] = str(script_config.Game.Path or "")
     config["startGame"]["game.useGlobalPath"] = False
 
     if mode == "remembered":
@@ -301,10 +301,10 @@ def build_sra_start_game_config(
 
     def _cipher(key: str) -> str:
         try:
-            item = user_config._config_item_index["Info"][key]
+            value = user_config.model_dump(context={"audience": "persist"})["Info"][key]
         except (AttributeError, KeyError):
             return ""
-        return str(item.getValue(if_decrypt=False) or "")
+        return str(value.removeprefix("DPAPI:") if isinstance(value, str) else "")
 
     username_cipher = _cipher("Id")
     password_cipher = _cipher("Password")
@@ -436,7 +436,7 @@ def build_sra_module_config(
         config["cosmicStrife"]["currencyWars.enabled"] = True
         # SRA 靠开拓者名称认出自己的角色。必须在套用原生值之后写，否则多账号
         # 全用原生 profile 里同一个名字；用户在托管表单里显式填了的以它为准。
-        username = str(user_config.get("Info", "Name") or "").strip()
+        username = str(user_config.Info.Name or "").strip()
         if username and not _managed_options(plan, module.key).get(
             "currencyWars.username"
         ):
@@ -455,7 +455,7 @@ def get_sra_app_data_dir() -> Path:
 
 
 def _script_sra_profile_setting(script_config: Any) -> str:
-    """读脚本 ``Info.SRAProfile``；兼容 ConfigBase 与测试里的普通字典。"""
+    """读脚本 ``Info.SRAProfile``；兼容 ConfigEntry 与测试里的普通字典。"""
 
     if script_config is None:
         return ""
@@ -464,7 +464,7 @@ def _script_sra_profile_setting(script_config: Any) -> str:
         value = section.get("SRAProfile") if isinstance(section, dict) else None
     else:
         try:
-            value = script_config.get("Info", "SRAProfile")
+            value = script_config.Info.SRAProfile
         except (AttributeError, KeyError, TypeError):
             value = None
     return str(value or "").strip()
@@ -1073,7 +1073,7 @@ def build_sra_echo_of_war_config(
 def _resolve_sra_currency_wars_strategy(script_config) -> str:
     """优先使用 SRA 本地货币战争攻略 json。"""
 
-    raw_path = str(script_config.get("Info", "SRAPath") or "").strip()
+    raw_path = str(script_config.Info.SRAPath or "").strip()
     if not raw_path:
         return SRA_CURRENCY_WARS_STRATEGY
     path = Path(raw_path)

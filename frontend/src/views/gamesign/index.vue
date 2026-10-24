@@ -2,8 +2,8 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { ToolsConfig, ToolsConfig_GameSign } from '@/api'
-import { useToolsApi } from '@/composables/useToolsApi'
+import type { ToolsConfig_GameSign } from '@/api'
+import { useToolsApi, type ToolsViewConfig } from '@/composables/useToolsApi'
 import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -28,26 +28,26 @@ const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 // 工具数据（保留完整 ToolsConfig，避免更新时覆盖其它工具的配置）
-const toolsConfig = reactive<ToolsConfig>({
+const toolsConfig = reactive<ToolsViewConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
     ActivityEnabled: true,
     RunOnStartup: false,
-    LastSignDate: '2000-01-01',
+    LastSignDate: '2000-01-01T00:00:00+08:00',
     Status: '-',
     Result: '{}',
   },
 })
 
 // 本地编辑状态
-const editingConfig = reactive<ToolsConfig>({
+const editingConfig = reactive<ToolsViewConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
     ActivityEnabled: true,
     RunOnStartup: false,
-    LastSignDate: '2000-01-01',
+    LastSignDate: '2000-01-01T00:00:00+08:00',
     Status: '-',
     Result: '{}',
   },
@@ -113,7 +113,7 @@ const loadTools = async () => {
         NotifyEnabled: false,
         ActivityEnabled: true,
         RunOnStartup: false,
-        LastSignDate: '2000-01-01',
+        LastSignDate: '2000-01-01T00:00:00+08:00',
         Status: '-',
         Result: '{}',
       }
@@ -243,7 +243,7 @@ onUnmounted(() => {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
-  color: var(--ant-color-text);
+  color: var(--app-page-title-color, var(--ant-color-text));
 }
 
 .gamesign-content {

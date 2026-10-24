@@ -1,3 +1,4 @@
+import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -8,54 +9,28 @@ import {
   type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
   type MaaFWAgentEnvPrepareOut,
-  ScriptCreateIn,
+  type ScriptCreateIn,
   type ScriptReorderIn,
-  type ZzzOdUserConfig,
   HsrService,
   MaaFwService,
   Service,
 } from '@/api'
-import type { ScriptDetail, ScriptType, User } from '@/types/script'
+import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
-import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
 // 首页卫星与活动区共用在途的列表请求，完成后释放，后续读取仍取最新数据。
-let scriptListRequest: Promise<ScriptGetOut> | null = null
+interface ScriptListRequest {
+  promise: Promise<ScriptGetOut>
+  errorNotified: boolean
+}
+let scriptListRequest: ScriptListRequest | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
-type ScriptWithUsers = ScriptDetail & { users: User[] }
-type LooseSection = Record<string, unknown>
-type LooseUserConfig = Record<string, unknown> & {
-  Info?: LooseSection | null
-  Data?: LooseSection | null
-  Task?: LooseSection | null
-  Notify?: LooseSection | null
-  Stage?: LooseSection | null
-  TaskSwitch?: LooseSection | null
-  TaskOpt?: LooseSection | null
-}
-
-const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
-  MAA: ScriptCreateIn.type.MAA,
-  SRC: ScriptCreateIn.type.SRC,
-  MaaEnd: ScriptCreateIn.type.MAA_END,
-  M9A: ScriptCreateIn.type.M9A,
-  MaaFW: ScriptCreateIn.type.MAA_FW,
-  Okww: ScriptCreateIn.type.OKWW,
-  OkNte: ScriptCreateIn.type.OK_NTE,
-  HSR: ScriptCreateIn.type.HSR,
-  BetterGI: ScriptCreateIn.type.BETTER_GI,
-  ZzzOd: ScriptCreateIn.type.ZZZ_OD,
-  BAAH: ScriptCreateIn.type.BAAH,
-  Whimbox: ScriptCreateIn.type.WHIMBOX,
-  MSS: ScriptCreateIn.type.MSS,
-  General: ScriptCreateIn.type.GENERAL,
-}
-
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaConfig: 'MAA',
   SrcConfig: 'SRC',
@@ -86,15 +61,14 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type: SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE[type],
+        type: type as ScriptCreateIn['type'],
         scriptId: scriptId || null,
       }
 
       const response = await Service.addScriptApiScriptsAddPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '添加脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -105,15 +79,13 @@ export function useScriptApi() {
 
       return {
         scriptId: response.scriptId,
-        message: response.message || '脚本添加成功',
+        message: response.message || t('apiErrors.scriptAdded'),
         data: response.data,
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '添加脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptAddFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -121,7 +93,10 @@ export function useScriptApi() {
   }
 
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
-  const getScripts = async (manageLoading: boolean = true): Promise<ScriptDetail[]> => {
+  const getScripts = async (
+    manageLoading: boolean = true,
+    options: { showError?: boolean } = {}
+  ): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
       error.value = null
@@ -130,18 +105,23 @@ export function useScriptApi() {
       error.value = null
     }
 
+    let sharedRequest: ScriptListRequest | null = null
     try {
       if (!scriptListRequest) {
-        const request = Service.getScriptApiScriptsGetPost({}).finally(() => {
+        const request: ScriptListRequest = {
+          promise: Service.getScriptApiScriptsGetPost({}),
+          errorNotified: false,
+        }
+        request.promise = request.promise.finally(() => {
           if (scriptListRequest === request) scriptListRequest = null
         })
         scriptListRequest = request
       }
-      const response = await scriptListRequest
+      sharedRequest = scriptListRequest
+      const response = await sharedRequest.promise
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取脚本列表失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptListFailed')
         throw new Error(errorMsg)
       }
 
@@ -154,9 +134,11 @@ export function useScriptApi() {
         config: response.data[indexItem.uid],
       }))
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptListFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
+      // 共享同一在途请求的多个消费者只弹一次；显式重试仍有自己的提示。
+      if ((options.showError ?? true) && !sharedRequest?.errorNotified) {
+        if (sharedRequest) sharedRequest.errorNotified = true
         message.error(errorMsg)
       }
       return []
@@ -164,1248 +146,6 @@ export function useScriptApi() {
       if (manageLoading) {
         loading.value = false
       }
-    }
-  }
-
-  // 获取脚本列表及其用户数据（统一管理一次 loading）
-  const getScriptsWithUsers = async (): Promise<ScriptWithUsers[]> => {
-    loading.value = true
-    error.value = null
-
-    try {
-      // 首先获取脚本列表，但不在内部结束 loading
-      const scriptDetails = await getScripts(false)
-
-      // 为每个脚本获取用户数据
-      const scriptsWithUsers = await Promise.all(
-        scriptDetails.map(async script => {
-          try {
-            // 获取该脚本下的用户列表
-            const userResponse = await Service.getUserApiScriptsUserGetPost({
-              scriptId: script.uid,
-            })
-
-            if (userResponse.code === 200) {
-              // 将用户数据转换为User格式
-              const users = userResponse.index
-                .map(userIndex => {
-                  const userData = userResponse.data[userIndex.uid]
-
-                  if (userIndex.type === 'MaaUserConfig' && userData) {
-                    const maaUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: maaUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          maaUserData.Info?.Name !== undefined
-                            ? maaUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Id: maaUserData.Info?.Id !== undefined ? maaUserData.Info.Id : '',
-                        Base:
-                          maaUserData.Info?.Base !== undefined ? maaUserData.Info.Base : 'shared',
-                        Server:
-                          maaUserData.Info?.Server !== undefined
-                            ? maaUserData.Info.Server
-                            : 'Official',
-                        Status:
-                          maaUserData.Info?.Status !== undefined ? maaUserData.Info.Status : true,
-                        RemainedDay:
-                          maaUserData.Info?.RemainedDay !== undefined
-                            ? maaUserData.Info.RemainedDay
-                            : -1,
-                        Password:
-                          maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
-                        Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
-                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
-                      },
-                      Stage: {
-                        StageMode:
-                          maaUserData.Stage?.StageMode !== undefined
-                            ? maaUserData.Stage.StageMode
-                            : 'Fixed',
-                        MedicineNumb:
-                          maaUserData.Stage?.MedicineNumb !== undefined
-                            ? maaUserData.Stage.MedicineNumb
-                            : 0,
-                        SeriesNumb:
-                          maaUserData.Stage?.SeriesNumb !== undefined
-                            ? maaUserData.Stage.SeriesNumb
-                            : '0',
-                        Stage:
-                          maaUserData.Stage?.Stage !== undefined ? maaUserData.Stage.Stage : '-',
-                        Stage_1:
-                          maaUserData.Stage?.Stage_1 !== undefined
-                            ? maaUserData.Stage.Stage_1
-                            : '-',
-                        Stage_2:
-                          maaUserData.Stage?.Stage_2 !== undefined
-                            ? maaUserData.Stage.Stage_2
-                            : '-',
-                        Stage_3:
-                          maaUserData.Stage?.Stage_3 !== undefined
-                            ? maaUserData.Stage.Stage_3
-                            : '-',
-                      },
-                      Task: {
-                        IfStartUp:
-                          maaUserData.Task?.IfStartUp !== undefined
-                            ? maaUserData.Task.IfStartUp
-                            : true,
-                        IfRecruit:
-                          maaUserData.Task?.IfRecruit !== undefined
-                            ? maaUserData.Task.IfRecruit
-                            : true,
-                        IfInfrast:
-                          maaUserData.Task?.IfInfrast !== undefined
-                            ? maaUserData.Task.IfInfrast
-                            : true,
-                        IfFight:
-                          maaUserData.Task?.IfFight !== undefined ? maaUserData.Task.IfFight : true,
-                        IfMall:
-                          maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
-                        IfAward:
-                          maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
-                        IfSwitchTheme:
-                          maaUserData.Task?.IfSwitchTheme !== undefined
-                            ? maaUserData.Task.IfSwitchTheme
-                            : false,
-                        IfDepotMaintain:
-                          maaUserData.Task?.IfDepotMaintain !== undefined
-                            ? maaUserData.Task.IfDepotMaintain
-                            : false,
-                        IfEventDepotMaintain: maaUserData.Task?.IfEventDepotMaintain ?? false,
-                        EventDepotMaintainPlans: maaUserData.Task?.EventDepotMaintainPlans ?? '[]',
-                        IfActivityFirst:
-                          maaUserData.Task?.IfActivityFirst !== undefined
-                            ? maaUserData.Task.IfActivityFirst
-                            : false,
-                        ActivityStageIndex:
-                          maaUserData.Task?.ActivityStageIndex !== undefined
-                            ? maaUserData.Task.ActivityStageIndex
-                            : 1,
-                        DepotMaintainPlans:
-                          maaUserData.Task?.DepotMaintainPlans !== undefined
-                            ? maaUserData.Task.DepotMaintainPlans
-                            : '[]',
-                        Annihilation:
-                          maaUserData.Task?.Annihilation !== undefined
-                            ? maaUserData.Task.Annihilation
-                            : 'Annihilation',
-                        InfrastMode:
-                          maaUserData.Task?.InfrastMode !== undefined
-                            ? maaUserData.Task.InfrastMode
-                            : 'Normal',
-                        InfrastName:
-                          maaUserData.Task?.InfrastName !== undefined
-                            ? maaUserData.Task.InfrastName
-                            : '',
-                      },
-                      Notify: {
-                        Enabled:
-                          maaUserData.Notify?.Enabled !== undefined
-                            ? maaUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          maaUserData.Notify?.IfSendStatistic !== undefined
-                            ? maaUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendSixStar:
-                          maaUserData.Notify?.IfSendSixStar !== undefined
-                            ? maaUserData.Notify.IfSendSixStar
-                            : false,
-                        IfSendMail:
-                          maaUserData.Notify?.IfSendMail !== undefined
-                            ? maaUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          maaUserData.Notify?.ToAddress !== undefined
-                            ? maaUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          maaUserData.Notify?.IfServerChan !== undefined
-                            ? maaUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          maaUserData.Notify?.ServerChanKey !== undefined
-                            ? maaUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        StaminaPipelineVersion: maaUserData.Data?.StaminaPipelineVersion ?? 1,
-                        StaminaPipelineBackup: maaUserData.Data?.StaminaPipelineBackup ?? '{}',
-                        LastProxyDate:
-                          maaUserData.Data?.LastProxyDate !== undefined
-                            ? maaUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          maaUserData.Data?.ProxyTimes !== undefined
-                            ? maaUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
-                  } else if (userIndex.type === 'SrcUserConfig' && userData) {
-                    const srcUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: srcUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          srcUserData.Info?.Name !== undefined
-                            ? srcUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
-                        Password:
-                          srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
-                        Base:
-                          srcUserData.Info?.Base !== undefined ? srcUserData.Info.Base : 'shared',
-                        Server:
-                          srcUserData.Info?.Server !== undefined
-                            ? srcUserData.Info.Server
-                            : 'CN-Official',
-                        Status:
-                          srcUserData.Info?.Status !== undefined ? srcUserData.Info.Status : true,
-                        RemainedDay:
-                          srcUserData.Info?.RemainedDay !== undefined
-                            ? srcUserData.Info.RemainedDay
-                            : -1,
-                        Notes: srcUserData.Info?.Notes !== undefined ? srcUserData.Info.Notes : '',
-                        Tag: srcUserData.Info?.Tag !== undefined ? srcUserData.Info.Tag : null,
-                      },
-                      Stage: {
-                        Channel:
-                          srcUserData.Stage?.Channel !== undefined
-                            ? srcUserData.Stage.Channel
-                            : 'Relic',
-                        Relic:
-                          srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
-                        Materials:
-                          srcUserData.Stage?.Materials !== undefined
-                            ? srcUserData.Stage.Materials
-                            : '-',
-                        Ornament:
-                          srcUserData.Stage?.Ornament !== undefined
-                            ? srcUserData.Stage.Ornament
-                            : '-',
-                        ExtractReservedTrailblazePower:
-                          srcUserData.Stage?.ExtractReservedTrailblazePower !== undefined
-                            ? srcUserData.Stage.ExtractReservedTrailblazePower
-                            : false,
-                        UseFuel:
-                          srcUserData.Stage?.UseFuel !== undefined
-                            ? srcUserData.Stage.UseFuel
-                            : false,
-                        FuelReserve:
-                          srcUserData.Stage?.FuelReserve !== undefined
-                            ? srcUserData.Stage.FuelReserve
-                            : 5,
-                        EchoOfWar:
-                          srcUserData.Stage?.EchoOfWar !== undefined
-                            ? srcUserData.Stage.EchoOfWar
-                            : '-',
-                        SimulatedUniverseWorld:
-                          srcUserData.Stage?.SimulatedUniverseWorld !== undefined
-                            ? srcUserData.Stage.SimulatedUniverseWorld
-                            : '-',
-                      },
-                      Notify: {
-                        Enabled:
-                          srcUserData.Notify?.Enabled !== undefined
-                            ? srcUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          srcUserData.Notify?.IfSendStatistic !== undefined
-                            ? srcUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          srcUserData.Notify?.IfSendMail !== undefined
-                            ? srcUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          srcUserData.Notify?.ToAddress !== undefined
-                            ? srcUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          srcUserData.Notify?.IfServerChan !== undefined
-                            ? srcUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          srcUserData.Notify?.ServerChanKey !== undefined
-                            ? srcUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          srcUserData.Data?.LastProxyDate !== undefined
-                            ? srcUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          srcUserData.Data?.ProxyTimes !== undefined
-                            ? srcUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
-                  } else if (userIndex.type === 'GeneralUserConfig' && userData) {
-                    const generalUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: generalUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          generalUserData.Info?.Name !== undefined
-                            ? generalUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          generalUserData.Info?.Status !== undefined
-                            ? generalUserData.Info.Status
-                            : true,
-                        RemainedDay:
-                          generalUserData.Info?.RemainedDay !== undefined
-                            ? generalUserData.Info.RemainedDay
-                            : -1,
-                        IfUseMasConfig:
-                          generalUserData.Info?.IfUseMasConfig !== undefined
-                            ? generalUserData.Info.IfUseMasConfig
-                            : true,
-                        IfScriptBeforeTask:
-                          generalUserData.Info?.IfScriptBeforeTask !== undefined
-                            ? generalUserData.Info.IfScriptBeforeTask
-                            : false,
-                        ScriptBeforeTask:
-                          generalUserData.Info?.ScriptBeforeTask !== undefined
-                            ? generalUserData.Info.ScriptBeforeTask
-                            : '',
-                        IfScriptAfterTask:
-                          generalUserData.Info?.IfScriptAfterTask !== undefined
-                            ? generalUserData.Info.IfScriptAfterTask
-                            : false,
-                        ScriptAfterTask:
-                          generalUserData.Info?.ScriptAfterTask !== undefined
-                            ? generalUserData.Info.ScriptAfterTask
-                            : '',
-                        Notes:
-                          generalUserData.Info?.Notes !== undefined
-                            ? generalUserData.Info.Notes
-                            : '',
-                        Tag:
-                          generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
-                      },
-                      Notify: {
-                        Enabled:
-                          generalUserData.Notify?.Enabled !== undefined
-                            ? generalUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          generalUserData.Notify?.IfSendStatistic !== undefined
-                            ? generalUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          generalUserData.Notify?.IfSendMail !== undefined
-                            ? generalUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          generalUserData.Notify?.ToAddress !== undefined
-                            ? generalUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          generalUserData.Notify?.IfServerChan !== undefined
-                            ? generalUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          generalUserData.Notify?.ServerChanKey !== undefined
-                            ? generalUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          generalUserData.Data?.LastProxyDate !== undefined
-                            ? generalUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          generalUserData.Data?.ProxyTimes !== undefined
-                            ? generalUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
-                  } else if (userIndex.type === 'MaaEndUserConfig' && userData) {
-                    const maaEndUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: maaEndUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          maaEndUserData.Info?.Name !== undefined
-                            ? maaEndUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Id: maaEndUserData.Info?.Id !== undefined ? maaEndUserData.Info.Id : '',
-                        Password:
-                          maaEndUserData.Info?.Password !== undefined
-                            ? maaEndUserData.Info.Password
-                            : '',
-                        Base:
-                          maaEndUserData.Info?.Base !== undefined
-                            ? maaEndUserData.Info.Base
-                            : 'shared',
-                        SanityMode:
-                          maaEndUserData.Info?.SanityMode !== undefined
-                            ? maaEndUserData.Info.SanityMode
-                            : 'Fixed',
-                        Resource:
-                          maaEndUserData.Info?.Resource !== undefined
-                            ? maaEndUserData.Info.Resource
-                            : '',
-                        Status:
-                          maaEndUserData.Info?.Status !== undefined
-                            ? maaEndUserData.Info.Status
-                            : true,
-                        RemainedDay:
-                          maaEndUserData.Info?.RemainedDay !== undefined
-                            ? maaEndUserData.Info.RemainedDay
-                            : -1,
-                        Notes:
-                          maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
-                        Tag:
-                          maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
-                      },
-                      Task: {
-                        SanityTaskType:
-                          maaEndUserData.Task?.SanityTaskType != null
-                            ? maaEndUserData.Task.SanityTaskType
-                            : 'OperatorProgression',
-                        OperatorProgression:
-                          maaEndUserData.Task?.OperatorProgression != null
-                            ? maaEndUserData.Task.OperatorProgression
-                            : 'OperatorEXP',
-                        WeaponProgression:
-                          maaEndUserData.Task?.WeaponProgression != null
-                            ? maaEndUserData.Task.WeaponProgression
-                            : 'WeaponEXP',
-                        CrisisDrills:
-                          maaEndUserData.Task?.CrisisDrills != null
-                            ? maaEndUserData.Task.CrisisDrills
-                            : 'AdvancedProgression1',
-                        RewardsSetOption:
-                          maaEndUserData.Task?.RewardsSetOption != null
-                            ? maaEndUserData.Task.RewardsSetOption
-                            : 'RewardsSetA',
-                        AutoEssenceSpecifiedLocation:
-                          maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
-                            ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
-                            : '',
-                        AutoEssenceMenu:
-                          maaEndUserData.Task?.AutoEssenceMenu === 'Random' ||
-                          maaEndUserData.Task?.AutoEssenceMenu === 'Target'
-                            ? maaEndUserData.Task.AutoEssenceMenu
-                            : 'Location',
-                        AutoEssenceTargetWeapons: Array.isArray(
-                          maaEndUserData.Task?.AutoEssenceTargetWeapons
-                        )
-                          ? Array.from(
-                              new Set(
-                                maaEndUserData.Task.AutoEssenceTargetWeapons.filter(
-                                  (item): item is string =>
-                                    typeof item === 'string' && item.length > 0
-                                )
-                              )
-                            )
-                          : [],
-                        IfSanity:
-                          maaEndUserData.Task?.IfSanity != null
-                            ? maaEndUserData.Task.IfSanity
-                            : true,
-                        IfAutoUseSpMedication:
-                          maaEndUserData.Task?.IfAutoUseSpMedication != null
-                            ? maaEndUserData.Task.IfAutoUseSpMedication
-                            : true,
-                        IfDijiangRewards:
-                          maaEndUserData.Task?.IfDijiangRewards != null
-                            ? maaEndUserData.Task.IfDijiangRewards
-                            : true,
-                        IfDeliveryJobs:
-                          maaEndUserData.Task?.IfDeliveryJobs != null
-                            ? maaEndUserData.Task.IfDeliveryJobs
-                            : true,
-                        IfSellProduct:
-                          maaEndUserData.Task?.IfSellProduct != null
-                            ? maaEndUserData.Task.IfSellProduct
-                            : true,
-                        IfAutoStockpile:
-                          maaEndUserData.Task?.IfAutoStockpile != null
-                            ? maaEndUserData.Task.IfAutoStockpile
-                            : true,
-                        IfAutoStockStaple:
-                          maaEndUserData.Task?.IfAutoStockStaple != null
-                            ? maaEndUserData.Task.IfAutoStockStaple
-                            : true,
-                        IfVisitFriends:
-                          maaEndUserData.Task?.IfVisitFriends != null
-                            ? maaEndUserData.Task.IfVisitFriends
-                            : true,
-                        IfCreditShoppingN2:
-                          maaEndUserData.Task?.IfCreditShoppingN2 != null
-                            ? maaEndUserData.Task.IfCreditShoppingN2
-                            : true,
-                        IfSeizeDeliveryJobs:
-                          maaEndUserData.Task?.IfSeizeDeliveryJobs != null
-                            ? maaEndUserData.Task.IfSeizeDeliveryJobs
-                            : true,
-                        SeizeDeliveryJobsReward:
-                          maaEndUserData.Task?.SeizeDeliveryJobsReward != null
-                            ? maaEndUserData.Task.SeizeDeliveryJobsReward
-                            : 15.9,
-                        SeizeDeliveryJobsCommissionSource:
-                          maaEndUserData.Task?.SeizeDeliveryJobsCommissionSource != null
-                            ? maaEndUserData.Task.SeizeDeliveryJobsCommissionSource
-                            : 'Unlimited',
-                        IfAutoEcoFarm:
-                          maaEndUserData.Task?.IfAutoEcoFarm != null
-                            ? maaEndUserData.Task.IfAutoEcoFarm
-                            : true,
-                        IfAutoSell:
-                          maaEndUserData.Task?.IfAutoSell != null
-                            ? maaEndUserData.Task.IfAutoSell
-                            : true,
-                        IfEnvironmentMonitoring:
-                          maaEndUserData.Task?.IfEnvironmentMonitoring != null
-                            ? maaEndUserData.Task.IfEnvironmentMonitoring
-                            : true,
-                        IfAutoCollect:
-                          maaEndUserData.Task?.IfAutoCollect != null
-                            ? maaEndUserData.Task.IfAutoCollect
-                            : true,
-                        AutoCollectMode:
-                          maaEndUserData.Task?.AutoCollectMode === 'Concentrated'
-                            ? 'Concentrated'
-                            : 'Distributed',
-                        AutoCollectRoutes: maaEndUserData.Task?.AutoCollectRoutes ?? null,
-                        AutoCollectCommonRoutes:
-                          maaEndUserData.Task?.AutoCollectCommonRoutes ?? null,
-                        IfTrialOfSwordmancy:
-                          maaEndUserData.Task?.IfTrialOfSwordmancy != null
-                            ? maaEndUserData.Task.IfTrialOfSwordmancy
-                            : true,
-                        IfDailyRewards:
-                          maaEndUserData.Task?.IfDailyRewards != null
-                            ? maaEndUserData.Task.IfDailyRewards
-                            : true,
-                        IfResourceRecycleStation:
-                          maaEndUserData.Task?.IfResourceRecycleStation != null
-                            ? maaEndUserData.Task.IfResourceRecycleStation
-                            : true,
-                        IfPullCountCalculator:
-                          maaEndUserData.Task?.IfPullCountCalculator != null
-                            ? maaEndUserData.Task.IfPullCountCalculator
-                            : false,
-                      },
-                      Notify: {
-                        Enabled:
-                          maaEndUserData.Notify?.Enabled !== undefined
-                            ? maaEndUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          maaEndUserData.Notify?.IfSendStatistic !== undefined
-                            ? maaEndUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          maaEndUserData.Notify?.IfSendMail !== undefined
-                            ? maaEndUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          maaEndUserData.Notify?.ToAddress !== undefined
-                            ? maaEndUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          maaEndUserData.Notify?.IfServerChan !== undefined
-                            ? maaEndUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          maaEndUserData.Notify?.ServerChanKey !== undefined
-                            ? maaEndUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          maaEndUserData.Data?.LastProxyDate !== undefined
-                            ? maaEndUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          maaEndUserData.Data?.ProxyTimes !== undefined
-                            ? maaEndUserData.Data.ProxyTimes
-                            : 0,
-                        LastProxyStatus:
-                          maaEndUserData.Data?.LastProxyStatus !== undefined
-                            ? maaEndUserData.Data.LastProxyStatus
-                            : '未知',
-                      },
-                    }
-                  } else if (
-                    (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
-                    userData
-                  ) {
-                    const okwwUserData = userData as unknown as LooseUserConfig
-                    const isOkwwUser = userIndex.type === 'OkwwUserConfig'
-                    return {
-                      id: userIndex.uid,
-                      name: okwwUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          okwwUserData.Info?.Name !== undefined
-                            ? okwwUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          okwwUserData.Info?.Status !== undefined ? okwwUserData.Info.Status : true,
-                        Id: okwwUserData.Info?.Id !== undefined ? okwwUserData.Info.Id : '',
-                        Password:
-                          okwwUserData.Info?.Password !== undefined
-                            ? okwwUserData.Info.Password
-                            : '',
-                        Base:
-                          okwwUserData.Info?.Base !== undefined ? okwwUserData.Info.Base : 'shared',
-                        IfQuickConfig: isOkwwUser
-                          ? okwwUserData.Info?.IfQuickConfig !== undefined
-                            ? okwwUserData.Info.IfQuickConfig
-                            : true
-                          : undefined,
-                        Resource:
-                          okwwUserData.Info?.Resource !== undefined
-                            ? okwwUserData.Info.Resource
-                            : '官服',
-                        RemainedDay:
-                          okwwUserData.Info?.RemainedDay !== undefined
-                            ? okwwUserData.Info.RemainedDay
-                            : -1,
-                        IfScriptBeforeTask:
-                          okwwUserData.Info?.IfScriptBeforeTask !== undefined
-                            ? okwwUserData.Info.IfScriptBeforeTask
-                            : false,
-                        ScriptBeforeTask:
-                          okwwUserData.Info?.ScriptBeforeTask !== undefined
-                            ? okwwUserData.Info.ScriptBeforeTask
-                            : '',
-                        IfScriptAfterTask:
-                          okwwUserData.Info?.IfScriptAfterTask !== undefined
-                            ? okwwUserData.Info.IfScriptAfterTask
-                            : false,
-                        ScriptAfterTask:
-                          okwwUserData.Info?.ScriptAfterTask !== undefined
-                            ? okwwUserData.Info.ScriptAfterTask
-                            : '',
-                        Notes:
-                          okwwUserData.Info?.Notes !== undefined ? okwwUserData.Info.Notes : '',
-                        Tag: okwwUserData.Info?.Tag !== undefined ? okwwUserData.Info.Tag : null,
-                      },
-                      Task: {
-                        TaskIndex:
-                          okwwUserData.Task?.TaskIndex !== undefined
-                            ? okwwUserData.Task.TaskIndex
-                            : userIndex.type === 'OkNteUserConfig'
-                              ? 2
-                              : 1,
-                        ExitOnFinish:
-                          okwwUserData.Task?.ExitOnFinish !== undefined
-                            ? okwwUserData.Task.ExitOnFinish
-                            : true,
-                      },
-                      Notify: {
-                        Enabled:
-                          okwwUserData.Notify?.Enabled !== undefined
-                            ? okwwUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          okwwUserData.Notify?.IfSendStatistic !== undefined
-                            ? okwwUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          okwwUserData.Notify?.IfSendMail !== undefined
-                            ? okwwUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          okwwUserData.Notify?.ToAddress !== undefined
-                            ? okwwUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          okwwUserData.Notify?.IfServerChan !== undefined
-                            ? okwwUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          okwwUserData.Notify?.ServerChanKey !== undefined
-                            ? okwwUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          okwwUserData.Data?.LastProxyDate !== undefined
-                            ? okwwUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          okwwUserData.Data?.ProxyTimes !== undefined
-                            ? okwwUserData.Data.ProxyTimes
-                            : 0,
-                        LastProxyStatus:
-                          okwwUserData.Data?.LastProxyStatus !== undefined
-                            ? okwwUserData.Data.LastProxyStatus
-                            : '未知',
-                      },
-                    }
-                  } else if (maafwUserConfigTypes().has(userIndex.type) && userData) {
-                    // 特调（M9A / MSS ……）的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
-                    const maafwUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
-                        Status: maafwUserData.Info?.Status ?? true,
-                        RemainedDay: maafwUserData.Info?.RemainedDay ?? -1,
-                        Notes: maafwUserData.Info?.Notes ?? '',
-                        Tag: maafwUserData.Info?.Tag ?? null,
-                      },
-                      Task: maafwUserData.Task ?? {},
-                      Notify: maafwUserData.Notify ?? {},
-                      Data: {
-                        LastProxyDate: maafwUserData.Data?.LastProxyDate ?? '2000-01-01',
-                        ProxyTimes: maafwUserData.Data?.ProxyTimes ?? 0,
-                        IfPassCheck: maafwUserData.Data?.IfPassCheck ?? true,
-                      },
-                    } as unknown as User
-                  } else if (userIndex.type === 'HSRUserConfig' && userData) {
-                    const hsrUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: hsrUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          hsrUserData.Info?.Name !== undefined
-                            ? hsrUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          hsrUserData.Info?.Status !== undefined ? hsrUserData.Info.Status : true,
-                        Id: hsrUserData.Info?.Id !== undefined ? hsrUserData.Info.Id : '',
-                        Password:
-                          hsrUserData.Info?.Password !== undefined ? hsrUserData.Info.Password : '',
-                        Server:
-                          hsrUserData.Info?.Server !== undefined
-                            ? hsrUserData.Info.Server
-                            : 'CN-Official',
-                        RemainedDay:
-                          hsrUserData.Info?.RemainedDay !== undefined
-                            ? hsrUserData.Info.RemainedDay
-                            : -1,
-                        Notes: hsrUserData.Info?.Notes !== undefined ? hsrUserData.Info.Notes : '',
-                        Tag: hsrUserData.Info?.Tag !== undefined ? hsrUserData.Info.Tag : null,
-                      },
-                      Stage: {
-                        Channel:
-                          hsrUserData.Stage?.Channel !== undefined
-                            ? hsrUserData.Stage.Channel
-                            : 'CalyxGolden',
-                        ScriptStage:
-                          hsrUserData.Stage?.ScriptStage !== undefined
-                            ? hsrUserData.Stage.ScriptStage
-                            : '{ }',
-                        ScriptEchoOfWar:
-                          hsrUserData.Stage?.ScriptEchoOfWar !== undefined
-                            ? hsrUserData.Stage.ScriptEchoOfWar
-                            : '{ }',
-                      },
-                      TaskSwitch: {
-                        Daily:
-                          hsrUserData.TaskSwitch?.Daily !== undefined
-                            ? hsrUserData.TaskSwitch.Daily
-                            : true,
-                        ReceiveRewards:
-                          hsrUserData.TaskSwitch?.ReceiveRewards !== undefined
-                            ? hsrUserData.TaskSwitch.ReceiveRewards
-                            : true,
-                        DivergentUniverse:
-                          hsrUserData.TaskSwitch?.DivergentUniverse !== undefined
-                            ? hsrUserData.TaskSwitch.DivergentUniverse
-                            : true,
-                        CurrencyWars:
-                          hsrUserData.TaskSwitch?.CurrencyWars !== undefined
-                            ? hsrUserData.TaskSwitch.CurrencyWars
-                            : false,
-                      },
-                      TaskOpt: {
-                        EchoOfWarWeekday:
-                          hsrUserData.TaskOpt?.EchoOfWarWeekday !== undefined
-                            ? hsrUserData.TaskOpt.EchoOfWarWeekday
-                            : 'Monday',
-                      },
-                      Notify: {
-                        Enabled:
-                          hsrUserData.Notify?.Enabled !== undefined
-                            ? hsrUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          hsrUserData.Notify?.IfSendStatistic !== undefined
-                            ? hsrUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          hsrUserData.Notify?.IfSendMail !== undefined
-                            ? hsrUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          hsrUserData.Notify?.ToAddress !== undefined
-                            ? hsrUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          hsrUserData.Notify?.IfServerChan !== undefined
-                            ? hsrUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          hsrUserData.Notify?.ServerChanKey !== undefined
-                            ? hsrUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          hsrUserData.Data?.LastProxyDate !== undefined
-                            ? hsrUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          hsrUserData.Data?.ProxyTimes !== undefined
-                            ? hsrUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
-                  } else if (userIndex.type === 'BetterGIUserConfig' && userData) {
-                    const bettergiUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: bettergiUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          bettergiUserData.Info?.Name !== undefined
-                            ? bettergiUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          bettergiUserData.Info?.Status !== undefined
-                            ? bettergiUserData.Info.Status
-                            : true,
-                        Id: bettergiUserData.Info?.Id !== undefined ? bettergiUserData.Info.Id : '',
-                        Password:
-                          bettergiUserData.Info?.Password !== undefined
-                            ? bettergiUserData.Info.Password
-                            : '',
-                        RemainedDay:
-                          bettergiUserData.Info?.RemainedDay !== undefined
-                            ? bettergiUserData.Info.RemainedDay
-                            : -1,
-                        IfScriptBeforeTask:
-                          bettergiUserData.Info?.IfScriptBeforeTask !== undefined
-                            ? bettergiUserData.Info.IfScriptBeforeTask
-                            : false,
-                        ScriptBeforeTask:
-                          bettergiUserData.Info?.ScriptBeforeTask !== undefined
-                            ? bettergiUserData.Info.ScriptBeforeTask
-                            : '',
-                        IfScriptAfterTask:
-                          bettergiUserData.Info?.IfScriptAfterTask !== undefined
-                            ? bettergiUserData.Info.IfScriptAfterTask
-                            : false,
-                        ScriptAfterTask:
-                          bettergiUserData.Info?.ScriptAfterTask !== undefined
-                            ? bettergiUserData.Info.ScriptAfterTask
-                            : '',
-                        Notes:
-                          bettergiUserData.Info?.Notes !== undefined
-                            ? bettergiUserData.Info.Notes
-                            : '',
-                        Tag:
-                          bettergiUserData.Info?.Tag !== undefined
-                            ? bettergiUserData.Info.Tag
-                            : null,
-                      },
-                      Task: {
-                        OneDragonConfigName:
-                          bettergiUserData.Task?.OneDragonConfigName !== undefined
-                            ? bettergiUserData.Task.OneDragonConfigName
-                            : '',
-                      },
-                      Notify: {
-                        Enabled:
-                          bettergiUserData.Notify?.Enabled !== undefined
-                            ? bettergiUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          bettergiUserData.Notify?.IfSendStatistic !== undefined
-                            ? bettergiUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          bettergiUserData.Notify?.IfSendMail !== undefined
-                            ? bettergiUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          bettergiUserData.Notify?.ToAddress !== undefined
-                            ? bettergiUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          bettergiUserData.Notify?.IfServerChan !== undefined
-                            ? bettergiUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          bettergiUserData.Notify?.ServerChanKey !== undefined
-                            ? bettergiUserData.Notify.ServerChanKey
-                            : '',
-                        CustomWebhooks:
-                          bettergiUserData.Notify?.CustomWebhooks !== undefined
-                            ? bettergiUserData.Notify.CustomWebhooks
-                            : [],
-                      },
-                      Data: {
-                        LastProxyDate:
-                          bettergiUserData.Data?.LastProxyDate !== undefined
-                            ? bettergiUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          bettergiUserData.Data?.ProxyTimes !== undefined
-                            ? bettergiUserData.Data.ProxyTimes
-                            : 0,
-                        LastProxyStatus:
-                          bettergiUserData.Data?.LastProxyStatus !== undefined
-                            ? bettergiUserData.Data.LastProxyStatus
-                            : '未知',
-                      },
-                    }
-                  } else if (userIndex.type === 'WhimboxUserConfig' && userData) {
-                    const whimboxUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: whimboxUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          whimboxUserData.Info?.Name !== undefined
-                            ? whimboxUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          whimboxUserData.Info?.Status !== undefined
-                            ? whimboxUserData.Info.Status
-                            : true,
-                        Base:
-                          whimboxUserData.Info?.Base !== undefined
-                            ? whimboxUserData.Info.Base
-                            : 'shared',
-                        RemainedDay:
-                          whimboxUserData.Info?.RemainedDay !== undefined
-                            ? whimboxUserData.Info.RemainedDay
-                            : -1,
-                        IfScriptBeforeTask:
-                          whimboxUserData.Info?.IfScriptBeforeTask !== undefined
-                            ? whimboxUserData.Info.IfScriptBeforeTask
-                            : false,
-                        ScriptBeforeTask:
-                          whimboxUserData.Info?.ScriptBeforeTask !== undefined
-                            ? whimboxUserData.Info.ScriptBeforeTask
-                            : '',
-                        IfScriptAfterTask:
-                          whimboxUserData.Info?.IfScriptAfterTask !== undefined
-                            ? whimboxUserData.Info.IfScriptAfterTask
-                            : false,
-                        ScriptAfterTask:
-                          whimboxUserData.Info?.ScriptAfterTask !== undefined
-                            ? whimboxUserData.Info.ScriptAfterTask
-                            : '',
-                        Notes:
-                          whimboxUserData.Info?.Notes !== undefined
-                            ? whimboxUserData.Info.Notes
-                            : '',
-                        Tag:
-                          whimboxUserData.Info?.Tag !== undefined ? whimboxUserData.Info.Tag : null,
-                      },
-                      Task: {
-                        Tasks:
-                          whimboxUserData.Task?.Tasks !== undefined
-                            ? whimboxUserData.Task.Tasks
-                            : '{ }',
-                        Options:
-                          whimboxUserData.Task?.Options !== undefined
-                            ? whimboxUserData.Task.Options
-                            : '{ }',
-                      },
-                      Notify: {
-                        Enabled:
-                          whimboxUserData.Notify?.Enabled !== undefined
-                            ? whimboxUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          whimboxUserData.Notify?.IfSendStatistic !== undefined
-                            ? whimboxUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          whimboxUserData.Notify?.IfSendMail !== undefined
-                            ? whimboxUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          whimboxUserData.Notify?.ToAddress !== undefined
-                            ? whimboxUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          whimboxUserData.Notify?.IfServerChan !== undefined
-                            ? whimboxUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          whimboxUserData.Notify?.ServerChanKey !== undefined
-                            ? whimboxUserData.Notify.ServerChanKey
-                            : '',
-                        CustomWebhooks:
-                          whimboxUserData.Notify?.CustomWebhooks !== undefined
-                            ? whimboxUserData.Notify.CustomWebhooks
-                            : [],
-                      },
-                      Data: {
-                        LastProxyDate:
-                          whimboxUserData.Data?.LastProxyDate !== undefined
-                            ? whimboxUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          whimboxUserData.Data?.ProxyTimes !== undefined
-                            ? whimboxUserData.Data.ProxyTimes
-                            : 0,
-                        LastProxyStatus:
-                          whimboxUserData.Data?.LastProxyStatus !== undefined
-                            ? whimboxUserData.Data.LastProxyStatus
-                            : '未知',
-                      },
-                    }
-                  } else if (userIndex.type === 'ZzzOdUserConfig' && userData) {
-                    const zzzodUserData = userData as unknown as ZzzOdUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: zzzodUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          zzzodUserData.Info?.Name !== undefined
-                            ? zzzodUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          zzzodUserData.Info?.Status !== undefined
-                            ? zzzodUserData.Info.Status
-                            : true,
-                        Base:
-                          zzzodUserData.Info?.Base !== undefined
-                            ? zzzodUserData.Info.Base
-                            : 'independent',
-                        RemainedDay:
-                          zzzodUserData.Info?.RemainedDay !== undefined
-                            ? zzzodUserData.Info.RemainedDay
-                            : -1,
-                        IfScriptBeforeTask:
-                          zzzodUserData.Info?.IfScriptBeforeTask !== undefined
-                            ? zzzodUserData.Info.IfScriptBeforeTask
-                            : false,
-                        ScriptBeforeTask:
-                          zzzodUserData.Info?.ScriptBeforeTask !== undefined
-                            ? zzzodUserData.Info.ScriptBeforeTask
-                            : '',
-                        IfScriptAfterTask:
-                          zzzodUserData.Info?.IfScriptAfterTask !== undefined
-                            ? zzzodUserData.Info.IfScriptAfterTask
-                            : false,
-                        ScriptAfterTask:
-                          zzzodUserData.Info?.ScriptAfterTask !== undefined
-                            ? zzzodUserData.Info.ScriptAfterTask
-                            : '',
-                        Notes:
-                          zzzodUserData.Info?.Notes !== undefined ? zzzodUserData.Info.Notes : '',
-                        Tag: zzzodUserData.Info?.Tag !== undefined ? zzzodUserData.Info.Tag : null,
-                      },
-                      Game: {
-                        GameRegion:
-                          zzzodUserData.Game?.GameRegion !== undefined
-                            ? zzzodUserData.Game.GameRegion
-                            : 'cn',
-                        GamePath:
-                          zzzodUserData.Game?.GamePath !== undefined
-                            ? zzzodUserData.Game.GamePath
-                            : '',
-                        GameLanguage:
-                          zzzodUserData.Game?.GameLanguage !== undefined
-                            ? zzzodUserData.Game.GameLanguage
-                            : 'cn',
-                        Account:
-                          zzzodUserData.Game?.Account !== undefined
-                            ? zzzodUserData.Game.Account
-                            : '',
-                        Password:
-                          zzzodUserData.Game?.Password !== undefined
-                            ? zzzodUserData.Game.Password
-                            : '',
-                        BilibiliAccountName:
-                          zzzodUserData.Game?.BilibiliAccountName !== undefined
-                            ? zzzodUserData.Game.BilibiliAccountName
-                            : '',
-                      },
-                      OneDragon: {
-                        AppList:
-                          zzzodUserData.OneDragon?.AppList !== undefined
-                            ? zzzodUserData.OneDragon.AppList
-                            : '[]',
-                      },
-                      Notify: {
-                        Enabled:
-                          zzzodUserData.Notify?.Enabled !== undefined
-                            ? zzzodUserData.Notify.Enabled
-                            : false,
-                        PushLogMode:
-                          zzzodUserData.Notify?.PushLogMode !== undefined
-                            ? zzzodUserData.Notify.PushLogMode
-                            : '汇总',
-                        IfSendStatistic:
-                          zzzodUserData.Notify?.IfSendStatistic !== undefined
-                            ? zzzodUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          zzzodUserData.Notify?.IfSendMail !== undefined
-                            ? zzzodUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          zzzodUserData.Notify?.ToAddress !== undefined
-                            ? zzzodUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          zzzodUserData.Notify?.IfServerChan !== undefined
-                            ? zzzodUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          zzzodUserData.Notify?.ServerChanKey !== undefined
-                            ? zzzodUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          zzzodUserData.Data?.LastProxyDate !== undefined
-                            ? zzzodUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        ProxyTimes:
-                          zzzodUserData.Data?.ProxyTimes !== undefined
-                            ? zzzodUserData.Data.ProxyTimes
-                            : 0,
-                        LastProxyStatus:
-                          zzzodUserData.Data?.LastProxyStatus !== undefined
-                            ? zzzodUserData.Data.LastProxyStatus
-                            : '未知',
-                      },
-                    }
-                  } else if (userIndex.type === 'BAAHUserConfig' && userData) {
-                    const baahUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: baahUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          baahUserData.Info?.Name !== undefined
-                            ? baahUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          baahUserData.Info?.Status !== undefined ? baahUserData.Info.Status : true,
-                        RemainedDay:
-                          baahUserData.Info?.RemainedDay !== undefined
-                            ? baahUserData.Info.RemainedDay
-                            : -1,
-                        ConfigName:
-                          baahUserData.Info?.ConfigName !== undefined
-                            ? baahUserData.Info.ConfigName
-                            : '',
-                        ActivityLineType:
-                          baahUserData.Info?.ActivityLineType != null
-                            ? baahUserData.Info.ActivityLineType
-                            : 'CN',
-                        Notes:
-                          baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
-                        Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
-                      },
-                      Notify: {
-                        Enabled:
-                          baahUserData.Notify?.Enabled !== undefined
-                            ? baahUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          baahUserData.Notify?.IfSendStatistic !== undefined
-                            ? baahUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          baahUserData.Notify?.IfSendMail !== undefined
-                            ? baahUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          baahUserData.Notify?.ToAddress !== undefined
-                            ? baahUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          baahUserData.Notify?.IfServerChan !== undefined
-                            ? baahUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          baahUserData.Notify?.ServerChanKey !== undefined
-                            ? baahUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          baahUserData.Data?.LastProxyDate !== undefined
-                            ? baahUserData.Data.LastProxyDate
-                            : '',
-                        ProxyTimes:
-                          baahUserData.Data?.ProxyTimes !== undefined
-                            ? baahUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
-                  }
-
-                  return null
-                })
-                .filter((user): user is User => user !== null)
-                .map(user => {
-                  const info = userResponse.data[user.id]?.Info
-                  return {
-                    ...user,
-                    Info: {
-                      ...user.Info,
-                      Base: info?.Base ?? user.Info.Base,
-                      IfQuickConfig:
-                        info && 'IfQuickConfig' in info && typeof info.IfQuickConfig === 'boolean'
-                          ? info.IfQuickConfig
-                          : typeof user.Info.IfQuickConfig === 'boolean'
-                            ? user.Info.IfQuickConfig
-                            : undefined,
-                    },
-                  }
-                })
-
-              return {
-                ...script,
-                users,
-              }
-            } else {
-              // 如果获取用户失败，返回空用户列表的脚本
-              return {
-                ...script,
-                users: [],
-              }
-            }
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err)
-            logger.warn(`获取脚本 ${script.uid} 的用户数据失败: ${errorMsg}`)
-            return {
-              ...script,
-              users: [],
-            }
-          }
-        })
-      )
-
-      return scriptsWithUsers
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
-      error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
-      return []
-    } finally {
-      loading.value = false
     }
   }
 
@@ -1418,14 +158,13 @@ export function useScriptApi() {
       const response = await Service.getScriptApiScriptsGetPost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '获取脚本详情失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptLoadFailed')
         throw new Error(errorMsg)
       }
 
       // 检查是否有数据返回
       if (response.index.length === 0) {
-        throw new Error('脚本不存在')
+        throw new Error(t('edit.scriptDoesNotExist'))
       }
 
       const item = response.index[0]
@@ -1440,11 +179,9 @@ export function useScriptApi() {
         config,
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取脚本详情失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptLoadFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false
@@ -1461,11 +198,11 @@ export function useScriptApi() {
         engine
       )
       if (payload?.code !== 200) {
-        throw new Error(payload?.message || '接口返回异常')
+        throw new Error(payload?.message || t('apiErrors.invalidResponse'))
       }
       return payload.data ?? null
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取 HSR 体力副本选项失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.hsrStagesFailed'))
       error.value = errorMsg
       logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
       return null
@@ -1477,11 +214,13 @@ export function useScriptApi() {
     path: string,
     scriptId?: string
   ): Promise<MaaFWInterfacePreviewOut | null> => {
+    error.value = null
     try {
       // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
       return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
+      error.value = errorMsg
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)
       return null
     }
@@ -1492,6 +231,7 @@ export function useScriptApi() {
     scriptId?: string,
     force = false
   ): Promise<MaaFWAgentEnvPrepareOut | null> => {
+    error.value = null
     try {
       return await MaaFwService.prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost({
         path,
@@ -1499,7 +239,8 @@ export function useScriptApi() {
         force,
       })
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err)
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwEnvFailed'))
+      error.value = errorMsg
       logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
       return null
     }
@@ -1508,13 +249,14 @@ export function useScriptApi() {
   const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
     try {
       const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
-      if (response?.code !== 200) throw new Error(response?.message || '接口返回异常')
+      if (response?.code !== 200)
+        throw new Error(response?.message || t('apiErrors.invalidResponse'))
       return response
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取 MaaEnd 动态选项失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maaEndOptionsFailed'))
       error.value = errorMsg
       logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error(t('misc.maaendIncompleteUninstallIt'))
+      message.error(errorMsg)
       return null
     }
   }
@@ -1528,8 +270,7 @@ export function useScriptApi() {
       const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '删除脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -1540,11 +281,9 @@ export function useScriptApi() {
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '删除脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptDeleteFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -1567,9 +306,11 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      // 创建数据副本并移除 SubConfigsInfo 字段
-      const dataToSend = { ...data }
-      delete dataToSend.SubConfigsInfo
+      // 脚本保存只提交字段，嵌套用户和通知配置由各自接口维护。
+      const dataToSend: Record<string, unknown> = { ...data }
+      delete dataToSend.UserData
+      delete dataToSend.Notify_CustomWebhooks
+      delete dataToSend.ui
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,
@@ -1577,19 +318,16 @@ export function useScriptApi() {
       })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '更新脚本失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptSaveFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptSaveFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       loading.value = false
@@ -1609,19 +347,16 @@ export function useScriptApi() {
       const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '脚本排序失败'
-        message.error(errorMsg)
+        const errorMsg = response.message || t('apiErrors.scriptOrderFailed')
         throw new Error(errorMsg)
       }
 
       scriptListRequest = null
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '脚本排序失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.scriptOrderFailed'))
       error.value = errorMsg
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return false
     } finally {
       // loading.value = false
@@ -1641,7 +376,6 @@ export function useScriptApi() {
     error,
     addScript,
     getScripts,
-    getScriptsWithUsers,
     getScript,
     getHsrStageOptions,
     getMaaEndOptions,

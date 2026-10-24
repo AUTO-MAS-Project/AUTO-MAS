@@ -61,7 +61,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.crashed = False
-        self.root_path = Path(str(self.script_config.get("Info", "RootPath") or ""))
+        self.root_path = Path(str(self.script_config.Info.RootPath or ""))
         self.exe_path = self.root_path / APP_EXE_NAME
         self.target_process = ProcessInfo(
             name=APP_EXE_NAME, exe=str(self.exe_path), cmdline=None
@@ -77,8 +77,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 仅当 MAS 自身未提权时才走 runas 触发 UAC；已提权时子进程自动继承
         await self.process_manager.open_process(
             self.exe_path,
-            elevated=bool(self.script_config.get("Run", "UseAdmin"))
-            and not IS_ELEVATED,
+            elevated=bool(self.script_config.Run.UseAdmin) and (not IS_ELEVATED),
             target_process=self.target_process,
         )
         await self.wait_event.wait()

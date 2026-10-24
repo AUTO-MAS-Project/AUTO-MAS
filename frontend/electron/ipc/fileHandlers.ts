@@ -3,6 +3,7 @@
  */
 
 import { ipcMain } from 'electron'
+import { createReadStream } from 'fs'
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { getLogger } from '../services/logger'
@@ -81,8 +82,18 @@ export function registerFileHandlers() {
         return { base64: '', size: stats.size }
       }
 
-      const buffer = await fsPromises.readFile(resolvedPath)
-      return { base64: buffer.toString('base64'), size: stats.size }
+      const chunks: Buffer[] = []
+      let size = 0
+      for await (const chunk of createReadStream(resolvedPath, { highWaterMark: 64 * 1024 })) {
+        size += chunk.length
+        if (maxBytes !== undefined && size > maxBytes) {
+          return { base64: '', size }
+        }
+        chunks.push(chunk)
+      }
+
+      const buffer = Buffer.concat(chunks)
+      return { base64: buffer.toString('base64'), size }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`读取文件（base64）失败 ${filePath}: ${errorMsg}`)

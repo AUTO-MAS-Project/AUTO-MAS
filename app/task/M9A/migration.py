@@ -18,7 +18,7 @@
 
 """旧版 M9A 专项配置 → MaaFW 形状，一次性、在 ``ScriptConfig.connect()`` 之前改原始 JSON。
 
-必须在加载前做：``ConfigBase.load`` 只认类里声明的条目，旧键（``Run.IfPsychubeDailyOnce``、
+必须在加载前做：``ConfigEntry.load`` 只认类里声明的条目，旧键（``Run.IfPsychubeDailyOnce``、
 ``Task.Queue``、``Data.LastPsychubeDate``…）在按新类加载的那一刻就会被丢弃并写回盘，
 之后再想迁就没有原料了。
 
@@ -214,7 +214,7 @@ def migrate_legacy_m9a_scripts(
     if not path.is_file():
         return report
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8").removeprefix("\ufeff")
         data = json.loads(text) if text.strip() else {}
     except (OSError, ValueError) as exc:
         logger.warning(f"M9A 迁移跳过：ScriptConfig.json 读取失败：{exc}")
@@ -372,8 +372,10 @@ def _script_label(payload: dict[str, Any], uid: str) -> str:
 
 
 def _user_data_of(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """脚本数据块里的用户表：``ConfigBase.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
+    """脚本数据块里的用户表：``ConfigEntry.toDict`` 把子配置放在 ``SubConfigsInfo`` 下。"""
 
+    if isinstance(payload.get("UserData"), dict):
+        return payload["UserData"]
     sub = payload.get("SubConfigsInfo")
     user_data = sub.get("UserData") if isinstance(sub, dict) else None
     return user_data if isinstance(user_data, dict) else None
@@ -381,13 +383,13 @@ def _user_data_of(payload: dict[str, Any]) -> dict[str, Any] | None:
 
 def _iter_users(payload: dict[str, Any]) -> list[dict[str, Any]]:
     user_data = _user_data_of(payload)
-    if user_data is None or not isinstance(user_data.get("instances"), list):
+    if user_data is None:
         return []
     users: list[dict[str, Any]] = []
-    for instance in user_data.get("instances") or []:
+    for instance in user_data.get("order", user_data.get("instances")) or []:
         if not isinstance(instance, dict):
             continue
-        user = user_data.get(str(instance.get("uid") or ""))
+        user = user_data.get("data", user_data).get(str(instance.get("uid") or ""))
         if isinstance(user, dict):
             users.append(user)
     return users
@@ -1009,7 +1011,9 @@ def _instance_file_items(
         if not candidate.is_file():
             continue
         try:
-            content = json.loads(candidate.read_text(encoding="utf-8"))
+            content = json.loads(
+                candidate.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         task_items = content.get("TaskItems") if isinstance(content, dict) else None
@@ -1152,7 +1156,9 @@ def _seed_update_source(source_path: str, global_mirror_cdk: str) -> tuple[str, 
     if source_path:
         config_path = Path(source_path) / "config" / "config.json"
         try:
-            content = json.loads(config_path.read_text(encoding="utf-8"))
+            content = json.loads(
+                config_path.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             content = None
         if isinstance(content, dict):
@@ -1339,7 +1345,7 @@ def repair_m9a_migration_losses(
 
     tmp = path.with_name(f"{path.name}.m9a-repairing")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8").removeprefix("\ufeff"))
         legacy_scripts = {
             uid: payload
             for uid, payload in _collect_legacy_scripts(backups).items()
@@ -1388,7 +1394,9 @@ def _collect_legacy_scripts(backups: list[Path]) -> dict[str, dict[str, Any]]:
     legacy: dict[str, dict[str, Any]] = {}
     for backup in backups:
         try:
-            content = json.loads(backup.read_text(encoding="utf-8"))
+            content = json.loads(
+                backup.read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except (OSError, ValueError):
             continue
         if not isinstance(content, dict):
@@ -1691,9 +1699,11 @@ def normalize_m9a_managed_entries(
     tmp = path.with_name(f"{path.name}.m9a-normalizing")
     try:
         raw = path.read_bytes()
-        if b'"M9AConfig"' not in raw:
+        if b"M9AConfig" not in raw:
             return report  # 没有 M9A 脚本就不读 interface
-        data = json.loads(raw.decode("utf-8"))
+        from app.utils.io import read_dict_file, write_file
+
+        data = read_dict_file(path)
         if not isinstance(data, dict) or not normalize_script_config_payload(
             data, report
         ):
@@ -1703,7 +1713,7 @@ def normalize_m9a_managed_entries(
         shutil.copyfile(path, backup)
         report.backup_path = backup
         _prune_managed_backups(path)
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
+        write_file(tmp, data, format=path.suffix)
         os.replace(tmp, path)
     except Exception as exc:  # noqa: BLE001 - 整理失败不该挡住启动，运行期照样按规则跑
         logger.opt(exception=True).warning(f"M9A 受管任务整理失败，下次启动再试：{exc}")
@@ -1753,11 +1763,11 @@ def normalize_script_config_payload(
     """对整份 ``ScriptConfig.json`` 字典就地整理全部 M9A 用户；返回有没有改动。"""
 
     changed = False
-    for instance in data.get("instances") or []:
+    for instance in data.get("order", data.get("instances")) or []:
         if not isinstance(instance, dict) or instance.get("type") != "M9AConfig":
             continue
         uid = str(instance.get("uid") or "")
-        payload = data.get(uid)
+        payload = data.get("data", data).get(uid)
         user_data = _user_data_of(payload) if isinstance(payload, dict) else None
         if not isinstance(payload, dict) or user_data is None:
             continue
@@ -1778,10 +1788,10 @@ def normalize_script_config_payload(
         official = _run_resource(model, payload) == OFFICIAL_RESOURCE_NAME
         for user_uid in [
             str(item.get("uid") or "")
-            for item in user_data.get("instances") or []
+            for item in user_data.get("order", user_data.get("instances")) or []
             if isinstance(item, dict)
         ]:
-            user = user_data.get(user_uid)
+            user = user_data.get("data", user_data).get(user_uid)
             if isinstance(user, dict) and _normalize_user(
                 user,
                 index,

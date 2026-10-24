@@ -42,7 +42,7 @@ def poor_yaml_read(file: Path) -> dict:
     Returns:
         dict:
     """
-    content = decode_bytes(file.read_bytes())
+    content = decode_bytes(file.read_bytes()).removeprefix("\ufeff")
     data = {}
     regex = re.compile(r"^(.*?):(.*?)$")
     for line in content.splitlines():

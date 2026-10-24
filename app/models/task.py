@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Literal, Optional
 
+from app.models.notification_ports import LocalNotifier, TaskNotifications
+from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils.logger import get_logger
 
@@ -161,8 +163,12 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
-    game_sign_summary_consumed: bool = field(default=False, repr=False)
+    notification_state: TaskNotificationState = field(
+        default_factory=TaskNotificationState, init=False, repr=False
+    )
+    _notifications: TaskNotifications | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -174,25 +180,19 @@ class TaskItem(ABC):
     )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
-    @property
-    def community_results(self) -> list[dict[str, object]]:
-        """读取社区签到结果，底层继续使用历史任务字段。"""
-
-        return self.game_sign_results
-
-    @community_results.setter
-    def community_results(self, value: list[dict[str, object]]) -> None:
-        self.game_sign_results = value
+    def bind_notifications(self, notifications: TaskNotifications) -> None:
+        """由任务创建者绑定能力，不读取全局通知实例。"""
+        self._notifications = notifications
 
     @property
-    def community_summary_consumed(self) -> bool:
-        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+    def notifications(self) -> TaskNotifications:
+        if self._notifications is None:
+            raise RuntimeError("任务的通知依赖尚未装配")
+        return self._notifications
 
-        return self.game_sign_summary_consumed
-
-    @community_summary_consumed.setter
-    def community_summary_consumed(self, value: bool) -> None:
-        self.game_sign_summary_consumed = value
+    @property
+    def local_notifier(self) -> LocalNotifier:
+        return self.notifications
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -332,6 +332,7 @@ class TaskExecuteBase(ABC):
     task: asyncio.Task | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
+    config_locks: dict = field(default_factory=dict)
 
     # 日志停滞判定的内部状态，按阶段分桶：{key: (上次推进的 latest_time, 单调读数)}
     # 不加类型注解，避免被 @dataclass 收作字段。

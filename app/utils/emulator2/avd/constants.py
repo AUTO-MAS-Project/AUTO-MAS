@@ -56,8 +56,6 @@ AVD_NAME_PREFIX = "mas_"
 SDK_DIR = "sdk"
 AVD_DIR = "avd"
 COMPONENTS_DIR = "components"
-#: MAA 截图用的假 MuMu 目录（``<根>\mumu-shim\shell\sdk\external_renderer_ipc.dll``，见 ``maa_shim.py``）。
-MUMU_SHIM_DIR = "mumu-shim"
 METADATA_FILE = "mas-avd.json"
 #: 模拟器日志、客体 logcat。
 LOGS_DIR = "logs"

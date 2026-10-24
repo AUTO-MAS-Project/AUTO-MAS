@@ -110,13 +110,13 @@ def collect_mas_user_info(user_config) -> dict:
     info: dict = {}
     for field in _MAS_INFO_FIELDS:
         try:
-            value = user_config.get("Info", field)
+            value = getattr(user_config.Info, field)
         except Exception:
             value = None
         if value is not None:
             info[field] = value
     try:
-        value = user_config.get("Notify", "PushLogMode")
+        value = user_config.Notify.PushLogMode
     except Exception:
         value = None
     if value is not None:
@@ -555,7 +555,7 @@ def materialize_user_fields(slot_dir: Path, user_config) -> None:
 
     write_game_account(slot_dir, user_field_patch(user_config))
     write_game(slot_dir, launch_args_patch(user_config))
-    materialize_user_applist(slot_dir, user_config.get("OneDragon", "AppList"))
+    materialize_user_applist(slot_dir, user_config.OneDragon.AppList)
 
 
 def archive_mas_config_backup(

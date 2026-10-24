@@ -31,7 +31,7 @@
   原始态）、退出时归档 ``mas``（编辑会话包络的 MAS 侧终态）。
 
 ``mas`` 池的内容 = ConfigFile 整目录 + **页面核心字段侧车**（Info / Task
-两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.json、
+两段，覆盖 MAS 编辑页全部可配置核心内容）：这些字段运行时注入 gui.new.json、
   不落盘在 ConfigFile——侧车让「MAS 用户配置备份」与页面认知一致，恢复时
   随文件一起回滚并按段分组回填表单（对齐 ZzzOd / ok-ww 字段回填模式）。
   池恒按用户分桶（``mas/{user_id}``），多用户共享同一份 Default 目录时各自
@@ -44,6 +44,7 @@
 import json
 from pathlib import Path
 
+from app.config import ConfigEntry
 from app.utils import get_logger
 from app.utils.config_archive import (
     META_FILE_NAMES,
@@ -58,7 +59,9 @@ from app.utils.config_archive import (
     restore_dir,
     write_backup_base,
 )
-from app.utils.constants import BASE_SOURCE_LABELS, MAA_TASKS, MAA_TASKS_ZH
+from app.utils.constants import BASE_SOURCE_LABELS
+
+from ..constants import MAA_TASKS, MAA_TASKS_ZH
 
 logger = get_logger("MAA 配置备份")
 
@@ -118,7 +121,7 @@ _OVERLAY_INFO_KEYS = (
     "Base",
     "IfQuickConfig",
 )
-"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.json）"""
+"""MAS 页面账号身份与配置文件来源字段（UserData.Info，运行时注入 gui.new.json）"""
 
 _OVERLAY_STAGE_KEYS = (
     "StageMode",
@@ -129,7 +132,7 @@ _OVERLAY_STAGE_KEYS = (
     "Stage_2",
     "Stage_3",
 )
-"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.json）"""
+"""MAS 页面关卡与理智参数（UserData.Stage，运行时注入 gui.new.json）"""
 
 _OVERLAY_TASK_KEYS = (
     "IfStartUp",
@@ -157,7 +160,7 @@ _OVERLAY_TASK_KEYS = (
     "InfrastMode",
     "InfrastName",
 )
-"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.json）"""
+"""MAS 页面任务开关与参数（UserData.Task，运行时注入 gui.new.json）"""
 
 _OVERLAY_KEY_GROUPS = {
     "Info": _OVERLAY_INFO_KEYS,
@@ -276,17 +279,26 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 """枚举字段取值中文词表（对齐编辑页选项；未知取值显示原文）"""
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 页面核心字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config: ConfigEntry) -> dict:
+    """按配置分组的 JSON 导出规则读取 MAS 页面核心字段，UUID 引用导出为字符串。
 
     覆盖 Info / Stage / Task 三段的全部 MAS 可配置核心内容；值为 ``None``（配置项
     不存在）的键不纳入侧车。
     """
 
+    # 与属性读取一致，事务内从当前任务的生效工作区导出。
+    config = config.effective
     values: dict = {}
     for group, keys in _OVERLAY_KEY_GROUPS.items():
+        group_config = getattr(config, group)
+        fields = group_config.model_dump(
+            mode="json", include=set(keys), context={"audience": "export"}
+        )
+        if group == "Task":
+            # export 排除虚拟字段，备份预览仍需保留基建方案名称。
+            fields["InfrastName"] = group_config.InfrastName
         for key in keys:
-            if (value := config.get(group, key)) is not None:
+            if (value := fields[key]) is not None:
                 values[key] = value
     return values
 
@@ -743,7 +755,9 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
         if "/" in rel or rel not in _MAA_CONFIG_FILES:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):

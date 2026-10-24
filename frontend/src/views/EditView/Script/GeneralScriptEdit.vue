@@ -1,35 +1,9 @@
 <template>
-  <div class="script-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <div class="breadcrumb-current">
-            <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
-            {{ t('edit.editScript') }}
-          </div>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <DocLink :url="MAS_DOC_URLS.scriptTypes.General" />
-      <a-button size="large" type="primary" class="upload-button" @click="showUploadModal">
-        <template #icon>
-          <CloudUploadOutlined />
-        </template>
-        {{ t('edit.shareThisConfigurationConfig') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <ScriptEditHeader script-type="General" :title="t('edit.editScript')" @cancel="handleCancel">
+    <template #after-doc-actions>
+      <GeneralTemplateUpload :script-id="scriptId" :script-name="formData.name" />
+    </template>
+  </ScriptEditHeader>
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
@@ -862,131 +836,17 @@
       </a-form>
     </a-card>
   </ConfigLockPanel>
-
-  <!-- 上传脚本弹窗 -->
-  <a-modal
-    v-model:open="uploadModalVisible"
-    :title="t('edit.uploadThisScriptConfiguration')"
-    :confirm-loading="uploadLoading"
-    width="600px"
-    :mask-closable="false"
-    @ok="handleUpload"
-    @cancel="handleUploadCancel"
-  >
-    <a-form
-      ref="uploadFormRef"
-      :model="uploadForm"
-      :rules="uploadRules"
-      layout="vertical"
-      class="upload-form"
-    >
-      <a-form-item name="config_name" :label="t('edit.configurationName')">
-        <a-input
-          v-model:value="uploadForm.config_name"
-          :placeholder="t('edit.giveYourScriptConfiguration')"
-          size="large"
-          :maxlength="50"
-          show-count
-          class="modern-input"
-        />
-      </a-form-item>
-
-      <a-form-item name="description" :label="t('edit.description')">
-        <a-textarea
-          v-model:value="uploadForm.description"
-          :placeholder="t('edit.brieflyDescribeWhatThis')"
-          size="large"
-          :rows="4"
-          :maxlength="200"
-          show-count
-          class="modern-textarea"
-        />
-      </a-form-item>
-
-      <a-alert
-        v-if="shareAuth.status === 'authorized'"
-        type="success"
-        show-icon
-        class="share-auth-alert"
-        :message="t('edit.share.signedInAs', { name: shareAuth.displayName || shareAuth.username })"
-      >
-        <template #description>
-          <div class="share-auth-idle">
-            <p>{{ t('edit.share.signedInDesc') }}</p>
-            <a-button size="small" :loading="shareAuthLoading" @click="handleStartShareAuth">{{
-              t('edit.share.switchAccount')
-            }}</a-button>
-          </div>
-        </template>
-      </a-alert>
-      <a-alert
-        v-else
-        type="warning"
-        show-icon
-        class="share-auth-alert"
-        :message="t('edit.share.loginRequired')"
-      >
-        <template #description>
-          <div v-if="shareAuth.status === 'pending'" class="share-auth-pending">
-            <p>{{ t('edit.share.pendingDesc') }}</p>
-            <p class="share-user-code">{{ shareAuth.userCode }}</p>
-            <a-space>
-              <a-button size="small" @click="openShareVerificationPage">{{
-                t('edit.share.reopenBrowser')
-              }}</a-button>
-              <a-button size="small" @click="handleCancelShareAuth">{{
-                t('edit.share.cancelAuth')
-              }}</a-button>
-            </a-space>
-          </div>
-          <div v-else class="share-auth-idle">
-            <p>{{ shareAuth.message || t('edit.share.loginRequiredDesc') }}</p>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="shareAuthLoading"
-              @click="handleStartShareAuth"
-              >{{ t('edit.share.startLogin') }}</a-button
-            >
-          </div>
-        </template>
-      </a-alert>
-
-      <a-alert
-        v-if="shareRisks.length"
-        type="warning"
-        show-icon
-        class="share-risk-alert"
-        :message="t('edit.share.riskTitle')"
-      >
-        <template #description>
-          <ul class="share-risk-list">
-            <li v-for="risk in shareRisks" :key="risk.field">
-              <code>{{ risk.field }}</code> — {{ risk.reason }}
-            </li>
-          </ul>
-          <a-checkbox v-model:checked="riskAcknowledged">{{
-            t('edit.share.riskConfirm')
-          }}</a-checkbox>
-        </template>
-      </a-alert>
-
-      <a-alert :message="t('edit.aboutSharing')" type="info">
-        <template #description>
-          <p>{{ t('edit.share.privacyNotice') }}</p>
-        </template>
-      </a-alert>
-    </a-form>
-  </a-modal>
 </template>
 
 <script setup lang="ts">
+import GeneralTemplateUpload from './components/GeneralTemplateUpload.vue'
+import { createGeneralScriptDraft } from './generalScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
-import DocLink from '@/components/DocLink.vue'
-import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
+import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
+import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import { openExternalUrl } from '@/utils/openExternal'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -994,16 +854,8 @@ import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import { Service, type ComboBoxItem } from '@/api'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import {
-  IDLE_SHARE_AUTH,
-  useShareApi,
-  type ShareAuthState,
-  type ShareRiskItem,
-} from '@/composables/useShareApi'
-import {
-  ArrowLeftOutlined,
-  CloudUploadOutlined,
   DeleteOutlined,
   FileOutlined,
   FolderOpenOutlined,
@@ -1018,22 +870,11 @@ const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
 
-const {
-  error: shareError,
-  getShareAuthStatus,
-  startShareAuth,
-  pollShareAuth,
-  cancelShareAuth,
-  inspectShare,
-  uploadShare,
-} = useShareApi()
-
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 
 const formRef = ref<FormInstance>()
-const uploadFormRef = ref<FormInstance>()
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，同一字段的连续改动只保留最后一次，不再被布尔互斥丢掉
 const { enqueue } = useSaveQueue()
@@ -1193,7 +1034,7 @@ const pathUtils = {
 const appDataPath = ref('')
 
 // 路径验证函数
-const validatePath = (rootPath: string, targetPath: string, pathName: string): boolean => {
+const validatePath = (rootPath: string | null, targetPath: string, pathName: string): boolean => {
   if (!targetPath || targetPath === '.') return true
   if (!rootPath || rootPath === '.') {
     message.warning(t('edit.setScriptRootDirectory', { p0: pathName }))
@@ -1372,54 +1213,7 @@ const formData = reactive({
 })
 
 // General配置
-const generalConfig = reactive<GeneralScriptConfig>({
-  Game: {
-    Arguments: '',
-    Enabled: false,
-    IfForceClose: false,
-    Path: '.',
-    Type: 'Emulator',
-    WaitTime: 0,
-    EmulatorId: '',
-    EmulatorIndex: '',
-    URL: '',
-    ProcessName: '',
-  },
-  Info: {
-    Name: '',
-    RootPath: '.',
-  },
-  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimeLimit: 10, RunTimesLimit: 3 },
-  Script: {
-    Arguments: '',
-    ConfigPath: '.',
-    ConfigPathMode: 'File',
-    ErrorLog: '',
-    IfTrackProcess: false,
-    TrackProcessName: '',
-    TrackProcessExe: '',
-    TrackProcessCmdline: '',
-    LogPath: '.',
-    LogPathFormat: '%Y-%m-%d',
-    LogTimeEnd: 1,
-    LogTimeStart: 1,
-    LogTimeFormat: '%Y-%m-%d %H:%M:%S',
-    LogHookEnabled: false,
-    LogHookRules: '',
-    ScriptPath: '.',
-    SuccessLog: '',
-    SuccessLogMode: 'Split',
-    ErrorLogMode: 'Split',
-    PushLogEnabled: false,
-    PushLogPatterns: '',
-    UpdateConfigMode: 'Never',
-  },
-  SubConfigsInfo: {
-    UserData: {
-      instances: [],
-    },
-  },
-})
+const generalConfig = reactive(createGeneralScriptDraft())
 
 // ==================== 表单校验规则 ====================
 const rules = {
@@ -1496,8 +1290,8 @@ const errorLogRegexError = computed(() => {
 })
 
 // 模拟器相关状态
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
+const { emulatorLoading, emulatorOptions, loadEmulatorOptions, clearEmulatorOptions } =
+  useEmulatorOptions()
 
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
 // 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
@@ -1691,7 +1485,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        message.error(t('edit.scriptDoesNotExist'))
+        if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -1714,7 +1508,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -1729,24 +1523,6 @@ const handleCancel = () => {
 }
 
 // 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    if (response && response.code === 200) {
-      emulatorOptions.value = response.data || []
-    } else {
-      message.error(t('edit.couldNotLoadEmulator'))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
 const handleEmulatorChange = async (emulatorId: string) => {
   // 清空模拟器实例选择
   generalConfig.Game.EmulatorIndex = ''
@@ -1796,7 +1572,7 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.URL = ''
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorOptions.value = []
+    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       URL: '',
@@ -1811,7 +1587,7 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.IfForceClose = false
     generalConfig.Game.EmulatorId = ''
     generalConfig.Game.EmulatorIndex = ''
-    emulatorOptions.value = []
+    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       Path: '.',
@@ -2061,344 +1837,13 @@ const selectLogPath = async () => {
     message.error(t('edit.couldNotPickFile'))
   }
 }
-
-// 上传脚本配置相关
-const uploadModalVisible = ref(false)
-const uploadLoading = ref(false)
-const shareAuthLoading = ref(false)
-const shareAuth = ref<ShareAuthState>({ ...IDLE_SHARE_AUTH })
-const shareRisks = ref<ShareRiskItem[]>([])
-const riskAcknowledged = ref(false)
-let sharePollTimer: ReturnType<typeof setTimeout> | null = null
-
-const uploadForm = reactive({
-  config_name: '',
-  description: '',
-})
-
-// 上传表单验证规则
-const uploadRules = {
-  config_name: [{ required: true, message: t('edit.enterConfigurationName'), trigger: 'blur' }],
-  description: [{ required: true, message: t('edit.enterDescription'), trigger: 'blur' }],
-}
-
-// 显示上传弹窗：带出当前脚本名称，并同步一次配置中心授权状态与隐私检查
-const showUploadModal = async () => {
-  uploadModalVisible.value = true
-  if (!uploadForm.config_name) {
-    uploadForm.config_name = formData.name || ''
-  }
-
-  const status = await getShareAuthStatus()
-  if (status) shareAuth.value = status
-  if (status?.status === 'pending') startSharePolling(status.interval)
-
-  await refreshShareRisks()
-}
-
-// 隐藏上传弹窗：停止轮询，并撤销尚未完成的授权等待
-const handleUploadCancel = async () => {
-  uploadModalVisible.value = false
-  stopSharePolling()
-  if (shareAuth.value.status === 'pending') {
-    const status = await cancelShareAuth()
-    if (status) shareAuth.value = status
-  }
-}
-
-const refreshShareRisks = async () => {
-  const risks = await inspectShare(scriptId, uploadForm.config_name || '未命名配置')
-  if (risks === null) {
-    logger.warn(`分享前检查失败: ${shareError.value ?? ''}`)
-    return
-  }
-  const knownFields = new Set(shareRisks.value.map(risk => risk.field))
-  const hasNewRisk = risks.some(risk => !knownFields.has(risk.field))
-  shareRisks.value = risks
-  // 只有冒出新的风险项才要求重新确认；风险变少不该把用户刚勾的框清掉
-  if (hasNewRisk) riskAcknowledged.value = false
-}
-
-const stopSharePolling = () => {
-  if (sharePollTimer !== null) {
-    clearTimeout(sharePollTimer)
-    sharePollTimer = null
-  }
-}
-
-// 按配置中心给的间隔轮询授权结果，弹窗关闭或拿到终态就停
-const startSharePolling = (interval: number) => {
-  stopSharePolling()
-  sharePollTimer = setTimeout(
-    async () => {
-      sharePollTimer = null
-      if (!uploadModalVisible.value) return
-
-      const status = await pollShareAuth()
-      if (!status) {
-        startSharePolling(interval)
-        return
-      }
-
-      shareAuth.value = status
-      if (status.status === 'pending') {
-        startSharePolling(status.interval || interval)
-        return
-      }
-      if (status.status === 'authorized') {
-        message.success(t('edit.share.authorized', { name: status.displayName || status.username }))
-      }
-    },
-    Math.max(interval, 1) * 1000
-  )
-}
-
-const openShareVerificationPage = () => {
-  const uri = shareAuth.value.verificationUri
-  // 地址由配置中心下发，只放行普通网页链接
-  if (/^https?:\/\//i.test(uri)) {
-    openExternalUrl(uri)
-    return
-  }
-  if (uri) logger.warn(`配置中心返回了无法打开的授权地址: ${uri}`)
-}
-
-const handleStartShareAuth = async () => {
-  shareAuthLoading.value = true
-  try {
-    const status = await startShareAuth()
-    if (!status) {
-      message.error(shareError.value ?? t('edit.share.startFailed'))
-      return
-    }
-    shareAuth.value = status
-    openShareVerificationPage()
-    startSharePolling(status.interval)
-  } finally {
-    shareAuthLoading.value = false
-  }
-}
-
-const handleCancelShareAuth = async () => {
-  stopSharePolling()
-  const status = await cancelShareAuth()
-  shareAuth.value = status ?? { ...IDLE_SHARE_AUTH }
-}
-
-// 处理上传脚本配置
-const handleUpload = async () => {
-  try {
-    await uploadFormRef.value?.validate()
-  } catch {
-    return
-  }
-
-  if (shareAuth.value.status !== 'authorized') {
-    message.warning(t('edit.share.loginRequired'))
-    return
-  }
-
-  // 配置名会写进 Info.Name 并参与隐私检查，按提交时的名字重新查一遍
-  await refreshShareRisks()
-  if (shareRisks.value.length > 0 && !riskAcknowledged.value) {
-    message.warning(t('edit.share.riskConfirm'))
-    return
-  }
-
-  uploadLoading.value = true
-  try {
-    const uploaded = await uploadShare({
-      scriptId,
-      configName: uploadForm.config_name,
-      description: uploadForm.description,
-      acknowledged: riskAcknowledged.value,
-    })
-
-    if (!uploaded) {
-      const errorMsg = shareError.value ?? t('edit.uploadFailedCheckYour')
-      logger.error(`上传失败: ${errorMsg}`)
-      message.error(errorMsg)
-      // 令牌可能已过期，重新同步一次授权状态，让用户知道要重新登录
-      const status = await getShareAuthStatus()
-      if (status) shareAuth.value = status
-      return
-    }
-
-    message.success(t('edit.configurationUploadedItWill'))
-    uploadModalVisible.value = false
-    uploadForm.config_name = ''
-    uploadForm.description = ''
-    shareRisks.value = []
-    riskAcknowledged.value = false
-  } finally {
-    uploadLoading.value = false
-  }
-}
-
-onUnmounted(stopSharePolling)
 </script>
 
+<style scoped src="@/styles/scriptEditForm.css"></style>
+
+<style scoped src="@/styles/scriptEdit.css"></style>
+
 <style scoped>
-/* 分享弹窗 */
-.share-auth-alert,
-.share-risk-alert {
-  margin-bottom: 12px;
-}
-
-.share-auth-pending p,
-.share-auth-idle p {
-  margin: 0 0 8px;
-}
-
-.share-user-code {
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 3px;
-}
-
-.share-risk-list {
-  margin: 0 0 8px;
-  padding-left: 18px;
-}
-
-/* 头部区域 */
-.script-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-  transition: color 0.3s ease;
-}
-
-.breadcrumb-current {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.breadcrumb-logo {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-  transition: all 0.3s ease;
-}
-
-/* 内容区域 */
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.config-card :deep(.ant-card-head) {
-  background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  padding: 24px 32px;
-}
-
-.config-card :deep(.ant-card-head-title) {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-  background: var(--ant-color-bg-container);
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
-}
-
-/* 表单样式 */
-.config-form {
-  max-width: none;
-}
-
-.form-section {
-  margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-/* 表单标签 */
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
 /* 字段标题旁的文档入口：蓝色书形图标 + 文字，区别于灰色问号 */
 .doc-link {
   display: inline-flex;
@@ -2412,105 +1857,6 @@ onUnmounted(stopSharePolling)
 
 .doc-link:hover {
   color: var(--ant-color-primary-hover);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
-  background: var(--ant-color-bg-container) !important;
-  transition: all 0.3s ease;
-}
-
-.modern-select:hover :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary-hover) !important;
-}
-
-.modern-select.ant-select-focused :deep(.ant-select-selector) {
-  border-color: var(--ant-color-primary) !important;
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
-}
-
-.modern-number-input {
-  border-radius: 8px;
-}
-
-.modern-number-input :deep(.ant-input-number) {
-  border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-number-input :deep(.ant-input-number:hover) {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-number-input :deep(.ant-input-number-focused) {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-/* 路径输入组 */
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
-  transform: none;
 }
 
 .path-clear-icon-btn {
@@ -2543,142 +1889,6 @@ onUnmounted(stopSharePolling)
 .path-clear-icon-btn :deep(.anticon svg) {
   fill: currentColor;
   stroke: currentColor;
-}
-
-/* 表单项间距 */
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 24px;
-}
-
-.config-form :deep(.ant-form-item-label) {
-  padding-bottom: 8px;
-}
-
-.config-form :deep(.ant-form-item-label > label) {
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
-html.dark .config-card {
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.3),
-    0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-html.dark .path-input-group:focus-within {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-input:focus,
-html.dark .modern-input.ant-input-focused {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-}
-
-html.dark .modern-number-input :deep(.ant-input-number-focused) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 24px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-}
-
-@media (max-width: 768px) {
-  .script-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
-  .config-card :deep(.ant-card-head) {
-    padding: 16px 20px;
-  }
-
-  .config-card :deep(.ant-card-head-title) {
-    font-size: 20px;
-  }
-
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
-
-  .section-header h3 {
-    font-size: 18px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
-
-  .path-button {
-    padding: 0 16px;
-    font-size: 14px;
-  }
-
-  .cancel-button,
-  .save-button {
-    height: 44px;
-    font-size: 14px;
-    padding: 0 20px;
-  }
-}
-
-/* 动画效果 */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.form-section {
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.form-section:nth-child(2) {
-  animation-delay: 0.1s;
-}
-
-.form-section:nth-child(3) {
-  animation-delay: 0.2s;
-}
-
-.form-section:nth-child(4) {
-  animation-delay: 0.3s;
-}
-
-/* Tooltip样式优化 */
-:deep(.ant-tooltip-inner) {
-  background: var(--ant-color-bg-elevated);
-  color: var(--ant-color-text);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 13px;
-  line-height: 1.5;
-  max-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-:deep(.ant-tooltip-arrow::before) {
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border);
 }
 
 .float-button {

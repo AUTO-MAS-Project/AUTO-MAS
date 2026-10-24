@@ -43,6 +43,8 @@ import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
 import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
+import type { MaaDepotStageCandidatesBatchIn } from '../models/MaaDepotStageCandidatesBatchIn';
+import type { MaaDepotStageCandidatesBatchOut } from '../models/MaaDepotStageCandidatesBatchOut';
 import type { MaaEndLauncherPathOut } from '../models/MaaEndLauncherPathOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
@@ -75,6 +77,7 @@ import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
 import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
+import type { TaskboardStateOut } from '../models/TaskboardStateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -93,7 +96,7 @@ import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOu
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
-import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookGetOut_Webhook_ } from '../models/WebhookGetOut_Webhook_';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -119,6 +122,17 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取任务台状态
+     * @returns TaskboardStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskboardStateApiInfoTaskboardStateGet(): CancelablePromise<TaskboardStateOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/taskboard/state',
         });
     }
     /**
@@ -598,6 +612,25 @@ export class GetService {
         });
     }
     /**
+     * 批量获取 MAA 库存保持关卡候选
+     * @param requestBody
+     * @returns MaaDepotStageCandidatesBatchOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost(
+        requestBody: MaaDepotStageCandidatesBatchIn,
+    ): CancelablePromise<MaaDepotStageCandidatesBatchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates/batch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
      * @param requestBody
      * @returns MaaDepotInventoryOut Successful Response
@@ -687,12 +720,12 @@ export class GetService {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiScriptsWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/get',
@@ -1120,12 +1153,12 @@ export class GetService {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiSettingWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/get',

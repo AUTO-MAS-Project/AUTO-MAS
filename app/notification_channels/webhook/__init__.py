@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -38,6 +39,7 @@ from app.models.notification_channel import (
     SCOPE_USER,
     ChannelConfig,
     ChannelTarget,
+    HttpDependencies,
     NotifyChannel,
 )
 from app.models.notification_channel import target_prefix as _prefix
@@ -48,10 +50,7 @@ from .transport import Sender
 def _webhook_name(uid: str, webhook: Any) -> str:
     """返回便于定位失败配置的 Webhook 名称。"""
 
-    try:
-        return str(webhook.get("Info", "Name") or uid)
-    except (AttributeError, KeyError):
-        return uid
+    return str(webhook.Info.Name or uid)
 
 
 def _webhook_capabilities(
@@ -92,24 +91,33 @@ def _webhook_capabilities(
 def _webhook_targets(config: ChannelConfig, *, scope: str) -> tuple[ChannelTarget, ...]:
     prefix = _prefix(scope)
     targets = []
-    # 顺序按 MultipleConfig.order（items() 的产出顺序），不按 uid。
+    # 使用配置集合 items() 的顺序，不按 uid 排序。
     for uid, webhook in config.Notify_CustomWebhooks.items():
         snapshot = WebhookTargetSnapshot(
             name=_webhook_name(uid, webhook),
-            enabled=bool(webhook.get("Info", "Enabled")),
-            url=str(webhook.get("Data", "Url") or ""),
-            template=str(webhook.get("Data", "Template") or ""),
-            headers=str(webhook.get("Data", "Headers") or "{ }"),
-            method=webhook.get("Data", "Method"),
+            enabled=bool(webhook.Info.Enabled),
+            url=str(webhook.Data.Url or ""),
+            template=str(webhook.Data.Template or ""),
+            headers=str(webhook.Data.Headers or "{ }"),
+            method=webhook.Data.Method,
         )
         if not snapshot.enabled:
             continue
+        capabilities = _webhook_capabilities(snapshot)
         targets.append(
             ChannelTarget(
                 id=f"{prefix} Webhook {uid}",
-                label=f"{prefix} Webhook {_webhook_name(uid, snapshot)}",
+                label=f"{prefix} Webhook {snapshot.name}",
                 value=snapshot,
-                capabilities=_webhook_capabilities(snapshot),
+                capabilities=capabilities,
+                announcement_capabilities=replace(
+                    capabilities,
+                    formats=("text",),
+                    double_text_newlines=(
+                        "markdown" in capabilities.formats
+                        or capabilities.double_text_newlines
+                    ),
+                ),
                 compact_summary_policy="preferred",
             )
         )
@@ -145,5 +153,12 @@ def register() -> NotifyChannel:
         fields={},
         target_builder=_webhook_targets,
         send_adapter=_webhook_send,
-        sender_factory=Sender,
+        sender_factory=lambda deps: Sender(
+            HttpDependencies(
+                read_proxy=deps.read_proxy,
+                http_factory=deps.http_factory,
+                logger=deps.logger,
+            )
+        ),
+        transport_fields=(),
     )

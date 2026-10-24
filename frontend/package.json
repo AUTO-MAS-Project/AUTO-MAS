@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v5.7.0",
+  "version": "v5.8.0-beta.1",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
@@ -35,12 +35,16 @@
     "e2e:settings": "node e2e/run.mjs --grep @settings",
     "e2e:history": "node e2e/run.mjs --grep @history",
     "e2e:recovery": "node e2e/run.mjs --grep @recovery",
+    "e2e:notify": "node e2e/run.mjs --grep @notify",
     "e2e:real": "pwsh -NoProfile -File ./e2e/run-real.ps1",
     "e2e:real:local": "pwsh -NoProfile -File ./e2e/run-real.ps1",
     "e2e:real:all": "node e2e/real-batch.mjs",
     "e2e:ui": "node e2e/run.mjs --ui",
     "e2e:report": "playwright show-report playwright-report/browser",
-    "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json"
+    "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json",
+    "audit:baseline": "node scripts/audit-baseline.mjs",
+    "audit:unused": "knip --no-progress",
+    "audit:duplicates": "jscpd src electron"
   },
   "build": {
     "asar": true,
@@ -91,13 +95,15 @@
     "adm-zip": "^0.5.16",
     "axios": "1.15.2",
     "electron-log": "^5.4.3",
-    "form-data": "^4.0.4"
+    "form-data": "^4.0.4",
+    "yaml": "2.8.1"
   },
   "devDependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "@guolao/vue-monaco-editor": "^1.6.0",
     "@playwright/test": "1.64.0",
     "@sentry/vite-plugin": "^5.4.0",
+    "@tanstack/vue-query": "^5.104.4",
     "@types/adm-zip": "^0.5.8",
     "@types/markdown-it": "^14.1.2",
     "@types/matter-js": "^0",
@@ -111,9 +117,11 @@
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0",
     "dayjs": "^1.11.13",
-    "electron": "^37.2.5",
+    "electron": "^43.8.2",
     "electron-builder": "26.8.1",
     "electron-builder-squirrel-windows": "26.15.3",
+    "jscpd": "5.4.1",
+    "knip": "6.41.0",
     "markdown-it": "^14.1.1",
     "markdownlint-cli2": "^0.18.1",
     "matter-js": "^0.20.0",

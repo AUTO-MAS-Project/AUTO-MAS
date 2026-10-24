@@ -2,6 +2,7 @@ import { translate as t } from '@/i18n'
 import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
+import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
@@ -109,7 +110,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Embedded: {
     SourceVersion: '',
-    ImportedAt: '',
+    ImportedAt: null,
     Report: '{ }',
     FollowSource: false,
   },
@@ -148,14 +149,15 @@ export function useMaaFWControlConfig(
   interfaceLoading: Ref<boolean>,
   handleChange: PersistFn
 ) {
-  const emulatorLoading = ref(false)
-  const emulatorOptionsReady = ref(false)
+  const {
+    emulatorLoading,
+    emulatorOptionsReady,
+    emulatorOptions,
+    emulatorTypeById,
+    loadEmulatorOptions,
+  } = useEmulatorOptions({ includeTypes: true })
   const emulatorDeviceLoading = ref(false)
-  const emulatorOptions = ref<ComboBoxItem[]>([])
   const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
-  const emulatorTypeById = ref<Record<string, EmulatorType>>({})
-  let emulatorOptionsLoaded = false
-  let emulatorOptionsPromise: Promise<void> | null = null
   const emulatorDeviceOptionsCache = new Map<string, ComboBoxItem[]>()
   const emulatorDeviceRequests = new Map<string, Promise<ComboBoxItem[] | null>>()
   // Emulator 2.0：设备号 → 该设备的真实模拟器类型（ldplayer / mumu）。配置本身没有类型，
@@ -320,54 +322,6 @@ export function useMaaFWControlConfig(
       { label: t('misc.input'), value: pick(inputWithExtras) },
     ]
   })
-
-  const loadEmulatorOptions = async () => {
-    if (emulatorOptionsLoaded) {
-      emulatorOptionsReady.value = true
-      return
-    }
-    if (emulatorOptionsPromise) return emulatorOptionsPromise
-
-    const request = (async () => {
-      emulatorLoading.value = true
-      emulatorOptionsReady.value = false
-      let comboLoaded = false
-      let detailLoaded = false
-      try {
-        const [response, detailResponse] = await Promise.all([
-          Service.getEmulatorComboxApiInfoComboxEmulatorPost(),
-          Service.getEmulatorApiEmulatorGetPost({}),
-        ])
-        if (response?.code === 200) {
-          emulatorOptions.value = response.data || []
-          comboLoaded = true
-        }
-        if (detailResponse?.code === 200) {
-          const typeMap: Record<string, EmulatorType> = {}
-          Object.entries(detailResponse.data || {}).forEach(([emulatorId, config]) => {
-            const emulatorType = config.Info?.Type
-            if (emulatorType) typeMap[emulatorId] = emulatorType
-          })
-          emulatorTypeById.value = typeMap
-          detailLoaded = true
-        }
-        emulatorOptionsLoaded = comboLoaded && detailLoaded
-        emulatorOptionsReady.value = emulatorOptionsLoaded
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`加载模拟器选项失败: ${errorMsg}`)
-        emulatorOptionsReady.value = false
-      } finally {
-        emulatorLoading.value = false
-      }
-    })()
-    emulatorOptionsPromise = request
-    try {
-      await request
-    } finally {
-      if (emulatorOptionsPromise === request) emulatorOptionsPromise = null
-    }
-  }
 
   const loadEmulatorDeviceOptions = async (emulatorId: string) => {
     if (!emulatorId || emulatorId === '-') {

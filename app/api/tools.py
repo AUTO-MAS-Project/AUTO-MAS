@@ -21,49 +21,201 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import traceback
 from datetime import datetime
 from inspect import isawaitable
+from typing import (
+    Annotated,
+    Dict,
+    Literal,
+)
 from uuid import UUID
 
-from fastapi import APIRouter, Body
-
-from app.core import Config
-from app.core.community_scheduler import (
-    CommunityActivityInProgressError,
-    community_activity_flow,
+from fastapi import APIRouter, Body, Depends
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
 )
+
+import app.models.config as _config_models
+from app.api.notification_dependencies import get_community_notifier
+from app.config.wire import (
+    ConfigInput,
+    ConfigPayload,
+    config_group_contract,
+)
+from app.core import Config
 from app.core.community_sign import (
     CommunitySignInProgressError,
     community_sign_flow,
     run_community_sign_in,
 )
-from app.models.schema import (
-    CommunityActivityOut,
-    CommunityActivityQueryIn,
-    CommunityActivityResourceOut,
-    CommunityActivitySnapshotOut,
-    CommunityActivityTaskOut,
-    GameSignAccountCreateOut,
-    GameSignAccountDeleteIn,
-    GameSignAccountGroupConfig,
-    GameSignAccountReorderIn,
-    GameSignAccountsListOut,
-    GameSignAccountUpdateIn,
-    OutBase,
-    TaygedoLoginIn,
-    ToolsConfig,
-    ToolsGetOut,
-    ToolsUpdateIn,
-)
+from app.models.notification_ports import CommunityNotifier
+from app.models.schema import OutBase
 from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
+ToolsConfig = ConfigPayload[_config_models.ToolsConfig]
+ToolsConfigInput = ConfigInput[_config_models.ToolsConfig]
+
+
+class GameSignAccountGroupConfig(
+    config_group_contract(
+        _config_models.GameSignAccountGroup.GameSignAccountFields,
+        name="GameSignAccountGroupConfig",
+    )
+):
+    """账号组的纯接口投影。"""
+
+
+class GameSignAccountGroupConfigInput(
+    config_group_contract(
+        _config_models.GameSignAccountGroup.GameSignAccountFields,
+        name="GameSignAccountGroupConfigInput",
+        mode="input",
+    )
+):
+    """账号组的纯接口投影。"""
+
+
+class TaygedoLoginIn(BaseModel):
+    """塔吉多一次性账号密码登录请求。"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    phone: str = Field(..., min_length=1, description="塔吉多账号或手机号")
+    password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
+
+
+class GameSignAccountCreateOut(OutBase):
+    """游戏社区账号组创建响应"""
+
+    accountId: str = Field(default="", description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(
+        default_factory=GameSignAccountGroupConfig, description="账号组配置"
+    )
+
+
+class GameSignAccountInstanceOut(BaseModel):
+    """游戏社区账号组顺序项。"""
+
+    uid: str = Field(..., description="账号组 UUID")
+    type: str = Field(..., description="账号组配置类型")
+
+
+class GameSignAccountDataOut(BaseModel):
+    """动态 UUID 键对应的游戏社区账号组数据。"""
+
+    GameSignAccount: GameSignAccountGroupConfig = Field(..., description="账号组配置")
+
+
+class GameSignAccountCollectionOut(BaseModel):
+    """新配置集合的索引和成员文档。"""
+
+    order: list[GameSignAccountInstanceOut] = Field(default_factory=list)
+    data: Dict[str, GameSignAccountDataOut] = Field(default_factory=dict)
+
+
+class GameSignAccountsListOut(OutBase):
+    """游戏社区账号组列表响应"""
+
+    data: GameSignAccountCollectionOut = Field(
+        default_factory=GameSignAccountCollectionOut, description="账号组列表"
+    )
+
+
+class GameSignAccountUpdateIn(BaseModel):
+    """游戏社区账号组更新请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    data: GameSignAccountGroupConfigInput = Field(..., description="账号组配置")
+
+
+class GameSignAccountDeleteIn(BaseModel):
+    """游戏社区账号组删除请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountReorderIn(BaseModel):
+    """游戏社区账号组排序请求"""
+
+    order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
+class CommunityActivityQueryIn(BaseModel):
+    """游戏社区日常查询请求。"""
+
+    accountIds: list[str] | None = Field(
+        default=None,
+        description="指定账号组 UUID 列表；为空时查询全部已配置账号组",
+    )
+
+
+class CommunityActivityTaskOut(BaseModel):
+    """日常活动中的单项任务。"""
+
+    name: str = Field(..., description="任务名称")
+    completed: int = Field(..., description="已完成数量")
+    target: int = Field(..., description="目标数量")
+    status: str = Field(..., description="任务状态")
+    period: str = Field(default="daily", description="任务周期")
+
+
+class CommunityActivityResourceOut(BaseModel):
+    """日常活动中的可用资源。"""
+
+    name: str = Field(..., description="资源名称")
+    current: int = Field(..., description="当前数量")
+    target: int = Field(..., description="容量上限")
+    status: str = Field(..., description="资源状态")
+
+
+class CommunityActivitySnapshotOut(BaseModel):
+    """单个游戏角色的日常活动快照。"""
+
+    account: str = Field(..., description="账号组名称")
+    accountUid: str = Field(..., description="账号组 UUID")
+    game: str = Field(..., description="游戏名称")
+    platform: str = Field(..., description="社区平台名称")
+    status: Literal["success", "empty", "limited", "unavailable", "failed"] = Field(
+        ..., description="活动查询状态"
+    )
+    completed: int | None = Field(default=None, description="已完成数量")
+    target: int | None = Field(default=None, description="目标数量")
+    tasks: list[CommunityActivityTaskOut] = Field(
+        default_factory=list, description="每日任务"
+    )
+    resources: list[CommunityActivityResourceOut] = Field(
+        default_factory=list, description="可用资源"
+    )
+    reason: str = Field(default="", description="失败或受限原因")
+    updatedAt: str = Field(default="", description="查询时间")
+    roleName: str = Field(default="", description="角色名称")
+    roleUid: str = Field(default="", description="角色 UID")
+    server: str = Field(default="", description="角色区服")
+    source: str = Field(default="", description="已确认的数据来源路径")
+
+
+class CommunityActivityOut(OutBase):
+    """游戏社区日常活动查询响应。"""
+
+    data: list[CommunityActivitySnapshotOut] = Field(
+        default_factory=list, description="按账号和游戏拆分的活动快照"
+    )
+
+
+class ToolsGetOut(OutBase):
+    data: ToolsConfig = Field(..., description="工具配置数据")
+
+
+class ToolsUpdateIn(BaseModel):
+    data: ToolsConfigInput = Field(..., description="工具配置需要更新的数据")
+
+
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
-_PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
 
 
@@ -92,53 +244,11 @@ def _normalize_miyoushe_device_fields(data: dict[str, object]) -> None:
         data[field] = value.strip() if isinstance(value, str) else ""
 
 
-def _track_community_notification(
-    task: asyncio.Task[list[str] | None],
-) -> None:
-    """保留后台通知任务引用，并消费完成后的异常。"""
-
-    _PENDING_COMMUNITY_NOTIFICATIONS.discard(task)
-    if task.cancelled():
-        return
-    try:
-        failed_channels = task.result()
-    except Exception as exc:
-        _log_community_api_error("后台游戏社区通知发送失败", exc)
-        return
-    if failed_channels:
-        logger.warning(f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}")
-
-
-async def _dispatch_community_notification(
-    results: list[dict[str, object]],
-) -> list[str] | None:
-    """发送签到通知；慢渠道转后台，避免阻塞签到完成响应。"""
-
-    from app.tools.community_notify import (
-        NOTIFICATION_FAST_PATH_WAIT_SECONDS,
-        push_community_notification,
-    )
-
-    task = asyncio.create_task(push_community_notification(results))
-    _PENDING_COMMUNITY_NOTIFICATIONS.add(task)
-    task.add_done_callback(_track_community_notification)
-    try:
-        return await asyncio.wait_for(
-            asyncio.shield(task), timeout=NOTIFICATION_FAST_PATH_WAIT_SECONDS
-        )
-    except asyncio.TimeoutError:
-        logger.info("等待窗口内未返回，通知渠道仍在后台发送")
-        return None
-    except Exception as exc:
-        _log_community_api_error("游戏社区通知服务异常", exc)
-        return ["通知服务"]
-
-
 def _get_community_account_field(account: object, field: str, default=None):
     """读取社区账号字段时兼容未包含新增字段的旧账号对象。"""
 
     try:
-        return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
+        return getattr(account.GameSignAccount, field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return default
 
@@ -197,10 +307,13 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def manual_game_sign() -> OutBase:
+async def manual_game_sign(
+    *, notifier: Annotated[CommunityNotifier, Depends(get_community_notifier)]
+) -> OutBase:
     """手动触发游戏社区签到"""
 
     try:
+        from app.models.notification_community import community_notification_results
         from app.tools.community import (
             format_community_sign_results,
             has_community_credentials,
@@ -223,11 +336,19 @@ async def manual_game_sign() -> OutBase:
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
                 has_credentials = has_community_credentials(account)
                 if _get_community_account_field(account, "Enabled") and has_credentials:
-                    if _get_community_account_field(account, "LastSignDate") != today:
+                    if (
+                        account.GameSignAccount.LastSignDate.strftime("%Y-%m-%d")
+                        != today
+                    ):
                         all_signed = False
                         break
             if all_signed:
-                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                await Config.ToolsConfig.update(
+                    type(Config.ToolsConfig).model_validate(
+                        {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                    ),
+                    check_visibility=False,
+                )
         warning_messages = []
         if any(
             result.get("status") not in ("成功", "已签到")
@@ -235,8 +356,10 @@ async def manual_game_sign() -> OutBase:
             for result in results
         ):
             warning_messages.append("签到未全部完成，请查看签到结果")
-        if results and Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
-            failed_channels = await _dispatch_community_notification(results)
+        if results:
+            failed_channels = await notifier.submit(
+                community_notification_results(results)
+            )
             if failed_channels:
                 warning_messages.append(
                     f"部分通知发送失败：{'、'.join(failed_channels)}"
@@ -273,28 +396,17 @@ async def query_community_activity(
 ) -> CommunityActivityOut:
     """查询游戏社区日常活动，不占用签到流程锁。"""
 
-    if Config.ToolsConfig.get("GameSign", "ActivityEnabled") is False:
+    if Config.ToolsConfig.GameSign.ActivityEnabled is False:
         return CommunityActivityOut(status="success", data=[])
 
     snapshots = ()
     try:
         from app.core.community_activity import (
             build_configured_community_activity_failures,
-            collect_configured_community_activity,
+            query_configured_community_activity,
         )
 
-        async with community_activity_flow():
-            snapshots = await collect_configured_community_activity(
-                query.accountIds,
-                proxy=Config.proxy,
-            )
-    except CommunityActivityInProgressError as exc:
-        _log_community_api_error("游戏社区日常查询并发冲突", exc)
-        return CommunityActivityOut(
-            code=409,
-            status="error",
-            message="游戏社区日常查询正在执行，请稍后重试",
-        )
+        snapshots = await query_configured_community_activity(query.accountIds)
     except ValueError as exc:
         _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
         return CommunityActivityOut(
@@ -370,9 +482,11 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
             code=500,
             status="error",
             message="获取游戏社区账号组失败，请稍后重试",
-            data={},
+            data=GameSignAccountCollectionOut(),
         )
-    return GameSignAccountsListOut(data=data)
+    return GameSignAccountsListOut(
+        data=GameSignAccountCollectionOut.model_validate(data)
+    )
 
 
 @router.post(
@@ -387,8 +501,8 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
 
     try:
         uid, config = await Config.add_game_sign_account()
-        # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
-        raw = await config.toDict()
+        # 配置导出按组组织，账号接口继续使用原有扁平载荷。
+        raw = config.model_dump(context={"audience": "api"})
         flat = raw.get("GameSignAccount", raw)
         data = GameSignAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
@@ -417,7 +531,7 @@ async def update_game_sign_account(
     """更新游戏社区账号组配置"""
 
     try:
-        # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
+        # 将账号接口的扁平载荷包装为配置分组。
         flat_data = account.data.model_dump(exclude_unset=True)
         _normalize_miyoushe_device_fields(flat_data)
         skland_token = flat_data.get("SklandToken")
@@ -528,9 +642,7 @@ async def login_taygedo(
         )
 
         account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
-        existing_token = str(
-            account.get("GameSignAccount", "TaygedoToken") or ""
-        ).strip()
+        existing_token = str(account.GameSignAccount.TaygedoToken or "").strip()
         refreshed = await login_taygedo_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),

@@ -21,12 +21,96 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import (
+    Literal,
+)
+
 from fastapi import APIRouter, Body
+from pydantic import (
+    BaseModel,
+    Field,
+)
 
 from app.core import Config, TaskManager
-from app.models.schema import *
+from app.models.schema import (
+    OutBase,
+    PowerCountdownSnapshot,
+    TaskRuntimeSnapshot,
+    TaskStatusOut,
+)
 from app.services import System
 from app.utils import get_logger
+
+
+class DispatchIn(BaseModel):
+    taskId: str = Field(
+        ...,
+        description="目标任务ID, 设置类任务可选对应脚本ID或用户ID, 代理类任务可选对应队列ID或脚本ID",
+    )
+
+
+class TaskCreateIn(DispatchIn):
+    mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"] = Field(
+        ...,
+        description="任务模式; CycleRun 为循环运行, 仅接受循环队列, 其脚本按 AutoProxy 执行",
+    )
+    resumeFromScriptId: str | None = Field(
+        default=None,
+        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
+    )
+    userId: str | None = Field(
+        default=None,
+        description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
+    )
+    userIds: list[str] | None = Field(
+        default=None,
+        description="可选：仅对脚本的自动代理任务生效；只运行指定的多个用户",
+    )
+    queueUserIds: dict[str, list[str]] | None = Field(
+        default=None,
+        description="可选：仅对队列任务生效；按脚本ID指定本次要运行的用户；未列出的脚本不限, 空列表表示该脚本本次整项跳过",
+    )
+    viewOnly: bool = Field(
+        default=False,
+        description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
+    )
+    instanceIdx: int | None = Field(
+        default=None,
+        description="可选：仅 ScriptConfig 生效；直控指定会话窗口打开的原生实例（临时切换活跃，会话结束还原）",
+    )
+
+
+class TaskCreateOut(OutBase):
+    taskId: str = Field(..., description="新创建的任务ID")
+
+
+class PowerIn(BaseModel):
+    signal: Literal[
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
+        "RestartSelf",
+        "Logoff",
+    ] = Field(..., description="电源操作信号")
+
+
+class PowerOut(OutBase):
+    signal: Literal[
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
+        "RestartSelf",
+        "Logoff",
+    ] = Field(..., description="电源操作信号")
+
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 logger = get_logger("任务调度 API")

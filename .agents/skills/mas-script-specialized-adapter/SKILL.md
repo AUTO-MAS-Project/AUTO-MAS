@@ -33,7 +33,7 @@ description: >-
 - **MAS 领域**（账号与用户管理、多脚本/多实例调度、计划表、通知、统计、模拟器生命周期、跨脚本编排）：可自行实现，但不得读取或反推上游内部状态。**「补位」只在 MAS 领域成立。**
 - **上游私有格式**（配置内部字段、计划/队列/运行记录、资源文件）：只允许透传读写，值经手、语义不过手；不在其上建映射表、平行模型或自造判定信号，上游执行的任务成败必须取自上游结果面。
 
-判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？判据、能力归属表、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
+判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？归 MAS 之后，它是通用能力还是该专项的特色？判据、能力归属表、MAS 内部落点、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
 
 **方案分析时参考黑箱边界**：按需核对能力归属、上游入口和私有格式依赖；相关事实、风险或替代方案可作为参考意见提供给用户，不要求在开工阶段输出固定结论。
 
@@ -74,7 +74,7 @@ description: >-
 
 **不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
 
-- 配置与 schema：`app/models/config.py`、`app/models/schema.py`
+- 配置与接口契约：`app/models/config/script.py`、包内注册/导出、`app/config/wire.py`；端点模型位于所属 API 模块，公共契约位于 `app/models/schema.py`。字段与调用点遵循[配置框架参考](../mas-data-model/references/config-framework.md)，上游私有配置文件快照与 MAS 事务工作区分别处理
 - 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`；`scripts.py` 只放薄端点，业务在任务模块里实现
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
 - 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。**接入前确认脚本日志滚动行为**：有 inode（本地 NTFS）时一律按 inode 找回，与运行日志监控 LogMonitor 同逻辑，宁缺勿错不猜名字；**仅文件系统不提供 inode（FAT32/exFAT/网络盘）时需要传 `rotated_name` strftime 模板**（日期式滚动的唯一兜底，通用组件不猜测任何日期格式）；`.bak` 式无需声明；删除重建/截断式滚动无法自动找回（见 logbox-api「日志轮转补偿」）。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogMode`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合统一复用通用工具 `app/tools/push_log.py` 的 `build_user_result_text`（按用户交错组装「用户结果行+节点」并入 result），专项不要自行拼接实现。具体注入端点现场反查参考实现。

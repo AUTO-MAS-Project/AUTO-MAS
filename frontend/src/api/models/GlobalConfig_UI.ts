@@ -4,16 +4,16 @@
 /* eslint-disable */
 export type GlobalConfig_UI = {
     /**
-     * 是否常态显示托盘图标
-     */
-    IfShowTray?: (boolean | null);
-    /**
-     * 是否最小化到托盘
-     */
-    IfToTray?: (boolean | null);
-    /**
      * 是否隐藏主窗口关闭按钮
      */
     IfHideCloseButton?: (boolean | null);
+    /**
+     * 是否显示托盘图标
+     */
+    IfShowTray?: (boolean | null);
+    /**
+     * 是否关闭到托盘
+     */
+    IfToTray?: (boolean | null);
 };
 

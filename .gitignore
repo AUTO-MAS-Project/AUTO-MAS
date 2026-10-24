@@ -31,6 +31,7 @@ list/
 /environment/
 
 # Frontend dependencies & caches
+/node_modules/
 /frontend/node_modules/
 /frontend/.yarn/cache/
 /frontend/.yarn/unplugged/

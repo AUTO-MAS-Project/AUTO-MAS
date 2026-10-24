@@ -69,6 +69,8 @@ import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
 import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
+import type { MaaDepotStageCandidatesBatchIn } from '../models/MaaDepotStageCandidatesBatchIn';
+import type { MaaDepotStageCandidatesBatchOut } from '../models/MaaDepotStageCandidatesBatchOut';
 import type { MaaEndLauncherPathOut } from '../models/MaaEndLauncherPathOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
@@ -161,6 +163,10 @@ import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
 import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
 import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
 import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
+import type { TaskboardArchiveIn } from '../models/TaskboardArchiveIn';
+import type { TaskboardDoneAtIn } from '../models/TaskboardDoneAtIn';
+import type { TaskboardSelectionIn } from '../models/TaskboardSelectionIn';
+import type { TaskboardStateOut } from '../models/TaskboardStateOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -193,13 +199,13 @@ import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
-import type { WebhookCreateOut } from '../models/WebhookCreateOut';
+import type { WebhookCreateOut_Webhook_ } from '../models/WebhookCreateOut_Webhook_';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
-import type { WebhookGetOut } from '../models/WebhookGetOut';
+import type { WebhookGetOut_Webhook_ } from '../models/WebhookGetOut_Webhook_';
 import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
-import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebhookUpdateIn_WebhookInput_ } from '../models/WebhookUpdateIn_WebhookInput_';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { WhimboxTaskCatalogOut } from '../models/WhimboxTaskCatalogOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
@@ -307,6 +313,74 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/activity/completions',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取任务台状态
+     * @returns TaskboardStateOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskboardStateApiInfoTaskboardStateGet(): CancelablePromise<TaskboardStateOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/taskboard/state',
+        });
+    }
+    /**
+     * 保存任务台勾选的游戏
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardSelectionApiInfoTaskboardSelectionPut(
+        requestBody: TaskboardSelectionIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/selection',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存任务台归档缓存
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardArchiveApiInfoTaskboardArchivePut(
+        requestBody: TaskboardArchiveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/archive',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 记录或删除任务台的完成日期
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static setTaskboardDoneAtApiInfoTaskboardDoneAtPut(
+        requestBody: TaskboardDoneAtIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/info/taskboard/done-at',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1049,6 +1123,25 @@ export class Service {
         });
     }
     /**
+     * 批量获取 MAA 库存保持关卡候选
+     * @param requestBody
+     * @returns MaaDepotStageCandidatesBatchOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesBatchApiScriptsMaaDepotStageCandidatesBatchPost(
+        requestBody: MaaDepotStageCandidatesBatchIn,
+    ): CancelablePromise<MaaDepotStageCandidatesBatchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates/batch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
      * @param requestBody
      * @returns MaaDepotInventoryOut Successful Response
@@ -1138,12 +1231,12 @@ export class Service {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiScriptsWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/get',
@@ -1157,12 +1250,12 @@ export class Service {
     /**
      * 添加webhook项
      * @param requestBody
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static addWebhookApiScriptsWebhookAddPost(
         requestBody: WebhookInBase,
-    ): CancelablePromise<WebhookCreateOut> {
+    ): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/add',
@@ -1180,7 +1273,7 @@ export class Service {
      * @throws ApiError
      */
     public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1561,7 +1654,7 @@ export class Service {
     }
     /**
      * 获取 BetterGI 自动战斗策略选项
-     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt`` 文件名。
+     * 返回 BetterGI 可用自动战斗策略：内置「根据队伍自动选择」+ ``{RootPath}/User/AutoFight*.txt``、``*.json`` 文件名。
      * @param scriptId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
@@ -3926,12 +4019,12 @@ export class Service {
     /**
      * 查询 webhook 配置
      * @param requestBody
-     * @returns WebhookGetOut Successful Response
+     * @returns WebhookGetOut_Webhook_ Successful Response
      * @throws ApiError
      */
     public static getWebhookApiSettingWebhookGetPost(
         requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut> {
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/get',
@@ -3944,10 +4037,10 @@ export class Service {
     }
     /**
      * 添加webhook项
-     * @returns WebhookCreateOut Successful Response
+     * @returns WebhookCreateOut_Webhook_ Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut_Webhook_> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
@@ -3960,7 +4053,7 @@ export class Service {
      * @throws ApiError
      */
     public static updateWebhookApiSettingWebhookUpdatePost(
-        requestBody: WebhookUpdateIn,
+        requestBody: WebhookUpdateIn_WebhookInput_,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

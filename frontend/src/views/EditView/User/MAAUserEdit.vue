@@ -242,6 +242,7 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
 import { useMaaCultivateImportApi } from '@/composables/useMaaCultivateImportApi'
+import { useMaaDepotStageCandidates } from '@/composables/useMaaDepotStageCandidates'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
@@ -277,6 +278,7 @@ import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 const { parseImport } = useMaaCultivateImportApi()
@@ -284,7 +286,7 @@ const { parseImport } = useMaaCultivateImportApi()
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const { getPlans } = usePlanApi()
 const {
   maaConfigLoading,
@@ -329,9 +331,12 @@ const depotItemOptionsLoading = ref(false)
 const depotItemOptionsError = ref('')
 
 // 库存保持关卡候选（按物品缓存，含每理智效率）与仓库库存
-const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
-const depotStageCandidatesLoading = ref<string[]>([])
-const depotStageCandidatePromises = new Map<string, Promise<void>>()
+const {
+  candidates: depotStageCandidates,
+  loading: depotStageCandidatesLoading,
+  load: loadDepotStageCandidateBatch,
+  cancelPending: cancelDepotStageCandidates,
+} = useMaaDepotStageCandidates(scriptId)
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
 
@@ -642,7 +647,7 @@ const getDefaultMAAUserData = () => ({
     ServerChanTag: '',
   },
   Data: {
-    LastProxyDate: '',
+    LastProxyDate: '2000-01-01T00:00:00+04:00',
     ProxyTimes: 0,
     CultivateNotice: '',
     StaminaPipelineVersion: 1,
@@ -741,7 +746,7 @@ const fieldSave = useMAAFieldSave({
     (key === 'Task.EventDepotMaintainPlans' && eventDepotPlanEditor.hasPendingEdits()),
   onFailure: () => {
     const errorMsg = userError.value
-    if (!errorMsg || errorMsg.includes('HTTP error')) message.error(t('edit.couldNotSaveUser'))
+    if (!errorMsg) message.error(t('edit.couldNotSaveUser'))
     logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
   },
   onError: error => {
@@ -828,13 +833,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
   }
 }
 
@@ -856,13 +861,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -925,13 +930,13 @@ const loadUserData = async (): Promise<boolean> => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userError.value) message.error(t('edit.couldNotLoadUser2'))
   }
   return false
 }
@@ -1032,51 +1037,15 @@ const loadDepotItemOptions = async () => {
   }
 }
 
-const loadDepotStageCandidates = async (itemId: string) => {
-  if (!itemId || depotStageCandidates.value[itemId]) return
-  const pending = depotStageCandidatePromises.get(itemId)
-  if (pending) return pending
-  depotStageCandidatesLoading.value.push(itemId)
-  const loadingCandidates = (async () => {
-    try {
-      const response =
-        await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
-          script: { scriptId },
-          itemId,
-        })
-      // 空数组表示已完成但无候选，编辑器保留原选项，同时避免无限重试。
-      depotStageCandidates.value[itemId] =
-        response.code === 200
-          ? response.data
-              .filter(option => option.value)
-              .map(option => ({ label: option.label, value: option.value as string }))
-          : []
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
-      depotStageCandidates.value[itemId] = []
-    } finally {
-      depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
-        id => id !== itemId
-      )
-      depotStageCandidatePromises.delete(itemId)
-    }
-  })()
-  // 预取与编辑共享同一个请求，冲刷编辑时也要等正在预取的候选。
-  depotStageCandidatePromises.set(itemId, loadingCandidates)
-  await loadingCandidates
-}
+const loadDepotStageCandidates = (itemId: string) => loadDepotStageCandidateBatch([itemId])
 
-// 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
-// 返回肉眼可见地逐个刷新。改在进页后台预取（折叠状态下面板未挂载，响应
-// 到达零渲染），展开时编辑器的预加载全命中缓存不再发请求。单条失败写入
-// 空数组由 loadDepotStageCandidates 自身的兜底语义处理
+// 进页一次预取所有已配置材料，展开时复用缓存；慢数据源不会挤满保存请求的连接。
 const preloadDepotStageCandidates = () => {
   try {
     const plans: Array<{ DropId?: string }> = JSON.parse(formData.Task.DepotMaintainPlans || '[]')
-    for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
-      void loadDepotStageCandidates(itemId as string)
-    }
+    void loadDepotStageCandidateBatch(
+      plans.map(plan => plan?.DropId).filter((itemId): itemId is string => !!itemId)
+    )
   } catch {
     logger.warn('库存保持候选预取失败，展开时按需加载')
   }
@@ -1385,6 +1354,8 @@ const {
   pageRef,
   canStart: () => !configLocked.value && !isInitializing.value && !!userId,
   flushEdits: async () => {
+    // 结清纯读取的候选等待，让换材料或导入预设的编辑按当前结果保存。
+    cancelDepotStageCandidates()
     if (isInitializing.value) return fieldSave.waitForPending()
     await depotPlanEditor.flushPendingEdits()
     await eventDepotPlanEditor.flushPendingEdits()
@@ -1410,7 +1381,7 @@ const {
   backup: () => ensureMaaBackup('mas'),
   onSaveError: error => {
     logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error(t('edit.couldNotSaveUser'))
+    if (!userError.value) message.error(t('edit.couldNotSaveUser'))
   },
   onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
   onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
@@ -1578,31 +1549,27 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
 ]
 
 // 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const {
+  restoreApi: backupApi,
+  restore: restoreConfigBackup,
+  ensureBackup,
+} = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  ...backupApi,
   restore: (target: string, time: string, force?: boolean) =>
     restoreBackup(target, time, false, force),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
 // 一键恢复与详细查看共用恢复事务：旧编辑先完成，恢复和重载期间保持锁定。
 const restoreBackup = async (target: string, time: string, viewOnly = false, force = false) => {
-  let response:
-    | Awaited<ReturnType<typeof Service.restoreConfigBackupApiApiScriptsBackupRestorePost>>
-    | undefined
+  let response: Awaited<ReturnType<typeof restoreConfigBackup>> | undefined
   const restored = await restoreConfiguration(
     async () => {
-      response = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-        scriptId,
-        userId,
-        time,
-        target,
-        force,
-      })
+      response = await restoreConfigBackup(target, time, force)
       if (response.code !== 200) return false
       restoreOpen.value = false
       if (target === 'mas' && !(await loadUserData())) return false
@@ -1690,20 +1657,7 @@ const handleRestoreView = (
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 的 set_maa）配合——进入归档原生配置当前状态
 // （MAS 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
-const ensureMaaBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureMaaBackup = ensureBackup
 
 // 初始化加载
 onMounted(async () => {

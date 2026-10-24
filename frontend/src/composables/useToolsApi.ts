@@ -1,7 +1,16 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type ToolsConfig } from '@/api'
+import { Service, type ToolsConfig, type ToolsConfigInput } from '@/api'
+
+// 接口的只读字段仍需随轮询更新本地显示状态。
+export type ToolsViewConfig = {
+  [K in keyof ToolsConfig]:
+    | {
+        -readonly [F in keyof NonNullable<ToolsConfig[K]>]: NonNullable<ToolsConfig[K]>[F]
+      }
+    | null
+}
 
 export function useToolsApi() {
   const loading = ref(false)
@@ -10,7 +19,7 @@ export function useToolsApi() {
   /**
    * 获取工具
    */
-  const getTools = async (): Promise<ToolsConfig> => {
+  const getTools = async (): Promise<ToolsViewConfig> => {
     loading.value = true
     try {
       const response = await Service.getToolsApiToolsGetPost()
@@ -31,7 +40,7 @@ export function useToolsApi() {
   /**
    * 更新工具
    */
-  const updateTools = async (data: ToolsConfig): Promise<void> => {
+  const updateTools = async (data: ToolsConfigInput): Promise<void> => {
     loading.value = true
     try {
       const response = await Service.updateToolsApiToolsUpdatePost({ data })

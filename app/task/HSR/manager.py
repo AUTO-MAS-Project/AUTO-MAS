@@ -27,12 +27,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import atomic_write, replace_dir
@@ -46,7 +48,6 @@ from .task_mapping import (
     resolve_script_assignment,
     script_supports,
 )
-from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
     check_cloud_prerequisites,
@@ -124,8 +125,10 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
     logger.info(f"{label} 已恢复：{source}")
 
 
-class HSRManager(TaskExecuteBase):
+class HSRManager(NotificationTaskBase):
     """HSR 调度器，管理星穹铁道 M7A/SRA 双脚本任务。"""
+
+    wait_for_finalizer_on_cancel = True
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -139,9 +142,9 @@ class HSRManager(TaskExecuteBase):
         self.begin_time: str = ""
         self.crashed: bool = False
         self.script_config: HSRConfig | None = None
-        self.user_config: MultipleConfig[HSRUserConfig] | None = None
+        self.user_config: ConfigCollection[HSRUserConfig] | None = None
         # 真实执行成功后的完成态写回队列。执行链路只登记意图，等待 final_task()
-        # 确认整轮正常结束、脚本配置解锁后，再写回真实 UserData。
+        # 结算时在 X 锁内更新原始 UserData。
         self._completion_writebacks: list[CompletionWriteback] = []
         self._log_lines: list[str] = []
         self._runtime: HSRRuntimeState = HSRRuntimeState(
@@ -304,7 +307,7 @@ class HSRManager(TaskExecuteBase):
         script_config = self.script_config
         if script_config is None:
             return None
-        if str(script_config.get("Update", "AutoUpdateMode") or "Off") != "AfterRun":
+        if str(script_config.Update.AutoUpdateMode or "Off") != "AfterRun":
             return None
         # 取消或已经出错的这一轮不动目录：收尾期最不该起一个几百 MB 的下载。
         # `stopped_manually` 是基类在任何 CancelledError 上置的（models/task.py），
@@ -315,8 +318,8 @@ class HSRManager(TaskExecuteBase):
 
         from app.task.HSR.tools.update import update_engine_if_needed
 
-        channel = str(script_config.get("Update", "Channel") or "stable")
-        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+        channel = str(script_config.Update.Channel or "stable")
+        cdk = str(script_config.Update.MirrorChyanCDK or "")
         # 与 MaaFW 更新缓存同一口径：下载包落 MAS 数据目录，不落安装卷。
         download_dir = Path.cwd() / "data" / "hsr_update"
 
@@ -327,7 +330,7 @@ class HSRManager(TaskExecuteBase):
             root = resolve_script_path(script_config, engine)
             if not root:
                 continue
-            source = str(script_config.get("Update", f"{engine}Source") or "")
+            source = str(getattr(script_config.Update, f"{engine}Source") or "")
             try:
                 outcome = await update_engine_if_needed(
                     engine,
@@ -434,9 +437,7 @@ class HSRManager(TaskExecuteBase):
             return "未配置任何脚本路径，请至少填写三月七或 SRA 路径"
 
         for module in HSR_TASK_MODULES:
-            raw_assigned = script_config._config_item_index["TaskMapping"][
-                module.key
-            ].value
+            raw_assigned = getattr(script_config.TaskMapping, module.key)
             if not script_supports(module.key, raw_assigned):
                 return (
                     f"模块「{module.name}」的分配脚本 '{raw_assigned}' "
@@ -473,9 +474,9 @@ class HSRManager(TaskExecuteBase):
         daily_stage_checks: list[tuple[Any, HSRUserConfig, str, str]] = []
 
         for uid, user_config in script_config.UserData.items():
-            if not user_config.get("Info", "Status"):
+            if not user_config.Info.Status:
                 continue
-            if user_config.get("Info", "RemainedDay") == 0:
+            if user_config.Info.RemainedDay == 0:
                 continue
             # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
             # 用户的原生来源前置条件、引擎需求与托管账号数把这一个用户拦下来。
@@ -484,7 +485,7 @@ class HSRManager(TaskExecuteBase):
             has_executable_user = True
 
             control = resolve_user_control(user_config, script_config=script_config)
-            user_name = str(user_config.get("Info", "Name") or uid)
+            user_name = str(user_config.Info.Name or uid)
             if control.mode == "direct":
                 has_direct_user = True
                 if self.task_info.mode != "AutoProxy":
@@ -543,8 +544,9 @@ class HSRManager(TaskExecuteBase):
             # 任务开关、副本与引擎分配读计划（shared 来源 = 脚本配置上的共享计划），
             # 账号与完成态仍读用户配置。
             plan = resolve_plan(user_config, script_config)
+            assert plan is not None
             for module in HSR_TASK_MODULES:
-                if plan.get("TaskSwitch", module.key):
+                if getattr(plan.TaskSwitch, module.key):
                     enabled_module_keys.add(module.key)
                     assigned = resolve_script_assignment(
                         module,
@@ -585,7 +587,7 @@ class HSRManager(TaskExecuteBase):
             )
 
         if game_management_enabled and (enabled_module_keys or has_direct_user):
-            if not str(script_config.get("Game", "Path") or "").strip():
+            if not str(script_config.Game.Path or "").strip():
                 return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
             if not game_exe_path.exists():
@@ -779,10 +781,7 @@ class HSRManager(TaskExecuteBase):
     def _is_executable_user(user_config) -> bool:
         """判断用户是否处于本轮可执行状态。"""
 
-        return (
-            bool(user_config.get("Info", "Status"))
-            and user_config.get("Info", "RemainedDay") != 0
-        )
+        return bool(user_config.Info.Status) and user_config.Info.RemainedDay != 0
 
     def _proxy_times_limit_reached(self, user_config) -> bool:
         """今日代理次数是否已达脚本页设定的上限（0 = 不限）。
@@ -791,13 +790,14 @@ class HSRManager(TaskExecuteBase):
         所以这里只在 ``LastProxyDate`` 是今天时才算数。
         """
 
-        limit = int(self.script_config.get("Run", "ProxyTimesLimit") or 0)
+        assert self.script_config is not None
+        limit = int(self.script_config.Run.ProxyTimesLimit or 0)
         if limit == 0:
             return False
         today = _server_day_clock().strftime("%Y-%m-%d")
-        if str(user_config.get("Data", "LastProxyDate") or "") != today:
+        if str(user_config.Data.LastProxyDate.strftime("%Y-%m-%d") or "") != today:
             return False
-        return int(user_config.get("Data", "ProxyTimes") or 0) >= limit
+        return int(user_config.Data.ProxyTimes or 0) >= limit
 
     def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
@@ -815,7 +815,7 @@ class HSRManager(TaskExecuteBase):
                 == "direct"
             ):
                 continue
-            user_name = user_config.get("Info", "Name")
+            user_name = user_config.Info.Name
             result = check_user_credentials(user_config, user_name)
             if result != "Pass":
                 return result
@@ -823,7 +823,7 @@ class HSRManager(TaskExecuteBase):
         return "Pass"
 
     async def _apply_completion_writebacks(self) -> None:
-        """在配置解锁后，把真实成功的完成态写回用户 Data。"""
+        """持有 X 锁时，把真实成功的完成态写入用户 Data。"""
 
         pending = list(self._completion_writebacks)
         if not pending:
@@ -835,13 +835,14 @@ class HSRManager(TaskExecuteBase):
             user_uuid = uuid.UUID(item.user_id)
             user_config = script_config.UserData[user_uuid]
             for group, key, value in item.fields:
-                await user_config.set(group, key, value)
+                setattr(getattr(user_config, group), key, value)
+            await user_config.commit()
             logger.success(f"用户「{item.user_name}」HSR 完成态已写回：{item.reason}")
 
         self._completion_writebacks.clear()
 
     async def _apply_cloud_login_writebacks(self) -> None:
-        """配置解锁后把本轮确认已登录的时间合并进 ``Cloud.LastLogin``。
+        """持有 X 锁时把本轮确认已登录的时间合并进 ``Cloud.LastLogin``。
 
         只是给界面看的记录，写失败只记日志，不影响任务结果。
         """
@@ -865,12 +866,13 @@ class HSRManager(TaskExecuteBase):
         """锁定配置、加载用户列表（不启动外部程序）"""
 
         script_id = uuid.UUID(self.script_info.script_id)
-        await Config.ScriptConfig[script_id].lock()
+        self.config_locks[
+            Config.ScriptConfig[script_id].uid
+        ] = await Config.ScriptConfig[script_id].lock_x()
         self.script_config = Config.ScriptConfig[script_id]
-        self.user_config = MultipleConfig([HSRUserConfig])
-        await self.user_config.load(
-            await self.script_config.UserData.toDict(if_decrypt=False)
-        )
+        if not isinstance(self.script_config, HSRConfig):
+            raise TypeError("脚本配置类型错误")
+        self.user_config = self.script_config.UserData
 
         logger.success(f"{self.script_info.script_id} 已锁定，HSR 配置提取完成")
 
@@ -916,14 +918,10 @@ class HSRManager(TaskExecuteBase):
             raise
 
         self.script_info.user_list = [
-            UserItem(
-                user_id=str(uid),
-                name=config.get("Info", "Name"),
-                status="等待",
-            )
+            UserItem(user_id=str(uid), name=config.Info.Name, status="等待")
             for uid, config in self.user_config.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
+            if config.Info.Status
+            and config.Info.RemainedDay != 0
             and self.task_info.is_target_user(str(uid))
         ]
         logger.info(
@@ -1079,7 +1077,7 @@ class HSRManager(TaskExecuteBase):
         if self.script_config is None:
             raise RuntimeError("HSR 脚本配置尚未加载")
         control = resolve_user_control(user_config, script_config=self.script_config)
-        user_name = str(user_config.get("Info", "Name") or user_item.name)
+        user_name = str(user_config.Info.Name or user_item.name)
         started_at = datetime.now()
         log_item = LogRecord(status="HSR 脚本原生来源运行中")
         user_item.log_record[started_at] = log_item
@@ -1404,7 +1402,9 @@ class HSRManager(TaskExecuteBase):
             )
             return False
 
-        await Config.ScriptConfig[script_id].unlock()
+        _config_ticket = self.config_locks.pop(Config.ScriptConfig[script_id].uid, None)
+        if _config_ticket is not None:
+            await Config.ScriptConfig[script_id].unlock(_config_ticket)
         return True
 
     async def _push_result_notification(self) -> None:
@@ -1425,7 +1425,7 @@ class HSRManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{task_mode}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
@@ -1436,11 +1436,9 @@ class HSRManager(TaskExecuteBase):
         }
 
         try:
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
-                user_config=None,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
             )
         except Exception as e:  # noqa: BLE001
@@ -1460,106 +1458,103 @@ class HSRManager(TaskExecuteBase):
             logger.warning(f"发送 HSR 通知错误提示失败：{e}")
 
     async def final_task(self):
-        """解锁配置、恢复外部配置并落盘日志。"""
-
-        final_errors: list[str] = []
-        try:
-            await self._stop_external_processes()
-        except Exception as e:  # noqa: BLE001
-            msg = f"停止 SRA / 三月七外部进程失败：{e}"
-            logger.opt(exception=True).warning(msg)
-            self._append_log(msg)
-            final_errors.append(msg)
+        """恢复外部配置、保存运行状态并释放 X 锁。"""
 
         try:
-            await self._close_game_if_needed()
-        except Exception as e:  # noqa: BLE001
-            msg = f"关闭 HSR 游戏进程失败：{e}"
-            logger.opt(exception=True).warning(msg)
-            self._append_log(msg)
-            final_errors.append(msg)
-
-        try:
-            # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
-            # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
-            # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
-            if (
-                isinstance(self.script_config, HSRConfig)
-                and is_game_management_enabled(self.script_config)
-                and not is_cloud_platform(self.script_config)
-            ):
-                restore_game_resolution_if_needed(
-                    self._runtime,
-                    self._append_log,
-                )
-        except Exception as e:  # noqa: BLE001
-            msg = f"恢复星铁分辨率注册表失败：{e}"
-            logger.opt(exception=True).warning(msg)
-            self._append_log(msg)
-            final_errors.append(msg)
-
-        try:
-            restore_error = await self._restore_external_configs()
-            # 外部脚本更新是这一段关键区里的最后一件事：往前必须晚于配置恢复
-            # （恢复写的是打补丁前的用户配置，反过来会把旧配置盖到新版本上），
-            # 往后必须早于释放路径锁，否则更新期间目录不再独占。
-            if not final_errors and not restore_error:
-                update_error = await self._update_external_scripts()
-                if update_error:
-                    final_errors.append(update_error)
-        finally:
-            # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
-            self._release_external_path_lock()
-        if restore_error:
-            final_errors.append(restore_error)
-
-        if final_errors:
-            self.crashed = True
-
-        if self.check_result != "Pass" or self.crashed:
-            self.script_info.status = "异常"
-            self._append_log("HSR 异常或中止结束，开始解锁配置")
-            logger.info("HSR 异常结束，开始解锁配置")
-            if await self._unlock_script_config():
-                logger.info(f"已解锁脚本配置 {self.script_info.script_id}（异常结束）")
-                self._append_log("HSR 配置已解锁（异常或中止结束）")
+            final_errors: list[str] = []
             try:
-                if self.task_info.mode == "AutoProxy":
-                    await self._apply_completion_writebacks()
+                await self._stop_external_processes()
             except Exception as e:  # noqa: BLE001
-                msg = f"HSR 已完成模块状态写回失败：{e}"
+                msg = f"停止 SRA / 三月七外部进程失败：{e}"
                 logger.opt(exception=True).warning(msg)
                 self._append_log(msg)
                 final_errors.append(msg)
+
+            try:
+                await self._close_game_if_needed()
+            except Exception as e:  # noqa: BLE001
+                msg = f"关闭 HSR 游戏进程失败：{e}"
+                logger.opt(exception=True).warning(msg)
+                self._append_log(msg)
+                final_errors.append(msg)
+
+            try:
+                # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
+                # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
+                # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
+                # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
+                if (
+                    isinstance(self.script_config, HSRConfig)
+                    and is_game_management_enabled(self.script_config)
+                    and not is_cloud_platform(self.script_config)
+                ):
+                    restore_game_resolution_if_needed(
+                        self._runtime,
+                        self._append_log,
+                    )
+            except Exception as e:  # noqa: BLE001
+                msg = f"恢复星铁分辨率注册表失败：{e}"
+                logger.opt(exception=True).warning(msg)
+                self._append_log(msg)
+                final_errors.append(msg)
+
+            try:
+                restore_error = await self._restore_external_configs()
+                # 外部脚本更新是这一段关键区里的最后一件事：往前必须晚于配置恢复
+                # （恢复写的是打补丁前的用户配置，反过来会把旧配置盖到新版本上），
+                # 往后必须早于释放路径锁，否则更新期间目录不再独占。
+                if not final_errors and not restore_error:
+                    update_error = await self._update_external_scripts()
+                    if update_error:
+                        final_errors.append(update_error)
+            finally:
+                # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
+                self._release_external_path_lock()
+            if restore_error:
+                final_errors.append(restore_error)
+
+            if final_errors:
+                self.crashed = True
+
+            if self.check_result != "Pass" or self.crashed:
+                self.script_info.status = "异常"
+                self._append_log("HSR 异常或中止结束，开始收尾")
+                logger.info("HSR 异常结束，开始收尾")
+                try:
+                    if self.task_info.mode == "AutoProxy":
+                        await self._apply_completion_writebacks()
+                except Exception as e:  # noqa: BLE001
+                    msg = f"HSR 已完成模块状态写回失败：{e}"
+                    logger.opt(exception=True).warning(msg)
+                    self._append_log(msg)
+                    final_errors.append(msg)
+                await self._apply_cloud_login_writebacks()
+                await self._persist_user_logs()
+                await self._push_result_notification()
+                return "；".join(final_errors) or self.check_result
+
+            logger.info("HSR 主任务已结束，开始收尾")
+            self._append_log("HSR 主任务已结束，开始收尾")
+
             await self._apply_cloud_login_writebacks()
+            try:
+                if self.task_info.mode == "AutoProxy":
+                    await self._apply_completion_writebacks()
+            except Exception as e:
+                self.script_info.status = "异常"
+                logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
+                self._append_log(f"HSR 用户数据写回失败：{e}")
+                return f"HSR 用户数据写回失败：{e}"
+
+            if any(user.status == "异常" for user in self.script_info.user_list):
+                self.script_info.status = "异常"
+            else:
+                self.script_info.status = "完成"
+            self._append_log("HSR 任务完成")
             await self._persist_user_logs()
             await self._push_result_notification()
-            return "；".join(final_errors) or self.check_result
-
-        logger.info("HSR 主任务已结束，开始解锁配置")
-        self._append_log("HSR 主任务已结束，开始解锁配置")
-        if await self._unlock_script_config():
-            logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
-            self._append_log("HSR 配置已解锁")
-
-        await self._apply_cloud_login_writebacks()
-        try:
-            if self.task_info.mode == "AutoProxy":
-                await self._apply_completion_writebacks()
-        except Exception as e:
-            self.script_info.status = "异常"
-            logger.opt(exception=True).warning(f"HSR 用户数据写回失败：{e}")
-            self._append_log(f"HSR 用户数据写回失败：{e}")
-            return f"HSR 用户数据写回失败：{e}"
-
-        if any(user.status == "异常" for user in self.script_info.user_list):
-            self.script_info.status = "异常"
-        else:
-            self.script_info.status = "完成"
-        self._append_log("HSR 任务完成")
-        await self._persist_user_logs()
-        await self._push_result_notification()
+        finally:
+            await self._unlock_script_config()
 
     async def on_crash(self, e: Exception):
         """任务异常处理"""

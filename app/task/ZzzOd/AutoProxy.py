@@ -61,15 +61,17 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.notification_ports import LocalNotice
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -111,7 +113,6 @@ from .tools import (
     list_app_catalog,
     list_instances,
     mas_backup_root,
-    push_notification,
     read_game_account,
     read_native_after_done,
     recycle_orphan_slots,
@@ -175,7 +176,8 @@ _ZZZOD_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 )
 
 # 应用最终失败触发有界重跑，内部操作的失败不直接判负；重试保留运行记录，
-# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。
+# 已完成任务的跳过与周期进度均交给 zzz-od 自己维护。白名单应用
+# （_RETRY_FUTILE_APPS）的失败不触发重试，详见其注释。
 
 # 一条龙应用终态成功标志（每次运行恰好出现一次）：出现即代表全部实例执行
 # 完毕（对齐 ok-ww 的成功标志行行为）。出现后立即结束日志等待，不等启动器
@@ -187,6 +189,14 @@ _ZZZOD_ONE_DRAGON_SUCCESS = "指令[ 一条龙 ] 执行成功"
 # 汇总信号应用：上游「通知」应用在本轮存在失败任务时会把自己标失败
 # （通知消息本身已发出，fire-and-forget），从失败名单剔除避免误导
 _SUMMARY_APP_IDS = frozenset({"notify"})
+
+# 「重试无意义」应用白名单（2026-10 维护者决策，条目为应用中文名，prepare
+# 时经应用目录解析为 app_id、失配在启动时告警）：这些应用的最终失败重试也不
+# 会改变结果（如限时活动关闭后入口消失，上游 app 内部已重试多次），失败不再
+# 因它们消耗重试轮次，也不拦其余应用的重试——仅当本轮失败的应用全部在白名单
+# 内（没有可恢复对象）时才跳过剩余重试。上游尚无「活动已结束」等专门状态前
+# 的调度域临时补位，上游补齐后移除。
+_RETRY_FUTILE_APPS: frozenset[str] = frozenset({"丽都城募", "情报板"})
 
 
 def _match_fatal(log: str) -> str | None:
@@ -244,6 +254,20 @@ def _failed_apps(
     failed.difference_update(observed)
     failed.update(app_id for (_, app_id), is_failed in results.items() if is_failed)
     return sorted(failed)
+
+
+def _failures_all_futile(
+    failed_app_ids: list[str], futile_app_ids: frozenset[str]
+) -> bool:
+    """失败的应用是否全部命中「重试无意义」白名单（没有可恢复对象）。
+
+    白名单应用的失败不触发重试，也不拦其余应用的重试；空失败名单（致命
+    错误 / 超时等运行级失败，未做应用级判定）按可重试处理。
+    """
+
+    return bool(failed_app_ids) and all(
+        app_id in futile_app_ids for app_id in failed_app_ids
+    )
 
 
 def find_launcher_exe(root: Path) -> Path:
@@ -430,7 +454,7 @@ def _owner_alive(root: Path, owner: str) -> bool:
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
             continue
-        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        script_root = str(script_config.Info.RootPath or "").strip()
         if not script_root or config_root_key(script_root) != key:
             continue
         if any(str(uid) == owner for uid in script_config.UserData.keys()):
@@ -542,7 +566,7 @@ async def ensure_user_slot(
         owner_uid: 用户 uid，写进台账作为该槽的归属；缺省则归属未知。
     """
 
-    bound = int(user_config.get("Info", "SlotIdx") or -1)
+    bound = int(user_config.Info.SlotIdx or -1)
     native_idxs = {
         int(item.get("idx", -1))
         for item in list_instances(root)
@@ -567,7 +591,7 @@ async def ensure_user_slot(
             )
         )
         if taken:
-            user_name = str(user_config.get("Info", "Name") or "未知用户")
+            user_name = str(user_config.Info.Name or "未知用户")
             archive_taken_slot(
                 root,
                 bound,
@@ -577,7 +601,8 @@ async def ensure_user_slot(
                 _follow_mas_backups(script_id, bound, slot)
     used_idxs.add(slot)
     if slot != bound:
-        await user_config.set("Info", "SlotIdx", slot)
+        user_config.Info.SlotIdx = slot
+        await user_config.commit()
     _record_allocated_slot(root, slot, owner_uid)
     return slot
 
@@ -601,13 +626,13 @@ def collect_used_slot_idxs(
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
             continue
-        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        script_root = str(script_config.Info.RootPath or "").strip()
         if not script_root or config_root_key(script_root) != key:
             continue
         for uid, cfg in script_config.UserData.items():
             if uid in excluded:
                 continue
-            bound = int(cfg.get("Info", "SlotIdx") or -1)
+            bound = int(cfg.Info.SlotIdx or -1)
             if bound > 0:
                 used.add(bound)
     return used
@@ -627,12 +652,12 @@ def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
     for script_uid, script_config in Config.ScriptConfig.items():
         if not isinstance(script_config, ZzzOdConfig):
             continue
-        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        script_root = str(script_config.Info.RootPath or "").strip()
         if not script_root or config_root_key(script_root) != key:
             continue
-        script_name = str(script_config.get("Info", "Name") or "")
+        script_name = str(script_config.Info.Name or "")
         for uid, cfg in script_config.UserData.items():
-            bound = int(cfg.get("Info", "SlotIdx") or -1)
+            bound = int(cfg.Info.SlotIdx or -1)
             if bound <= 0:
                 continue
             owners.setdefault(bound, []).append(
@@ -640,8 +665,8 @@ def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
                     "scriptId": str(script_uid),
                     "userId": str(uid),
                     "scriptName": script_name,
-                    "userName": str(cfg.get("Info", "Name") or ""),
-                    "base": str(cfg.get("Info", "Base") or CONFIG_BASE_INDEPENDENT),
+                    "userName": str(cfg.Info.Name or ""),
+                    "base": str(cfg.Info.Base or CONFIG_BASE_INDEPENDENT),
                 }
             )
     return owners
@@ -665,9 +690,9 @@ def running_zzzod_scripts(
             continue
         if exclude_script_id and str(script_uid) == str(exclude_script_id):
             continue
-        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        script_root = str(script_config.Info.RootPath or "").strip()
         if script_root and config_root_key(script_root) == key:
-            running.append(str(script_config.get("Info", "Name") or script_uid))
+            running.append(str(script_config.Info.Name or script_uid))
     return running
 
 
@@ -742,7 +767,7 @@ def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
     """
 
     try:
-        raw = json.loads(str(user_config.get("OneDragon", "AppList") or "[]"))
+        raw = json.loads(str(user_config.OneDragon.AppList or "[]"))
     except json.JSONDecodeError as e:
         raise ValueError("一条龙任务编排数据异常, 请重新编辑任务配置") from e
     if not isinstance(raw, list):
@@ -840,7 +865,7 @@ def _judge_all_skipped(log: str, diffs: list) -> bool:
     return not diffs and _ZZZOD_ONE_DRAGON_SUCCESS in log
 
 
-class AutoProxyTask(ScriptAutoProxyBase):
+class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
     """ZZZ-OD 自动代理：逐用户按三态来源拉起启动器 CLI 一条龙并监控"""
 
     # 取消时等 final_task 完整收尾（SRC/MaaFW 同款）：不设此 flag 时外层取消会
@@ -852,7 +877,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self,
         script_info: ScriptItem,
         script_config: ZzzOdConfig,
-        user_config: MultipleConfig[ZzzOdUserConfig],
+        user_config: ConfigCollection[ZzzOdUserConfig],
         users: list[UserItem] | None = None,
     ):
         super().__init__()
@@ -875,9 +900,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.base = read_config_base(self.cur_user_config)
         # 账号切换方式（脚本级下拉，仅注入模式生效）：
         # 多实例切换=多用户注入多实例槽一轮跑；单实例切换=逐用户独立会话
-        self.account_switch = str(
-            self.script_config.get("Game", "AccountSwitch") or "单实例切换"
-        )
+        self.account_switch = str(self.script_config.Game.AccountSwitch or "单实例切换")
         self.cur_user_log: LogRecord | None = None
         self.launcher_process_manager: ProcessManager | None = None
         # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体的进程管理器
@@ -917,6 +940,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
         self._app_name_book: dict[str, str] = {}
+        # 本轮应用级失败名单（_judge_final 写入；重试前判「重试无意义」用）
+        self._failed_app_ids: list[str] = []
+        # 白名单解析结果（app_id 集，prepare 经应用目录解析）
+        self._futile_app_ids: frozenset[str] = frozenset()
 
     def _enabled_app_list(self) -> list[dict]:
         """当前用户的一条龙任务编排 enabled 项列表。"""
@@ -989,13 +1016,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not self._is_multi_account():
             return False
         return any(
-            str(
-                self.user_config[uuid.UUID(item.user_id)].get("Notify", "PushLogMode")
-                or "汇总"
+            (
+                str(
+                    self.user_config[uuid.UUID(item.user_id)].Notify.PushLogMode
+                    or "汇总"
+                )
+                != "关闭"
+                for item in self._task_users
+                if self.user_config[uuid.UUID(item.user_id)].Info.Status
             )
-            != "关闭"
-            for item in self._task_users
-            if self.user_config[uuid.UUID(item.user_id)].get("Info", "Status")
         )
 
     def _route_push_log(self, log_type: str, text: str, ts: float) -> None:
@@ -1026,22 +1055,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
         「异常」剔除，告警写入调度台。
         """
 
-        limit = int(self.script_config.get("Run", "ProxyTimesLimit"))
+        limit = int(self.script_config.Run.ProxyTimesLimit)
         candidates: list[tuple[UserItem, ZzzOdUserConfig, list[dict]]] = []
         for user_item in self._task_users:
             uid = uuid.UUID(user_item.user_id)
             cfg = self.user_config[uid]
-            if not cfg.get("Info", "Status"):
+            if not cfg.Info.Status:
                 continue
             if user_uses_native_base(cfg):
                 logger.warning(
                     f"用户 {user_item.name} 为原生来源配置, 不参与注入运行（原生裸跑由调度单独分派）"
                 )
                 continue
-            if cfg.get("Info", "RemainedDay") == 0:
+            if cfg.Info.RemainedDay == 0:
                 user_item.status = "跳过"
                 continue
-            if limit != 0 and cfg.get("Data", "ProxyTimes") >= limit:
+            if limit != 0 and cfg.Data.ProxyTimes >= limit:
                 user_item.status = "跳过"
                 continue
             try:
@@ -1059,8 +1088,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             guarded: list[tuple[UserItem, ZzzOdUserConfig, list[dict]]] = []
             for user_item, cfg, apps in candidates:
                 if (
-                    str(cfg.get("Game", "Account") or "").strip()
-                    and str(cfg.get("Game", "Password") or "").strip()
+                    str(cfg.Game.Account or "").strip()
+                    and str(cfg.Game.Password or "").strip()
                 ):
                     guarded.append((user_item, cfg, apps))
                     continue
@@ -1159,8 +1188,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self._multi_uids.add(user_item.user_id)
             # 多实例切换共用一个 log_box：各用户的节点详情推送模式与归属
             # （sink 按「【用户名】」前缀路由，idx→用户名供后置处理器归属）
-            user_item.push_log_mode = str(cfg.get("Notify", "PushLogMode") or "汇总")
-            self._idx_names[slot] = str(cfg.get("Info", "Name") or "")
+            user_item.push_log_mode = str(cfg.Notify.PushLogMode or "汇总")
+            self._idx_names[slot] = str(cfg.Info.Name or "")
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
 
     def _write_view(self) -> None:
@@ -1181,16 +1210,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         force_login = False
         if len(slots) == 1:
             first_user = next(iter(self._slot_users.values()))[1]
-            force_login = bool(str(first_user.get("Game", "Account") or "").strip())
+            force_login = bool(str(first_user.Game.Account or "").strip())
 
         write_instance_view(
             self.script_root_path,
-            [
-                (slot, f"MAS-{self._slot_users[slot][1].get('Info', 'Name')}")
-                for slot, _ in slots
-            ],
+            [(slot, f"MAS-{self._slot_users[slot][1].Info.Name}") for slot, _ in slots],
             active_idx=slots[0][0],
-            instance_run=(INSTANCE_RUN_ALL if len(slots) > 1 else INSTANCE_RUN_CURRENT),
+            instance_run=INSTANCE_RUN_ALL if len(slots) > 1 else INSTANCE_RUN_CURRENT,
             force_login=force_login,
         )
 
@@ -1204,16 +1230,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         for cfg in self.user_config.values():
-            if cfg.get("Data", "LastProxyDate") != self.curdate:
-                await cfg.set("Data", "LastProxyDate", self.curdate)
-                await cfg.set("Data", "ProxyTimes", 0)
+            if cfg.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
+                cfg.Data.LastProxyDate = datetime.now(tz=UTC4)
+                await cfg.commit()
+                cfg.Data.ProxyTimes = 0
+                await cfg.commit()
 
     async def check(self) -> str:
         # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成（对齐 ok-nte，
         # 避免 check 入口拿过期 ProxyTimes 误判为超限、永久跳过）
         await self._reset_daily_proxy_count()
-        root = Path(self.script_config.get("Info", "RootPath"))
-        if not root.is_dir():
+        root = self.script_config.Info.RootPath
+        if root is None or not root.is_dir():
             return "请设置绝区零一条龙安装目录"
         try:
             find_launcher_exe(root)
@@ -1232,9 +1260,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.base in (CONFIG_BASE_SHARED, CONFIG_BASE_INDEPENDENT):
             # 同脚本用户名唯一（绑定槽名与统计都依赖名字区分）
             names = [
-                str(cfg.get("Info", "Name") or "").strip()
+                str(cfg.Info.Name or "").strip()
                 for cfg in self.user_config.values()
-                if cfg.get("Info", "Status")
+                if cfg.Info.Status
             ]
             duplicates = sorted({n for n in names if names.count(n) > 1})
             if duplicates:
@@ -1251,14 +1279,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         return "未启用任何一条龙任务, 请在用户配置中开启至少一个任务"
                 except ValueError as e:
                     return str(e)
-                if self.script_config.get(
-                    "Run", "ProxyTimesLimit"
-                ) != 0 and self.cur_user_config.get(
-                    "Data", "ProxyTimes"
-                ) >= self.script_config.get("Run", "ProxyTimesLimit"):
+                if (
+                    self.script_config.Run.ProxyTimesLimit != 0
+                    and self.cur_user_config.Data.ProxyTimes
+                    >= self.script_config.Run.ProxyTimesLimit
+                ):
                     self.cur_user_item.status = "跳过"
                     return "今日代理次数已达上限, 跳过该用户"
-                if self.cur_user_config.get("Info", "RemainedDay") == 0:
+                if self.cur_user_config.Info.RemainedDay == 0:
                     self.cur_user_item.status = "跳过"
                     return "用户剩余天数为 0, 跳过该用户"
         else:
@@ -1286,16 +1314,19 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 「启用游戏配置 + 任务前启动游戏」时由 MAS 拉起游戏本体（对齐 ok-nte）
         self.game_process_manager = (
             ProcessManager()
-            if self.script_config.get("Game", "Enabled")
-            and self.script_config.get("Game", "LaunchBeforeTask")
+            if self.script_config.Game.Enabled
+            and self.script_config.Game.LaunchBeforeTask
             else None
         )
-        game_path = str(self.script_config.get("Game", "Path") or "").strip()
+        game_path = str(self.script_config.Game.Path or "").strip()
         self.game_exe_path = Path(game_path) if game_path else None
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
-        self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
+        script_root_path = self.script_config.Info.RootPath
+        if script_root_path is None:
+            raise ValueError("RootPath未配置，请检查路径设置")
+        self.script_root_path = script_root_path
         self.launcher_exe_path = find_launcher_exe(self.script_root_path)
         self.script_log_path = self.script_root_path / _ZZZOD_REL_LOG
         self.log_monitor = LogMonitor(
@@ -1311,9 +1342,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not self._app_name_book:
             raise ValueError("未能加载一条龙任务目录，请检查安装文件是否完整")
 
+        # 白名单条目按应用目录解析为 app_id：上游更名后条目失配在启动时告警，
+        # 而不是在重试判定里静默失配（失配条目按可重试处理）
+        self._futile_app_ids = frozenset(
+            app_id
+            for app_id, name in self._app_name_book.items()
+            if name in _RETRY_FUTILE_APPS
+        )
+        missing = _RETRY_FUTILE_APPS - set(self._app_name_book.values())
+        if missing:
+            logger.warning(
+                f"「重试无意义」白名单条目 {'、'.join(sorted(missing))} "
+                f"不在应用目录中, 可能已更名, 失配条目按可重试处理"
+            )
+
         # 用户级节点详情推送模式（build_user_result_text 按此渲染）
         self.cur_user_item.push_log_mode = str(
-            self.cur_user_config.get("Notify", "PushLogMode") or "汇总"
+            self.cur_user_config.Notify.PushLogMode or "汇总"
         )
         # ── log_box：节点详情采集（MAS 进程宿主，sink 按账号路由）──
         # 触发用户关闭且（多实例切换时）全部启用用户也关闭时不创建：不读日志、
@@ -1348,7 +1393,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 任务前脚本每用户一次，先于全部重试；后置脚本由收尾阶段成对执行
         await self.run_user_scripts_before()
 
-        run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
+        run_limit = int(self.script_config.Run.RunTimesLimit)
         try:
             # 注入现场（注入模式）：绑定槽备份 → 由用户配置字段生成 YAML 写入槽 →
             # 临时切 instance_run。注入只做一次——重试不清运行记录，
@@ -1408,9 +1453,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if self.base == CONFIG_BASE_NATIVE:
                 after_done = read_native_after_done(self.script_root_path)
             else:
-                after_done = str(
-                    self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
-                )
+                after_done = str(self.cur_user_config.OneDragon.AfterDone or "关闭游戏")
             if after_done == "关闭游戏":
                 launcher_args.append("--close-game")
             self._shutdown_after_success = after_done == "关机"
@@ -1420,13 +1463,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             # 启动器选择：原生来源/用户统一按配置——自动=优先上次成功项，原始/集成=固定
             # 对应项（未安装回退可用项）；原生来源默认「自动」时行为等同原强绑定默认顺序
-            self._launcher_mode = str(
-                self.cur_user_config.get("Info", "LauncherMode") or "自动"
-            )
+            self._launcher_mode = str(self.cur_user_config.Info.LauncherMode or "自动")
             self.launcher_exe_path, self._launcher_label = resolve_launcher(
                 self.script_root_path,
                 self._launcher_mode,
-                str(self.cur_user_config.get("Data", "LauncherLastGood") or ""),
+                str(self.cur_user_config.Data.LauncherLastGood or ""),
             )
 
             for i in range(run_limit):
@@ -1445,6 +1486,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.log_start_time = datetime.now()
                 self.cur_user_item.log_record[self.log_start_time] = LogRecord()
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
+                self._failed_app_ids = []
                 self.script_info.log = ""
 
                 # 启用游戏配置 + 任务前启动游戏：由 MAS 拉起游戏本体后再跑一条龙
@@ -1464,11 +1506,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                             kill_game=self._mas_should_close_game()
                         )
                         try:
-                            await Notify.push_plyer(
-                                "ZZZ-OD 自动代理出现异常！",
-                                f"用户 {self.cur_user_item.name} 游戏启动失败",
-                                f"{self.cur_user_item.name}的自动代理出现异常",
-                                3,
+                            await self.task_info.local_notifier.send_notice(
+                                LocalNotice(
+                                    title="ZZZ-OD 自动代理出现异常！",
+                                    message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                                    duration_seconds=3,
+                                )
                             )
                         except Exception:
                             pass
@@ -1542,9 +1586,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         and self._launcher_mode == "自动"
                     ):
                         # 自动模式：把本次成功使用的启动器记忆为下次优先项
-                        await self.cur_user_config.set(
-                            "Data", "LauncherLastGood", self._launcher_label
+                        self.cur_user_config.Data.LauncherLastGood = (
+                            type(self.cur_user_config.Data)
+                            .model_validate({"LauncherLastGood": self._launcher_label})
+                            .LauncherLastGood
                         )
+                        await self.cur_user_config.commit()
                     self.script_info.log = (
                         self.script_info.log or "检测到 ZZZ-OD 已完成任务"
                     )
@@ -1568,15 +1615,31 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
-                    await Notify.push_plyer(
-                        "ZZZ-OD 自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="ZZZ-OD 自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
                 if i + 1 < run_limit:
+                    if self._all_failures_futile(log):
+                        futile_names = "、".join(
+                            self._app_display_name(app_id)
+                            for app_id in self._failed_app_ids
+                        )
+                        self.script_info.log += f"\n失败的应用均无重试价值（{futile_names}），已跳过剩余重试"
+                        logger.info(
+                            f"用户 {self.cur_user_item.name} - "
+                            f"失败应用均无重试价值({futile_names}), 跳过剩余重试"
+                        )
+                        await self._push_dispatch_log(
+                            f"失败的应用均无重试价值（{futile_names}），跳过剩余重试"
+                        )
+                        break
                     self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
                     await asyncio.sleep(10)
         finally:
@@ -1617,6 +1680,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         else:
             diffs = diff_run_records(records_before, records_after)
             failed_apps = _failed_apps(diffs, log, self._app_name_book)
+            self._failed_app_ids = failed_apps
             if failed_apps:
                 failed_names = [
                     self._app_display_name(app_id) for app_id in failed_apps
@@ -1655,6 +1719,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.run_book = user_status == "完成"
         if user_status is not None:
             self.cur_user_item.status = user_status
+
+    def _all_failures_futile(self, log: str) -> bool:
+        """本轮失败是否已无重试价值：整轮正常走完且失败应用全部命中白名单。
+
+        白名单应用的失败不触发重试，也不拦其余应用的重试；仅注入模式单实例
+        会话启用——独立基座的多实例切换与原生裸跑一轮覆盖多个用户或实例
+        （共享基座本就走既有单槽路径），个别应用的确定性失败不应剥夺其余
+        目标的补跑机会。以「指令[ 一条龙 ] 执行成功」确认整轮走完：启动器
+        提前退出时未跑到的应用不在失败名单里，缺这条证据按可重试处理，
+        守住未尝试应用的补跑机会。
+        """
+
+        if self._is_multi_account() or self._is_bare_run():
+            return False
+        if _ZZZOD_ONE_DRAGON_SUCCESS not in log:
+            return False
+        return _failures_all_futile(self._failed_app_ids, self._futile_app_ids)
 
     def _launch_evidence(self, log: str, records_changed: bool) -> bool:
         """启动器是否已成功启动：出现应用层运行上下文日志或运行记录有变化即视为已启动。
@@ -1802,10 +1883,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """代理成功的数据写回三步（单实例与多实例路径共用）：
         首次代理扣剩余天数 → 累计次数 → 落「成功」状态。"""
 
-        if cfg.get("Data", "ProxyTimes") == 0 and cfg.get("Info", "RemainedDay") != -1:
-            await cfg.set("Info", "RemainedDay", cfg.get("Info", "RemainedDay") - 1)
-        await cfg.set("Data", "ProxyTimes", cfg.get("Data", "ProxyTimes") + 1)
-        await cfg.set("Data", "LastProxyStatus", "成功")
+        if cfg.Data.ProxyTimes == 0 and cfg.Info.RemainedDay != -1:
+            cfg.Info.RemainedDay = cfg.Info.RemainedDay - 1
+            await cfg.commit()
+        cfg.Data.ProxyTimes = cfg.Data.ProxyTimes + 1
+        await cfg.commit()
+        cfg.Data.LastProxyStatus = "成功"
+        await cfg.commit()
 
     async def _persist_multi_user_result(
         self, cfg: ZzzOdUserConfig, ok: bool, succeeded_before: bool
@@ -1818,11 +1902,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if ok:
             if succeeded_before:
-                await cfg.set("Data", "LastProxyStatus", "成功")
+                cfg.Data.LastProxyStatus = "成功"
+                await cfg.commit()
             else:
                 await self._apply_proxy_success(cfg)
         else:
-            await cfg.set("Data", "LastProxyStatus", "失败")
+            cfg.Data.LastProxyStatus = "失败"
+            await cfg.commit()
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -1917,7 +2003,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 # 终态成败由 main_task 的运行记录 diff 统一判定
                 need_stop = True
             elif self.is_log_stalled(
-                latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
+                latest_time, minutes=self.script_config.Run.RunTimeLimit
             ):
                 log_status = "ZZZ-OD 运行超时"
                 user_item_status = "异常"
@@ -1991,12 +2077,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_user_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
@@ -2033,7 +2120,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_item.status = "完成"
             logger.success(f"用户 {self.cur_user_uid} 的 ZZZ-OD 自动代理任务已完成")
         else:
-            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
+            self.cur_user_config.Data.LastProxyStatus = "失败"
+            await self.cur_user_config.commit()
             if self.cur_user_item.status != "完成":
                 self.cur_user_item.status = "异常"
 
@@ -2066,11 +2154,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "ZZZ-OD 运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="ZZZ-OD 运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass
@@ -2105,7 +2195,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _mas_should_close_game(self) -> bool:
         """收尾/中止时由 MAS 结束游戏（任务结束后关闭游戏=是）。"""
 
-        return bool(self.script_config.get("Game", "CloseOnFinish"))
+        return bool(self.script_config.Game.CloseOnFinish)
 
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏本体（启用游戏配置 + 任务前启动游戏时调用）。
@@ -2128,10 +2218,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             )
         await self._push_dispatch_log("正在由 MAS 启动游戏...")
         await self.game_process_manager.open_process(
-            self.game_exe_path,
-            *split_args(self.script_config.get("Game", "Arguments")),
+            self.game_exe_path, *split_args(self.script_config.Game.Arguments)
         )
-        wait_time = max(int(self.script_config.get("Game", "WaitTime") or 0), 0)
+        wait_time = max(int(self.script_config.Game.WaitTime or 0), 0)
         if wait_time:
             await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
             await asyncio.sleep(wait_time)
@@ -2140,7 +2229,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _note_launch_arguments_skipped(self) -> None:
         """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
 
-        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        arguments = str(self.script_config.Game.Arguments or "").strip()
         if arguments:
             message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
             logger.info(message)

@@ -6,6 +6,7 @@
 
 import httpx
 
+from app.config import ConfigEntry
 from app.models.config import (
     MaaConfig,
     MaaEndConfig,
@@ -13,9 +14,7 @@ from app.models.config import (
     MaaUserConfig,
     OkNteConfig,
     OkwwConfig,
-    # OkNteUserConfig,  # 异环公告映射待数据侧接入后随下方挂载点一并启用
 )
-from app.models.ConfigBase import ConfigBase
 from app.services.game_maintenance import GameMaintenance, MaintenanceWindow
 
 
@@ -34,14 +33,14 @@ def get_maintenance_message(
 
 
 async def get_user_maintenance(
-    user_config: ConfigBase, *, proxy: httpx.Proxy | None
+    user_config: ConfigEntry, *, proxy: httpx.Proxy | None
 ) -> MaintenanceWindow | None:
     if isinstance(user_config, MaaUserConfig):
-        if user_config.get("Info", "Server") not in ("Official", "Bilibili"):
+        if user_config.Info.Server not in ("Official", "Bilibili"):
             return None
         game = "arknights"
     elif isinstance(user_config, MaaEndUserConfig):
-        if user_config.get("Info", "Resource") != "官服":
+        if user_config.Info.Resource != "官服":
             return None
         game = "endfield"
     # 异环（nte）映射待数据侧接入维护公告后挂载（画面 OCR 检测先行兜底，

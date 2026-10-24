@@ -1,4 +1,6 @@
 import { ref } from 'vue'
+import { translate as t } from '@/i18n'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { message } from 'ant-design-vue'
 import { MaaFwService, OpenAPI } from '@/api'
 import type {
@@ -23,7 +25,7 @@ const logger = window.electronAPI.getLogger('MaaFW接口')
  * （projection.py 的 `_normalize_ui_asset_path`）同一口径：投影会把这些文件带进副本，
  * 这里拒掉的话图标就显示不出来。
  */
-export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) => {
+export const buildMaaFWAssetUrl = (rootPath?: string | null, rawPath?: string | null) => {
   if (!rawPath || !rootPath) return ''
   const trimmed = rawPath.trim()
   if (/^(https?:|data:image\/)/i.test(trimmed)) return trimmed
@@ -175,17 +177,15 @@ export function useMaaFWApi() {
       })
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || '读取项目 interface 失败')
+        throw new Error(response.message || t('apiErrors.maafwPreviewFailed'))
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '读取项目 interface 失败'
+      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
       error.value = errorMsg
       logger.error(`读取项目 interface 失败: ${errorMsg}`)
-      if (err instanceof Error && !err.message.includes('HTTP error')) {
-        message.error(errorMsg)
-      }
+      message.error(errorMsg)
       return null
     } finally {
       loading.value = false

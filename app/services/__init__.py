@@ -20,10 +20,23 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .config_center import ConfigCenter, ConfigCenterError
-from .matomo import Matomo
-from .notification import Notify
-from .system import System
-from .update import Updater
+from importlib import import_module
 
-__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "Notify", "System", "Updater"]
+_EXPORTS = {
+    "ConfigCenter": ".config_center",
+    "ConfigCenterError": ".config_center",
+    "Matomo": ".matomo",
+    "System": ".system",
+    "Updater": ".update",
+}
+
+
+def __getattr__(name: str):
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(_EXPORTS[name], __name__), name)
+    globals()[name] = value
+    return value
+
+
+__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "System", "Updater"]

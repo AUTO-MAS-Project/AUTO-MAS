@@ -44,6 +44,8 @@ export type MaaFWQueueSource = {
   passwordCount: number
   /** 来源的选项表（只含能导入的项，未去密码） */
   taskOptions: TaskOptionMap
+  /** 可导入实例的运行 / 跳过状态 */
+  taskChecked: Record<string, boolean>
   /** 来源的实例显示名（只含能导入的项） */
   taskLabels?: Record<string, string>
 }
@@ -146,6 +148,9 @@ export const describeMaaFWQueueSource = (
     invalidCount: chips.length - entries.length,
     passwordCount: countMaaFWPasswordValues(taskOptions, context.passwordFields),
     taskOptions,
+    taskChecked: Object.fromEntries(
+      entries.map(entry => [entry.id, snapshot.taskChecked[entry.id] !== false])
+    ),
     ...taskLabelsField(pickMaaFWTaskLabels(snapshot.taskLabels, entryIds)),
   }
 }
@@ -170,7 +175,7 @@ export const countMaaFWQueueReplacementImports = (
  * 与显示名），其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）与显示名。
  */
 export const buildMaaFWQueueReplacement = (
-  source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels'>,
+  source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels' | 'taskChecked'>,
   current: MaaFWTaskSnapshot,
   isPretaskId: (taskId: string) => boolean,
   passwordFields: MaaFWPasswordFields
@@ -196,6 +201,12 @@ export const buildMaaFWQueueReplacement = (
     { ...sourceOptions, ...currentPretaskOptions },
     current.taskOrder,
     isPretaskId,
-    { ...sourceLabels, ...pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds) }
+    { ...sourceLabels, ...pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds) },
+    {
+      ...source.taskChecked,
+      ...Object.fromEntries(
+        [...currentPretaskIds].map(taskId => [taskId, current.taskChecked[taskId] !== false])
+      ),
+    }
   )
 }

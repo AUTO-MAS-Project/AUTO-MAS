@@ -172,7 +172,7 @@ const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise
     const updateData: GlobalConfig = { [category]: changes }
     const result = await updateSettings(updateData)
     if (!result) {
-      message.error(t('setting.toast.saveFailed'))
+      // 请求层已提示后端原因，保留当前输入供重试。
       return false
     }
     return true
@@ -443,7 +443,7 @@ const checkUpdate = async () => {
 
   // 手动检查立即恢复：先终止暂停、清空截止日期，再做完整检查
   if (settings.Update?.PauseUntil) {
-    await handleSettingChange('Update', 'PauseUntil', '')
+    await handleSettingChange('Update', 'PauseUntil', null)
   }
 
   logger.info(`检查前状态:{
@@ -619,7 +619,10 @@ onMounted(() => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(
+    --app-page-title-color,
+    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

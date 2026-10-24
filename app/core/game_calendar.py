@@ -7,16 +7,18 @@
 import asyncio
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from typing import TYPE_CHECKING
 
 from pydantic import AwareDatetime, TypeAdapter
 
 from app.core.config import Config
-from app.core.notify import dispatch, global_target
 from app.models.config import CLASS_BOOK
 from app.models.notification import NotifyPayload
+from app.models.notification_channel import NotifyTarget
+from app.models.notification_report import NotificationDispatcher
 from app.tools.game_calendar import (
     BLUEARCHIVE_SERVERS,
     CALENDAR_GAMES,
@@ -25,6 +27,9 @@ from app.tools.game_calendar import (
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.io import write_file
+
+if TYPE_CHECKING:
+    from app.core.notify import HostNotificationService
 
 logger = get_logger("游戏日历")
 CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
@@ -152,13 +157,26 @@ def calendar_reminders(
 
 
 class _GameCalendar:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        dispatcher: NotificationDispatcher | None = None,
+        prepare_target: Callable[[], NotifyTarget] | None = None,
+    ) -> None:
+        self._dispatcher = dispatcher
+        self._prepare_target = prepare_target
         self._lock = asyncio.Lock()
         self._loaded = False
         self._reminders: dict[str, CalendarReminder] = {}
         self._completions: dict[str, CalendarActivityCompletion] = {}
         self._dirty = False
         self._save_retry_at: datetime | None = None
+
+    def bind_notifications(self, notifications: "HostNotificationService") -> None:
+        self._dispatcher = notifications.dispatch
+        self._prepare_target = lambda: notifications.global_target(
+            include_system=True, empty_policy="skip"
+        )
 
     def _load_schedule(self) -> None:
         """恢复已生成的日程，启动后的推送不等待活动接口。"""
@@ -265,11 +283,11 @@ class _GameCalendar:
             if game is None:
                 continue
             for user in script.UserData.values():
-                if not user.get("Info", "Status"):
+                if not user.Info.Status:
                     continue
                 source, label = CALENDAR_GAMES[game]
                 if game == "bluearchive":
-                    server = BAAH_CALENDAR_SERVERS[user.get("Info", "ActivityLineType")]
+                    server = BAAH_CALENDAR_SERVERS[user.Info.ActivityLineType]
                     source, server_label = BLUEARCHIVE_SERVERS[server]
                     label = f"碧蓝档案（{server_label}）"
                 targets[(game, source)] = label
@@ -325,13 +343,15 @@ class _GameCalendar:
 
     async def send_due_reminders(self) -> None:
         """汇总所有游戏已到点的日程，按渠道保存送达状态与重试时刻。"""
+        if self._dispatcher is None or self._prepare_target is None:
+            raise RuntimeError("游戏日历的通知依赖尚未装配")
 
         self._load_schedule()
         async with self._lock:
             if self._dirty:
                 self._save_schedule()
             games = self._notification_games()
-            target = global_target(include_system=True, empty_policy="skip")
+            target = self._prepare_target()
             target_ids = {channel_target.id for _, channel_target in target.channels}
             now = datetime.now(tz=UTC8)
             reminders: list[CalendarReminder] = []
@@ -353,7 +373,7 @@ class _GameCalendar:
                     self._save_schedule()
                     continue
                 if target_ids.issubset(reminder.delivered):
-                    reminder.completed = not target.catalog_failures
+                    reminder.completed = not target.unresolved
                     if not reminder.completed:
                         reminder.next_attempt_at = now + timedelta(
                             seconds=CALENDAR_RETRY_INTERVAL_SECONDS
@@ -389,7 +409,7 @@ class _GameCalendar:
                     ),
                 )
                 try:
-                    result = await dispatch(
+                    result = await self._dispatcher(
                         payload,
                         [target],
                         skip_channel_ids=target_ids - channel_ids,
@@ -401,7 +421,7 @@ class _GameCalendar:
                             dict.fromkeys((*reminder.delivered, *result.succeeded_ids))
                         )
                         reminder.completed = (
-                            not target.catalog_failures
+                            not target.unresolved
                             and target_ids.issubset(reminder.delivered)
                         )
                     if result.failed:

@@ -42,9 +42,8 @@ from app.models.notification import (
 if TYPE_CHECKING:
     from httpx import Proxy
 
-    from app.models.config import Webhook
-
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import HttpDependencies, NotificationDeliveryError
+from app.notification_channels.common import RemoteHTTPError, http_delivery_errors
 
 UTC4 = timezone(timedelta(hours=4))
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
@@ -127,14 +126,14 @@ def _is_wecom_robot(url: str) -> bool:
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: HttpDependencies) -> None:
         self.dependencies = dependencies
 
     async def WebhookPush(
         self,
         title: str,
         content: str,
-        webhook: Webhook | WebhookTargetSnapshot,
+        webhook: WebhookTargetSnapshot,
         *,
         images: Sequence[NotificationImage] = (),
     ) -> None:
@@ -147,8 +146,8 @@ class Sender:
             通知标题
         content: str
             通知内容
-        webhook: Webhook | WebhookTargetSnapshot
-            Webhook 配置或创建目标时的只读快照
+        webhook: WebhookTargetSnapshot
+            目标准备或草稿测试时固定的只读快照
         images: Sequence[NotificationImage], optional
             可选图片资源，由 Webhook 协议适配器编码
         """
@@ -159,15 +158,15 @@ class Sender:
             if image is not None and image.data is not None
             else ""
         )
-        if not webhook.get("Info", "Enabled"):
+        if not webhook.enabled:
             return
 
-        if webhook.get("Data", "Url") == "":
+        if webhook.url == "":
             self.dependencies.logger.warning("Webhook URL 不能为空")
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
-        template = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
+        template = webhook.template or DEFAULT_WEBHOOK_TEMPLATE
 
         # 替换模板变量
         try:
@@ -256,57 +255,64 @@ class Sender:
 
         # 准备请求头
         headers = {"Content-Type": "application/json"}
-        headers.update(json.loads(webhook.get("Data", "Headers")))
+        headers.update(json.loads(webhook.headers))
 
-        url = webhook.get("Data", "Url")
+        url = webhook.url
 
-        async with self.dependencies.http_factory(
-            **_webhook_client_kwargs(url, proxy)
-        ) as client:
-            if webhook.get("Data", "Method") == "POST":
-                if isinstance(data, str):
-                    response = await client.post(url=url, content=data, headers=headers)
-                elif data is None:
-                    # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
-                    response = await client.post(
-                        url=url, content="null", headers=headers
-                    )
-                else:
-                    response = await client.post(url=url, json=data, headers=headers)
-            elif webhook.get("Data", "Method") == "GET":
-                if isinstance(data, dict):
-                    # Flatten params to ensure all values are str or list of str
-                    params = {}
-                    for k, v in data.items():
-                        if isinstance(v, (dict, list)):
-                            params[k] = json.dumps(v, ensure_ascii=False)
-                        else:
-                            params[k] = str(v)
-                else:
-                    params = {"message": str(data)}
-                response = await client.get(url=url, params=params, headers=headers)
+        with http_delivery_errors():
+            async with self.dependencies.http_factory(
+                **_webhook_client_kwargs(url, proxy)
+            ) as client:
+                if webhook.method == "POST":
+                    if isinstance(data, str):
+                        response = await client.post(
+                            url=url, content=data, headers=headers
+                        )
+                    elif data is None:
+                        # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
+                        response = await client.post(
+                            url=url, content="null", headers=headers
+                        )
+                    else:
+                        response = await client.post(
+                            url=url, json=data, headers=headers
+                        )
+                elif webhook.method == "GET":
+                    if isinstance(data, dict):
+                        # Flatten params to ensure all values are str or list of str
+                        params = {}
+                        for k, v in data.items():
+                            if isinstance(v, (dict, list)):
+                                params[k] = json.dumps(v, ensure_ascii=False)
+                            else:
+                                params[k] = str(v)
+                    else:
+                        params = {"message": str(data)}
+                    response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
         if not response.is_success:
             self.dependencies.logger.warning(
                 f"Webhook 推送失败: HTTP {response.status_code}"
             )
-            raise Exception(
-                f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}"
+            raise RemoteHTTPError(
+                response.status_code, f"[{webhook.name}] HTTP {response.status_code}"
             )
         failure = webhook_body_failure(response.text, url)
         if failure is not None:
             self.dependencies.logger.warning(f"Webhook 服务端拒绝: {failure}")
-            raise Exception(f"[{webhook.get('Info', 'Name')}] 服务端拒绝")
+            raise NotificationDeliveryError(
+                f"[{webhook.name}] 服务端拒绝", kind="rejected", retryable=True
+            )
         self.dependencies.logger.success(
-            f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
+            f"自定义Webhook推送成功: {webhook.name} - {title}"
         )
 
         # 企业微信群机器人的文本消息放不下图，失败截图要单独补发一条图片消息；
         # 模板里自己写了 {image_base64} 的说明用户已经处理过图，不再补发。
         if image_base64 and "{image_base64}" not in template and _is_wecom_robot(url):
             await self._push_wecom_image(
-                url, image_base64, headers, webhook.get("Info", "Name"), proxy=proxy
+                url, image_base64, headers, webhook.name, proxy=proxy
             )
 
     async def _push_wecom_image(

@@ -238,7 +238,7 @@
                   >
                     {{
                       t('edit.hsrLastCompleted', {
-                        date: formData.Data.EchoOfWarLastCompletionDate,
+                        date: formatConfigDate(formData.Data.EchoOfWarLastCompletionDate, 4 * 60),
                       })
                     }}
                   </span>
@@ -273,7 +273,9 @@
                     class="date-hint"
                   >
                     {{
-                      t('edit.hsrLastCompleted', { date: formData.Data.WeeklyLastCompletionDate })
+                      t('edit.hsrLastCompleted', {
+                        date: formatConfigDate(formData.Data.WeeklyLastCompletionDate, 4 * 60),
+                      })
                     }}
                   </span>
                 </div>
@@ -353,6 +355,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { formatConfigDate } from '@/utils/configDateTime'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -364,7 +367,6 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
@@ -399,6 +401,7 @@ import {
   readEowStage,
   resolveStageChannel,
 } from './HSRUserEdit/stageState'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
 
@@ -422,20 +425,12 @@ const getCurrentISOWeek = (): string => {
   return `${thursday.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
 }
 
-const getCurrentDate = (): string => {
-  const d = nowAtServerDayBoundary()
-  const yyyy = d.getUTCFullYear()
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(d.getUTCDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
 const logger = window.electronAPI.getLogger('HSR 用户编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript, updateScript } = useScriptApi()
+const { addUser, updateUser, getUsers, error: userApiError } = useUserApi()
+const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
@@ -488,10 +483,10 @@ const formData = reactive<HSRUserConfigData>({
   Data: {
     EchoOfWarCompletedThisWeek: false,
     EchoOfWarLastResetWeek: '',
-    EchoOfWarLastCompletionDate: '',
+    EchoOfWarLastCompletionDate: '2000-01-01T00:00:00+04:00',
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
-    WeeklyLastCompletionDate: '',
+    WeeklyLastCompletionDate: '2000-01-01T00:00:00+04:00',
   },
   Notify: {
     Enabled: false,
@@ -645,7 +640,7 @@ const stringifyJsonRecord = (value: unknown): string => JSON.stringify(parseJson
 const DEFAULT_COMPLETION_DATE = '2000-01-01'
 
 const hasValidCompletionDate = (value?: string | null): boolean => {
-  const date = String(value ?? '').trim()
+  const date = formatConfigDate(value, 4 * 60).trim()
   return date !== '' && date !== DEFAULT_COMPLETION_DATE
 }
 
@@ -997,7 +992,7 @@ const saveUserPatch = async (
 // 历战余响 — 标记已完成
 // 必须同时写入当前 ISO 周：后端 resolver 用 LastResetWeek == 当前 ISO 周
 const markEowCompleted = async () => {
-  const today = getCurrentDate()
+  const today = nowAtServerDayBoundary().toISOString().replace(/Z$/, '+04:00')
   const isoWeek = getCurrentISOWeek()
   formData.Data.EchoOfWarCompletedThisWeek = true
   formData.Data.EchoOfWarLastCompletionDate = today
@@ -1020,13 +1015,13 @@ const resetEowProgress = async () => {
   const isoWeek = getCurrentISOWeek()
   formData.Data.EchoOfWarCompletedThisWeek = false
   formData.Data.EchoOfWarLastResetWeek = isoWeek
-  formData.Data.EchoOfWarLastCompletionDate = ''
+  formData.Data.EchoOfWarLastCompletionDate = '2000-01-01T00:00:00+04:00'
   await saveUserPatch(
     {
       Data: {
         EchoOfWarCompletedThisWeek: false,
         EchoOfWarLastResetWeek: isoWeek,
-        EchoOfWarLastCompletionDate: '',
+        EchoOfWarLastCompletionDate: '2000-01-01T00:00:00+04:00',
       },
     },
     `历战余响已标记未完成（${isoWeek}）`,
@@ -1038,7 +1033,7 @@ const resetEowProgress = async () => {
 // 必须同时写入当前 ISO 周：后端 resolver 用 WeeklyLastResetWeek == 当前 ISO 周
 // 判断 Data 是否属于本周，否则会按"新周已重置"把 done 重置为 False。
 const markWeeklyCompleted = async () => {
-  const today = getCurrentDate()
+  const today = nowAtServerDayBoundary().toISOString().replace(/Z$/, '+04:00')
   const isoWeek = getCurrentISOWeek()
   formData.Data.WeeklyCompletedThisWeek = true
   formData.Data.WeeklyLastCompletionDate = today
@@ -1061,13 +1056,13 @@ const resetWeeklyProgress = async () => {
   const isoWeek = getCurrentISOWeek()
   formData.Data.WeeklyCompletedThisWeek = false
   formData.Data.WeeklyLastResetWeek = isoWeek
-  formData.Data.WeeklyLastCompletionDate = ''
+  formData.Data.WeeklyLastCompletionDate = '2000-01-01T00:00:00+04:00'
   await saveUserPatch(
     {
       Data: {
         WeeklyCompletedThisWeek: false,
         WeeklyLastResetWeek: isoWeek,
-        WeeklyLastCompletionDate: '',
+        WeeklyLastCompletionDate: '2000-01-01T00:00:00+04:00',
       },
     },
     `周常已重置（新周：${isoWeek}）`,
@@ -1183,21 +1178,11 @@ const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
   { key: 'native', kind: 'script' },
 ]
 
-const restoreApi = {
-  list: async (target: string) =>
-    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
-  preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
-  readFile: async (target: string, time: string, path: string) =>
-    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
-}
+const { restoreApi, ensureBackup } = useConfigBackupApi({
+  scriptId,
+  userId: () => userId,
+  logger,
+})
 
 interface HSRPreviewRow {
   key: string
@@ -1224,20 +1209,7 @@ const handleRestored = async (target: string) => {
 
 // 编辑会话归档（进入/退出时机，指纹去重）：进入归档两引擎原生配置当前状态
 // （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
-const ensureHSRBackup = async (target: 'mas' | 'native') => {
-  if (!userId) return
-  try {
-    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
-      scriptId,
-      userId,
-      target,
-    })
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.configRestoreEnsureFailed'))
-  }
-}
+const ensureHSRBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {
@@ -1248,7 +1220,7 @@ onMounted(async () => {
   try {
     const script = await getScript(scriptId)
     if (!script) {
-      message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
       handleCancel()
       return
     }
@@ -1269,7 +1241,7 @@ onMounted(async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
   } finally {
     isInitializing.value = false
   }
@@ -1295,13 +1267,13 @@ const createUserImmediately = async () => {
       await loadUserData()
       if (controlMode.value === 'managed') await loadManagedConfig()
     } else {
-      message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -1340,13 +1312,13 @@ const loadUserData = async () => {
         handleCancel()
       }
     } else {
-      message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
   }
 }
 </script>

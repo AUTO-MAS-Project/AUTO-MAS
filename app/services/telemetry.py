@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -262,17 +261,15 @@ def sanitize_event(
 def is_telemetry_enabled(config_path: Path) -> bool:
     """读取遥测开关；缺失的旧配置按默认开启处理，损坏的配置按关闭处理。"""
 
+    from app.utils.config_document import read_bootstrap_setting
+
     try:
-        text = config_path.read_text(encoding="utf-8")
+        data = read_bootstrap_setting(config_path)
+        value = data.get("Function", {}).get("IfEnableTelemetry", True)
     except OSError:
         return True
-    if not text.strip():
-        return True
-    try:
-        data = json.loads(text)
-        value = data.get("Function", {}).get("IfEnableTelemetry", True)
-    except (json.JSONDecodeError, AttributeError) as e:
-        logger.warning(f"配置文件 {config_path} 损坏, 遥测按关闭处理: {e}")
+    except (ValueError, AttributeError, TypeError):
+        logger.warning(f"配置文件 {config_path.name} 损坏, 遥测按关闭处理")
         return False
     return value if isinstance(value, bool) else True
 

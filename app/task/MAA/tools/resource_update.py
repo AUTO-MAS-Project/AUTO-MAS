@@ -226,7 +226,7 @@ def _snapshot_maa_configs() -> list[tuple[str, bool]]:
                 enabled, _ = resolve_takeover_credentials(config)
                 if not enabled:
                     continue
-                raw = str(config.get("Info", "Path") or "")
+                raw = str(config.Info.Path or "")
                 if raw:
                     result.append((raw, bool(config.is_locked)))
         return result
