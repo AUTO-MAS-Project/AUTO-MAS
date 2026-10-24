@@ -212,6 +212,14 @@ def _clear_legacy_history() -> None:
         (Path.cwd() / name).unlink(missing_ok=True)
 
 
+class QueueNotFoundError(LookupError):
+    """查询的调度队列已不存在。"""
+
+
+class QueueItemNotFoundError(LookupError):
+    """查询的队列项已不存在。"""
+
+
 class AppConfig:
     VERSION = "v5.8.0-beta.1"
 
@@ -3755,7 +3763,9 @@ class AppConfig:
         if queue_id is None:
             data = self.QueueConfig.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[uuid.UUID(queue_id)]
+            entry = self.QueueConfig.get(uuid.UUID(queue_id))
+            if entry is None:
+                raise QueueNotFoundError("队列不存在或已删除，请重新选择")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
@@ -3878,13 +3888,16 @@ class AppConfig:
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        queue = self.QueueConfig.get(queue_uid)
+        if queue is None:
+            raise QueueNotFoundError("队列不存在或已删除，请重新选择")
 
         if queue_item_id is None:
-            data = self.QueueConfig[queue_uid].QueueItem.model_dump(
-                context={"audience": "api"}
-            )
+            data = queue.QueueItem.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[queue_uid].QueueItem[uuid.UUID(queue_item_id)]
+            entry = queue.QueueItem.get(uuid.UUID(queue_item_id))
+            if entry is None:
+                raise QueueItemNotFoundError("队列项不存在或已删除，请刷新列表")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
