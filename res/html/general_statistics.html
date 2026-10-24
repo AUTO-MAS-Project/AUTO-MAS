@@ -48,14 +48,20 @@
                     <td>{{ s.index }}/{{ s.total }}</td>
                     <td>{{ s.task }}</td>
                     <td>
-                        {% if s.ok and not s.issue_count %}
+                        {% if s.ok and s.skipped %}
+                        <span>⏭ 已跳过</span>
+                        {% elif s.ok and s.warning_text %}
+                        <span>⚠ 需关注</span>
+                        {% elif s.ok and not s.issue_count %}
                         <span class="greenhighlight">✓ 成功</span>
                         {% elif s.ok %}
                         <span class="redhighlight">✓ 成功（含{{ s.issue_count }}处异常）</span>
                         {% else %}
                         <span class="redhighlight">✗ 未完成</span>
                         {% endif %}
-                        {% if s.issue_text %}<br><small>{{ s.issue_text }}</small>{% endif %}
+                        {% if s.ok and s.warning_text %}
+                        <br><small>{{ s.warning_text }}</small>
+                        {% elif s.issue_text %}<br><small>{{ s.issue_text }}</small>{% endif %}
                     </td>
                     <td>{{ s.start }} → {{ s.end }}</td>
                 </tr>

@@ -53,7 +53,11 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
     for s in steps:
         tag = f"{s['index']}/{s['total']}"
         span = f"{s['start']} → {s['end']}（{_step_duration(s)}）"
-        if s["ok"] and not s["issue_count"]:
+        if s["ok"] and s.get("skipped"):
+            lines.append(f"⏭ {tag} {s['task']} 已跳过 {span}")
+        elif s["ok"] and s.get("warning_text"):
+            lines.append(f"⚠ {tag} {s['task']} 需关注 · {s['warning_text']} {span}")
+        elif s["ok"] and not s["issue_count"]:
             lines.append(f"✓ {tag} {s['task']} 成功 {span}")
         elif s["ok"]:
             lines.append(
