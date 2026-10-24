@@ -48,12 +48,7 @@ from app.api.notification_dependencies import (
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
 from app.core.data_backup import create_data_backup
-from app.core.notify import (
-    HostNotificationService,
-    get_webhook_tester,
-    send_test_notification,
-    webhook_test_snapshot,
-)
+from app.core.notify import HostNotificationService
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_ports import WebhookTester
