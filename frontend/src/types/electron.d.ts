@@ -234,7 +234,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   saveTextFile: (
     defaultName: string,
     content: string,
-    filters?: unknown[]
+    filters?: unknown[],
+    dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
   ) => Promise<{ success: boolean; filePath?: string; error?: string }>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
   discoverOkwwPath: () => Promise<PathDiscoveryResult>

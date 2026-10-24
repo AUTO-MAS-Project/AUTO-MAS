@@ -67,7 +67,8 @@ class FluxdownRecord(BaseModel):
     proxy: str | None = Field(default=None, description="使用的代理")
     checksum: str | None = Field(default=None, description="校验信息")
     status: str | None = Field(
-        default=None, description="状态：success、failed、checksum_fail、fluxdown_fallback"
+        default=None,
+        description="状态：success、failed、checksum_fail、fluxdown_fallback",
     )
     error: str | None = Field(default=None, description="失败原因")
     timestamp: str | None = Field(default=None, description="发生时间")

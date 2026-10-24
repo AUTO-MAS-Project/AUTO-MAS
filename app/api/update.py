@@ -59,13 +59,17 @@ class FluxdownCandidateOut(BaseModel):
     """一个候选 FluxDown 可执行文件。"""
 
     path: str = Field(..., description="可执行文件完整路径")
-    is_portable_cli: bool = Field(..., description="是否为带 portable 标记的 CLI 便携版")
+    is_portable_cli: bool = Field(
+        ..., description="是否为带 portable 标记的 CLI 便携版"
+    )
 
 
 class FluxdownDetectOut(OutBase):
     """FluxDown 全盘检测结果。"""
 
-    path: Optional[str] = Field(None, description="择优后的 FluxDown 路径；未找到为 None")
+    path: Optional[str] = Field(
+        None, description="择优后的 FluxDown 路径；未找到为 None"
+    )
     is_portable_cli: bool = Field(False, description="选中项是否为 CLI 便携版")
     only_full_warning: bool = Field(
         False,
@@ -245,7 +249,9 @@ async def detect_fluxdown() -> FluxdownDetectOut:
         result = await asyncio.to_thread(fluxdown_detect, configured)
         return FluxdownDetectOut(**result)
     except Exception as e:
-        logger.opt(exception=True).warning(f"detect_fluxdown失败: {type(e).__name__}: {e}")
+        logger.opt(exception=True).warning(
+            f"detect_fluxdown失败: {type(e).__name__}: {e}"
+        )
         return FluxdownDetectOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

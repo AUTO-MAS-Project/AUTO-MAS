@@ -5267,7 +5267,8 @@ export default {
       downloaderTip:
         'Choose the update downloader; interrupted FluxDown downloads resume from completed segments on retry, and after repeated failures you can switch to the builtin downloader. MirrorChyan always uses the builtin downloader. Put the portable build in res/fluxdown-cli/ or set FluxdownPath',
       fluxdownSegments: 'Thread segments',
-      fluxdownSegmentsTip: 'Higher values mean more parallel requests, if the server supports Range',
+      fluxdownSegmentsTip:
+        'Higher values mean more parallel requests, if the server supports Range',
       fluxdownTakeover: 'Take over all script updates',
       fluxdownTakeoverTip:
         'Also route all automation script update downloads through FluxDown (planned)',
@@ -5282,6 +5283,7 @@ export default {
       fluxdownDetect: 'Auto detect',
       fluxdownDetectFound: 'FluxDown detected: {path}',
       fluxdownDetectNotFound: 'No usable FluxDown found on this device',
+      fluxdownDetectFailed: 'FluxDown auto-detection failed',
       fluxdownOnlyFullWarning:
         'This FluxDown is the only one on this device; using it will record the downloaded updates in its own queue.',
       lastUpdateHistoryTip: 'Recent downloads made via FluxDown (last 50 kept)',
@@ -5289,8 +5291,15 @@ export default {
       viewHistory: 'View history',
       noHistory: 'No download history yet',
       historyExport: 'Export log',
+      historyExportDialogTitle: 'Export download log',
+      historyExportSaveLabel: 'Save',
       historyExportSuccess: 'Download log exported',
       historyExportFailed: 'Failed to export the download log',
+      historyStatusSuccess: 'Success',
+      historyStatusFailed: 'Failed',
+      historyStatusChecksumFail: 'Checksum failed',
+      historyStatusInterrupted: 'Interrupted',
+      historyStatusFluxdownFallback: 'Fell back to built-in downloader',
       linkSection: 'Project links',
       site: 'Website',
       siteDesc: 'Latest releases and a feature tour',

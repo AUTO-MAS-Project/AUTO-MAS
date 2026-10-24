@@ -118,7 +118,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   settings: GlobalConfig
   historyRetentionOptions: { label: string; value: number }[]
   voiceTypeOptions: { label: string; value: string }[]
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
 }>()
 </script>
 <template>

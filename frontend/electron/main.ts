@@ -1920,12 +1920,19 @@ ipcMain.handle('select-file', async (event, filters = []) => {
 // 保存文本内容到用户选择的位置（用于导出下载日志等小体积文本）
 ipcMain.handle(
   'save-text-file',
-  async (_event, defaultName: string, content: string, filters = []) => {
+  async (
+    _event,
+    defaultName: string,
+    content: string,
+    filters = [],
+    dialogOptions: { dialogTitle?: string; buttonLabel?: string } = {}
+  ) => {
     if (!mainWindow) return { success: false, error: '窗口未就绪' }
     const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出日志',
+      title: dialogOptions.dialogTitle ?? '导出日志',
       defaultPath: defaultName,
       filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
+      ...(dialogOptions.buttonLabel ? { buttonLabel: dialogOptions.buttonLabel } : {}),
     })
     if (result.canceled || !result.filePath) {
       return { success: false, error: '用户取消' }

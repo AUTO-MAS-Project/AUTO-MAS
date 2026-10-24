@@ -41,6 +41,7 @@ from app.models.schema import (
     WSUpdateProgressData,
 )
 from app.utils import LazyProxy, ProcessRunner, get_logger
+from app.utils.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.platform.process import platform_process
 
 from .system import System
@@ -251,23 +252,34 @@ class _UpdateHandler:
             return False
 
         task.cancel()
+        stop_unconfirmed = False
         try:
             await task
         except asyncio.CancelledError:
             pass
+        except FluxdownCancelUnconfirmed as error:
+            # 暂停无法确认：旧任务可能仍在后台写下载文件，但不能让取消接口 500；
+            # 记失败提示用户，保留任务映射供下次重试续传
+            logger.error(f"取消下载时无法确认 FluxDown 任务已停止: {error}")
+            await self._publish_failed(
+                "取消时无法确认 FluxDown 任务已停止，将在下次重试时续传"
+            )
+            stop_unconfirmed = True
         self._cleanup_download()
 
-        if notify:
+        # 已按失败上报时不能再播"取消成功"，否则前端会把仍在写盘的下载当已停止
+        if notify and not stop_unconfirmed:
             self._update_download_snapshot(status="cancelled", speed=0)
             await Publisher.send(id=protocol.ID_UPDATE, type=protocol.UPDATE_CANCELLED)
         return True
 
     async def switch_to_cnb(self) -> bool:
+        frozen_job = self._download_task_job
         download_version = (
-            self._download_task_job.version
-            if self._download_task_job is not None
-            else self.remote_version
+            frozen_job.version if frozen_job is not None else self.remote_version
         )
+        # 切源要重建 job：显式下载器与来源一样随任务冻结，不能因重建丢回配置默认
+        frozen_downloader = frozen_job.downloader if frozen_job is not None else None
         if self.is_switching_source:
             return False
 
@@ -297,7 +309,9 @@ class _UpdateHandler:
                 raise
 
             self.is_locked = False
-            restart_job = self._create_download_job(download_version=download_version)
+            restart_job = self._create_download_job(
+                download_version=download_version, downloader=frozen_downloader
+            )
             if not self._start_download_task(job=restart_job):
                 error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
                 await self._publish_failed(str(error))
@@ -318,7 +332,10 @@ class _UpdateHandler:
             self.is_locked = False
 
     def _create_download_job(
-        self, *, download_version: Optional[str] = None, downloader: Optional[str] = None
+        self,
+        *,
+        download_version: Optional[str] = None,
+        downloader: Optional[str] = None,
     ) -> _DownloadJob:
         frozen_version = (
             download_version if download_version is not None else self.remote_version
@@ -569,6 +586,7 @@ class _UpdateHandler:
                     timeout=30,
                     progress=report_progress,
                     downloader=download_job.downloader,
+                    source=download_job.source,
                 )
 
                 # 重命名临时文件为最终包

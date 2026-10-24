@@ -206,14 +206,19 @@ const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string
   if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
 }
 
-const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+// 返回本次保存是否成功，供子组件在失败时跳过成功提示
+const handleSettingChange = async (
+  category: keyof GlobalConfig,
+  key: string,
+  value: any
+): Promise<boolean> => {
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
 
   if (!success) {
     if (category === 'Replay') throw new Error(t('setting.toast.saveFailed'))
-    return
+    return false
   }
 
   if (NORMALIZED_SETTING_KEYS.has(`${category}.${key}`)) {
@@ -256,6 +261,8 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   if (category === 'Update' && key === 'PauseUntil') {
     updateInfo.value = null
   }
+
+  return true
 }
 
 const confirmFluidCursor = () =>

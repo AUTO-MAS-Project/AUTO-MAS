@@ -383,7 +383,9 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         await _report(progress, _download_line(downloaded, total, speed))
 
     try:
-        # Mirror 酱临时授权 URL 显式走内置 httpx，不进 FluxDown；
+        # Mirror 酱临时授权 URL 显式声明来源，不依赖全局 Source；接管开关打开时
+        # 不再硬编码内置下载器，交由分发层按来源策略决定（Mirror 酱仍强制 httpx）；
+        # 关闭时保持原有的内置 httpx 行为。
         # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
         await download_file(
             url,
@@ -391,7 +393,10 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
             timeout=_DOWNLOAD_TIMEOUT,
             proxy=Config.proxy,
             progress=report_progress,
-            downloader="builtin",
+            source="MirrorChyan",
+            downloader=(
+                None if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+            ),
         )
     except TimeoutError as e:
         raise _DownloadError("下载超时") from e

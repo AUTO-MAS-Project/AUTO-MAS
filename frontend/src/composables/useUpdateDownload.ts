@@ -205,9 +205,16 @@ const receiveFailed = (reason: string) => {
   invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
+  // 后台下载（窗口已收起）中断时没有入口展示原因，立即重新打开下载窗口
+  const reopenModal =
+    !modalVisible.value &&
+    (status.value === 'downloading' ||
+      status.value === 'cancelling' ||
+      status.value === 'switchingSource')
   status.value = 'failed'
   failureReason.value = reason
   speed.value = 0
+  if (reopenModal) modalVisible.value = true
 }
 
 const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {

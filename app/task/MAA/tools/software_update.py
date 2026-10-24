@@ -455,14 +455,19 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
         write_file(_STATE_FILE, state)
     part = cache_dir / "package.zip.part"
     try:
-        # Mirror 酱临时授权 URL 显式走内置 httpx，不进 FluxDown；
+        # Mirror 酱临时授权 URL 显式声明来源，不依赖全局 Source；接管开关打开时
+        # 不再硬编码内置下载器，交由分发层按来源策略决定（Mirror 酱仍强制 httpx）；
+        # 关闭时保持原有的内置 httpx 行为。
         # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
         await download_file(
             latest.url,
             part,
             timeout=_DOWNLOAD_TIMEOUT,
             proxy=Config.proxy,
-            downloader="builtin",
+            source="MirrorChyan",
+            downloader=(
+                None if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+            ),
         )
         await _run_write_thread(
             _store_verified_cache, cache_dir, part, latest, channel, arch

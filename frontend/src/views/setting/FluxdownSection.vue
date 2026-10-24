@@ -12,7 +12,7 @@ const { t } = useI18n()
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
 }>()
 
 // FluxDown 路径：文件夹选择 + 全盘自动检测（CLI 便携版优先，无 CLI 只有全量版时警告）
@@ -22,19 +22,28 @@ const fluxdownOnlyFull = ref(false)
 const handleFluxdownBrowse = async () => {
   const dir = await window.electronAPI.selectFolder()
   if (dir) {
-    fluxdownOnlyFull.value = false
-    await props.handleSettingChange('Update', 'FluxdownPath', dir)
+    const saved = await props.handleSettingChange('Update', 'FluxdownPath', dir)
+    if (saved) fluxdownOnlyFull.value = false
   }
 }
+
+// 后端内部异常时仍返回 HTTP 200，业务失败信息在 code/status 里，不能当成"未找到"
+const isDetectSuccess = (result: { code?: number; status?: string }): boolean =>
+  (result.code == null || result.code === 200) && result.status !== 'error'
 
 const handleFluxdownDetect = async () => {
   fluxdownDetecting.value = true
   try {
     const result = await GetService.detectFluxdownApiUpdateFluxdownDetectGet()
+    if (!isDetectSuccess(result)) {
+      throw new Error(result.message || t('setting.others.fluxdownDetectFailed'))
+    }
     if (result.path) {
-      fluxdownOnlyFull.value = result.only_full_warning ?? false
-      await props.handleSettingChange('Update', 'FluxdownPath', result.path)
-      message.success(t('setting.others.fluxdownDetectFound', { path: result.path }))
+      const saved = await props.handleSettingChange('Update', 'FluxdownPath', result.path)
+      if (saved) {
+        fluxdownOnlyFull.value = result.only_full_warning ?? false
+        message.success(t('setting.others.fluxdownDetectFound', { path: result.path }))
+      }
     } else {
       fluxdownOnlyFull.value = false
       message.warning(t('setting.others.fluxdownDetectNotFound'))
@@ -54,13 +63,26 @@ const handleFluxdownDetect = async () => {
 }
 
 // 下载历史：后端按追加顺序保存，展示时倒序（最新在上）
-const updateHistory = computed(() => [...(props.settings.Update?.LastUpdateHistory ?? [])].reverse())
+const updateHistory = computed(() =>
+  [...(props.settings.Update?.LastUpdateHistory ?? [])].reverse()
+)
+
+// 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
+const historyStatusLabels = computed<Record<string, string>>(() => ({
+  success: t('setting.others.historyStatusSuccess'),
+  failed: t('setting.others.historyStatusFailed'),
+  checksum_fail: t('setting.others.historyStatusChecksumFail'),
+  interrupted: t('setting.others.historyStatusInterrupted'),
+  fluxdown_fallback: t('setting.others.historyStatusFluxdownFallback'),
+}))
+
+const formatHistoryStatus = (status?: string | null) =>
+  (status && historyStatusLabels.value[status]) || status || t('common.unknown')
 
 const formatHistorySize = (size?: number | null) =>
   size ? `${(size / 1024 / 1024).toFixed(1)} MB` : '-'
 
-const formatHistoryDuration = (ms?: number | null) =>
-  ms ? `${(ms / 1000).toFixed(1)}s` : '-'
+const formatHistoryDuration = (ms?: number | null) => (ms ? `${(ms / 1000).toFixed(1)}s` : '-')
 
 // 失败/回退记录可导出：把这条下载记录存成 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
@@ -70,6 +92,10 @@ const handleExportHistory = async (item: FluxdownRecord) => {
       fileName,
       JSON.stringify(item, null, 2),
       [{ name: 'JSON', extensions: ['json'] }],
+      {
+        dialogTitle: t('setting.others.historyExportDialogTitle'),
+        buttonLabel: t('setting.others.historyExportSaveLabel'),
+      }
     )
     if (result.success) {
       message.success(t('setting.others.historyExportSuccess'))
@@ -103,8 +129,12 @@ const showUpdateHistory = ref(false)
           style="width: 100%"
           @change="(value: any) => handleSettingChange('Update', 'Downloader', value)"
         >
-          <a-select-option value="builtin">{{ t('setting.others.downloaderBuiltin') }}</a-select-option>
-          <a-select-option value="fluxdown">{{ t('setting.others.downloaderFluxdown') }}</a-select-option>
+          <a-select-option value="builtin">{{
+            t('setting.others.downloaderBuiltin')
+          }}</a-select-option>
+          <a-select-option value="fluxdown">{{
+            t('setting.others.downloaderFluxdown')
+          }}</a-select-option>
         </a-select>
       </div>
     </a-col>
@@ -213,7 +243,9 @@ const showUpdateHistory = ref(false)
           :disabled="!settings.Update?.LastUpdateHistory?.length"
           @click="showUpdateHistory = true"
         >
-          {{ t('setting.others.viewHistory') }} ({{ settings.Update?.LastUpdateHistory?.length ?? 0 }})
+          {{ t('setting.others.viewHistory') }} ({{
+            settings.Update?.LastUpdateHistory?.length ?? 0
+          }})
         </a-button>
       </div>
     </a-col>
@@ -240,7 +272,9 @@ const showUpdateHistory = ref(false)
                 : 'red'
         "
       >
-        <div class="history-item-title">{{ item.timestamp }} — {{ item.status }}</div>
+        <div class="history-item-title">
+          {{ item.timestamp }} — {{ formatHistoryStatus(item.status) }}
+        </div>
         <div class="history-item-path">{{ item.destination || item.url?.slice(0, 80) }}</div>
         <div class="history-item-meta">
           {{ formatHistorySize(item.size) }} ·

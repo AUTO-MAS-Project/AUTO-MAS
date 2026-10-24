@@ -75,7 +75,9 @@ class FluxdownDownloadRecord:
     segments: int = 0
     proxy: str | None = None
     checksum: str | None = None
-    status: str = ""  # success | failed | checksum_fail | interrupted | fluxdown_fallback
+    status: str = (
+        ""  # success | failed | checksum_fail | interrupted | fluxdown_fallback
+    )
     error: str | None = None
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -185,11 +187,21 @@ async def fluxdown_download(
     if destination.exists():
         destination.unlink()
 
+    # --local 的数据目录由 exe 同目录的 portable 标记决定：换用 MAS 私有副本，
+    # 否则任务记录会写进用户自己的 FluxDown 数据库
+    local_exe = await asyncio.to_thread(_local_cli_exe, cli_exe)
+
     args = [
-        str(cli_exe), "add", url, "--local",
-        "-d", str(destination.parent),
-        "-o", destination.name,
-        "--segments", str(segments),
+        str(local_exe),
+        "add",
+        url,
+        "--local",
+        "-d",
+        str(destination.parent),
+        "-o",
+        destination.name,
+        "--segments",
+        str(segments),
     ]
     if proxy:
         args += ["--proxy", proxy]
@@ -241,6 +253,27 @@ async def fluxdown_download(
                     pass
                 last_report = now
 
+    def _output_bytes() -> int:
+        """destination 及其同名前缀临时文件（.part/.tmp 等）的总字节数。
+
+        --local 模式只在启动时输出一行任务 ID，之后全程静默但仍在写临时
+        文件，只能靠这个增长信号判断它是否真的还在下载。
+        """
+        total_bytes = 0
+        try:
+            with os.scandir(destination.parent) as entries:
+                for entry in entries:
+                    if not entry.name.startswith(destination.name):
+                        continue
+                    try:
+                        if entry.is_file(follow_symlinks=False):
+                            total_bytes += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            return 0
+        return total_bytes
+
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.PIPE,
@@ -248,26 +281,44 @@ async def fluxdown_download(
     )
     assert proc.stdout is not None
 
-    # 停滞超时：timeout 语义 = 持续无 CLI 输出的秒数上限，不是整包总时限，
-    # 正常慢速下载只要持续有进度输出就永不超时
+    # 停滞超时：timeout 语义 = 持续无"活动"的秒数上限，不是整包总时限。
+    # 活动 = stdout 有新输出 或 输出文件在增长（--local 下载期间没有进度输出，
+    # 只看 stdout 会把正常下载误判为停滞），两者都静默超过 timeout 才算中断。
     parse_task = asyncio.ensure_future(_parse_stream())
     stalled = False
+    last_activity = t0  # 最近一次观察到的活动时刻（输出或文件增长）
+    last_size_check = t0
+    last_file_bytes = -1
     try:
         while not parse_task.done():
-            remaining = timeout - (time.monotonic() - last_output)
+            now = time.monotonic()
+            # 每 0.5s 采样一次文件字节数；增长即刷新活动时间
+            if now - last_size_check >= 0.5:
+                current_bytes = _output_bytes()
+                if current_bytes > last_file_bytes:
+                    last_file_bytes = current_bytes
+                    last_activity = now
+                last_size_check = now
+            last_activity = max(last_activity, last_output)
+            remaining = timeout - (time.monotonic() - last_activity)
             if remaining <= 0:
                 stalled = True
                 break
-            await asyncio.wait({parse_task}, timeout=remaining)
+            # 分段等待：parse 结束时立刻返回，同时保证每 0.5s 复查一次文件增长
+            await asyncio.wait({parse_task}, timeout=min(remaining, 0.5))
         if stalled:
-            # 进程已无输出：杀掉后 stdout 关闭，parse_task 随之自行结束
+            # 进程既无输出也无写入：杀掉后 stdout 关闭，parse_task 随之自行结束
             proc.kill()
             await proc.wait()
             record.status = "failed"
-            record.error = f"CLI 输出停滞超时 ({timeout:.0f}s 无输出)"
+            record.error = f"CLI 停滞超时 ({timeout:.0f}s 无输出且文件无增长)"
             record.duration_ms = int((time.monotonic() - t0) * 1000)
-            logger.warning(f"[--local] 输出停滞 {timeout:.0f}s, 判定中断: {url}")
-            raise RuntimeError(f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出") from None
+            logger.warning(
+                f"[--local] 停滞 {timeout:.0f}s 无输出且无写入, 判定中断: {url}"
+            )
+            raise RuntimeError(
+                f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出且文件无增长"
+            ) from None
 
         await parse_task
         exit_code = await proc.wait()
@@ -331,9 +382,21 @@ class FluxdownCandidate:
 
 # 全盘扫描时跳过的目录名（小写比较）；$ 开头的系统目录统一跳过
 _SCAN_PRUNE_DIRS = {
-    "windows", "windowsapps", "recycle.bin", "system volume information",
-    "recovery", "perflogs", "msocache", "node_modules", ".git",
-    "__pycache__", "venv", ".venv", ".pixi", ".cargo", "temp",
+    "windows",
+    "windowsapps",
+    "recycle.bin",
+    "system volume information",
+    "recovery",
+    "perflogs",
+    "msocache",
+    "node_modules",
+    ".git",
+    "__pycache__",
+    "venv",
+    ".venv",
+    ".pixi",
+    ".cargo",
+    "temp",
 }
 
 # 全量版桌面程序的 exe 名（无 portable 标记，用它下载会在用户队列里留记录）
@@ -512,25 +575,39 @@ def fluxdown_detect(
 # ---------------------------------------------------------------------------
 # Server 模式：常驻 fluxdown-agent --server + fluxdownd，跨进程断点续传
 #
-# 与 --local 单次调用的区别：任务持久化在便携 portable_data\\flux_down.db，
-# 断网/失败后可经 ``fluxdown resume <task_id>`` 从已下载分段续传，不从头。
+# 与 --local 单次调用的区别：任务持久化在 MAS 私有数据根 data\fluxdown_server
+# 下的 server 数据库，断网/失败后可经 ``fluxdown resume <task_id>`` 从已下载
+# 分段续传，不从头。
 #
 # 与用户全量版 FluxDown 的关系（v0.5.9 实测）：
-#   - 数据目录经 FLUXDOWN_DATA_DIR 强制指向便携 portable_data，与用户主程序隔离；
+#   - 数据目录经 FLUXDOWN_DATA_DIR 强制指向 MAS 私有 data\fluxdown_server，
+#     与用户主程序及其便携版数据库完全隔离；
 #   - 自选 gateway/daemon 端口对且 spawn 前先验空闲，agent 的 terminate_stale
 #     （按进程名全杀）路径只在"自己的 daemon 端口被异己占用"时触发，不会触碰
 #     用户全量版（17801 上的任何进程 MAS 一概不碰）；
 #   - MAS 退出清理一律按 PID，禁止按进程名 taskkill。
 
 _SERVER_GATEWAY_BASE = 27896  # agent 管理 API（HTTP/Web）
-_SERVER_DAEMON_BASE = 27897   # daemon RPC（WS），须与 gateway 相邻
+_SERVER_DAEMON_BASE = 27897  # daemon RPC（WS），须与 gateway 相邻
 _SERVER_READY_TIMEOUT = 20.0  # 管理 API 就绪晚于 ping，给足余量
 _SERVER_MAP_NAME = "mas_task_map.json"
 _SERVER_TOKEN_NAME = "mas_server.token"
 
-# 任务 status 枚举（实测）：1=等待 2=下载中 3=完成 4=失败
+# 任务 status 枚举（TaskDto.status）：0=等待 1=下载中 2=暂停 3=完成 4=失败 5=准备中
+_TASK_STATUS_PENDING = 0
+_TASK_STATUS_DOWNLOADING = 1
+_TASK_STATUS_PAUSED = 2
 _TASK_STATUS_DONE = 3
 _TASK_STATUS_FAILED = 4
+_TASK_STATUS_PREPARING = 5
+
+# 活动态：daemon 仍可能持有输出文件写入权。pending/preparing 虽然还没开始
+# 写数据，但会自行转入 downloading，判断"能否覆写目标文件"时必须一并排除。
+_ACTIVE_STATUSES = (
+    _TASK_STATUS_PENDING,
+    _TASK_STATUS_DOWNLOADING,
+    _TASK_STATUS_PREPARING,
+)
 
 
 @dataclass
@@ -552,7 +629,9 @@ class _ServerState:
         self.lock = threading.Lock()
         self.handle: _ServerHandle | None = None
         self.spawned_by_us: bool = False
-        self.checked_available: dict[str, tuple[float, bool]] = {}  # cli_dir -> (ts, ok)
+        self.checked_available: dict[
+            str, tuple[float, bool]
+        ] = {}  # cli_dir -> (ts, ok)
 
 
 _server = _ServerState()
@@ -585,7 +664,53 @@ def _server_binaries(cli_exe: Path) -> tuple[Path, Path] | None:
 
 
 def _server_data_dir(cli_exe: Path) -> Path:
-    return cli_exe.parent / "portable_data"
+    """MAS 私有的 server 数据根：token、任务映射、日志都放在其下。
+
+    不能复用 ``cli_exe.parent / "portable_data"``：那是用户便携版自己的数据库
+    目录，共用会让 MAS 的任务记录和用户的访问密钥搅在一起，且 spawn 时的
+    ``FLUXDOWN_TOKEN_FORCE`` 会连带改写用户自己的数据库密钥。改用 MAS 工作
+    目录下的独立数据根后，该变量只覆盖 MAS 私有目录里的密钥，不影响用户的
+    便携版数据库与访问密钥。
+
+    ``cli_exe`` 仅为保持调用方签名稳定而保留，数据根与 CLI 位置无关。
+    """
+    return Path.cwd() / "data" / "fluxdown_server"
+
+
+def _local_cli_exe(cli_exe: Path) -> Path:
+    """把 CLI 复制进 MAS 私有便携目录，让 ``--local`` 的数据落在 MAS 数据根。
+
+    官方 ``--local`` 用 ``resolve_data_dir(None)`` 定位数据目录，只认 exe 同目录
+    的 ``portable`` 标记，否则落到用户 ``%LOCALAPPDATA%\\FluxDown``；v0.5.9 的 CLI
+    既没有 ``--data-dir`` 参数，也不读 ``FLUXDOWN_DATA_DIR``。因此直接跑用户 CLI
+    会把 MAS 的任务记录写进用户自己的数据库。复制一份到私有目录并放置便携标记
+    后，exe 同目录即私有根，数据目录随之变成
+    ``data/fluxdown_local/portable_data``，与用户本体完全隔离。
+
+    复制失败（磁盘/权限）抛 :class:`RuntimeError`，由上层回退 httpx；绝不退回
+    使用用户 CLI，以免污染用户数据。
+    """
+    root = Path.cwd() / "data" / "fluxdown_local"
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "portable").touch()
+        target = root / cli_exe.name
+        src_stat = cli_exe.stat()
+        stale = True
+        if target.is_file():
+            dst_stat = target.stat()
+            stale = (dst_stat.st_size, dst_stat.st_mtime_ns) != (
+                src_stat.st_size,
+                src_stat.st_mtime_ns,
+            )
+        if stale:
+            # 先写临时名再替换，避免复制中断留下半个不可执行文件
+            tmp = root / f".{cli_exe.name}.tmp"
+            shutil.copy2(cli_exe, tmp)
+            os.replace(tmp, target)
+        return target
+    except OSError as error:
+        raise RuntimeError(f"无法准备 MAS 私有 FluxDown CLI 副本: {error}") from error
 
 
 def _server_token_path(cli_exe: Path) -> Path:
@@ -621,7 +746,9 @@ def _cli_env(gateway_port: int, token: str) -> dict[str, str]:
     return env
 
 
-def _run_cli(cli_exe: Path, env: dict[str, str], args: list[str], timeout: float = 30.0) -> tuple[int, str]:
+def _run_cli(
+    cli_exe: Path, env: dict[str, str], args: list[str], timeout: float = 30.0
+) -> tuple[int, str]:
     """同步跑一条 CLI 命令，返回 (exit_code, stdout+stderr)。"""
     try:
         out = subprocess.run(
@@ -663,7 +790,7 @@ def _parse_cli_json(text: str):
     # 先只认 { [（对象/数组才是调用方真正要的），再兜底认 "（JSON 字符串）
     for quote_pass in (False, True):
         for i, ch in enumerate(text):
-            if ch in "{[\"" and (ch == "\"") == quote_pass:
+            if ch in '{["' and (ch == '"') == quote_pass:
                 value = _try_from(i)
                 if value is not None:
                     return value
@@ -677,7 +804,9 @@ def _ping_ok(cli_exe: Path, gateway_port: int, token: str) -> bool:
 
 def _mgmt_ready(cli_exe: Path, gateway_port: int, token: str) -> bool:
     """管理 API 就绪（list 能通），比 ping 晚，ensure 需等到这步。"""
-    code, _ = _run_cli(cli_exe, _cli_env(gateway_port, token), ["list", "--json"], timeout=10)
+    code, _ = _run_cli(
+        cli_exe, _cli_env(gateway_port, token), ["list", "--json"], timeout=10
+    )
     return code == 0
 
 
@@ -723,9 +852,9 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
 
     with _server.lock:
         h = _server.handle
-        if h is not None and os.path.normcase(os.path.abspath(str(h.cli_exe))) != os.path.normcase(
-            os.path.abspath(str(cli_exe))
-        ):
+        if h is not None and os.path.normcase(
+            os.path.abspath(str(h.cli_exe))
+        ) != os.path.normcase(os.path.abspath(str(cli_exe))):
             # CLI 路径变了（用户改配置/检测到新目录）：旧句柄的端口与数据目录
             # 不再适用，不复用；由我们 spawn 的旧套件按 PID 清理
             if _server.spawned_by_us:
@@ -733,7 +862,11 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
             _server.handle = None
             _server.spawned_by_us = False
             h = None
-        if h and _ping_ok(h.cli_exe, h.gateway_port, h.token) and _mgmt_ready(h.cli_exe, h.gateway_port, h.token):
+        if (
+            h
+            and _ping_ok(h.cli_exe, h.gateway_port, h.token)
+            and _mgmt_ready(h.cli_exe, h.gateway_port, h.token)
+        ):
             logger.debug(f"[server] 复用已就绪套件: gateway={h.gateway_port}")
             return h
 
@@ -744,13 +877,15 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
         gateway_port, daemon_port = pair
 
         env = os.environ.copy()
-        env.update({
-            "FLUXDOWN_DATA_DIR": str(data_dir),
-            "FLUXDOWN_DAEMON_URL": f"ws://127.0.0.1:{daemon_port}/rpc",
-            "FLUXDOWN_BIND": f"127.0.0.1:{gateway_port}",
-            "FLUXDOWN_TOKEN": token,
-            "FLUXDOWN_TOKEN_FORCE": "1",
-        })
+        env.update(
+            {
+                "FLUXDOWN_DATA_DIR": str(data_dir),
+                "FLUXDOWN_DAEMON_URL": f"ws://127.0.0.1:{daemon_port}/rpc",
+                "FLUXDOWN_BIND": f"127.0.0.1:{gateway_port}",
+                "FLUXDOWN_TOKEN": token,
+                "FLUXDOWN_TOKEN_FORCE": "1",
+            }
+        )
         logs = data_dir / "logs"
         try:
             logs.mkdir(parents=True, exist_ok=True)
@@ -780,14 +915,18 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 break  # agent 已退出
-            if _ping_ok(cli_exe, gateway_port, token) and _mgmt_ready(cli_exe, gateway_port, token):
+            if _ping_ok(cli_exe, gateway_port, token) and _mgmt_ready(
+                cli_exe, gateway_port, token
+            ):
                 ready = True
                 break
             time.sleep(0.3)
 
         if not ready:
             _kill_pid(proc.pid)
-            logger.warning(f"[server] 便携套件 {_SERVER_READY_TIMEOUT:.0f}s 内未就绪,已按 PID 清理")
+            logger.warning(
+                f"[server] 便携套件 {_SERVER_READY_TIMEOUT:.0f}s 内未就绪,已按 PID 清理"
+            )
             return None
 
         h = _ServerHandle(
@@ -867,7 +1006,9 @@ def _map_pop(cli_exe: Path, key: str) -> None:
             _save_task_map(cli_exe, m)
 
 
-def _map_put(cli_exe: Path, key: str, task_id: str, url: str, destination: Path) -> None:
+def _map_put(
+    cli_exe: Path, key: str, task_id: str, url: str, destination: Path
+) -> None:
     """带锁写入/更新一个映射条目（重读全表，fail_count 跨写入保留）。"""
     with _TASK_MAP_LOCK:
         m = _load_task_map(cli_exe)
@@ -893,11 +1034,13 @@ def fluxdown_server_task_safe_to_overwrite(
 
     用于在改用内置 httpx 等"以 wb 重写 destination"的路径前排除双写：
     - 无映射：从未经 server 下载过 → 安全
-    - 有映射且 status 能查到（任务在 server 端有明确状态，即便仍在下载，
-      此时应配合暂停；本函数只回答"通道是否可用"）→ 调用方需自行 pause
-    - 有映射且 status 查询失败：管理通道异常，**不能排除 daemon 仍在写**，
-      返回 False，调用方应阻止覆写
-    - 有映射、status 能查到且为终态/暂停态：安全
+    - paused(2)：已暂停，daemon 不再写输出文件 → 安全
+    - pending/downloading/preparing(0/1/5)：先 pause 再复查，只有确认离开
+      活动态才安全（这些状态随时可能开始写数据）
+    - completed/error(3/4)：终态 → 安全
+    - 未知状态码（不在 0..5）：语义不明，按不安全处理
+    - status 查询失败 / server 不可用：管理通道异常，**不能排除 daemon 仍在
+      写**，返回 False，调用方应阻止覆写
     """
     key = _map_key(url, Path(destination))
     entry = _load_task_map(cli_exe).get(key) or {}
@@ -909,32 +1052,37 @@ def fluxdown_server_task_safe_to_overwrite(
         # server 都起不来，无法证明 daemon 是否仍在写 destination，按不安全处理
         return False
     env = _cli_env(handle.gateway_port, handle.token)
-    code, out = _run_cli(cli_exe, env, ["status", task_id, "--json"], timeout=timeout)
-    if code != 0:
+
+    def _status_code() -> int | None:
+        code, out = _run_cli(
+            cli_exe, env, ["status", task_id, "--json"], timeout=timeout
+        )
+        if code != 0:
+            return None
+        data = _parse_cli_json(out)
+        if not isinstance(data, dict):
+            return None
+        try:
+            return int(data.get("status"))
+        except (TypeError, ValueError):
+            return None
+
+    status = _status_code()
+    if status is None:
         return False
-    data = _parse_cli_json(out)
-    if not isinstance(data, dict):
-        return False
-    try:
-        status = int(data.get("status") or 0)
-    except Exception:
-        return False
-    if status in (1, 2):
-        # 任务仍在跑：先尝试暂停，再确认状态变更
+    if status == _TASK_STATUS_PAUSED:
+        return True
+    if status in _ACTIVE_STATUSES:
+        # 活动态：先暂停，再复查状态是否真的离开活动态。
+        # pause 返回 124（客户端超时）同样不能证明没生效，按未确认处理
         pause_code, _ = _run_cli(cli_exe, env, ["pause", task_id], timeout=10)
         if pause_code != 0:
             return False
-        code2, out2 = _run_cli(cli_exe, env, ["status", task_id, "--json"], timeout=timeout)
-        if code2 != 0:
-            return False
-        data2 = _parse_cli_json(out2)
-        if not isinstance(data2, dict):
-            return False
-        try:
-            return int(data2.get("status") or 0) not in (1, 2)
-        except Exception:
-            return False
-    return True
+        paused = _status_code()
+        return paused is not None and paused not in _ACTIVE_STATUSES
+    if status in (_TASK_STATUS_DONE, _TASK_STATUS_FAILED):
+        return True
+    return False
 
 
 def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> int:
@@ -1017,6 +1165,17 @@ def _extract_task_id(out: str) -> str | None:
     return m.group(1) if m else None
 
 
+class FluxdownCancelUnconfirmed(RuntimeError):
+    """用户取消后无法确认 FluxDown 任务已停止。
+
+    daemon 可能仍在写目标文件，上层不能把它当成"取消成功"静默收场，
+    而应按显式失败上报并提示用户检查 FluxDown 状态。
+
+    定义在 cli 这一侧而非 ``app.services.update_fluxdown``，因为后者已经
+    import 本模块，反向 import 会循环。
+    """
+
+
 async def fluxdown_server_download(
     url: str,
     destination: Path,
@@ -1063,133 +1222,187 @@ async def fluxdown_server_download(
     # 既有 task：查询服务端是否仍在；None 既可能是"任务已不存在"，也可能是
     # "管理通道异常但 daemon 仍在下载"。前者可安全清映射重 add，后者必须先
     # 尽力暂停再决定是否清除，否则会以同一 destination 启动第二个写入者。
-    if task_id:
-        st0 = await asyncio.to_thread(_status, task_id)
-        if st0 is None:
-            # 状态未知：尽力暂停（pause 失败也不放弃任务），仅当 pause 返回 0
-            # 且重查 status 能拿到响应（任务确已停下）才清映射重新 add；
-            # 否则保留映射抛出，让上层按"任务未确认停止"处理。
-            # propagate_cancel=True：pause 是进入清理前的最后一步，若用户
-            # 此时取消，必须把取消抛给上面的 except 统一处理，不能吞掉继续 add
-            try:
-                pause_code, _ = await _to_thread_strong(
-                    _run_cli, cli_exe, env, ["pause", task_id], 10,
-                    propagate_cancel=True,
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                pause_code = 1
-            confirmed = False
-            if pause_code == 0:
-                st1 = await asyncio.to_thread(_status, task_id)
-                confirmed = st1 is not None
-            if confirmed:
+    resumed = False
+    # 取消清理前必须先等这条在飞的 CLI 线程落定：add 可能已建出任务（须取回
+    # id 落映射），resume 的 124 只代表客户端超时（服务端可能已恢复），两者
+    # 都要先拿到结果再决定暂停谁
+    inflight_cli: asyncio.Task | None = None
+
+    async def _confirm_paused(*, propagate_cancel: bool = True) -> bool:
+        """确认 daemon 任务已停止/已释放输出文件。
+
+        _run_cli 超时不抛异常而返回 124，仅凭调用"发了 pause"不等于成功；
+        再查一次 status：失败(None)说明管理通道仍不通，不能排除后台写入，
+        不允许上层据此降级 --local 双写。
+
+        propagate_cancel=False 用于取消清理阶段：此时已在取消流程里，二次
+        取消不能打断"暂停 + 复查"，否则任务会在无人等待时继续下载。
+        """
+        try:
+            code, _ = await _to_thread_strong(
+                _run_cli,
+                cli_exe,
+                env,
+                ["pause", task_id],
+                10,
+                propagate_cancel=propagate_cancel,
+            )
+        except Exception:
+            return False
+        if code != 0:
+            return False
+        try:
+            st = await _to_thread_strong(
+                _status, task_id, propagate_cancel=propagate_cancel
+            )
+        except Exception:
+            return False
+        if st is None:
+            return False
+        # 能查到状态还不够：pause 可能被接受但任务仍处于活动态（pending/
+        # downloading/preparing），只有离开活动态才算确认停下，否则会在
+        # 无人等待时继续写输出文件
+        try:
+            status_code = int(st.get("status"))
+        except (TypeError, ValueError):
+            return False
+        return status_code not in _ACTIVE_STATUSES
+
+    # 既有任务查询 → resume/add → 映射落盘 → 轮询 → 完成归位，整段共用一个
+    # 取消作用域：任一阶段被取消都走同一套清理（确认暂停），不吞掉取消，
+    # 也不会继续走完成路径。
+    try:
+        if task_id:
+            st0 = await asyncio.to_thread(_status, task_id)
+            if st0 is None:
+                # 状态未知：尽力暂停（pause 失败也不放弃任务），仅当 pause 返回 0
+                # 且重查 status 能拿到响应（任务确已停下）才清映射重新 add；
+                # 否则保留映射抛出，让上层按"任务未确认停止"处理。
+                # propagate_cancel=True：pause 是进入清理前的最后一步，若用户
+                # 此时取消，必须把取消抛给外层 except 统一清理，不能吞掉继续 add
+                try:
+                    pause_code, _ = await _to_thread_strong(
+                        _run_cli,
+                        cli_exe,
+                        env,
+                        ["pause", task_id],
+                        10,
+                        propagate_cancel=True,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pause_code = 1
+                confirmed = False
+                if pause_code == 0:
+                    st1 = await asyncio.to_thread(_status, task_id)
+                    confirmed = st1 is not None
+                if confirmed:
+                    task_id = None
+                    await asyncio.to_thread(_map_pop, cli_exe, key)
+                else:
+                    record.status = "failed"
+                    record.error = "既有任务状态未知且无法确认已停止，保留映射待续传"
+                    record.duration_ms = int((time.monotonic() - t0) * 1000)
+                    logger.warning(
+                        f"[server] 进入时任务 {task_id} 状态未知,无法确认已停止,保留映射"
+                    )
+                    raise RuntimeError(
+                        "FluxDown server status 查询失败（任务未确认停止）"
+                    )
+
+        if task_id:
+            inflight_cli = asyncio.ensure_future(
+                asyncio.to_thread(_run_cli, cli_exe, env, ["resume", task_id], 30)
+            )
+            code, out = await asyncio.shield(inflight_cli)
+            inflight_cli = None
+            if code == 0:
+                resumed = True
+                logger.info(f"[server] 续传任务: {task_id} ({url})")
+            else:
+                # resume 失败：区分"任务确实不存在"和"管理通道异常/超时"
+                # code==124 是客户端超时，不能证明 daemon 没接受恢复命令，
+                # 旧任务可能已在后台恢复，此时重新 add 会双写同一文件
+                if code == 124:
+                    record.status = "failed"
+                    record.error = "resume 超时，无法确认旧任务状态，保留映射待续传"
+                    record.duration_ms = int((time.monotonic() - t0) * 1000)
+                    logger.warning(
+                        f"[server] resume 超时 (task {task_id}), 无法确认已停止,保留映射"
+                    )
+                    raise RuntimeError(
+                        "FluxDown server status 查询失败（任务未确认停止）"
+                    )
+                # 其他非零：任务可能真的不存在/不可恢复，清映射重新 add
                 task_id = None
                 await asyncio.to_thread(_map_pop, cli_exe, key)
-            else:
-                record.status = "failed"
-                record.error = "既有任务状态未知且无法确认已停止，保留映射待续传"
-                record.duration_ms = int((time.monotonic() - t0) * 1000)
-                logger.warning(
-                    f"[server] 进入时任务 {task_id} 状态未知,无法确认已停止,保留映射"
-                )
-                raise RuntimeError("FluxDown server status 查询失败（任务未确认停止）")
 
-    resumed = False
-    if task_id:
-        resume_task = asyncio.ensure_future(
-            asyncio.to_thread(_run_cli, cli_exe, env, ["resume", task_id], 30)
-        )
-        try:
-            code, out = await asyncio.shield(resume_task)
-        except asyncio.CancelledError:
-            # 取消安全：等 resume 线程跑完；若已生效则暂停服务端任务，
-            # 否则 daemon 会在无人等待的情况下继续下载
-            try:
-                code, _ = await _wait_thread_done(resume_task)
-            except Exception:
-                code = 1
-            if code == 0:
-                await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
-            raise
-        if code == 0:
-            resumed = True
-            logger.info(f"[server] 续传任务: {task_id} ({url})")
-        else:
-            # resume 失败：区分"任务确实不存在"和"管理通道异常/超时"
-            # code==124 是客户端超时，不能证明 daemon 没接受恢复命令，
-            # 旧任务可能已在后台恢复，此时重新 add 会双写同一文件
-            if code == 124:
-                record.status = "failed"
-                record.error = "resume 超时，无法确认旧任务状态，保留映射待续传"
-                record.duration_ms = int((time.monotonic() - t0) * 1000)
-                logger.warning(
-                    f"[server] resume 超时 (task {task_id}), 无法确认已停止,保留映射"
+        if task_id is None:
+            # 新建任务前把已存在的 destination 改名隔离：FluxDown 默认
+            # FileExistsBehavior::Rename，目标重名时会把新包改名（如
+            # "download (1).temp"）并回写数据库 fileName，完成时很难对回约定
+            # 路径。改名而不是删除，因为无法确认这份残留的归属（可能是上次
+            # httpx 或取消留下的残包），删掉可能丢用户数据。
+            if destination.exists():
+                stale = destination.with_name(
+                    f"{destination.name}.stale-{int(time.time())}"
                 )
-                raise RuntimeError("FluxDown server status 查询失败（任务未确认停止）")
-            # 其他非零：任务可能真的不存在/不可恢复，清映射重新 add
-            task_id = None
-            await asyncio.to_thread(_map_pop, cli_exe, key)
-
-    if task_id is None:
-        args = [
-            "add", url,
-            "-d", str(destination.parent),
-            "-o", destination.name,
-            "--segments", str(segments),
-            "--json",
-        ]
-        if proxy:
-            args += ["--proxy", proxy]
-        add_task = asyncio.ensure_future(
-            asyncio.to_thread(_run_cli, cli_exe, env, args, 60)
-        )
-        try:
-            code, out = await asyncio.shield(add_task)
-        except asyncio.CancelledError:
-            # 取消安全：add 线程必须等它跑完——CLI 可能已建出任务，取回
-            # task_id 持久化映射并暂停，否则结果丢失、daemon 后台继续下载
-            try:
-                _, out = await _wait_thread_done(add_task)
-                salvaged = _extract_task_id(out or "")
-                if salvaged:
-                    await _to_thread_strong(_map_put, cli_exe, key, salvaged, url, destination)
-                    await _to_thread_strong(_run_cli, cli_exe, env, ["pause", salvaged], 10)
-                    logger.info(f"[server] 取消时补救 add: 已持久化并暂停 task {salvaged}")
-            except Exception:
-                pass
-            raise
-        new_id: str | None = _extract_task_id(out)
-        if code != 0 or not new_id:
-            # add 失败：若服务端已把任务建出来了（"added <id>" 后 probe 失败），
-            # 取出该 id 并持久化映射 —— 重试时 resume 续传，不重新 add；
-            # 同时尽力暂停该任务，防止 daemon 后台继续下载。
-            # 若连 id 都没有（add 完全没成功），抛错但**不视为进程异常**：
-            # 让上层以可续传语义重试（同 url 会再次尝试 add，已有分段由服务端保留）。
-            if new_id:
-                task_id = new_id
-                # 强等待：取消时也必须落盘+暂停，否则 daemon 后台继续下载
-                await _to_thread_strong(_map_put, cli_exe, key, task_id, url, destination)
                 try:
-                    await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
-                except Exception:
-                    pass
-            record.status = "failed"
-            record.error = f"add 失败 exit={code}: {out[:200]}"
-            record.duration_ms = int((time.monotonic() - t0) * 1000)
-            logger.warning(f"[server] add 失败 (exit={code}): {out[:200]}")
-            raise RuntimeError(f"FluxDown add 失败: {out[:200]}")
-        task_id = new_id
-        logger.info(f"[server] 新建任务: {url} -> task {task_id}")
+                    os.replace(destination, stale)
+                    logger.warning(
+                        f"[server] 目标已存在,改名隔离保留: {destination.name} -> {stale.name}"
+                    )
+                except OSError as e:
+                    logger.warning(f"[server] 目标残留改名失败,继续 add: {e}")
+            args = [
+                "add",
+                url,
+                "-d",
+                str(destination.parent),
+                "-o",
+                destination.name,
+                "--segments",
+                str(segments),
+                "--json",
+            ]
+            if proxy:
+                args += ["--proxy", proxy]
+            inflight_cli = asyncio.ensure_future(
+                asyncio.to_thread(_run_cli, cli_exe, env, args, 60)
+            )
+            code, out = await asyncio.shield(inflight_cli)
+            inflight_cli = None
+            new_id: str | None = _extract_task_id(out)
+            if code != 0 or not new_id:
+                # add 失败：若服务端已把任务建出来了（"added <id>" 后 probe 失败），
+                # 取出该 id 并持久化映射 —— 重试时 resume 续传，不重新 add；
+                # 同时尽力暂停该任务，防止 daemon 后台继续下载。
+                # 若连 id 都没有（add 完全没成功），抛错但**不视为进程异常**：
+                # 让上层以可续传语义重试（同 url 会再次尝试 add，已有分段由服务端保留）。
+                if new_id:
+                    task_id = new_id
+                    # 强等待：取消时也必须落盘+暂停，否则 daemon 后台继续下载
+                    await _to_thread_strong(
+                        _map_put, cli_exe, key, task_id, url, destination
+                    )
+                    try:
+                        await _to_thread_strong(
+                            _run_cli, cli_exe, env, ["pause", task_id], 10
+                        )
+                    except Exception:
+                        pass
+                record.status = "failed"
+                record.error = f"add 失败 exit={code}: {out[:200]}"
+                record.duration_ms = int((time.monotonic() - t0) * 1000)
+                logger.warning(f"[server] add 失败 (exit={code}): {out[:200]}")
+                raise RuntimeError(f"FluxDown add 失败: {out[:200]}")
+            task_id = new_id
+            logger.info(f"[server] 新建任务: {url} -> task {task_id}")
 
-    # 从这里起 task_id 已确定（add 新建 / resume 续用），整个后续阶段
-    # （映射落盘 + 轮询进度）共享同一个取消清理：取消时强等待 pause，
-    # 不吞掉取消，协程立刻退出、不继续走完成路径。
-    try:
         # 持久化映射（失败也留着，供下次 resume；fail_count 跨写入保留）。
         # propagate_cancel=True：等待期间被取消时，落盘完成后立刻把取消
-        # 抛给下面的 except，由统一清理负责 pause；避免吞掉取消后继续轮询。
+        # 抛给 except，由统一清理负责暂停；避免吞掉取消后继续轮询。
         await _to_thread_strong(
             _map_put, cli_exe, key, task_id, url, destination, propagate_cancel=True
         )
@@ -1202,27 +1415,6 @@ async def fluxdown_server_download(
         last_speed_ts = last_change
         last_speed_bytes = 0
         speed = 0.0
-
-        async def _confirm_paused() -> bool:
-            """确认 daemon 任务已停止/已释放输出文件。
-
-            _run_cli 超时不抛异常而返回 124，仅凭调用"发了 pause"不等于成功；
-            再查一次 status：失败(None)说明管理通道仍不通，不能排除后台写入，
-            不允许上层据此降级 --local 双写。
-            """
-            try:
-                code, _ = await _to_thread_strong(
-                    _run_cli, cli_exe, env, ["pause", task_id], 10, propagate_cancel=True
-                )
-            except Exception:
-                return False
-            if code != 0:
-                return False
-            try:
-                st = await _to_thread_strong(_status, task_id, propagate_cancel=True)
-            except Exception:
-                return False
-            return st is not None
 
         while True:
             st = await asyncio.to_thread(_status, task_id)
@@ -1265,21 +1457,27 @@ async def fluxdown_server_download(
                 last_change = now
             else:
                 speed = 0.0
-                # 等待中(1)/下载中(2) 都纳入停滞计时：排队卡死同样能被判定
-                if status in (1, 2) and now - last_change > timeout:
+                # 等待(0)/下载中(1)/准备中(5) 都算活动态：排队/准备卡死同样要判定
+                if status in _ACTIVE_STATUSES and now - last_change > timeout:
                     # 尽力暂停旧任务再抛错：防止 daemon 后台继续下载，
                     # 分发层降 --local 时双写同一文件
                     try:
-                        await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                        await asyncio.to_thread(
+                            _run_cli, cli_exe, env, ["pause", task_id], 10
+                        )
                     except Exception:
                         pass
                     record.status = "failed"
-                    record.error = f"下载停滞（{timeout:.0f}s 无新字节），task 已保留可续传"
+                    record.error = (
+                        f"下载停滞（{timeout:.0f}s 无新字节），task 已保留可续传"
+                    )
                     record.duration_ms = int((time.monotonic() - t0) * 1000)
                     logger.warning(
                         f"[server] 下载停滞 {timeout:.0f}s 无进度 (task {task_id}), 判定中断, task 已保留可续传"
                     )
-                    raise RuntimeError(f"FluxDown server 下载停滞: {timeout:.0f}s 无进度")
+                    raise RuntimeError(
+                        f"FluxDown server 下载停滞: {timeout:.0f}s 无进度"
+                    )
 
             if progress and (now - last_report) >= 0.5 and total > 0:
                 try:
@@ -1293,7 +1491,9 @@ async def fluxdown_server_download(
             if status == _TASK_STATUS_FAILED:
                 # 尽力暂停（任务已 failed,多为兜底）：防止重试语义下残留活动任务
                 try:
-                    await asyncio.to_thread(_run_cli, cli_exe, env, ["pause", task_id], 10)
+                    await asyncio.to_thread(
+                        _run_cli, cli_exe, env, ["pause", task_id], 10
+                    )
                 except Exception:
                     pass
                 record.status = "failed"
@@ -1304,24 +1504,77 @@ async def fluxdown_server_download(
 
             await asyncio.sleep(0.8)
     except asyncio.CancelledError:
-        # 用户取消：暂停 server 任务（分段保留,下次重试 resume 续传），
-        # 否则 daemon 会在后台继续下载。强等待确保暂停不被二次取消打断
-        logger.info(f"[server] 用户取消,暂停任务 {task_id}")
-        try:
-            await _to_thread_strong(_run_cli, cli_exe, env, ["pause", task_id], 10)
-        except Exception:
-            pass
         record.status = "failed"
-        record.error = "用户取消"
-        raise
+        record.duration_ms = int((time.monotonic() - t0) * 1000)
+        # 取消可能正好落在 add/resume 的 CLI 线程上：先等它落定，add 已建出
+        # 任务时要把 id 落映射，否则重试时无从续传
+        if inflight_cli is not None:
+            try:
+                _, out = await _wait_thread_done(inflight_cli)
+                salvaged = _extract_task_id(out or "")
+                if salvaged and task_id is None:
+                    task_id = salvaged
+                    await _to_thread_strong(
+                        _map_put, cli_exe, key, task_id, url, destination
+                    )
+                    logger.info(f"[server] 取消时补救 add: 已持久化 task {task_id}")
+            except Exception:
+                pass
+        if task_id is None:
+            # 还没有任何服务端任务，取消本身就是干净退出
+            record.error = "用户取消"
+            logger.info(f"[server] 用户取消(任务尚未建立): {url}")
+            raise
+        # 统一清理：无论取消落在哪个阶段，都先等 CLI 落定再确认暂停；
+        # 分段保留，下次重试 resume 续传。清理中的二次取消不再传播。
+        logger.info(f"[server] 用户取消,确认暂停任务 {task_id}")
+        if await _confirm_paused(propagate_cancel=False):
+            record.error = "用户取消"
+            raise
+        # 无法确认已停止：daemon 可能仍在写目标文件，不能谎报"取消成功"，
+        # 改为显式失败，让上层按失败上报并提示用户检查 FluxDown 状态
+        record.error = (
+            "用户取消，但无法确认 FluxDown 任务已停止，"
+            "daemon 可能仍在写入目标文件，请检查 FluxDown 状态"
+        )
+        logger.warning(f"[server] 用户取消但无法确认任务 {task_id} 已停止: {url}")
+        raise FluxdownCancelUnconfirmed(record.error)
 
     record.duration_ms = int((time.monotonic() - t0) * 1000)
-    if not destination.is_file():
-        record.status = "failed"
-        record.error = "任务完成但文件未落地"
-        raise RuntimeError("FluxDown server 任务完成但文件未落地")
 
-    record.size = destination.stat().st_size
+    # 完成的落点以服务端最后一帧快照为准：默认 FileExistsBehavior::Rename 会在
+    # 目标重名时把新包改名（如 "download (1).temp"）并回写数据库，只判断
+    # destination 是否存在会落空，甚至把别人的同名残留当成下载结果
+    save_dir = st.get("saveDir")
+    file_name = st.get("fileName")
+    if not save_dir or not file_name:
+        record.status = "failed"
+        record.error = "任务完成但服务端未报告 saveDir/fileName，无法定位输出文件"
+        raise RuntimeError(record.error)
+
+    actual = Path(str(save_dir)) / str(file_name)
+    if not actual.is_file():
+        record.status = "failed"
+        record.error = f"任务完成但服务端报告的文件不存在: {actual}"
+        raise RuntimeError(record.error)
+
+    size = actual.stat().st_size
+    same_path = os.path.normcase(os.path.abspath(str(actual))) == os.path.normcase(
+        os.path.abspath(str(destination))
+    )
+    if not same_path:
+        if destination.exists():
+            # 两侧都存在且不是同一文件：无法判断哪份才是本次任务的产物，
+            # 任一方都不删，直接报错，避免误删无主文件
+            record.status = "failed"
+            record.error = (
+                f"任务输出落在 {actual}，约定路径 {destination} 也已存在，拒绝自动覆盖"
+            )
+            raise RuntimeError(record.error)
+        # 归位到约定路径，供上层按原路径做校验/记录
+        os.replace(actual, destination)
+
+    record.size = size
     record.status = "success"
     if resumed:
         record.error = None  # 明确无错误；resumed 信息可体现在历史调用方
