@@ -30,9 +30,9 @@ BWIKI：它的「活动日历」页是维基文本，每条写着 ``[[页面|「
 那份日历只有月日、没有时刻，所以开始按当天 10:00、结束按 23:59 落到北京时间，
 误差最多几个小时——对「还剩几天」的显示足够，精确到分钟的场合不要用它。
 
-活动封面这一版不给：日历页本身不带图，条目页里的图不是换装立绘就是头像、logo，
-真正当封面的头图在维基里还是红链（文件没上传）。卡片拿不到图会走素色样式，
-比塞一张换装立绘顺眼。活动条目仍然带 ``url``，点开能看到对应页。
+活动封面用两张固定图：日历页与条目页都没有能直接用的活动宣传图（头图在维基里
+还是红链，条目页里的图是换装立绘和头像），所以「世界巡游」单独一张、其余活动共用
+一张。两张都放在 B 站图床，前端引用时带 no-referrer，否则会被对方的防盗链挡掉。
 """
 
 import re
@@ -67,6 +67,16 @@ WIKI_HEADERS = {
 }
 
 BEIJING = timezone(timedelta(hours=8))
+
+## 活动封面：「世界巡游」单独一张，其余活动共用一张
+DEFAULT_COVER = (
+    "https://i0.hdslb.com/bfs/new_dyn/7be0c3be64a99903ee5f13d41236121e233114659.jpg"
+)
+WORLD_PATROL_COVER = (
+    "https://i0.hdslb.com/bfs/new_dyn/67bf8f9d99263e6aef28c0682903ae2f233114659.png"
+)
+## 名字里带这个的活动（如「世界巡游-第三十一期」）用上面那张单独的图
+WORLD_PATROL_KEYWORD = "世界巡游"
 
 ## [[页面|「活动名」]]<small>10.15-11.05</small>
 ## 页面名里可能带 #锚点，显示文本可能缺省（此时退回页面名）
@@ -141,12 +151,14 @@ def _build_activity(row: re.Match[str], year: int) -> dict[str, Any] | None:
         except ValueError:
             return None
 
+    cover = WORLD_PATROL_COVER if WORLD_PATROL_KEYWORD in name else DEFAULT_COVER
+
     return {
         "name": name,
         "description": "",
         "startTime": start.isoformat(),
         "endTime": end.isoformat(),
-        "cover": "",
+        "cover": cover,
         "kind": "",
         "url": f"{WIKI_BASE}/{quote(page)}",
     }
