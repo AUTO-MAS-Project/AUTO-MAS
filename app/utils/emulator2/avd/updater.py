@@ -117,6 +117,8 @@ class _Runtime:
         self.progress = _Progress()
         self.cancel_requested = False
         self.published_at = 0.0
+        #: 上次没做完的换上已经按 ``state.json`` 收拾过（拿着 ``lock`` 做，见 :func:`_ensure_recovered`）
+        self.recovered = False
 
     @property
     def busy(self) -> bool:
@@ -681,6 +683,20 @@ async def _swap(runtime: _Runtime, *, close: bool) -> str:
         _swapping.discard(key)
 
 
+async def _ensure_recovered(runtime: _Runtime) -> None:
+    """按 ``state.json`` 收拾上次没做完的换上，每个根目录只做一次。调用方拿着 ``runtime.lock``。
+
+    启动恢复和更新用同一把锁、谁先到谁做：恢复不会把正在进行的这次更新当成上次的半截清掉，
+    而后台初始化还没轮到恢复时用户就点了「更新」，也会先恢复再动手。
+    """
+    if runtime.recovered:
+        return
+    done = await asyncio.to_thread(stage.recover, runtime.root)
+    runtime.recovered = True
+    if done:
+        logger.warning(f"{runtime.root} 的魔改 AVD 更新：{done}")
+
+
 async def _update_job(
     runtime: _Runtime, release: RemoteRelease | None, *, close: bool
 ) -> None:
@@ -689,6 +705,7 @@ async def _update_job(
         runtime.cancel_requested = False
         version = ""
         try:
+            await _ensure_recovered(runtime)
             # 拿到锁之后重新判断：排队期间可能已经装上了别的版本、拼好了别的版本
             local = await asyncio.to_thread(local_version, root)
             version = await asyncio.to_thread(_staged_version, root)
@@ -821,13 +838,13 @@ async def startup() -> None:
     """MAS 启动时：先收拾上次没做完的换上（要在定时器拉起实例之前），再在后台查更新。"""
     roots = await asyncio.to_thread(_managed_roots)
     for root in roots:
+        runtime = _runtime(root)
         try:
-            done = await asyncio.to_thread(stage.recover, root)
+            # 用户可能已经在界面上点了「更新」：等这个根目录的锁，不和正在进行的更新同时动手
+            async with runtime.lock:
+                await _ensure_recovered(runtime)
         except Exception as e:  # noqa: BLE001 - 一个根目录恢复失败不影响别的
             logger.opt(exception=True).error(f"{root} 的魔改 AVD 更新恢复失败: {e}")
-            continue
-        if done:
-            logger.warning(f"{root} 的魔改 AVD 更新：{done}")
     _spawn(_startup_check(roots), "avd-update-startup-check")
 
 
