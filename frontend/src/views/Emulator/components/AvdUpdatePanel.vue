@@ -19,7 +19,7 @@ import {
   type WSAvdUpdateProgressData,
 } from '@/services/websocket/types'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
-import { samePath, updateActions, versionLabel } from '../avdLogic'
+import { samePath, updateActions, versionText } from '../avdLogic'
 
 const props = defineProps<{ root: string }>()
 /** 换上成功：组件与电脑检查要跟着刷新 */
@@ -43,10 +43,10 @@ let disposed = false
 const actions = computed(() =>
   status.value ? updateActions(status.value) : { update: false, cancel: false }
 )
-const current = computed(() =>
-  versionLabel(status.value?.currentBuild, status.value?.currentVersion)
-)
-const latest = computed(() => versionLabel(status.value?.latestBuild, status.value?.latestVersion))
+const current = computed(() => versionText(status.value?.currentVersion))
+const latest = computed(() => versionText(status.value?.latestVersion))
+const minimum = computed(() => versionText(status.value?.minimumVersion))
+const prepared = computed(() => versionText(status.value?.preparedVersion))
 /** 正在跑的进度，或最近一次的结果（成功 / 失败 / 已下载好但没换上） */
 const shown = computed(() => progress.value ?? status.value?.progress ?? null)
 const running = computed(() => (shown.value?.status === 'running' ? shown.value : null))
@@ -173,7 +173,7 @@ onBeforeUnmount(() => {
         v-if="status.belowMinimum"
         type="error"
         show-icon
-        :message="t('emulator2.avd.update.belowMinimum', { current, minimum: status.minimumBuild })"
+        :message="t('emulator2.avd.update.belowMinimum', { current, minimum })"
       />
       <div class="version-row">
         <span>{{ t('emulator2.avd.update.current') }}：{{ current || '—' }}</span>
@@ -214,8 +214,8 @@ onBeforeUnmount(() => {
       <div class="update-actions">
         <a-button v-if="actions.update" type="primary" :loading="acting" @click="run(false)">
           {{
-            status.preparedVersion
-              ? t('emulator2.avd.update.install', { version: status.preparedVersion })
+            prepared
+              ? t('emulator2.avd.update.install', { version: prepared })
               : t('emulator2.avd.update.update', {
                   version: latest,
                   size: formatBytes(status.assetSize ?? 0),

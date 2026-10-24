@@ -89,6 +89,7 @@ from .constants import (
 )
 from .update_source import (
     ModAvdVersion,
+    display_version,
     local_version,
     parse_version,
     requires_manifest,
@@ -416,12 +417,13 @@ def check_package_manifest(manifest: dict[str, Any], target: ModAvdVersion) -> N
     declared = parse_version(manifest.get("version"))
     if declared != target:
         raise PackageError(
-            f"包里清单的版本（{manifest.get('version')}）和要装的版本（{target}）不一致"
+            f"包里清单的版本（{display_version(manifest.get('version'))}）和要装的版本"
+            f"（{target.display}）不一致"
         )
     build = manifest.get("build")
     if build is not None and build != target.build:
         raise PackageError(
-            f"包里清单的构建号（{build}）和版本 {target} 的构建号（{target.build}）不一致"
+            f"包里清单的构建号（{build}）和版本 {target.display} 的构建号（{target.build}）不一致"
         )
     platform = manifest.get("platform")
     if not isinstance(platform, str) or not platform.strip():
@@ -441,8 +443,8 @@ def check_emulator(source: Path, target: ModAvdVersion) -> None:
     build = read_mod_build_at(source)
     if build != target.build:
         raise PackageError(
-            f"包里模拟器的构建号（{f'mas-{build}' if build is not None else '读不到'}）"
-            f"和要装的 {target.label} 不一致"
+            f"包里模拟器的构建号（{build if build is not None else '读不到'}）"
+            f"和要装的 {target.display}（构建号 {target.build}）不一致"
         )
     if not qemu_has_self_built_mark(
         source / "qemu" / "windows-x86_64" / "qemu-system-x86_64-headless.exe"
@@ -977,7 +979,8 @@ def swap_in(root: str | Path) -> str:
         # 改过名之后出错（写 state.json、换包内文件……）：当场按崩溃恢复的规则补完或退回，不留半套
         raise PackageError(f"换上中途出错（{e}）；{_recover_now(root)}") from e
     logger.info(
-        f"{root} 的魔改 AVD 已从 {state.get('from') or '旧版'} 换成 {state['target']['version']}"
+        f"{root} 的魔改 AVD 已从 {display_version(state.get('from')) or '旧版'} 换成 "
+        f"{display_version(state['target']['version'])}"
     )
     return state["target"]["version"]
 
@@ -1040,7 +1043,7 @@ def recover(root: str | Path) -> str | None:
                 _rename(stage, current)
                 _apply_root_files(root, state["plan"])
                 _finish_install(root, state)
-                return f"补完了上次没装完的更新（{state['target']['version']}）"
+                return f"补完了上次没装完的更新（{display_version(state['target']['version'])}）"
             if os.path.isdir(native_path(old)):
                 _rename(old, current)
                 _restore_root_files(root, state.get("plan") or {})
@@ -1064,7 +1067,7 @@ def recover(root: str | Path) -> str | None:
         ):
             _apply_root_files(root, state["plan"])
             _finish_install(root, state)
-            return f"补完了上次没装完的更新（{state['target']['version']}）"
+            return f"补完了上次没装完的更新（{display_version(state['target']['version'])}）"
         _back_to_staged(root, state)
         return "上次更新还没开始换，已回到「待安装」"
     if os.path.lexists(native_path(previous_dir(root))):

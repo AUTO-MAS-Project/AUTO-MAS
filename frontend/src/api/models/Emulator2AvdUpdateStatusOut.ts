@@ -42,9 +42,13 @@ export type Emulator2AvdUpdateStatusOut = {
      */
     belowMinimum?: boolean;
     /**
-     * MAS 要求的最低构建号
+     * MAS 要求的最低构建号, 如 mas-25
      */
     minimumBuild?: string;
+    /**
+     * MAS 要求的最低构建号对应的版本 v0.N.0, 如 v0.25.0 (界面显示时去掉 v)
+     */
+    minimumVersion?: string;
     /**
      * 上次查更新失败的原因
      */

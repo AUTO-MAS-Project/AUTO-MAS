@@ -2,7 +2,7 @@ import { Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 
 import { useAvdUpdateApi } from '@/composables/useAvdUpdateApi'
-import { versionLabel } from './avdLogic'
+import { versionText } from './avdLogic'
 
 /**
  * 魔改 AVD 开不了机、而且是版本低于 MAS 的最低要求（开机前检查拒绝）时，直接给出「去更新」。
@@ -22,8 +22,8 @@ export function useAvdOutdatedPrompt(openRoot: (root: string) => void) {
       Modal.confirm({
         title: t('emulator2.avd.update.outdatedTitle'),
         content: t('emulator2.avd.update.outdatedContent', {
-          current: versionLabel(status.currentBuild, status.currentVersion),
-          minimum: status.minimumBuild,
+          current: versionText(status.currentVersion),
+          minimum: versionText(status.minimumVersion),
         }),
         okText: t('emulator2.avd.update.goUpdate'),
         cancelText: t('emulator.cancel'),

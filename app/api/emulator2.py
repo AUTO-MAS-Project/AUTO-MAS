@@ -508,7 +508,11 @@ class Emulator2AvdUpdateStatusOut(OutBase):
         default=False,
         description="装着的低于 MAS 要求的最低构建号, 开机前检查会拒绝开机",
     )
-    minimumBuild: str = Field(default="", description="MAS 要求的最低构建号")
+    minimumBuild: str = Field(default="", description="MAS 要求的最低构建号, 如 mas-25")
+    minimumVersion: str = Field(
+        default="",
+        description="MAS 要求的最低构建号对应的版本 v0.N.0, 如 v0.25.0 (界面显示时去掉 v)",
+    )
     checkError: str = Field(default="", description="上次查更新失败的原因")
     latestVersion: str = Field(default="", description="最新版本号; 没查到为空")
     latestBuild: str = Field(default="", description="最新构建号")

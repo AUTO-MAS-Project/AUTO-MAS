@@ -76,6 +76,7 @@ from .update_source import (
     RemoteRelease,
     UpdateSourceError,
     automas_too_old,
+    display_version,
     local_version,
     parse_version,
     update_sources,
@@ -333,12 +334,17 @@ async def _latest(*, force: bool) -> RemoteRelease:
                 "",
             )
             logger.info(
-                f"ModAVD 最新版本 {release.version}（{release.version.label}，"
-                f"tag {release.tag}，来源 {release.source}，包 {release.asset.name}）"
+                f"ModAVD 最新版本 {release.version.display}（tag {release.tag}，"
+                f"来源 {release.source}，包 {release.asset.name}）"
             )
             return release
         _remote_failed_at, _remote_error = time.monotonic(), "；".join(errors)
         raise UpdateSourceError(_remote_error)
+
+
+def _shown(version: ModAvdVersion | None) -> str:
+    """版本给人看的写法 ``0.32.1``；读不到时写「未知」。"""
+    return version.display if version is not None else "未知"
 
 
 def _newer(release: RemoteRelease | None, local: ModAvdVersion | None) -> bool:
@@ -389,6 +395,7 @@ def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
         "currentBuild": local.label if local else "",
         "belowMinimum": local is None or local.build < MIN_MOD_AVD_BUILD,
         "minimumBuild": f"mas-{MIN_MOD_AVD_BUILD}",
+        "minimumVersion": str(ModAvdVersion.of_build(MIN_MOD_AVD_BUILD)),
         "checkError": _remote_error,
         "latestVersion": str(release.version) if release else "",
         "latestBuild": release.version.label if release else "",
@@ -636,7 +643,7 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
         else "旧版包没有清单，按 zip CRC 并核对了整包的 SHA-256"
     )
     logger.info(
-        f"{root} 的 {release.version} 已拼好（{staged['files']} 个文件，{checked}）"
+        f"{root} 的 {release.version.display} 已拼好（{staged['files']} 个文件，{checked}）"
     )
 
 
@@ -717,20 +724,26 @@ async def _update_job(
                 await _prepare(runtime, release)
                 version = await asyncio.to_thread(_staged_version, root)
             if not version:
-                raise _NothingToDo(f"已经是最新版本（{local}）")
+                raise _NothingToDo(f"已经是最新版本（{_shown(local)}）")
             installed = await _swap(runtime, close=close)
-            _set(runtime, "installed", "success", f"已更新到 {installed}")
+            _set(
+                runtime,
+                "installed",
+                "success",
+                f"已更新到 {display_version(installed)}",
+            )
         except _NothingToDo as e:
             _set(runtime, "idle", "idle", str(e))
         except stage.UpdateCancelled:
             _set(runtime, "cancelled", "idle", "已取消，下次点「更新」接着下")
         except stage.SwapBlocked as e:
-            logger.info(f"{root} 的 {version} 已下载好，这次没换上: {e}")
+            shown = display_version(version)
+            logger.info(f"{root} 的 {shown} 已下载好，这次没换上: {e}")
             _set(
                 runtime,
                 "staged",
                 "failed",
-                f"{version} 已下载并核对好，但现在不能换上：{e}。处理好后再点「更新」直接换上，"
+                f"{shown} 已下载并核对好，但现在不能换上：{e}。处理好后再点「更新」直接换上，"
                 "不用重新下载",
             )
         except Exception as e:  # noqa: BLE001 - 失败如实交给界面
@@ -776,12 +789,12 @@ async def update(root: str, *, close_instances: bool = False) -> dict[str, Any]:
             assert release is not None
             return _action(
                 "automas_too_old",
-                f"{release.version} 需要 AUTO-MAS {required} 或更新的版本，请先更新 AUTO-MAS",
+                f"{release.version.display} 需要 AUTO-MAS {required} 或更新的版本，请先更新 AUTO-MAS",
             )
     elif not staged:
         if release is None:
             return _action("check_failed", f"查不到最新版本：{check_error}")
-        return _action("up_to_date", f"已经是最新版本（{local}）")
+        return _action("up_to_date", f"已经是最新版本（{_shown(local)}）")
     else:
         release = None  # 只换上已经下好的那一版
     running = await asyncio.to_thread(_running_instances, path)
@@ -830,7 +843,7 @@ async def _startup_check(roots: list[Path]) -> None:
         local = await asyncio.to_thread(local_version, root)
         if _newer(release, local):
             logger.info(
-                f"{root} 的魔改 AVD 有新版本：{local or '未知'} → {release.version}"
+                f"{root} 的魔改 AVD 有新版本：{_shown(local)} → {release.version.display}"
             )
 
 

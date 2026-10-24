@@ -96,9 +96,11 @@ export const isRootAdded = (addedRoots: string[], root: string) =>
 
 // ---- 更新 ----
 
-/** 版本的显示写法：``mas-33（v0.33.0）``；只有一样时就显示那一样。 */
-export const versionLabel = (build?: string | null, version?: string | null) =>
-  build && version ? `${build}（${version}）` : build || version || ''
+/**
+ * 版本给人看的写法：后端给的是版本身份 ``v0.33.0``（和 tag、清单一致），界面去掉 ``v`` 显示成
+ * ``0.33.0``，不再写 ``mas-N``。
+ */
+export const versionText = (version?: string | null) => (version ?? '').replace(/^v(?=\d)/, '')
 
 /** 还能取消的阶段（换上一旦开始就不能取消）。 */
 const CANCELLABLE_STAGES = new Set(['downloading', 'extracting', 'verifying'])
@@ -119,8 +121,9 @@ export const updateActions = (status: Emulator2AvdUpdateStatusOut) => {
 /** 路径卡片上的更新标记：低于最低要求 → 需要更新；有新版本 → 有新版本；否则不标。 */
 export const updateBadge = (status: Emulator2AvdUpdateStatusOut) => {
   if (!status.updatable) return null
-  if (status.belowMinimum) return { kind: 'outdated' as const, version: status.minimumBuild ?? '' }
+  if (status.belowMinimum)
+    return { kind: 'outdated' as const, version: versionText(status.minimumVersion) }
   if (status.updateAvailable)
-    return { kind: 'available' as const, version: status.latestBuild ?? '' }
+    return { kind: 'available' as const, version: versionText(status.latestVersion) }
   return null
 }

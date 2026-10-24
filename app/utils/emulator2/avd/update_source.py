@@ -89,12 +89,24 @@ class ModAvdVersion:
         return cls(0, build, 0)
 
     def __str__(self) -> str:
+        """版本身份写法 ``v0.32.1``：和 tag、清单的 ``version`` 一字不差，存状态、比较、对外请求都用它。"""
         return f"v{self.major}.{self.build}.{self.patch}"
 
     @property
+    def display(self) -> str:
+        """给人看的写法 ``0.32.1``：界面、提示文字、日志都用它，不带 ``v``、不写 ``mas-N``。"""
+        return f"{self.major}.{self.build}.{self.patch}"
+
+    @property
     def label(self) -> str:
-        """界面上的构建号写法：``mas-33``。"""
+        """构建号写法：``mas-33``（和 ``Pkg.BuildId`` 一致）。"""
         return f"mas-{self.build}"
+
+
+def display_version(text: object) -> str:
+    """把版本身份字符串（``v0.32.1``、旧 tag ``v37.2.10-mas32``）换成给人看的 ``0.32.1``；认不出原样返回。"""
+    parsed = parse_version(text)
+    return parsed.display if parsed is not None else str(text or "")
 
 
 def parse_version(text: object) -> ModAvdVersion | None:
@@ -337,6 +349,7 @@ __all__ = [
     "UpdateSource",
     "UpdateSourceError",
     "automas_too_old",
+    "display_version",
     "local_version",
     "package_candidates",
     "parse_min_automas",
