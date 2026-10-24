@@ -22,14 +22,15 @@
 
 流程（每个根目录各走各的）：
 
-1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问 GitHub），
-   结果缓存 4 小时；MAS 启动时在后台查一次，界面打开更新区时按缓存再查。失败只记日志、写在状态里，
-   不弹窗、不挡启动。
+1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问
+   GitHub；MAS 设置的「更新源」选了 GitHub 时只问 GitHub），结果缓存 4 小时，更新源设置一改就作废；
+   MAS 启动时在后台查一次，界面打开更新区时按缓存再查。失败只记日志、写在状态里，不弹窗、不挡启动。
 2. **更新**（:func:`update`）：用户点一下，依次
    - 再查一次最新版本（不走缓存）；
-   - 选包（:func:`_pick_package`）：填了 Mirror 酱 CDK（MAS 全局的 ``Update.MirrorChyanCDK``）就向
-     Mirror 酱现要下载地址，本地正好是起点时要增量包；CDK 过期、无效、次数用完、不含此资源，或
-     Mirror 酱出错时给出提示、改用 GitHub 的整包（8001「这个平台没有包」不提示）；
+   - 选包（:func:`_pick_package`）：「更新源」不是 GitHub、又填了 Mirror 酱 CDK（MAS 全局的
+     ``Update.MirrorChyanCDK``）就向 Mirror 酱现要下载地址，本地正好是起点时要增量包；CDK 过期、
+     无效、次数用完、不含此资源，或 Mirror 酱出错时给出提示、改用 GitHub 的整包（8001「这个平台
+     没有包」不提示）。「更新源」选 GitHub 时填了 CDK 也不用，只走 GitHub；
    - 下载到 ``<根>\\.update\\download``（同盘、续传、可取消），按发布记录 / Mirror 酱给的 SHA-256 核对；
      Mirror 酱的地址过期就重新要一次；
    - 整包解到 ``pkg``；增量包按本地清单抄现有文件、按 ``changes.json`` 删改加，拼成整包的样子。然后按
@@ -159,6 +160,8 @@ _remote: RemoteRelease | None = None
 _remote_at = 0.0
 _remote_failed_at = 0.0
 _remote_error = ""
+#: 上面这份缓存是在哪种更新源设置下查的（``_github_only()`` 的值）；设置一改就作废。
+_remote_github_only: bool | None = None
 _check_lock = asyncio.Lock()
 
 
@@ -333,6 +336,14 @@ def _mirror_cdk() -> str:
     return str(Config.setting.Update.MirrorChyanCDK or "").strip()
 
 
+def _github_only() -> bool:
+    """MAS 设置的「更新源」（``Update.Source``）选了 GitHub 时只走 GitHub，查更新和下载都不碰 Mirror 酱；
+    选别的源时先问 Mirror 酱、再问 GitHub。"""
+    from app.core import Config
+
+    return Config.setting.Update.Source == "GitHub"
+
+
 async def _latest(
     *, force: bool, current: ModAvdVersion | None = None
 ) -> RemoteRelease:
@@ -341,9 +352,13 @@ async def _latest(
     ``current`` 是发起查询的根目录装着的版本（Mirror 酱的 ``current_version``）。各源依次问，前一个查不到
     或出错就问下一个；Mirror 酱的错误这里只记日志，选包时（:func:`_pick_package`）再提示。
     """
-    global _remote, _remote_at, _remote_failed_at, _remote_error
+    global _remote, _remote_at, _remote_failed_at, _remote_error, _remote_github_only
     async with _check_lock:
         now = time.monotonic()
+        github_only = _github_only()
+        if github_only != _remote_github_only:
+            _remote, _remote_failed_at, _remote_error = None, 0.0, ""
+            _remote_github_only = github_only
         if not force:
             if _remote is not None and now - _remote_at < UPDATE_CHECK_CACHE_SECONDS:
                 return _remote
@@ -357,7 +372,7 @@ async def _latest(
         from app.core import Config
 
         errors: list[str] = []
-        for source in update_sources(_mirror_cdk()):
+        for source in update_sources(_mirror_cdk(), github_only=github_only):
             try:
                 release = await source.latest(proxy=Config.proxy, current=current)
             except Exception as e:  # noqa: BLE001 - 一个源不行换下一个，全不行才报
@@ -501,16 +516,17 @@ async def _pick_package(
 ) -> RemoteRelease:
     """这次下哪个包，返回带下载地址的那一版。
 
-    填了 CDK 先向 Mirror 酱现要地址：本地正好是增量包的起点（根上的清单就是装着的版本）时带
-    ``current_version`` 要，Mirror 酱可能给增量包；否则（或 ``full``）不带，只要全量包。Mirror 酱给不了
-    （CDK 过期、无效、次数用完、不含此资源，或出错）就用 GitHub 的整包，原因记进 ``runtime.notice``；
-    8001（这个平台没有包）不提示。
+    「更新源」不是 GitHub 又填了 CDK 时先向 Mirror 酱现要地址：本地正好是增量包的起点（根上的清单就是
+    装着的版本）时带 ``current_version`` 要，Mirror 酱可能给增量包；否则（或 ``full``）不带，只要全量包。
+    Mirror 酱给不了（CDK 过期、无效、次数用完、不含此资源，或出错）就用 GitHub 的整包，原因记进
+    ``runtime.notice``；8001（这个平台没有包）不提示。「更新源」选 GitHub 时不用 CDK、不问 Mirror 酱。
     """
     from app.core import Config
 
     root = runtime.root
     local = await asyncio.to_thread(local_version, root)
-    cdk = _mirror_cdk()
+    github_only = _github_only()
+    cdk = "" if github_only else _mirror_cdk()
     if cdk:
         patchable = not full and await asyncio.to_thread(
             stage.patch_base_ok, root, local
@@ -544,7 +560,10 @@ async def _pick_package(
                 proxy=Config.proxy
             )
         except UpdateSourceError as e:
-            hint = "" if cdk else "（没有填 Mirror 酱 CDK 时只能从 GitHub 下载）"
+            if github_only:
+                hint = "（更新源选的是 GitHub）"
+            else:
+                hint = "" if cdk else "（没有填 Mirror 酱 CDK 时只能从 GitHub 下载）"
             raise UpdateSourceError(f"{e}{hint}") from e
     if not _newer(github, local):
         raise RuntimeError(

@@ -533,13 +533,13 @@ def github_api_url() -> str:
     return os.environ.get(MODAVD_RELEASE_API_ENV, "").strip() or MODAVD_RELEASE_API
 
 
-def update_sources(cdk: str = "") -> list[UpdateSource]:
-    """按顺序问的下载源：先 Mirror 酱（不带 CDK 也能查版本），查不到或出错再问 GitHub。
-    两个环境变量只供测试，不进配置、不上界面。"""
-    return [
-        MirrorChyanSource(cdk, mirror_api_root()),
-        GitHubReleaseSource(github_api_url()),
-    ]
+def update_sources(cdk: str = "", *, github_only: bool = False) -> list[UpdateSource]:
+    """按顺序问的下载源：先 Mirror 酱（不带 CDK 也能查版本），查不到或出错再问 GitHub；``github_only``
+    （MAS 设置的「更新源」选了 GitHub）时只问 GitHub。两个环境变量只供测试，不进配置、不上界面。"""
+    github = GitHubReleaseSource(github_api_url())
+    if github_only:
+        return [github]
+    return [MirrorChyanSource(cdk, mirror_api_root()), github]
 
 
 __all__ = [
