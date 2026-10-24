@@ -261,8 +261,9 @@ async def fluxdown_download(
         --local 模式只在启动时输出一行任务 ID，之后全程静默但仍在写文件；
         且分段下载会预分配完整临时文件，st_size 从开始就等于总大小（官方
         downloader.rs 明确真实进度须从数据库读取，而 local 独占数据库锁，
-        这里取不到），只看大小会把健康下载误判为停滞。分段数据持续写入会
-        刷新 mtime，因此把 (总字节数, 最新 mtime) 一并作为活动信号。
+        这里取不到），只看大小会把健康下载误判为停滞。Windows 在所有写句柄
+        关闭前不保证刷新 mtime，因此这里只把 (总字节数, 最新 mtime) 当辅助
+        活动信号，停滞判定以 ``_proc_write_bytes`` 的进程写入计数为准。
         """
         total_bytes = 0
         latest_mtime = 0
@@ -301,16 +302,18 @@ async def fluxdown_download(
             return None
 
     # 停滞超时：timeout 语义 = 持续无"活动"的秒数上限，不是整包总时限。
-    # 活动 = stdout 有新输出 或 输出文件有写入（大小/mtime 变化）或 进程
-    # 写入计数增长。--local 下载期间没有进度输出，且分段下载会预分配完整
-    # 文件（大小恒定），只看 stdout 或只看大小都会把正常下载误判为停滞；
-    # 三路信号全部静默超过 timeout 才判定中断。
+    # 主判据是进程已写入字节数：--local 分段下载会预分配完整文件（大小从开始
+    # 就等于总大小），且 Windows 在所有写句柄关闭前不保证刷新文件 mtime，
+    # 只看 size/mtime 会把仍在正常写入的下载误判为停滞；进程 I/O 计数随每次
+    # 写系统调用增长，与写句柄状态、文件时间戳都无关。stdout 与文件状态只作
+    # 为额外的活动信号，不会因为它们静默就中断下载。
     parse_task = asyncio.ensure_future(_parse_stream())
     stalled = False
-    last_activity = t0  # 最近一次观察到的活动时刻（输出或文件写入）
+    last_activity = t0  # 最近一次观察到的活动时刻（输出或写入）
     last_size_check = t0
     last_file_state = (-1, -1)
-    last_write_bytes = -1
+    last_write_bytes = -1  # -1 = 尚未采到进程写入计数基线
+    no_write_io_warned = False
     try:
         while not parse_task.done():
             now = time.monotonic()
@@ -321,13 +324,26 @@ async def fluxdown_download(
                     last_file_state = current_state
                     last_activity = now
                 write_bytes = _proc_write_bytes()
-                if write_bytes is not None and write_bytes != last_write_bytes:
-                    if last_write_bytes >= 0:
+                if write_bytes is None:
+                    # 拿不到计数（psutil 不可用/进程已退出）：本样本无可靠信号
+                    last_write_bytes = -1
+                else:
+                    if last_write_bytes >= 0 and write_bytes != last_write_bytes:
                         last_activity = now
                     last_write_bytes = write_bytes
                 last_size_check = now
             last_activity = max(last_activity, last_output)
             remaining = timeout - (time.monotonic() - last_activity)
+            if remaining <= 0 and last_write_bytes < 0:
+                # 没有可靠写入计数时，不以 size/mtime 长时间不变作为杀掉 local
+                # 进程的充分条件：宁可继续等待，也不误杀仍在写盘的下载
+                if not no_write_io_warned:
+                    logger.warning(
+                        f"[--local] 进程写入计数不可用, 暂不按停滞中断: {url}"
+                    )
+                    no_write_io_warned = True
+                last_activity = time.monotonic()
+                remaining = timeout
             if remaining <= 0:
                 stalled = True
                 break
@@ -338,13 +354,13 @@ async def fluxdown_download(
             proc.kill()
             await proc.wait()
             record.status = "failed"
-            record.error = f"CLI 停滞超时 ({timeout:.0f}s 无输出且文件无写入)"
+            record.error = f"CLI 停滞超时 ({timeout:.0f}s 无输出且进程无写入)"
             record.duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning(
-                f"[--local] 停滞 {timeout:.0f}s 无输出且无写入, 判定中断: {url}"
+                f"[--local] 停滞 {timeout:.0f}s 无输出且进程无写入, 判定中断: {url}"
             )
             raise RuntimeError(
-                f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出且文件无写入"
+                f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出且进程无写入"
             ) from None
 
         await parse_task

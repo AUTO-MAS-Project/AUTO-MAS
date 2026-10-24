@@ -80,7 +80,10 @@ const openUpdateHistory = async () => {
   historyLoading.value = true
   try {
     const data = await getSettings()
-    fetchedHistory.value = data?.Update?.LastUpdateHistory ?? []
+    // 读取失败时 getSettings 返回 null（基础层已提示），此时保留原快照，
+    // 不能把已有历史清成空
+    const history = data?.Update?.LastUpdateHistory
+    if (history) fetchedHistory.value = history
   } finally {
     historyLoading.value = false
   }
