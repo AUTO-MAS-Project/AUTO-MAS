@@ -318,6 +318,14 @@ const start = async (version: string, data: ChangelogData, downloader?: 'builtin
     receiveFailed(errorMessage)
   }
 }
+// 取消失败时后端不一定还在下载（可能已广播失败/完成，或压根没有活动任务），
+// 不再臆测回「下载中」，而是以 HTTP 快照为准；快照也读不到时才退回下载中。
+const settleCancelFailure = async (): Promise<void> => {
+  invalidateSnapshot()
+  await refreshUpdateDownloadSnapshot()
+  if (status.value === 'cancelling') status.value = 'downloading'
+}
+
 const cancel = async () => {
   if (status.value !== 'downloading') return
 
@@ -331,16 +339,14 @@ const cancel = async () => {
       receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
-      invalidateSnapshot()
-      status.value = 'downloading'
+      await settleCancelFailure()
     }
   } catch (error) {
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '取消下载失败')
     logger.error(`取消下载失败: ${errorMessage}`)
     message.error(errorMessage)
-    invalidateSnapshot()
-    status.value = 'downloading'
+    await settleCancelFailure()
   }
 }
 
