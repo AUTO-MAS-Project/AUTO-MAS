@@ -138,12 +138,16 @@ import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptMirrorCdkIn } from '../models/ScriptMirrorCdkIn';
+import type { ScriptMirrorCdkOut } from '../models/ScriptMirrorCdkOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
 import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { SettingMirrorCdkIn } from '../models/SettingMirrorCdkIn';
+import type { SettingMirrorCdkOut } from '../models/SettingMirrorCdkOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { ShareAppearanceCategoryIn } from '../models/ShareAppearanceCategoryIn';
 import type { ShareAppearanceCoverIn } from '../models/ShareAppearanceCoverIn';
@@ -1557,6 +1561,26 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询脚本生效的 Mirror 酱 CDK 状态
+     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
+     * @param requestBody
+     * @returns ScriptMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
+        requestBody: ScriptMirrorCdkIn,
+    ): CancelablePromise<ScriptMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -3906,6 +3930,25 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/taygedo/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询全局 Mirror 酱 CDK 状态与到期时间
+     * @param requestBody
+     * @returns SettingMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static querySettingMirrorCdkApiSettingMirrorCdkPost(
+        requestBody: SettingMirrorCdkIn,
+    ): CancelablePromise<SettingMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

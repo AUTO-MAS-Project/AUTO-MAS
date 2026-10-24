@@ -1820,6 +1820,8 @@ export default {
     sourceGithub: 'GitHub',
     cdkStatusIssue:
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
+    cdkHintGlobal: 'Using the global CDK',
+    cdkHintAbsent: 'No CDK configured. Enter one here or set a global CDK.',
     cdkHintRemaining: '{days} day(s) left (expires on {date})',
     cdkHintLessThanDay: 'Less than 1 day left (expires on {date})',
     cdkHintExpired: 'The CDK has expired',
@@ -5276,7 +5278,10 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used for updating MAS itself and the modified AVD; MAA and MaaFW script project updates take their own CDK on their script edit pages',
+        'Used for MAS and modified AVD updates, and as a fallback when the MAA CDK is empty. Set the CDK for MaaFW projects on their script edit pages.',
+      cdkValid: 'CDK is valid',
+      cdkChecking: 'Validating CDK…',
+      cdkCheckFailed: 'Unable to validate CDK right now. Please retry.',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',
