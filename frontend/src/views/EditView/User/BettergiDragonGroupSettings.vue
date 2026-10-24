@@ -9,7 +9,7 @@
         <!-- 分组用标签页承载；多分组/单分组都保留标签 -->
         <a-tabs v-model:activeKey="activeTabKey" class="bettergi-groups-tabs">
           <!-- 标签栏最右侧：放大按钮（弹窗态不再嵌套放大） -->
-          <template v-if="!embedded" #tabBarExtraContent>
+          <template v-if="!embedded" #rightExtra>
             <a-tooltip :title="t('edit.bettergiGroupSettingsZoom')" placement="top">
               <a-button
                 type="text"

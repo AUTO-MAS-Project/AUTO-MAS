@@ -7,7 +7,7 @@
     :closable="false"
     :keyboard="false"
     :mask-closable="false"
-    :mask="{ blur: true }"
+    :mask="true"
     :width="480"
     centered
     wrap-class-name="power-countdown-modal"
@@ -117,6 +117,12 @@ const handleCancel = async () => {
 
 .power-countdown-modal .ant-modal-body {
   padding: 0;
+}
+
+/* 遮罩毛玻璃。antd 的 mask 只接受布尔值（原先写的 :mask="{ blur: true }" 是无效属性，
+   只会在开发期刷一条 prop 类型告警、且模糊效果从未生效），模糊改由 CSS 落在遮罩层上。 */
+body:has(.power-countdown-modal) .ant-modal-mask {
+  backdrop-filter: blur(4px);
 }
 </style>
 
