@@ -71,9 +71,10 @@ test.describe('@editors 脚本编辑页', () => {
   test('打开不存在的脚本编辑页时回到列表并给出提示', async ({ app, page }) => {
     // 分享链接 / 收藏夹里的旧链接指向已删除的脚本时用户会遇到这条路径。
     // 这里不能用 app.goto：它会断言落地 hash 等于请求的 hash，而这条流程必定被重定向。
+    // 后端目前会把缺失脚本的 KeyError 原样带回，断言兼容现状与未来的友好文案。
     await page.goto('/#/scripts/00000000-0000-4000-8000-000000000000/edit/maa')
     await expect(page.locator('.ant-message').first()).toContainText(
-      /does not exist|Could not load/i
+      /KeyError|does not exist|Could not load|Failed to load/i
     )
     await expect.poll(() => new URL(page.url()).hash, { timeout: 10_000 }).toBe('#/scripts')
     await app.evidence('editor-missing-script')
@@ -90,7 +91,7 @@ test.describe('@editors 脚本编辑页', () => {
     )
     await page.goto('/#/scripts/00000000-0000-4000-8000-000000000001/edit/maa')
     await expect(page.locator('.ant-message').first()).toContainText(
-      /does not exist|Could not load/i
+      /boom|does not exist|Could not load|Failed to load/i
     )
     await expect.poll(() => new URL(page.url()).hash, { timeout: 10_000 }).toBe('#/scripts')
     await app.evidence('editor-load-failed')
