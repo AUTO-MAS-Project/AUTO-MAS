@@ -73,7 +73,6 @@ from .tools.one_dragon_plan import (
     resolve_base_name,
 )
 from .tools.one_dragon_report import (
-    count_failed_custom_items,
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
@@ -693,6 +692,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self.exec_group_names: list[str] = []
         # 执行层「部分失败」的步数：单步失败已跳过继续、不判负，但状态/通知要标出来
         self.partial_failed_steps = 0
+        self.warning_steps = 0
 
     def _resolve_log_file_path(self) -> Path:
         """构造 BetterGI 当日滚动日志路径（better-genshin-impact{yyyyMMdd}.log）。"""
@@ -1111,7 +1111,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             self.cur_user_item.status = "运行"
             self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+            self.cur_user_item.log_record[self.log_start_time] = LogRecord(
+                phase="一条龙"
+            )
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
             self.script_info.log = ""
 
@@ -1322,7 +1324,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 执行层是一次真实运行，必须留下 log_record：否则本用户这次运行在 MAS 侧没有
         # 任何记录（结果列落到「未开始运行」、不写历史日志、不发统计通知、分步报告与
         # 掉落统计无数据可解析）。原生一条龙随后会另开一条记录，结果形如「执行层 | 一条龙」。
-        exec_log = LogRecord()
+        exec_log = LogRecord(phase="执行层")
         self.log_start_time = datetime.now()
         self.cur_user_item.log_record[self.log_start_time] = exec_log
         # 同步为「当前记录」：on_crash 与收尾的「运行异常」通知都读 self.cur_user_log
@@ -1475,9 +1477,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 自定义项（配置组 / 脚本 / 路径 / 录制）不走 main.js，BGI 也不会因为其中某个项目
         # 失败而判本次执行层失败（配置组照样走到「执行结束」），所以只能按 BGI 项目行自己补计；
         # 否则这类失败会静默消失（2026-09-19 实机：脚本项失败仍报「成功」）。
-        custom_failed = count_failed_custom_items("".join(exec_log.content))
-        # 失败步数：main.js 的收尾汇总最可靠，缺失时退回逐行计数；自定义项另行累加
-        failed_steps = max(partial_failed, step_failed) + custom_failed
+        exec_steps = parse_execution_layer_report("".join(exec_log.content)) or []
+        custom_failed = sum(
+            not step["ok"] for step in exec_steps if step.get("bgi_project")
+        )
+        # JS 收尾不覆盖 BGI 明确报出的任务失败；同一步只计一次，自定义项另行累加。
+        parsed_failed = sum(
+            not step["ok"] for step in exec_steps if not step.get("bgi_project")
+        )
+        failed_steps = max(partial_failed, step_failed, parsed_failed) + custom_failed
         if custom_failed:
             logger.warning(
                 f"用户 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
@@ -1487,10 +1495,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
         exec_log.status = "Success!" if result["success"] else failure_reason
+        # 执行层整体失败后仍可能继续原生一条龙，已失败的步骤也必须进入最终汇总。
+        self.partial_failed_steps = failed_steps
         if result["success"] and failed_steps:
             # 有步骤失败并已跳过：按 2026-09-09 决策不判负（不重试、计入成功），但状态不能再
             # 报「成功」——否则出现「任务没跑完却显示成功」（2026-09-15 实机：地脉花未打）。
-            self.partial_failed_steps = failed_steps
             exec_log.status = f"部分失败：{failed_steps} 个步骤未完成（已跳过继续）"
 
         if result["success"]:
@@ -1910,6 +1919,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww 行为）
         statistic_paths: list[Path] = []
+        # 进度行只有序号，按本次启动的配置顺序对齐任务名；对不上时解析器退回日志推断。
+        native_task_names = self._native_one_dragon_task_names()
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
@@ -1925,7 +1936,21 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            history_status = log_item.status
+            if log_item.status == "Success!":
+                content = "".join(log_item.content)
+                steps = _merge_one_dragon_reports(
+                    parse_one_dragon_report(content, native_task_names),
+                    parse_execution_layer_report(content),
+                )
+                failed = sum(not step["ok"] for step in steps or [])
+                warnings = sum(bool(step.get("warning_text")) for step in steps or [])
+                if failed or warnings:
+                    history_status = (
+                        f"流程完成（有警告：{failed} 个步骤失败，{warnings} 项需关注）"
+                    )
+
+            await Config.save_general_log(log_path, log_item.content, history_status)
             statistic_paths.append(log_path.with_suffix(".json"))
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
@@ -1933,23 +1958,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 日常相把战斗 4 项顶掉（2026-09-19 实机：通知只见「领取邮件/领取尘歌壶奖励/
         # 领取每日奖励」，执行层的幽境危战/地脉花/首领讨伐/秘境全看不见）。
         # 同一相的多轮日志只可能是重试，故每相只取一轮：成功轮优先，无成功轮时取最后一轮
-        # 能解析出步骤的（末轮可能在打出标记前就失败）。全部相都无步骤时整块省略。
+        # 能解析出步骤的（末轮可能在打出标记前就失败）。成功轮无步骤则不沿用旧轮。
         runs = list(self.cur_user_item.log_record.values())
-        # 原生一条龙的进度行只有序号、日志里没有任务名：按本次启动的那份配置给出名字表，
-        # 供解析器按序号还原（长度对不上时解析器自行退回日志推断，见 one_dragon_report）。
-        native_task_names = self._native_one_dragon_task_names()
 
         def _phase_steps(
-            parser: Callable[[str], list[dict] | None],
+            parser: Callable[[str], list[dict] | None], *, phase: str
         ) -> list[dict] | None:
-            """取某一相的步骤：成功轮优先，否则最近一轮能解析出步骤的轮次。"""
+            """取成功轮的步骤（可为空），否则取最近一轮能解析出的步骤。"""
             fallback: list[dict] | None = None
             for item in reversed(runs):
+                if item.phase != phase:
+                    continue
                 steps = parser("".join(item.content))
+                if item.status == "Success!":
+                    # 成功轮没有可解析步骤时也不应沿用旧失败轮的结果。
+                    return steps
                 if not steps:
                     continue
-                if item.status == "Success!":
-                    return steps
                 if fallback is None:
                     fallback = steps
             return fallback
@@ -1959,15 +1984,29 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 这一相不止 main.js 的战斗步：队列里的自定义项（配置组 / 脚本 / 路径 / 录制）由
         # 同一次 --startGroups 直连 BGI 配置组执行，解析器按 BGI 项目行一并还原
         # （2026-09-19 实机：只有自定义项的运行整块分步表缺失）。
-        exec_steps = _phase_steps(parse_execution_layer_report)
-        native_steps = _phase_steps(
-            lambda content: parse_one_dragon_report(content, native_task_names)
-        )
+        def _native_steps(content: str) -> list[dict] | None:
+            # 原生一条龙也可穿插配置组。两类步骤取自同一轮，按原始日志位置合并，
+            # 避免拿原生配置组的结果顶掉前一相的执行层结果。
+            steps = _merge_one_dragon_reports(
+                parse_one_dragon_report(content, native_task_names),
+                parse_execution_layer_report(content),
+            )
+            if steps:
+                steps.sort(key=lambda step: step["log_line"])
+                for index, step in enumerate(steps, 1):
+                    step["index"] = index
+            return steps
+
+        exec_steps = _phase_steps(parse_execution_layer_report, phase="执行层")
+        native_steps = _phase_steps(_native_steps, phase="一条龙")
         one_dragon_report = _merge_one_dragon_reports(exec_steps, native_steps)
+        self.warning_steps = sum(
+            bool(step.get("warning_text")) for step in one_dragon_report or []
+        )
         # 原生一条龙的任务级异常（匹配不到自动战斗脚本、切队回不到主界面…）会让该任务被跳过，
         # BGI 却照打「任务结束」并继续后面的任务，只看「一条龙和配置组任务结束」会整条判成功
         # （2026-09-19 实机：秘境一仗没打、领奖也没领，通知却是「成功」）。分步表里判失败的步
-        # 计入「部分失败」——与执行层同口径：不判负、照常计次，但状态与通知要说清。
+        # 计入「部分失败」——与执行层同口径：照常计次，但状态与通知必须反映未完成。
         native_failed = sum(1 for s in native_steps or [] if not s["ok"])
         if native_failed:
             self.partial_failed_steps += native_failed
@@ -2019,18 +2058,24 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 if drop_statistics:
                     statistics["drop_statistics"] = drop_statistics
                 statistics["user_info"] = self.cur_user_item.name
+                statistics["warning_count"] = (
+                    self.partial_failed_steps + self.warning_steps
+                )
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 statistics["user_result"] = (
                     "代理任务全部完成" if self.run_book else self.cur_user_item.result
                 )
-                if self.run_book and self.partial_failed_steps:
-                    # 不判负，但执行结果要说清有几个步骤没做完，不能写「全部完成」
+                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                    # 上游流程已完成；子任务失败和无法确认的检查结果仅作警告展示。
                     statistics["user_result"] = (
-                        f"代理任务完成（{self.partial_failed_steps} 个步骤失败已跳过）"
+                        f"代理流程完成（有警告：{self.partial_failed_steps} 个步骤失败，"
+                        f"{self.warning_steps} 项需关注）"
                     )
                 success_symbol = "√" if self.run_book else "X"
+                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                    success_symbol = "⚠"
                 # 统计通知的字段清单：用于确认分步表/掉落表这类可选区块到底有没有下发
                 logger.info(
                     f"用户 {self.cur_user_item.name} 统计通知字段: "
@@ -2076,11 +2121,19 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             await self.cur_user_config.commit()
             self.cur_user_config.Data.LastProxyStatus = "成功"
             await self.cur_user_config.commit()
-            # 部分失败仍算成功（不判负、照常计次），但状态要能看到，不能显示成「完成」
+            # 与上游整体结果一致；分步问题不升级为整条失败，也不触发失败重试/推送。
             self.cur_user_item.status = (
                 "部分失败" if self.partial_failed_steps else "完成"
             )
-            logger.success(f"用户 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成")
+            if self.partial_failed_steps or self.warning_steps:
+                logger.warning(
+                    f"用户 {self.cur_user_uid} 的 BetterGI 自动代理流程完成（有警告："
+                    f"{self.partial_failed_steps} 个步骤失败，{self.warning_steps} 项需关注）"
+                )
+            else:
+                logger.success(
+                    f"用户 {self.cur_user_uid} 的 BetterGI 自动代理任务已完成"
+                )
         else:
             self.cur_user_config.Data.LastProxyStatus = "失败"
             await self.cur_user_config.commit()

@@ -52,17 +52,23 @@ _BGI_STEP_PROGRESS_RE = re.compile(r"一条龙任务执行:\s*(\d+)\s*/\s*(\d+)"
 _MAS_STEP_PREFIX = "MAS_STEP_"
 # Serilog 头行时间戳：「[HH:mm:ss(.fff)] ...」
 _BGI_STEP_TIME_RE = re.compile(r"\[(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
-# 步内可恢复异常的信号（BGI TaskRunner 捕获后不 rethrow，一条龙继续跑下一条）。
+_BGI_STEP_END_RE = re.compile(r'^→\s*"[^"]*任务结束"$')
+# OneDragonTaskItem 的任务失败/异常出口；不包含任务内部仍会重试的操作报错。
+_BGI_TASK_FAILURE_RE = re.compile(
+    r"^(?:领取邮件|合成树脂|自动秘境|自动首领讨伐|自动幽境危战|自动地脉花|"
+    r"领取尘歌壶奖励|领取每日奖励|领取纪行奖励)(?:执行异常|失败)[:：]"
+)
+_BGI_TASK_RESULT_RE = re.compile(r"任务结果[:：]\s*(Unverified|Partial|Skipped)[，,]")
+# 步内异常信号；TaskRunner 的任务失败与 TaskControl 可恢复报错按日志来源区分。
 # 真实 BGI Serilog 里级别写在头行的第二个括号（``[..] [ERR] [Primary:..]``），
 # 消息/异常原因另起一行；``任务执行异常``/``执行失败`` 则直接出现在消息行。
 _BGI_STEP_HEADER_ERR_HINTS = ("[ERR]", "[FTL]")
 _BGI_STEP_ISSUE_HINTS = ("[ERR]", "任务执行异常", "执行失败")
-# 步内「致命」异常信号：出现即说明这一步实际没干成，BGI 却照样打 ``→ "任务结束"``，
-# 只看收尾行会把它报成「已完成（含 N 处异常）」。命中即判该步失败，原因照旧交给通知。
+# 步内异常白名单：没有上游任务级失败结果时，只作警告，不据此替上游判负。
 #   - 未匹配到任何战斗脚本：进副本后拿当前队伍找不到自动战斗脚本，仗没打（AutoDomainTask）；
 #   - 未能返回主界面：SwitchPartyTask 回不到主界面（通常上一步把游戏留在了副本/子界面）；
 #   - 未找到队伍 / Sequence contains no elements：游戏队伍列表里没有这支队伍。
-_BGI_STEP_FATAL_HINTS = (
+_BGI_STEP_WARNING_HINTS = (
     "未匹配到任何战斗脚本",
     "未能返回主界面",
     "未找到队伍",
@@ -104,15 +110,92 @@ def _clean_step_task(line: str) -> str:
     return s.strip() or "未知任务"
 
 
-def _note_step_issue(step: dict, line: str) -> None:
+def _append_step_warning(step: dict, text: str) -> None:
+    """保留同一节点的不同警告原因，重复日志不反复加入汇总。"""
+    previous = step.get("warning_text")
+    if not previous:
+        step["warning_text"] = text
+    elif text not in previous:
+        step["warning_text"] = f"{previous}；{text}"
+
+
+def _note_step_issue(step: dict, line: str, *, fatal: bool = False) -> None:
     """把一条异常行记入步内问题；命中「致命」信号时额外把该步标记为失败。
 
-    见 ``_BGI_STEP_FATAL_HINTS``：BGI 的 TaskRunner 捕获任务级异常后不再 rethrow，照打
-    ``→ "任务结束"`` 继续跑后面的任务，所以「打没打成」只能靠这类信号区分。
+    TaskRunner 捕获任务级异常后仍打印结束；局部重试的 ERR 则只记录问题。
+    任务失败出口和已知的不可恢复信号见上方日志规则。
     """
-    step["issue"].append(line)
-    if any(h in line for h in _BGI_STEP_FATAL_HINTS):
+    fatal = fatal or bool(_BGI_TASK_FAILURE_RE.match(line))
+    warning = any(h in line for h in _BGI_STEP_WARNING_HINTS) or (
+        line.endswith("，跳过")
+        and ("战斗策略" in line or line.startswith("一条龙配置内"))
+    )
+    if fatal and not step["fatal"]:
+        # 任务级失败优先于此前可恢复的报错，通知首先展示真正未完成的原因。
+        step["issue"].insert(0, line)
+    else:
+        step["issue"].append(line)
+    if fatal:
         step["fatal"] = True
+        step.pop("warning_text", None)
+    elif warning and not step["fatal"]:
+        # 子操作异常或跳过不等同于上游任务失败，作为白名单警告保留。
+        _append_step_warning(step, line)
+
+
+def _note_step_result(step: dict, line: str) -> bool:
+    """保留上游明确的未确认、部分完成和正常跳过结果。"""
+    match = _BGI_TASK_RESULT_RE.search(line)
+    if match is None:
+        return False
+    if not step.get("fatal"):
+        if match.group(1) == "Skipped":
+            step["skipped"] = True
+            step.pop("warning_text", None)
+        elif match.group(1) == "Unverified" and step.get("skip_text"):
+            # 已明确无需合成时，没有需要确认的产出，保留跳过原因即可。
+            pass
+        else:
+            # 结果说明不是执行报错；自定义项目按 issue 判失败，不能混入警告。
+            _append_step_warning(step, line)
+    return True
+
+
+def _note_step_warning_or_skip(step: dict, line: str, logger_name: str) -> bool:
+    """承接上游明确打印的局部失败、指定次数提前停止和无需合成说明。"""
+    if step.get("fatal"):
+        return False
+    text = line.replace('"', "").replace("：", ":")
+    task, _, detail = text.partition(":")
+    reason = detail.strip()
+    if (
+        logger_name.endswith(".TaskControl")
+        and task == "领取尘歌壶奖励"
+        and reason == "寻找阿圆失败"
+    ):
+        _append_step_warning(step, reason)
+    elif (
+        logger_name.endswith(".AutoBossTask")
+        and task == "自动首领讨伐"
+        and reason
+        in (
+            "指定讨伐次数模式未开启补充树脂，停止讨伐",
+            "补充树脂未成功，停止讨伐",
+        )
+    ):
+        # 只认指定次数模式的停止说明；正常刷到树脂耗尽不额外警告。
+        _append_step_warning(step, reason)
+    elif (
+        logger_name.endswith(".TaskControl")
+        and line == "无需合成浓缩树脂"
+        and not step.get("bgi_project")
+    ):
+        step["skipped"] = True
+        step["skip_text"] = line
+        step.pop("warning_text", None)
+    else:
+        return False
+    return True
 
 
 def _align_task_names(
@@ -142,10 +225,13 @@ def parse_one_dragon_report(
     """解析「一条龙」分步执行报告，按执行顺序返回步骤字典列表。
 
     每步字段：``index``/``total``（第几条/共几条）、``task``（任务名）、``start``/``end``
-    （起止时间 HH:MM:SS）、``ok``（是否走完 ``→ "任务结束"`` 且步内没有致命异常，见
-    ``_BGI_STEP_FATAL_HINTS``）、``issue_count``/``issue_text``
+    （起止时间 HH:MM:SS）、``ok``（是否正常收尾且无任务级失败）、
+    ``issue_count``/``issue_text``
     （步内可恢复异常数目与首条原因摘要，无异常为空串）。
-    本会话未跑一条龙（无 ``一条龙任务执行`` 行）时返回 None，调用方据此省略分步区块。
+    ``log_line`` 是起始消息在原日志中的行号（从 0 开始），用于合并不同类型步骤。
+    ``warning_text`` 保留未确认/部分完成或白名单异常，``skipped`` 保留上游正常跳过；
+    两者均不替上游判负，呈现时也不显示为已确认成功；收尾领取状态检查仅作警告。
+    没有步骤与奖励检查失败时返回 None，调用方据此省略分步区块。
 
     Args:
         log: BGI 日志全文。
@@ -158,6 +244,12 @@ def parse_one_dragon_report(
     cur: dict | None = None
     last_time = ""
     pending_err = False  # 上一条头行级别为 [ERR]/[FTL]，紧随其后的消息行即异常原因
+    pending_fatal = False
+    logger_name = ""
+    reward_issue = ""
+    reward_time = ""
+    reward_line = 0
+    reward_uncertain = False
 
     def finalize() -> dict:
         assert cur is not None
@@ -167,61 +259,96 @@ def parse_one_dragon_report(
             "issue_text": cur["issue"][0].strip() if cur["issue"] else "",
         }
 
-    for raw in lines:
+    for line_index, raw in enumerate(lines):
         m = _BGI_STEP_TIME_RE.match(raw)
         if m:
             last_time = m.group(1)
+            logger_name = raw.rsplit(" ", 1)[-1]
             # 头行级别槽带 [ERR]/[FTL] 且当前在某条一步内 → 下一条消息行即异常原因
             pending_err = cur is not None and any(
                 h in raw for h in _BGI_STEP_HEADER_ERR_HINTS
+            )
+            # TaskRunner 的 ERR 来自任务失败/未处理异常；其 finally 仍打印结束。
+            # TaskControl 的 ERR 可能来自尚会重试的局部操作，不能一概判负。
+            pending_fatal = "[FTL]" in raw or (
+                "[ERR]" in raw and logger_name.endswith(".TaskRunner")
             )
             continue
         line = raw.strip()
         if not line:
             continue
 
+        # CheckRewardsTask 在所有步骤结束后另跑，不能因 cur 为空丢弃其结果。
+        if (
+            line.startswith("检查每日奖励结果：")
+            and "未领取" in line
+            or line.startswith("检查奖励并通知的任务异常")
+            or line.startswith("一条龙结束汇总：")
+            and ("每日委托奖励：未领取" in line or "委托状态识别失败" in line)
+        ):
+            reward_issue = line
+            reward_time = last_time
+            reward_line = line_index
+            reward_uncertain = "未领取" not in line
+            pending_err = False
+            continue
+
         if pending_err:
             # 该消息属于上一条 [ERR] 头行：记入问题，不参与任务名解析
             pending_err = False
-            if cur is not None and "任务启动" not in line and "任务结束" not in line:
-                _note_step_issue(cur, line)
+            if cur is not None:
+                _note_step_issue(cur, line, fatal=pending_fatal)
             continue
 
         pm = _BGI_STEP_PROGRESS_RE.match(line)
         if pm:
-            if cur is not None:  # 上一步异常中断（无「任务结束」）也先收尾再开新步
+            if cur is not None:
                 cur["end"] = cur["end"] or last_time
-                cur["ok"] = False
+                # 新版 OneDragonTask 直接运行子任务，以进度边界收尾；旧版缺结束仍算中断。
+                cur["ok"] = cur["implicit_end"] and not cur["fatal"]
                 steps.append(finalize())
             cur = {
                 "index": int(pm.group(1)),
                 "total": int(pm.group(2)),
                 "task": "",
                 "start": last_time,
+                "log_line": line_index,
                 "end": "",
                 "ok": True,
                 "issue": [],
                 "fatal": False,
+                "implicit_end": logger_name.endswith(".OneDragonTask"),
             }
             continue
         if cur is None:
             continue
 
-        if line == '→ "任务结束"':
-            # 走完「任务结束」即该步成功；步内 [ERR] 是 BGI 可恢复异常，只记为 issue，
-            # 不把本可完成的一条龙某步误判失败（与 _one_dragon_sequence_done 语义一致）。
-            # 例外：步内出现「致命」信号（找不到自动战斗脚本、切队回不到主界面…）时这一步
-            # 实际没干成，收尾行只是 BGI 跳过继续，判失败并把原因交给通知。
+        if logger_name.endswith(".TaskRunner") and _note_step_result(cur, line):
+            continue
+
+        if _BGI_STEP_END_RE.match(line) or (
+            cur["implicit_end"]
+            and (line == "一条龙和配置组任务结束" or line.startswith("配置组任务执行:"))
+        ):
+            # TaskRunner 在 finally 打结束行，只有未出现任务级失败时才可按完成收尾。
             cur["end"] = last_time
             cur["ok"] = not cur["fatal"]
             steps.append(finalize())
             cur = None
         elif "任务启动" in line:
             continue
+        elif logger_name.endswith(".TaskRunner") and re.match(
+            r"任务中断[:：]\s*任务被取消", line
+        ):
+            _note_step_issue(cur, line, fatal=True)
         else:
             if not cur["task"]:
                 cur["task"] = _clean_step_task(line)
-            if any(h in line for h in _BGI_STEP_ISSUE_HINTS):
+            if _note_step_warning_or_skip(step=cur, line=line, logger_name=logger_name):
+                continue
+            if _BGI_TASK_FAILURE_RE.match(line) or any(
+                h in line for h in _BGI_STEP_ISSUE_HINTS
+            ):
                 _note_step_issue(cur, line)
 
     if cur is not None:  # 日志结束仍停留在某一步（未收尾）→ 该步未完成
@@ -229,16 +356,60 @@ def parse_one_dragon_report(
         cur["ok"] = False
         steps.append(finalize())
 
-    if not steps:
+    if not steps and not reward_issue:
         return None
     # 任务名优先取配置里的权威顺序表（进度行不带名字），对不上才用中途推断的结果
-    aligned = _align_task_names(steps, task_names)
+    aligned = _align_task_names(steps, task_names) if steps else None
     # 移除解析过程使用的内部 issue 原始行，避免携带多余细节（已汇总为 issue_count/text）
     for s in steps:
         if aligned is not None:
             s["task"] = aligned[int(s["index"]) - 1]
+    if reward_issue:
+        # 优先关联到领取步骤；未启用领奖时仍保留独立检查结果，不嫁接给最后的无关任务。
+        reward_step = (
+            next(
+                (
+                    s
+                    for s in reversed(steps)
+                    if s["task"] in ("领取每日奖励", "前往冒险家协会领取奖励")
+                    and not s.get("skipped")
+                ),
+                None,
+            )
+            if not reward_uncertain
+            else None
+        )
+        if reward_step is None:
+            reward_step = {
+                "index": len(steps) + 1,
+                "total": len(steps) + 1,
+                "task": "检查每日奖励",
+                "start": reward_time,
+                "log_line": reward_line,
+                "end": reward_time,
+                "issue": [],
+                "fatal": False,
+                "ok": True,
+            }
+            steps.append(reward_step)
+            for s in steps:
+                s["total"] = len(steps)
+        # BGI 的「未领取」也可能来自尚不可领取、已领取但未识别或检查界面未打开。
+        # 保留检查原文作警告，不据此判执行失败，也不覆盖领取阶段已明确报出的失败。
+        reward_step["issue"].append(reward_issue)
+        if reward_step["ok"]:
+            warning = (
+                f"奖励领取结果未确认：{reward_issue}"
+                if reward_uncertain
+                else reward_issue
+            )
+            _append_step_warning(reward_step, warning)
+        reward_step["issue_count"] = len(reward_step["issue"])
+        reward_step["issue_text"] = reward_step["issue"][0]
+    for s in steps:
         s.pop("issue", None)
         s.pop("fatal", None)
+        s.pop("implicit_end", None)
     return steps
 
 
@@ -276,11 +447,13 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
     last_time = ""
     pending_err = False  # 上一条头行级别为 [ERR]/[FTL]，紧随其后的消息行即异常原因
     project_has_mas = False  # 当前 BGI 项目内部打了 MAS 标记 → 它就是执行层本体
+    pending_fatal = False
+    logger_name = ""
 
     def finalize(ok: bool) -> None:
         assert cur is not None
         cur["end"] = cur["end"] or last_time
-        cur["ok"] = bool(ok and cur["ok"])
+        cur["ok"] = bool(ok and cur["ok"] and not cur["fatal"])
         steps.append(
             {
                 **cur,
@@ -296,9 +469,11 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             "total": 0,  # 收尾时统一回填（见末尾），此处占位
             "task": name or uid,
             "start": last_time,
+            "log_line": line_index,
             "end": "",
             "ok": True,
             "issue": [],
+            "fatal": False,
         }
 
     def close_project(ok: bool) -> None:
@@ -321,19 +496,21 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
                     "issue_text": project["issue"][0].strip()
                     if project["issue"]
                     else "",
-                    # 标记来源：调用方据此把自定义项失败计入「部分失败」（见 count_failed_custom_items）
-                    "bgi_project": True,
                 }
             )
         project = None
 
-    for raw in lines:
+    for line_index, raw in enumerate(lines):
         m = _BGI_STEP_TIME_RE.match(raw)
         if m:
             last_time = m.group(1)
+            logger_name = raw.rsplit(" ", 1)[-1]
             # 头行级别槽带 [ERR]/[FTL] 且在某个 BGI 项目内 → 下一条消息行即异常原因
-            pending_err = project is not None and any(
+            pending_err = (project is not None or cur is not None) and any(
                 h in raw for h in _BGI_STEP_HEADER_ERR_HINTS
+            )
+            pending_fatal = "[FTL]" in raw or (
+                "[ERR]" in raw and logger_name.endswith(".TaskRunner")
             )
             continue
         line = raw.strip()
@@ -344,7 +521,30 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             pending_err = False
             if project is not None:
                 project["issue"].append(line)
+            if cur is not None:
+                _note_step_issue(cur, line, fatal=pending_fatal)
             continue
+
+        target = cur if cur is not None else project
+        if target is not None and _note_step_warning_or_skip(
+            step=target, line=line, logger_name=logger_name
+        ):
+            continue
+
+        if logger_name.endswith(".TaskRunner"):
+            if target is not None and _note_step_result(target, line):
+                continue
+
+        if (
+            logger_name.endswith(".TaskRunner")
+            and re.match(r"任务中断[:：]\s*任务被取消", line)
+            or logger_name.endswith(".ScriptService")
+            and line.startswith("取消执行配置组:")
+        ):
+            if cur is not None:
+                _note_step_issue(cur, line, fatal=True)
+            if project is not None:
+                project["issue"].append(line)
 
         if line.startswith(_MAS_STEP_PREFIX):
             if project is not None:
@@ -391,9 +591,12 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             project = {
                 "task": pm.group("name"),
                 "start": last_time,
+                "log_line": line_index,
                 "end": "",
                 "ok": True,
                 "issue": [],
+                # 自定义项失败单独计数；其子操作无需合成，不代表整个项目已跳过。
+                "bgi_project": True,
             }
             project_has_mas = False
             continue
@@ -413,19 +616,5 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
         step["index"] = order
         step["total"] = total
         step.pop("issue", None)
+        step.pop("fatal", None)
     return steps
-
-
-def count_failed_custom_items(log: str) -> int:
-    """统计直连 BGI 配置组的自定义项（配置组 / 脚本 / 路径 / 录制）里失败的项目数。
-
-    执行层收尾要用它把这类失败一并算进「部分失败」：BGI 的判定是**组级**的，单个项目
-    失败不会让配置组失败（照样走到「执行结束」），也不打 ``MAS_PLAN_DONE_WITH_FAILURES``，
-    只认 MAS 的汇总标记会漏（2026-09-19 实机：脚本项失败仍报「成功」）。
-    执行层本体（内部带 ``MAS_STEP_*`` 的项目）已被解析器剔除，不会与 MAS 步失败数重复计数。
-    """
-    return sum(
-        1
-        for step in parse_execution_layer_report(log) or []
-        if step.get("bgi_project") and not step["ok"]
-    )

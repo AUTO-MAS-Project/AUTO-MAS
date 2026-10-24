@@ -62,7 +62,7 @@ def _render_scatter(entries: list[tuple]) -> list[str]:
     return lines
 
 
-def _render_aggregate(entries: list[tuple]) -> list[str]:
+def render_aggregate_push_log(entries: list[tuple]) -> list[str]:
     """汇总式渲染：按（账号, 状态前缀）分组合并节点名，同组合并为一行
 
     账号按组首次出现排列，同账号内成功/跳过/失败固定在前；不具状态前缀的
@@ -134,7 +134,7 @@ def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:
         if mode == PUSH_LOG_MODE_OFF:
             node_lines: list[str] = []
         elif mode == PUSH_LOG_MODE_AGGREGATE:
-            node_lines = _render_aggregate(entries)
+            node_lines = render_aggregate_push_log(entries)
         else:
             node_lines = _render_scatter(entries)
         blocks.append("\n".join([f"{user.name}: {user.result}"] + node_lines))

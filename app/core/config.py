@@ -4843,6 +4843,12 @@ class AppConfig:
                 # 「今日任务均已完成」= zzz-od 原生来源/按记录跳过场景的历史存量文案,
                 # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
                 return True
+            # BetterGI 保留流程完成语义，子步骤问题在历史文案和节点详情中展示。
+            # 同时兼容此前已保存的带警告记录，不能将其归为流程执行错误。
+            if result_key == "general_result" and re.fullmatch(
+                r"流程完成（有警告：\d+ 个步骤失败，\d+ 项需关注）", value
+            ):
+                return True
             if result_key == "hsr_result" and result_value in hsr_success_results:
                 return True
             return False
