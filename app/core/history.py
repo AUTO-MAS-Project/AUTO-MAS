@@ -458,7 +458,10 @@ class HistoryStore:
                         attachment.byte_size = size
                         if source.kind == "video":
                             quota = self._enforce_quota(
-                                connection, extra=size, cancel=cancel
+                                connection,
+                                extra=size,
+                                protected_record_id=record_id,
+                                cancel=cancel,
                             )
                             errors.extend(quota.errors)
                             if self._video_usage(connection) + size > self._video_limit:
@@ -993,6 +996,7 @@ class HistoryStore:
         *,
         extra: int = 0,
         pending: Sequence[HistoryAttachment] = (),
+        protected_record_id: UUID | None = None,
         cancel: threading.Event,
     ) -> HistoryCleanupReport:
         """按容量上限清理旧视频并更新附件可用状态。"""
@@ -1001,6 +1005,39 @@ class HistoryStore:
         if extra > self._video_limit:
             return report
         usage = self._video_usage(connection, pending)
+        pending_targets: dict[UUID, Path] = {}
+        pending_candidates: list[HistoryAttachment] = []
+        for row in cast(
+            list[sqlite3.Row],
+            connection.execute(
+                """
+                SELECT attachment_id, record_id, target_path, byte_size
+                FROM pending_files
+                WHERE kind='video'
+                ORDER BY created_at, rowid
+                """
+            ).fetchall(),
+        ):
+            pending_record_id = UUID(cast(str, row["record_id"]))
+            if protected_record_id is not None and pending_record_id == protected_record_id:
+                continue
+            pending_id = UUID(cast(str, row["attachment_id"]))
+            target = Path(cast(str, row["target_path"]))
+            pending_targets[pending_id] = target
+            pending_candidates.append(
+                HistoryAttachment(
+                    id=pending_id,
+                    record_id=pending_record_id,
+                    kind="video",
+                    role="pending",
+                    display_name=target.name,
+                    relative_path=target.relative_to(self.root).as_posix()
+                    if target.is_relative_to(self.root)
+                    else None,
+                    byte_size=cast(int, row["byte_size"]),
+                    available=True,
+                )
+            )
         candidates = [
             HistoryAttachment.model_validate(cast(dict[str, object], dict(row)))
             for row in cast(
@@ -1010,21 +1047,26 @@ class HistoryStore:
                 ).fetchall(),
             )
         ]
+        candidates = pending_candidates + candidates
         candidates.extend(item for item in pending if item.kind == "video")
-        candidates.sort(key=lambda item: str(item.id))
         for item in candidates:
-            if not item.relative_path:
+            if item.id in pending_targets:
+                target = pending_targets[item.id]
+            elif not item.relative_path:
                 continue
+            else:
+                target = self.root / item.relative_path
             if usage + extra <= self._video_limit:
                 break
             if cancel.is_set():
                 raise HistoryStorageError("历史服务正在关闭，归档已停止")
-            target = self.root / item.relative_path
+            is_pending = item.id in pending_targets
             for file in (target, target.with_name(target.name + ".temp")):
                 try:
                     size = file.stat().st_size if file.is_file() else 0
                     file.unlink(missing_ok=True)
-                    usage -= size
+                    if not is_pending:
+                        usage -= size
                     report.reclaimed_bytes += size
                     if file == target:
                         report.deleted_videos += int(size > 0)
@@ -1037,8 +1079,25 @@ class HistoryStore:
                             message=str(error),
                         )
                     )
-            if not target.exists():
-                if item in pending:
+            if not target.exists() and not target.with_name(target.name + ".temp").exists():
+                if item.id in pending_targets:
+                    try:
+                        connection.execute(
+                            "DELETE FROM pending_files WHERE attachment_id=?",
+                            (str(item.id),),
+                        ).close()
+                        connection.commit()
+                        usage -= item.byte_size
+                    except sqlite3.Error as error:
+                        report.errors.append(
+                            HistoryStorageIssue(
+                                stage="cleanup",
+                                target_path=str(target),
+                                error_type=type(error).__name__,
+                                message=str(error),
+                            )
+                        )
+                elif item in pending:
                     item.available = False
                     item.unavailable_reason = "quota"
                 else:
