@@ -1,3 +1,5 @@
+import { observePreference } from '@/utils/preferenceAnalytics'
+import { observeFeature } from '@/utils/featureAnalytics'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
@@ -149,7 +151,9 @@ export const usePerformanceStore = defineStore('performance', () => {
     lowPerformanceMode.value = enabled
 
     try {
-      await saveConfig({ lowPerformanceMode: enabled })
+      await observePreference('performance', enabled ? 'low' : 'normal', () =>
+        saveConfig({ lowPerformanceMode: enabled })
+      )
     } catch (error) {
       lowPerformanceMode.value = previousValue
       throw error
@@ -170,7 +174,16 @@ export const usePerformanceStore = defineStore('performance', () => {
     pauseHomeEffectsWhenRunning.value = enabled
 
     try {
-      await saveConfig({ pauseHomeEffectsWhenRunning: enabled })
+      await observeFeature(
+        'settings_change_finished',
+        {
+          setting_kind: 'performance',
+          setting_key: 'performance_effects',
+          value_kind: enabled ? 'enabled' : 'disabled',
+        },
+        () => saveConfig({ pauseHomeEffectsWhenRunning: enabled }),
+        () => 'success'
+      )
     } catch (error) {
       pauseHomeEffectsWhenRunning.value = previousValue
       throw error

@@ -30,6 +30,7 @@ function addZzzOdConfigs(state: CollectorState, installations: Installation[]): 
 
 interface ZzzOdIssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -69,6 +70,7 @@ export function createZzzOdIssueReport(appRoot: string, zipPath: string): ZzzOdI
     logger.info(`ZZZ-OD 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `ZZZ-OD 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }

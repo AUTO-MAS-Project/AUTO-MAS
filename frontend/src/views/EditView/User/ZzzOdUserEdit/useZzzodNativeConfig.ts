@@ -1,3 +1,4 @@
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import {
   computed,
   ref,
@@ -11,7 +12,6 @@ import {
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
-  Service,
   type ZzzOdNativeAccountField,
   type ZzzOdNativeConfigOut,
   ZzzOdNativeLaunchArgs,

@@ -47,7 +47,9 @@ from app.models.schema import (
     WSTaskInfoUpdatedData,
     WSTaskLogUpdatedData,
     WSTaskNoticeData,
+    WSTaskScriptFinishedData,
     WSTaskScriptIdentityData,
+    WSTaskScriptStartedData,
 )
 from app.models.task import (
     ScriptItem,
@@ -108,6 +110,33 @@ if TYPE_CHECKING:
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+_script_observation_tasks: set[asyncio.Task[bool]] = set()
+
+
+def _publish_script_observation(
+    *,
+    message_type: str,
+    data: WSTaskScriptStartedData,
+    after: asyncio.Task[bool] | None = None,
+) -> asyncio.Task[bool] | None:
+    """有界、可丢弃的本地统计消息，不进入脚本的执行或收尾等待链。"""
+
+    if len(_script_observation_tasks) >= 32:
+        return None
+
+    async def send() -> bool:
+        if after is not None and not await asyncio.shield(after):
+            return False
+        return await Publisher.send(
+            id=protocol.ID_TASK_MANAGER, type=message_type, data=data
+        )
+
+    pending = RuntimeTasks.spawn(send(), name="script-run-observation")
+    if pending is not None:
+        _script_observation_tasks.add(pending)
+        pending.add_done_callback(_script_observation_tasks.discard)
+    return pending
+
 
 # 最近完成任务的状态留存：任务一结束就会从运行快照摘掉，凭 taskId 单点查询
 # 只能靠这里回读终态，所以留一个有限窗口（条数上限 + 留存时长）。
@@ -746,6 +775,25 @@ class Task(TaskExecuteBase):
         from app.services.telemetry import record_count
 
         outcome = "error"
+        run = (
+            WSTaskScriptStartedData(
+                taskId=self.task_info.task_id,
+                runId=str(uuid.uuid4()),
+                scriptType=_SCRIPT_TYPE_BY_CLASS.get(
+                    type(script_config).__name__, "unknown"
+                ),
+                mode="CycleRun" if self.task_info.is_cycle else "AutoProxy",
+            )
+            if self.task_info.mode == "AutoProxy"
+            else None
+        )
+        started = (
+            _publish_script_observation(
+                message_type=protocol.TASK_SCRIPT_STARTED, data=run
+            )
+            if run is not None
+            else None
+        )
         try:
             yield
             user_statuses = [
@@ -780,6 +828,12 @@ class Task(TaskExecuteBase):
                     "outcome": outcome,
                 },
             )
+            if run is not None and started is not None:
+                _publish_script_observation(
+                    message_type=protocol.TASK_SCRIPT_FINISHED,
+                    data=WSTaskScriptFinishedData(**run.model_dump(), outcome=outcome),
+                    after=started,
+                )
 
     def _build_task_item(
         self,

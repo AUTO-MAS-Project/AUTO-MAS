@@ -495,6 +495,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -508,7 +509,7 @@ import {
   QuestionCircleOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
@@ -765,10 +766,7 @@ const startUpdate = async () => {
   if (!updateModal.selectedUserId) return
   updateModal.starting = true
   try {
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: updateModal.selectedUserId,
-      mode: TaskCreateIn.mode.UPDATE,
-    })
+    const response = await requestScriptUpdateStart(updateModal.selectedUserId)
     if (response.code !== 200 || !response.taskId) {
       throw new Error(response.message || '启动鸣潮更新失败')
     }

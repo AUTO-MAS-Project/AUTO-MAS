@@ -1,3 +1,4 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service, type ShareTemplateItem } from '@/api'
@@ -74,11 +75,17 @@ export function useTemplateApi() {
     error.value = null
 
     try {
-      const response = await Service.importScriptFromWebApiScriptsImportWebPost({
-        scriptId,
-        configKey: template.configKey,
-        versionNo: template.publishedVersionNo ?? null,
-      })
+      const response = await observeFeature(
+        'adapter_setup_finished',
+        { script_type: 'General', operation_kind: 'template', engine_kind: 'unknown' },
+        () =>
+          Service.importScriptFromWebApiScriptsImportWebPost({
+            scriptId,
+            configKey: template.configKey,
+            versionNo: template.publishedVersionNo ?? null,
+          }),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || '导入配置失败'

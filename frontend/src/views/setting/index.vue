@@ -27,6 +27,7 @@ import { usePressSoundStore } from '@/stores/pressSound'
 import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 import { Service, type VersionOut } from '@/api'
 import { useAppearanceSettings } from './useAppearanceSettings'
+import { useNotificationTest } from './useNotificationTest'
 
 defineOptions({ name: 'SettingsPage' })
 
@@ -479,23 +480,7 @@ const getBackendVersion = async () => {
   }
 }
 
-// 通知测试
-const testingNotify = ref(false)
-const testNotify = async () => {
-  testingNotify.value = true
-  try {
-    const res = await Service.testNotifyApiSettingTestNotifyPost()
-    if (res?.code && res.code !== 200)
-      message.warning(res?.message || t('setting.toast.testUnknown'))
-    else message.success(res?.message || t('setting.toast.testSent'))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`测试通知发送失败: ${errorMsg}`)
-    message.error(t('setting.toast.testFailed'))
-  } finally {
-    testingNotify.value = false
-  }
-}
+const { testingNotify, testNotify } = useNotificationTest(logger)
 
 onMounted(() => {
   void cursorEffectStore.load()

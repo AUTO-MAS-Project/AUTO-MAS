@@ -16,7 +16,8 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { EmulatorOperateIn, Service } from '@/api'
+import { EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
+import { importLegacyEmulator } from '@/views/Emulator/importLegacyEmulator'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -523,38 +524,21 @@ const handleSearch = async () => {
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   let added = false
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
-    if (response.code === 200) {
+    const response = await importLegacyEmulator(result, () => {
       added = true
-      // 更新新添加的模拟器配置，使用分组结构
-      const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
-        data: {
-          Info: {
-            Name: result.name,
-            Type: result.type as 'general' | 'mumu' | 'ldplayer',
-            Path: result.path,
-            MaxWaitTime: 300,
-            BossKey: JSON.stringify([]),
-          },
-        },
-      })
-      if (updateResponse.code === 200) {
-        message.success(t('emulator.toast.importOk'))
-        await loadEmulators()
-        showSearchModal.value = false
-      } else {
-        message.error(updateResponse.message || t('emulator.toast.importFailed'))
-      }
+    })
+    if (response.code === 200) {
+      message.success(t('emulator.toast.importOk'))
+      await loadEmulators()
+      showSearchModal.value = false
     } else {
       message.error(response.message || t('emulator.toast.importFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`导入模拟器失败: ${errorMsg}`)
+    logger.error('导入模拟器失败: ' + errorMsg)
     message.error(t('emulator.toast.importEmulatorFailed'))
   } finally {
-    // 添加已成功时，即使后续配置失败，列表也需要反映新建的模拟器。
     if (added) await invalidateEmulatorOptions()
   }
 }

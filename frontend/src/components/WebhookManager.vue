@@ -236,6 +236,7 @@ import {
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
+import { useWebhookTest } from '@/composables/useWebhookTest'
 
 const { t } = useI18n()
 
@@ -310,7 +311,21 @@ const modalVisible = ref(false)
 const isEditing = ref(false)
 const submitting = ref(false)
 const selectedTemplate = ref<string>()
-const testingWebhooks = ref<Record<string, boolean>>({})
+const { testingWebhooks, testWebhook } = useWebhookTest(
+  (webhook: WebhookItem) => ({
+    scriptId: props.mode === 'global' ? null : props.scriptId || null,
+    userId: props.mode === 'global' ? null : props.userId || null,
+    data: toWebhookPayload(
+      webhook.name,
+      webhook.url,
+      webhook.template,
+      webhook.method,
+      webhook.enabled,
+      webhook.headers ? JSON.stringify(webhook.headers) : null
+    ),
+  }),
+  () => (props.mode === 'global' ? 'global' : 'script')
+)
 const formRef = ref()
 const loading = ref(false)
 const apiWebhooks = ref<WebhookItem[]>([])
@@ -538,41 +553,6 @@ const deleteWebhook = (webhook: WebhookItem) => {
       }
     },
   })
-}
-
-// 测试 Webhook
-const testWebhook = async (webhook: WebhookItem) => {
-  testingWebhooks.value[webhook.uid] = true
-
-  try {
-    const headersJson = webhook.headers ? JSON.stringify(webhook.headers) : null
-
-    const response = await Service.testWebhookApiSettingWebhookTestPost({
-      scriptId: props.mode === 'global' ? null : props.scriptId || null,
-      userId: props.mode === 'global' ? null : props.userId || null,
-      data: toWebhookPayload(
-        webhook.name,
-        webhook.url,
-        webhook.template,
-        webhook.method,
-        webhook.enabled,
-        headersJson
-      ),
-    })
-
-    if (response.code === 200) {
-      message.success(t('comp.webhookP0TestedSuccessfully', { p0: webhook.name }))
-    } else {
-      message.error(t('comp.webhookTestFailedP0', { p0: response.message || '未知错误' }))
-    }
-  } catch (error: any) {
-    const errorMsg =
-      error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
-    logger.error(`Webhook测试错误: ${errorMsg}`)
-    message.error(t('comp.webhookTestFailedP0', { p0: errorMsg }))
-  } finally {
-    testingWebhooks.value[webhook.uid] = false
-  }
 }
 
 // 应用模板

@@ -59,6 +59,7 @@ export const useEndfieldActivitySource = () => {
   }
 
   const ake = useHomeActivitySource<EndfieldSourceData>({
+    isAvailable: () => akeOverview.value.Available,
     label: () => 'AKEData',
     timeoutMs: 60_000,
     requestTag: () => generation,
@@ -149,6 +150,7 @@ export const useEndfieldActivitySource = () => {
   })
 
   const sra = useHomeActivitySource<unknown>({
+    isAvailable: () => sraOverview.value.Available,
     label: () => 'SRA',
     timeoutMs: 20_000,
     requestTag: () => generation,
@@ -254,6 +256,8 @@ export const useEndfieldActivitySource = () => {
   })
 
   return {
+    whenLoaded: () =>
+      Promise.all([sra.whenLoaded(), ake.whenLoaded()]).then(states => states.flat()),
     overview,
     // 卡池加载不会挡住已可用的版本和活动。
     loading: computed(() => !overview.value.Available && sra.loading.value),

@@ -1,3 +1,4 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
 import { computed, h, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
@@ -169,17 +170,26 @@ export function useAppearanceSettings() {
     }
     if (result.appearance) showAppearancePreview(result.appearance)
     if ('mascot' in result && result.mascot) {
-      await saveConfig({ desktopMascotId: result.mascot.id })
+      try {
+        await saveConfig({ desktopMascotId: result.mascot.id })
+      } catch (error) {
+        // 资源已经安装，保存选择失败不会撤销安装。
+        logger.error(`安装在线外观失败: ${error instanceof Error ? error.message : String(error)}`)
+        message.error(t('themeStore.installFailed'))
+        return 'partial'
+      }
       message.success(t('setting.basic.mascotImported'))
     }
     return 'installed'
   }
 
-  const importAppearanceFromPath = async (zipPath: string): Promise<void> => {
-    if (appearanceBusy.value) return
+  const importAppearanceFromPath = async (
+    zipPath: string
+  ): Promise<OnlineAppearanceInstallOutcome> => {
+    if (appearanceBusy.value) return 'cancelled'
     appearanceBusy.value = true
     try {
-      await runAppearanceInstall(
+      return await runAppearanceInstall(
         replace => importAppearance(zipPath, replace),
         result =>
           result.code === 'INVALID_ANIMATION'
@@ -217,15 +227,31 @@ export function useAppearanceSettings() {
   }
 
   const handleAppearanceImport = async (): Promise<void> => {
+    if (appearanceBusy.value) return
+    const telemetry = beginAnalyticsOperation('appearance_package_finished')
+    let outcome: 'success' | 'partial' | 'failure' | 'cancelled' | 'unknown' = 'unknown'
     try {
       const paths = await window.electronAPI.selectFile([
         { name: t('setting.basic.importAppearance'), extensions: ['zip'] },
       ])
-      if (!paths[0]) return
-      await importAppearanceFromPath(paths[0])
+      if (!paths[0]) {
+        outcome = 'cancelled'
+        return
+      }
+      const result = await importAppearanceFromPath(paths[0])
+      outcome =
+        result === 'installed'
+          ? 'success'
+          : result === 'partial'
+            ? 'partial'
+            : result === 'cancelled'
+              ? 'cancelled'
+              : 'failure'
     } catch (error) {
       logger.error(`导入外观失败: ${error instanceof Error ? error.message : String(error)}`)
       message.error(t('setting.basic.appearanceImportFailed'))
+    } finally {
+      telemetry.finish({ package_kind: 'theme', action: 'import', outcome })
     }
   }
 

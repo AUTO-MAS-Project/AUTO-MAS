@@ -554,6 +554,21 @@ class WSTaskCompletedData(BaseModel):
     task_info: List[WSTaskScriptInfoData] = Field(..., description="任务信息全量快照")
 
 
+class WSTaskScriptStartedData(BaseModel):
+    """一次脚本执行的本地关联信息；同一循环任务的每轮使用新的 runId。"""
+
+    taskId: str
+    runId: str
+    scriptType: str
+    mode: Literal["AutoProxy", "CycleRun"]
+
+
+class WSTaskScriptFinishedData(WSTaskScriptStartedData):
+    outcome: Literal[
+        "success", "failed", "skipped", "no_user", "incomplete", "error", "cancelled"
+    ]
+
+
 class WSTaskCreatedData(BaseModel):
     """新任务创建通知数据 (id=TaskManager, type=task.created)"""
 
@@ -1454,6 +1469,8 @@ __all__ = [
     "TaskStatusOut",
     "WSTaskCompletedData",
     "WSTaskCreatedData",
+    "WSTaskScriptStartedData",
+    "WSTaskScriptFinishedData",
     "WSPowerCountdownData",
     "PowerCountdownSnapshot",
     "WSPowerSignData",

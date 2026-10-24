@@ -1,8 +1,12 @@
+import {
+  requestTaskStart,
+  stopNativeConfig,
+  type NativeConfigStopAction,
+} from '@/composables/useTaskApi'
 // OK-NTE 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
@@ -52,7 +56,10 @@ export function useOknteGuiSession() {
     }
   }
 
-  const stopSession = async (keepOnFailure = false): Promise<boolean> => {
+  const stopSession = async (
+    keepOnFailure = false,
+    action: NativeConfigStopAction = 'close'
+  ): Promise<boolean> => {
     const taskId = oknteWebsocketId.value
     if (!taskId) {
       clearSession()
@@ -62,7 +69,7 @@ export function useOknteGuiSession() {
 
     stoppingOknteConfig.value = true
     try {
-      const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+      const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
         throw new Error(response.message || t('edit.oknteSessionStopFailed'))
       }
@@ -81,11 +88,14 @@ export function useOknteGuiSession() {
   const startSession = async (taskId: string, viewOnly = false): Promise<void> => {
     try {
       oknteConfigLoading.value = true
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.oknteSessionStartFailed'))
       }
@@ -107,13 +117,16 @@ export function useOknteGuiSession() {
       message.success(viewOnly ? t('edit.oknteViewOpened') : t('edit.oknteSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
-        oknteConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)
+        oknteConfigTimeout = window.setTimeout(
+          () => void stopSession(false, 'timeout'),
+          SESSION_TIMEOUT_MS
+        )
         return
       }
       oknteConfigWarningTimeout = window.setTimeout(() => {
         message.warning(t('edit.oknteSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
-      oknteConfigTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
+      oknteConfigTimeout = window.setTimeout(() => void saveSession('timeout'), SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.oknteSessionStartFailed'))
@@ -123,9 +136,9 @@ export function useOknteGuiSession() {
     }
   }
 
-  const saveSession = async () => {
+  const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!oknteWebsocketId.value) return
-    if (await stopSession(true)) {
+    if (await stopSession(true, action)) {
       message.success(t('edit.okNteConfigurationThis'))
     } else {
       message.error(t('edit.couldNotSaveOk'))

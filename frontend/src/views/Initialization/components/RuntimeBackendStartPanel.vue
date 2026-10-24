@@ -54,6 +54,7 @@ const emit = defineEmits<{
   complete: []
   error: [error: string, failure: RuntimeFailureFields]
   skip: []
+  'recovery-action': [kind: FailureActionKind]
   'runtime-updated': []
 }>()
 
@@ -170,6 +171,9 @@ async function startBackend() {
 }
 
 async function handleFailureAction(kind: FailureActionKind) {
+  // 恢复选择交给父流程观察记录；重试与查看日志仍在本面板执行，
+  // 父流程的 retry 语义是重跑安装步骤，不会重启后端。
+  emit('recovery-action', kind)
   if (kind === 'open-log') {
     await openLaunchLogWindow('后端启动步骤')
     return

@@ -1,3 +1,4 @@
+import { observePackageRemoval } from '../services/appearanceAnalytics'
 import { app, BrowserWindow, ipcMain, net } from 'electron'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
@@ -172,25 +173,27 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     return result
   })
 
-  ipcMain.handle('appearance:remove', (_event, id: unknown) => {
-    if (typeof id !== 'string') return { success: false, error: '外观 ID 无效' }
-    const result = removeAppearance(userDataPath(), id)
-    if (result.success) {
-      logger.info(`外观包已移除: ${id}`)
-      forgetAppearanceSource(id)
-      try {
-        clearInvalidAppearance(id)
-      } catch (error) {
-        logger.warn(
-          `清理已移除外观配置失败: ${error instanceof Error ? error.message : String(error)}`
-        )
+  ipcMain.handle('appearance:remove', (_event, id: unknown) =>
+    observePackageRemoval('theme', () => {
+      if (typeof id !== 'string') return { success: false, error: '外观 ID 无效' }
+      const result = removeAppearance(userDataPath(), id)
+      if (result.success) {
+        logger.info(`外观包已移除: ${id}`)
+        forgetAppearanceSource(id)
+        try {
+          clearInvalidAppearance(id)
+        } catch (error) {
+          logger.warn(
+            `清理已移除外观配置失败: ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+        broadcastAppearanceChange(options.onChanged)
+      } else {
+        logger.warn(`外观包移除失败: ${id}，${result.error ?? '未知错误'}`)
       }
-      broadcastAppearanceChange(options.onChanged)
-    } else {
-      logger.warn(`外观包移除失败: ${id}，${result.error ?? '未知错误'}`)
-    }
-    return result
-  })
+      return result
+    })
+  )
 
   // ==================== 在线外观（分享站） ====================
   // 渲染进程只能传查询条件、file_key、版本号和 token；URL、路径、哈希一律由主进程决定。

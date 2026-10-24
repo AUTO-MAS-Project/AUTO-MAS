@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { communityAccountAction } from '@/utils/communityAnalytics'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -16,7 +18,12 @@ export function useGameSignAccountApi() {
   } | null> => {
     loading.value = true
     try {
-      const response = await Service.addGameSignAccountApiToolsSignAccountAddPost()
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        { action: 'create' },
+        () => Service.addGameSignAccountApiToolsSignAccountAddPost(),
+        result => (result.code === 200 && result.accountId && result.data ? 'success' : 'failure')
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '添加账号组失败')
       }
@@ -43,10 +50,18 @@ export function useGameSignAccountApi() {
     data: GameSignAccountGroupConfig
   ): Promise<void> => {
     try {
-      const response = await Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
-        accountId,
-        data,
-      })
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        {
+          action: communityAccountAction(data),
+        },
+        () =>
+          Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
+            accountId,
+            data,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '更新账号组失败')
       }
@@ -64,9 +79,15 @@ export function useGameSignAccountApi() {
   const deleteAccount = async (accountId: string): Promise<void> => {
     loading.value = true
     try {
-      const response = await Service.deleteGameSignAccountApiToolsSignAccountDeletePost({
-        accountId,
-      })
+      const response = await observeFeature(
+        'community_account_manage_finished',
+        { action: 'delete' },
+        () =>
+          Service.deleteGameSignAccountApiToolsSignAccountDeletePost({
+            accountId,
+          }),
+        apiOutcome
+      )
       if (response.code !== 200) {
         throw new Error(response.message || '删除账号组失败')
       }
