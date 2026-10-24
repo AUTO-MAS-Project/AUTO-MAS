@@ -248,12 +248,7 @@ onBeforeUnmount(() => {
           {{
             button === 'install'
               ? t('emulator2.avd.update.install', { version: prepared })
-              : status.assetSize
-                ? t('emulator2.avd.update.update', {
-                    version: latest,
-                    size: formatBytes(status.assetSize),
-                  })
-                : t('emulator2.avd.update.updateNoSize', { version: latest })
+              : t('emulator2.avd.update.update', { version: latest })
           }}
         </a-button>
       </div>
