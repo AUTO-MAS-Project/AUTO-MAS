@@ -1117,18 +1117,7 @@ export function useSchedulerLogic() {
     // 首次激活由 initialize 预加载；返回时先校正已删除的任务，再更新队列项/账号。
     if (!schedulerViewLeft) return
     schedulerViewLeft = false
-    if (!(await loadTaskOptions()) || !schedulerViewActive) return
-    for (const tab of schedulerTabs.value) {
-      if (tab.status === '运行') continue
-      void loadCycleQueueFlag(tab)
-      if (isQueueTask(tab)) {
-        void loadResumeScriptOptions(tab)
-        void loadQueueScope(tab)
-      } else if (isScriptTask(tab)) {
-        // 「本次运行范围」是脚本任务唯一的账号入口，不重拉就看不到已删账号
-        void loadUserOptions(tab)
-      }
-    }
+    await loadTaskOptions()
   }
 
   const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
@@ -1463,14 +1452,59 @@ export function useSchedulerLogic() {
       const response = await Service.getTaskComboxApiInfoComboxTaskPost()
       if (latestTaskOptionsRequest !== request) return false
       if (response.code === 200) {
+        const knownQueueIds = new Set(
+          taskOptions.value
+            .filter(option => option.label.startsWith('队列 - '))
+            .map(option => option.value)
+        )
+        const missingTasks = schedulerTabs.value
+          .filter(
+            tab =>
+              tab.status !== '运行' &&
+              tab.selectedTaskId &&
+              !response.data.some(option => option.value === tab.selectedTaskId)
+          )
+          .map(tab => ({ tab, taskId: tab.selectedTaskId! }))
+        let existingScriptIds = new Set<string>()
+        // 任务下拉隐藏了被占用的脚本；未知类型的旧选择须查完整脚本列表，不能按缺席就删除。
+        if (missingTasks.some(({ taskId }) => !knownQueueIds.has(taskId))) {
+          const scripts = await Service.getScriptComboxApiInfoComboxScriptPost()
+          if (latestTaskOptionsRequest !== request) return false
+          if (scripts.code !== 200) {
+            message.error(t('scheduler.toast.fetchTaskListFailed'))
+            return false
+          }
+          existingScriptIds = new Set(
+            scripts.data
+              .map(option => option.value)
+              .filter((value): value is string => Boolean(value))
+          )
+        }
         taskOptions.value = response.data
-        for (const tab of schedulerTabs.value) {
+        for (const { tab, taskId } of missingTasks) {
           if (
             tab.status !== '运行' &&
-            tab.selectedTaskId &&
-            !taskOptions.value.some(option => option.value === tab.selectedTaskId)
+            tab.selectedTaskId === taskId &&
+            !existingScriptIds.has(taskId)
           ) {
             void handleTaskSelectionChange(tab, null)
+          }
+        }
+        // 派生数据跟随被接受的最新列表重建，避免激活请求被下拉刷新取代后漏掉刷新。
+        for (const tab of schedulerTabs.value) {
+          if (
+            !schedulerViewActive ||
+            tab.status === '运行' ||
+            !tab.selectedTaskId ||
+            !taskOptions.value.some(option => option.value === tab.selectedTaskId)
+          )
+            continue
+          void loadCycleQueueFlag(tab)
+          if (isQueueTask(tab)) {
+            void loadResumeScriptOptions(tab)
+            void loadQueueScope(tab)
+          } else if (isScriptTask(tab)) {
+            void loadUserOptions(tab)
           }
         }
         return true
@@ -1707,18 +1741,7 @@ export function useSchedulerLogic() {
 
     // 为已有调度台预加载恢复脚本 / 用户选项，确保刷新后恢复交互可用。
     // isQueueTask / isScriptTask 靠任务选项判断类型，所以要先把选项拉回来
-    if (await loadTaskOptions()) {
-      schedulerTabs.value.forEach(tab => {
-        if (tab.status === '运行') return
-        void loadCycleQueueFlag(tab)
-        if (isQueueTask(tab)) {
-          void loadResumeScriptOptions(tab)
-          void loadQueueScope(tab)
-        } else if (isScriptTask(tab)) {
-          void loadUserOptions(tab)
-        }
-      })
-    }
+    await loadTaskOptions()
 
     // 为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     // 注意：subscribeToTask 内部会检查订阅是否已存在，避免重复订阅
