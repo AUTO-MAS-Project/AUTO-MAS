@@ -20,9 +20,11 @@
 
 """魔改 AVD 更新：版本号与下载源。
 
-**版本号**（ModAVD 发版规则）：``v<N>.0.<P>``，N 是构建号（与 ``Pkg.BuildId=mas-N`` 同一个数），
-P 是重新打包的次数。GitHub 上的旧 tag ``v37.2.10-masN`` 当作 ``(N, 0, 0)``。本地版本有清单
-（``modavd-manifest.json``）读清单的 ``version``，没有就把 ``Pkg.BuildId=mas-N`` 当作 ``vN.0.0``。
+**版本号**（ModAVD 发版规则）：版本号和 tag 都写成 ``v0.<N>.<P>``。第一段 0 表示内测阶段（转正式后
+是 1）；N 是构建号（与 ``Pkg.BuildId=mas-N`` 同一个数）；P 是不重编、只重新打包的次数。例如 mas32
+换成新格式重新打包是 ``v0.32.1``，mas33 是 ``v0.33.0``。按三段数字比较；GitHub 上的旧 tag
+``v37.2.10-masN`` 当作 ``(0, N, 0)``。本地版本有清单（``modavd-manifest.json``）读清单的 ``version``，
+没有就把 ``Pkg.BuildId=mas-N`` 当作 ``v0.N.0``，所以装着旧 mas32 的根目录会把 ``v0.32.1`` 认成新版。
 
 **Release 正文**只读第一行的机读行 ``<!-- modavd: {...} -->`` 里的 ``min_automas``：比当前 MAS 新就不装、
 提示先更新 MAS。公告不在 MAS 里显示。
@@ -69,14 +71,23 @@ _LEGACY_TAG = re.compile(r"v?\d+\.\d+\.\d+-mas(\d+)")
 
 @dataclass(frozen=True, order=True)
 class ModAvdVersion:
-    """ModAVD 的版本号，按三段数字比较。第一段就是构建号 N（``mas-N``）。"""
+    """ModAVD 的版本号 ``v<major>.<build>.<patch>``，按三段数字比较。
 
+    ``major`` 0 是内测阶段（转正式后是 1）；``build`` 是第二段，就是构建号 N（``mas-N``）；``patch`` 是
+    不重编、只重新打包的次数。
+    """
+
+    major: int
     build: int
-    middle: int = 0
     patch: int = 0
 
+    @classmethod
+    def of_build(cls, build: int) -> ModAvdVersion:
+        """只知道构建号时（没有清单的旧包、旧 tag）：内测阶段的 ``v0.N.0``。"""
+        return cls(0, build, 0)
+
     def __str__(self) -> str:
-        return f"v{self.build}.{self.middle}.{self.patch}"
+        return f"v{self.major}.{self.build}.{self.patch}"
 
     @property
     def label(self) -> str:
@@ -85,17 +96,17 @@ class ModAvdVersion:
 
 
 def parse_version(text: object) -> ModAvdVersion | None:
-    """``v33.0.0`` / ``33.0.1`` → 三段；旧 tag ``v37.2.10-mas32`` → ``(32, 0, 0)``；别的写法返回 ``None``。"""
+    """``v0.32.1`` / ``0.33.0`` → 三段；旧 tag ``v37.2.10-mas32`` → ``(0, 32, 0)``；别的写法返回 ``None``。"""
     value = str(text or "").strip()
     if match := _NEW_TAG.fullmatch(value):
         return ModAvdVersion(*(int(part) for part in match.groups()))
     if match := _LEGACY_TAG.fullmatch(value):
-        return ModAvdVersion(int(match.group(1)))
+        return ModAvdVersion.of_build(int(match.group(1)))
     return None
 
 
 def requires_manifest(tag: object) -> bool:
-    """新写法的版本（``vX.Y.Z``，下一个公开版本 v33.0.0 起）必须带 ``modavd-manifest.json``；
+    """新写法的版本（``vX.Y.Z``，第一个是 ``v0.32.1``）必须带 ``modavd-manifest.json``；
     只有旧 tag ``v37.2.10-masN`` 的包没有清单。"""
     return _NEW_TAG.fullmatch(str(tag or "").strip()) is not None
 
@@ -112,7 +123,7 @@ def read_manifest_file(path: Path) -> dict[str, Any] | None:
 def local_version(root: str | Path) -> ModAvdVersion | None:
     """根目录里装着的 ModAVD 版本。
 
-    有清单读清单的 ``version``；没有清单（mas32 及更早）按 ``Pkg.BuildId=mas-N`` 算成 ``vN.0.0``。
+    有清单读清单的 ``version``；没有清单（mas32 及更早）按 ``Pkg.BuildId=mas-N`` 算成 ``v0.N.0``。
     清单里的构建号和 ``sdk\\emulator`` 实际的对不上时（用户按说明手动换过 ``sdk\\emulator``，
     清单还是旧的），以实际的模拟器为准。两样都读不到返回 ``None``。
     """
@@ -122,7 +133,7 @@ def local_version(root: str | Path) -> ModAvdVersion | None:
     if declared is not None and (build is None or declared.build == build):
         return declared
     if build is not None:
-        return ModAvdVersion(build)
+        return ModAvdVersion.of_build(build)
     return declared
 
 

@@ -501,7 +501,7 @@ class Emulator2AvdUpdateStatusOut(OutBase):
     )
     currentVersion: str = Field(
         default="",
-        description="装着的版本 (有清单读清单, 没有按 Pkg.BuildId 算 vN.0.0)",
+        description="装着的版本 (有清单读清单, 没有按 Pkg.BuildId=mas-N 算 v0.N.0)",
     )
     currentBuild: str = Field(default="", description="装着的构建号, 如 mas-32")
     belowMinimum: bool = Field(

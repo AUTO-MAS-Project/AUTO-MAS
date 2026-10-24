@@ -96,7 +96,7 @@ export const isRootAdded = (addedRoots: string[], root: string) =>
 
 // ---- 更新 ----
 
-/** 版本的显示写法：``mas-33（v33.0.0）``；只有一样时就显示那一样。 */
+/** 版本的显示写法：``mas-33（v0.33.0）``；只有一样时就显示那一样。 */
 export const versionLabel = (build?: string | null, version?: string | null) =>
   build && version ? `${build}（${version}）` : build || version || ''
 

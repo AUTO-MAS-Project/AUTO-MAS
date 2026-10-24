@@ -30,7 +30,7 @@ export type Emulator2AvdUpdateStatusOut = {
      */
     notUpdatableReason?: string;
     /**
-     * 装着的版本 (有清单读清单, 没有按 Pkg.BuildId 算 vN.0.0)
+     * 装着的版本 (有清单读清单, 没有按 Pkg.BuildId=mas-N 算 v0.N.0)
      */
     currentVersion?: string;
     /**
