@@ -890,7 +890,8 @@ export function addLatestMasHistoryLog(
   )
   candidates.sort(
     (left, right) =>
-      right.record.timestamp - left.record.timestamp || right.record.id - left.record.id
+      right.record.timestamp - left.record.timestamp ||
+      right.record.id.localeCompare(left.record.id)
   )
   const latest = candidates[0]
   if (!latest) return undefined
@@ -940,7 +941,8 @@ export function addRecentAdapterHistoryLogs(
   })
   candidates.sort(
     (left, right) =>
-      right.record.timestamp - left.record.timestamp || right.record.id - left.record.id
+      right.record.timestamp - left.record.timestamp ||
+      right.record.id.localeCompare(left.record.id)
   )
   const limit = Math.max(options.limit ?? 3, 0)
   const selected = candidates

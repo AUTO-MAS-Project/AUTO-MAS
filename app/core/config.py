@@ -200,6 +200,22 @@ def normalize_proxy_address(raw: str | None) -> str | None:
     return text
 
 
+def _clear_legacy_history() -> None:
+    """清理旧版历史存储的目录、升级标记和整数主键数据库。"""
+
+    for path in (Path.cwd() / "history", Path.cwd() / "data/replays"):
+        if path.exists():
+            shutil.rmtree(path)
+    (Path.cwd() / "data/history-storage.json").unlink(missing_ok=True)
+    for name in (
+        "data/history.db",
+        "data/history.db-journal",
+        "data/history.db-shm",
+        "data/history.db-wal",
+    ):
+        (Path.cwd() / name).unlink(missing_ok=True)
+
+
 class AppConfig:
     VERSION = "v5.7.0"
 
@@ -404,8 +420,25 @@ class AppConfig:
         def on_telemetry(sender, event):
             set_telemetry_enabled(event.value)
 
+        async def on_video_limit(sender, event):
+            from app.core.history import history_store
+
+            try:
+                report = await history_store.set_video_limit(
+                    limit_bytes=event.value * 1024 * 1024
+                )
+                for issue in report.errors:
+                    logger.warning(f"历史视频容量维护失败：{issue.message}")
+            except Exception as error:
+                logger.opt(exception=True).warning(f"历史视频容量维护失败：{error}")
+
         # connect 默认弱引用，配置管理器持有回调直至应用退出。
-        self._config_receivers = (on_self_start, on_allow_sleep, on_telemetry)
+        self._config_receivers = (
+            on_self_start,
+            on_allow_sleep,
+            on_telemetry,
+            on_video_limit,
+        )
         self.setting.connect(
             on_self_start, phase="runtime", group="Start", field="IfSelfStart"
         )
@@ -414,6 +447,12 @@ class AppConfig:
         )
         self.setting.connect(
             on_telemetry, phase="runtime", group="Function", field="IfEnableTelemetry"
+        )
+        self.setting.connect(
+            on_video_limit,
+            phase="runtime",
+            group="Replay",
+            field="VideoStorageLimitMiB",
         )
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
@@ -445,9 +484,17 @@ class AppConfig:
                 version = database.execute("SELECT v FROM version").fetchone()[0]
         else:
             version = "v1.11"
-        if version not in {"v1.7", "v1.8", "v1.9", "v1.10", "v1.11", "v2.0"}:
+        if version not in {
+            "v1.7",
+            "v1.8",
+            "v1.9",
+            "v1.10",
+            "v1.11",
+            "v2.0",
+            "v2.1",
+        }:
             raise ValueError(f"不支持的数据版本：{version}，配置文件未迁移")
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             await asyncio.to_thread(preserve_pre_upgrade, self.config_path)
             await self._upgrade_legacy_data()
             if self.setting.activation_state == NodeState.INACTIVE:
@@ -509,10 +556,16 @@ class AppConfig:
             ):
                 script._preload_task = asyncio.create_task(script.preload_resource())
         await config_manager.flush()
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.0",))
+                database.commit()
+            version = "v2.0"
+        if version == "v2.0":
+            await asyncio.to_thread(_clear_legacy_history)
+            with closing(sqlite3.connect(self.database_path)) as database:
+                database.execute("UPDATE version SET v = ?", ("v2.1",))
                 database.commit()
 
     async def _upgrade_legacy_data(self) -> None:
@@ -4163,14 +4216,6 @@ class AppConfig:
             data = {**data, "Replay": replay}
         await self.setting.update(type(self.setting).model_validate(data))
 
-        if replay is not None and "VideoStorageLimitMiB" in replay:
-            from app.core.history import history_store
-
-            report = await history_store.set_video_limit(
-                limit_bytes=self.setting.Replay.VideoStorageLimitMiB * 1024 * 1024
-            )
-            for issue in report.errors:
-                logger.warning(f"历史视频容量维护失败：{issue.message}")
         logger.success("全局设置更新成功")
 
     async def get_webhook(
@@ -4434,9 +4479,11 @@ class AppConfig:
         users = await history_store.get_overview(day=datetime.now(tz=UTC4).date())
         return {
             username: {
-                "LastProxyDate": entry.latest_time.isoformat()
-                if entry.latest_time
-                else "暂无代理数据",
+                "LastProxyDate": (
+                    entry.latest_time.isoformat()
+                    if entry.latest_time
+                    else "暂无代理数据"
+                ),
                 "ProxyTimes": entry.execute_count,
                 "ErrorTimes": entry.error_count,
                 "ErrorInfo": {
@@ -4860,11 +4907,15 @@ class AppConfig:
         self.startup_notices.append(
             {
                 "level": "warning" if report.needs_attention else "info",
-                "title": "M9A 脚本迁移失败"
-                if report.failure
-                else "M9A 脚本已并入 MFW 引擎"
-                if report.migrated_scripts
-                else "已按项目识别出 M9A 脚本",
+                "title": (
+                    "M9A 脚本迁移失败"
+                    if report.failure
+                    else (
+                        "M9A 脚本已并入 MFW 引擎"
+                        if report.migrated_scripts
+                        else "已按项目识别出 M9A 脚本"
+                    )
+                ),
                 "lines": lines,
             }
         )

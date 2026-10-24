@@ -6,9 +6,9 @@ import { OpenAPI } from '@/api'
 
 defineProps<{ attachments: HistoryAttachment[] }>()
 const { t } = useI18n()
-const failed = ref(new Set<number>())
+const failed = ref(new Set<string>())
 // 媒体元素直接访问 ID 资源以支持 Range；路径解析与访问边界由后端负责。
-const attachmentUrl = (id: number) => `${OpenAPI.BASE}/api/history/attachments/${id}`
+const attachmentUrl = (id: string) => `${OpenAPI.BASE}/api/history/attachments/${id}`
 const unavailableReason = (reason?: string | null) => {
   const keys: Record<string, string> = {
     missing: 'history.attachments.missing',
@@ -18,7 +18,7 @@ const unavailableReason = (reason?: string | null) => {
   }
   return t(keys[reason ?? ''] ?? 'history.attachments.unavailable')
 }
-const markFailed = (id: number) => {
+const markFailed = (id: string) => {
   failed.value = new Set([...failed.value, id])
 }
 </script>

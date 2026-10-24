@@ -6,6 +6,6 @@ export type HistoryAggregateError = {
     key: string;
     message: string;
     input_indices?: Array<number>;
-    record_ids?: Array<number>;
+    record_ids?: Array<string>;
 };
 

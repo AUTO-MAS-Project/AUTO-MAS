@@ -2,10 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type HistoryDataGetIn = {
+export type HistoryDetailGetIn = {
     /**
      * 历史记录编号
      */
-    recordId: number;
+    recordId: string;
 };
 

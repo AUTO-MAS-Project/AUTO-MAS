@@ -25,18 +25,13 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
+from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.history import (
-    aggregate_statistics,
-    build_record,
-    save_user_history,
-    statistic,
-)
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -1821,18 +1816,16 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 try:
                     drops = parse_drop_lines(log_item.content)
                     if drops:
-                        data["drop_statistics"] = statistic("counter", drops)
+                        data["drop_statistics"] = {"kind": "counter", "value": drops}
                 except Exception as error:
                     diagnostic = f"BetterGI 掉落统计解析失败：{error}"
                     logger.opt(exception=True).warning(diagnostic)
                     log_item.content.append(f"\n{diagnostic}\n")
             history_records.append(
-                build_record(
-                    script_info=self.script_info,
-                    user_info=self.cur_user_item,
-                    started_at=t,
-                    log_item=log_item,
-                    data=data,
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
                     status=(
                         "success"
                         if log_item.status == "Success!"
@@ -1840,6 +1833,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                         if was_cancelled
                         else "error"
                     ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                    data=data,
                 )
             )
 
@@ -1909,23 +1905,63 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，
         # 因此不挑轮次；识别未开启或日志里没有该行时结果为空表，通知里整块省略。
-        drop_statistics = aggregate_statistics(history_records).get(
-            "drop_statistics", {}
+        aggregate = aggregate_data(
+            [
+                HistoryAggregationItem(time=record.time, data=record.data)
+                for record in history_records
+            ]
         )
+        statistics = {key: value.value for key, value in aggregate.data.items()}
+        drop_statistics = statistics.get("drop_statistics", {})
 
         await self._persist_user_run_result()
         self._restore_one_dragon_config()
 
-        await save_user_history(
-            task_info=self.task_info,
-            script_info=self.script_info,
-            user_info=self.cur_user_item,
-            records=history_records,
-        )
+        if history_records:
+            try:
+                attachments = await self.task_info.collect_user_history_attachments(
+                    self.script_info, self.cur_user_item
+                )
+                history_records[-1].attachments.extend(attachments)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "收集用户历史附件失败，继续保存日志与执行结果"
+                )
+            try:
+                for record in history_records:
+                    try:
+                        await history_store.record(record)
+                    except Exception as error:
+                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                        try:
+                            await Publisher.send(
+                                id=self.task_info.task_id,
+                                type=protocol.TASK_NOTICE,
+                                data=WSTaskNoticeData(
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
+                                ),
+                            )
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
+            finally:
+                await self.task_info.discard_user_history_capture(
+                    self.script_info, self.cur_user_item
+                )
 
         if history_records:
             try:
-                statistics = aggregate_statistics(history_records)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 if one_dragon_report:
                     statistics["one_dragon_steps"] = one_dragon_report
                 if drop_statistics:

@@ -737,7 +737,7 @@ async function createIssueReport(
     (left, right) =>
       Number(left.selected.success) - Number(right.selected.success) ||
       right.selected.run.record.timestamp - left.selected.run.record.timestamp ||
-      right.selected.run.record.id - left.selected.run.record.id
+      right.selected.run.record.id.localeCompare(left.selected.run.record.id)
   )
   for (const { scriptRoot, selected, includeNativeLog } of deferred) {
     await addRunHeavyFiles(state, scriptRoot, selected, includeNativeLog)

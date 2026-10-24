@@ -28,6 +28,7 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.models.config import (
     MaaConfig,
@@ -38,7 +39,12 @@ from app.models.config import (
 )
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification import NotificationImage
-from app.models.schema import HistoryAttachmentInput, WSTaskNoticeData
+from app.models.schema import (
+    HistoryAggregationItem,
+    HistoryAttachmentInput,
+    HistoryWrite,
+    WSTaskNoticeData,
+)
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
@@ -48,12 +54,6 @@ from app.task.emulator_core import (
     resolve_device_ref,
     resolve_host_adb,
     script_process_env,
-)
-from app.task.history import (
-    aggregate_statistics,
-    build_record,
-    save_user_history,
-    statistic,
 )
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
@@ -3052,12 +3052,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 parsed, six_star = log_statistics.parse_maa_statistics(log_item.content)
                 if_six_star = if_six_star or six_star
                 data = {
-                    key: statistic(
-                        "counter"
-                        if key in {"recruit_statistics", "drop_statistics"}
-                        else "snapshot",
-                        value,
-                    )
+                    key: {
+                        "kind": (
+                            "counter"
+                            if key in {"recruit_statistics", "drop_statistics"}
+                            else "snapshot"
+                        ),
+                        "value": value,
+                    }
                     for key, value in parsed.items()
                 }
             except Exception as error:
@@ -3065,11 +3067,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.opt(exception=True).warning(diagnostic)
                 log_item.content.append(f"\n{diagnostic}\n")
             history_records.append(
-                build_record(
-                    script_info=self.script_info,
-                    user_info=self.cur_user_item,
-                    started_at=t,
-                    log_item=log_item,
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
                     status="success"
                     if log_item.status == "Success!"
                     else "cancelled"
@@ -3077,11 +3078,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     and log_item is self.cur_user_log
                     and log_item.status == "任务被用户手动中止"
                     else "error",
+                    message=log_item.status,
+                    logs="".join(log_item.content),
                     data=data,
                 )
             )
 
-        statistics = aggregate_statistics(history_records)
+        statistics = {
+            key: value.value
+            for key, value in aggregate_data(
+                [
+                    HistoryAggregationItem(time=record.time, data=record.data)
+                    for record in history_records
+                ]
+            ).data.items()
+        }
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -3173,13 +3184,38 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.warning(diagnostic)
                 history_records[-1].logs += f"\n{diagnostic}\n"
         try:
-            await save_user_history(
-                task_info=self.task_info,
-                script_info=self.script_info,
-                user_info=self.cur_user_item,
-                records=history_records,
-            )
+            if history_records:
+                try:
+                    attachments = await self.task_info.collect_user_history_attachments(
+                        self.script_info, self.cur_user_item
+                    )
+                    history_records[-1].attachments.extend(attachments)
+                except Exception:
+                    logger.opt(exception=True).warning(
+                        "收集用户历史附件失败，继续保存日志与执行结果"
+                    )
+                for record in history_records:
+                    try:
+                        await history_store.record(record)
+                    except Exception as error:
+                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                        try:
+                            await Publisher.send(
+                                id=self.task_info.task_id,
+                                type=protocol.TASK_NOTICE,
+                                data=WSTaskNoticeData(
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
+                                ),
+                            )
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
         finally:
+            await self.task_info.discard_user_history_capture(
+                self.script_info, self.cur_user_item
+            )
             if snapshot_directory is not None:
                 try:
                     snapshot_directory.cleanup()

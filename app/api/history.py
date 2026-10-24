@@ -24,6 +24,7 @@
 from datetime import date
 from mimetypes import guess_type
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
@@ -52,11 +53,11 @@ class HistorySearchOut(OutBase):
     )
 
 
-class HistoryDataGetIn(BaseModel):
-    recordId: int = Field(..., ge=1, description="历史记录编号")
+class HistoryDetailGetIn(BaseModel):
+    recordId: UUID = Field(..., description="历史记录编号")
 
 
-class HistoryDataGetOut(OutBase):
+class HistoryDetailGetOut(OutBase):
     data: HistoryDetail
 
 
@@ -91,17 +92,17 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut | JSONRes
 
 
 @router.post(
-    "/data",
+    "/detail",
     tags=["Get"],
     summary="按记录编号获取执行结果、日志和附件",
-    operation_id="get_history_data_api_history_data_post",
-    response_model=HistoryDataGetOut,
+    operation_id="get_history_detail_api_history_detail_post",
+    response_model=HistoryDetailGetOut,
 )
-async def get_history_data(
-    history: HistoryDataGetIn = Body(...),
-) -> HistoryDataGetOut | JSONResponse:
+async def get_history_detail(
+    history: HistoryDetailGetIn = Body(...),
+) -> HistoryDetailGetOut | JSONResponse:
     try:
-        return HistoryDataGetOut(
+        return HistoryDetailGetOut(
             data=await history_store.get_detail(record_id=history.recordId)
         )
     except HistoryStorageError as error:
@@ -116,10 +117,10 @@ async def get_history_data(
     response_model=None,
 )
 async def get_history_attachment(
-    attachment_id: int, download: bool = False
+    attachment_id: UUID, download: bool = False
 ) -> FileResponse | JSONResponse:
     try:
-        attachment = await history_store.resolve_attachment(attachment_id=attachment_id)
+        attachment = await history_store.get_attachment(attachment_id=attachment_id)
         filename = attachment.display_name
         suffix = attachment.path.suffix
         if suffix and not filename.lower().endswith(suffix.lower()):

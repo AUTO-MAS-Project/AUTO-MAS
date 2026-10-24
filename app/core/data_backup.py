@@ -55,7 +55,6 @@ _DATABASE_FILES = {
     "data/history.db-journal",
     "data/history.db-shm",
     "data/history.db-wal",
-    "data/history-storage.json",
 }
 
 
@@ -163,7 +162,6 @@ def _create_data_backup(
                     archive.write(database_snapshot, "data/data.db")
                 # 历史只从协调后的快照树打包，活动WAL及附件树不能混入。
                 archive.write(history_snapshot.database, "data/history.db")
-                archive.write(history_snapshot.marker, "data/history-storage.json")
                 archive.writestr("history/", b"")
                 for path in history_snapshot.history.rglob("*"):
                     if path.is_file():

@@ -26,22 +26,17 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import log_box
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
-from app.task.history import (
-    aggregate_statistics,
-    build_record,
-    save_user_history,
-    statistic,
-)
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -2744,10 +2739,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             try:
                 parsed = parse_maaend_statistics(log_item.content)
                 data = {
-                    key: statistic(
-                        "keyed_snapshot" if key == "matrix_statistics" else "snapshot",
-                        value,
-                    )
+                    key: {
+                        "kind": (
+                            "keyed_snapshot"
+                            if key == "matrix_statistics"
+                            else "snapshot"
+                        ),
+                        "value": value,
+                    }
                     for key, value in parsed.items()
                 }
                 failed_tasks = parse_maaend_failed_tasks(log_item.content)
@@ -2764,13 +2763,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
             if phase:
                 message = f"[{phase}] {message}"
-            record = build_record(
-                script_info=self.script_info,
-                user_info=self.cur_user_item,
-                started_at=t,
-                log_item=log_item,
-                message=message,
-                data=data,
+            record = HistoryWrite(
+                time=t.astimezone(UTC4),
+                username=self.cur_user_item.name,
+                script_name=self.script_info.name,
                 status="success"
                 if log_item.status == "Success!"
                 else "cancelled"
@@ -2778,6 +2774,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 else "skipped"
                 if was_skipped
                 else "error",
+                message=message,
+                logs="".join(log_item.content),
+                data=data,
             )
             history_records.append(record)
             if stage_directory is not None:
@@ -2818,7 +2817,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 stage_directory.cleanup()
             except OSError as error:
                 logger.warning(f"清理 MaaEnd 节点临时日志失败：{error}")
-        statistics = aggregate_statistics(history_records)
+        statistics = {
+            key: value.value
+            for key, value in aggregate_data(
+                [
+                    HistoryAggregationItem(time=record.time, data=record.data)
+                    for record in history_records
+                ]
+            ).data.items()
+        }
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2851,12 +2858,39 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
-        await save_user_history(
-            task_info=self.task_info,
-            script_info=self.script_info,
-            user_info=self.cur_user_item,
-            records=history_records,
-        )
+        if history_records:
+            try:
+                attachments = await self.task_info.collect_user_history_attachments(
+                    self.script_info, self.cur_user_item
+                )
+                history_records[-1].attachments.extend(attachments)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "收集用户历史附件失败，继续保存日志与执行结果"
+                )
+            try:
+                for record in history_records:
+                    try:
+                        await history_store.record(record)
+                    except Exception as error:
+                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                        try:
+                            await Publisher.send(
+                                id=self.task_info.task_id,
+                                type=protocol.TASK_NOTICE,
+                                data=WSTaskNoticeData(
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
+                                ),
+                            )
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
+            finally:
+                await self.task_info.discard_user_history_capture(
+                    self.script_info, self.cur_user_item
+                )
 
         if completed:
             await Notify.push_plyer(

@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type HistoryIndexItem = {
-    id: number;
+    id: string;
     time: string;
     username: string;
     script_name: string;

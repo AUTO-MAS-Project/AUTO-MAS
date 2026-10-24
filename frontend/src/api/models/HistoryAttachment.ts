@@ -3,8 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export type HistoryAttachment = {
-    id: number;
-    record_id: number;
+    id: string;
+    record_id: string;
     kind: HistoryAttachment.kind;
     role: string;
     display_name: string;

@@ -16,6 +16,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from uuid import UUID
 
 from pydantic import (
     AwareDatetime,
@@ -134,8 +135,8 @@ class HistoryStorageIssue(BaseModel):
 
 
 class HistoryAttachment(BaseModel):
-    id: int
-    record_id: int
+    id: UUID
+    record_id: UUID
     kind: HistoryAttachmentKind
     role: str
     display_name: str
@@ -147,7 +148,7 @@ class HistoryAttachment(BaseModel):
 
 
 class HistoryIndexItem(BaseModel):
-    id: int
+    id: UUID
     time: AwareDatetime
     username: str
     script_name: str
@@ -183,7 +184,7 @@ class HistoryAggregateError(BaseModel):
     key: str
     message: str
     input_indices: list[int] = Field(default_factory=list)
-    record_ids: list[int] = Field(default_factory=list)
+    record_ids: list[UUID] = Field(default_factory=list)
 
 
 class HistoryAggregate(BaseModel):
@@ -210,7 +211,7 @@ class HistoryUserOverview(BaseModel):
     execute_count: int = 0
     error_count: int = 0
     latest_time: AwareDatetime | None = None
-    error_info: dict[int, str] = Field(default_factory=dict)
+    error_info: dict[UUID, str] = Field(default_factory=dict)
 
 
 class HistoryCleanupReport(BaseModel):
@@ -224,7 +225,6 @@ class HistoryBackupSnapshot(BaseModel):
     destination: Path
     database: Path
     history: Path
-    marker: Path
 
 
 class OutBase(BaseModel):

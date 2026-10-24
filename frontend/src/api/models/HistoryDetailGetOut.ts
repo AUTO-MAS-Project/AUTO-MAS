@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { HistoryDetail } from './HistoryDetail';
-export type HistoryDataGetOut = {
+export type HistoryDetailGetOut = {
     /**
      * 状态码
      */

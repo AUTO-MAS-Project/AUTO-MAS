@@ -8,7 +8,7 @@ import type { HistoryKeyedSnapshotStatistic } from './HistoryKeyedSnapshotStatis
 import type { HistorySnapshotStatistic } from './HistorySnapshotStatistic';
 import type { HistoryStorageIssue } from './HistoryStorageIssue';
 export type HistoryDetail = {
-    id: number;
+    id: string;
     time: string;
     username: string;
     script_name: string;

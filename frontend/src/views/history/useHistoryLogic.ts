@@ -96,7 +96,7 @@ export function useHistoryLogic() {
   const selectedUserData = ref<HistoryBucket | null>(null)
   const selectedRecordIndex = ref(-1)
   const currentDetail = ref<HistoryDetail | null>(null)
-  const currentRecordId = ref<number | null>(null)
+  const currentRecordId = ref<string | null>(null)
 
   // 搜索表单
   const searchForm = reactive({
@@ -215,10 +215,10 @@ export function useHistoryLogic() {
   }
 
   // 加载用户日志
-  const loadUserLog = async (recordId: number) => {
+  const loadUserLog = async (recordId: string) => {
     try {
       detailLoading.value = true
-      const response = await Service.getHistoryDataApiHistoryDataPost({ recordId })
+      const response = await Service.getHistoryDetailApiHistoryDetailPost({ recordId })
 
       if (!isMounted || currentRecordId.value !== recordId) return
 

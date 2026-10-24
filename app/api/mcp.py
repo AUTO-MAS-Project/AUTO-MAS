@@ -74,7 +74,7 @@ MCP_INCLUDED_OPERATIONS = (
     "stop_task_api_dispatch_stop_post",
     # 只读历史记录与编号详情，用于核对已结束的运行。
     "search_history_api_history_search_post",
-    "get_history_data_api_history_data_post",
+    "get_history_detail_api_history_detail_post",
     # MAA 基建选项
     "get_user_combox_infrastructure_api_scripts_user_combox_infrastructure_post",
     "get_infrast_plan_select_api_scripts_user_infrastructure_plan_select_get_post",

@@ -3,8 +3,8 @@ import * as path from 'path'
 import { DatabaseSync } from 'node:sqlite'
 
 export interface HistoryAttachmentRow {
-  id: number
-  record_id: number
+  id: string
+  record_id: string
   kind: string
   role: string
   display_name: string
@@ -15,7 +15,7 @@ export interface HistoryAttachmentRow {
 }
 
 export interface HistoryRecordRow {
-  id: number
+  id: string
   time: string
   timestamp: number
   date: string
@@ -44,7 +44,7 @@ export function readHistoryRecords(dataRoot: string): HistoryRecordRow[] {
     const attachments = database
       .prepare('SELECT * FROM attachments ORDER BY id')
       .all() as unknown as HistoryAttachmentRow[]
-    const byRecord = new Map<number, HistoryAttachmentRow[]>()
+    const byRecord = new Map<string, HistoryAttachmentRow[]>()
     for (const attachment of attachments) {
       const group = byRecord.get(attachment.record_id) ?? []
       group.push(attachment)
@@ -56,7 +56,7 @@ export function readHistoryRecords(dataRoot: string): HistoryRecordRow[] {
   }
 }
 
-/** 数据库中的相对路径也须限制在归档根内，不跟随指向外部的链接。 */
+/** 数据库中的相对路径须限制在归档根内。 */
 export function historyFilePath(dataRoot: string, relativePath: string | null): string | undefined {
   if (!relativePath || path.isAbsolute(relativePath)) return undefined
   const archiveRoot = path.resolve(dataRoot, 'history')
@@ -64,11 +64,7 @@ export function historyFilePath(dataRoot: string, relativePath: string | null): 
   const relative = path.relative(archiveRoot, candidate)
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return undefined
   try {
-    const realRoot = fs.realpathSync(archiveRoot)
-    const realCandidate = fs.realpathSync(candidate)
-    const realRelative = path.relative(realRoot, realCandidate)
-    if (realRelative.startsWith('..') || path.isAbsolute(realRelative)) return undefined
-    return fs.statSync(realCandidate).isFile() ? realCandidate : undefined
+    return fs.statSync(candidate).isFile() ? candidate : undefined
   } catch {
     return undefined
   }
