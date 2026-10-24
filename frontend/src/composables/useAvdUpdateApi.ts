@@ -38,7 +38,7 @@ export function useAvdUpdateApi() {
     }
   }
 
-  /** ``check``：先查一次最新版本（走后端 4 小时缓存）；不传只读本地状态和缓存 */
+  /** ``check``：「检查更新」，先强制查一次最新版本（不走缓存、不带 CDK）；不传只读本地状态和缓存 */
   const getStatus = (root: string, check = false): Promise<Emulator2AvdUpdateStatusOut> =>
     call(
       () => Emulator20Service.avdUpdateStatusApiEmulator2AvdUpdateStatusPost({ root, check }),

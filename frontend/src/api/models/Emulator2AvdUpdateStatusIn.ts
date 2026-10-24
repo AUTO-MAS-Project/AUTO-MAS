@@ -8,7 +8,7 @@ export type Emulator2AvdUpdateStatusIn = {
      */
     root: string;
     /**
-     * 先查一次最新版本 (走 4 小时缓存); 查不到不算失败, 原因写在 checkError
+     * 先强制查一次最新版本 (界面上的「检查更新」; 不走缓存, 不带 CDK); 查不到不算失败, 原因写在 checkError
      */
     check?: boolean;
 };

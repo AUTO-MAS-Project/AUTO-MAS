@@ -387,8 +387,8 @@ export class Emulator20Service {
     }
     /**
      * 查询魔改 AVD 根目录的更新状态
-     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（Mirror 酱、
-     * GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。
+     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
+     * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
      * @param requestBody
      * @returns Emulator2AvdUpdateStatusOut Successful Response
      * @throws ApiError

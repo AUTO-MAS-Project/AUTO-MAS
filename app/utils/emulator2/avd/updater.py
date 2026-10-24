@@ -23,26 +23,29 @@
 流程（每个根目录各走各的）：
 
 1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问
-   GitHub；MAS 设置的「更新源」选了 GitHub 时只问 GitHub），结果缓存 4 小时，更新源设置一改就作废；
-   界面打开「管理与更新」时查（走缓存）。失败只记日志、写在状态里，不弹窗。
+   GitHub；MAS 设置的「更新源」选了 GitHub 时只问 GitHub），一律不带 CDK，只拿版本和 release_note。
+   界面上点「检查更新」时强制查一次；结果缓存 4 小时，更新源设置一改就作废。失败写在状态里，不弹窗。
 2. **更新**（:func:`update`）：本根目录有实例开着或正在开机就直接拒绝、请用户先关掉，什么都不动；
    界面在用户确认「更新期间不会启动用到这个魔改 AVD 的脚本和实例」后才调。开始以后到结束（成功、
    失败都算）这个根目录一律不许开机（:func:`update_in_progress`，``manager._launch`` 据此拒绝），依次
    - 再查一次最新版本（不走缓存）；
    - 选包（:func:`_pick_package`），优先顺序：「更新源」不是 GitHub 又填了 Mirror 酱 CDK（MAS 全局的
-     ``Update.MirrorChyanCDK``）→ 向 Mirror 酱现要下载地址，本地正好是起点时要增量包；否则 → GitHub
-     按区间增量；不行 → GitHub 整包。CDK 过期、无效、次数用完、不含此资源，或 Mirror 酱出错时给出
-     提示、改走 GitHub（同样先试按区间增量；8001「这个平台没有包」不提示）。「更新源」选 GitHub 时
-     填了 CDK 也不用；
+     ``Update.MirrorChyanCDK``）→ Mirror 酱（本地正好是起点时要增量包）；否则 → GitHub 按区间增量；
+     不行 → GitHub 整包。CDK 过期、无效、次数用完、不含此资源，或 Mirror 酱出错时给出提示、改走
+     GitHub（同样先试按区间增量；8001「这个平台没有包」不提示）。「更新源」选 GitHub 时填了 CDK 也不用；
+   - **Mirror 酱省 CDK**：消耗 CDK 的是「带 CDK 要下载链接」这一步，每次点「更新」最多要一次。要到的链接
+     只在内存里记（:class:`_MirrorLink`，不写 state.json、日志、状态接口），25 分钟内同一根目录、同一
+     目标版本的下一次「更新」直接复用、不再要；超时或 MAS 重启作废。下载失败（含 403/404/410）只算
+     失败：同一链接从头重下最多 3 次，仍不行这次就结束，不另要链接；下到的包 sha256 不对、增量包拼出来
+     核对不过，作废这个链接，这次改走 GitHub，也不再向 Mirror 酱要；
    - GitHub 按区间增量（:mod:`.update_range`）：读包的中央目录，和根目录逐文件比 CRC32 + 大小，只取回
      变了的条目、没变的从本地复制。服务器不认 Range、变了的太多（取回量超过整包 40% 或 3000 个文件）、
      拼好后核对不过或任何异常，都丢掉这一批改下整包（只退这一次）；已经有下了一半的整包时直接续传整包；
    - 整包 / Mirror 酱的包下到 ``<根>\\.update\\download``（同盘），按发布记录 / Mirror 酱给的 SHA-256
-     核对。GitHub 断了下次续传；Mirror 酱不支持续传，断了在同一个地址上从头重下（最多 3 次），地址
-     过期才重新要一次；
+     核对。GitHub 断了下次续传；Mirror 酱不支持续传，断了在同一个链接上从头重下（最多 3 次）；
    - 整包解到 ``pkg``；增量包按本地清单抄现有文件、按 ``changes.json`` 删改加，拼成整包的样子。然后按
      清单逐文件核对（旧版包没有清单，靠包的 SHA-256 + zip CRC），``sdk\\emulator`` 改名进 ``stage``
-     （:mod:`.update_stage`）。Mirror 酱的增量包拼出来核对不过就丢掉，改下全量包（只退这一次）；
+     （:mod:`.update_stage`）。Mirror 酱的包核对不过就丢掉，改走 GitHub（只退这一次）；
    - 换上。换上前再按进程查一次（挡 MAS 之外手动开的模拟器），还有程序开着模拟器文件就不换，
      停在「已下载好」，下次再点直接换上，不重新下载。
    有 MAS 任务在跑不再挡更新：开着的实例一开始就拒绝，更新中开机一律被拒，跑着的任务也开不了这个
@@ -65,7 +68,6 @@ import shutil
 import time
 import zipfile
 import zlib
-from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -115,13 +117,15 @@ logger = get_logger("魔改 AVD 更新")
 #: 查更新失败后多久之内不再自动重试（用户点「更新」不受限）。
 _CHECK_FAILURE_BACKOFF_SECONDS = 600.0
 #: 一个下载地址最多试几次（含第一次）：GitHub 每次接着续传；Mirror 酱不支持续传，每次从头下，
-#: 也不为重试另要地址（要一次地址可能就算一次下载），只有地址过期才重新要一次（见 ``_EXPIRED_URL_STATUS``）。
+#: 不管什么错（含 403/404/410）都不另要链接（要一次链接就消耗一次 CDK）。同 MAS 本体
+#: ``services/update.py`` 的 ``_download_update_locked``：同一地址重试 3 次，中途不换地址。
 _DOWNLOAD_ATTEMPTS = 3
 _DOWNLOAD_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 #: 进度消息最密多久发一条。
 _PUBLISH_INTERVAL_SECONDS = 0.5
-#: Mirror 酱的下载地址过期 / 用过时可能回的状态码：遇到就重新要一次地址。
-_EXPIRED_URL_STATUS = frozenset({401, 403, 404, 410})
+#: 要到的 Mirror 酱下载链接复用多久（秒）：服务端留 30 分钟（resource-backend ``logic/version.go`` 的
+#: ``GetDistributeURL``），留出余量。
+_MIRROR_LINK_REUSE_SECONDS = 25 * 60
 
 
 @dataclass
@@ -137,6 +141,15 @@ class _Progress:
     speedBytesPerSec: float | None = None
 
 
+@dataclass
+class _MirrorLink:
+    """要到的 Mirror 酱下载链接：要来的那一版（链接、目标版本、增量 / 全量、大小、sha256 都在 ``release``
+    里）和要到的时间。只在内存里，不写 state.json、日志和状态接口。"""
+
+    release: RemoteRelease
+    at: float
+
+
 class _Runtime:
     """一个根目录在本进程里的更新状态：同一时刻只跑一次更新。"""
 
@@ -150,6 +163,8 @@ class _Runtime:
         self.recovered = False
         #: 这次更新没按首选来下的原因（CDK 过期、增量包核对不过……），显示在进度和结果里
         self.notice = ""
+        #: 要到、还没用完的 Mirror 酱下载链接（25 分钟内同一目标版本复用，见 :func:`_reusable_link`）
+        self.mirror_link: _MirrorLink | None = None
 
     @property
     def busy(self) -> bool:
@@ -330,7 +345,7 @@ async def _latest(
     """最新一版。4 小时内查过就用缓存；查失败后 10 分钟内不自动重试（``force`` 例外）。
 
     ``current`` 是发起查询的根目录装着的版本（Mirror 酱的 ``current_version``）。各源依次问，前一个查不到
-    或出错就问下一个；Mirror 酱的错误这里只记日志，选包时（:func:`_pick_package`）再提示。
+    或出错就问下一个。一律不带 CDK：只拿版本和 release_note，不要下载链接、不消耗 CDK。
     """
     global _remote, _remote_at, _remote_failed_at, _remote_error, _remote_github_only
     async with _check_lock:
@@ -352,7 +367,7 @@ async def _latest(
         from app.core import Config
 
         errors: list[str] = []
-        for source in update_sources(_mirror_cdk(), github_only=github_only):
+        for source in update_sources(github_only=github_only):
             try:
                 release = await source.latest(proxy=Config.proxy, current=current)
             except Exception as e:  # noqa: BLE001 - 一个源不行换下一个，全不行才报
@@ -455,13 +470,13 @@ def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
 
 
 async def status(root: str, *, check: bool = False) -> dict[str, Any]:
-    """一个根目录的更新现状。``check`` 为真时先查一次更新（走 4 小时缓存；查不到只记日志、写在
-    ``checkError``，不算接口失败）。"""
+    """一个根目录的更新现状。``check`` 为真时（界面上的「检查更新」）先强制查一次最新版本（不走缓存、
+    不带 CDK；查不到写在 ``checkError``，不算接口失败）。"""
     path = await _managed(root)
     if check and not _not_updatable_reason(path):
         try:
             current = await asyncio.to_thread(local_version, path)
-            await _latest(force=False, current=current)
+            await _latest(force=True, current=current)
         except Exception as e:  # noqa: BLE001 - 查不到不算接口失败
             logger.warning(f"检查魔改 AVD 更新失败: {e}")
     return await asyncio.to_thread(_snapshot_sync, path, _runtime(path))
@@ -492,15 +507,37 @@ def _download_label(release: RemoteRelease) -> str:
     return f"从 GitHub 下载 {asset.name}"
 
 
-async def _pick_package(
-    runtime: _Runtime, release: RemoteRelease, *, full: bool = False
-) -> RemoteRelease:
-    """这次下哪个包，返回带下载地址的那一版。
+def _reusable_link(
+    runtime: _Runtime, target: ModAvdVersion, local: ModAvdVersion | None
+) -> RemoteRelease | None:
+    """25 分钟内、同一目标版本、还比装着的新（增量包的起点还是装着的版本）的 Mirror 酱链接；
+    不满足就作废、返回 ``None``。"""
+    link = runtime.mirror_link
+    if link is None:
+        return None
+    asset = link.release.asset
+    if (
+        asset is not None
+        and time.monotonic() - link.at < _MIRROR_LINK_REUSE_SECONDS
+        and link.release.version == target
+        and (not asset.incremental or asset.base == str(local))
+        and _newer(link.release, local)
+    ):
+        return link.release
+    runtime.mirror_link = None
+    return None
 
-    「更新源」不是 GitHub 又填了 CDK 时先向 Mirror 酱现要地址：本地正好是增量包的起点（根上的清单就是
-    装着的版本）时带 ``current_version`` 要，Mirror 酱可能给增量包；否则（或 ``full``）不带，只要全量包。
-    Mirror 酱给不了（CDK 过期、无效、次数用完、不含此资源，或出错）就用 GitHub 的整包，原因记进
-    ``runtime.notice``；8001（这个平台没有包）不提示。「更新源」选 GitHub 时不用 CDK、不问 Mirror 酱。
+
+async def _pick_package(
+    runtime: _Runtime, release: RemoteRelease, *, mirror: bool = True
+) -> RemoteRelease:
+    """这次下哪个包，返回带下载链接的那一版。
+
+    「更新源」不是 GitHub 又填了 CDK（且 ``mirror``）时用 Mirror 酱：25 分钟内要到过同一目标版本的链接就
+    直接复用（:func:`_reusable_link`），否则带 CDK 要一次（这一步消耗 CDK，每次点「更新」最多一次）。
+    本地正好是增量包的起点（根上的清单就是装着的版本）时带 ``current_version`` 要，可能给增量包；否则
+    不带，只要全量包。Mirror 酱给不了（CDK 过期、无效、次数用完、不含此资源，或出错）就用 GitHub，原因
+    记进 ``runtime.notice``；8001（这个平台没有包）不提示。「更新源」选 GitHub 时不用 CDK、不问 Mirror 酱。
     """
     from app.core import Config
 
@@ -508,10 +545,16 @@ async def _pick_package(
     local = await asyncio.to_thread(local_version, root)
     github_only = _github_only()
     cdk = "" if github_only else _mirror_cdk()
-    if cdk:
-        patchable = not full and await asyncio.to_thread(
-            stage.patch_base_ok, root, local
-        )
+    if cdk and mirror:
+        reused = _reusable_link(runtime, release.version, local)
+        if reused is not None:
+            assert runtime.mirror_link is not None
+            minutes = (time.monotonic() - runtime.mirror_link.at) / 60
+            logger.info(
+                f"{root} 复用 {minutes:.0f} 分钟前要到的 Mirror 酱下载链接，不再带 CDK 去要"
+            )
+            return reused
+        patchable = await asyncio.to_thread(stage.patch_base_ok, root, local)
         try:
             picked = await MirrorChyanSource(cdk, mirror_api_root()).package(
                 proxy=Config.proxy, current=local if patchable else None
@@ -522,6 +565,7 @@ async def _pick_package(
                 refusal = _automas_refusal(picked)
                 if refusal:
                     raise RuntimeError(refusal)
+                runtime.mirror_link = _MirrorLink(picked, time.monotonic())
                 return picked
             logger.info(
                 f"Mirror 酱这次没给比 {_shown(local)} 新的包（最新 {picked.version.display}），"
@@ -556,36 +600,6 @@ async def _pick_package(
     return github
 
 
-def _mirror_refresher(release: RemoteRelease) -> Callable[[], Awaitable[str]]:
-    """Mirror 酱的下载地址过期 / 用过时重新要一次：同样的请求，包得是同一个（版本、类型、大小、哈希）。"""
-    asset = release.asset
-    assert asset is not None
-
-    async def refresh() -> str:
-        from app.core import Config
-
-        try:
-            fresh = await MirrorChyanSource(_mirror_cdk(), mirror_api_root()).package(
-                proxy=Config.proxy,
-                current=parse_version(asset.base) if asset.incremental else None,
-            )
-        except MirrorChyanError as e:
-            raise MirrorChyanError(
-                f"重新向 Mirror 酱要下载地址没成：{e}", e.code
-            ) from None
-        same = fresh.asset is not None and (
-            fresh.version,
-            fresh.asset.incremental,
-            fresh.asset.size,
-            fresh.asset.sha256,
-        ) == (release.version, asset.incremental, asset.size, asset.sha256)
-        if not same or fresh.asset is None:
-            raise MirrorChyanError("Mirror 酱重新给的包和刚才的不是同一个，请重试")
-        return fresh.asset.url
-
-    return refresh
-
-
 # ---- 下载与拼新版 ----------------------------------------------------------
 
 
@@ -596,20 +610,15 @@ def _error_text(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
-async def _download(
-    runtime: _Runtime,
-    release: RemoteRelease,
-    *,
-    refresh: Callable[[], Awaitable[str]] | None = None,
-) -> Path:
+async def _download(runtime: _Runtime, release: RemoteRelease) -> Path:
     """下载 ``release`` 的包，按发布记录 / Mirror 酱给的 SHA-256 核对。
 
     - GitHub：断了续传（``.part`` 留着，下次点「更新」接着下）。请求带了 Range 而服务器回 200 时，
       :func:`~app.services.update_transport.download_resumable` 从 0 重写，不追加。
-    - Mirror 酱不支持续传：不发 Range，之前留下的半截直接丢掉从头下；中途断了在同一个地址上从头重试，
-      一共最多 :data:`_DOWNLOAD_ATTEMPTS` 次，仍不行就结束（下次点「更新」重新下载）。``refresh`` 是地址
-      过期（401/403/404/410）时重新要地址的办法，只用一次。两个来源的包名不同（Mirror 酱的带
-      ``-mirrorchyan``），半截的不会被另一边拿去续传。
+    - Mirror 酱不支持续传：不发 Range，之前留下的半截直接丢掉从头下；中途断了（含 401/403/404/410）在
+      同一个链接上从头重试，一共最多 :data:`_DOWNLOAD_ATTEMPTS` 次，仍不行这次就结束，不另要链接（下次
+      点「更新」时链接还在 25 分钟内就复用）。两个来源的包名不同（Mirror 酱的带 ``-mirrorchyan``），半截
+      的不会被另一边拿去续传。
     """
     root, asset = runtime.root, release.asset
     assert asset is not None
@@ -671,7 +680,6 @@ async def _download(
         f"已有 {received} 字节）"
     )
     url = asset.url
-    refreshed = False
     digest: Any = None
     attempt = 0
     async with httpx.AsyncClient(
@@ -697,39 +705,25 @@ async def _download(
                     digest=digest,
                 )
             except (httpx.HTTPError, OSError, ValueError) as e:
-                expired = (
-                    refresh is not None
-                    and not refreshed
-                    and isinstance(e, httpx.HTTPStatusError)
-                    and e.response.status_code in _EXPIRED_URL_STATUS
-                )
-                if not expired:
-                    if attempt >= _DOWNLOAD_ATTEMPTS:
-                        # 不串上 httpx 的状态错误：它的消息里有完整地址
-                        cause = None if isinstance(e, httpx.HTTPStatusError) else e
-                        if mirror:
-                            part.unlink(missing_ok=True)
-                            raise RuntimeError(
-                                "下载中断，再点一次更新会重新下载"
-                                f"（从 Mirror 酱下载 {attempt} 次都没成：{_error_text(e)}）"
-                            ) from cause
+                if attempt >= _DOWNLOAD_ATTEMPTS:
+                    # 不串上 httpx 的状态错误：它的消息里有完整地址
+                    cause = None if isinstance(e, httpx.HTTPStatusError) else e
+                    if mirror:
+                        part.unlink(missing_ok=True)
                         raise RuntimeError(
-                            f"下载 {asset.name} 失败: {_error_text(e)}"
+                            "下载中断，再点一次更新会重新下载"
+                            f"（从 Mirror 酱下载 {attempt} 次都没成：{_error_text(e)}）"
                         ) from cause
-                    again = "从头重下" if mirror else "续传"
-                    logger.warning(
-                        f"下载 {asset.name} 出错，{attempt} 秒后{again}: {_error_text(e)}"
-                    )
-                    await asyncio.sleep(attempt)
-                    continue
-                logger.info(f"{label}：下载地址失效（{_error_text(e)}），重新要一次")
-            else:
-                break
-            # Mirror 酱的地址失效：出了 except 再重新要，免得新的错误串上带着地址的旧错误
-            assert refresh is not None
-            refreshed = True
-            attempt -= 1
-            url = await refresh()
+                    raise RuntimeError(
+                        f"下载 {asset.name} 失败: {_error_text(e)}"
+                    ) from cause
+                again = "从头重下" if mirror else "续传"
+                logger.warning(
+                    f"下载 {asset.name} 出错，{attempt} 秒后{again}: {_error_text(e)}"
+                )
+                await asyncio.sleep(attempt)
+                continue
+            break
     if size != asset.size:
         raise RuntimeError(
             f"下载的 {asset.name} 大小不对（{size} / {asset.size} 字节）"
@@ -925,13 +919,7 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
                 totalBytes=release.asset.size,
             )
             await _publish(runtime)
-            archive = await _download(
-                runtime,
-                release,
-                refresh=_mirror_refresher(release)
-                if release.source == MIRROR_SOURCE
-                else None,
-            )
+            archive = await _download(runtime, release)
             _set(runtime, "extracting", message=unpack)
             await _publish(runtime)
             staged = await asyncio.to_thread(
@@ -955,8 +943,8 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
 async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
     """选包、下载并拼好新版，结束时 ``state`` 停在 ``staged``。调用方拿着这个根目录的锁。
 
-    Mirror 酱的增量包拼出来核对不过（或包坏了）：丢掉暂存，改下全量包（不带 ``current_version`` 再向
-    Mirror 酱要，要不到用 GitHub 的整包），只退这一次。
+    Mirror 酱的包不对（sha256 对不上、增量包拼出来核对不过、包坏了）：丢掉暂存、作废这个链接，这次改走
+    GitHub（先按区间增量，不行再整包），不再向 Mirror 酱要，只退这一次。
     """
     root = runtime.root
     state = await asyncio.to_thread(stage.read_state, root)
@@ -986,12 +974,16 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
     try:
         staged = await _stage_release(runtime, picked)
     except _BAD_PACKAGE_ERRORS as e:
-        if picked.asset is None or not picked.asset.incremental:
+        if picked.source != MIRROR_SOURCE or picked.asset is None:
             raise
-        logger.warning(f"{root} 的 Mirror 酱增量包没拼成（{e}），改下全量包")
-        _add_notice(runtime, "增量包核对不过，改下全量包")
-        picked = await _pick_package(runtime, release, full=True)
+        runtime.mirror_link = None  # 这个链接给的包不对，作废
+        kind = "增量包" if picked.asset.incremental else "包"
+        logger.warning(f"{root} 的 Mirror 酱{kind}不对（{e}），这次改从 GitHub 下载")
+        _add_notice(runtime, f"Mirror 酱的{kind}核对不过，改从 GitHub 下载")
+        picked = await _pick_package(runtime, release, mirror=False)
         staged = await _stage_release(runtime, picked)
+    # 包已经下好、核对过：链接用不着了
+    runtime.mirror_link = None
     if staged["verified"] == "manifest":
         checked = "按清单逐文件核对"
     elif staged.get("mode") == "range":

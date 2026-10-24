@@ -107,3 +107,19 @@ export const canUpdate = (status: Emulator2AvdUpdateStatusOut) =>
   !status.busy &&
   Boolean(status.updatable) &&
   (Boolean(status.preparedVersion) || (Boolean(status.updateAvailable) && !status.requiredAutoMas))
+
+/**
+ * 更新区那一个按钮显示成什么（照 MFW 项目更新：先「检查更新」，查到新版本才能更新）：
+ * 更新中不显示；已经下好一版 → 「换上已下载好的 …」；这次打开后点过「检查更新」、查成功且有新版本 →
+ * 「更新到 …」；其余（还没查、已是最新、查失败）→ 「检查更新」。
+ */
+export const updateButton = (
+  status: Emulator2AvdUpdateStatusOut,
+  checked: boolean
+): 'install' | 'update' | 'check' | null => {
+  if (status.busy || !status.updatable) return null
+  if (status.preparedVersion) return 'install'
+  if (checked && !status.checkError && status.updateAvailable && !status.requiredAutoMas)
+    return 'update'
+  return 'check'
+}

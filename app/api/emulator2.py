@@ -451,7 +451,10 @@ class Emulator2AvdUpdateIn(BaseModel):
 class Emulator2AvdUpdateStatusIn(Emulator2AvdUpdateIn):
     check: bool = Field(
         default=False,
-        description="先查一次最新版本 (走 4 小时缓存); 查不到不算失败, 原因写在 checkError",
+        description=(
+            "先强制查一次最新版本 (界面上的「检查更新」; 不走缓存, 不带 CDK); "
+            "查不到不算失败, 原因写在 checkError"
+        ),
     )
 
 
@@ -961,8 +964,8 @@ async def avd_install_apk(
 async def avd_update_status(
     payload: Emulator2AvdUpdateStatusIn = Body(...),
 ) -> Emulator2AvdUpdateStatusOut:
-    """装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（Mirror 酱、
-    GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。"""
+    """装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
+    下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。"""
     try:
         result = await avd_updater.status(payload.root, check=payload.check)
     except Exception as e:

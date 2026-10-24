@@ -33,10 +33,10 @@
 下载、拼新版、换上都和源无关（:mod:`.updater`、:mod:`.update_stage`）。按顺序问（:func:`update_sources`）：
 
 - **Mirror 酱**（:class:`MirrorChyanSource`）：``GET https://mirrorchyan.com/api/resources/ModAVD/latest``，
-  带 ``current_version``（本地版本 ``v0.N.P``）、``os=win``、``arch=x64``、``channel=stable``，有 CDK 再带
-  ``cdk``（用 MAS 全局的 ``Update.MirrorChyanCDK``，不另设）。不带 CDK 只能查版本；带 CDK 才给下载地址，
-  可能是从 ``current_version`` 到新版的增量包。``min_automas`` 从它同步的 ``release_note`` 第一行读，
-  和 GitHub 正文同一套解析。CDK 只在请求参数里，不进日志、错误信息和状态。
+  带 ``current_version``（本地版本 ``v0.N.P``）、``os=win``、``arch=x64``、``channel=stable``。查更新一律
+  不带 CDK，只拿版本和 ``release_note``；只有真要下载时才带 ``cdk``（MAS 全局的 ``Update.MirrorChyanCDK``，
+  不另设）要一次下载链接（这一步消耗 CDK），可能是从 ``current_version`` 到新版的增量包。``min_automas``
+  从同步的 ``release_note`` 第一行读，和 GitHub 正文同一套解析。CDK 只在请求参数里，不进日志、错误信息和状态。
 - **GitHub**（:class:`GitHubReleaseSource`）：Mirror 酱查不到、出错、没有 CDK 时用它的主包（先按区间只取
   变了的文件，见 :mod:`.update_range`，不行再下整包）。
 
@@ -51,7 +51,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -461,6 +461,7 @@ class MirrorChyanSource:
 
     ``cdk`` 是 MAS 全局的 ``Update.MirrorChyanCDK``，只放进请求参数：错误信息里不带它，也不带含它的地址
     （:func:`~app.services.update_transport.request_mirror_resource` 不用 ``raise_for_status``）。
+    消耗 CDK 的是「带 CDK 要下载链接」（:meth:`package`）；查更新（:meth:`latest`）一律不带 CDK。
     """
 
     name = MIRROR_SOURCE
@@ -477,7 +478,11 @@ class MirrorChyanSource:
         return text.replace(self._cdk, "***") if self._cdk else text
 
     async def _query(
-        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None
+        self,
+        *,
+        proxy: httpx.Proxy | None,
+        current: ModAvdVersion | None,
+        with_cdk: bool,
     ) -> RemoteRelease:
         params = {
             "os": MODAVD_MIRROR_OS,
@@ -486,7 +491,7 @@ class MirrorChyanSource:
         }
         if current is not None:
             params["current_version"] = str(current)
-        if self._cdk:
+        if with_cdk and self._cdk:
             params["cdk"] = self._cdk
         try:
             payload = await request_mirror_resource(
@@ -509,19 +514,15 @@ class MirrorChyanSource:
     async def latest(
         self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None = None
     ) -> RemoteRelease:
-        """查最新版本（查更新用）。增量包只对发请求的这个根目录成立，查更新的结果各根目录共用，
-        所以这里不报增量包；真正下载前由 :meth:`package` 现要地址。"""
-        release = await self._query(proxy=proxy, current=current)
-        if release.asset is not None and release.asset.incremental:
-            release = replace(release, asset=None)
-        return release
+        """查最新版本（查更新用）：不带 CDK，只拿版本和 release_note，没有下载链接、不消耗 CDK。"""
+        return await self._query(proxy=proxy, current=current, with_cdk=False)
 
     async def package(
         self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None
     ) -> RemoteRelease:
-        """现要下载地址（要有 CDK；地址一次性、会过期，每次下载前都要）。``current`` 为 ``None`` 时
-        只会给全量包。"""
-        return await self._query(proxy=proxy, current=current)
+        """带 CDK 要下载链接（这一步消耗 CDK；链接在服务端留 30 分钟，由调用方在内存里复用）。
+        ``current`` 为 ``None`` 时只会给全量包。"""
+        return await self._query(proxy=proxy, current=current, with_cdk=True)
 
 
 def mirror_api_root() -> str:
@@ -534,13 +535,13 @@ def github_api_url() -> str:
     return os.environ.get(MODAVD_RELEASE_API_ENV, "").strip() or MODAVD_RELEASE_API
 
 
-def update_sources(cdk: str = "", *, github_only: bool = False) -> list[UpdateSource]:
-    """按顺序问的下载源：先 Mirror 酱（不带 CDK 也能查版本），查不到或出错再问 GitHub；``github_only``
+def update_sources(*, github_only: bool = False) -> list[UpdateSource]:
+    """查更新时按顺序问的源：先 Mirror 酱（不带 CDK，只查版本），查不到或出错再问 GitHub；``github_only``
     （MAS 设置的「更新源」选了 GitHub）时只问 GitHub。两个环境变量只供测试，不进配置、不上界面。"""
     github = GitHubReleaseSource(github_api_url())
     if github_only:
         return [github]
-    return [MirrorChyanSource(cdk, mirror_api_root()), github]
+    return [MirrorChyanSource("", mirror_api_root()), github]
 
 
 __all__ = [

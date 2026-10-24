@@ -1,10 +1,12 @@
 <script setup lang="ts">
 /**
- * 魔改 AVD 根目录的「模拟器更新」：当前 / 最新版本，一个「更新」按钮（下载、核对、换上一次做完），
- * 进度和结果。
+ * 魔改 AVD 根目录的「模拟器更新」：当前 / 最新版本，一个按钮，进度和结果。
  *
- * 点「更新」：有实例开着（或正在开机）就提示先关掉，什么都不动；没有时先确认「更新期间不会启动用到
- * 这个魔改 AVD 的脚本和实例」，再让后端开始。进度由后端经 WebSocket 推，操作结束后重新取一次状态。
+ * 按钮照 MFW 项目更新的做法：打开时不自动查，先显示「检查更新」；点了强制查一次（不走缓存、不带 CDK），
+ * 查到新版本按钮变成「更新到 …」，再点才更新；已是最新、查失败时仍是「检查更新」。已经下好一版时直接
+ * 显示「换上已下载好的 …」。点更新：有实例开着（或正在开机）就提示先关掉，什么都不动；没有时先确认
+ * 「更新期间不会启动用到这个魔改 AVD 的脚本和实例」，再让后端开始（下载、核对、换上一次做完）。进度由
+ * 后端经 WebSocket 推，操作结束后重新取一次状态。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -19,7 +21,7 @@ import {
   type WSAvdUpdateProgressData,
 } from '@/services/websocket/types'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
-import { canUpdate, samePath, versionText } from '../avdLogic'
+import { canUpdate, samePath, updateButton, versionText } from '../avdLogic'
 
 const props = defineProps<{ root: string }>()
 /** 换上成功：组件与电脑检查要跟着刷新 */
@@ -34,13 +36,16 @@ const BUSY_POLL_MS = 2000
 
 const status = ref<Emulator2AvdUpdateStatusOut | null>(null)
 const acting = ref(false)
+/** 这次打开后点过「检查更新」：之前不显示最新版本、不给「更新到 …」 */
+const checked = ref(false)
+const checking = ref(false)
 const progress = ref<WSAvdUpdateProgressData | null>(null)
 let subscription: string | null = null
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 /** 卸载后在途请求回来，不再更新状态、也不再排下一次轮询 */
 let disposed = false
 
-const updatable = computed(() => (status.value ? canUpdate(status.value) : false))
+const button = computed(() => (status.value ? updateButton(status.value, checked.value) : null))
 const current = computed(() => versionText(status.value?.currentVersion))
 const latest = computed(() => versionText(status.value?.latestVersion))
 const minimum = computed(() => versionText(status.value?.minimumVersion))
@@ -72,12 +77,11 @@ const schedulePoll = () => {
     !disposed && status.value?.busy ? setTimeout(() => void refresh(), BUSY_POLL_MS) : null
 }
 
-/** ``check``：打开时顺带查一次更新（走后端 4 小时缓存） */
-const refresh = async (check = false) => {
+const refresh = async () => {
   const root = props.root
   if (!root || disposed) return
   try {
-    const next = await api.getStatus(root, check)
+    const next = await api.getStatus(root)
     // 等的时候组件卸载了、或者换了根目录：这份结果已经不是当前的
     if (disposed || root !== props.root) return
     status.value = next
@@ -95,6 +99,22 @@ const onProgress = (data: WSAvdUpdateProgressData) => {
   if (data.status !== 'running') {
     if (data.status === 'success' && data.stage === 'installed') emit('changed')
     void refresh()
+  }
+}
+
+/** 「检查更新」：强制查一次（不走缓存、不带 CDK）；查不到时原因在 checkError 里，按钮仍是「检查更新」 */
+const check = async () => {
+  const root = props.root
+  checking.value = true
+  try {
+    const next = await api.getStatus(root, true)
+    if (disposed || root !== props.root) return
+    status.value = next
+    checked.value = true
+  } catch (error) {
+    message.error(describe(error))
+  } finally {
+    checking.value = false
   }
 }
 
@@ -146,7 +166,8 @@ watch(
   () => props.root,
   () => {
     progress.value = null
-    void refresh(true)
+    checked.value = false
+    void refresh()
   }
 )
 
@@ -154,7 +175,7 @@ onMounted(() => {
   subscription = subscribe({ id: WS_ID_EMULATOR_MANAGER, type: WS_AVD_UPDATE_PROGRESS }, envelope =>
     onProgress(envelope.data)
   )
-  void refresh(true)
+  void refresh()
 })
 
 onBeforeUnmount(() => {
@@ -187,10 +208,10 @@ onBeforeUnmount(() => {
         <span>{{ t('emulator2.avd.update.current') }}：{{ current || '—' }}</span>
         <span>
           {{ t('emulator2.avd.update.latest') }}：{{
-            latest || t('emulator2.avd.update.notChecked')
+            (checked && latest) || t('emulator2.avd.update.notChecked')
           }}
           <a-tag
-            v-if="status.latestVersion && !status.updateAvailable"
+            v-if="checked && !status.checkError && status.latestVersion && !status.updateAvailable"
             color="success"
             class="version-tag"
           >
@@ -198,11 +219,11 @@ onBeforeUnmount(() => {
           </a-tag>
         </span>
       </div>
-      <div v-if="status.checkError" class="update-error">
+      <div v-if="checked && status.checkError" class="update-error">
         {{ t('emulator2.avd.update.checkFailed', { reason: status.checkError }) }}
       </div>
       <a-alert
-        v-if="status.requiredAutoMas"
+        v-if="checked && status.requiredAutoMas"
         type="warning"
         show-icon
         :message="t('emulator2.avd.update.requiredAutoMas', { version: status.requiredAutoMas })"
@@ -220,9 +241,12 @@ onBeforeUnmount(() => {
       </div>
       <a-alert v-else-if="resultType" :type="resultType" show-icon :message="shown?.message" />
       <div class="update-actions">
-        <a-button v-if="updatable" type="primary" :loading="acting" @click="run">
+        <a-button v-if="button === 'check'" :loading="checking" @click="check">
+          {{ t('emulator2.avd.update.check') }}
+        </a-button>
+        <a-button v-else-if="button" type="primary" :loading="acting" @click="run">
           {{
-            prepared
+            button === 'install'
               ? t('emulator2.avd.update.install', { version: prepared })
               : status.assetSize
                 ? t('emulator2.avd.update.update', {

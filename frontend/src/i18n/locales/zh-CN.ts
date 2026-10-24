@@ -3257,7 +3257,8 @@ export default {
         title: '模拟器更新',
         current: '当前版本',
         latest: '最新版本',
-        notChecked: '还没查到',
+        notChecked: '未检查',
+        check: '检查更新',
         upToDate: '已是最新',
         checkFailed: '检查失败：{reason}',
         belowMinimum:
