@@ -96,6 +96,7 @@
     "axios": "1.15.2",
     "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
+    "json5": "2.2.3",
     "yaml": "2.8.1"
   },
   "devDependencies": {

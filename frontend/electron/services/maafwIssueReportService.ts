@@ -718,7 +718,7 @@ async function createIssueReport(
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',
       runs: selectedRuns.map(selected => ({
-        history: `${selected.run.date}/${selected.run.user}/${selected.run.stamp}`,
+        history: `${selected.run.date}/${selected.run.stamp}`,
         result: selected.result ?? null,
         success: selected.success,
         matchedBy: selected.matchedBy,
