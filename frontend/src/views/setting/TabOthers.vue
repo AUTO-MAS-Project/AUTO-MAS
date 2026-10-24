@@ -159,15 +159,10 @@ const copyAllInfo = async () => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.Update?.IfAutoUpdate"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="settings.Update?.IfAutoUpdate"
               @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
         <a-col :span="8">

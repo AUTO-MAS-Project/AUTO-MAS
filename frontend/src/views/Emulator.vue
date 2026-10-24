@@ -23,6 +23,7 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
+import { nameNewEmulator } from '@/views/Emulator/emulatorNaming'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -331,12 +332,11 @@ const loadEmulators = async () => {
   }
 }
 
-// 添加模拟器
 const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
-      await invalidateEmulatorOptions()
+      await nameNewEmulator(response.emulatorId, emulatorIndex.value, emulatorData.value)
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
@@ -930,7 +930,7 @@ const handleBossKeyInputChange = (uuid: string) => {
       <a-spin :spinning="loading">
         <!-- 空状态：无模拟器时居中显示大按钮 -->
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
-          <a-empty />
+          <a-empty :description="t('emulator.emptyIndexHint')" />
           <a-space direction="horizontal" :size="16">
             <a-button
               type="primary"
@@ -1338,7 +1338,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
     <!-- 搜索结果导入模态框 -->
     <a-modal
-      v-model:visible="showSearchModal"
+      v-model:open="showSearchModal"
       :title="t('emulator.searchModalTitle')"
       width="600"
       :footer="null"

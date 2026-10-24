@@ -334,19 +334,15 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Stage.ExtractReservedTrailblazePower"
-            size="large"
+          <a-switch
+            v-model:checked="formData.Stage.ExtractReservedTrailblazePower"
             @change="
               emitSave(
                 'Stage.ExtractReservedTrailblazePower',
                 formData.Stage.ExtractReservedTrailblazePower
               )
             "
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
+          />
         </a-form-item>
       </a-col>
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
@@ -359,14 +355,10 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Stage.UseFuel"
-            size="large"
+          <a-switch
+            v-model:checked="formData.Stage.UseFuel"
             @change="emitSave('Stage.UseFuel', formData.Stage.UseFuel)"
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
+          />
         </a-form-item>
       </a-col>
       <a-col v-if="formData.Stage.UseFuel" :span="8">

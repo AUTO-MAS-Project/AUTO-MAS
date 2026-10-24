@@ -296,17 +296,12 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="lowPerformanceMode"
+            <a-switch
+              :checked="lowPerformanceMode"
               :disabled="lowPerformanceModeSaving"
               :loading="lowPerformanceModeSaving"
-              size="large"
-              style="width: 100%"
               @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
         <a-col :span="12">
@@ -344,17 +339,12 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="pauseHomeEffectsWhenRunning"
+            <a-switch
+              :checked="pauseHomeEffectsWhenRunning"
               :disabled="pauseHomeEffectsWhenRunningSaving"
               :loading="pauseHomeEffectsWhenRunningSaving"
-              size="large"
-              style="width: 100%"
               @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
-            >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
       </a-row>
@@ -373,15 +363,10 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfShowTray"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="settings.UI?.IfShowTray"
               @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
         <a-col :span="12">
@@ -392,15 +377,10 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfToTray"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="settings.UI?.IfToTray"
               @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
       </a-row>
@@ -419,15 +399,10 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="settings.UI?.IfHideCloseButton"
-              size="large"
-              style="width: 100%"
+            <a-switch
+              :checked="settings.UI?.IfHideCloseButton"
               @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
-            >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-            </a-select>
+            />
           </div>
         </a-col>
       </a-row>

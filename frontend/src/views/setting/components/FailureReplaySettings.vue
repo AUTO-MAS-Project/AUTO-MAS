@@ -148,15 +148,10 @@ const openReplayDirectory = async () => {
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="replayEnabled"
-            size="large"
-            style="width: 100%"
+          <a-switch
+            :checked="replayEnabled"
             @change="(value: any) => updateReplaySetting('Enabled', value)"
-          >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
-          </a-select>
+          />
         </div>
       </a-col>
       <a-col :span="8">

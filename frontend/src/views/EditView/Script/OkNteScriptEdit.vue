@@ -77,15 +77,10 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.Enabled"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="oknteConfig.Game.Enabled"
                   @change="handleGameEnabledChange"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -98,16 +93,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.LaunchBeforeTask"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="oknteConfig.Game.LaunchBeforeTask"
                   :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'LaunchBeforeTask', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -123,16 +113,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.CloseOnFinish"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="oknteConfig.Game.CloseOnFinish"
                   :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -145,16 +130,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.AccountSwitch"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="oknteConfig.Game.AccountSwitch"
                   :disabled="!oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
+                />
                 <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>

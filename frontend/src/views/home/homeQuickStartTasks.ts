@@ -1,4 +1,5 @@
 import type { ComboBoxItem } from '@/api'
+import { comboxLabel } from '@/utils/comboxLabel'
 import type { TaskCreateOut } from '@/api/models/TaskCreateOut'
 
 export interface HomeTaskOption {
@@ -39,7 +40,7 @@ export const normalizeHomeQuickStartSelection = (value: unknown): string[] => {
 export const toHomeTaskOptions = (options: ComboBoxItem[]): HomeTaskOption[] => {
   return options
     .filter((option): option is ComboBoxItem & { value: string } => Boolean(option.value))
-    .map(option => ({ label: option.label, value: option.value }))
+    .map(option => ({ label: comboxLabel(option), value: option.value }))
 }
 
 export const retainSelectedTaskIds = (

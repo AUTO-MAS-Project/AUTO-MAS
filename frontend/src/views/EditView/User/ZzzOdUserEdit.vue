@@ -136,15 +136,12 @@
                         </a-tooltip>
                       </span>
                     </template>
-                    <a-select
+                    <BooleanSelect
                       v-model:value="formData.Info.Status"
                       size="large"
                       class="modern-select"
                       @change="saveField('Info.Status', formData.Info.Status)"
-                    >
-                      <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                      <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                    </a-select>
+                    />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -559,13 +556,11 @@
                   <a-switch
                     v-if="formData.Info.Base === 'native'"
                     v-model:checked="nativeLaunchArgs.launch_argument"
-                    size="large"
                     @change="(v: any) => saveNativeLaunchArgsField('launch_argument', v === true)"
                   />
                   <a-switch
                     v-else
                     v-model:checked="formData.Game.LaunchArgument"
-                    size="large"
                     @change="(v: any) => saveField('Game.LaunchArgument', v === true)"
                   />
                 </div>
@@ -633,7 +628,6 @@
                               </template>
                               <a-switch
                                 v-model:checked="nativeLaunchArgs.popup_window"
-                                size="large"
                                 :disabled="!nativeLaunchArgs.launch_argument"
                                 @change="
                                   (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
@@ -653,7 +647,6 @@
                               </template>
                               <a-switch
                                 v-model:checked="nativeLaunchArgs.dx12"
-                                size="large"
                                 :disabled="!nativeLaunchArgs.launch_argument"
                                 @change="(v: any) => saveNativeLaunchArgsField('dx12', v === true)"
                               />
@@ -747,7 +740,6 @@
                           </template>
                           <a-switch
                             v-model:checked="formData.Game.PopupWindow"
-                            size="large"
                             :disabled="!formData.Game.LaunchArgument"
                             @change="(v: any) => saveField('Game.PopupWindow', v === true)"
                           />
@@ -765,7 +757,6 @@
                           </template>
                           <a-switch
                             v-model:checked="formData.Game.Dx12"
-                            size="large"
                             :disabled="!formData.Game.LaunchArgument"
                             @change="(v: any) => saveField('Game.Dx12', v === true)"
                           />
@@ -890,6 +881,7 @@
 </template>
 
 <script setup lang="ts">
+import BooleanSelect from '@/components/BooleanSelect.vue'
 import { useZzzodTaskConfig } from './ZzzOdUserEdit/useZzzodTaskConfig'
 import ZzzodTaskBoard from './ZzzOdUserEdit/ZzzodTaskBoard.vue'
 

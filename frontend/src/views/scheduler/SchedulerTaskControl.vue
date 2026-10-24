@@ -199,6 +199,7 @@ import {
 } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import { isQueueTaskOption } from '@/utils/comboxLabel'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import {
@@ -290,14 +291,12 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
 // 仅普通队列支持指定续跑起点，循环队列按既有排期运行。
-// 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
+// 队列/脚本靠后端 kind 字段判断，与 useSchedulerLogic.isQueueTask 保持同步。
 const selectedTaskOption = computed(() =>
   props.taskOptions.find(opt => opt.value === localSelectedTaskId.value)
 )
 
-const selectedIsQueueTask = computed(() =>
-  Boolean(selectedTaskOption.value?.label.startsWith('队列 - '))
-)
+const selectedIsQueueTask = computed(() => isQueueTaskOption(selectedTaskOption.value))
 
 const showResumeScriptSelect = computed(
   () =>

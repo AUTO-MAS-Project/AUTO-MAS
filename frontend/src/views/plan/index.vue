@@ -88,6 +88,7 @@ import type { PlanIndexItem } from '@/api'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
+  isDefaultPlanName,
   validatePlanName,
 } from '@/utils/planNameUtils'
 import {
@@ -565,10 +566,9 @@ const initPlans = async () => {
         return
       }
 
-      const planDescriptor = PLAN_TYPE_REGISTRY[planType]
       let planName = planData.Info?.Name || ''
-      if (!planName || planName === planDescriptor.defaultName) {
-        planName = generateUniquePlanName(planType, allPlanNames)
+      if (!planName || isDefaultPlanName(planType, planName, key => t(key))) {
+        planName = generateUniquePlanName(planType, allPlanNames, key => t(key))
       }
 
       allPlanNames.push(planName)
@@ -606,7 +606,7 @@ const initPlans = async () => {
 
 const getDefaultPlanName = (planType: PlanConfigType) => {
   const existingNames = planList.value.map(plan => plan.name)
-  return generateUniquePlanName(planType, existingNames)
+  return generateUniquePlanName(planType, existingNames, key => t(key))
 }
 
 // 注意：currentPlanName 和 currentMode 的变更保存由各自的 finish/change 事件处理

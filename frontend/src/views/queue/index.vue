@@ -122,16 +122,15 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
+                <a-radio-group
                   v-model:value="currentCycleEnabled"
-                  style="width: 100%"
                   size="large"
                   :disabled="cycleRunning"
-                  @change="(value: any) => handleConfigChange('CycleEnabled', value)"
+                  @change="(event: any) => handleConfigChange('CycleEnabled', event.target.value)"
                 >
-                  <a-select-option :value="false">{{ t('queue.typeTimed') }}</a-select-option>
-                  <a-select-option :value="true">{{ t('queue.typeCycle') }}</a-select-option>
-                </a-select>
+                  <a-radio-button :value="false">{{ t('queue.typeTimed') }}</a-radio-button>
+                  <a-radio-button :value="true">{{ t('queue.typeCycle') }}</a-radio-button>
+                </a-radio-group>
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
@@ -164,16 +163,16 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select
-                  v-model:value="currentTimeEnabled"
-                  style="width: 100%"
-                  size="large"
+                <a-switch
+                  :checked="currentTimeEnabled"
                   :disabled="currentCycleEnabled"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
-                >
-                  <a-select-option :value="true">{{ t('queue.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('queue.no') }}</a-select-option>
-                </a-select>
+                  @change="
+                    (value: any) => {
+                      currentTimeEnabled = value
+                      handleConfigChange('TimeEnabled', value)
+                    }
+                  "
+                />
               </div>
             </a-col>
             <a-col :xs="24" :md="8">

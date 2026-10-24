@@ -3,7 +3,7 @@
   <div class="bgi-project-shell">
     <a-tabs :active-key="shellPaneKey" class="bgi-project-shell-tabs">
       <!-- 标签栏最右：放大图标（点击后居中大弹窗展示更大编辑区） -->
-      <template #tabBarExtraContent>
+      <template #rightExtra>
         <a-tooltip :title="t('edit.bettergiProjectZoom')" placement="top">
           <a-button
             type="text"

@@ -11,6 +11,7 @@ import type {
   DesktopMascotTaskSnapshot,
 } from '@/types/desktopMascot'
 import { resolveTaskCompletionFeedback, scriptHasStatus } from '@/utils/taskFailures'
+import { comboxLabel } from '@/utils/comboxLabel'
 
 const RUNNING_STATUSES = new Set(['运行', '运行中'])
 
@@ -42,7 +43,7 @@ export function useDesktopMascotTaskAdapter(): {
           result: request.then(response => {
             if (response.code !== 200) throw new Error(response.message)
             return response.data.flatMap(item =>
-              item.value ? [{ taskId: item.value, label: item.label, enabled: true }] : []
+              item.value ? [{ taskId: item.value, label: comboxLabel(item), enabled: true }] : []
             )
           }),
           cancel: () => request.cancel(),

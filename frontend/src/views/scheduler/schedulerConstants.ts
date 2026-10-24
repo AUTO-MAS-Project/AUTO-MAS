@@ -49,6 +49,10 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
 export interface SchedulerTab {
   key: string
   title: string
+  // 标题的生成方式（词表 key + 参数）。界面语言切换后按它重算 title；
+  // 只持久化求值后的 title，会把上一门语言的标签一直留在界面上。
+  titleKey?: string
+  titleParams?: Record<string, unknown>
   closable: boolean
   status: SchedulerStatus
   selectedTaskId: string | null

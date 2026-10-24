@@ -119,15 +119,10 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="bettergiConfig.Game.CloseOnFinish"
-                  size="large"
-                  style="width: 100%"
+                <a-switch
+                  v-model:checked="bettergiConfig.Game.CloseOnFinish"
                   @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -143,15 +138,10 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="bettergiConfig.Game.IfAutoUpdate"
-                  size="large"
-                  style="width: 100%"
+                <a-switch
+                  v-model:checked="bettergiConfig.Game.IfAutoUpdate"
                   @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">

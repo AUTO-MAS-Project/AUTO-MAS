@@ -83,14 +83,11 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select
+                  <BooleanSelect
                     v-model:value="formData.Info.Status"
                     size="large"
                     @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -388,6 +385,7 @@
 </template>
 
 <script setup lang="ts">
+import BooleanSelect from '@/components/BooleanSelect.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'

@@ -95,15 +95,10 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.Enabled"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'Enabled', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -116,16 +111,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.AccountSwitch"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="okwwConfig.Game.AccountSwitch"
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
+                />
                 <span class="control-hint">
                   {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
                 </span>
@@ -144,16 +134,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.IfAutoUpdate"
-                  size="large"
-                  class="modern-input"
+                <a-switch
+                  v-model:checked="okwwConfig.Game.IfAutoUpdate"
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'IfAutoUpdate', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
                 <span
                   v-if="
                     okwwConfig.Game.Type === 'Client' &&

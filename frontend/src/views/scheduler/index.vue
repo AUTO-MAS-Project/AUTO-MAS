@@ -36,7 +36,7 @@
         :hide-add="true"
         @edit="onSchedulerTabEdit"
       >
-        <template #tabBarExtraContent>
+        <template #rightExtra>
           <div class="tab-actions">
             <a-tooltip :title="t('scheduler.addTab')" placement="top">
               <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">

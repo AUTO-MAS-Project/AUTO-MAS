@@ -53,6 +53,22 @@ class TagItem(BaseModel):
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
+    labelKey: Optional[str] = Field(
+        default=None,
+        description="展示文案的词表键；有值时前端优先按界面语言翻译，缺省回退 label",
+    )
+    kind: Optional[Literal["placeholder", "queue", "script", "fixed"]] = Field(
+        default=None,
+        description="选项类别；前端据此区分队列/脚本任务，不依赖 label 文案前缀",
+    )
+    scriptType: Optional[str] = Field(
+        default=None,
+        description="脚本类型键（kind=script 时给出，前端按词表显示类型名）",
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="实体名（队列名/脚本名）；kind=queue/script 时给出，前端据此拼接本地化前缀",
+    )
 
 
 class ComboBoxOut(OutBase):

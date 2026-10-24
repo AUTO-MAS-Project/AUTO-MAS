@@ -38,9 +38,7 @@ const REFRESH_INTERVAL_MS = 2000
 
 // 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
 const emptyHint = computed(() =>
-  selectedLogFile.value === 'app'
-    ? '后端日志还是空的。后端这一程可能还没启动起来，先看「前端日志」。'
-    : '前端日志还是空的。'
+  selectedLogFile.value === 'app' ? t('logs.emptyBackend') : t('logs.emptyFrontend')
 )
 
 // Monaco Editor 配置
@@ -158,7 +156,7 @@ const loadLogs = async (silent = false) => {
     if (!silent) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载日志失败: ${errorMsg}`)
-      message.error('加载日志失败')
+      message.error(t('logs.loadFailed'))
     }
   } finally {
     if (!silent && seq === loadSeq) {
@@ -192,10 +190,10 @@ const toggleRealTime = () => {
   realTimeEnabled.value = !realTimeEnabled.value
   if (realTimeEnabled.value) {
     startRealTimeRefresh()
-    message.success('已启用自动更新')
+    message.success(t('logs.realTimeEnabledToast'))
   } else {
     stopRealTimeRefresh()
-    message.info('已停止自动更新')
+    message.info(t('logs.realTimeDisabledToast'))
   }
 }
 
@@ -267,7 +265,7 @@ onUnmounted(() => {
             <template #icon>
               <SyncOutlined :spin="realTimeEnabled" />
             </template>
-            {{ realTimeEnabled ? '自动更新' : '停止更新' }}
+            {{ realTimeEnabled ? t('logs.realTimeOn') : t('logs.realTimeOff') }}
           </a-button>
 
           <a-button :loading="exportingLogs" @click="packageLogs">
@@ -281,7 +279,7 @@ onUnmounted(() => {
     </div>
 
     <div class="logs-content">
-      <a-spin :spinning="loading" tip="加载日志中...">
+      <a-spin :spinning="loading" :tip="t('logs.loadingTip')">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
           <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
           <vue-monaco-editor

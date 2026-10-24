@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import assert from 'node:assert/strict'
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -85,6 +86,89 @@ export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
     } catch (error) {
       if (error.code !== 'ENOENT') throw error
     }
+  }
+}
+
+/** 让一次 e2e 运行占用独立端口，多个运行/多人同时跑不会互相抢服务器。 */
+export const pickFreePort = () =>
+  new Promise((resolve, reject) => {
+    const server = createServer()
+    server.unref()
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      const port = typeof address === 'object' && address ? address.port : 0
+      server.close(() => (port > 0 ? resolve(port) : reject(new Error('无法分配空闲端口'))))
+    })
+  })
+
+/**
+ * 依赖没装时应用起不来，Playwright 只会报「找不到元素」，
+ * 真正的原因（Vite 解析不到某个包）埋在页面 overlay 里，很难看出来。
+ * 这里提前把话说清楚，失败原因对得上手该做的事。
+ */
+export const assertFrontendDependencies = async (root = frontendRoot) => {
+  let packageJson
+  try {
+    packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+  } catch {
+    return
+  }
+  const declared = Object.keys({ ...packageJson.dependencies, ...packageJson.devDependencies })
+  const missing = []
+  for (const name of declared) {
+    try {
+      await lstat(path.join(root, 'node_modules', ...name.split('/')))
+    } catch {
+      missing.push(name)
+    }
+  }
+  if (missing.length > 0) {
+    const preview = missing.slice(0, 5).join('、')
+    throw new Error(
+      `前端依赖未安装或与 package.json 不一致（缺少 ${preview}${missing.length > 5 ? ` 等 ${missing.length} 个` : ''}）。` +
+        '应用因此在浏览器里起不来，所有用例都会变成「找不到元素」。先在 frontend/ 执行 yarn install 再跑测试。'
+    )
+  }
+  try {
+    const lockBytes = (await lstat(path.join(root, 'yarn.lock'))).mtimeMs
+    const stateBytes = (await lstat(path.join(root, 'node_modules', '.yarn-state.yml'))).mtimeMs
+    if (stateBytes + 1000 < lockBytes) {
+      console.warn('[e2e] yarn.lock 比 node_modules 新：依赖可能没重装，先执行 yarn install 再跑')
+    }
+  } catch {
+    // 没有 yarn.lock 或 state 文件时不阻塞：缺失依赖已在上面的硬检查里报出来。
+  }
+}
+
+/**
+ * Playwright 升级后自带的 Chromium 版本也变了，缓存里只有旧版时启动会失败：
+ * 「Executable doesn't exist at ...\\chromium_headless_shell-1248\\...」——
+ * 报错里只有路径，看不出要执行什么命令。这里真启动一次浏览器，
+ * 用实际结果判断，再翻译成「该执行哪条命令」。
+ */
+export const assertPlaywrightBrowser = async (root = frontendRoot) => {
+  let chromium
+  try {
+    const playwrightRequire = createRequire(path.join(root, 'package.json'))
+    chromium = playwrightRequire('@playwright/test').chromium
+  } catch (error) {
+    throw new Error(
+      `读不到 @playwright/test（${error instanceof Error ? error.message : String(error)}）。先在 frontend/ 执行 yarn install 再跑测试。`
+    )
+  }
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message.split('\n')[0] : String(error)
+    const missingBinary = /Executable doesn't exist|is not found|ENOENT/i.test(detail)
+    throw new Error(
+      `${missingBinary ? 'Playwright 自带的浏览器还没下载' : '浏览器启动失败'}（${detail}）。` +
+        '所有用例都会在启动浏览器这一步失败。先在 frontend/ 执行 yarn playwright install chromium 再跑测试。'
+    )
+  } finally {
+    await browser?.close().catch(() => undefined)
   }
 }
 
@@ -433,6 +517,10 @@ async function main() {
   let dataRoot
   let runRoot
   try {
+    // 依赖不全时应用根本起不来，先在这里失败，避免十几条用例一起报「找不到元素」
+    if (!real) await assertFrontendDependencies()
+    // 浏览器没装时每条用例都会在启动阶段失败，先在这里说清楚要执行什么
+    await assertPlaywrightBrowser()
     await mkdir(tempBase, { recursive: true })
     runRoot = await mkdtemp(path.join(tempBase, 'auto-mas-e2e-'))
     const tempDirectory = path.join(runRoot, 'temp')
@@ -479,6 +567,24 @@ async function main() {
         .filter(([, value]) => real || value)
         .map(([key, value]) => [`AUTO_MAS_E2E_${key}`, value])
     )
+    // 端口与产物目录都按这次运行独立：并行跑同一条用例时不会抢 webServer，也不会互相覆盖报告
+    const ports = {
+      AUTO_MAS_E2E_BACKEND_PORT: process.env.AUTO_MAS_E2E_BACKEND_PORT?.trim() ?? '',
+      AUTO_MAS_E2E_FRONTEND_PORT: process.env.AUTO_MAS_E2E_FRONTEND_PORT?.trim() ?? '',
+    }
+    if (!ports.AUTO_MAS_E2E_BACKEND_PORT)
+      ports.AUTO_MAS_E2E_BACKEND_PORT = String(await pickFreePort())
+    if (!ports.AUTO_MAS_E2E_FRONTEND_PORT) {
+      let candidate = await pickFreePort()
+      while (String(candidate) === ports.AUTO_MAS_E2E_BACKEND_PORT) candidate = await pickFreePort()
+      ports.AUTO_MAS_E2E_FRONTEND_PORT = String(candidate)
+    }
+    const runTag =
+      process.env.AUTO_MAS_E2E_RUN_TAG?.trim() ||
+      path.basename(runRoot).replace(/^auto-mas-e2e-/, '')
+    console.warn(
+      `[e2e] 后端 ${ports.AUTO_MAS_E2E_BACKEND_PORT} / 前端 ${ports.AUTO_MAS_E2E_FRONTEND_PORT}，产物目录 ${runTag}`
+    )
     const cli = path.join(path.dirname(require.resolve('@playwright/test/package.json')), 'cli.js')
     const child = spawn(process.execPath, [cli, 'test', ...playwrightArgs], {
       cwd: frontendRoot,
@@ -490,6 +596,8 @@ async function main() {
         TMP: tempDirectory,
         TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
+        AUTO_MAS_E2E_RUN_TAG: runTag,
+        ...ports,
         ...selectedEnv,
         AUTO_MAS_E2E_IN_PLACE: inPlace ? '1' : '',
         ...(real ? { PLAYWRIGHT_NO_COPY_PROMPT: '1' } : {}),

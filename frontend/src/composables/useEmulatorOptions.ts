@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { comboxOptions } from '@/utils/comboxLabel'
 import { queryOptions, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Service, type EmulatorConfig_Info } from '@/api'
 import { translate as t } from '@/i18n'
@@ -66,7 +67,8 @@ export function useEmulatorOptions({ includeTypes = false }: { includeTypes?: bo
   }
 
   return {
-    emulatorOptions: computed(() => (enabled.value ? (options.data.value ?? []) : [])),
+    // label 按当前界面语言重拼占位项；模拟器名是用户数据不翻译
+    emulatorOptions: computed(() => (enabled.value ? comboxOptions(options.data.value ?? []) : [])),
     emulatorTypeById: computed(() => types.data.value ?? {}),
     emulatorLoading: computed(
       () => enabled.value && (options.isFetching.value || (includeTypes && types.isFetching.value))
