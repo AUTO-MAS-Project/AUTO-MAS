@@ -57,21 +57,10 @@ export function useObsReplayApi() {
       translate('setting.replay.saveFailed')
     )
 
-  const listObsReplays = () =>
-    run(
-      async () =>
-        responseMessage(
-          await GetService.getObsReplaysApiHistoryReplaysGet(),
-          translate('history.replays.fetchFailed')
-        ),
-      translate('history.replays.fetchFailed')
-    )
-
   return {
     loading,
     error,
     checkObsReplay,
     saveObsReplay,
-    listObsReplays,
   }
 }

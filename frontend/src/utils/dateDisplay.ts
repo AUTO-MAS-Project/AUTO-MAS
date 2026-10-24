@@ -85,3 +85,6 @@ export const formatHistoryGroupLabel = (value: string): string => {
 
   return value
 }
+
+/** 历史快照保留保存时的时钟及偏移，不经浏览器时区转换。 */
+export const formatStoredDateTime = (time: string): string => time.replace('T', ' ')

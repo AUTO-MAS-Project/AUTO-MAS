@@ -79,7 +79,7 @@ class DetectResult:
     #: - ``unsupported``     暂不支持（MuMu 12、其他品牌）
     #: - ``not_found``       路径下没找到管理器程序
     #: - ``probe_failed``    管理器程序跑不起来或输出认不出
-    #: - ``components_missing`` 魔改 AVD 根目录里组件不全（要用完整的模拟器内测包）
+    #: - ``components_missing`` 魔改 AVD 根目录里组件不全（用包里的「补全组件.bat」补齐）
     #: - ``test_package_required`` 魔改 AVD 根目录里的模拟器不是内测包里的自编版
     #: - ``test_package_outdated`` 魔改 AVD 内测包编号低于最低要求或读不到，要换新包
 

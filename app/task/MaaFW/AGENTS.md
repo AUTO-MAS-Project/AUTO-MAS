@@ -18,7 +18,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `history_paths`、`default_snapshot`）。
+  `default_snapshot`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -479,7 +479,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口对
   **长度至少 4 个字符**（`MIN_REDACTED_SECRET_LENGTH`）的密码值都已打码
   （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`runner_task` 复制到
-  `history/…/*.maafw.log` 的原生日志副本、转发的 worker stdout（协议行先解析、只打码给人读的
+  历史详情中 `native_log` 角色的原生日志附件、转发的 worker stdout（协议行先解析、只打码给人读的
   文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
@@ -487,16 +487,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不中断整轮），它们与当前仍是 password 的字段同一口径：值进打码集合
   （`option_secrets.collect_run_password_values`），字段记进快照的 `secretInputs`，下发失败的告警同样不带原值。
   新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
-  项目有 password 输入框、或本次有要打码的值时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
+  项目有 password 输入框、或本次有要打码的值时，`worker_log` 附件第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
-  `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
+  `worker_log` / `native_log` 附件已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
   项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
   `bbcdll/*.log` …）由 `runner_task` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
-  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<脚本名>-<时分秒>.project.log`（每段一行分隔头；
+  的大小与开头，收尾只取本次新写的部分拼成临时日志并按 `project_log` 角色归档（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
-  `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按后缀认 history
-  文件，`.project.log` 与 `.worker.log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
-  数据备份与 `.maafw.log` 一样不带它。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
+  `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按附件角色识别，
+  `project_log` 与 `worker_log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
+  整包备份通过历史快照保留数据库与附件的对应关系。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
   （`option_secrets.secret_byte_pairs`，`.maafw.log` 同用）。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
@@ -648,6 +648,5 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   "读错键"类缺陷全程绿灯。
 - 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
   否则 Windows 报 `WinError 206`，看起来像代码坏了。
-- 排障先看 `history/<日期>/…/<脚本名>-<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
-  只记在那里，宿主日志只有一句"连接超时"。agent 自己的 DEBUG 日志、Go agent 的 panic 在同名
-  的 `.project.log` 里。
+- 排障先从历史详情读取 `native_log` 附件：agent 协议版本不匹配之类只记在那里，
+  宿主日志只有一句"连接超时"。agent 自己的 DEBUG 日志、Go agent 的 panic 在 `project_log` 附件中。

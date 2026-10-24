@@ -36,7 +36,7 @@ export type Emulator2AvdComponentItem = {
      */
     needsTestPackage?: boolean;
     /**
-     * 仅 Android 模拟器: 内测包编号 (source.properties 的 Pkg.BuildId, 如 mas-19); 不是自编版或读不到为 null
+     * 仅 Android 模拟器: 装着的内测包版本, 如 0.32.1 (有清单读清单, 没有按 Pkg.BuildId=mas-N 算 0.N.0); 不是自编版或读不到 Pkg.BuildId 为 null
      */
     build?: (string | null);
     /**

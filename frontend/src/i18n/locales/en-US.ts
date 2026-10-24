@@ -3576,6 +3576,20 @@ export default {
     },
   },
   history: {
+    cancelled: 'Cancelled',
+    storageWarningCount: '{count} storage issues',
+    storageRecovered: 'Recovered, including by copying',
+    storageFailed: 'Some content could not be saved',
+    aggregateWarning: 'Some statistics could not be combined; other statistics remain available',
+    attachments: {
+      missing: 'The attachment file is missing',
+      quota: 'The video was not saved or was reclaimed because of the storage limit',
+      directoryUnavailable: 'The archive directory was unavailable; the attachment was not saved',
+      archiveFailed: 'The attachment could not be archived',
+      title: 'Attachments ({count})',
+      download: 'Download',
+      unavailable: 'This attachment was reclaimed, is missing, or cannot be read',
+    },
     title: 'History',
     dateList: 'Dates',
     noData: 'No data',
@@ -3590,7 +3604,7 @@ export default {
     successCount: 'Succeeded {count} times',
     failureCount: 'Failed {count} times',
     scriptUnknown: 'Unlabeled script',
-    timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
+    timeRule: 'Records are grouped by their saved date; times retain the original timezone offset',
     done: 'Done',
     skipped: 'Skipped',
     failed: 'Failed',
@@ -3598,6 +3612,7 @@ export default {
     search: 'Search',
     reset: 'Reset',
     log: {
+      unavailable: 'The log file is unavailable and no complete fallback log was saved',
       title: 'Full log',
       recruit: 'Recruit',
       viewDrops: 'Drop statistics',
@@ -3609,7 +3624,7 @@ export default {
       nextSignin: 'Next banner check-in: {n} pulls',
       poolSummary: 'Current {current} pulls · next {next} pulls',
       stripBlank: 'Hide blank lines',
-      openFile: 'Open the log file',
+      openFile: 'Download complete log',
       openDir: 'Open the containing folder',
       fontSize: 'Font size',
       searchTip: 'Search: Ctrl+F',
@@ -5021,6 +5036,11 @@ export default {
       voiceTypeTip: 'How much the voice prompts say',
     },
     replay: {
+      videoLimit: 'Video storage limit (MiB)',
+      saveVideoLimit: 'Save limit',
+      videoLimitTip:
+        'History videos share this capacity. The oldest archived videos are reclaimed when full; logs and statistics remain.',
+      capturePath: 'Test capture location (managed by OBS)',
       section: 'Failure replays',
       intro:
         'When a task finally fails, MAS saves a copy from the running OBS replay buffer for troubleshooting.',
@@ -5033,8 +5053,6 @@ export default {
       port: 'OBS WebSocket port',
       portTip:
         'OBS uses port 4455 by default. Keep this in sync with the OBS WebSocket server port.',
-      maxCount: 'Maximum retained copies',
-      maxCountTip: 'MAS keeps 1–20 managed replay copies and removes older copies automatically.',
       password: 'OBS WebSocket password',
       passwordTip:
         'Leaving the field blank without saving keeps the existing password. Use Clear password to remove it.',
@@ -5055,7 +5073,7 @@ export default {
       openDirectory: 'Open replay folder',
       checkDone: 'OBS connection check complete',
       checkFailed: 'OBS connection check failed',
-      saveDone: 'Replay saved',
+      saveDone: 'OBS test capture completed without creating history',
       saveEmpty: 'OBS did not return a replay file to save',
       saveFailed: 'Saving the test replay failed',
       directoryUnavailable: 'No replay folder is available yet',
@@ -5260,7 +5278,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used for MAS updates and as a fallback when the MAA CDK is empty. Set the CDK for MaaFW projects on their script edit pages.',
+        'Used for MAS and modified AVD updates, and as a fallback when the MAA CDK is empty. Set the CDK for MaaFW projects on their script edit pages.',
       cdkValid: 'CDK is valid',
       cdkChecking: 'Validating CDK…',
       cdkCheckFailed: 'Unable to validate CDK right now. Please retry.',

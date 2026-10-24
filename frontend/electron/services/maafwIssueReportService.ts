@@ -1,3 +1,4 @@
+import { historyFilePath, type HistoryRecordRow } from './historyReader'
 import { readBackendDocument } from './backendConfig'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -9,6 +10,8 @@ import {
   CollectorState,
   addDebugDirectory,
   addDiagnosticFile,
+  addReportHistoryLog,
+  addReportHistoryJson,
   addDirectory,
   addReportManifest,
   addSanitizedJsonFile,
@@ -16,6 +19,7 @@ import {
   addVerbatimTextFile,
   isRecord,
   readJson,
+  readReportHistory,
   resolveDataRoots,
 } from './issueReportCore'
 
@@ -29,14 +33,6 @@ const MSS_CONFIG_TYPE = 'MSSConfig'
 // 每个脚本的项目视图是 data/mfw/<脚本 uuid 去掉连字符的前 12 位>/
 const VIEW_DIR_NAME_LENGTH = 12
 
-// 与 app/task/MaaFW/tools/embedded/runner_task.py 的 history_dir / history_stamp 同步：
-// history/<YYYY-MM-DD>/<用户名>/<脚本名>-<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
-// 失败截图 <脚本名>-<HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起。
-// 早期记录没有脚本名前缀（旧版 MaaFW 的写法），前缀段可选，解析时同样兼容。
-// 非贪婪匹配避免脚本名包含 -HH-MM-SS 模式时误解析（如 Test-12-34-56-10-20-30.json）
-const HISTORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const HISTORY_FILE_PATTERN = /^(?:(.+?)-)?(\d{2}-\d{2}-\d{2})\.(.+)$/
-const SCREENSHOT_SUFFIX_PATTERN = /^[a-z]+-\d{6}-.+\.png$/i
 const HISTORY_SCAN_DAYS = 30
 const RECENT_RUN_COUNT = 5
 const RECENT_FAILED_RUN_COUNT = 3
@@ -51,8 +47,6 @@ const MAX_ARCHIVE_BYTES = 160 * 1024 * 1024
 // 有视图之前的版本直接在导入来源（Info.Path）里跑，那时的记录按来源路径认
 const VIEW_PATH_PATTERN = /[\\/]mfw[\\/]([0-9a-f]{12})(?![0-9a-f])/i
 const WORKER_LOG_HEAD_BYTES = 64 * 1024
-const RUN_LOG_HEAD_BYTES = 64 * 1024
-const MAAFW_RUN_LOG_MARKER = /MaaFW|MFW/
 
 // PI v2.10.0 的 password 输入框：MaaFramework 会把 override 连同密码原文写进项目自己的
 // debug 日志（见 app/task/MaaFW/AGENTS.md）；MAS 只给 history 副本里 4 个字符以上的密码打码，
@@ -93,7 +87,8 @@ interface HistoryRun {
   date: string
   user: string
   stamp: string
-  json?: string
+  record: HistoryRecordRow
+  dataRoot: string
   log?: string
   workerLog?: string
   maafwLog?: string
@@ -253,71 +248,38 @@ export function maafwIssueReportFileNamePrefix(appRoot: string, scriptId: string
   return safeName ? `MFW-${safeName}-logs` : 'MFW-logs'
 }
 
-function scanHistoryRuns(dataRoot: string): HistoryRun[] {
-  const historyRoot = path.join(dataRoot, 'history')
-  const dates = readDirectory(historyRoot)
-    .filter(entry => entry.isDirectory() && HISTORY_DATE_PATTERN.test(entry.name))
-    .map(entry => entry.name)
+function scanHistoryRuns(
+  dataRoot: string,
+  state: CollectorState,
+  archiveRoot: string
+): HistoryRun[] {
+  const records = readReportHistory(state, dataRoot, archiveRoot)
+  const dates = [...new Set(records.map(record => record.date))]
     .sort()
     .reverse()
     .slice(0, HISTORY_SCAN_DAYS)
-
-  const runs: HistoryRun[] = []
-  for (const date of dates) {
-    for (const userEntry of readDirectory(path.join(historyRoot, date))) {
-      if (!userEntry.isDirectory()) {
-        continue
+  return records
+    .filter(record => dates.includes(record.date))
+    .map(record => {
+      const byRole = (role: string) => {
+        const attachment = record.attachments.find(item => item.role === role && item.available)
+        return attachment ? historyFilePath(dataRoot, attachment.relative_path) : undefined
       }
-
-      const userDir = path.join(historyRoot, date, userEntry.name)
-      const runsByStamp = new Map<string, HistoryRun>()
-      for (const fileEntry of readDirectory(userDir)) {
-        const match = fileEntry.isFile() ? HISTORY_FILE_PATTERN.exec(fileEntry.name) : null
-        if (!match) {
-          continue
-        }
-
-        // 前缀（脚本名）可选：stamp 取整段文件名主干，与盘上的文件名一一对应
-        const [, scriptPrefix, timeStamp, suffix] = match
-        const stamp = scriptPrefix ? `${scriptPrefix}-${timeStamp}` : timeStamp
-        const run = runsByStamp.get(stamp) ?? {
-          date,
-          user: userEntry.name,
-          stamp,
-          screenshots: [],
-        }
-        const filePath = path.join(userDir, fileEntry.name)
-        switch (suffix.toLowerCase()) {
-          case 'json':
-            run.json = filePath
-            break
-          case 'log':
-            run.log = filePath
-            break
-          case 'worker.log':
-            run.workerLog = filePath
-            break
-          case 'maafw.log':
-            run.maafwLog = filePath
-            break
-          case 'project.log':
-            run.projectLog = filePath
-            break
-          default:
-            if (!SCREENSHOT_SUFFIX_PATTERN.test(suffix)) {
-              continue
-            }
-            run.screenshots.push(filePath)
-        }
-        runsByStamp.set(stamp, run)
+      return {
+        record,
+        dataRoot,
+        date: record.date,
+        user: record.username,
+        stamp: String(record.id),
+        log: historyFilePath(dataRoot, record.log_path),
+        workerLog: byRole('worker_log'),
+        maafwLog: byRole('native_log'),
+        projectLog: byRole('project_log'),
+        screenshots: record.attachments
+          .filter(item => item.kind === 'image' && item.available)
+          .flatMap(item => historyFilePath(dataRoot, item.relative_path) ?? []),
       }
-      runs.push(...runsByStamp.values())
-    }
-  }
-
-  return runs.sort((left, right) =>
-    `${right.date} ${right.stamp}`.localeCompare(`${left.date} ${left.stamp}`)
-  )
+    })
 }
 
 function workerLogViewDirName(run: HistoryRun): string | null {
@@ -334,20 +296,6 @@ function workerLogRedactedAtWrite(run: HistoryRun): boolean {
   }
   const [firstLine] = readHead(run.workerLog, WORKER_LOG_HEAD_BYTES).split('\n', 1)
   return firstLine.includes(LOG_REDACTION_MARKER)
-}
-
-function readRunResult(run: HistoryRun): string | undefined {
-  const data = run.json ? readJson(run.json) : undefined
-  return isRecord(data) && typeof data.general_result === 'string' ? data.general_result : undefined
-}
-
-// 与 app/core/config.py search_history 里的 is_success_result 同步
-function isSuccessResult(result: string | undefined): boolean {
-  if (result === undefined) {
-    return false
-  }
-  const value = result.replace(/^\[[^\]]+\]\s*/, '')
-  return value === 'Success!' || value === '今日任务均已完成'
 }
 
 /** 同一数据根下所有脚本（不限类型）的导入来源，用来认没有视图路径的旧记录。 */
@@ -371,7 +319,6 @@ function sourcePathKeysOf(dataRoot: string): Array<{ uid: string; key: string }>
 function claimRun(
   run: HistoryRun,
   script: MaaFWScript,
-  result: string | undefined,
   sourceKeys: Array<{ uid: string; key: string }>
 ): SelectedRun['matchedBy'] | undefined {
   const viewDirName = workerLogViewDirName(run)
@@ -390,13 +337,10 @@ function claimRun(
     }
   }
 
-  // 认不出项目路径——worker 没起来（模拟器没起来、环境准备或项目更新失败）就没有 .worker.log，
-  // 或者 worker 在打出加载来源之前就挂了——只能按脚本现有的用户名认领；同名用户的其他 MFW
-  // 脚本的这类记录会一并带上
-  if (result === undefined || !run.log || !script.userNames.includes(run.user)) {
-    return undefined
-  }
-  return MAAFW_RUN_LOG_MARKER.test(readHead(run.log, RUN_LOG_HEAD_BYTES)) ? 'userName' : undefined
+  // worker 未产生可识别路径时只按保存时的名称快照认领，不推断脚本执行结果。
+  return run.record.script_name === script.name && script.userNames.includes(run.user)
+    ? 'userName'
+    : undefined
 }
 
 /** 最近 RECENT_RUN_COUNT 次运行，外加最近 RECENT_FAILED_RUN_COUNT 次失败，新的在前。 */
@@ -414,18 +358,19 @@ function selectRuns(
       break
     }
 
-    const result = readRunResult(run)
-    const matchedBy = claimRun(run, script, result, sourceKeys)
+    const result = run.record.message
+    const matchedBy = claimRun(run, script, sourceKeys)
     if (!matchedBy) {
       continue
     }
 
-    const success = isSuccessResult(result)
-    if (claimedCount < RECENT_RUN_COUNT || (!success && failedCount < RECENT_FAILED_RUN_COUNT)) {
+    const success = run.record.status === 'success'
+    const failed = run.record.status === 'error'
+    if (claimedCount < RECENT_RUN_COUNT || (failed && failedCount < RECENT_FAILED_RUN_COUNT)) {
       selected.push({ run, result, success, matchedBy })
     }
     claimedCount += 1
-    if (!success) {
+    if (failed) {
       failedCount += 1
     }
   }
@@ -603,7 +548,7 @@ async function addMasDebugLogs(state: CollectorState, dataRoots: string[]): Prom
 }
 
 function historyArchivePath(scriptRoot: string, run: HistoryRun, filePath: string): string {
-  return path.posix.join(scriptRoot, 'history', run.date, run.user, path.basename(filePath))
+  return path.posix.join(scriptRoot, 'history', run.date, run.stamp, path.basename(filePath))
 }
 
 async function addRunHeavyFiles(
@@ -620,10 +565,6 @@ async function addRunHeavyFiles(
   for (const screenshot of [...run.screenshots].sort()) {
     addDiagnosticFile(state, screenshot, historyArchivePath(scriptRoot, run, screenshot))
   }
-}
-
-function runOrderKey({ run }: SelectedRun): string {
-  return `${run.date} ${run.stamp}`
 }
 
 /**
@@ -670,7 +611,10 @@ async function createIssueReport(
     const scriptRoot = `scripts/${script.viewDirName}`
     const viewDir = path.join(script.dataRoot, 'data', 'mfw', script.viewDirName)
     if (!runsByDataRoot.has(script.dataRoot)) {
-      runsByDataRoot.set(script.dataRoot, scanHistoryRuns(script.dataRoot))
+      runsByDataRoot.set(
+        script.dataRoot,
+        scanHistoryRuns(script.dataRoot, state, `${scriptRoot}/history`)
+      )
       sourceKeysByDataRoot.set(script.dataRoot, sourcePathKeysOf(script.dataRoot))
     }
     const selectedRuns = selectRuns(
@@ -723,17 +667,27 @@ async function createIssueReport(
     for (const selected of selectedRuns) {
       const { run } = selected
       const shareable = frameworkLogsShareable.get(selected)
+      addReportHistoryJson(
+        state,
+        run.record,
+        `${scriptRoot}/history/${run.date}/${run.stamp}/record.json`
+      )
+      if (!run.log) {
+        const archivePath = `${scriptRoot}/history/${run.date}/${run.stamp}/main.log`
+        addReportHistoryLog(state, run.dataRoot, run.record, archivePath)
+      }
       const workerLog = shareable ? run.workerLog : undefined
       // .project.log 写的时候已按全部用户的密码打码，这里仍与 .worker.log 同一条件从严
       const projectLog = shareable ? run.projectLog : undefined
-      for (const filePath of [run.json, run.log, workerLog, projectLog]) {
+      for (const filePath of [run.log, workerLog, projectLog]) {
         if (filePath) {
           addDiagnosticFile(state, filePath, historyArchivePath(scriptRoot, run, filePath))
         }
       }
     }
 
-    const focusRun = selectedRuns.find(selected => !selected.success) ?? selectedRuns[0]
+    const focusRun =
+      selectedRuns.find(selected => selected.run.record.status === 'error') ?? selectedRuns[0]
     if (focusRun) {
       await addRunHeavyFiles(state, scriptRoot, focusRun, !!frameworkLogsShareable.get(focusRun))
     }
@@ -782,7 +736,8 @@ async function createIssueReport(
   deferred.sort(
     (left, right) =>
       Number(left.selected.success) - Number(right.selected.success) ||
-      runOrderKey(right.selected).localeCompare(runOrderKey(left.selected))
+      right.selected.run.record.timestamp - left.selected.run.record.timestamp ||
+      right.selected.run.record.id.localeCompare(left.selected.run.record.id)
   )
   for (const { scriptRoot, selected, includeNativeLog } of deferred) {
     await addRunHeavyFiles(state, scriptRoot, selected, includeNativeLog)
