@@ -1485,11 +1485,12 @@ export function useSchedulerLogic() {
             void handleTaskSelectionChange(tab, null)
           }
         }
-        // 派生数据跟随被接受的最新列表重建，避免激活请求被下拉刷新取代后漏掉刷新。
+        // 最新列表负责重建派生数据；启动中的调度台由启动流程校验，避免替换其请求和范围。
         for (const tab of schedulerTabs.value) {
           if (
             !schedulerViewActive ||
             tab.status === '运行' ||
+            startingTabKeys.has(tab.key) ||
             !tab.selectedTaskId ||
             !taskOptions.value.some(option => option.value === tab.selectedTaskId)
           )
