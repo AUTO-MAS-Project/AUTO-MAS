@@ -45,6 +45,8 @@ import hashlib
 import os
 import shutil
 import time
+import zipfile
+import zlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -547,6 +549,21 @@ class _NothingToDo(Exception):
     """拿到锁以后发现前提已经不成立（已经是最新、没有要装的）。"""
 
 
+#: 下好的包本身不对（zip 坏了、CRC 对不上、清单或内容核对不过）：这份下载不能再用
+_BAD_PACKAGE_ERRORS = (stage.PackageError, zipfile.BadZipFile, zlib.error, EOFError)
+
+
+def _discard_download(archive: Path) -> None:
+    """丢掉核对不过的包，下次点「更新」重新下载。
+
+    发布记录里没有 SHA-256 时，缓存只按大小认，不丢就会每次都拿这份坏包重试。
+    """
+    try:
+        archive.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning(f"删除核对不过的 {archive} 失败，下次会重新核对: {e}")
+
+
 async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
     """下载并拼好 ``release``，结束时 ``state`` 停在 ``staged``。调用方拿着这个根目录的锁。
 
@@ -579,6 +596,7 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
             f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理{hint}"
         )
     await asyncio.to_thread(stage.begin_staging, root, target)
+    archive: Path | None = None
     try:
         _set(
             runtime,
@@ -605,6 +623,9 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
             if isinstance(e, (stage.UpdateCancelled, asyncio.CancelledError))
             else str(e)
         )
+        # 取消、断网留着下载（.part 下次续传）；包本身核对不过的才丢
+        if archive is not None and isinstance(e, _BAD_PACKAGE_ERRORS):
+            await asyncio.shield(asyncio.to_thread(_discard_download, archive))
         await asyncio.shield(asyncio.to_thread(stage.abort_staging, root, reason))
         raise
     checked = (

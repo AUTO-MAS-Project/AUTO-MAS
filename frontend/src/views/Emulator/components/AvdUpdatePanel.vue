@@ -37,6 +37,8 @@ const acting = ref(false)
 const progress = ref<WSAvdUpdateProgressData | null>(null)
 let subscription: string | null = null
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+/** 卸载后在途请求回来，不再更新状态、也不再排下一次轮询 */
+let disposed = false
 
 const actions = computed(() =>
   status.value ? updateActions(status.value) : { update: false, cancel: false }
@@ -68,15 +70,20 @@ const describe = (error: unknown) => (error instanceof Error ? error.message : S
 
 const schedulePoll = () => {
   if (pollTimer) clearTimeout(pollTimer)
-  pollTimer = status.value?.busy ? setTimeout(() => void refresh(), BUSY_POLL_MS) : null
+  pollTimer =
+    !disposed && status.value?.busy ? setTimeout(() => void refresh(), BUSY_POLL_MS) : null
 }
 
 /** ``check``：打开时顺带查一次更新（走后端 4 小时缓存） */
 const refresh = async (check = false) => {
-  if (!props.root) return
+  const root = props.root
+  if (!root || disposed) return
   try {
-    status.value = await api.getStatus(props.root, check)
-    if (!status.value.busy) progress.value = null
+    const next = await api.getStatus(root, check)
+    // 等的时候组件卸载了、或者换了根目录：这份结果已经不是当前的
+    if (disposed || root !== props.root) return
+    status.value = next
+    if (!next.busy) progress.value = null
   } catch (error) {
     logger.warn(`读取魔改 AVD 更新状态失败 (${props.root}): ${describe(error)}`)
   } finally {
@@ -143,6 +150,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   if (subscription) unsubscribe(subscription)
   if (pollTimer) clearTimeout(pollTimer)
 })
