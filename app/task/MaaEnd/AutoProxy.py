@@ -13,6 +13,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 import asyncio
+import io
 import json
 import re
 import shlex
@@ -21,10 +22,12 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from time import time_ns
 from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.maa_capture import AdbCapture, Win32Capture
 from app.core.ws import Publisher, protocol
 from app.log_box import log_box
 from app.models.config import MaaEndConfig, MaaEndUserConfig
@@ -35,7 +38,12 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import System
 from app.services.endfield_launcher import discover_launcher_exe, resolve_launcher_exe
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator
+from app.task.emulator_core import (
+    close_emulator,
+    resolve_device_ref,
+    resolve_host_adb,
+)
+from app.task.failure_capture_core import FailureCapture
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model
 from app.task.MaaFW.tools.core.interface.task_config import (
     build_task_option_maps,
@@ -90,6 +98,7 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
 )
+from .tools.notify import collect_recent_error_images
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -409,6 +418,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         user_config: ConfigCollection[MaaEndUserConfig],
         emulator_manager: DeviceBase | None,
         *,
+        capture_adb: AdbCapture,
+        capture_win32: Win32Capture,
         on_error_screenshot: Callable[[Path], None] | None = None,
     ):
         super().__init__()
@@ -421,7 +432,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.emulator_info: DeviceInfo | None = None
+        self.capture_adb = capture_adb
+        self.capture_win32 = capture_win32
         self.on_error_screenshot = on_error_screenshot
+        self._attempt_start_ns: int | None = None
+        self._attempt_screenshot_paths: list[Path] = []
+        self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -794,7 +811,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if not await async_start_game_via_launcher(
                 launcher_path,
                 on_log=_push_launch_log,
-                on_error_screenshot=self.on_error_screenshot,
+                on_error_screenshot=self._record_error_screenshot,
             ):
                 raise RuntimeError("终末地启动器未能拉起游戏，请人工确认启动器状态")
             wait_time = int(self.script_config.Game.WaitTime)
@@ -1485,6 +1502,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 self.task_dict = None
                 continue
             i += 1
+            self._attempt_start_ns = time_ns()
+            self._attempt_screenshot_paths.clear()
+            self._failure_capture.reset()
+            self.emulator_info = None
             self.retryable = True
             logger.info(
                 f"用户 {self.cur_user_item.name} - {stage_label}"
@@ -1506,10 +1527,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     await self._start_game(
                         preserve_running_game=keep_game_for_login_retry
                     )
-                    emulator_info = None
                 else:
                     logger.info(f"启动模拟器: {self.script_config.Game.EmulatorIndex}")
-                    emulator_info = await self.emulator_manager.open(
+                    self.emulator_info = await self.emulator_manager.open(
                         self.script_config.Game.EmulatorIndex, "com.hypergryph.endfield"
                     )
             except Exception as e:
@@ -1532,9 +1552,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     self.script_info.log = "正在由 MAS 自建流程切换账号..."
                     await login(
                         account_id,
-                        emulator_info,
+                        self.emulator_info,
                         restart_game=self._restart_game_after_update,
-                        on_error_screenshot=self.on_error_screenshot,
+                        on_error_screenshot=self._record_error_screenshot,
                     )
                 except Exception as error:
                     keep_game_for_login_retry = (
@@ -1561,7 +1581,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 self.script_info.log = "游戏已启动，未配置账号，跳过账号切换"
 
             if self.emulator_manager is not None:
-                await self.set_maaend(emulator_info)
+                await self.set_maaend(self.emulator_info)
 
             if not any(any(tasks.values()) for tasks in self.task_dict.values()):
                 self.retryable = False
@@ -1600,6 +1620,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 先保存首阶段结果，更新失败或取消不能抹掉已经完成的任务。
             if self.cur_user_log.status == "Success!":
                 self.run_book[self.mode] = True
+            else:
+                # 更新接管和失败清理都可能结束游戏，先保留这次尝试的现场。
+                await self._take_failure_shot()
             if update_log_offsets is not None:
                 await self._update_after_first_stage(update_log_offsets)
 
@@ -1663,6 +1686,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
 
+        await self._take_failure_shot()
         await self.kill_managed_process(kill_game=kill_game)
 
         try:
@@ -2704,6 +2728,105 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             logger.info(f"MaaEnd 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
+    def _record_error_screenshot(self, path: Path) -> None:
+        self._attempt_screenshot_paths.append(path)
+        if self.on_error_screenshot is not None:
+            self.on_error_screenshot(path)
+
+    async def _failure_window_handle(self) -> int | None:
+        """按终末地既有主窗口标识确认目标，不把同进程弹窗计为另一个游戏。"""
+        import psutil
+        import win32gui
+        import win32process
+
+        game_path = Path(str(self.script_config.Game.Path or ""))
+
+        def find() -> int | None:
+            expected_path = game_path.resolve()
+            if not expected_path.is_file():
+                return None
+            candidates: list[tuple[int, psutil.Process]] = []
+
+            def collect(hwnd: int, _: int) -> bool:
+                try:
+                    if (
+                        not win32gui.IsWindowVisible(hwnd)
+                        or win32gui.GetClassName(hwnd) != "UnityWndClass"
+                        or win32gui.GetWindowText(hwnd) != "Endfield"
+                    ):
+                        return True
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                    process = psutil.Process(pid)
+                    if Path(process.exe()).resolve() != expected_path:
+                        return True
+                    left, top, right, bottom = win32gui.GetClientRect(hwnd)
+                    if right > left and bottom > top:
+                        candidates.append((hwnd, process))
+                except (OSError, psutil.Error):
+                    pass
+                return True
+
+            win32gui.EnumWindows(collect, 0)
+            if len(candidates) != 1:
+                return None
+            hwnd, process = candidates[0]
+            if (
+                not process.is_running()
+                or not win32gui.IsWindow(hwnd)
+                or win32process.GetWindowThreadProcessId(hwnd)[1] != process.pid
+                or Path(process.exe()).resolve() != expected_path
+            ):
+                return None
+            return hwnd
+
+        return await asyncio.to_thread(find)
+
+    async def _capture_failure_shot(self) -> Path | None:
+        if self._attempt_start_ns is None:
+            return None
+        existing = await asyncio.to_thread(
+            collect_recent_error_images,
+            self.maaend_root_path,
+            started_at_ns=self._attempt_start_ns,
+            ended_at_ns=time_ns(),
+            diagnostic_paths=tuple(self._attempt_screenshot_paths),
+        )
+        if existing:
+            return None
+
+        if self.emulator_manager is None:
+            hwnd = await self._failure_window_handle()
+            if hwnd is None:
+                return None
+            image = await self.capture_win32(hwnd)
+        else:
+            if self.emulator_info is None:
+                return None
+            index = self.script_config.Game.EmulatorIndex
+            host_adb = await resolve_host_adb(self, index=index)
+            if host_adb is not None:
+                from PIL import Image
+
+                data = await host_adb.screencap_png()
+                with Image.open(io.BytesIO(data)) as source:
+                    image = source.convert("RGB")
+            else:
+                device_ref = resolve_device_ref(self.emulator_manager, index)
+                if device_ref is not None and device_ref.emulator_type == "avd":
+                    # 私有通道不可用时不能回落到共享 ADB server。
+                    return None
+                adb_path = self.emulator_manager.get_adb_path()
+                if not adb_path:
+                    return None
+                image = await self.capture_adb(adb_path, self.emulator_info.adb_address)
+        # 此后同步保存并回调，避免取消后后台保存线程交回迟到的图片。
+        return self._failure_capture.save(image, dir_name="maaend-failure")
+
+    async def _take_failure_shot(self) -> None:
+        shot = await self._failure_capture.run(self._capture_failure_shot, once=True)
+        if shot is not None:
+            self._record_error_screenshot(shot)
+
     async def final_task(self):
 
         if self.check_result != "Pass":
@@ -2724,6 +2847,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         completed = all(self.run_book.values()) and not self.update_failed
         await self.maaend_log_monitor.stop()
+        if not completed:
+            # 总时限或异常可能绕过主循环失败分支；必须赶在关游戏/模拟器之前。
+            await self._take_failure_shot()
         if (
             self.script_info.current_index == len(self.script_info.user_list) - 1
             and completed
