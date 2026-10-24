@@ -5276,7 +5276,7 @@ export default {
       cdkGet: '.',
       cdkPlaceholder: 'Enter the MirrorChyan CDK to use the Mirror source',
       cdkHint:
-        'Used only for updating MAS itself; MAA and MaaFW script project updates take their own CDK on their script edit pages',
+        'Used for updating MAS itself and the modified AVD; MAA and MaaFW script project updates take their own CDK on their script edit pages',
       cdkGetLink: 'Get a MirrorChyan CDK',
       linkSection: 'Project links',
       site: 'Website',

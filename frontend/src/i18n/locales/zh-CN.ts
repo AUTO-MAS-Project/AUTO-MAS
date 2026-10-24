@@ -5229,7 +5229,8 @@ export default {
       cdkSite: 'Mirror 酱官网',
       cdkGet: '获取',
       cdkPlaceholder: '使用Mirror源时请输入Mirror 酱CDK',
-      cdkHint: '仅用于 MAS 自身的更新；MAA 与 MaaFW 项目的更新请在各自脚本编辑页单独填写 CDK',
+      cdkHint:
+        '用于 MAS 自身和魔改 AVD 的更新；MAA 与 MaaFW 项目的更新请在各自脚本编辑页单独填写 CDK',
       cdkGetLink: '获取 Mirror 酱 CDK',
       linkSection: '项目链接',
       site: '软件官网',
