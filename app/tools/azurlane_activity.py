@@ -123,8 +123,14 @@ async def _wikitext(client: httpx.AsyncClient, page: str) -> str:
     return text if isinstance(text, str) else ""
 
 
-def _build_activity(row: re.Match[str], year: int) -> dict[str, Any] | None:
-    """把日历里的一行整理成卡片要的字段；起止不合法就返回 None"""
+def _build_activity(row: re.Match[str], now: datetime) -> dict[str, Any] | None:
+    """把日历里的一行整理成卡片要的字段；起止不合法就返回 None。
+
+    日历只写月日，年份得自己推：同一组月日在前一年、当年、次年各有一种落法，
+    取「现在正好落在区间内」的那种；没有进行中的，就取最近一个还没开始的，
+    再没有才取刚刚结束的。跨年（12 月开到 1 月）也在这里一并处理——只按当年
+    拼再给结束年 +1 的话，年初读跨年活动会把它整个挪到下一轮。
+    """
 
     page = row.group("page").strip()
     label = (row.group("label") or "").strip()
@@ -137,19 +143,38 @@ def _build_activity(row: re.Match[str], year: int) -> dict[str, Any] | None:
     start_day = int(row.group("start_day"))
     end_month = int(row.group("end_month"))
     end_day = int(row.group("end_day"))
+    ## 结束的月日写在开始之前（12.20-01.10）就是跨年
+    spans_year = (end_month, end_day) < (start_month, start_day)
 
-    try:
-        start = _at(start_month, start_day, 10, 0, year)
-        end = _at(end_month, end_day, 23, 59, year)
-    except ValueError:
-        ## 2 月 29 日之类的边界，日历写错就跳过这条
-        return None
-    ## 12 月开到 1 月的活动跨年
-    if end <= start:
+    candidates: list[tuple[datetime, datetime]] = []
+    for start_year in (now.year - 1, now.year, now.year + 1):
         try:
-            end = _at(end_month, end_day, 23, 59, year + 1)
+            start = _at(start_month, start_day, 10, 0, start_year)
+            end = _at(
+                end_month,
+                end_day,
+                23,
+                59,
+                start_year + 1 if spans_year else start_year,
+            )
         except ValueError:
-            return None
+            ## 2 月 29 日之类的边界，日历写错就跳过这一种落法
+            continue
+        candidates.append((start, end))
+
+    if not candidates:
+        return None
+
+    running = [item for item in candidates if item[0] <= now < item[1]]
+    if running:
+        start, end = running[-1]
+    else:
+        upcoming = sorted(
+            (item for item in candidates if item[0] > now), key=lambda item: item[0]
+        )
+        start, end = (
+            upcoming[0] if upcoming else max(candidates, key=lambda item: item[1])
+        )
 
     cover = WORLD_PATROL_COVER if WORLD_PATROL_KEYWORD in name else DEFAULT_COVER
 
@@ -175,6 +200,7 @@ async def fetch_azurlane_activities(*, force: bool = False) -> dict[str, Any] | 
     if not force and _cache is not None and time.time() - _cache[0] < CACHE_TTL_SECONDS:
         return _cache[1]
 
+    now = datetime.now(BEIJING)
     headers = WIKI_HEADERS
     try:
         async with httpx.AsyncClient(
@@ -182,28 +208,30 @@ async def fetch_azurlane_activities(*, force: bool = False) -> dict[str, Any] | 
         ) as client:
             text = WIKI_COMMENT.sub("", await _wikitext(client, CALENDAR_PAGE))
             if not text.strip():
-                logger.warning("碧蓝航线活动日历页内容为空")
-                return None
+                raise ValueError("活动日历页内容为空")
 
-            year = datetime.now(BEIJING).year
             activities: list[dict[str, Any]] = []
-            seen: set[str] = set()
+            ## 同名活动可能是不同场次（复刻），去重得连起止一起比
+            seen: set[tuple[str, str, str]] = set()
             for row in CALENDAR_ROW.finditer(text):
-                activity = _build_activity(row, year)
-                if activity is None or activity["name"] in seen:
+                activity = _build_activity(row, now)
+                if activity is None:
                     continue
-                seen.add(activity["name"])
+                key = (activity["name"], activity["startTime"], activity["endTime"])
+                if key in seen:
+                    continue
+                seen.add(key)
                 activities.append(activity)
 
             if not activities:
-                logger.warning("碧蓝航线活动日历页没有解析出活动")
-                return None
+                raise ValueError("活动日历页没有解析出活动")
 
     except Exception as e:
         logger.opt(exception=True).warning(
             f"获取碧蓝航线活动失败: {type(e).__name__}: {e}"
         )
-        return None
+        ## 取不到就给上次成功的结果：宁可显示可能过期的排期，也好过整块空着
+        return _cache[1] if _cache is not None else None
 
     data = {
         "version": "",

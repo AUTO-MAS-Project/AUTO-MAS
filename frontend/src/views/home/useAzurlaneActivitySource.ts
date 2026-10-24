@@ -79,6 +79,8 @@ export const useAzurlaneActivitySource = () => {
   const source = useHomeActivitySource<AzurlaneActivity[]>({
     // 日志里沿用原本的中文名字，不随界面语言变
     label: () => '碧蓝航线',
+    // 后端要现去 WIKI 取数，慢起来比其它源久，但也不能让卡片一直转
+    timeoutMs: 20_000,
     loadingOnInit: false,
     loadingOnStart: true,
     fetchData: async () => {
