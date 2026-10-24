@@ -26,6 +26,7 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -301,6 +302,21 @@ def main():
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
+        from app.core.history import history_store
+        from app.utils.constants import UTC4
+
+        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+        await history_store.initialize(
+            video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB * 1024 * 1024
+        )
+        await history_store.prune(
+            today=datetime.now(tz=UTC4).date(),
+            retention_days=Config.setting.Function.HistoryRetentionTime,
+        )
+
+        from app.services.obs_replay import ObsReplay
+
+        await ObsReplay.cleanup_temporary()
 
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
@@ -481,9 +497,14 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            await MainTimer.stop()
-
-            await TaskManager.stop_task("ALL")
+            stop_timer = asyncio.create_task(MainTimer.stop())
+            stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
+            try:
+                # 定时清理与用户收尾共用宽限；慢盘操作不能挡住历史服务的关闭期限。
+                await asyncio.wait({stop_timer, stop_tasks}, timeout=1)
+            finally:
+                await history_store.close()
+            await asyncio.gather(stop_timer, stop_tasks)
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
             from app.core.desktop_guard import DesktopGuard

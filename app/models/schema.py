@@ -1,7 +1,11 @@
 """跨模块公共契约；端点专用请求与响应在所属 API 模块声明。"""
 
+import math
 import re
+from datetime import date
+from pathlib import Path
 from typing import (
+    Annotated,
     Any,
     Dict,
     Generic,
@@ -12,17 +16,215 @@ from typing import (
     TypeVar,
     Union,
 )
+from uuid import UUID
 
 from pydantic import (
+    AwareDatetime,
     BaseModel,
     ConfigDict,
     Field,
     JsonValue,
     ValidationInfo,
+    WithJsonSchema,
     field_validator,
 )
 
 from app.utils.constants import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
+
+type HistoryCounterValue = int | float | dict[str, HistoryCounterValue]
+
+
+class HistoryCounterStatistic(BaseModel):
+    kind: Literal["counter"] = "counter"
+    # 现有客户端生成器不能编译递归 Record 别名；仅展开传输首层，Python仍完整校验数值树。
+    value: Annotated[
+        int | float | dict[str, Any],
+        WithJsonSchema(
+            {
+                "anyOf": [
+                    {"type": "number"},
+                    {"type": "object", "additionalProperties": {}},
+                ],
+                "description": "有限数值或任意深度的嵌套数值字典，所有叶子必须为数值",
+            }
+        ),
+    ]
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def validate_counter(cls, value):
+        def check(item):
+            if type(item) in (int, float):
+                if isinstance(item, float) and not math.isfinite(item):
+                    raise ValueError("计数必须是有限数值")
+            elif isinstance(item, dict):
+                for key, child in item.items():
+                    if not isinstance(key, str):
+                        raise ValueError("计数键必须是字符串")
+                    check(child)
+            else:
+                raise ValueError("计数只接受数值或嵌套数值字典")
+
+        check(value)
+        return value
+
+
+HistoryJsonValue = Annotated[
+    JsonValue,
+    WithJsonSchema(
+        {
+            "anyOf": [
+                {"type": "boolean"},
+                {"type": "number"},
+                {"type": "string"},
+                {"type": "array", "items": {}},
+                {"type": "object", "additionalProperties": {}},
+            ],
+            "nullable": True,
+        }
+    ),
+]
+
+
+class HistorySnapshotStatistic(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    kind: Literal["snapshot"] = "snapshot"
+    value: HistoryJsonValue
+
+
+class HistoryKeyedSnapshotStatistic(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    kind: Literal["keyed_snapshot"] = "keyed_snapshot"
+    value: dict[str, HistoryJsonValue]
+
+
+HistoryStatistic = Annotated[
+    HistoryCounterStatistic | HistorySnapshotStatistic | HistoryKeyedSnapshotStatistic,
+    Field(discriminator="kind"),
+]
+HistoryStatus = Literal["success", "error", "skipped", "cancelled"]
+HistoryAttachmentKind = Literal["log", "image", "video", "diagnostic"]
+
+
+class HistoryAttachmentInput(BaseModel):
+    path: Path
+    kind: HistoryAttachmentKind
+    role: str
+    display_name: str
+
+
+class HistoryWrite(BaseModel):
+    time: AwareDatetime
+    username: str
+    script_name: str
+    status: HistoryStatus
+    message: str
+    logs: str
+    data: dict[str, HistoryStatistic] = Field(default_factory=dict)
+    attachments: list[HistoryAttachmentInput] = Field(default_factory=list)
+
+
+class HistoryStorageIssue(BaseModel):
+    stage: Literal["mkdir", "write_log", "move", "copy", "quota", "cleanup", "database"]
+    attachment_index: int | None = None
+    source_path: str | None = None
+    target_path: str | None = None
+    error_type: str
+    message: str
+    recovered: bool = False
+
+
+class HistoryAttachment(BaseModel):
+    id: UUID
+    record_id: UUID
+    kind: HistoryAttachmentKind
+    role: str
+    display_name: str
+    relative_path: str | None = None
+    byte_size: int = 0
+    saved_via: Literal["move", "copy"] | None = None
+    available: bool = False
+    unavailable_reason: str | None = None
+
+
+class HistoryIndexItem(BaseModel):
+    id: UUID
+    time: AwareDatetime
+    username: str
+    script_name: str
+    status: HistoryStatus
+    message: str
+    storage_error_count: int = 0
+
+
+class HistoryRecord(HistoryIndexItem):
+    data: dict[str, HistoryStatistic] = Field(default_factory=dict)
+    attachments: list[HistoryAttachment] = Field(default_factory=list)
+    storage_errors: list[HistoryStorageIssue] = Field(default_factory=list)
+    log_path: str | None = None
+    has_log_fallback: bool = False
+
+
+class HistoryDetail(HistoryRecord):
+    log_content: str | None = None
+    log_available: bool = False
+    log_unavailable_reason: str | None = None
+
+
+class HistoryAttachmentFile(HistoryAttachment):
+    path: Path
+
+
+class HistoryAggregationItem(BaseModel):
+    time: AwareDatetime
+    data: dict[str, HistoryStatistic] = Field(default_factory=dict)
+
+
+class HistoryAggregateError(BaseModel):
+    key: str
+    message: str
+    input_indices: list[int] = Field(default_factory=list)
+    record_ids: list[UUID] = Field(default_factory=list)
+
+
+class HistoryAggregate(BaseModel):
+    data: dict[str, HistoryStatistic] = Field(default_factory=dict)
+    errors: list[HistoryAggregateError] = Field(default_factory=list)
+
+
+class HistoryBucket(BaseModel):
+    index: list[HistoryIndexItem] = Field(default_factory=list)
+    data: dict[str, HistoryStatistic] = Field(default_factory=dict)
+    aggregate_errors: list[HistoryAggregateError] = Field(default_factory=list)
+
+
+class HistoryRecordQuery(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    username: str | None = None
+    script_name: str | None = None
+    status: HistoryStatus | None = None
+    limit: int = Field(default=100, ge=1, le=10000)
+
+
+class HistoryUserOverview(BaseModel):
+    execute_count: int = 0
+    error_count: int = 0
+    latest_time: AwareDatetime | None = None
+    error_info: dict[UUID, str] = Field(default_factory=dict)
+
+
+class HistoryCleanupReport(BaseModel):
+    deleted_records: int = 0
+    deleted_videos: int = 0
+    reclaimed_bytes: int = 0
+    errors: list[HistoryStorageIssue] = Field(default_factory=list)
+
+
+class HistoryBackupSnapshot(BaseModel):
+    destination: Path
+    database: Path
+    history: Path
 
 
 class OutBase(BaseModel):
@@ -107,21 +309,6 @@ class UpdateDownloadSnapshot(BaseModel):
 
 class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-
-
-class ReplayRecord(BaseModel):
-    replayId: str = Field(..., description="回放唯一标识")
-    taskId: str | None = Field(default=None, description="调度任务标识")
-    scriptId: str | None = Field(default=None, description="脚本标识")
-    userId: str | None = Field(default=None, description="账号标识")
-    scriptName: str = Field(default="", description="脚本名称")
-    userName: str = Field(default="", description="账号名称")
-    failedAt: str = Field(..., description="失败时间")
-    reason: str = Field(..., description="失败原因")
-    filePath: str = Field(default="", description="MAS 保存的回放副本")
-    historyPaths: list[str] = Field(
-        default_factory=list, description="本轮关联历史记录"
-    )
 
 
 PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
@@ -1418,6 +1605,29 @@ class MSSPlanKey(BaseModel):
 
 
 __all__ = [
+    "HistoryCounterValue",
+    "HistoryCounterStatistic",
+    "HistorySnapshotStatistic",
+    "HistoryKeyedSnapshotStatistic",
+    "HistoryStatistic",
+    "HistoryStatus",
+    "HistoryAttachmentKind",
+    "HistoryAttachmentInput",
+    "HistoryWrite",
+    "HistoryStorageIssue",
+    "HistoryAttachment",
+    "HistoryIndexItem",
+    "HistoryRecord",
+    "HistoryDetail",
+    "HistoryAttachmentFile",
+    "HistoryAggregationItem",
+    "HistoryAggregateError",
+    "HistoryAggregate",
+    "HistoryBucket",
+    "HistoryRecordQuery",
+    "HistoryUserOverview",
+    "HistoryCleanupReport",
+    "HistoryBackupSnapshot",
     "OutBase",
     "TagItem",
     "ComboBoxItem",
@@ -1427,7 +1637,6 @@ __all__ = [
     "DeviceInfo",
     "UpdateDownloadSnapshot",
     "EmulatorDeleteIn",
-    "ReplayRecord",
     "PlanComboxConsumer",
     "MaaEndAutoEssencePlanKey",
     "MaaEndProtocolSpacePlanKey",

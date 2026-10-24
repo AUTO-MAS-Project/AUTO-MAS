@@ -22,7 +22,6 @@
 
 
 import asyncio
-import uuid
 from datetime import datetime
 from typing import (
     Annotated,
@@ -48,6 +47,7 @@ from app.api.notification_dependencies import (
 )
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
+from app.core.data_backup import create_data_backup
 from app.core.notify import HostNotificationService
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
@@ -55,7 +55,6 @@ from app.models.notification_ports import WebhookTester
 from app.models.schema import (
     ObsReplayCheckOut,
     OutBase,
-    ReplayRecord,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
     WebhookDeleteIn,
@@ -72,7 +71,6 @@ from app.models.schema import (
 from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
-from app.services.data_backup import create_data_backup
 from app.utils import debug_pattern, get_logger
 
 GlobalConfig = ConfigPayload[_config_models.GlobalConfig]
@@ -175,7 +173,7 @@ class NotifyChannelsOut(OutBase):
 
 
 class ObsReplaySaveOut(OutBase):
-    replay: ReplayRecord | None = None
+    capture_path: str | None = None
 
 
 class WebhookTestIn(WebhookInBase):
@@ -256,14 +254,10 @@ async def save_obs_replay() -> ObsReplaySaveOut:
     from app.services.obs_replay import ObsReplay
 
     try:
-        record = ReplayRecord(
-            replayId=str(uuid.uuid4()),
-            scriptName="手动测试",
-            failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            reason="试存 OBS 回放",
+        path = await ObsReplay.capture(
+            Config.obs_replay_options(), temporary_copy=False
         )
-        replay = await ObsReplay.save(Config.obs_replay_options(), record)
-        return ObsReplaySaveOut(replay=replay)
+        return ObsReplaySaveOut(capture_path=str(path))
     except Exception as error:
         return ObsReplaySaveOut(code=500, status="error", message=str(error))
 
