@@ -1,9 +1,13 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
-import type { Emulator2AvdComponentItem, Emulator2AvdPrecheckItem } from '@/api'
+import type {
+  Emulator2AvdComponentItem,
+  Emulator2AvdPrecheckItem,
+  Emulator2AvdUpdateStatusOut,
+} from '@/api'
 
 // ---- 实例选项 ----
 
@@ -79,7 +83,7 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
     version: item.version ?? '',
     localSdk: installed && Boolean(item.localSdk),
     testPackage: installed && Boolean(item.testPackage),
-    /** 内测包编号（``mas-19``），只有自编版才有 */
+    /** 装着的内测包版本（``0.32.1``，后端已按更新器的规则算好），只有自编版才有 */
     build: item.build ?? '',
     /** 是自编版但内测包编号太旧或读不到 */
     outdated: Boolean(item.outdatedTestPackage),
@@ -89,3 +93,33 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 /** 这个根目录是不是已经在配置里了（路径写法不同也算同一个）。 */
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
+
+// ---- 更新 ----
+
+/**
+ * 版本给人看的写法：后端给的是版本身份 ``v0.33.0``（和 tag、清单一致），界面去掉 ``v`` 显示成
+ * ``0.33.0``，不再写 ``mas-N``。
+ */
+export const versionText = (version?: string | null) => (version ?? '').replace(/^v(?=\d)/, '')
+
+/** 能不能点「更新」：不在更新中，且有新版本（不要求更新 AUTO-MAS）或已经下好一版。 */
+export const canUpdate = (status: Emulator2AvdUpdateStatusOut) =>
+  !status.busy &&
+  Boolean(status.updatable) &&
+  (Boolean(status.preparedVersion) || (Boolean(status.updateAvailable) && !status.requiredAutoMas))
+
+/**
+ * 更新区那一个按钮显示成什么（照 MFW 项目更新：先「检查更新」，查到新版本才能更新）：
+ * 更新中不显示；已经下好一版 → 「换上已下载好的 …」；这次打开后点过「检查更新」、查成功且有新版本 →
+ * 「更新到 …」；其余（还没查、已是最新、查失败）→ 「检查更新」。
+ */
+export const updateButton = (
+  status: Emulator2AvdUpdateStatusOut,
+  checked: boolean
+): 'install' | 'update' | 'check' | null => {
+  if (status.busy || !status.updatable) return null
+  if (status.preparedVersion) return 'install'
+  if (checked && !status.checkError && status.updateAvailable && !status.requiredAutoMas)
+    return 'update'
+  return 'check'
+}

@@ -193,6 +193,12 @@ export type { Emulator2AvdInstanceOptionsOut } from './models/Emulator2AvdInstan
 export type { Emulator2AvdPrecheckItem } from './models/Emulator2AvdPrecheckItem';
 export type { Emulator2AvdStatusIn } from './models/Emulator2AvdStatusIn';
 export type { Emulator2AvdStatusOut } from './models/Emulator2AvdStatusOut';
+export type { Emulator2AvdUpdateActionOut } from './models/Emulator2AvdUpdateActionOut';
+export type { Emulator2AvdUpdateIn } from './models/Emulator2AvdUpdateIn';
+export type { Emulator2AvdUpdateProgress } from './models/Emulator2AvdUpdateProgress';
+export type { Emulator2AvdUpdateResult } from './models/Emulator2AvdUpdateResult';
+export type { Emulator2AvdUpdateStatusIn } from './models/Emulator2AvdUpdateStatusIn';
+export type { Emulator2AvdUpdateStatusOut } from './models/Emulator2AvdUpdateStatusOut';
 export type { Emulator2BatchResult } from './models/Emulator2BatchResult';
 export type { Emulator2DeviceItem } from './models/Emulator2DeviceItem';
 export type { Emulator2DevicesIn } from './models/Emulator2DevicesIn';

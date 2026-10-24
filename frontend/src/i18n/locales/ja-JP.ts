@@ -4632,7 +4632,7 @@ export default {
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
       cdkHint:
-        'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
+        'MAS 自身と改造 AVD の更新に使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',

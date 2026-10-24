@@ -37,6 +37,16 @@ from app.utils.update_files import file_size, native_path
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
 
+MIRROR_RESOURCE_API = "https://mirrorchyan.com/api/resources"
+
+
+class MirrorResourceError(RuntimeError):
+    """Mirror 酱返回了非 0 的业务码；``code`` 留给要按码分别处理的调用方。"""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(f"Mirror酱 code={code}: {message}")
+        self.code = code
+
 
 async def request_mirror_resource(
     resource_id: str,
@@ -44,13 +54,17 @@ async def request_mirror_resource(
     params: Mapping[str, str],
     proxy: httpx.Proxy | None = None,
     timeout: float = 10,
+    api_root: str = MIRROR_RESOURCE_API,
 ) -> dict[str, Any]:
-    """查询 Mirror 资源，校验响应和业务码，返回完整响应体。"""
+    """查询 Mirror 资源，校验响应和业务码，返回完整响应体。
+
+    业务码非 0 抛 :class:`MirrorResourceError`。``api_root`` 只供测试换成本地模拟服务。
+    """
     async with httpx.AsyncClient(
         proxy=proxy, follow_redirects=True, timeout=timeout
     ) as client:
         response = await client.get(
-            f"https://mirrorchyan.com/api/resources/{resource_id}/latest",
+            f"{api_root.rstrip('/')}/{resource_id}/latest",
             params={"user_agent": "AutoMasGui", **params},
         )
     payload = response.json()
@@ -61,7 +75,7 @@ async def request_mirror_resource(
         raise RuntimeError(f"Mirror酱响应 code 非整数: {code!r}")
     if code != 0:
         message = MIRROR_ERROR_INFO.get(code, str(payload.get("msg", "")))
-        raise RuntimeError(f"Mirror酱 code={code}: {message}")
+        raise MirrorResourceError(code, message)
     if not response.is_success:
         # raise_for_status 的异常会包含完整 URL，查询参数中可能带有 CDK。
         raise RuntimeError(f"Mirror酱 HTTP 响应异常: {response.status_code}")

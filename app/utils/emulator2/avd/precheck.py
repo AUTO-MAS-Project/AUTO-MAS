@@ -24,7 +24,7 @@
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
 - **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
-- **组件**：平台工具、系统镜像都要在（随内测包提供，MAS 不下载）；缺了写明缺哪一项。拦截。
+- **组件**：平台工具、系统镜像都要在（MAS 不下载，由包里的「补全组件.bat」补齐）；缺了写明缺哪一项、怎么补。拦截。
 - **模拟器版本**：只支持魔改 AVD 内测包里的自编版（``components.emulator_self_built``），且内测包编号
   （``Pkg.BuildId=mas-<编号>``）不低于 ``MIN_MOD_AVD_BUILD``；谷歌原版
   与没有模拟器都拒绝。拦截。
@@ -56,16 +56,14 @@ from app.utils import get_logger
 
 from . import host
 from .components import (
-    FULL_PACKAGE_ADVICE,
+    FETCH_COMPONENTS_ADVICE,
     avd_home,
     component_installed,
     emulator_build_ok,
     emulator_exe,
     emulator_present,
     emulator_self_built,
-    mod_build_label,
     read_emulator_version,
-    read_mod_build,
 )
 from .constants import (
     DEFAULT_MEMORY_MB,
@@ -77,6 +75,7 @@ from .constants import (
     VULKAN_PROBE_TIMEOUT_CACHE_SECONDS,
     VULKAN_PROBE_TIMEOUT_SECONDS,
 )
+from .update_source import ModAvdVersion, local_version_text
 
 logger = get_logger("魔改 AVD 电脑检查")
 
@@ -192,20 +191,22 @@ def emulator_item(root: str | Path) -> PrecheckItem:
         )
     version = read_emulator_version(root) or "版本未知"
     if emulator_self_built(root):
-        # 能力探测过了，还要内测包编号够新（Pkg.BuildId=mas-<编号>），两项都要满足
-        label = mod_build_label(read_mod_build(root))
+        # 能力探测过了，还要内测包编号够新（Pkg.BuildId=mas-<编号>），两项都要满足。
+        # 给人看的版本一律写 0.32.1（和更新器同一规则），不写 mas-N
+        shown = local_version_text(root)
         if emulator_build_ok(root):
             return PrecheckItem(
-                "emulator", title, True, True, f"内测包 {label}（{version}）"
+                "emulator", title, True, True, f"内测包 {shown}（{version}）"
             )
+        minimum = ModAvdVersion.of_build(MIN_MOD_AVD_BUILD).display
         return PrecheckItem(
             "emulator",
             title,
             False,
             True,
-            f"内测包版本过旧（{label or '未标版本号'}）",
-            f"请更新到 {mod_build_label(MIN_MOD_AVD_BUILD)} 或更新的版本：把新包里的 "
-            "sdk\\emulator 文件夹整个替换进来，实例和游戏数据不受影响",
+            f"内测包版本过旧（{shown or '未标版本号'}）",
+            f"请更新到 {minimum} 或更新的版本：在模拟器页这个魔改 AVD "
+            "的「管理与更新」里点「更新」，实例和游戏数据不受影响",
         )
     return PrecheckItem(
         "emulator",
@@ -218,7 +219,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
 
 
 def components_item(root: str | Path) -> PrecheckItem:
-    """平台工具、系统镜像都要在（随内测包提供，MAS 不下载）。模拟器本身见 :func:`emulator_item`。拦截。"""
+    """平台工具、系统镜像都要在（MAS 不下载，由包里的「补全组件.bat」补齐）。模拟器本身见 :func:`emulator_item`。拦截。"""
     title = "组件"
     missing = [c.name for c in REQUIRED_COMPONENTS if not component_installed(root, c)]
     if not missing:
@@ -235,7 +236,7 @@ def components_item(root: str | Path) -> PrecheckItem:
         False,
         True,
         f"这个目录里缺少：{'、'.join(missing)}",
-        FULL_PACKAGE_ADVICE,
+        FETCH_COMPONENTS_ADVICE,
     )
 
 
