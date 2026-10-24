@@ -217,8 +217,8 @@ class HistoryStore:
             raise HistoryStorageError("历史服务正在关闭，归档已停止")
         connection = sqlite3.connect(self.database, timeout=1)
         connection.row_factory = sqlite3.Row
-        # 取消可能发生在 Python 最后一次检查与 SQLite 真正提交之间。
-        # 每条指令都检查关闭信号，阻止已废弃的事务随后继续提交。
+        # 每条虚拟机指令尽早检查关闭信号；已进入底层 I/O 的提交仍可能完成，
+        # 因此关闭超时只能报告保存状态未确认。
         connection.set_progress_handler(lambda: int(cancel.is_set()), 1)
         connection.execute("PRAGMA foreign_keys=ON").close()
         connection.execute("PRAGMA synchronous=FULL").close()
@@ -368,7 +368,7 @@ class HistoryStore:
         await self._run(initialize_storage)
 
     async def close(self, *, after: asyncio.Task[None] | None = None) -> None:
-        """等待用户收尾，存储操作阻塞时仍按期限取消并关闭。"""
+        """等待用户收尾；阻塞操作按期限请求取消，超时则保留保存状态未确认。"""
 
         try:
             while after is not None and not after.done():
