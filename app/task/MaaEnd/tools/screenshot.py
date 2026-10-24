@@ -15,7 +15,7 @@ type Win32Capture = Callable[[int], Awaitable["Image.Image | None"]]
 async def capture_game_window(
     game_path: Path, capture_win32: Win32Capture
 ) -> "Image.Image | None":
-    """仅截取 Game.Path 对应的真实进程窗口，拒绝同名的其他安装。"""
+    """仅截取 Game.Path 对应的唯一有效窗口，多候选时跳过补截。"""
 
     import psutil
     import win32gui
@@ -26,7 +26,7 @@ async def capture_game_window(
         return None
 
     def find_window() -> tuple[int, psutil.Process] | None:
-        candidates: list[tuple[int, int, psutil.Process]] = []
+        candidates: list[tuple[int, psutil.Process]] = []
 
         def collect(hwnd: int, _: int) -> bool:
             try:
@@ -39,16 +39,16 @@ async def capture_game_window(
                 left, top, right, bottom = win32gui.GetClientRect(hwnd)
                 area = (right - left) * (bottom - top)
                 if area > 0:
-                    candidates.append((area, hwnd, process))
+                    candidates.append((hwnd, process))
             except (OSError, psutil.Error):
                 pass
             return True
 
         win32gui.EnumWindows(collect, 0)
-        if not candidates:
+        # 同路径多个窗口无法确认任务归属，不能按面积猜测。
+        if len(candidates) != 1:
             return None
-        _, hwnd, process = max(candidates, key=lambda item: item[0])
-        return hwnd, process
+        return candidates[0]
 
     target = await asyncio.to_thread(find_window)
     if target is None:

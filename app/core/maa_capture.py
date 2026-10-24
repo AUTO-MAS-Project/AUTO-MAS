@@ -81,6 +81,9 @@ async def _capture_controller(
             if abandoned.is_set():
                 return None
             controller = create_controller()
+            # SDK 默认缩放到短边 720；诊断截图保留设备或窗口的原始尺寸。
+            if not controller.set_screenshot_use_raw_size(enable=True):
+                raise RuntimeError("设置原尺寸截图失败")
             if not controller.post_connection().wait().succeeded:
                 raise RuntimeError("连接设备失败")
             if abandoned.is_set():

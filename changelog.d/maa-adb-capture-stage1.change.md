@@ -1,2 +1,2 @@
 project: notify
-MAA 与 MaaEnd 失败通知支持补截画面，手动停止不再补截。
+MAA 与 MaaEnd 失败通知支持原尺寸补截，窗口不明确或手动停止时跳过。
