@@ -230,8 +230,8 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { usePlanComboxOptions } from '@/composables/usePlanComboxOptions'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { comboxLabel } from '@/utils/comboxLabel'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -393,8 +393,11 @@ const isCustomStage = (value: string) => {
   return !predefinedStage
 }
 
-// 关卡配置模式选项
-const stageModeOptions = ref<any[]>([{ label: t('edit.fixed'), value: 'Fixed' }])
+// 关卡配置模式选项（本地化由 composable 统一处理，失败时保留固定项兜底）
+const { options: stageModeOptions, loadOptions: loadStageModeOptions } = usePlanComboxOptions(
+  PlanComboxIn.consumer.MAA,
+  [{ label: t('edit.fixed'), value: 'Fixed' }]
+)
 
 // 计划模式状态
 const isPlanMode = computed(() => {
@@ -1190,21 +1193,6 @@ const loadCultivatePreview = async (targetsJson: string) => {
     cultivatePreviewError.value = '需求计算失败'
   } finally {
     if (seq === cultivatePreviewSeq) cultivatePreviewLoading.value = false
-  }
-}
-
-const loadStageModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAA,
-    })
-    if (response && response.code === 200 && response.data) {
-      stageModeOptions.value = response.data.map(item => ({ ...item, label: comboxLabel(item) }))
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载关卡配置模式选项失败: ${errorMsg}`)
-    // 保持默认的固定选项
   }
 }
 

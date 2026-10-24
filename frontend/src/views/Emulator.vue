@@ -23,6 +23,7 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
+import { nameNewEmulator } from '@/views/Emulator/emulatorNaming'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
@@ -331,31 +332,11 @@ const loadEmulators = async () => {
   }
 }
 
-// 新模拟器的默认名。后端 app/models/config/emulator.py:102 的 default_factory 是中文「新模拟器」，
-// 英文/日文界面下新标签直接显示中文；这里按界面语言改名，并避开已有名字，用户才看得懂这个标签是谁。
-const nextEmulatorName = () => {
-  const base = t('emulator.defaultName')
-  const existing = new Set(
-    emulatorIndex.value.map(item => String(emulatorData.value[item.uid]?.Info?.Name ?? ''))
-  )
-  if (!existing.has(base)) return base
-  for (let index = 2; index < 1000; index += 1) {
-    const candidate = `${base} ${index}`
-    if (!existing.has(candidate)) return candidate
-  }
-  return base
-}
-
-// 添加模拟器
 const handleAdd = async () => {
   try {
     const response = await Service.addEmulatorApiEmulatorAddPost()
     if (response.code === 200) {
-      await Service.updateEmulatorApiEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
-        data: { Info: { Name: nextEmulatorName() } },
-      })
-      await invalidateEmulatorOptions()
+      await nameNewEmulator(response.emulatorId, emulatorIndex.value, emulatorData.value)
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId

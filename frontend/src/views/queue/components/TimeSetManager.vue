@@ -56,15 +56,10 @@
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
               <a-switch
-                :checked="record.enabled"
+                v-model:checked="record.enabled"
                 size="small"
                 class="status-select"
-                @change="
-                  (checked: any) => {
-                    record.enabled = checked
-                    updateTimeSetStatus(record)
-                  }
-                "
+                @change="updateTimeSetStatus(record)"
               />
             </div>
             <div class="row-cell days-cell">

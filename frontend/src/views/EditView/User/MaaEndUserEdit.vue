@@ -236,7 +236,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { comboxLabel } from '@/utils/comboxLabel'
+import { usePlanComboxOptions } from '@/composables/usePlanComboxOptions'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
@@ -326,9 +326,11 @@ const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const essenceMenuOptions = ref<ComboBoxItem[]>([])
 const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
 const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
-])
+// 理智任务计划选项（本地化由 composable 统一处理，失败时保留固定项兜底）
+const { options: sanityModeOptions, loadOptions: loadSanityModeOptions } = usePlanComboxOptions(
+  PlanComboxIn.consumer.MAAEND,
+  [{ label: t('edit.fixed'), value: 'Fixed' }]
+)
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
 let sanityPlanLoadVersion = 0
@@ -606,21 +608,6 @@ const loadMaaEndOptions = async () => {
     }
   } finally {
     maaEndOptionsLoading.value = false
-  }
-}
-
-const loadSanityModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAAEND,
-    })
-    if (response?.code === 200 && response.data) {
-      sanityModeOptions.value = response.data
-        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
-        .map(item => ({ label: comboxLabel(item), value: item.value }))
-    }
-  } catch (error) {
-    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
