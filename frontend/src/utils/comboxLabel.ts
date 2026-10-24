@@ -11,7 +11,7 @@ import type { ComboBoxItem } from '@/api'
  * 前端统一在这里拼装本地化文案：
  * - labelKey   占位（未选择）与固定项，直接整条翻译；
  * - kind+name 队列/脚本项，本地化前缀 + 用户起的实体名（实体名不翻译）；
- * - kind      同时是稳定类别，isQueueTaskOption 让调度台不再靠 label 中文前缀判断。
+ * - kind      同时是稳定类别，isQueueTaskOption 优先按它判断（缺省见下方兜底）。
  * 兜底：旧后端（或没带新字段的接口）逐字回退 label，行为与改造前一致。
  */
 
@@ -35,12 +35,18 @@ export const comboxLabel = (item: ItemLike): string => {
 export const comboxOptions = <T extends ItemLike>(items: T[]): (T & { label: string })[] =>
   items.map(item => ({ ...item, label: comboxLabel(item) }))
 
-/** 队列任务？用 kind 判断，不再看 label 的中文前缀。 */
-export const isQueueTaskOption = (item: ItemLike | undefined): boolean => item?.kind === 'queue'
+/**
+ * 队列任务？优先 kind；旧后端响应没有 kind 时，沿用 label 的中文前缀兜底——
+ * 分类和展示走同一套兼容口径，否则旧响应能正常显示却被当成脚本任务（审查 #1627）。
+ */
+export const isQueueTaskOption = (item: ItemLike | undefined): boolean =>
+  Boolean(
+    item && (item.kind === 'queue' || (item.kind === undefined && item.label.startsWith('队列 - ')))
+  )
 
-/** 脚本任务？（kind 存在且不是占位/队列即脚本，与后端 get_task_combox 结构一致） */
+/** 脚本任务？（kind 存在且不是占位/队列即脚本；缺 kind 时即「非占位的非队列项」） */
 export const isScriptTaskOption = (item: ItemLike | undefined): boolean =>
-  Boolean(item && item.kind !== 'placeholder' && item.kind !== 'queue')
+  Boolean(item && item.kind !== 'placeholder' && !isQueueTaskOption(item))
 
 /** MaaEnd 脚本任务？（通知兜底用；队列任务恒 false） */
 export const isMaaEndTaskOption = (item: ItemLike | undefined): boolean =>

@@ -568,7 +568,7 @@ const initPlans = async () => {
 
       let planName = planData.Info?.Name || ''
       if (!planName || isDefaultPlanName(planType, planName, key => t(key))) {
-        planName = generateUniquePlanName(planType, allPlanNames)
+        planName = generateUniquePlanName(planType, allPlanNames, key => t(key))
       }
 
       allPlanNames.push(planName)
