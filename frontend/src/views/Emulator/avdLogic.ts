@@ -1,9 +1,13 @@
 /**
- * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态。
+ * 魔改 AVD 面板的纯逻辑：新建实例的选项、开机前检查的分级、组件状态、更新按钮与标记。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
-import type { Emulator2AvdComponentItem, Emulator2AvdPrecheckItem } from '@/api'
+import type {
+  Emulator2AvdComponentItem,
+  Emulator2AvdPrecheckItem,
+  Emulator2AvdUpdateStatusOut,
+} from '@/api'
 
 // ---- 实例选项 ----
 
@@ -89,3 +93,34 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 /** 这个根目录是不是已经在配置里了（路径写法不同也算同一个）。 */
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
+
+// ---- 更新 ----
+
+/** 版本的显示写法：``mas-33（v33.0.0）``；只有一样时就显示那一样。 */
+export const versionLabel = (build?: string | null, version?: string | null) =>
+  build && version ? `${build}（${version}）` : build || version || ''
+
+/** 还能取消的阶段（换上一旦开始就不能取消）。 */
+const CANCELLABLE_STAGES = new Set(['downloading', 'extracting', 'verifying'])
+
+/** 更新区的两个按钮：有新版本（或已经下好一版）时能点「更新」；下载、解包、核对中能「取消」。 */
+export const updateActions = (status: Emulator2AvdUpdateStatusOut) => {
+  const busy = Boolean(status.busy)
+  return {
+    update:
+      !busy &&
+      Boolean(status.updatable) &&
+      (Boolean(status.preparedVersion) ||
+        (Boolean(status.updateAvailable) && !status.requiredAutoMas)),
+    cancel: busy && CANCELLABLE_STAGES.has(status.progress?.stage ?? ''),
+  }
+}
+
+/** 路径卡片上的更新标记：低于最低要求 → 需要更新；有新版本 → 有新版本；否则不标。 */
+export const updateBadge = (status: Emulator2AvdUpdateStatusOut) => {
+  if (!status.updatable) return null
+  if (status.belowMinimum) return { kind: 'outdated' as const, version: status.minimumBuild ?? '' }
+  if (status.updateAvailable)
+    return { kind: 'available' as const, version: status.latestBuild ?? '' }
+  return null
+}

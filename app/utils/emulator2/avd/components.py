@@ -20,9 +20,10 @@
 
 """魔改 AVD 根目录：路径、元数据（``mas-avd.json``）与组件检查。
 
-组件全部随模拟器内测包提供（模拟器、平台工具、系统镜像，可选的轻量桌面），MAS **不下载任何组件**。
+模拟器和轻量桌面随魔改 AVD 发布包提供；平台工具、系统镜像是 Google 的，由包里的「补全组件.bat」从官方渠道
+下载。MAS 不下载组件，只有模拟器本体（``sdk\\emulator``）可以由更新器（:mod:`.updater`）换成 GitHub 上的新版。
 这里只检查根目录里它们在不在：关键文件、模拟器是不是我们的自编版、内测包编号够不够新。
-缺了就明确说缺哪一项，让用户换完整的内测包。
+缺了就明确说缺哪一项、怎么补。
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -65,16 +67,32 @@ _KEY_FILES = {
     "system-image": ("system.img", "vendor.img", "kernel-ranchu", "ramdisk.img"),
 }
 
-#: 组件不全时给用户的建议（MAS 不下载组件）。
-FULL_PACKAGE_ADVICE = "请使用完整的模拟器内测包"
+#: 平台工具（adb）、系统镜像不全时给用户的指引（MAS 不下载组件）：Google 的组件不随魔改 AVD 发布包分发，
+#: 由包里的「补全组件.bat」（``tools\fetch-components.ps1``）从官方渠道下载。
+FETCH_COMPONENTS_ADVICE = (
+    "双击魔改 AVD 根目录里的「补全组件.bat」：它会先显示《Android 软件开发套件许可协议》，输入 y 同意后"
+    "从官方渠道下载 adb 和系统镜像（约 1.5 GB，中断了再运行会接着下），看到「完成」后回来点「检查」"
+)
+#: 模拟器本身缺着时：发布包要整个解压到这个根目录
+PACKAGE_ADVICE = (
+    "模拟器要用魔改 AVD 的发布包：从 https://github.com/ModAVD/ModAVD/releases 下载 "
+    "ModAVD-<版本>-win-x64.zip，整个解压到这个目录"
+)
 
 
 # ---- 根目录与元数据 --------------------------------------------------------
 
 
 def root_key(root: str | Path) -> str:
-    """根目录的规范化键，按它去重。"""
-    return os.path.normcase(os.path.abspath(str(root)))
+    """根目录的规范化键，按它去重、按它查各张按根目录记的表（开机中、正在换上、更新状态与锁……）。
+
+    按真实路径算（解开目录链接 / 符号链接）：管理器的根目录取自 ``Path(主程序).resolve()``，配置里登记的
+    却可能是链接或别的写法，两边必须算出同一个键。路径不在时 ``realpath`` 照样给出规范化的结果。
+    """
+    try:
+        return os.path.normcase(os.path.realpath(str(root)))
+    except (OSError, ValueError):
+        return os.path.normcase(os.path.abspath(str(root)))
 
 
 def sdk_dir(root: str | Path) -> Path:
@@ -183,13 +201,34 @@ def root_from_manager_exe(manager_exe: str | Path) -> Path:
 
 
 def read_metadata(root: str | Path) -> dict[str, Any]:
-    """读 ``mas-avd.json``。不存在或读不出按空字典处理。"""
-    path = Path(root) / METADATA_FILE
+    """读 ``mas-avd.json``。不存在或读不出按空字典处理。
+
+    用 ``utf-8-sig`` 读：Windows PowerShell 5.1 写的 UTF-8 带 BOM，按 ``utf-8`` 读会整份解析失败。
+    要写回整份文件的地方用 :func:`read_metadata_strict`，读不出时不能拿空字典盖掉原文件。
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return read_metadata_strict(root)
+    except MetadataUnreadable:
         return {}
-    return data if isinstance(data, dict) else {}
+
+
+class MetadataUnreadable(RuntimeError):
+    """``mas-avd.json`` 在，但读不出或不是 JSON 对象。"""
+
+
+def read_metadata_strict(root: str | Path) -> dict[str, Any]:
+    """读 ``mas-avd.json``：不存在返回空字典；存在却读不出（被占用、不是 JSON、不是对象）抛
+    :class:`MetadataUnreadable`。"""
+    path = Path(root) / METADATA_FILE
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as e:
+        raise MetadataUnreadable(f"{path} 读不出：{e}") from e
+    if not isinstance(data, dict):
+        raise MetadataUnreadable(f"{path} 不是 JSON 对象")
+    return data
 
 
 def write_metadata(root: str | Path, data: dict[str, Any]) -> None:
@@ -198,7 +237,25 @@ def write_metadata(root: str | Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(".json.tmp")
     temp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(temp, path)
+    replace_with_retry(temp, path)
+
+
+#: 替换被别人正读着的文件时最多重试多久（秒）。
+_REPLACE_RETRY_SECONDS = 3.0
+
+
+def replace_with_retry(source: Path, target: Path) -> None:
+    """``os.replace``，目标正被别的线程 / 进程读着（Python 的 ``open`` 不带 FILE_SHARE_DELETE）时
+    会报拒绝访问，稍等重试，最多 :data:`_REPLACE_RETRY_SECONDS` 秒。"""
+    deadline = time.monotonic() + _REPLACE_RETRY_SECONDS
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 def update_metadata(root: str | Path, **changes: Any) -> dict[str, Any]:
@@ -327,7 +384,12 @@ def qemu_has_self_built_mark(exe: str | Path) -> bool:
 
 def emulator_present(root: str | Path) -> bool:
     """实际运行用的 SDK 里模拟器的关键文件都在（不管是不是自编版）。"""
-    target = runtime_sdk_dir(root) / "emulator"
+    return emulator_files_present(runtime_sdk_dir(root) / "emulator")
+
+
+def emulator_files_present(emulator_dir: str | Path) -> bool:
+    """给定的 ``emulator`` 目录里模拟器的关键文件都在（更新时核对暂存的新版也用它）。"""
+    target = Path(emulator_dir)
     return all((target / name).is_file() for name in _KEY_FILES[EMULATOR_COMPONENT_ID])
 
 
@@ -343,7 +405,12 @@ def read_mod_build(root: str | Path) -> int | None:
     """内测包编号：``sdk\\emulator\\source.properties`` 的 ``Pkg.BuildId=mas-<编号>``。
 
     谷歌原版那里是一串纯数字的构建号，不算；没有这一行、写法不对都返回 ``None``。"""
-    props = _read_properties(runtime_sdk_dir(root) / "emulator" / "source.properties")
+    return read_mod_build_at(runtime_sdk_dir(root) / "emulator")
+
+
+def read_mod_build_at(emulator_dir: str | Path) -> int | None:
+    """同 :func:`read_mod_build`，但直接看给定的 ``emulator`` 目录（更新时核对暂存的新版用）。"""
+    props = _read_properties(Path(emulator_dir) / "source.properties")
     match = _MOD_BUILD_ID.fullmatch((props.get("Pkg.BuildId") or "").strip())
     return int(match.group(1)) if match else None
 
@@ -435,18 +502,23 @@ def install_status(root: str | Path) -> dict[str, Any]:
 
 
 def missing_components_message(missing: list[str]) -> str:
-    """缺组件时给用户的一句话：缺哪几项 + 用完整的内测包。"""
-    return f"这个目录里缺少：{'、'.join(missing)}。{FULL_PACKAGE_ADVICE}"
+    """缺组件时给用户的一句话：缺哪几项 + 怎么补（模拟器本身要放发布包，其余用「补全组件.bat」）。"""
+    advice = [PACKAGE_ADVICE] if EMULATOR_COMPONENT_NAME in missing else []
+    if any(name != EMULATOR_COMPONENT_NAME for name in missing):
+        advice.append(FETCH_COMPONENTS_ADVICE)
+    return f"这个目录里缺少：{'、'.join(missing)}。{'；'.join(advice)}"
 
 
 __all__ = [
-    "FULL_PACKAGE_ADVICE",
+    "FETCH_COMPONENTS_ADVICE",
+    "PACKAGE_ADVICE",
     "adb_exe",
     "adb_server_port",
     "avd_home",
     "component_installed",
     "emulator_build_ok",
     "emulator_exe",
+    "emulator_files_present",
     "emulator_present",
     "emulator_ready",
     "emulator_self_built",
@@ -459,8 +531,12 @@ __all__ = [
     "missing_components_message",
     "mod_build_label",
     "read_emulator_version",
+    "MetadataUnreadable",
     "read_metadata",
+    "read_metadata_strict",
     "read_mod_build",
+    "read_mod_build_at",
+    "replace_with_retry",
     "root_from_manager_exe",
     "root_key",
     "runtime_sdk_dir",

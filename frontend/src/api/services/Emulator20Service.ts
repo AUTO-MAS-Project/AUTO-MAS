@@ -8,6 +8,11 @@ import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
+import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
+import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
+import type { Emulator2AvdUpdateRootIn } from '../models/Emulator2AvdUpdateRootIn';
+import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
+import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
@@ -374,6 +379,70 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 根目录的更新状态
+     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时先问下载源（现在是
+     * GitHub）最新版本，4 小时缓存；查不到不算接口失败，原因写在 ``checkError``。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
+        requestBody: Emulator2AvdUpdateStatusIn,
+    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新魔改 AVD
+     * 一键更新：查最新版本，下载整包并按发布记录的 SHA-256 核对，解包后按清单逐文件核对，再换上。
+     * 有实例开着且 ``closeInstances`` 为 false 时不动手，返回 ``instances_running`` 和要关几台。
+     * 现在不能换上（有实例在开机、有任务在跑、文件被占用）时停在「已下载好」，下次直接换上。
+     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateApiEmulator2AvdUpdatePost(
+        requestBody: Emulator2AvdUpdateIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消魔改 AVD 更新下载
+     * 取消下载 / 解包 / 核对，已下载的部分留着，下次接着下。换上一旦开始不能取消。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateCancelApiEmulator2AvdUpdateCancelPost(
+        requestBody: Emulator2AvdUpdateRootIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update/cancel',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -62,7 +62,7 @@ from ..applaunch import (
 )
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
-from . import host, precheck
+from . import host, precheck, updater
 from .components import (
     component_installed,
     emulator_exe,
@@ -334,12 +334,13 @@ _OPENING: dict[str, asyncio.Event] = {}
 _OPENING_WAIT_EXTRA_SECONDS = 300.0
 
 
-async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event | None:
+async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event:
     """排到这台实例的 open：前面有 open 没做完就一个个等，轮到时登记自己的标记并返回它。
 
     一次置位会唤醒所有等待者，所以要循环：醒来后标记已被另一个等待者抢先登记，就接着等它。
     跳出循环和登记之间没有 ``await``，不会有两个同时登记。总共最多等 ``timeout`` 秒，
-    超时记日志、不登记（返回 ``None``），照常继续。
+    超时记日志、照样登记自己（顶替前一次的标记）再继续：「开机中」这张表是更新器判断能不能换上的
+    依据，不能有开机却不在表里的时候。前一次做完时只删仍是它自己的标记，不会删掉这一次的。
     """
     deadline = time.monotonic() + timeout
     started = time.monotonic()
@@ -357,7 +358,8 @@ async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event 
             logger.warning(
                 f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
             )
-            return None
+            waited = False
+            break
     if waited:
         logger.info(
             f"{label} 另一次启动已做完（等了 {time.monotonic() - started:.0f} 秒）"
@@ -778,7 +780,7 @@ class _AvdCore(DeviceBase):
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """开机并做开机后设置。同一台实例上的 open 排队：前一次还没做完（开机后最后一步会重启 zygote），
         后一次先等它，免得后一次先返回在线、调用方拉起游戏，随后被前一次的 zygote 重启结束。
-        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、照常往下走。"""
+        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、顶替前一次登记自己，照常往下走。"""
         idx = str(idx)
         instance = self._instance(idx)
         key = _instance_key(self.root, idx)
@@ -790,10 +792,9 @@ class _AvdCore(DeviceBase):
             await _wait_closing(key, f"魔改 AVD 实例 {idx}")
             return await self._open(idx, instance, key, max_wait)
         finally:
-            if mine is not None:
-                mine.set()
-                if _OPENING.get(key) is mine:
-                    del _OPENING[key]
+            mine.set()
+            if _OPENING.get(key) is mine:
+                del _OPENING[key]
 
     async def _open(
         self, idx: str, instance: AvdInstance, key: str, max_wait: float
@@ -875,6 +876,8 @@ class _AvdCore(DeviceBase):
         return " | ".join(tail)
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
+        if updater.swap_in_progress(self.root):
+            raise RuntimeError("魔改 AVD 正在换上新版，几秒后再开机")
         self._check_components()
         # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
         memory_mb = memory_for(instance_meta(self.root, idx))

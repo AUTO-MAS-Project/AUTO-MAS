@@ -61,6 +61,18 @@ CONTRACT: dict[str, frozenset[str]] = {
             "extractTotalBytes",
         }
     ),
+    "WSAvdUpdateProgressData": frozenset(
+        {
+            "root",
+            "stage",
+            "status",
+            "message",
+            "percent",
+            "downloadedBytes",
+            "totalBytes",
+            "speedBytesPerSec",
+        }
+    ),
     "WSUpdateCompletedData": frozenset({"file"}),
     "WSUpdateFailedData": frozenset({"message"}),
 }
