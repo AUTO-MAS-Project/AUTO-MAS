@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, onScopeDispose, ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { LoadingOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig, SettingMirrorCdkData } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import { resolveCdkHint } from '@/utils/mirrorCdk'
+import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
@@ -82,41 +82,6 @@ const handleBlur = async () => {
     savedDraftSequence = sequence
   }
 }
-
-const hint = computed(() => resolveCdkHint(state.value?.status, state.value?.expiredTime))
-const hintText = computed(() => {
-  if (checking.value) return t('setting.others.cdkChecking')
-  if (!state.value) return ''
-  if (state.value.status === 'error') return t('setting.others.cdkCheckFailed')
-  const value = hint.value
-  if (!value) return state.value.status === 'ok' ? t('setting.others.cdkValid') : ''
-  const date = value.dateText ?? ''
-  const remaining =
-    value.daysLeft === null || !date
-      ? ''
-      : value.daysLeft < 1
-        ? t('edit.cdkHintLessThanDay', { date })
-        : t('edit.cdkHintRemaining', { days: value.daysLeft, date })
-  switch (value.kind) {
-    case 'remaining':
-      return `${t('setting.others.cdkValid')} · ${remaining}`
-    case 'expired':
-      return date ? t('edit.cdkHintExpiredOn', { date }) : t('edit.cdkHintExpired')
-    case 'invalid':
-      return t('edit.cdkHintInvalid')
-    case 'quota':
-      return remaining ? t('edit.cdkHintQuotaRemaining', { remaining }) : t('edit.cdkHintQuota')
-    case 'mismatched':
-      return t('edit.cdkHintMismatched')
-    case 'blocked':
-      return t('edit.cdkHintBlocked')
-  }
-  return ''
-})
-const hintType = computed(() => {
-  if (checking.value) return 'secondary'
-  return state.value?.status !== 'ok' || hint.value?.warning ? 'warning' : 'success'
-})
 </script>
 
 <template>
@@ -149,20 +114,7 @@ const hintType = computed(() => {
       @update:value="handleInput"
       @blur="handleBlur"
     />
-    <div v-if="hintText" class="form-hint" role="status" aria-live="polite">
-      <a-typography-text :type="hintType">
-        <LoadingOutlined v-if="checking" />
-        {{ hintText }}
-      </a-typography-text>
-      <a-button
-        v-if="state?.status === 'error' && !checking"
-        type="link"
-        size="small"
-        @click="refresh"
-      >
-        {{ t('apiErrors.retry') }}
-      </a-button>
-    </div>
+    <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
     <div class="form-hint">
       {{ t('setting.others.cdkHint') }}
       <a
@@ -181,10 +133,6 @@ const hintType = computed(() => {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.form-hint :deep(.ant-typography) {
-  font-size: inherit;
 }
 
 .form-hint-link {
