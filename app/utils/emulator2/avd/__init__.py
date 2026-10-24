@@ -31,7 +31,8 @@
 - :mod:`.host`           宿主侧：硬件加速检查、内存预检、进程查找、控制台、私有 adb
 - :mod:`.manager`        ``DeviceBase`` 实现（启动调优、首次初始化、冻结看门狗）
 - :mod:`.service`        给 API 用的业务入口
-- :mod:`.update_source`  版本号、下载源（GitHub）
+- :mod:`.update_source`  版本号、下载源（Mirror 酱、GitHub）
+- :mod:`.update_range`   GitHub 的整包按区间只取变了的文件
 - :mod:`.update_stage`   更新的本机文件操作：解包、核对、换上、崩溃恢复
 - :mod:`.updater`        更新流程：查更新，「更新」一键下载、核对、换上，启动恢复
 """

@@ -29,15 +29,20 @@
    界面在用户确认「更新期间不会启动用到这个魔改 AVD 的脚本和实例」后才调。开始以后到结束（成功、
    失败都算）这个根目录一律不许开机（:func:`update_in_progress`，``manager._launch`` 据此拒绝），依次
    - 再查一次最新版本（不走缓存）；
-   - 选包（:func:`_pick_package`）：「更新源」不是 GitHub、又填了 Mirror 酱 CDK（MAS 全局的
-     ``Update.MirrorChyanCDK``）就向 Mirror 酱现要下载地址，本地正好是起点时要增量包；CDK 过期、
-     无效、次数用完、不含此资源，或 Mirror 酱出错时给出提示、改用 GitHub 的整包（8001「这个平台
-     没有包」不提示）。「更新源」选 GitHub 时填了 CDK 也不用，只走 GitHub；
-   - 下载到 ``<根>\\.update\\download``（同盘、断了下次续传），按发布记录 / Mirror 酱给的 SHA-256 核对；
-     Mirror 酱的地址过期就重新要一次；
+   - 选包（:func:`_pick_package`），优先顺序：「更新源」不是 GitHub 又填了 Mirror 酱 CDK（MAS 全局的
+     ``Update.MirrorChyanCDK``）→ 向 Mirror 酱现要下载地址，本地正好是起点时要增量包；否则 → GitHub
+     按区间增量；不行 → GitHub 整包。CDK 过期、无效、次数用完、不含此资源，或 Mirror 酱出错时给出
+     提示、改走 GitHub（同样先试按区间增量；8001「这个平台没有包」不提示）。「更新源」选 GitHub 时
+     填了 CDK 也不用；
+   - GitHub 按区间增量（:mod:`.update_range`）：读包的中央目录，和根目录逐文件比 CRC32 + 大小，只取回
+     变了的条目、没变的从本地复制。服务器不认 Range、变了的太多（取回量超过整包 40% 或 3000 个文件）、
+     拼好后核对不过或任何异常，都丢掉这一批改下整包（只退这一次）；已经有下了一半的整包时直接续传整包；
+   - 整包 / Mirror 酱的包下到 ``<根>\\.update\\download``（同盘），按发布记录 / Mirror 酱给的 SHA-256
+     核对。GitHub 断了下次续传；Mirror 酱不支持续传，断了在同一个地址上从头重下（最多 3 次），地址
+     过期才重新要一次；
    - 整包解到 ``pkg``；增量包按本地清单抄现有文件、按 ``changes.json`` 删改加，拼成整包的样子。然后按
      清单逐文件核对（旧版包没有清单，靠包的 SHA-256 + zip CRC），``sdk\\emulator`` 改名进 ``stage``
-     （:mod:`.update_stage`）。增量包拼出来核对不过就丢掉，改下全量包（只退这一次）；
+     （:mod:`.update_stage`）。Mirror 酱的增量包拼出来核对不过就丢掉，改下全量包（只退这一次）；
    - 换上。换上前再按进程查一次（挡 MAS 之外手动开的模拟器），还有程序开着模拟器文件就不换，
      停在「已下载好」，下次再点直接换上，不重新下载。
    有 MAS 任务在跑不再挡更新：开着的实例一开始就拒绝，更新中开机一律被拒，跑着的任务也开不了这个
@@ -72,6 +77,7 @@ from app.services.update_transport import download_resumable
 from app.utils import get_logger
 from app.utils.update_files import native_path
 
+from . import update_range
 from . import update_stage as stage
 from .components import (
     MetadataUnreadable,
@@ -743,6 +749,20 @@ async def _download(
     return final
 
 
+def _verify_and_stage(
+    root: Path, target: dict[str, Any], verifying: stage.Progress
+) -> dict[str, Any]:
+    """核对拼好的 ``pkg``（新写法版本必须有清单、逐文件比；模拟器的构建号与自编版标志），再把
+    ``sdk\\emulator`` 改名进 ``stage``。不写状态，由调用方核对通过后写。"""
+    version = parse_version(target["version"])
+    assert version is not None
+    verified = stage.verify_package(
+        stage.pkg_dir(root), version, tag=target["tag"], progress=verifying
+    )
+    stage.build_stage(root, version)
+    return {"verified": verified}
+
+
 def _stage_sync(
     runtime: _Runtime,
     archive: Path,
@@ -750,8 +770,7 @@ def _stage_sync(
     extracting: stage.Progress,
     verifying: stage.Progress,
 ) -> dict[str, Any]:
-    """整包解包 / 增量包拼成整包的样子 → 核对（新写法版本必须有清单、逐文件比；模拟器的构建号与
-    自编版标志）→ ``sdk\\emulator`` 改名进 ``stage``。不写状态，由调用方核对通过后写。"""
+    """整包解包 / 增量包拼成整包的样子，再核对、拼 ``stage``（:func:`_verify_and_stage`）。"""
     root = runtime.root
     asset = target["asset"]
     if asset.get("incremental"):
@@ -768,16 +787,97 @@ def _stage_sync(
             top_dir=asset["topDir"],
             progress=extracting,
         )
-    version = parse_version(target["version"])
-    assert version is not None
-    verified = stage.verify_package(
-        stage.pkg_dir(root),
-        version,
-        tag=target["tag"],
-        progress=verifying,
+    staged = _verify_and_stage(root, target, verifying)
+    mode = "incremental" if asset.get("incremental") else "full"
+    return {**staged, "files": files, "mode": mode}
+
+
+def _mb(size: int) -> str:
+    return f"{size / 1024**2:.1f} MB"
+
+
+def _range_allowed(root: Path, release: RemoteRelease) -> bool:
+    """GitHub 的整包才按区间取；已经有下好或下了一半的整包时直接用它（接着续传）。"""
+    asset = release.asset
+    if release.source != GITHUB_SOURCE or asset is None:
+        return False
+    folder = stage.download_dir(root)
+    return not (
+        (folder / asset.name).is_file() or (folder / f"{asset.name}.part").is_file()
     )
-    stage.build_stage(root, version)
-    return {"verified": verified, "files": files}
+
+
+async def _stage_by_range(
+    runtime: _Runtime, release: RemoteRelease, target: dict[str, Any]
+) -> dict[str, Any] | None:
+    """GitHub 的整包按区间只取变了的文件（:mod:`.update_range`），没变的从本地复制，拼出和整包解出来一样的
+    ``pkg``，再照样按新版清单逐文件核对、拼 ``stage``。
+
+    服务器不认 Range、变了的太多（取回量超过整包的 40% 或 3000 个文件）、取回的数据不对、拼好后核对不过，
+    或任何意外，都丢掉这一批、返回 ``None``，调用方改下整包（只退这一次）。
+    """
+    from app.core import Config
+
+    root = runtime.root
+    asset = release.asset
+    assert asset is not None
+    pkg = stage.pkg_dir(root)
+    try:
+        async with httpx.AsyncClient(
+            proxy=Config.proxy,
+            follow_redirects=True,
+            timeout=_DOWNLOAD_TIMEOUT,
+            headers={"User-Agent": "AutoMasGui"},
+        ) as client:
+            plan = await update_range.plan_range(client, asset, root)
+            label = f"从 GitHub 按区间下载 {len(plan.fetch)} 个文件（{_mb(plan.fetch_bytes)}）"
+            logger.info(
+                f"{root} 更新到 {release.version.display}：{label}，没变的 "
+                f"{len(plan.copy)} 个从本地复制（整包 {_mb(asset.size)}）"
+            )
+
+            async def on_bytes(done: int, total: int) -> None:
+                # 计划里每个条目按文件头余量估的长度，实际取回的会略多一点
+                _set(
+                    runtime,
+                    "downloading",
+                    message=_with_notice(runtime, label),
+                    percent=min(round(done * 100 / total, 1), 100.0) if total else None,
+                    downloadedBytes=min(done, total),
+                    totalBytes=total,
+                )
+                await _publish(runtime, force=done == 0)
+
+            await on_bytes(0, plan.fetch_bytes)
+            await update_range.fetch_changed(client, plan, pkg, on_bytes=on_bytes)
+        copying = "正在拼新版（没变的文件从本地复制）"
+        _set(runtime, "extracting", message=copying)
+        await _publish(runtime)
+        await asyncio.to_thread(
+            update_range.copy_unchanged,
+            root,
+            plan,
+            pkg,
+            _thread_progress(runtime, "extracting", copying),
+        )
+        staged = await asyncio.to_thread(
+            _verify_and_stage,
+            root,
+            target,
+            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+        )
+        return {**staged, "files": len(plan.fetch) + len(plan.copy), "mode": "range"}
+    except update_range.RangeUnavailable as e:
+        logger.info(f"{root} 这次不按区间取，改下整包：{e}")
+    except stage.PackageError as e:
+        logger.warning(f"{root} 按区间拼出来核对不过，改下整包：{e}")
+        _add_notice(runtime, "按区间拼出来核对不过，改下整包")
+    except Exception as e:  # noqa: BLE001 - 区间这一路任何意外都退回整包
+        logger.opt(exception=True).warning(f"{root} 按区间取出错，改下整包：{e}")
+    # 状态这时是「正在准备」，丢掉半成品不会留下可以安装的东西
+    await asyncio.to_thread(stage.remove_tree, pkg)
+    await asyncio.to_thread(stage.remove_tree, stage.stage_emulator_dir(root).parent)
+    return None
 
 
 class _NothingToDo(Exception):
@@ -801,6 +901,7 @@ def _discard_download(archive: Path) -> None:
 
 async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str, Any]:
     """下载 ``release`` 的包、拼好核对过，``state`` 停在 ``staged``，返回写进状态的 ``staged``。
+    GitHub 的整包先试按区间只取变了的文件（:func:`_stage_by_range`），不行再下整包。
 
     动 ``pkg`` / ``stage`` 之前先把状态改成「正在准备」，核对通过、``stage`` 拼好后才写 ``staged``；
     中途失败（含 MAS 退出）都丢掉暂存、回到空闲（下载的包留着，下次接着下；包本身核对不过的才丢）。
@@ -813,30 +914,34 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
     await asyncio.to_thread(stage.begin_staging, root, target)
     archive: Path | None = None
     try:
-        _set(
-            runtime,
-            "downloading",
-            message=_with_notice(runtime, label),
-            totalBytes=release.asset.size,
-        )
-        await _publish(runtime)
-        archive = await _download(
-            runtime,
-            release,
-            refresh=_mirror_refresher(release)
-            if release.source == MIRROR_SOURCE
-            else None,
-        )
-        _set(runtime, "extracting", message=unpack)
-        await _publish(runtime)
-        staged = await asyncio.to_thread(
-            _stage_sync,
-            runtime,
-            archive,
-            target,
-            _thread_progress(runtime, "extracting", unpack),
-            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
-        )
+        staged = None
+        if await asyncio.to_thread(_range_allowed, root, release):
+            staged = await _stage_by_range(runtime, release, target)
+        if staged is None:
+            _set(
+                runtime,
+                "downloading",
+                message=_with_notice(runtime, label),
+                totalBytes=release.asset.size,
+            )
+            await _publish(runtime)
+            archive = await _download(
+                runtime,
+                release,
+                refresh=_mirror_refresher(release)
+                if release.source == MIRROR_SOURCE
+                else None,
+            )
+            _set(runtime, "extracting", message=unpack)
+            await _publish(runtime)
+            staged = await asyncio.to_thread(
+                _stage_sync,
+                runtime,
+                archive,
+                target,
+                _thread_progress(runtime, "extracting", unpack),
+                _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+            )
         return await asyncio.to_thread(stage.finish_staging, root, target, staged)
     except BaseException as e:
         reason = "MAS 退出，没做完" if isinstance(e, asyncio.CancelledError) else str(e)
@@ -887,14 +992,19 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
         _add_notice(runtime, "增量包核对不过，改下全量包")
         picked = await _pick_package(runtime, release, full=True)
         staged = await _stage_release(runtime, picked)
-    checked = (
-        "按清单逐文件核对"
-        if staged["verified"] == "manifest"
-        else "旧版包没有清单，按 zip CRC 并核对了整包的 SHA-256"
+    if staged["verified"] == "manifest":
+        checked = "按清单逐文件核对"
+    elif staged.get("mode") == "range":
+        checked = "旧版包没有清单，按每个文件的 zip CRC 核对"
+    else:
+        checked = "旧版包没有清单，按 zip CRC 并核对了整包的 SHA-256"
+    how = (
+        "从 GitHub 按区间只取变了的"
+        if staged.get("mode") == "range"
+        else _download_label(picked)
     )
     logger.info(
-        f"{root} 的 {picked.version.display} 已拼好（{_download_label(picked)}，"
-        f"{staged['files']} 个文件，{checked}）"
+        f"{root} 的 {picked.version.display} 已拼好（{how}，{staged['files']} 个文件，{checked}）"
     )
 
 

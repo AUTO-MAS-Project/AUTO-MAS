@@ -37,7 +37,8 @@
   ``cdk``（用 MAS 全局的 ``Update.MirrorChyanCDK``，不另设）。不带 CDK 只能查版本；带 CDK 才给下载地址，
   可能是从 ``current_version`` 到新版的增量包。``min_automas`` 从它同步的 ``release_note`` 第一行读，
   和 GitHub 正文同一套解析。CDK 只在请求参数里，不进日志、错误信息和状态。
-- **GitHub**（:class:`GitHubReleaseSource`）：Mirror 酱查不到、出错、没有 CDK 时用它的整包。
+- **GitHub**（:class:`GitHubReleaseSource`）：Mirror 酱查不到、出错、没有 CDK 时用它的主包（先按区间只取
+  变了的文件，见 :mod:`.update_range`，不行再下整包）。
 
 **包**：从 0.32.1 起每版只发主包 ``ModAVD-<ver>-win-x64.zip``（没有顶层目录，包根就是 ModAVD 根目录，
 根上有 ``modavd-manifest.json``）、源码包 ``ModAVD-<ver>-sources.zip`` 和 ``SHA256SUMS.txt``。主包的文件名
