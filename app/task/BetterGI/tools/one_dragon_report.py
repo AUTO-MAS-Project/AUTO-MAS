@@ -54,9 +54,10 @@ _MAS_STEP_PREFIX = "MAS_STEP_"
 _BGI_STEP_TIME_RE = re.compile(r"\[(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
 _BGI_STEP_END_RE = re.compile(r'^→\s*"[^"]*任务结束"$')
 # OneDragonTaskItem 的任务失败/异常出口；不包含任务内部仍会重试的操作报错。
+# 文件日志使用 Serilog {Message}，字符串任务名可能被双引号包裹。
 _BGI_TASK_FAILURE_RE = re.compile(
-    r"^(?:领取邮件|合成树脂|自动秘境|自动首领讨伐|自动幽境危战|自动地脉花|"
-    r"领取尘歌壶奖励|领取每日奖励|领取纪行奖励)(?:执行异常|失败)[:：]"
+    r'^(?P<quote>"?)(?:领取邮件|合成树脂|自动秘境|自动首领讨伐|自动幽境危战|自动地脉花|'
+    r"领取尘歌壶奖励|领取每日奖励|领取纪行奖励)(?P=quote)(?:执行异常|失败)[:：]"
 )
 _BGI_TASK_RESULT_RE = re.compile(r"任务结果[:：]\s*(Unverified|Partial|Skipped)[，,]")
 # 步内异常信号；TaskRunner 的任务失败与 TaskControl 可恢复报错按日志来源区分。
