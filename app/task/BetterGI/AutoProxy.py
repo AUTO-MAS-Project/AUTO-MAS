@@ -1495,10 +1495,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
         exec_log.status = "Success!" if result["success"] else failure_reason
+        # 执行层整体失败后仍可能继续原生一条龙，已失败的步骤也必须进入最终汇总。
+        self.partial_failed_steps = failed_steps
         if result["success"] and failed_steps:
             # 有步骤失败并已跳过：按 2026-09-09 决策不判负（不重试、计入成功），但状态不能再
             # 报「成功」——否则出现「任务没跑完却显示成功」（2026-09-15 实机：地脉花未打）。
-            self.partial_failed_steps = failed_steps
             exec_log.status = f"部分失败：{failed_steps} 个步骤未完成（已跳过继续）"
 
         if result["success"]:
@@ -1935,6 +1936,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
+            history_status = log_item.status
             if log_item.status == "Success!":
                 content = "".join(log_item.content)
                 steps = _merge_one_dragon_reports(
@@ -1944,11 +1946,11 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 failed = sum(not step["ok"] for step in steps or [])
                 warnings = sum(bool(step.get("warning_text")) for step in steps or [])
                 if failed or warnings:
-                    log_item.status = (
+                    history_status = (
                         f"流程完成（有警告：{failed} 个步骤失败，{warnings} 项需关注）"
                     )
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            await Config.save_general_log(log_path, log_item.content, history_status)
             statistic_paths.append(log_path.with_suffix(".json"))
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
@@ -1956,22 +1958,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 日常相把战斗 4 项顶掉（2026-09-19 实机：通知只见「领取邮件/领取尘歌壶奖励/
         # 领取每日奖励」，执行层的幽境危战/地脉花/首领讨伐/秘境全看不见）。
         # 同一相的多轮日志只可能是重试，故每相只取一轮：成功轮优先，无成功轮时取最后一轮
-        # 能解析出步骤的（末轮可能在打出标记前就失败）。全部相都无步骤时整块省略。
+        # 能解析出步骤的（末轮可能在打出标记前就失败）。成功轮无步骤则不沿用旧轮。
         runs = list(self.cur_user_item.log_record.values())
 
         def _phase_steps(
             parser: Callable[[str], list[dict] | None], *, phase: str
         ) -> list[dict] | None:
-            """取某一相的步骤：成功轮优先，否则最近一轮能解析出步骤的轮次。"""
+            """取成功轮的步骤（可为空），否则取最近一轮能解析出的步骤。"""
             fallback: list[dict] | None = None
             for item in reversed(runs):
                 if item.phase != phase:
                     continue
                 steps = parser("".join(item.content))
+                if item.status == "Success!":
+                    # 成功轮没有可解析步骤时也不应沿用旧失败轮的结果。
+                    return steps
                 if not steps:
                     continue
-                if item.status == "Success!":
-                    return steps
                 if fallback is None:
                     fallback = steps
             return fallback
@@ -1989,7 +1992,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 parse_execution_layer_report(content),
             )
             if steps:
-                steps.sort(key=lambda step: content.find(f"[{step['start']}]"))
+                steps.sort(key=lambda step: step["log_line"])
                 for index, step in enumerate(steps, 1):
                     step["index"] = index
             return steps

@@ -228,6 +228,7 @@ def parse_one_dragon_report(
     （起止时间 HH:MM:SS）、``ok``（是否正常收尾且无任务级失败）、
     ``issue_count``/``issue_text``
     （步内可恢复异常数目与首条原因摘要，无异常为空串）。
+    ``log_line`` 是起始消息在原日志中的行号（从 0 开始），用于合并不同类型步骤。
     ``warning_text`` 保留未确认/部分完成或白名单异常，``skipped`` 保留上游正常跳过；
     两者均不替上游判负，呈现时也不显示为已确认成功；收尾领取状态检查仅作警告。
     没有步骤与奖励检查失败时返回 None，调用方据此省略分步区块。
@@ -247,6 +248,7 @@ def parse_one_dragon_report(
     logger_name = ""
     reward_issue = ""
     reward_time = ""
+    reward_line = 0
     reward_uncertain = False
 
     def finalize() -> dict:
@@ -257,7 +259,7 @@ def parse_one_dragon_report(
             "issue_text": cur["issue"][0].strip() if cur["issue"] else "",
         }
 
-    for raw in lines:
+    for line_index, raw in enumerate(lines):
         m = _BGI_STEP_TIME_RE.match(raw)
         if m:
             last_time = m.group(1)
@@ -286,6 +288,7 @@ def parse_one_dragon_report(
         ):
             reward_issue = line
             reward_time = last_time
+            reward_line = line_index
             reward_uncertain = "未领取" not in line
             pending_err = False
             continue
@@ -309,6 +312,7 @@ def parse_one_dragon_report(
                 "total": int(pm.group(2)),
                 "task": "",
                 "start": last_time,
+                "log_line": line_index,
                 "end": "",
                 "ok": True,
                 "issue": [],
@@ -342,7 +346,9 @@ def parse_one_dragon_report(
                 cur["task"] = _clean_step_task(line)
             if _note_step_warning_or_skip(step=cur, line=line, logger_name=logger_name):
                 continue
-            if any(h in line for h in _BGI_STEP_ISSUE_HINTS):
+            if _BGI_TASK_FAILURE_RE.match(line) or any(
+                h in line for h in _BGI_STEP_ISSUE_HINTS
+            ):
                 _note_step_issue(cur, line)
 
     if cur is not None:  # 日志结束仍停留在某一步（未收尾）→ 该步未完成
@@ -379,6 +385,7 @@ def parse_one_dragon_report(
                 "total": len(steps) + 1,
                 "task": "检查每日奖励",
                 "start": reward_time,
+                "log_line": reward_line,
                 "end": reward_time,
                 "issue": [],
                 "fatal": False,
@@ -462,6 +469,7 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             "total": 0,  # 收尾时统一回填（见末尾），此处占位
             "task": name or uid,
             "start": last_time,
+            "log_line": line_index,
             "end": "",
             "ok": True,
             "issue": [],
@@ -492,7 +500,7 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             )
         project = None
 
-    for raw in lines:
+    for line_index, raw in enumerate(lines):
         m = _BGI_STEP_TIME_RE.match(raw)
         if m:
             last_time = m.group(1)
@@ -583,6 +591,7 @@ def parse_execution_layer_report(log: str) -> list[dict] | None:
             project = {
                 "task": pm.group("name"),
                 "start": last_time,
+                "log_line": line_index,
                 "end": "",
                 "ok": True,
                 "issue": [],
