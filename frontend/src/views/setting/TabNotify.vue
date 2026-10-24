@@ -18,7 +18,7 @@ import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<boolean>
   testNotify: () => Promise<void>
   testingNotify: boolean
 }>()

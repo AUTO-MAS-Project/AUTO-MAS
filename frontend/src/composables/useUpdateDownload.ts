@@ -205,9 +205,16 @@ const receiveFailed = (reason: string) => {
   invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
+  // 后台下载（窗口已收起）中断时没有入口展示原因，立即重新打开下载窗口
+  const reopenModal =
+    !modalVisible.value &&
+    (status.value === 'downloading' ||
+      status.value === 'cancelling' ||
+      status.value === 'switchingSource')
   status.value = 'failed'
   failureReason.value = reason
   speed.value = 0
+  if (reopenModal) modalVisible.value = true
 }
 
 const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
@@ -281,8 +288,8 @@ export function disposeUpdateDownloadSubscriptions(): void {
   stopRuntimeMonitoring()
 }
 
-const start = async (version: string, data: ChangelogData) => {
-  logger.info(`开始下载: ${version}`)
+const start = async (version: string, data: ChangelogData, downloader?: 'builtin' | 'fluxdown') => {
+  logger.info(`开始下载: ${version}${downloader ? ` (指定下载器: ${downloader})` : ''}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
   latestVersion.value = version
@@ -294,7 +301,10 @@ const start = async (version: string, data: ChangelogData) => {
   startRuntimeMonitoring()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    const response = await Service.downloadUpdateApiUpdateDownloadPost(
+      version || undefined,
+      downloader
+    )
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
       receiveFailed(response.message || '下载请求失败')
@@ -376,6 +386,11 @@ const retry = async () => {
   await start(latestVersion.value, updateData.value)
 }
 
+/** 多次失败后在失败弹窗里给用户的显式选择：改用内置 httpx 重新下载 */
+const retryWithBuiltin = async () => {
+  await start(latestVersion.value, updateData.value, 'builtin')
+}
+
 const install = async () => {
   try {
     const response = await Service.installUpdateApiUpdateInstallPost()
@@ -425,6 +440,7 @@ export function useUpdateDownload() {
     open,
     switchToCnb,
     retry,
+    retryWithBuiltin,
     install,
     installLater,
     reset,

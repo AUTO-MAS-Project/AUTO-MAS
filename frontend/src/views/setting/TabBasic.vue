@@ -65,7 +65,7 @@ interface TabBasicProps {
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handlePauseHomeEffectsWhenRunningChange(_enabled: boolean): Promise<void>
-  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
+  handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<boolean>
 }
 
 const {

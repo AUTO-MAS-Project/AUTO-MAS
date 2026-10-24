@@ -1,4 +1,4 @@
-//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -337,6 +337,7 @@ export default {
     resetEverything: '重置全部',
     resetThisColor: '重置此颜色',
     retryDownload: '重试下载',
+    retryWithBuiltin: '改用内置 (httpx) 下载',
     preview: '预览效果',
     estimatedTimeLeft: '预计剩余时间',
     colors: '颜色配置',
@@ -5186,6 +5187,42 @@ export default {
       cdkPlaceholder: '使用Mirror源时请输入Mirror 酱CDK',
       cdkHint: '仅用于 MAS 自身的更新；MAA 与 MaaFW 项目的更新请在各自脚本编辑页单独填写 CDK',
       cdkGetLink: '获取 Mirror 酱 CDK',
+      downloader: '下载器',
+      downloaderBuiltin: '内置 (httpx)',
+      downloaderFluxdown: 'FluxDown CLI 多线程',
+      downloaderTip:
+        '选择更新包下载器；FluxDown 中断后重试会断点续传，连续失败时提示可切换内置下载器，Mirror 酱源固定使用内置下载器。便携包需放在 res/fluxdown-cli/ 或配置 FluxdownPath',
+      fluxdownSegments: '多线程分段数',
+      fluxdownSegmentsTip: '值越大并发越高，实际效果取决于目标服务器是否支持 Range 请求',
+      fluxdownTakeover: '接管所有脚本更新',
+      fluxdownTakeoverTip: '开启后所有自动化脚本的更新下载也走 FluxDown（预留开关）',
+      fluxdownServerMode: 'FluxDown 断点续传服务',
+      fluxdownServerModeTip:
+        '开启后由常驻的 FluxDown 服务下载，断网/失败后可从已下载分段续传；关闭则每次重新下载。与用户全量版 FluxDown 互不影响',
+      fluxdownPath: 'FluxDown 路径',
+      fluxdownPathTip: 'FluxDown CLI 所在文件夹；留空时自动查找 MAS 便携包与系统 PATH',
+      fluxdownPathPlaceholder: '留空自动查找 res/fluxdown-cli/',
+      fluxdownBrowse: '选择文件夹',
+      fluxdownDetect: '自动检测',
+      fluxdownDetectFound: '已检测到 FluxDown：{path}',
+      fluxdownDetectNotFound: '未在本机找到可用的 FluxDown',
+      fluxdownDetectFailed: 'FluxDown 自动检测失败',
+      fluxdownOnlyFullWarning:
+        '此Fluxdown程序为当前设备唯一程序，若使用此程序，则下载的更新会在Fluxdown的队列里记录。',
+      lastUpdateHistoryTip: '查看最近通过 FluxDown 完成的下载记录（最多保留 50 条）',
+      lastUpdateHistory: '下载历史',
+      viewHistory: '查看历史记录',
+      noHistory: '暂无下载历史',
+      historyExport: '导出日志',
+      historyExportDialogTitle: '导出下载日志',
+      historyExportSaveLabel: '保存',
+      historyExportSuccess: '下载日志已导出',
+      historyExportFailed: '导出下载日志失败',
+      historyStatusSuccess: '成功',
+      historyStatusFailed: '失败',
+      historyStatusChecksumFail: '校验失败',
+      historyStatusInterrupted: '中断',
+      historyStatusFluxdownFallback: '已回退内置下载',
       linkSection: '项目链接',
       site: '软件官网',
       siteDesc: '查看最新版本和功能介绍',
