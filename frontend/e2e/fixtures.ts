@@ -36,6 +36,8 @@ type Api = {
     params?: Record<string, string | number | boolean>
   ) => Promise<T>
   post: <T = unknown>(route: string, body?: unknown) => Promise<T>
+  /** 与 post 同一套检查，但返回完整响应体（data 的同级别名端点用这个读） */
+  postFull: <T = unknown>(route: string, body?: unknown) => Promise<ApiResult<T>>
   raw: APIRequestContext
 }
 
@@ -170,7 +172,11 @@ const waitForAppShell = async (page: Page): Promise<void> => {
 }
 
 const createApi = (request: APIRequestContext): Api => {
-  const unwrap = async <T>(method: string, url: string, payload: unknown): Promise<T> => {
+  const requestJson = async <T>(
+    method: string,
+    url: string,
+    payload: unknown
+  ): Promise<ApiResult<T>> => {
     const response = await request.fetch(url, {
       method,
       data: method === 'GET' ? undefined : payload,
@@ -190,14 +196,20 @@ const createApi = (request: APIRequestContext): Api => {
     if (parsed.code !== undefined && parsed.code !== 200) {
       throw new Error(`${method} ${url} 业务失败 code=${parsed.code}：${parsed.message ?? ''}`)
     }
-    return parsed.data as T
+    return parsed
   }
+  const unwrap = async <T>(method: string, url: string, payload: unknown): Promise<T> =>
+    (await requestJson<T>(method, url, payload)).data as T
   return {
     raw: request,
     get: <T = unknown>(route: string, params: Record<string, string | number | boolean> = {}) =>
       unwrap<T>('GET', `${backendBaseUrl}${route}`, params),
     post: <T = unknown>(route: string, body: unknown = {}) =>
       unwrap<T>('POST', `${backendBaseUrl}${route}`, body),
+    // 有的端点把索引放在 data 的同级（如 /api/plan/get 的 index），
+    // post 解包后读不到；这里返回完整响应体，专供这类端点使用。
+    postFull: <T = unknown>(route: string, body: unknown = {}) =>
+      requestJson<T>('POST', `${backendBaseUrl}${route}`, body),
   }
 }
 

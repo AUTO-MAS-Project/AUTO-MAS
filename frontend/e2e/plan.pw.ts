@@ -23,8 +23,9 @@ interface PlanIndexItem {
 }
 
 const readPlans = async (app: App): Promise<PlanIndexItem[]> => {
-  const data = await app.api.post('/api/plan/get', {})
-  return Array.isArray(data?.index) ? (data.index as PlanIndexItem[]) : []
+  // /api/plan/get 的 index 与 data 是同级字段；post 会解包成 data 读不到，必须走 postFull
+  const response = await app.api.postFull<{ index?: PlanIndexItem[] }>('/api/plan/get', {})
+  return Array.isArray(response.index) ? response.index : []
 }
 
 const deleteAllPlans = async (app: App) => {
@@ -140,5 +141,28 @@ test.describe('@plan plan management', () => {
     // 混合类型的计划列表会给每个计划打上类型标签，用户才分得清哪个是哪种
     await expect(page.locator('.plan-type-tag')).toHaveCount(4)
     await app.evidence('plan-all-types')
+  })
+
+  test('英文默认名重载后不变回中文，再建同类型不重名', async ({ app, page }) => {
+    // 回归：重载路径曾不传翻译函数，把已保存的英文默认名重算成中文兜底名，
+    // 显示跟着回退，且按列表名的重名判断失效，第二次又存出同名计划（PR #1627 审查）
+    await app.goto('/plans')
+    await expect(page.locator('.empty-title')).toBeVisible()
+
+    await createPlanOfType(page, 'New MAA plan')
+    await expect(page.locator('.plan-name').first()).toHaveText('New MAA plan')
+
+    // 离开再回来：默认名按当前语言重算，仍是当初保存的英文，不变回中文
+    await page.reload()
+    await expect(page.locator('.plan-name').first()).toHaveText('New MAA plan', {
+      timeout: 20_000,
+    })
+
+    // 再建同类型：重名判断对真实列表名工作，第二个带后缀而不是再次同名
+    await createPlanOfType(page, 'New MAA plan')
+    await expect(page.locator('.plan-name')).toHaveCount(2)
+    const names = await page.locator('.plan-name').allTextContents()
+    expect(new Set(names).size).toBe(2)
+    expect(names[1]).toMatch(/^New MAA plan \d+$/)
   })
 })

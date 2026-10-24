@@ -620,8 +620,10 @@ test('浏览器没下载时说清楚要执行 yarn playwright install chromium',
   } finally {
     await rm(empty, { recursive: true, force: true })
   }
-  // 浏览器装好的情况下不该报错，否则这套预检会把正常环境也拦下来
-  await runBrowserCheck()
+  // 浏览器装好的情况下不该报错，否则这套预检会把正常环境也拦下来。
+  // CI 的格式检查 runner 不装 Playwright 浏览器（只有真正跑 e2e 的作业才装），
+  // 这半段只对本地开发环境有意义。
+  if (!process.env.CI) await runBrowserCheck()
 })
 
 // ── 用例目录自身的守卫 ───────────────────────────────────────────────
