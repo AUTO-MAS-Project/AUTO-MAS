@@ -395,7 +395,13 @@ class LogMonitor:
                                 self.time_format,
                                 self.last_callback_time,
                             )
-                            if entry_time > log_start_time:
+                            # 上游日志沿用本机时钟；任务开始时刻改为带偏移后，在监控边界显式比较本地钟点。
+                            comparison_start = (
+                                log_start_time.astimezone().replace(tzinfo=None)
+                                if log_start_time.utcoffset() is not None
+                                else log_start_time
+                            )
+                            if entry_time > comparison_start:
                                 if_log_start = True
                                 self.append_line(log_contents, line)
                                 await self.update_latest_timestamp(line)

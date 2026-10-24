@@ -29,12 +29,15 @@ from contextlib import closing
 from pathlib import Path
 
 from app.config import config_manager
+from app.core.history import history_store
+from app.models.schema import HistoryBackupSnapshot
 
 # 不进备份包: MaaFW 运行环境池、内嵌副本与共用库 (都可由来源 / 更新重建, 生产可达 GB 级;
 # 副本里的共用库是硬链接, 按路径逐个读会把同一份字节打进去两遍)、更新包下载缓存 (每个
 # 200 MB 上下, 重下即可) 与原生日志 (单个可达百 MB)
 _EXCLUDED_DIRS = {
     "data/replays",
+    "data/history-capture",
     "config/maafw_runtime_pool",
     "data/mfw",
     "data/maafw_blobs",
@@ -48,6 +51,10 @@ _DATABASE_FILES = {
     "data/data.db-journal",
     "data/data.db-shm",
     "data/data.db-wal",
+    "data/history.db",
+    "data/history.db-journal",
+    "data/history.db-shm",
+    "data/history.db-wal",
 }
 
 
@@ -63,9 +70,13 @@ async def create_data_backup(root: Path | None = None) -> Path:
 
     root = Path.cwd() if root is None else root
     snapshot = tempfile.TemporaryDirectory(prefix="auto-mas-config-export-")
-    config_export = Path(snapshot.name)
+    config_export = Path(snapshot.name) / "config"
+    config_export.mkdir()
     try:
         await config_manager.export(config_export)
+        history_snapshot = await history_store.export_snapshot(
+            destination=Path(snapshot.name) / "history-snapshot"
+        )
     except BaseException:
         snapshot.cleanup()
         raise
@@ -73,7 +84,11 @@ async def create_data_backup(root: Path | None = None) -> Path:
     def pack() -> Path:
         # 压缩线程负责临时目录生命周期，取消请求也不能提前删掉其输入。
         with snapshot:
-            return _create_data_backup(root=root, config_export=config_export)
+            return _create_data_backup(
+                root=root,
+                config_export=config_export,
+                history_snapshot=history_snapshot,
+            )
 
     task = asyncio.create_task(asyncio.to_thread(pack))
     try:
@@ -88,7 +103,9 @@ async def create_data_backup(root: Path | None = None) -> Path:
         raise
 
 
-def _create_data_backup(*, root: Path, config_export: Path) -> Path:
+def _create_data_backup(
+    *, root: Path, config_export: Path, history_snapshot: HistoryBackupSnapshot
+) -> Path:
     """配置根使用固定的内存导出文件，其余文件沿用整包备份规则。"""
     exported_files = {
         path.relative_to(config_export).as_posix(): path
@@ -111,7 +128,7 @@ def _create_data_backup(*, root: Path, config_export: Path) -> Path:
             with zipfile.ZipFile(
                 backup_path, mode="w", compression=zipfile.ZIP_DEFLATED
             ) as archive:
-                for directory_name in ("data", "config", "history"):
+                for directory_name in ("data", "config"):
                     archive.writestr(f"{directory_name}/", b"")
                     source_directory = root / directory_name
                     if not source_directory.is_dir():
@@ -143,6 +160,15 @@ def _create_data_backup(*, root: Path, config_export: Path) -> Path:
 
                 if database_snapshot.exists():
                     archive.write(database_snapshot, "data/data.db")
+                # 历史只从协调后的快照树打包，活动WAL及附件树不能混入。
+                archive.write(history_snapshot.database, "data/history.db")
+                archive.writestr("history/", b"")
+                for path in history_snapshot.history.rglob("*"):
+                    if path.is_file():
+                        archive.write(
+                            path,
+                            f"history/{path.relative_to(history_snapshot.history).as_posix()}",
+                        )
 
         return backup_path
     except Exception:

@@ -31,8 +31,7 @@ SERVER_MAINTENANCE = "server_maintenance"
 CLIENT_UPDATE_REQUIRED = "client_update_required"
 
 # 用户日志状态、统计信息与「任务详情」里用的一句话。
-# 历史页按停服维护那两句（这里的和 MAINTENANCE_SKIP_MESSAGE）把记录判为「跳过」，
-# 见 app/core/config.py 的 merge_statistic_info；改这两句要一起改那边。
+# 执行器按显式信号提供历史状态；这些文案仅用于展示。
 SIGNAL_USER_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中，本次跳过",
     CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端，请手动更新后再运行",
@@ -53,9 +52,9 @@ class MaaFWSignalRecord:
     # (用户 id, 用户名)，按撞上 / 被连带跳过的先后
     users: list[tuple[str, str]] = field(default_factory=list)
     # 证据截图，只留第一张（后面的用户是同一画面），给全局渠道的合并通知用
-    screenshots: list[Path] = field(default_factory=list)
+    screenshots: list[Path | bytes] = field(default_factory=list)
     # 用户 id → 这位用户自己拍的证据截图，给个人渠道用（被连带跳过的用户没有）
-    user_screenshots: dict[str, Path] = field(default_factory=dict)
+    user_screenshots: dict[str, Path | bytes] = field(default_factory=dict)
 
     def add_user(self, user_id: str, user_name: str) -> None:
         if all(existing != user_id for existing, _ in self.users):
@@ -97,6 +96,26 @@ class MaaFWSignalTracker:
                 record.screenshots.append(screenshot)
             record.user_screenshots.setdefault(user_id, screenshot)
         return record
+
+    async def freeze_user_screenshots(self, user_id: str) -> None:
+        """用户归档前复制证据内容，保持个人渠道的原有隔离。"""
+        for record in self._records.values():
+            source = record.user_screenshots.get(user_id)
+            if not isinstance(source, Path):
+                continue
+            try:
+                data = await asyncio.to_thread(source.read_bytes)
+            except OSError as error:
+                logger.warning(f"冻结信号截图失败：{source}: {error}")
+                record.user_screenshots.pop(user_id, None)
+                record.screenshots = [
+                    value for value in record.screenshots if value != source
+                ]
+                continue
+            record.user_screenshots[user_id] = data
+            record.screenshots = [
+                data if value == source else value for value in record.screenshots
+            ]
 
     def maintenance(self, resource_name: str) -> MaaFWSignalRecord | None:
         """该资源本轮已确认在维护时返回那条记录。"""

@@ -52,8 +52,8 @@ import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderI
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
-import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
-import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
+import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
+import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
@@ -132,7 +132,6 @@ import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
-import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
@@ -3684,18 +3683,7 @@ export class Service {
         });
     }
     /**
-     * 查询保留的失败回放
-     * @returns ReplayListOut Successful Response
-     * @throws ApiError
-     */
-    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/history/replays',
-        });
-    }
-    /**
-     * 搜索历史记录总览信息
+     * 搜索历史记录及类型化统计
      * @param requestBody
      * @returns HistorySearchOut Successful Response
      * @throws ApiError
@@ -3714,19 +3702,44 @@ export class Service {
         });
     }
     /**
-     * 从指定文件内获取历史记录数据
+     * 按记录编号获取执行结果、日志和附件
      * @param requestBody
-     * @returns HistoryDataGetOut Successful Response
+     * @returns HistoryDetailGetOut Successful Response
      * @throws ApiError
      */
-    public static getHistoryDataApiHistoryDataPost(
-        requestBody: HistoryDataGetIn,
-    ): CancelablePromise<HistoryDataGetOut> {
+    public static getHistoryDetailApiHistoryDetailPost(
+        requestBody: HistoryDetailGetIn,
+    ): CancelablePromise<HistoryDetailGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/history/data',
+            url: '/api/history/detail',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按附件编号读取图片、文件或视频
+     * @param attachmentId
+     * @param download
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getHistoryAttachmentApiHistoryAttachmentsAttachmentIdGet(
+        attachmentId: string,
+        download: boolean = false,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/attachments/{attachment_id}',
+            path: {
+                'attachment_id': attachmentId,
+            },
+            query: {
+                'download': download,
+            },
             errors: {
                 422: `Validation Error`,
             },

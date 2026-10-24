@@ -30,7 +30,7 @@ from app.models.notification_ports import CommunityNotifier
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
 from app.utils import get_logger
-from app.utils.constants import UTC8
+from app.utils.constants import UTC4, UTC8
 
 from .community_scheduler import (
     TASK_COMMUNITY_SOURCES,
@@ -211,12 +211,21 @@ class _MainTimer:
             if self._last_cleanup_date == today:
                 return
             self._last_cleanup_date = today
+            from app.core.history import history_store
+
+            await self._run_loop_step(
+                "历史记录清理",
+                partial(
+                    history_store.prune,
+                    today=datetime.now(tz=UTC4).date(),
+                    retention_days=Config.setting.Function.HistoryRetentionTime,
+                ),
+            )
             for name, clean in (
-                ("历史记录清理", Config.clean_old_history),
                 ("诊断文件清理", Config.clean_debug_diagnostics),
                 ("MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs),
             ):
-                # 三个清理函数是纯同步文件 IO，丢工作线程执行，别占用事件循环
+                # 诊断清理函数是纯同步文件 IO，丢工作线程执行，别占用事件循环
                 await self._run_loop_step(name, partial(asyncio.to_thread, clean))
 
         while True:
