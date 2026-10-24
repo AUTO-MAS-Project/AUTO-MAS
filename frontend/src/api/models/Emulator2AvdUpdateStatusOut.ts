@@ -70,7 +70,7 @@ export type Emulator2AvdUpdateStatusOut = {
      */
     requiredAutoMas?: string;
     /**
-     * 要下载的包的大小 (字节)
+     * 要下载的包的大小 (字节); 不知道时为 0 (Mirror 酱不填 CDK 时不报大小)
      */
     assetSize?: number;
     /**

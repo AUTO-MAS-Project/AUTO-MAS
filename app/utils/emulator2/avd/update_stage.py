@@ -24,7 +24,8 @@
 
     .update\\state.json          阶段与换上计划（先写临时文件再替换）
     .update\\download\\          下载的包（``.part`` 续传）
-    .update\\pkg\\               包解开后的样子（已剥掉顶层目录）
+    .update\\pkg\\               包解开后的样子（已剥掉顶层目录；Mirror 酱增量包则是按本地清单抄来的
+                                 现有文件加上增量包里的新文件，见 :func:`build_patched_package`）
     .update\\stage\\emulator\\   拼好、核对过的新 ``sdk\\emulator``（``stage\\staged.json`` 记版本与摘要）
     .update\\previous\\          换上中的旧版：``emulator\\`` 与被替换的包内文件（``root\\``），换完就删
     .update\\trash\\             要删的目录先改名到这里、写好状态后再删
@@ -278,9 +279,12 @@ def _is_symlink(info: zipfile.ZipInfo) -> bool:
 
 
 def package_entries(
-    archive: zipfile.ZipFile, top_dir: str
+    archive: zipfile.ZipFile, top_dir: str, *, whole: bool = True
 ) -> list[tuple[str, zipfile.ZipInfo]]:
-    """校验整个包的条目表，返回 ``[(包内路径, 条目)]``（不含目录）。坏包抛 :class:`PackageError`。"""
+    """校验整个包的条目表，返回 ``[(包内路径, 条目)]``（不含目录）。坏包抛 :class:`PackageError`。
+
+    ``whole`` 为假时是增量包：里面可以没有 ``sdk\\emulator`` 的文件。
+    """
     infos = archive.infolist()
     if len(infos) > UPDATE_MAX_ENTRIES:
         raise PackageError(f"包里的条目太多（{len(infos)} 个）")
@@ -299,7 +303,7 @@ def package_entries(
             raise PackageError(f"包里有重名的文件: {rel}")
         seen.add(key)
         entries.append((rel, info))
-    if not any(is_emulator_file(rel) for rel, _ in entries):
+    if whole and not any(is_emulator_file(rel) for rel, _ in entries):
         raise PackageError("包里没有 sdk\\emulator")
     return entries
 
@@ -488,6 +492,160 @@ def build_stage(root: str | Path, target: ModAvdVersion) -> Path:
     stage.parent.mkdir(parents=True)
     _rename(source, stage)
     return stage
+
+
+# ---- Mirror 酱增量包 ----------------------------------------------------------
+
+#: Mirror 酱增量包根上的变更清单。格式按 Mirror 酱服务端（MirrorChyan/resource-backend 的
+#: ``internal/pkg/patcher``）：``{"added": [...], "modified": [...], "deleted": [...]}``，有目录增减时另有
+#: ``added_dir`` / ``deleted_dir``；路径相对包根（也就是 ModAVD 根目录）、``/`` 分隔。包里只有新增和改过的
+#: 文件（原路径）、新增的目录和这份清单。MaaFW 项目更新器（``project_update/apply.py``）认的也是这几个键。
+PATCH_CHANGES_FILE = "changes.json"
+_PATCH_FILE_KEYS = ("added", "modified", "deleted")
+_PATCH_DIR_KEYS = ("added_dir", "deleted_dir")
+
+
+def patch_base_ok(root: str | Path, base: ModAvdVersion | None) -> bool:
+    """本地装着的正好是增量包的起点：根上有清单、清单的版本就是 ``base``（请求带的 ``current_version``）、
+    清单读得懂。拼增量包要按这份清单把现有文件抄进暂存。"""
+    if base is None:
+        return False
+    manifest = _read_json(Path(root) / MODAVD_MANIFEST_FILE)
+    if not manifest or parse_version(manifest.get("version")) != base:
+        return False
+    try:
+        manifest_files(manifest)
+    except PackageError:
+        return False
+    return True
+
+
+def read_patch_changes(raw: bytes) -> dict[str, list[str]]:
+    """解析 ``changes.json``：``added`` / ``modified`` / ``deleted`` 返回规范化的包内路径。路径和整包条目同一套
+    检查（:func:`package_path`）：越界、碰受保护目录的一律拒收；目录两项只检查、不用。"""
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as e:
+        raise PackageError(f"增量包的 {PATCH_CHANGES_FILE} 读不懂") from e
+    if not isinstance(data, dict):
+        raise PackageError(f"增量包的 {PATCH_CHANGES_FILE} 不是对象")
+    result: dict[str, list[str]] = {}
+    for key in (*_PATCH_FILE_KEYS, *_PATCH_DIR_KEYS):
+        value = data.get(key) or []
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) for item in value
+        ):
+            raise PackageError(f"增量包的 {PATCH_CHANGES_FILE} 里 {key} 写错了")
+        if key in _PATCH_DIR_KEYS:
+            for item in value:
+                package_path(item.replace("\\", "/").rstrip("/") + "/")
+            continue
+        paths: list[str] = []
+        for item in value:
+            rel = package_path(item)
+            if rel is None:
+                raise PackageError(
+                    f"增量包的 {PATCH_CHANGES_FILE} 里 {key} 有目录: {item!r}"
+                )
+            paths.append(rel)
+        result[key] = paths
+    return result
+
+
+def _copy_file(source: Path, target: Path, advance: Callable[[int], None]) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        open(native_path(source), "rb") as reader,
+        open(native_path(target), "wb") as sink,
+    ):
+        while block := reader.read(_COPY_CHUNK):
+            sink.write(block)
+            advance(len(block))
+
+
+def build_patched_package(
+    root: str | Path,
+    archive_path: Path,
+    base: ModAvdVersion | None,
+    *,
+    progress: Progress | None = None,
+    cancelled: Cancelled | None = None,
+) -> int:
+    """用 Mirror 酱的增量包在 ``pkg`` 里拼出新版整包的样子，之后和整包一样按新版清单逐文件核对、拼 ``stage``。
+
+    1. 按本地清单把现有的包内文件（``sdk\\emulator`` 和根上的 ``tools``、``LICENSES``、清单等）抄进 ``pkg``，
+       ``changes.json`` 里要删、要换的不抄；
+    2. ``added`` / ``modified`` 从增量包里解出来（包里别的条目不用）。
+
+    返回 ``pkg`` 里的文件数。本地不是增量包的起点、包坏了、缺文件都抛 :class:`PackageError`，调用方改下全量包。
+    """
+    root = Path(root)
+    if not patch_base_ok(root, base):
+        shown = base.display if base is not None else "未知"
+        raise PackageError(f"本地装着的不是增量包的起点 {shown}（或没有清单）")
+    base_files = [
+        *manifest_files(_read_json(root / MODAVD_MANIFEST_FILE)),
+        MODAVD_MANIFEST_FILE,
+    ]
+    dest = pkg_dir(root)
+    remove_tree(dest)
+    dest.mkdir(parents=True)
+    with zipfile.ZipFile(native_path(archive_path)) as archive:
+        entries = {
+            rel.lower(): info for rel, info in package_entries(archive, "", whole=False)
+        }
+        changes_info = entries.pop(PATCH_CHANGES_FILE.lower(), None)
+        if changes_info is None:
+            raise PackageError(f"增量包里没有 {PATCH_CHANGES_FILE}")
+        changes = read_patch_changes(archive.read(changes_info))
+        wanted = [*changes["added"], *changes["modified"]]
+        missing = [rel for rel in wanted if rel.lower() not in entries]
+        if missing:
+            more = f" 等 {len(missing)} 个" if len(missing) > 5 else ""
+            raise PackageError(f"增量包里缺 {'、'.join(missing[:5])}{more}")
+        unused = len(entries.keys() - {rel.lower() for rel in wanted})
+        if unused:
+            logger.warning(f"增量包里有 {unused} 个文件 changes.json 没列，不用")
+        touched = {rel.lower() for rel in [*wanted, *changes["deleted"]]}
+        keep = [
+            rel
+            for rel in base_files
+            if rel.lower() not in touched and os.path.isfile(native_path(root / rel))
+        ]
+        total = sum(os.stat(native_path(root / rel)).st_size for rel in keep) + sum(
+            entries[rel.lower()].file_size for rel in wanted
+        )
+        done = 0
+
+        def advance(count: int) -> None:
+            nonlocal done
+            if cancelled is not None and cancelled():
+                raise UpdateCancelled("已取消")
+            done += count
+            if progress is not None:
+                progress(done, total)
+
+        for rel in keep:
+            _copy_file(
+                resolve_within(root, rel, resolve_links=False),
+                resolve_within(dest, rel, resolve_links=False),
+                advance,
+            )
+        for rel in wanted:
+            target = resolve_within(dest, rel, resolve_links=False)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with (
+                archive.open(entries[rel.lower()]) as source,
+                open(native_path(target), "wb") as sink,
+            ):
+                while block := source.read(_COPY_CHUNK):
+                    sink.write(block)
+                    advance(len(block))
+    logger.info(
+        f"按增量包拼好新版：沿用 {len(keep)} 个文件，新增 {len(changes['added'])}、"
+        f"改动 {len(changes['modified'])}、删除 {len(changes['deleted'])} 个"
+    )
+    return sum(1 for _ in walk_files(dest))
 
 
 # ---- 暂存的记录 --------------------------------------------------------------
@@ -1079,6 +1237,7 @@ def recover(root: str | Path) -> str | None:
 
 
 __all__ = [
+    "PATCH_CHANGES_FILE",
     "PHASE_IDLE",
     "PHASE_PREPARING",
     "PHASE_STAGED",
@@ -1088,6 +1247,7 @@ __all__ = [
     "UpdateCancelled",
     "abort_staging",
     "begin_staging",
+    "build_patched_package",
     "build_stage",
     "check_emulator",
     "check_package_manifest",
@@ -1102,11 +1262,13 @@ __all__ = [
     "manifest_files",
     "package_entries",
     "package_path",
+    "patch_base_ok",
     "pkg_dir",
     "plan_root_files",
     "previous_dir",
     "processes_using",
     "purge_trash",
+    "read_patch_changes",
     "read_state",
     "recover",
     "remove_tree",

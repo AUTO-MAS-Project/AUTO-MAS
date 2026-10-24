@@ -30,9 +30,14 @@
 提示先更新 MAS。公告不在 MAS 里显示。
 
 **下载源可插拔**：:class:`UpdateSource` 只回答「最新一版是什么、包在哪、多大、哈希多少」；
-下载、拼新版、换上都和源无关（:mod:`.updater`、:mod:`.update_stage`）。现在只有 GitHub
-（:class:`GitHubReleaseSource`），以后接别的源时加进 :func:`update_sources` 的列表即可；接 Mirror 酱时
-按 ``os=win``、``arch=x64`` 请求（``constants.MODAVD_MIRROR_OS`` / ``MODAVD_MIRROR_ARCH``）。
+下载、拼新版、换上都和源无关（:mod:`.updater`、:mod:`.update_stage`）。按顺序问（:func:`update_sources`）：
+
+- **Mirror 酱**（:class:`MirrorChyanSource`）：``GET https://mirrorchyan.com/api/resources/ModAVD/latest``，
+  带 ``current_version``（本地版本 ``v0.N.P``）、``os=win``、``arch=x64``、``channel=stable``，有 CDK 再带
+  ``cdk``（用 MAS 全局的 ``Update.MirrorChyanCDK``，不另设）。不带 CDK 只能查版本；带 CDK 才给下载地址，
+  可能是从 ``current_version`` 到新版的增量包。``min_automas`` 从它同步的 ``release_note`` 第一行读，
+  和 GitHub 正文同一套解析。CDK 只在请求参数里，不进日志、错误信息和状态。
+- **GitHub**（:class:`GitHubReleaseSource`）：Mirror 酱查不到、出错、没有 CDK 时用它的整包。
 
 **包**：从 0.32.1 起每版只发主包 ``ModAVD-<ver>-win-x64.zip``（没有顶层目录，包根就是 ModAVD 根目录，
 根上有 ``modavd-manifest.json``）、源码包 ``ModAVD-<ver>-sources.zip`` 和 ``SHA256SUMS.txt``。主包的文件名
@@ -45,18 +50,29 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Protocol
 
 import httpx
 from packaging import version as pep440
 
+from app.services.update_transport import (
+    MIRROR_RESOURCE_API,
+    MirrorResourceError,
+    request_mirror_resource,
+)
 from app.utils import get_logger
+from app.utils.constants import MIRROR_ERROR_INFO
 
 from .components import read_mod_build
 from .constants import (
     MODAVD_MANIFEST_FILE,
+    MODAVD_MIRROR_API_ENV,
+    MODAVD_MIRROR_ARCH,
+    MODAVD_MIRROR_CHANNEL,
+    MODAVD_MIRROR_OS,
+    MODAVD_MIRROR_RID,
     MODAVD_PLATFORM,
     MODAVD_RELEASE_API,
     MODAVD_RELEASE_API_ENV,
@@ -200,53 +216,75 @@ class UpdateSourceError(RuntimeError):
     """下载源查不到最新版本、或返回的东西用不了。"""
 
 
+GITHUB_SOURCE = "github"
+MIRROR_SOURCE = "mirrorchyan"
+
+
 @dataclass(frozen=True)
 class RemoteAsset:
     """要下载的那个包。``top_dir`` 是解包时要剥掉的顶层目录：只有旧 tag 的主包有（``ModAVD-37.2.10-masN``），
-    新写法的主包没有顶层目录，为空串。``sha256`` 拿不到时为 ``None``（只靠 zip 自带的 CRC）。"""
+    新写法的主包没有顶层目录，为空串。``sha256`` 拿不到时为 ``None``（只靠 zip 自带的 CRC）。
+
+    ``incremental`` 为真时是 Mirror 酱从 ``base``（版本身份 ``v0.N.P``）到新版的增量包（见
+    :func:`.update_stage.build_patched_package`），否则是整包。
+    """
 
     name: str
     url: str
     size: int
     sha256: str | None
     top_dir: str
+    incremental: bool = False
+    base: str = ""
 
 
 @dataclass(frozen=True)
 class RemoteRelease:
-    """下载源报出的最新一版。``min_automas`` 是它要求的最低 AUTO-MAS 版本（没要求为空串）。"""
+    """下载源报出的最新一版。``min_automas`` 是它要求的最低 AUTO-MAS 版本（没要求为空串）。
+    ``asset`` 是能下的包；Mirror 酱没给下载地址（没有 CDK）时为 ``None``。"""
 
     source: str
     tag: str
     version: ModAvdVersion
     min_automas: str
-    asset: RemoteAsset
+    asset: RemoteAsset | None
 
     def as_dict(self) -> dict[str, Any]:
-        """写进 ``state.json`` 的那一份：下载、续传、拼新版要用的字段。"""
+        """写进 ``state.json`` 的那一份：拼新版、记更新历史要用的字段。
+
+        Mirror 酱的下载地址是一次性的（每次下载前现要），不写进去。
+        """
+        asset = self.asset
+        if asset is None:
+            raise UpdateSourceError(f"{self.version.display} 没有能下载的包")
         return {
             "source": self.source,
             "tag": self.tag,
             "version": str(self.version),
             "asset": {
-                "name": self.asset.name,
-                "url": self.asset.url,
-                "size": self.asset.size,
-                "sha256": self.asset.sha256,
-                "topDir": self.asset.top_dir,
+                "name": asset.name,
+                "url": asset.url if self.source != MIRROR_SOURCE else "",
+                "size": asset.size,
+                "sha256": asset.sha256,
+                "topDir": asset.top_dir,
+                "incremental": asset.incremental,
+                "base": asset.base,
             },
         }
 
 
 class UpdateSource(Protocol):
-    """下载源：只负责报出最新一版和它的包。"""
+    """下载源：只负责报出最新一版和它的包。``current`` 是发请求的根目录装着的版本。"""
 
     name: str
 
-    async def latest(self, *, proxy: httpx.Proxy | None) -> RemoteRelease: ...
+    async def latest(
+        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None = None
+    ) -> RemoteRelease: ...
 
 
 _SHA256_DIGEST = re.compile(r"sha256:([0-9a-fA-F]{64})")
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
 def _asset_from_github(item: dict[str, Any], top_dir: str) -> RemoteAsset:
@@ -300,7 +338,7 @@ def release_from_github(data: object) -> RemoteRelease:
             f"{tag} 里没有本机（{MODAVD_PLATFORM}）能用的包 {wanted}"
         )
     return RemoteRelease(
-        source="github",
+        source=GITHUB_SOURCE,
         tag=tag,
         version=parsed,
         min_automas=parse_min_automas(data.get("body")),
@@ -311,12 +349,14 @@ def release_from_github(data: object) -> RemoteRelease:
 class GitHubReleaseSource:
     """GitHub：``GET repos/ModAVD/ModAVD/releases/latest``，走 MAS 的代理设置。"""
 
-    name = "github"
+    name = GITHUB_SOURCE
 
     def __init__(self, api_url: str = MODAVD_RELEASE_API) -> None:
         self.api_url = api_url
 
-    async def latest(self, *, proxy: httpx.Proxy | None) -> RemoteRelease:
+    async def latest(
+        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None = None
+    ) -> RemoteRelease:
         try:
             async with httpx.AsyncClient(
                 proxy=proxy,
@@ -345,15 +385,171 @@ class GitHubReleaseSource:
         return release_from_github(data)
 
 
-def update_sources() -> list[UpdateSource]:
-    """按顺序问的下载源。环境变量 ``AUTO_MAS_MODAVD_RELEASE_API`` 可把 GitHub 的查询地址换成
-    本地模拟服务（只供测试，不进配置、不上界面）。"""
-    api_url = os.environ.get(MODAVD_RELEASE_API_ENV, "").strip() or MODAVD_RELEASE_API
-    return [GitHubReleaseSource(api_url)]
+#: CDK 本身有问题的 Mirror 酱业务码：过期、错误、当天下载次数用完、不含这个资源、被封禁。
+MIRROR_CDK_ERRORS = frozenset({7001, 7002, 7003, 7004, 7005})
+#: 这个系统和架构下没有包（不带 os/arch 时也是它）。
+MIRROR_NO_PACKAGE = 8001
+
+
+class MirrorChyanError(UpdateSourceError):
+    """Mirror 酱给不了能用的结果。``code`` 是它的业务码；连不上、响应不对时为 ``None``。
+    消息是给人看的中文，不含 CDK 和带 CDK 的地址。"""
+
+    def __init__(self, message: str, code: int | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+    @property
+    def cdk_problem(self) -> bool:
+        return self.code in MIRROR_CDK_ERRORS
+
+
+def mirror_error_text(code: int) -> str:
+    """Mirror 酱业务码的中文说明（和 MAS 别处同一份 ``MIRROR_ERROR_INFO``）。"""
+    return MIRROR_ERROR_INFO.get(code, f"错误码 {code}")
+
+
+def release_from_mirror(data: object, *, base: ModAvdVersion | None) -> RemoteRelease:
+    """Mirror 酱 ``latest`` 响应的 ``data`` → :class:`RemoteRelease`。
+
+    带了 CDK、又有比 ``current_version`` 新的版本时才有下载地址（``url``、``sha256``、``filesize``、
+    ``update_type``）：``update_type`` 为 ``incremental`` 是从 ``base``（请求带的 ``current_version``）到新版的
+    增量包，否则是全量包（同 GitHub 的主包，包根就是 ModAVD 根目录）。没有下载地址时 ``asset`` 为 ``None``。
+    """
+    if not isinstance(data, dict):
+        raise MirrorChyanError("Mirror 酱返回的数据不完整")
+    tag = str(data.get("version_name") or "").strip()
+    version = parse_version(tag)
+    if version is None:
+        raise MirrorChyanError(f"认不出 Mirror 酱上最新版本的版本号: {tag!r}")
+    asset: RemoteAsset | None = None
+    url = data.get("url")
+    if isinstance(url, str) and url.strip():
+        size = data.get("filesize")
+        if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+            raise MirrorChyanError("Mirror 酱给了下载地址，但没给包的大小")
+        incremental = data.get("update_type") == "incremental"
+        if incremental and base is None:
+            raise MirrorChyanError("Mirror 酱给了增量包，但请求没带当前版本")
+        digest = str(data.get("sha256") or "").strip().lower()
+        stem = (
+            f"ModAVD-{base.display}-to-{version.display}"
+            if incremental and base is not None
+            else f"ModAVD-{version.display}"
+        )
+        asset = RemoteAsset(
+            name=f"{stem}-{MODAVD_PLATFORM}-mirrorchyan.zip",
+            url=url.strip(),
+            size=size,
+            sha256=digest if _SHA256_HEX.fullmatch(digest) else None,
+            top_dir="",
+            incremental=incremental,
+            base=str(base) if incremental else "",
+        )
+    return RemoteRelease(
+        source=MIRROR_SOURCE,
+        tag=tag,
+        version=version,
+        min_automas=parse_min_automas(data.get("release_note")),
+        asset=asset,
+    )
+
+
+class MirrorChyanSource:
+    """Mirror 酱：``GET <api>/ModAVD/latest``，走 MAS 的代理设置。
+
+    ``cdk`` 是 MAS 全局的 ``Update.MirrorChyanCDK``，只放进请求参数：错误信息里不带它，也不带含它的地址
+    （:func:`~app.services.update_transport.request_mirror_resource` 不用 ``raise_for_status``）。
+    """
+
+    name = MIRROR_SOURCE
+
+    def __init__(self, cdk: str = "", api_root: str = MIRROR_RESOURCE_API) -> None:
+        self._cdk = cdk.strip()
+        self.api_root = api_root
+
+    @property
+    def has_cdk(self) -> bool:
+        return bool(self._cdk)
+
+    def _scrub(self, text: str) -> str:
+        return text.replace(self._cdk, "***") if self._cdk else text
+
+    async def _query(
+        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None
+    ) -> RemoteRelease:
+        params = {
+            "os": MODAVD_MIRROR_OS,
+            "arch": MODAVD_MIRROR_ARCH,
+            "channel": MODAVD_MIRROR_CHANNEL,
+        }
+        if current is not None:
+            params["current_version"] = str(current)
+        if self._cdk:
+            params["cdk"] = self._cdk
+        try:
+            payload = await request_mirror_resource(
+                MODAVD_MIRROR_RID,
+                params=params,
+                proxy=proxy,
+                timeout=UPDATE_API_TIMEOUT_SECONDS,
+                api_root=self.api_root,
+            )
+        except MirrorResourceError as e:
+            raise MirrorChyanError(mirror_error_text(e.code), e.code) from None
+        except Exception as e:  # noqa: BLE001 - 连不上、不是 JSON 都算 Mirror 酱用不了
+            detail = self._scrub(
+                f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+            )
+            # 不串上原异常：httpx 的异常带着请求，请求地址里有 CDK
+            raise MirrorChyanError(f"连不上 Mirror 酱（{detail}）") from None
+        return release_from_mirror(payload.get("data"), base=current)
+
+    async def latest(
+        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None = None
+    ) -> RemoteRelease:
+        """查最新版本（查更新用）。增量包只对发请求的这个根目录成立，查更新的结果各根目录共用，
+        所以这里不报增量包；真正下载前由 :meth:`package` 现要地址。"""
+        release = await self._query(proxy=proxy, current=current)
+        if release.asset is not None and release.asset.incremental:
+            release = replace(release, asset=None)
+        return release
+
+    async def package(
+        self, *, proxy: httpx.Proxy | None, current: ModAvdVersion | None
+    ) -> RemoteRelease:
+        """现要下载地址（要有 CDK；地址一次性、会过期，每次下载前都要）。``current`` 为 ``None`` 时
+        只会给全量包。"""
+        return await self._query(proxy=proxy, current=current)
+
+
+def mirror_api_root() -> str:
+    """Mirror 酱的查询根地址；环境变量 ``AUTO_MAS_MODAVD_MIRROR_API`` 可换成本地模拟服务（只供测试）。"""
+    return os.environ.get(MODAVD_MIRROR_API_ENV, "").strip() or MIRROR_RESOURCE_API
+
+
+def github_api_url() -> str:
+    """GitHub 的查询地址；环境变量 ``AUTO_MAS_MODAVD_RELEASE_API`` 可换成本地模拟服务（只供测试）。"""
+    return os.environ.get(MODAVD_RELEASE_API_ENV, "").strip() or MODAVD_RELEASE_API
+
+
+def update_sources(cdk: str = "") -> list[UpdateSource]:
+    """按顺序问的下载源：先 Mirror 酱（不带 CDK 也能查版本），查不到或出错再问 GitHub。
+    两个环境变量只供测试，不进配置、不上界面。"""
+    return [
+        MirrorChyanSource(cdk, mirror_api_root()),
+        GitHubReleaseSource(github_api_url()),
+    ]
 
 
 __all__ = [
+    "GITHUB_SOURCE",
+    "MIRROR_CDK_ERRORS",
+    "MIRROR_NO_PACKAGE",
+    "MIRROR_SOURCE",
     "GitHubReleaseSource",
+    "MirrorChyanError",
+    "MirrorChyanSource",
     "ModAvdVersion",
     "RemoteAsset",
     "RemoteRelease",
@@ -361,13 +557,17 @@ __all__ = [
     "UpdateSourceError",
     "automas_too_old",
     "display_version",
+    "github_api_url",
     "local_version",
     "local_version_text",
+    "mirror_api_root",
+    "mirror_error_text",
     "package_candidates",
     "parse_min_automas",
     "parse_version",
     "read_manifest_file",
     "release_from_github",
+    "release_from_mirror",
     "requires_manifest",
     "update_sources",
 ]

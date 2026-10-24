@@ -521,7 +521,10 @@ class Emulator2AvdUpdateStatusOut(OutBase):
         default="",
         description="最新版本要求的 AUTO-MAS 最低版本比当前高时给出; 这时不装, 要先更新 AUTO-MAS",
     )
-    assetSize: int = Field(default=0, description="要下载的包的大小 (字节)")
+    assetSize: int = Field(
+        default=0,
+        description="要下载的包的大小 (字节); 不知道时为 0 (Mirror 酱不填 CDK 时不报大小)",
+    )
     phase: str = Field(
         default="idle",
         description=(

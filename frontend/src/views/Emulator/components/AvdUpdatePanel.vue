@@ -216,10 +216,12 @@ onBeforeUnmount(() => {
           {{
             prepared
               ? t('emulator2.avd.update.install', { version: prepared })
-              : t('emulator2.avd.update.update', {
-                  version: latest,
-                  size: formatBytes(status.assetSize ?? 0),
-                })
+              : status.assetSize
+                ? t('emulator2.avd.update.update', {
+                    version: latest,
+                    size: formatBytes(status.assetSize),
+                  })
+                : t('emulator2.avd.update.updateNoSize', { version: latest })
           }}
         </a-button>
         <a-button v-if="actions.cancel" @click="cancel">

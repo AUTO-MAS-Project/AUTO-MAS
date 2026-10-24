@@ -149,10 +149,14 @@ MODAVD_MANIFEST_FILE = "modavd-manifest.json"
 MODAVD_PLATFORM_OS = "win"
 MODAVD_PLATFORM_ARCH = "x64"
 MODAVD_PLATFORM = f"{MODAVD_PLATFORM_OS}-{MODAVD_PLATFORM_ARCH}"
-#: 以后接 Mirror 酱时请求带的 ``os`` / ``arch``：ModAVD 按 win / x64 上传（不是 AUTO-MAS 自己的
-#: windows / amd64），请求时必须和上传的完全一致。现在还没接，先留在这里。
+#: Mirror 酱上 ModAVD 的资源 ID、请求带的 ``os`` / ``arch`` 与更新通道。10-24 实测：服务端把 os/arch
+#: 存成 windows/amd64，请求带 win/x64 或 windows/amd64 都认，不带 os/arch 返回 8001。
+MODAVD_MIRROR_RID = "ModAVD"
 MODAVD_MIRROR_OS = MODAVD_PLATFORM_OS
 MODAVD_MIRROR_ARCH = MODAVD_PLATFORM_ARCH
+MODAVD_MIRROR_CHANNEL = "stable"
+#: 只供测试：把 Mirror 酱的查询根地址（``https://mirrorchyan.com/api/resources``）换成本地模拟服务。
+MODAVD_MIRROR_API_ENV = "AUTO_MAS_MODAVD_MIRROR_API"
 #: 更新器在根目录里的工作目录：下载、解包、暂存、上一版都在这里。和根目录同一个盘，换上靠改名。
 UPDATE_DIR = ".update"
 #: 查更新的结果缓存多久（秒），和 MAS 自己检查更新一样 4 小时；用户点「更新」时不走缓存。
