@@ -252,23 +252,23 @@ class _UpdateHandler:
             return False
 
         task.cancel()
-        stop_unconfirmed = False
         try:
             await task
         except asyncio.CancelledError:
             pass
         except FluxdownCancelUnconfirmed as error:
-            # 暂停无法确认：旧任务可能仍在后台写下载文件，但不能让取消接口 500；
-            # 记失败提示用户，保留任务映射供下次重试续传
+            # 暂停未确认：daemon 可能仍在写目标文件。按失败上报并抛出，
+            # 让调用方走失败路径（API 500 / 切源中止），绝不能继续覆写
+            # 同一目标或报告取消成功
             logger.error(f"取消下载时无法确认 FluxDown 任务已停止: {error}")
             await self._publish_failed(
                 "取消时无法确认 FluxDown 任务已停止，将在下次重试时续传"
             )
-            stop_unconfirmed = True
+            self._cleanup_download()
+            raise
         self._cleanup_download()
 
-        # 已按失败上报时不能再播"取消成功"，否则前端会把仍在写盘的下载当已停止
-        if notify and not stop_unconfirmed:
+        if notify:
             self._update_download_snapshot(status="cancelled", speed=0)
             await Publisher.send(id=protocol.ID_UPDATE, type=protocol.UPDATE_CANCELLED)
         return True
@@ -518,6 +518,10 @@ class _UpdateHandler:
         except asyncio.CancelledError:
             logger.info("更新下载已取消")
             raise
+        except FluxdownCancelUnconfirmed:
+            # 透传给 cancel_download 的 await task：由那里按失败上报，
+            # 不走通用"下载失败"路径，更不能在后台状态未知时报告取消成功
+            raise
         except Exception as error:
             logger.exception(f"更新下载任务异常: {type(error).__name__}: {error}")
             await self._publish_failed(f"下载失败: {type(error).__name__}: {error}")
@@ -599,6 +603,11 @@ class _UpdateHandler:
                 await self._publish_completed(final_path)
                 self.is_locked = False
                 break
+
+            except FluxdownCancelUnconfirmed:
+                # 取消但无法确认 FluxDown 任务已停止：不是可重试的下载错误，
+                # 必须退出取消流程，不能睡眠后自动 resume 状态未知的任务
+                raise
 
             except FluxdownResumableError as e:
                 # 中断类失败不自动重试：立即弹出失败，由用户点击重试发起下一次尝试

@@ -253,13 +253,17 @@ async def fluxdown_download(
                     pass
                 last_report = now
 
-    def _output_bytes() -> int:
-        """destination 及其同名前缀临时文件（.part/.tmp 等）的总字节数。
+    def _output_state() -> tuple[int, int]:
+        """返回 destination 及同名前缀临时文件的 (总字节数, 最新 mtime_ns)。
 
-        --local 模式只在启动时输出一行任务 ID，之后全程静默但仍在写临时
-        文件，只能靠这个增长信号判断它是否真的还在下载。
+        --local 模式只在启动时输出一行任务 ID，之后全程静默但仍在写文件；
+        且分段下载会预分配完整临时文件，st_size 从开始就等于总大小（官方
+        downloader.rs 明确真实进度须从数据库读取，而 local 独占数据库锁，
+        这里取不到），只看大小会把健康下载误判为停滞。分段数据持续写入会
+        刷新 mtime，因此把 (总字节数, 最新 mtime) 一并作为活动信号。
         """
         total_bytes = 0
+        latest_mtime = 0
         try:
             with os.scandir(destination.parent) as entries:
                 for entry in entries:
@@ -267,12 +271,14 @@ async def fluxdown_download(
                         continue
                     try:
                         if entry.is_file(follow_symlinks=False):
-                            total_bytes += entry.stat(follow_symlinks=False).st_size
+                            st = entry.stat(follow_symlinks=False)
+                            total_bytes += st.st_size
+                            latest_mtime = max(latest_mtime, st.st_mtime_ns)
                     except OSError:
                         continue
         except OSError:
-            return 0
-        return total_bytes
+            return 0, 0
+        return total_bytes, latest_mtime
 
     proc = await asyncio.create_subprocess_exec(
         *args,
@@ -282,21 +288,23 @@ async def fluxdown_download(
     assert proc.stdout is not None
 
     # 停滞超时：timeout 语义 = 持续无"活动"的秒数上限，不是整包总时限。
-    # 活动 = stdout 有新输出 或 输出文件在增长（--local 下载期间没有进度输出，
-    # 只看 stdout 会把正常下载误判为停滞），两者都静默超过 timeout 才算中断。
+    # 活动 = stdout 有新输出 或 输出文件有写入（大小或 mtime 变化）。
+    # --local 下载期间没有进度输出，且分段下载会预分配完整文件（大小恒定），
+    # 只看 stdout 或只看大小都会把正常下载误判为停滞；两者都静默超过
+    # timeout 才算中断。
     parse_task = asyncio.ensure_future(_parse_stream())
     stalled = False
-    last_activity = t0  # 最近一次观察到的活动时刻（输出或文件增长）
+    last_activity = t0  # 最近一次观察到的活动时刻（输出或文件写入）
     last_size_check = t0
-    last_file_bytes = -1
+    last_file_state = (-1, -1)
     try:
         while not parse_task.done():
             now = time.monotonic()
-            # 每 0.5s 采样一次文件字节数；增长即刷新活动时间
+            # 每 0.5s 采样一次文件状态；字节数或 mtime 变化即刷新活动时间
             if now - last_size_check >= 0.5:
-                current_bytes = _output_bytes()
-                if current_bytes > last_file_bytes:
-                    last_file_bytes = current_bytes
+                current_state = _output_state()
+                if current_state != last_file_state:
+                    last_file_state = current_state
                     last_activity = now
                 last_size_check = now
             last_activity = max(last_activity, last_output)
@@ -304,20 +312,20 @@ async def fluxdown_download(
             if remaining <= 0:
                 stalled = True
                 break
-            # 分段等待：parse 结束时立刻返回，同时保证每 0.5s 复查一次文件增长
+            # 分段等待：parse 结束时立刻返回，同时保证每 0.5s 复查一次文件写入
             await asyncio.wait({parse_task}, timeout=min(remaining, 0.5))
         if stalled:
             # 进程既无输出也无写入：杀掉后 stdout 关闭，parse_task 随之自行结束
             proc.kill()
             await proc.wait()
             record.status = "failed"
-            record.error = f"CLI 停滞超时 ({timeout:.0f}s 无输出且文件无增长)"
+            record.error = f"CLI 停滞超时 ({timeout:.0f}s 无输出且文件无写入)"
             record.duration_ms = int((time.monotonic() - t0) * 1000)
             logger.warning(
                 f"[--local] 停滞 {timeout:.0f}s 无输出且无写入, 判定中断: {url}"
             )
             raise RuntimeError(
-                f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出且文件无增长"
+                f"FluxDown CLI 停滞超时: {timeout:.0f}s 无输出且文件无写入"
             ) from None
 
         await parse_task
@@ -1321,22 +1329,66 @@ async def fluxdown_server_download(
                 resumed = True
                 logger.info(f"[server] 续传任务: {task_id} ({url})")
             else:
-                # resume 失败：区分"任务确实不存在"和"管理通道异常/超时"
-                # code==124 是客户端超时，不能证明 daemon 没接受恢复命令，
-                # 旧任务可能已在后台恢复，此时重新 add 会双写同一文件
-                if code == 124:
+                # resume 失败按官方退出码分类（native/cli/src/exit.rs，aria2 语义）：
+                # 124=MAS 包装超时、2=HTTP 超时、5=网络/断连——都不能证明服务端
+                # 未收到 resume，旧任务可能已在后台恢复写盘，此时清映射重新 add
+                # 会产生两个写入者双写同一文件。保留映射按"未确认停止"抛出
+                if code in (124, 2, 5):
                     record.status = "failed"
-                    record.error = "resume 超时，无法确认旧任务状态，保留映射待续传"
+                    record.error = f"resume 通信失败(exit={code})，无法确认旧任务状态，保留映射待续传"
                     record.duration_ms = int((time.monotonic() - t0) * 1000)
                     logger.warning(
-                        f"[server] resume 超时 (task {task_id}), 无法确认已停止,保留映射"
+                        f"[server] resume 通信失败 (exit={code}, task {task_id}), "
+                        "无法确认旧任务状态,保留映射"
                     )
                     raise RuntimeError(
                         "FluxDown server status 查询失败（任务未确认停止）"
                     )
-                # 其他非零：任务可能真的不存在/不可恢复，清映射重新 add
-                task_id = None
-                await asyncio.to_thread(_map_pop, cli_exe, key)
+                if code == 3:
+                    # 3=NotFound：服务端明确答复任务不存在，归属已确认终止，
+                    # 清映射重新 add 是安全的
+                    logger.info(
+                        f"[server] resume 返回任务不存在 (task {task_id}),重新 add"
+                    )
+                    task_id = None
+                    await asyncio.to_thread(_map_pop, cli_exe, key)
+                else:
+                    # 其余非零：先查任务真实状态再决定归属，不能默认任务已消失
+                    st1 = await asyncio.to_thread(_status, task_id)
+                    if st1 is None:
+                        # 查询通道也不可用：无法确认，保留映射停止本轮
+                        record.status = "failed"
+                        record.error = (
+                            f"resume 失败(exit={code})且状态查询不可用，保留映射待续传"
+                        )
+                        record.duration_ms = int((time.monotonic() - t0) * 1000)
+                        raise RuntimeError(
+                            "FluxDown server status 查询失败（任务未确认停止）"
+                        )
+                    status1 = int(st1.get("status") or 0)
+                    if status1 == _TASK_STATUS_FAILED:
+                        # 任务已终止：清映射重新 add
+                        logger.info(
+                            f"[server] resume 失败且任务已终止 (task {task_id}),重新 add"
+                        )
+                        task_id = None
+                        await asyncio.to_thread(_map_pop, cli_exe, key)
+                    elif status1 == _TASK_STATUS_DONE or status1 in _ACTIVE_STATUSES:
+                        # 服务端仍持有任务且已完成/活动：resume 实际已生效，
+                        # 交给轮询与完成归位，不重新 add
+                        resumed = True
+                        logger.info(
+                            f"[server] resume 返回 exit={code} 但任务状态={status1},按已恢复处理"
+                        )
+                    else:
+                        # paused/未知状态码：无法确认，保守保留映射停止本轮，
+                        # 下次重试会再次 resume
+                        record.status = "failed"
+                        record.error = f"resume 失败(exit={code})，任务状态={status1} 未确认，保留映射待续传"
+                        record.duration_ms = int((time.monotonic() - t0) * 1000)
+                        raise RuntimeError(
+                            "FluxDown server status 查询失败（任务未确认停止）"
+                        )
 
         if task_id is None:
             # 新建任务前把已存在的 destination 改名隔离：FluxDown 默认

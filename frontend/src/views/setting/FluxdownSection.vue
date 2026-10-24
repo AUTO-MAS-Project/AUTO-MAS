@@ -5,10 +5,13 @@ import { message } from 'ant-design-vue'
 import { computed, ref } from 'vue'
 import { ApiError, GetService } from '@/api'
 import type { GlobalConfig, FluxdownRecord } from '@/api'
+import { useSettingsApi } from '@/composables/useSettingsApi'
 
 const logger = window.electronAPI.getLogger('设置-FluxDown')
 
 const { t } = useI18n()
+
+const { getSettings } = useSettingsApi()
 
 const props = defineProps<{
   settings: GlobalConfig
@@ -62,10 +65,26 @@ const handleFluxdownDetect = async () => {
   }
 }
 
-// 下载历史：后端按追加顺序保存，展示时倒序（最新在上）
+// 下载历史：后端按追加顺序保存，展示时倒序（最新在上）。
+// 父页面只在挂载时读取一次设置，下载终态后快照不会自动更新；打开面板时
+// 拉取一次最新配置，避免刚产生的失败记录要离页重进才能看到/导出
+const fetchedHistory = ref<FluxdownRecord[] | null>(null)
+const historyLoading = ref(false)
+
 const updateHistory = computed(() =>
-  [...(props.settings.Update?.LastUpdateHistory ?? [])].reverse()
+  [...(fetchedHistory.value ?? props.settings.Update?.LastUpdateHistory ?? [])].reverse()
 )
+
+const openUpdateHistory = async () => {
+  showUpdateHistory.value = true
+  historyLoading.value = true
+  try {
+    const data = await getSettings()
+    fetchedHistory.value = data?.Update?.LastUpdateHistory ?? []
+  } finally {
+    historyLoading.value = false
+  }
+}
 
 // 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
 const historyStatusLabels = computed<Record<string, string>>(() => ({
@@ -169,8 +188,7 @@ const showUpdateHistory = ref(false)
           :value="!!settings.Update?.FluxdownTakeoverAll"
           size="large"
           style="width: 100%"
-          :disabled="settings.Update?.Downloader !== 'fluxdown'"
-          @change="(checked: any) => handleSettingChange('Update', 'FluxdownTakeoverAll', checked)"
+          disabled
         >
           <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
           <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
@@ -237,15 +255,8 @@ const showUpdateHistory = ref(false)
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
-        <a-button
-          block
-          size="large"
-          :disabled="!settings.Update?.LastUpdateHistory?.length"
-          @click="showUpdateHistory = true"
-        >
-          {{ t('setting.others.viewHistory') }} ({{
-            settings.Update?.LastUpdateHistory?.length ?? 0
-          }})
+        <a-button block size="large" :loading="historyLoading" @click="openUpdateHistory">
+          {{ t('setting.others.viewHistory') }} ({{ updateHistory.length }})
         </a-button>
       </div>
     </a-col>
@@ -258,41 +269,43 @@ const showUpdateHistory = ref(false)
     :footer="null"
     class="update-history-modal"
   >
-    <a-timeline v-if="updateHistory.length">
-      <a-timeline-item
-        v-for="(item, idx) in updateHistory"
-        :key="idx"
-        :color="
-          item.status === 'success'
-            ? 'green'
-            : item.status === 'checksum_fail'
-              ? 'red'
-              : item.status === 'fluxdown_fallback'
-                ? 'orange'
-                : 'red'
-        "
-      >
-        <div class="history-item-title">
-          {{ item.timestamp }} — {{ formatHistoryStatus(item.status) }}
-        </div>
-        <div class="history-item-path">{{ item.destination || item.url?.slice(0, 80) }}</div>
-        <div class="history-item-meta">
-          {{ formatHistorySize(item.size) }} ·
-          {{ formatHistoryDuration(item.duration_ms) }}
-          <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
-          <a-button
-            v-if="item.status && item.status !== 'success'"
-            type="link"
-            size="small"
-            class="history-export-button"
-            @click="handleExportHistory(item)"
-          >
-            {{ t('setting.others.historyExport') }}
-          </a-button>
-        </div>
-      </a-timeline-item>
-    </a-timeline>
-    <a-empty v-else :description="t('setting.others.noHistory')" />
+    <a-spin :spinning="historyLoading">
+      <a-timeline v-if="updateHistory.length">
+        <a-timeline-item
+          v-for="(item, idx) in updateHistory"
+          :key="idx"
+          :color="
+            item.status === 'success'
+              ? 'green'
+              : item.status === 'checksum_fail'
+                ? 'red'
+                : item.status === 'fluxdown_fallback'
+                  ? 'orange'
+                  : 'red'
+          "
+        >
+          <div class="history-item-title">
+            {{ item.timestamp }} — {{ formatHistoryStatus(item.status) }}
+          </div>
+          <div class="history-item-path">{{ item.destination || item.url?.slice(0, 80) }}</div>
+          <div class="history-item-meta">
+            {{ formatHistorySize(item.size) }} ·
+            {{ formatHistoryDuration(item.duration_ms) }}
+            <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
+            <a-button
+              v-if="item.status && item.status !== 'success'"
+              type="link"
+              size="small"
+              class="history-export-button"
+              @click="handleExportHistory(item)"
+            >
+              {{ t('setting.others.historyExport') }}
+            </a-button>
+          </div>
+        </a-timeline-item>
+      </a-timeline>
+      <a-empty v-else :description="t('setting.others.noHistory')" />
+    </a-spin>
   </a-modal>
 </template>
 

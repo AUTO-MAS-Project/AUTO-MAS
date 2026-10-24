@@ -5271,7 +5271,7 @@ export default {
         'Higher values mean more parallel requests, if the server supports Range',
       fluxdownTakeover: 'Take over all script updates',
       fluxdownTakeoverTip:
-        'Also route all automation script update downloads through FluxDown (planned)',
+        'Take over all script update downloads (not implemented yet; the switch is disabled and reserved for future use)',
       fluxdownServerMode: 'FluxDown resume service',
       fluxdownServerModeTip:
         'When enabled a resident FluxDown service handles downloads so interrupted downloads resume from completed segments; disable to always re-download from scratch. Does not affect your own FluxDown install',

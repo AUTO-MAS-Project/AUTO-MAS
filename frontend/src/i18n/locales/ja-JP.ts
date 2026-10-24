@@ -4626,7 +4626,7 @@ export default {
         '大きいほど並列数が増えますが、実際の効果はサーバーが Range リクエストに対応しているか次第です',
       fluxdownTakeover: '全スクリプト更新を引き継ぐ',
       fluxdownTakeoverTip:
-        'オンにすると、すべての自動化スクリプトの更新ダウンロードも FluxDown 経由になります（予定）',
+        'すべてのスクリプト更新ダウンロードを引き継ぎます（未実装のため、スイッチは無効化された予約項目です）',
       fluxdownServerMode: 'FluxDown レジュームサービス',
       fluxdownServerModeTip:
         'オンにすると常駐する FluxDown サービスがダウンロードを担当し、中断後も完了済みセグメントから再開します。オフの場合は毎回最初から再ダウンロードします。ユーザー自身の FluxDown 本体には影響しません',

@@ -455,9 +455,8 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
         write_file(_STATE_FILE, state)
     part = cache_dir / "package.zip.part"
     try:
-        # Mirror 酱临时授权 URL 显式声明来源，不依赖全局 Source；接管开关打开时
-        # 不再硬编码内置下载器，交由分发层按来源策略决定（Mirror 酱仍强制 httpx）；
-        # 关闭时保持原有的内置 httpx 行为。
+        # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
+        # Source/Downloader：FluxDown 不接短期授权链接（凭证泄漏风险）
         # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
         await download_file(
             latest.url,
@@ -465,9 +464,7 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
             timeout=_DOWNLOAD_TIMEOUT,
             proxy=Config.proxy,
             source="MirrorChyan",
-            downloader=(
-                None if Config.setting.Update.FluxdownTakeoverAll else "builtin"
-            ),
+            downloader="builtin",
         )
         await _run_write_thread(
             _store_verified_cache, cache_dir, part, latest, channel, arch

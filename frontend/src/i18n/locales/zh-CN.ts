@@ -5195,7 +5195,7 @@ export default {
       fluxdownSegments: '多线程分段数',
       fluxdownSegmentsTip: '值越大并发越高，实际效果取决于目标服务器是否支持 Range 请求',
       fluxdownTakeover: '接管所有脚本更新',
-      fluxdownTakeoverTip: '开启后所有自动化脚本的更新下载也走 FluxDown（预留开关）',
+      fluxdownTakeoverTip: '接管所有脚本的更新下载（该功能暂未实现，开关已禁用，仅为预留项）',
       fluxdownServerMode: 'FluxDown 断点续传服务',
       fluxdownServerModeTip:
         '开启后由常驻的 FluxDown 服务下载，断网/失败后可从已下载分段续传；关闭则每次重新下载。与用户全量版 FluxDown 互不影响',
