@@ -56,6 +56,13 @@ test.describe('@recovery websocket resilience', () => {
   })
 
   test('handles backend restart gracefully', async ({ app, page }) => {
+    // 这条用例故意让健康检查失败，属于被测行为本身：先声明出来，
+    // 否则 fixtures 的兜底断言会把它当成「页面出现不该有的错误」。
+    // 后台初始化轮询在同一个窗口期刷出的 Network Error 警告同理。
+    app.ignore({
+      request: [/\/api\/core\/health$/],
+      warning: [/\[后台初始化\] 读取后台初始化状态失败/],
+    })
     const sockets = trackMainWebSockets(page)
 
     await app.goto('/home')

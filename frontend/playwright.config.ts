@@ -8,6 +8,9 @@ const frontendPort = Number(process.env.AUTO_MAS_E2E_FRONTEND_PORT ?? 5174)
 const realE2E = process.env.AUTO_MAS_E2E_REAL === '1'
 const dataRoot = process.env.AUTO_MAS_E2E_DATA_ROOT
 if (!dataRoot) throw new Error('请通过 yarn e2e 或 yarn e2e:real:local 启动测试')
+// 每次运行独占自己的产物目录：并行跑、连着跑都不会互相清掉上一份报告
+const outputRoot = realE2E ? 'real' : 'browser'
+const runTag = process.env.AUTO_MAS_E2E_RUN_TAG?.trim() || 'latest'
 
 const runtimeEnv = Object.fromEntries(
   Object.entries(process.env).filter(([name]) =>
@@ -29,7 +32,7 @@ const backendEnv = {
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.pw.ts',
-  outputDir: realE2E ? 'test-results/real' : 'test-results/browser',
+  outputDir: `test-results/${outputRoot}/${runTag}`,
   grepInvert: realE2E ? undefined : /@real/,
   fullyParallel: false,
   workers: 1,
@@ -42,7 +45,7 @@ export default defineConfig({
     [
       'html',
       {
-        outputFolder: realE2E ? 'playwright-report/real' : 'playwright-report/browser',
+        outputFolder: `playwright-report/${outputRoot}/${runTag}`,
         open: 'never',
       },
     ],

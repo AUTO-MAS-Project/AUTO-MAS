@@ -40,7 +40,7 @@
     "e2e:real:local": "pwsh -NoProfile -File ./e2e/run-real.ps1",
     "e2e:real:all": "node e2e/real-batch.mjs",
     "e2e:ui": "node e2e/run.mjs --ui",
-    "e2e:report": "playwright show-report playwright-report/browser",
+    "e2e:report": "node e2e/report.mjs",
     "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json",
     "audit:baseline": "node scripts/audit-baseline.mjs",
     "audit:unused": "knip --no-progress",
