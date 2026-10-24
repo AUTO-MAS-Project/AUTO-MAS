@@ -34,14 +34,11 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
+          <BooleanSelect
             v-model:value="formData.Info.Status"
             size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -178,6 +175,7 @@
 </template>
 
 <script setup lang="ts">
+import BooleanSelect from '@/components/BooleanSelect.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
