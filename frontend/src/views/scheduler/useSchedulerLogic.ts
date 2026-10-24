@@ -1318,15 +1318,8 @@ export function useSchedulerLogic() {
     if (tabIndex !== -1) {
       const updatedTab: SchedulerTab = { ...tab }
       schedulerTabs.value.splice(tabIndex, 1, updatedTab)
-      // 刷新数组中的响应式对象，让外部启动或恢复的脚本也能直接再次运行。
-      const currentTab = schedulerTabs.value[tabIndex]
-      if (isScriptTask(currentTab)) {
-        void loadUserOptions(currentTab)
-      } else if (isQueueTask(currentTab)) {
-        // 队列任务结束（含页面在运行中被重载的情形）后重拉一次运行范围：
-        // groups 不持久化，不重拉就看不到账号，用户上次取消勾选的账号会被静默按全量跑
-        void loadQueueScope(currentTab)
-      }
+      // 运行中保留的选择到此重新校验，再按最新资源刷新账号和范围。
+      void loadTaskOptions()
     }
 
     const { playSound } = useAudioPlayer()
@@ -1457,17 +1450,18 @@ export function useSchedulerLogic() {
             .filter(option => option.label.startsWith('队列 - '))
             .map(option => option.value)
         )
-        const missingTasks = schedulerTabs.value
-          .filter(
-            tab =>
-              tab.status !== '运行' &&
-              tab.selectedTaskId &&
-              !response.data.some(option => option.value === tab.selectedTaskId)
-          )
-          .map(tab => ({ tab, taskId: tab.selectedTaskId! }))
+        const getMissingTasks = () =>
+          schedulerTabs.value
+            .filter(
+              tab =>
+                tab.status !== '运行' &&
+                tab.selectedTaskId &&
+                !response.data.some(option => option.value === tab.selectedTaskId)
+            )
+            .map(tab => ({ tab, taskId: tab.selectedTaskId! }))
         let existingScriptIds = new Set<string>()
         // 任务下拉隐藏了被占用的脚本；未知类型的旧选择须查完整脚本列表，不能按缺席就删除。
-        if (missingTasks.some(({ taskId }) => !knownQueueIds.has(taskId))) {
+        if (getMissingTasks().some(({ taskId }) => !knownQueueIds.has(taskId))) {
           const scripts = await Service.getScriptComboxApiInfoComboxScriptPost()
           if (latestTaskOptionsRequest !== request) return false
           if (scripts.code !== 200) {
@@ -1481,7 +1475,8 @@ export function useSchedulerLogic() {
           )
         }
         taskOptions.value = response.data
-        for (const { tab, taskId } of missingTasks) {
+        // 等待脚本确认期间也能换任务或新增调度台，使用此刻的选择重新核对。
+        for (const { tab, taskId } of getMissingTasks()) {
           if (
             tab.status !== '运行' &&
             tab.selectedTaskId === taskId &&
@@ -1645,13 +1640,8 @@ export function useSchedulerLogic() {
     tab.taskId = null
     tab.logMode = 'browse'
     schedulerTabs.value = [...schedulerTabs.value]
-    // 完成消息缺失时，快照确认结束也要准备下一轮的用户选择。
-    if (isScriptTask(tab)) {
-      void loadUserOptions(tab)
-    } else if (isQueueTask(tab)) {
-      // 跑完一轮后账号可能已经不可运行，重新拉一次让面板显示真实可选范围
-      void loadQueueScope(tab)
-    }
+    // 完成消息缺失时，快照确认结束也要校正资源并准备下一轮的用户选择。
+    void loadTaskOptions()
     saveTabsToStorage(schedulerTabs.value)
   }
 
