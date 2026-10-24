@@ -26,7 +26,7 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -36,7 +36,7 @@ import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
-    ReplayRecord,
+    HistoryAttachmentInput,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -62,7 +62,6 @@ from app.runtime_tasks import RuntimeTasks
 from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
-from app.utils.constants import UTC4
 
 from .config import (
     BAAHConfig,
@@ -366,27 +365,21 @@ class TaskInfo(TaskItem):
     )
     replay_cancelled: bool = field(default=False, init=False, repr=False)
     _replay_runs: dict[str, str] = field(default_factory=dict, init=False, repr=False)
-    _replay_active: dict[str, int] = field(default_factory=dict, init=False, repr=False)
-    _replay_candidates: dict[str, dict[str, UserItem]] = field(
-        default_factory=dict, init=False, repr=False
-    )
-    _replay_seen: set[tuple[str, str | None]] = field(
+    _replay_seen: set[tuple[str, str]] = field(
         default_factory=set, init=False, repr=False
     )
-    # script_id -> replayId -> 发起时的快照；补齐后移除，不受 _replay_seen 去重影响。
-    _replay_requests: dict[str, dict[str, _ReplayRequest]] = field(
+
+    _history_capture_tasks: dict[tuple[str, str], asyncio.Task[Path]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    _history_capture_files: dict[tuple[str, str], Path] = field(
         default_factory=dict, init=False, repr=False
     )
 
     def begin_script_run(self, script: ScriptItem) -> None:
-        # 兜底：上一轮漏掉的补齐必须在清空本轮状态之前完成。
-        self.flush_replays(script)
         previous = self._replay_runs.get(script.script_id)
         self._replay_seen = {key for key in self._replay_seen if key[0] != previous}
-        self._replay_runs[script.script_id] = str(uuid.uuid4())
-        self._replay_candidates.pop(script.script_id, None)
-        self._replay_active.pop(script.script_id, None)
-        # 循环队列复用 ScriptItem，上一轮账号不能参与本轮预检结果。
+        self._replay_runs[script.script_id] = uuid.uuid4().hex
         script.user_list = []
         script.current_index = -1
         script.status = "等待"
@@ -394,7 +387,8 @@ class TaskInfo(TaskItem):
     def on_status_changed(
         self, item: UserItem | ScriptItem, previous: str | None, status: str
     ) -> None:
-        if self.mode != "AutoProxy" or self.replay_cancelled:
+        # 已执行用户在自己的收尾中显式采集；预检与共享故障没有用户历史归属。
+        if status != "异常" or self.mode != "AutoProxy" or self.replay_cancelled:
             return
         script = (
             item
@@ -411,182 +405,155 @@ class TaskInfo(TaskItem):
         if script is None:
             return
         if isinstance(item, UserItem):
-            candidates = self._replay_candidates.setdefault(script.script_id, {})
-            if status != "异常":
-                candidates.pop(item.user_id, None)
-            elif self._replay_active.get(script.script_id, 0):
-                candidates[item.user_id] = item
-            else:
-                # 账号预检、HSR 原生来源、MFW inner task 不经过 spawn，异常即其终态。
-                self._request_replay(script, item)
-        elif status == "异常" and not self._replay_active.get(script.script_id, 0):
-            self._request_replay(script)
-
-    def on_user_execution_started(self, script: ScriptItem) -> None:
-        self._replay_active[script.script_id] = (
-            self._replay_active.get(script.script_id, 0) + 1
-        )
-
-    def on_user_execution_finished(self, script: ScriptItem) -> None:
-        active = max(0, self._replay_active.get(script.script_id, 0) - 1)
-        self._replay_active[script.script_id] = active
-        if active:
             return
-        candidates = self._replay_candidates.pop(script.script_id, {})
-        for user in candidates.values():
-            if user.status == "异常":
-                self._request_replay(script, user)
-        if script.status == "异常":
-            self._request_replay(script)
+        run = self._replay_runs.get(script.script_id)
+        if any(key[0] == run for key in self._history_capture_tasks) or any(
+            key[0] == run and key[1] != "diagnostic" for key in self._replay_seen
+        ):
+            return
+        self._request_unassigned_replay(script, reason="无对应用户执行轮次的任务异常")
 
-    def _request_replay(
-        self,
-        script: ScriptItem | None,
-        user: UserItem | None = None,
-        *,
-        reason: str = "",
+    def begin_user_history_capture(
+        self, script: ScriptItem, user: UserItem, *, failed: bool
     ) -> None:
-        if self.mode != "AutoProxy" or self.replay_cancelled:
+        """专项确认最终失败后及时请求缓冲；此时只采集临时文件，不预建历史。"""
+        if (
+            not failed
+            or self.mode != "AutoProxy"
+            or self.replay_cancelled
+            or not user.log_record
+        ):
             return
-        try:
-            if not Config.setting.Replay.Enabled:
-                return
-            script_id = script.script_id if script else "scheduler"
-            run_id = self._replay_runs.setdefault(script_id, str(uuid.uuid4()))
-            key = (run_id, user.user_id if user else None)
-            if key in self._replay_seen or (
-                user is None and any(seen[0] == run_id for seen in self._replay_seen)
-            ):
-                return
-            self._replay_seen.add(key)
-            options = Config.obs_replay_options()
-            record = ReplayRecord(
-                replayId=str(uuid.uuid4()),
-                taskId=self.task_id,
-                scriptId=script.script_id if script else None,
-                userId=user.user_id if user else None,
-                scriptName=script.name if script else "调度任务",
-                userName=user.name if user else "",
-                failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                reason=reason or self._replay_reason(user),
-                historyPaths=self._replay_history_paths(script, user),
-            )
-            RuntimeTasks.spawn(
-                self._save_replay(options, record), name=f"obs-replay:{record.replayId}"
-            )
-            if script is not None:
-                self._replay_requests.setdefault(script_id, {})[record.replayId] = (
-                    _ReplayRequest(
-                        script=script,
-                        user=user,
-                        explicit_reason=bool(reason),
-                        reason=record.reason,
-                        history_paths=list(record.historyPaths),
-                    )
-                )
-        except Exception as error:
-            logger.warning(f"无法安排失败回放: {type(error).__name__}")
+        if not Config.setting.Replay.Enabled:
+            return
+        run = self._replay_runs.setdefault(script.script_id, uuid.uuid4().hex)
+        key = (run, user.user_id)
+        if key in self._replay_seen or key in self._history_capture_tasks:
+            return
+        from app.services.obs_replay import ObsReplay
 
-    @staticmethod
-    def _replay_reason(user: UserItem | None) -> str:
-        if user is None:
-            return "脚本执行异常"
-        return user.result if user.log_record else "账号执行异常"
+        capture = RuntimeTasks.spawn(
+            ObsReplay.capture(Config.obs_replay_options()), name="obs-user-capture"
+        )
+        if capture is not None:
+            self._history_capture_tasks[key] = capture
 
-    @staticmethod
-    def _replay_history_paths(
-        script: ScriptItem | None, user: UserItem | None
-    ) -> list[str]:
-        if script is None or user is None:
+    async def collect_user_history_attachments(
+        self, script: ScriptItem, user: UserItem
+    ) -> list[HistoryAttachmentInput]:
+        """保存前等待该用户已有采集，捕获故障不影响执行结论和其余记录。"""
+        run = self._replay_runs.setdefault(script.script_id, uuid.uuid4().hex)
+        key = (run, user.user_id)
+        if key in self._replay_seen:
             return []
+        self.begin_user_history_capture(script, user, failed=user.status == "异常")
+        capture = self._history_capture_tasks.pop(key, None)
+        if capture is None:
+            return []
+        self._replay_seen.add(key)
         try:
-            script_config = Config.ScriptConfig[uuid.UUID(script.script_id)]
-        except (KeyError, ValueError):
-            script_config = None
-        if isinstance(script_config, MaaFWConfig):
-            # MaaFW 引擎（含特调）自己拼 history 路径，文件名带脚本名前缀。
-            from app.task.MaaFW.tools.embedded.history_paths import (
-                maafw_history_log_path,
-            )
-
+            path = await capture
+            if self.replay_cancelled or user.status != "异常":
+                await asyncio.to_thread(path.unlink, missing_ok=True)
+                return []
+            self._history_capture_files[key] = path
             return [
-                str(
-                    maafw_history_log_path(user.name, start, script.name).with_suffix(
-                        ".json"
-                    )
+                HistoryAttachmentInput(
+                    path=path, kind="video", role="obs_replay", display_name=path.name
                 )
-                for start in user.log_record
             ]
-        return [
-            str(
-                Config.build_history_log_path(
-                    script_name=script.name,
-                    user_name=user.name,
-                    log_time=start.astimezone(UTC4),
-                ).with_suffix(".json")
-            )
-            for start in user.log_record
-        ]
-
-    def flush_replays(self, script: ScriptItem | None = None) -> None:
-        """按当前日志补齐已发起回放的原因与历史关联。
-
-        保存在发现失败时立即发起，部分适配器之后才建日志或写失败原因；在脚本
-        管理器收尾（历史已写完）后调用，``script`` 为空时补齐全部在途脚本。
-        补齐只读当前状态，失败只记日志，不影响任务结果。
-        """
-
-        try:
-            if script is None:
-                pending = list(self._replay_requests.values())
-                self._replay_requests.clear()
-            else:
-                pending = [self._replay_requests.pop(script.script_id, {})]
-            for requests in pending:
-                for replay_id, request in requests.items():
-                    reason = (
-                        request.reason
-                        if request.explicit_reason
-                        else self._replay_reason(request.user)
-                    )
-                    history_paths = self._replay_history_paths(
-                        request.script, request.user
-                    )
-                    if (
-                        reason == request.reason
-                        and history_paths == request.history_paths
-                    ):
-                        continue
-                    RuntimeTasks.spawn(
-                        self._update_replay(replay_id, reason, history_paths),
-                        name=f"obs-replay-update:{replay_id}",
-                    )
         except Exception as error:
-            logger.warning(f"无法补齐失败回放信息: {type(error).__name__}")
+            logger.opt(exception=True).warning(f"用户失败回放未采集：{error}")
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning", message=f"失败回放未采集：{error}"
+                    ),
+                )
+            return []
 
-    async def _save_replay(self, options, record: ReplayRecord) -> None:
+    async def _discard_history_capture_file(self, path: Path) -> bool:
         from app.services.obs_replay import ObsReplay
 
         try:
-            await ObsReplay.save(options, record)
-        except Exception as error:
-            logger.warning(f"失败回放未保存: {error}")
-            await Publisher.send(
-                id=self.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(
-                    level="warning", message=f"失败回放未保存：{error}"
-                ),
-            )
+            if (
+                ObsReplay.directory.is_symlink()
+                or ObsReplay.directory.is_junction()
+                or path.is_symlink()
+                or path.parent.resolve() != ObsReplay.directory.resolve()
+            ):
+                logger.warning(f"拒绝清理回放临时目录外的文件：{path}")
+                return False
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+            return True
+        except OSError as error:
+            logger.warning(f"未归档回放临时副本清理失败：{error}")
+            return False
 
-    async def _update_replay(
-        self, replay_id: str, reason: str, history_paths: list[str]
+    async def discard_user_history_capture(
+        self, script: ScriptItem, user: UserItem
     ) -> None:
-        from app.services.obs_replay import ObsReplay
+        """归档返回后释放本用户的采集副本，包括配额拒收与复制回退留下的源。"""
+        run = self._replay_runs.get(script.script_id)
+        if run is None:
+            return
+        key = (run, user.user_id)
+        path = self._history_capture_files.get(key)
+        if path is not None and await self._discard_history_capture_file(path):
+            self._history_capture_files.pop(key, None)
 
-        await ObsReplay.update_record(
-            replay_id, reason=reason, history_paths=history_paths
-        )
+    async def discard_history_captures(self) -> None:
+        """异常中断未交给用户历史的采集只能丢弃，不能在队列末尾补挂。"""
+        captures = list(self._history_capture_tasks.values())
+        self._history_capture_tasks.clear()
+        for capture in captures:
+            if not capture.done():
+                capture.cancel()
+        results = await asyncio.gather(*captures, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Path):
+                await self._discard_history_capture_file(result)
+        for key, path in list(self._history_capture_files.items()):
+            if await self._discard_history_capture_file(path):
+                self._history_capture_files.pop(key, None)
+
+    def _request_unassigned_replay(
+        self, script: ScriptItem | None, *, reason: str
+    ) -> None:
+        """无用户归属的诊断只请求 OBS 原件，不创建 MAS 回放档案。"""
+        if (
+            self.mode != "AutoProxy"
+            or self.replay_cancelled
+            or not Config.setting.Replay.Enabled
+        ):
+            return
+        script_id = script.script_id if script is not None else "scheduler"
+        run = self._replay_runs.setdefault(script_id, uuid.uuid4().hex)
+        key = (run, "diagnostic")
+        if key in self._replay_seen:
+            return
+        self._replay_seen.add(key)
+        options = Config.obs_replay_options()
+
+        async def capture() -> None:
+            from app.services.obs_replay import ObsReplay
+
+            try:
+                path = await ObsReplay.capture(options, temporary_copy=False)
+                message = f"{reason}；回放仅保留在 OBS 输出：{path}"
+            except Exception as error:
+                message = f"{reason}；诊断回放未采集：{error}"
+            logger.warning(message)
+            with suppress(Exception):
+                await Publisher.send(
+                    id=self.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="warning", message=message),
+                )
+
+        RuntimeTasks.spawn(capture(), name="obs-diagnostic-capture")
 
     async def on_change(self):
         await Publisher.send(
@@ -1118,8 +1085,6 @@ class Task(TaskExecuteBase):
             logger.exception(f"循环任务出现异常: {entry.script_name}: {e}")
         finally:
             self.script_reservations.release(script_uid, reservation_owner)
-            # 管理器已收尾、历史已写完，按最终日志补齐本条目的失败回放。
-            self.task_info.flush_replays(script_item)
 
         # 维护可能在 manager 准备期间开始；全员尚未开跑时不留实际运行记录。
         if (
@@ -1480,13 +1445,9 @@ class Task(TaskExecuteBase):
                     await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
-                # 管理器已收尾、历史已写完，按最终日志补齐本脚本的失败回放。
-                self.task_info.flush_replays(script_item)
 
     async def final_task(self) -> None:
-
-        # 崩溃或取消时脚本循环来不及补齐，这里收掉还在途的失败回放。
-        self.task_info.flush_replays()
+        await self.task_info.discard_history_captures()
 
         # 收尾脚本完成后才发布终态，期间队列仍可被停止。
         if self._queue_run_started and self.task_info.queue_id is not None:
@@ -1564,7 +1525,7 @@ class Task(TaskExecuteBase):
             if 0 <= current < len(self.task_info.script_list)
             else None
         )
-        self.task_info._request_replay(
+        self.task_info._request_unassigned_replay(
             script, reason=f"任务执行异常：{type(e).__name__}: {e}"
         )
         if self._exit_result == "success":

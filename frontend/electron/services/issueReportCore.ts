@@ -1,3 +1,10 @@
+import {
+  historyFilePath,
+  historyLogText,
+  historyRecordJson,
+  readHistoryRecords,
+  type HistoryRecordRow,
+} from './historyReader'
 import { readBackendDocument } from './backendConfig'
 import * as fs from 'fs'
 import * as os from 'os'
@@ -97,20 +104,6 @@ function entryLimit(state: CollectorState): number {
 
 function archiveLimit(state: CollectorState): number {
   return state.maxArchiveBytes ?? MAX_ARCHIVE_BYTES
-}
-
-interface HistoryLogCandidate {
-  sourcePath: string
-  archivePath: string
-  mtimeMs: number
-}
-
-interface HistoryRecordCandidate {
-  logPath: string
-  jsonPath: string
-  archiveRoot: string
-  relativeBasePath: string
-  mtimeMs: number
 }
 
 function historyArchiveRoot(rootIndex: number): string {
@@ -799,74 +792,111 @@ export function addReportManifest(
   state.zip.addFile(archivePath, Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, 'utf-8'))
 }
 
+/** 诊断包保留其它证据，历史读取故障明确记入清单；历史读取本身仍抛出异常。 */
+export function readReportHistory(
+  state: CollectorState,
+  dataRoot: string,
+  archiveRoot: string
+): ReturnType<typeof readHistoryRecords> {
+  try {
+    return readHistoryRecords(dataRoot)
+  } catch (error) {
+    const message = sanitizeText(`历史数据库读取失败: ${String(error)}`)
+    addSkippedEntry(state, `${archiveRoot}/index`, 0, message)
+    // 部分专项没有整包清单，也要把此处的失败原因随现有证据导出。
+    addReportManifest(state, `${archiveRoot}/manifest.json`, { report: 'history', error: message })
+    return []
+  }
+}
+
+export function addDiagnosticText(state: CollectorState, text: string, archivePath: string): void {
+  const sourceSize = Buffer.byteLength(text, 'utf8')
+  const limit = Math.min(entryLimit(state), archiveLimit(state) - state.archiveBytes)
+  if (limit <= 0) {
+    addSkippedEntry(state, archivePath, sourceSize, '问题包已达到总大小限制')
+    return
+  }
+  const content = Buffer.from(sanitizeText(text), 'utf8')
+  if (content.byteLength <= limit) {
+    addEntry(state, archivePath, sourceSize, content, 'included')
+  } else {
+    const header = Buffer.from('[文件过大，仅保留文件末尾内容。]\n', 'utf8')
+    if (limit <= header.byteLength) {
+      addSkippedEntry(state, archivePath, sourceSize, '问题包剩余空间不足')
+      return
+    }
+    addEntry(
+      state,
+      `${archivePath}.tail`,
+      sourceSize,
+      Buffer.concat([header, tailOf(content, limit - header.byteLength)]),
+      'truncated',
+      '仅保留文件末尾'
+    )
+  }
+}
+
+/** 兜底日志会再次读取数据库，故障也必须随诊断包说明而不阻断其它证据。 */
+export function addReportHistoryLog(
+  state: CollectorState,
+  dataRoot: string,
+  record: HistoryRecordRow,
+  archivePath: string
+): string | undefined {
+  try {
+    const text = historyLogText(dataRoot, record)
+    if (text === undefined) {
+      addSkippedEntry(state, archivePath, 0, '历史日志不存在或无法读取')
+      return undefined
+    }
+    addDiagnosticText(state, text, archivePath)
+    return state.entries.at(-1)?.path
+  } catch (error) {
+    const message = sanitizeText(`历史日志读取失败: ${String(error)}`)
+    addSkippedEntry(state, archivePath, 0, message)
+    addReportManifest(state, `${archivePath}.manifest.json`, {
+      report: 'history-log',
+      error: message,
+    })
+    return undefined
+  }
+}
+
+export function addReportHistoryJson(
+  state: CollectorState,
+  record: HistoryRecordRow,
+  archivePath: string
+): void {
+  try {
+    addSanitizedJsonValue(state, historyRecordJson(record), archivePath)
+  } catch (error) {
+    const message = sanitizeText(`历史记录解析失败: ${String(error)}`)
+    addSkippedEntry(state, archivePath, 0, message)
+    addReportManifest(state, `${archivePath}.manifest.json`, {
+      report: 'history-record',
+      error: message,
+    })
+  }
+}
+
 export function addLatestMasHistoryLog(
   state: CollectorState,
   dataRoots: string[]
 ): string | undefined {
-  let latest: HistoryLogCandidate | undefined
-
-  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
-    let entries: fs.Dirent[]
-    try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true })
-    } catch (error) {
-      logger.debug(`读取 MAS 历史日志目录失败: ${currentDir}, ${String(error)}`)
-      return
-    }
-
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) {
-        continue
-      }
-
-      const sourcePath = path.join(currentDir, entry.name)
-      if (entry.isDirectory()) {
-        visitDirectory(historyRoot, sourcePath, archiveRoot)
-        continue
-      }
-
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.log') {
-        continue
-      }
-
-      try {
-        const mtimeMs = fs.statSync(sourcePath).mtimeMs
-        const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
-        const candidate = {
-          sourcePath,
-          archivePath: path.posix.join(archiveRoot, relativePath),
-          mtimeMs,
-        }
-        if (
-          !latest ||
-          candidate.mtimeMs > latest.mtimeMs ||
-          (candidate.mtimeMs === latest.mtimeMs && candidate.archivePath > latest.archivePath)
-        ) {
-          latest = candidate
-        }
-      } catch (error) {
-        logger.debug(`读取 MAS 历史日志信息失败: ${sourcePath}, ${String(error)}`)
-      }
-    }
-  }
-
-  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
-    const historyRoot = path.join(dataRoot, 'history')
-    if (fs.existsSync(historyRoot)) {
-      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
-    }
-  }
-
-  if (!latest) {
-    return undefined
-  }
-
-  const entryCount = state.entries.length
-  addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
-  if (state.entries.length === entryCount) {
-    return undefined
-  }
-  return state.entries[state.entries.length - 1]?.path
+  const candidates = dataRoots.flatMap((root, rootIndex) =>
+    readReportHistory(state, root, historyArchiveRoot(rootIndex))
+      .slice(0, 1)
+      .map(record => ({ root, rootIndex, record }))
+  )
+  candidates.sort(
+    (left, right) =>
+      right.record.timestamp - left.record.timestamp ||
+      right.record.id.localeCompare(left.record.id)
+  )
+  const latest = candidates[0]
+  if (!latest) return undefined
+  const archivePath = `${historyArchiveRoot(latest.rootIndex)}/${latest.record.id}/main.log`
+  return addReportHistoryLog(state, latest.root, latest.record, archivePath)
 }
 
 export function addRecentFailedMaaEndHistoryLogs(
@@ -874,114 +904,77 @@ export function addRecentFailedMaaEndHistoryLogs(
   dataRoots: string[],
   limit = 3
 ): string[] {
-  return addRecentAdapterHistoryLogs(state, dataRoots, { resultKey: 'maaend_result', limit })
+  return addRecentAdapterHistoryLogs(state, dataRoots, { adapter: 'maaend', limit })
 }
 
-/** 按专项结果字段收历史；没有失败记录时可回退到该专项最近一次运行。 */
+/** 按名称快照匹配当前专项；同名、重命名或删除后的归属限制不由导出端猜测补齐。 */
 export function addRecentAdapterHistoryLogs(
   state: CollectorState,
   dataRoots: string[],
   options: {
-    resultKey: 'maa_result' | 'maaend_result'
+    adapter: 'maa' | 'maaend'
     limit?: number
     fallbackLatest?: boolean
     includeJson?: boolean
   }
 ): string[] {
-  const candidates: HistoryRecordCandidate[] = []
-  const failedPaths = new Set<string>()
-  const seenPaths = new Set<string>()
-
-  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
-    let entries: fs.Dirent[]
-    try {
-      entries = fs.readdirSync(currentDir, { withFileTypes: true })
-    } catch (error) {
-      logger.debug(`读取专项历史日志目录失败: ${currentDir}, ${String(error)}`)
-      return
-    }
-
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) {
-        continue
-      }
-
-      const sourcePath = path.join(currentDir, entry.name)
-      if (entry.isDirectory()) {
-        visitDirectory(historyRoot, sourcePath, archiveRoot)
-        continue
-      }
-
-      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.json') {
-        continue
-      }
-
-      const data = readJson(sourcePath)
-      if (!isRecord(data) || typeof data[options.resultKey] !== 'string') {
-        continue
-      }
-
-      const result = (data[options.resultKey] as string).replace(/^\[[^\]]+\]\s*/, '')
-
-      const normalizedPath = path.resolve(sourcePath)
-      const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
-      if (seenPaths.has(pathKey)) {
-        continue
-      }
-
-      try {
-        const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
-        candidates.push({
-          logPath: sourcePath.slice(0, -path.extname(sourcePath).length) + '.log',
-          jsonPath: sourcePath,
-          archiveRoot,
-          relativeBasePath: relativePath.slice(0, -path.extname(relativePath).length),
-          mtimeMs: fs.statSync(sourcePath).mtimeMs,
-        })
-        seenPaths.add(pathKey)
-        if (result !== 'Success!') failedPaths.add(sourcePath)
-      } catch (error) {
-        logger.debug(`读取专项历史日志信息失败: ${sourcePath}, ${String(error)}`)
+  const seenDatabases = new Set<string>()
+  const candidates = dataRoots.flatMap((dataRoot, rootIndex) => {
+    const databasePath = path.resolve(dataRoot, 'data', 'history.db').toLowerCase()
+    if (seenDatabases.has(databasePath)) return []
+    seenDatabases.add(databasePath)
+    const document = readBackendDocument(dataRoot, 'scripts.yaml', 'ScriptConfig.json')
+    const names = new Set<string>()
+    if (isRecord(document) && Array.isArray(document.order) && isRecord(document.data)) {
+      for (const instance of document.order) {
+        const type = options.adapter === 'maa' ? 'MaaConfig' : 'MaaEndConfig'
+        if (!isRecord(instance) || instance.type !== type || typeof instance.uid !== 'string')
+          continue
+        const config = document.data[instance.uid]
+        if (isRecord(config) && isRecord(config.Info) && typeof config.Info.Name === 'string')
+          names.add(config.Info.Name)
       }
     }
-  }
-
-  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
-    const historyRoot = path.join(dataRoot, 'history')
-    if (fs.existsSync(historyRoot)) {
-      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
-    }
-  }
-
-  const addedPaths: string[] = []
+    return readReportHistory(state, dataRoot, historyArchiveRoot(rootIndex))
+      .filter(record => names.has(record.script_name))
+      .map(record => ({ dataRoot, rootIndex, record }))
+  })
   candidates.sort(
     (left, right) =>
-      right.mtimeMs - left.mtimeMs || right.relativeBasePath.localeCompare(left.relativeBasePath)
+      right.record.timestamp - left.record.timestamp ||
+      right.record.id.localeCompare(left.record.id)
   )
   const limit = Math.max(options.limit ?? 3, 0)
   const selected = candidates
-    .filter(candidate => failedPaths.has(candidate.jsonPath))
+    .filter(candidate => candidate.record.status === 'error')
     .slice(0, limit)
   if (!selected.length && limit > 0 && options.fallbackLatest && candidates.length)
     selected.push(candidates[0])
-
-  for (const candidate of selected) {
-    const files: Array<[string, string]> = [[candidate.logPath, '.log']]
-    if (options.includeJson !== false) files.push([candidate.jsonPath, '.json'])
-    for (const [sourcePath, extension] of files) {
-      const archivePath = path.posix.join(
-        candidate.archiveRoot,
-        `${candidate.relativeBasePath}${extension}`
-      )
-      const entryCount = state.entries.length
-      addDiagnosticFile(state, sourcePath, archivePath)
-      if (state.entries.length === entryCount)
-        addSkippedEntry(state, archivePath, 0, '历史文件不存在或无法读取')
-      if (state.entries.length > entryCount) {
-        addedPaths.push(state.entries[state.entries.length - 1].path)
-      }
+  const added: string[] = []
+  for (const { dataRoot, rootIndex, record } of selected) {
+    const archiveRoot = `${historyArchiveRoot(rootIndex)}/${record.id}`
+    addReportHistoryLog(state, dataRoot, record, `${archiveRoot}/main.log`)
+    if (options.includeJson !== false)
+      addReportHistoryJson(state, record, `${archiveRoot}/record.json`)
+    for (const attachment of record.attachments) {
+      const archivePath = `${archiveRoot}/${attachment.id}-${path.basename(attachment.display_name)}`
+      const source = attachment.available
+        ? historyFilePath(dataRoot, attachment.relative_path)
+        : undefined
+      if (source) addDiagnosticFile(state, source, archivePath)
+      else
+        addSkippedEntry(
+          state,
+          archivePath,
+          attachment.byte_size,
+          attachment.unavailable_reason || '历史附件不可用'
+        )
     }
+    added.push(
+      ...state.entries
+        .filter(entry => entry.path.startsWith(`${archiveRoot}/`))
+        .map(entry => entry.path)
+    )
   }
-
-  return addedPaths
+  return added
 }

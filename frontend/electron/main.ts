@@ -1648,7 +1648,7 @@ registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
   'MaaEnd-logs',
-  (appRoot, zipPath) => createMaaEndIssueReport(appRoot, zipPath, getLocalApiEndpoint())
+  createMaaEndIssueReport
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',

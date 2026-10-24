@@ -26,7 +26,7 @@ MaaEnd 专项作为 log_box 的一个实例：本模块只提供参数（规则�
 与其他专项 tail 脚本自身的日志文件不同，MaaEnd 的任务级进度行
 （任务开始/任务完成/任务失败）只打印在 MaaEnd.exe 的 stdout，上游不落盘；
 MAS 在 AutoProxy.final_task 已把 stdout 全文按阶段落盘为历史日志
-（``Config.save_maaend_log``），本专项以这些历史日志为采集源
+（用户收尾时写入任务临时目录），本专项以这些临时日志为采集源
 （``start_from_end=False`` 全文采集），不新增任何管道。
 
 规则说明（对应 MaaEnd.exe stdout 实际输出，行首带 ``[时间戳] `` 前缀）：

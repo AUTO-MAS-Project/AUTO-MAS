@@ -25,36 +25,36 @@
       <div v-else class="records-scroll">
         <div
           v-for="(record, index) in records"
-          :key="record.jsonFile"
+          :key="record.id"
           class="record-item"
           :class="{
             active: selectedIndex === index,
-            success: record.status === 'DONE',
-            skip: record.status === 'SKIP',
-            error: record.status === 'ERROR',
+            success: record.status === 'success',
+            skip: record.status === 'skipped' || record.status === 'cancelled',
+            error: record.status === 'error',
           }"
           @click="$emit('select', index, record)"
         >
           <div class="record-status-bar" :class="statusClass(record.status)" />
           <div class="record-content">
             <div class="record-main">
-              <span class="record-time">{{ formatRecordTime(record.date) }}</span>
+              <span class="record-time">{{ formatRecordTime(record.time) }}</span>
               <a-tag :color="statusTagColor(record.status)" size="small" class="status-tag">
-                <CheckCircleOutlined v-if="record.status === 'DONE'" />
-                <MinusCircleOutlined v-else-if="record.status === 'SKIP'" />
+                <CheckCircleOutlined v-if="record.status === 'success'" />
+                <MinusCircleOutlined
+                  v-else-if="record.status === 'skipped' || record.status === 'cancelled'"
+                />
                 <CloseCircleOutlined v-else />
-                {{
-                  record.status === 'DONE'
-                    ? record.result || t('history.done')
-                    : record.status === 'SKIP'
-                      ? record.result || t('history.skipped')
-                      : record.status === 'ERROR' && errorInfo && errorInfo[record.date]
-                        ? t('history.failedWith', { error: errorInfo[record.date] })
-                        : t('history.failed')
-                }}
+                {{ record.message || t(statusLabelKey(record.status)) }}
               </a-tag>
             </div>
-            <div class="record-file">{{ record.jsonFile }}</div>
+            <div class="record-file">
+              {{ record.script_name }} · #{{ record.id }}
+              <span v-if="record.storage_error_count">
+                ·
+                {{ t('history.storageWarningCount', { count: record.storage_error_count }) }}</span
+              >
+            </div>
           </div>
           <RightOutlined v-if="selectedIndex === index" class="record-arrow" />
         </div>
@@ -73,31 +73,24 @@ import {
   RightOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
-import { statusClass, statusTagColor } from '../historyStatus'
+import type { HistoryIndexItem } from '@/api'
+import { formatStoredDateTime } from '@/utils/dateDisplay'
+import { statusClass, statusTagColor, statusLabelKey } from '../historyStatus'
 
 const { t } = useI18n()
 
-interface RecordItem {
-  date: string
-  jsonFile: string
-  status: string
-  result?: string | null
-}
-
 interface Props {
-  records: RecordItem[]
+  records: HistoryIndexItem[]
   selectedIndex: number
-  errorInfo?: Record<string, string> | null
 }
 
 defineProps<Props>()
 
 defineEmits<{
-  (e: 'select', index: number, record: RecordItem): void
+  (e: 'select', index: number, record: HistoryIndexItem): void
 }>()
 
-const formatRecordTime = (date: string) => formatBackendDateTime(date)
+const formatRecordTime = (date: string) => formatStoredDateTime(date)
 </script>
 
 <style scoped>
@@ -244,7 +237,8 @@ const formatRecordTime = (date: string) => formatBackendDateTime(date)
   background: var(--ant-color-success);
 }
 
-.record-status-bar.skip {
+.record-status-bar.skip,
+.record-status-bar.cancelled {
   background: var(--ant-color-text-quaternary);
 }
 

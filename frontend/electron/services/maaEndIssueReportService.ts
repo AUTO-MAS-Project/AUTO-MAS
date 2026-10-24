@@ -8,6 +8,9 @@ import {
   CollectorState,
   addDebugDirectory,
   addDirectory,
+  addSkippedEntry,
+  addReportManifest,
+  readJson,
   addRecentFailedMaaEndHistoryLogs,
   discoverInstallations,
   isRecord,
@@ -89,24 +92,27 @@ interface MxuProject {
   projectVersion: string
 }
 
-async function loadMxuProject(apiEndpoint: string, scriptId: string): Promise<MxuProject> {
-  const response = await fetch(`${apiEndpoint}/api/scripts/maaend/options`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scriptId }),
-    signal: AbortSignal.timeout(30_000),
-  })
-  if (!response.ok) throw new Error(`读取 MaaEnd 资源失败: HTTP ${response.status}`)
-  const data: unknown = await response.json()
-  if (!isRecord(data) || data.code !== 200) {
-    throw new Error(
-      isRecord(data) && typeof data.message === 'string' ? data.message : '读取 MaaEnd 资源失败'
+function loadMxuProject(rootPath: string, state: CollectorState, label: string): MxuProject {
+  const value = readJson(path.join(rootPath, 'interface.json'))
+  if (!isRecord(value) || typeof value.name !== 'string') {
+    addSkippedEntry(
+      state,
+      `maaend/${label}/project-info`,
+      0,
+      '项目名称或版本不可读，使用备用包名继续导出'
     )
+    return { projectName: 'mxu', projectVersion: '' }
   }
-  if (typeof data.projectName !== 'string' || typeof data.projectVersion !== 'string') {
-    throw new Error('MaaEnd 资源未返回项目名称和版本，请更新后端')
+  // 名称仅作为压缩包文件名使用，公开 interface.json 与后端读取口径一致。
+  const safe = (text: string) =>
+    text
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/^[. ]+|[. ]+$/g, '')
+      .slice(0, 100)
+  return {
+    projectName: safe(value.name) || 'mxu',
+    projectVersion: typeof value.version === 'string' ? safe(value.version) : '',
   }
-  return { projectName: data.projectName, projectVersion: data.projectVersion }
 }
 
 function mxuExportName(project: MxuProject, now: Date): string {
@@ -193,8 +199,7 @@ interface MaaEndIssueReportResult {
 
 export async function createMaaEndIssueReport(
   appRoot: string,
-  zipPath: string,
-  apiEndpoint: string
+  zipPath: string
 ): Promise<MaaEndIssueReportResult> {
   const zip = new AdmZip()
   const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
@@ -224,9 +229,10 @@ export async function createMaaEndIssueReport(
   try {
     const now = new Date()
     for (const installation of installations) {
-      const project = await loadMxuProject(apiEndpoint, installation.scriptId)
+      const project = loadMxuProject(installation.rootPath, state, installation.label)
       addMxuVolumes(state, installation.rootPath, installation.label, project, now)
     }
+    addReportManifest(state, 'manifest.json', { report: 'MaaEnd', exportedAt: now.toISOString() })
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })
     zip.writeZip(zipPath)
     logger.info(`MaaEnd 问题包已导出: ${zipPath}`)

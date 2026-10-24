@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.config import config_manager
 from app.core import Config, EmulatorManager
+from app.core.maa_capture import capture_adb
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig
 from app.models.emulator import DeviceProvider
@@ -540,6 +541,7 @@ class MaaManager(ScriptManagerBase):
                 kwargs["view_only"] = self.task_info.view_only
             else:
                 kwargs["game_update_result"] = update_result
+                kwargs["capture_adb"] = capture_adb
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task

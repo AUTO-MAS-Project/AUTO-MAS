@@ -66,21 +66,12 @@ export function useObsReplayApi() {
             'replay_tool_finished',
             { action: 'save' },
             () => ActionService.saveObsReplayApiSettingObsSavePost(),
-            result => (result.code !== 200 ? 'failure' : result.replay ? 'success' : 'skipped')
+            result =>
+              result.code !== 200 ? 'failure' : result.capture_path ? 'success' : 'skipped'
           ),
           translate('setting.replay.saveFailed')
         ),
       translate('setting.replay.saveFailed')
-    )
-
-  const listObsReplays = () =>
-    run(
-      async () =>
-        responseMessage(
-          await GetService.getObsReplaysApiHistoryReplaysGet(),
-          translate('history.replays.fetchFailed')
-        ),
-      translate('history.replays.fetchFailed')
     )
 
   return {
@@ -88,6 +79,5 @@ export function useObsReplayApi() {
     error,
     checkObsReplay,
     saveObsReplay,
-    listObsReplays,
   }
 }
