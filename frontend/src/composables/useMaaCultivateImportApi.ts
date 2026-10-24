@@ -1,4 +1,5 @@
-import { Service, type MaaCultivateImportOut } from '@/api'
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
+import { type MaaCultivateImportOut } from '@/api'
 import { useI18n } from 'vue-i18n'
 
 const ERROR_KEYS: Record<string, string> = {

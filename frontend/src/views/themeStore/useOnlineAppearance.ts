@@ -1,3 +1,5 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 
@@ -18,7 +20,7 @@ export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
 export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
-export type OnlineAppearanceInstallOutcome = 'installed' | 'cancelled' | 'failed'
+export type OnlineAppearanceInstallOutcome = 'installed' | 'partial' | 'cancelled' | 'failed'
 
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
 
@@ -412,11 +414,17 @@ export function useOnlineAppearance(options: {
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
     if (installing.value || preparing.value) return 'cancelled'
+    const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
+    let category_kind = appearanceCategory(options.categoryKey ?? 'theme')
     installing.value = true
     let outcome: OnlineAppearanceInstallOutcome = 'failed'
     try {
       const ready = await prepareSelected()
       if (!ready) return outcome
+      category_kind = appearanceCategory(
+        ready.categoryKey ??
+          (options.categoryKey === 'all' ? undefined : (options.categoryKey ?? 'theme'))
+      )
       outcome = await (options.categoryKey === 'all'
         ? options.install(ready.token, ready.categoryKey)
         : options.install(ready.token))
@@ -424,6 +432,17 @@ export function useOnlineAppearance(options: {
       if (outcome !== 'cancelled' && prepared.value?.token === ready.token) discardPrepared()
       return outcome
     } finally {
+      telemetry.finish({
+        category_kind,
+        outcome:
+          outcome === 'installed'
+            ? 'success'
+            : outcome === 'partial'
+              ? 'partial'
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : 'failure',
+      })
       installing.value = false
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
       if (outcome === 'installed') {

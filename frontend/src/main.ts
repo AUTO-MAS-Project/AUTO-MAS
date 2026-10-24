@@ -8,6 +8,7 @@ import { OpenAPI } from '@/api'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { getConfig } from '@/utils/config'
 import { configureSentry, recordRendererStartup } from '@/utils/sentry'
+import { captureAnalyticsContext, recordRendererReady } from '@/utils/analytics'
 import { getDefaultHttpEndpoint } from '@/utils/backendEndpoint'
 import { i18n } from '@/i18n'
 import { useLocale } from '@/composables/useLocale'
@@ -98,6 +99,7 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 const bootstrap = async () => {
+  const analyticsContext = captureAnalyticsContext()
   const frontendConfig = await getConfig()
 
   // 外观必须在首次挂载前恢复，避免独立窗口和主窗口先显示默认主题后再跳变。
@@ -109,6 +111,7 @@ const bootstrap = async () => {
 
   // 挂载应用
   app.mount('#app')
+  recordRendererReady(analyticsContext, performance.now() - rendererStartedAt)
   recordRendererStartup(performance.now() - rendererStartedAt)
 
   logger.info('前端应用初始化完成')

@@ -6,10 +6,15 @@ description: Use when implementing, fixing, refactoring, or reviewing non-genera
 # MAS Code Standards
 
 ## Objective
+
 Reproduce the practical implementation style used in current `dev` without copying obsolete behavior or broadening scope unnecessarily.
 
 ## Scope
+
+For new or changed user-visible operations in Python, Electron or Vue, follow [mas-telemetry](../mas-telemetry/SKILL.md) alongside the domain rules: implement missing safe observation or reuse the existing owner, verify outcome/identity/async boundaries, and state intentional omissions. Prose-only or internal changes do not need artificial new events.
+
 Primary style reference samples:
+
 1. `frontend/electron/services`
 2. `frontend/electron/ipc`
 3. `frontend/src/views/Initialization`
@@ -17,6 +22,7 @@ Primary style reference samples:
 Use these samples as style lenses only. For frontend engineering or UI decisions, prefer `mas-frontend-standards` and `mas-frontend-ui`; for Python modules, carry over the same values of explicit orchestration, compatibility-first changes, and operational logging, but always compare nearby files before applying style assumptions.
 
 ## Workflow
+
 1. Read [references/style-observations.md](references/style-observations.md), with priority on commit lenses `e541fa5f`, `727aafb`, and `e5d72bdb`.
 2. Sample 2 to 3 sibling files in the same module before editing.
 3. Keep the main execution path obvious; extract helpers only when they make the flow easier to follow.
@@ -26,6 +32,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 7. Before completing a user-visible feature or fix, add exactly one changelog fragment under `changelog.d/` (`<PR number or branch>.<feat|change|fix|breaking|remove|security|dev>.md`; first line `project: <key>` from the project table in `changelog.d/README.md` — 14 adapters plus home / scheduler / emulator / notify / tools / settings / update / runtime, no catch-all, pick the nearest per the README; only `dev` fragments may omit it; then one user-facing sentence of at most 50 characters without project prefix, PR number or signature; `python scripts/changelog.py add <type> <project> "<sentence>"` creates it, with `-` as the project for `dev`). Before writing a fix or change fragment, decide which release introduced the feature you touch: a feature absent from the previous stable release's notes was introduced in the current X.Y.0 cycle (for 5.5.0: Runtime initialization, virtual display, Emulator 2.0, MFW, BetterGI, BAAH, ZZZ-OD, config restore, operator cultivation). Every later fix, maintenance or supplementary change to such a feature (bug fixes, turning something into a prompt, extra hints, default tweaks, layout changes, i18n wiring, cleanup) is beta-only: if the feature's entry is still in the top `## [未发布]` section or its fragment is still in `changelog.d/`, add no fragment and label the PR `skip-changelog` (describe any wording change in the PR for a maintainer to apply); if it shipped in an earlier beta of the cycle, add the header line `beta-only: true` so the entry is dropped from the stable roll-up. Sub-features added to it later are beta-only as well: in the stable notes a new adapter is exactly one line (`【bgi】新增 bgi 专项`) and a new feature is its single introduction entry; fixes and changes to features that shipped in the previous stable are normal. Project keys use the short names `bgi` (BetterGI) and `end` (MaaEnd). A PR with several human authors lists them all in the header line `author: a, b` (the script never reads Co-authored-by). Maintainers may add `highlight: true` to route an entry into 「本次亮点」; treat it as part of the implementation rather than a reminder. Condense all changes of the PR into that one sentence. Never edit `CHANGELOG.md`, `res/version.json` or any version number: they are written only by the release PR.
 
 ## Commit Lenses
+
 1. `e541fa5f`: small cleanup.
    Keep logic local, remove one-off indirection, simplify conditions without changing outcome.
 2. `727aafb`: feature landing.
@@ -34,6 +41,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
    Preserve the feature branch structure, then consolidate at integration points instead of rewriting during merge.
 
 ## Core Traits
+
 1. Use clear file sections such as `// ==================== 类型定义 ====================`.
 2. Keep module headers and comments short, Chinese, and purpose-driven.
 3. Prefer explicit orchestration over generic abstractions or clever helpers.
@@ -55,17 +63,20 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 19. Config fields use exact Pydantic types, defaults and Chinese `Field(description=...)` within semantic `ConfigGroup` blocks on `ConfigEntry`. Config behavior follows [the configuration framework reference](../mas-data-model/references/config-framework.md); historical style samples do not override current framework contracts.
 
 ## Comment Preservation
+
 Do not treat cleanup as permission to strip comments. Preserve comments that explain business intent, operational steps, compatibility decisions, non-obvious invariants, maintainer context, or config-field meaning.
 
 Only remove or rewrite a comment when it is stale, misleading, mechanically restates the next token of code, or refers to code that is being deleted in the same edit. When rewriting, keep the useful intent and make it shorter or more accurate instead of dropping it.
 
 Protect these comments especially:
+
 1. Config field descriptions, semantic group boundaries and comments explaining compatibility or non-obvious field behavior.
 2. Ordered workflow comments such as "第一步" and "第二步" in long service flows.
 3. Task-injection, config-swap, log-monitoring, and compatibility notes in runtime code.
 4. Frontend section comments that help scan large edit pages or distinguish type-specific logic.
 
 ## Avoid
+
 1. Do not introduce framework-heavy abstractions or generic factories unless the surrounding module already uses them.
 2. Do not hide the main workflow inside too many helper layers.
 3. Do not switch comment or logging language inconsistently inside a file.
@@ -79,6 +90,7 @@ Protect these comments especially:
 11. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
+
 1. The new code reads like neighboring project-standard files.
 2. Logs and comments are concise, operational, and consistent with the touched module.
 3. The main path is still easy to trace top-to-bottom.

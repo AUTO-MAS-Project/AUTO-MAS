@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 import { onUnmounted, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -154,10 +155,13 @@ export function useBetterGIUpdate(getUserId: () => string) {
     if (!userId) return
     updateModal.starting = true
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: userId,
-        mode: TaskCreateIn.mode.UPDATE,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId: userId,
+          mode: TaskCreateIn.mode.UPDATE,
+        },
+        { source: 'script_update' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.bettergiUpdateStartFailed'))
       }

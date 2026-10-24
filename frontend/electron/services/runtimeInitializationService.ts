@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 import { getLogger } from './logger'
+import { observeInitializationStage } from './initializationAnalytics'
 import { MirrorConfig, MirrorService } from './mirrorService'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
@@ -524,6 +525,22 @@ function cancelledOutcome(): RuntimeStageOutcome {
 }
 
 /**
+ * 手动更新 Runtime 的阶段观察口径：与第 0 步共用 runtime_binary 阶段观察，
+ * upgraded / current / skipped 记成功，失败与取消沿用第 0 步的错误码与失败段，
+ * 原始结果随行返回给失败页。
+ */
+function runtimeBinaryObservation(result: RuntimeBinaryAlignResult) {
+  const success =
+    result.status === 'upgraded' || result.status === 'current' || result.status === 'skipped'
+  return {
+    result,
+    success,
+    code: success ? undefined : (result.code ?? RUNTIME_BINARY_ALIGN_ERROR),
+    failedStage: success ? undefined : 'python',
+  }
+}
+
+/**
  * 从事件 details 里读 Runtime 自己的轮转日志路径。
  *
  * `details` 是裸 `Record<string, unknown>`，Runtime 只在写了日志文件的命令上放 `logPath`，
@@ -713,15 +730,24 @@ export class RuntimeInitializationService {
     this.operating = true
     this.aligning = true
     try {
-      await stopBackends?.()
-      if (this.cancelRequested) return { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
-      return await this.alignRuntimeBinary({
-        channel: this.releaseChannel,
-        runtimePath,
-        appRoot,
-        onProgress,
-        isCancelled: () => this.cancelRequested,
+      // 与第 0 步共用 runtime_binary 阶段观察，真实结局（含失败与取消）与耗时由此入库；
+      // 模式与占用守卫在观察之外，被拒绝的请求不算一次更新。
+      const observed = await observeInitializationStage('runtime_binary', mode, async () => {
+        await stopBackends?.()
+        if (this.cancelRequested) {
+          return runtimeBinaryObservation({ status: 'cancelled', code: RUNTIME_BINARY_CANCELLED })
+        }
+        return runtimeBinaryObservation(
+          await this.alignRuntimeBinary({
+            channel: this.releaseChannel,
+            runtimePath,
+            appRoot,
+            onProgress,
+            isCancelled: () => this.cancelRequested,
+          })
+        )
       })
+      return observed.result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.error(`更新 Runtime 失败: ${message}`)
@@ -1028,6 +1054,16 @@ export class RuntimeInitializationService {
    * （原因只会是网络与文件占用，都是重试能解决的），并给「重试」与「打开日志」两个入口。
    */
   private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const { mode, runtimePath } = this.options.launchConfig
+    if (mode !== 'managed' || !(runtimePath || process.resourcesPath)) {
+      return this.runRuntimeAlignment(bridge)
+    }
+    return observeInitializationStage('runtime_binary', this.options.launchConfig.mode, () =>
+      this.runRuntimeAlignment(bridge)
+    )
+  }
+
+  private async runRuntimeAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
     const outcome = await this.runAlignment(bridge)
     // 对齐期间收到的取消不能丢：exe 本来就最新、开发者自带 Runtime 这些路径不会去看取消判据，
     // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
@@ -1118,6 +1154,26 @@ export class RuntimeInitializationService {
 
   /** 跑一条 Runtime 命令，把事件桥接进进度，把失败转成现有失败形状。 */
   private async execute(
+    command: string[],
+    mirror: RuntimeMirrorSelection | null | undefined,
+    bridge: BootstrapProgressBridge
+  ): Promise<RuntimeStageOutcome> {
+    const stage =
+      command[0] === 'bootstrap'
+        ? 'bootstrap'
+        : command[0] === 'workspace'
+          ? 'repository'
+          : command[0] === 'dependencies'
+            ? 'dependency'
+            : command[0] === 'repair' || command[0] === 'environment'
+              ? 'python'
+              : 'unknown'
+    return observeInitializationStage(stage, this.options.launchConfig.mode, () =>
+      this.executeCommand(command, mirror, bridge)
+    )
+  }
+
+  private async executeCommand(
     command: string[],
     mirror: RuntimeMirrorSelection | null | undefined,
     bridge: BootstrapProgressBridge

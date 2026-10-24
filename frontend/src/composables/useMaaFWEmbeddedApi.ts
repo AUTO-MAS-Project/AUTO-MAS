@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { getAnalyticsScriptType } from '@/utils/analytics'
 import { MaaFwService } from '@/api'
 import type {
   MaaFWEmbeddedSourceItem,
@@ -64,10 +66,20 @@ export function useMaaFWEmbeddedApi() {
   /** 按来源目录导入副本：第一次是导入，之后是换来源或按当前来源重导。 */
   const reimportEmbedded = async (scriptId: string, sourcePath: string) =>
     unwrap(
-      await MaaFwService.reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost({
-        scriptId,
-        sourcePath,
-      }),
+      await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: getAnalyticsScriptType(scriptId),
+          operation_kind: 'import',
+          engine_kind: 'embedded',
+        },
+        () =>
+          MaaFwService.reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost({
+            scriptId,
+            sourcePath,
+          }),
+        apiOutcome
+      ),
       '导入失败'
     )
 
@@ -88,17 +100,36 @@ export function useMaaFWEmbeddedApi() {
    */
   const syncEmbedded = async (scriptId: string) =>
     unwrap(
-      await MaaFwService.syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost({ scriptId }),
+      await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: getAnalyticsScriptType(scriptId),
+          operation_kind: 'update',
+          engine_kind: 'embedded',
+        },
+        () => MaaFwService.syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost({ scriptId }),
+        apiOutcome
+      ),
       '同步失败'
     )
 
   /** 从另一个脚本的副本克隆：同一项目再建一个脚本，不用重新选目录投影。 */
   const cloneEmbedded = async (scriptId: string, sourceScriptId: string) =>
     unwrap(
-      await MaaFwService.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost({
-        scriptId,
-        sourceScriptId,
-      }),
+      await observeFeature(
+        'adapter_setup_finished',
+        {
+          script_type: getAnalyticsScriptType(scriptId),
+          operation_kind: 'import',
+          engine_kind: 'embedded',
+        },
+        () =>
+          MaaFwService.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost({
+            scriptId,
+            sourceScriptId,
+          }),
+        apiOutcome
+      ),
       '复用项目失败'
     )
 

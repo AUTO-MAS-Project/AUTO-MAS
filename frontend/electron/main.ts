@@ -1,3 +1,6 @@
+import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
+import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
+import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -28,6 +31,17 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import {
+  isAnalyticsSender,
+  isApplicationWindowSender,
+  registerAnalyticsHandlers,
+} from './ipc/analyticsHandlers'
+import {
+  analyticsService,
+  disposeAnalytics,
+  refreshAnalyticsPreference,
+  syncAnalyticsPreference,
+} from './services/analyticsService'
 import { registerAppearanceHandlers } from './ipc/appearanceHandlers'
 import { registerMascotHandlers } from './ipc/mascotHandlers'
 import {
@@ -120,12 +134,13 @@ function showShortcutNotification(title: string, body: string): void {
   }
 }
 
-async function stopAllTasksByShortcut(): Promise<void> {
+async function stopAllTasksByShortcut(source: 'shortcut' | 'tray' = 'shortcut'): Promise<void> {
   if (isStoppingAllTasks) {
     logger.info('全部任务正在停止中，忽略重复快捷键')
     return
   }
 
+  const telemetry = beginMainFeature('stop_all_requested')
   isStoppingAllTasks = true
   logger.info(`触发全局快捷键 ${STOP_ALL_TASKS_SHORTCUT}，开始停止所有任务`)
 
@@ -140,19 +155,23 @@ async function stopAllTasksByShortcut(): Promise<void> {
     })
 
     if (!response.ok) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(`停止请求返回错误: ${response.status}`)
     }
 
     const result = (await response.json()) as ApiResult
     if (result.code !== undefined && result.code !== 200) {
+      telemetry.finish({ source, outcome: 'rejected' })
       throw new Error(result.message || `停止请求失败: ${result.code}`)
     }
 
+    telemetry.finish({ source, outcome: 'accepted' })
     logger.info('所有任务已停止')
     showShortcutNotification('AUTO-MAS', '所有任务已停止')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局快捷键停止所有任务失败: ${errorMsg}`)
+    telemetry.finish({ source, outcome: 'unknown' })
     showShortcutNotification('AUTO-MAS', `停止所有任务失败: ${errorMsg}`)
   } finally {
     isStoppingAllTasks = false
@@ -221,6 +240,8 @@ function isRunningAsAdmin(): boolean {
 let tray: Tray | null = null
 let coordinatedQuit = false
 let forceQuitInProgress = false
+let closeTelemetry: ReturnType<typeof beginMainFeature<'app_close_finished'>> | null = null
+let closeTelemetryKind: 'user' | 'backend' = 'user'
 let quitRequestInFlight = false
 let quitConfirmationPending = false
 let relaunchAfterQuit = false
@@ -438,6 +459,10 @@ function rebuildTrayMenu(items: TrayItem[]): void {
 
 // 执行托盘菜单项动作
 function handleTrayAction(item: TrayItem): void {
+  beginMainFeature('tray_action_requested').finish({
+    action_kind: item.action,
+    outcome: 'accepted',
+  })
   switch (item.action) {
     case 'show':
       showMainWindow()
@@ -446,7 +471,7 @@ function handleTrayAction(item: TrayItem): void {
       hideMainWindow()
       break
     case 'stopAll':
-      void stopAllTasksByShortcut()
+      void stopAllTasksByShortcut('tray')
       break
     case 'startTask':
       // 一键启动指定任务：需携带任务 ID 转发给渲染进程，由调度台新建任务并启动
@@ -507,6 +532,9 @@ function cancelQuitRequest(token?: number): void {
   if (coordinatedQuit || forceQuitInProgress) return
   if (token !== undefined && token !== activeQuitPreparation) return
   clearQuitFallback()
+  closeTelemetry?.finish({ close_kind: closeTelemetryKind, outcome: 'cancelled' })
+  closeTelemetry = null
+  closeTelemetryKind = 'user'
   activeQuitPreparation = null
   quitConfirmationPending = false
   quitPreparationExpired = false
@@ -517,6 +545,11 @@ function cancelQuitRequest(token?: number): void {
 
 function finishCoordinatedQuit(): void {
   if (coordinatedQuit) return
+  closeTelemetry?.finish({
+    close_kind: forceQuitInProgress ? 'force' : closeTelemetryKind,
+    outcome: 'accepted',
+  })
+  closeTelemetry = null
   coordinatedQuit = true
   quitRequestInFlight = false
   clearQuitFallback()
@@ -541,6 +574,7 @@ async function shouldPreserveBackendForDevMode(): Promise<boolean> {
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   if (forceQuitInProgress || coordinatedQuit) return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   forceQuitInProgress = true
   clearQuitFallback()
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
@@ -558,6 +592,8 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     finishCoordinatedQuit()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
+    closeTelemetry?.finish({ close_kind: 'force', outcome: 'failure' })
+    closeTelemetry = null
     logger.error(`最终强制清理失败: ${errorMsg}`)
     const retryableState = markForceQuitFailed({
       coordinatedQuit,
@@ -589,6 +625,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
 function requestRendererClose(reason: string, confirmRunningTasks = false): void {
   if (!canRequestRendererClose({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight }))
     return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   const win = mainWindow
   if (!win || win.isDestroyed()) {
     void forceQuitAfterRendererTimeout(`${reason}（renderer 不可用）`)
@@ -866,18 +903,45 @@ function createWindow() {
       detail: decision.detail,
     })
 
+    beginMainFeature('renderer_recovery_decided').finish({
+      reason_kind:
+        details.reason === 'crashed'
+          ? 'crashed'
+          : details.reason === 'oom'
+            ? 'oom'
+            : details.reason === 'killed'
+              ? 'killed'
+              : details.reason === 'launch-failed'
+                ? 'launch_failed'
+                : 'other',
+      recovery_action: decision.action === 'give-up' ? 'give_up' : 'reload',
+      count_bucket: mainCountBucket(decision.crashCount),
+      outcome: 'accepted',
+    })
     if (decision.action === 'give-up') return
 
     keepHiddenAfterRecovery = !win.isVisible()
     win.webContents.reload()
   })
 
+  let responseIncident: ReturnType<
+    typeof beginMainFeature<'renderer_responsiveness_changed'>
+  > | null = null
   win.on('unresponsive', () => {
+    if (!responseIncident) {
+      responseIncident = beginMainFeature('renderer_responsiveness_changed')
+      beginMainFeature('renderer_responsiveness_changed').finish({
+        state: 'unresponsive',
+        outcome: 'accepted',
+      })
+    }
     logger.warn('渲染进程无响应（主线程卡住），等待其自行恢复')
     recordMainCount('auto_mas.app.renderer.unresponsive', { component: 'electron-main' })
   })
 
   win.on('responsive', () => {
+    responseIncident?.finish({ state: 'responsive', outcome: 'success' })
+    responseIncident = null
     logger.info('渲染进程已恢复响应')
   })
 
@@ -1214,7 +1278,7 @@ function createLogWindow(file?: LogWindowFile) {
 // 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
 // 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
 // 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
-// 拆不拆由弹窗自己调后端接口。
+// 用户选择由弹窗发出，拆除请求由主进程持有直到接口返回。
 
 interface VirtualDisplayPromptPayload {
   /** 回来的真实显示设备名 */
@@ -1224,6 +1288,25 @@ interface VirtualDisplayPromptPayload {
 }
 
 let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+let virtualPromptAnalytics: ReturnType<
+  typeof beginMainFeature<'virtual_display_prompt_answered'>
+> | null = null
+ipcMain.on('vdd-prompt:observe', (event, choice: unknown) => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return
+  if (choice !== 'keep') return
+  virtualPromptAnalytics?.finish({ choice: 'keep', outcome: 'success' })
+  virtualPromptAnalytics = null
+})
+
+// 拆除会先广播关闭弹窗再返回 HTTP；请求与终态由主进程持有，避免窗口销毁后漏记。
+ipcMain.handle('vdd-prompt:detach', async event => {
+  if (!isApplicationWindowSender(event, virtualDisplayPromptWindow, { allowDevelopment: true }))
+    return null
+  virtualPromptAnalytics?.finish({ choice: 'remove', outcome: 'accepted' })
+  virtualPromptAnalytics = null
+  return detachPromptVirtualDisplay(getLocalApiEndpoint())
+})
 
 const VDD_PROMPT_WIDTH = 460
 const VDD_PROMPT_HEIGHT = 240
@@ -1291,6 +1374,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
   )
 
+  virtualPromptAnalytics = beginMainFeature('virtual_display_prompt_answered')
   const win = new BrowserWindow({
     ...bounds,
     frame: false,
@@ -1332,6 +1416,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     if (virtualDisplayPromptWindow === win) {
       virtualDisplayPromptWindow = null
       virtualDisplayPromptPayload = null
+      virtualPromptAnalytics = null
     }
     logger.info('虚拟显示器询问弹窗已关闭')
   })
@@ -1341,6 +1426,7 @@ function closeVirtualDisplayPrompt(): void {
   const win = virtualDisplayPromptWindow
   virtualDisplayPromptWindow = null
   virtualDisplayPromptPayload = null
+  virtualPromptAnalytics = null
   if (win && !win.isDestroyed()) {
     win.close()
   }
@@ -1403,90 +1489,92 @@ ipcMain.handle(
 )
 
 ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
-  try {
-    if (!mainWindow)
-      return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
+  return observeDiagnosticExport('log:export', async () => {
+    try {
+      if (!mainWindow)
+        return { success: false, error: '窗口未初始化', errorCode: 'window-unavailable' }
 
-    const dialogLabels =
-      rawDialogLabels && typeof rawDialogLabels === 'object'
-        ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
-        : undefined
-    const appRoot = getAppRoot()
-    const debugDir = path.join(appRoot, 'debug')
+      const dialogLabels =
+        rawDialogLabels && typeof rawDialogLabels === 'object'
+          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+          : undefined
+      const appRoot = getAppRoot()
+      const debugDir = path.join(appRoot, 'debug')
 
-    if (!fs.existsSync(debugDir)) {
-      return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
-    }
+      if (!fs.existsSync(debugDir)) {
+        return { success: false, error: '日志目录不存在', errorCode: 'directory-missing' }
+      }
 
-    // 选择保存位置
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
-      defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [
-        {
-          name:
-            typeof dialogLabels?.zipFilterName === 'string'
-              ? dialogLabels.zipFilterName
-              : 'ZIP文件',
-          extensions: ['zip'],
-        },
-      ],
-    })
+      // 选择保存位置
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : '导出日志',
+        defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [
+          {
+            name:
+              typeof dialogLabels?.zipFilterName === 'string'
+                ? dialogLabels.zipFilterName
+                : 'ZIP文件',
+            extensions: ['zip'],
+          },
+        ],
+      })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const zipPath = result.filePath
+      const zipPath = result.filePath
 
-    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
-    const zip = new AdmZip()
-    const state: CollectorState = {
-      zip,
-      entries: [],
-      archiveBytes: 0,
-      maxEntryBytes: Number.POSITIVE_INFINITY,
-      maxArchiveBytes: Number.POSITIVE_INFINITY,
-    }
+      // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
+      const zip = new AdmZip()
+      const state: CollectorState = {
+        zip,
+        entries: [],
+        archiveBytes: 0,
+        maxEntryBytes: Number.POSITIVE_INFINITY,
+        maxArchiveBytes: Number.POSITIVE_INFINITY,
+      }
 
-    // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
-    const hasFiles = addDirectory(state, debugDir, '', {
-      includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
-    })
-    if (!hasFiles) {
-      return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
-    }
+      // 递归收集 debug 目录，沿用脱敏并跳过符号链接；覆盖已有压缩包时不把自身再装进去。
+      const hasFiles = addDirectory(state, debugDir, '', {
+        includeFile: sourcePath => path.relative(sourcePath, zipPath) !== '',
+      })
+      if (!hasFiles) {
+        return { success: false, error: '日志目录为空，没有可导出的文件', errorCode: 'no-files' }
+      }
 
-    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
-    const skipped = state.entries.filter(entry => entry.status === 'skipped')
-    for (const entry of state.entries) {
-      if (entry.status === 'skipped') {
-        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
-      } else {
-        logger.info(`添加文件到压缩包: ${entry.path}`)
+      // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+      const skipped = state.entries.filter(entry => entry.status === 'skipped')
+      for (const entry of state.entries) {
+        if (entry.status === 'skipped') {
+          logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+        } else {
+          logger.info(`添加文件到压缩包: ${entry.path}`)
+        }
+      }
+
+      // 保存 ZIP 文件
+      zip.writeZip(zipPath)
+      logger.info(`日志压缩包已导出: ${zipPath}`)
+
+      return {
+        success: true,
+        message:
+          skipped.length > 0
+            ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+            : '日志压缩包导出成功',
+        skippedPaths: skipped.map(entry => entry.path),
+        zipPath: zipPath,
+      }
+    } catch (error) {
+      logger.error('导出日志失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       }
     }
-
-    // 保存 ZIP 文件
-    zip.writeZip(zipPath)
-    logger.info(`日志压缩包已导出: ${zipPath}`)
-
-    return {
-      success: true,
-      message:
-        skipped.length > 0
-          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
-          : '日志压缩包导出成功',
-      skippedPaths: skipped.map(entry => entry.path),
-      zipPath: zipPath,
-    }
-  } catch (error) {
-    logger.error('导出日志失败:', error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
-  }
+  })
 })
 
 interface IssueReportResult {
@@ -1508,43 +1596,45 @@ function registerIssueReportExporter(
   ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
   ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown, rawDialogLabels?: unknown) => {
-    try {
-      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+    return observeDiagnosticExport(ipcChannel, async () => {
+      try {
+        if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
-      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
-      const dialogLabels =
-        rawDialogLabels && typeof rawDialogLabels === 'object'
-          ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
-          : undefined
-      const appRoot = getAppRoot()
-      const prefix =
-        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
-        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
-        filters: [
-          {
-            name:
-              typeof dialogLabels?.zipFilterName === 'string'
-                ? dialogLabels.zipFilterName
-                : 'ZIP文件',
-            extensions: ['zip'],
-          },
-        ],
-      })
+        const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+        const dialogLabels =
+          rawDialogLabels && typeof rawDialogLabels === 'object'
+            ? (rawDialogLabels as { title?: unknown; zipFilterName?: unknown })
+            : undefined
+        const appRoot = getAppRoot()
+        const prefix =
+          typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
+        const result = await dialog.showSaveDialog(mainWindow, {
+          title: typeof dialogLabels?.title === 'string' ? dialogLabels.title : title,
+          defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+          filters: [
+            {
+              name:
+                typeof dialogLabels?.zipFilterName === 'string'
+                  ? dialogLabels.zipFilterName
+                  : 'ZIP文件',
+              extensions: ['zip'],
+            },
+          ],
+        })
 
-      if (result.canceled || !result.filePath) {
-        return { success: false, error: '用户取消' }
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: '用户取消' }
+        }
+
+        return await create(appRoot, result.filePath, scriptId)
+      } catch (error) {
+        logger.error(`${title}失败:`, error)
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        }
       }
-
-      return await create(appRoot, result.filePath, scriptId)
-    } catch (error) {
-      logger.error(`${title}失败:`, error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      }
-    }
+    })
   })
 }
 
@@ -1617,65 +1707,67 @@ ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) =
 })
 
 ipcMain.handle('data:backup', async () => {
-  let partialPath: string | undefined
+  return observeDataBackup(async () => {
+    let partialPath: string | undefined
 
-  try {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return { success: false, error: '窗口未初始化' }
-    }
-
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: '导出数据备份',
-      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, error: '用户取消' }
-    }
-
-    const zipPath = result.filePath
-    partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
-    const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
-      method: 'GET',
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
-      )
-    }
-    if (!response.body) {
-      throw new Error('后端未返回备份文件内容')
-    }
-
-    const file = await fs.promises.open(partialPath, 'wx')
     try {
-      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-        await file.write(chunk)
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { success: false, error: '窗口未初始化' }
       }
-    } finally {
-      await file.close()
-    }
 
-    await fs.promises.rename(partialPath, zipPath)
-    partialPath = undefined
-    logger.info(`数据备份已导出: ${zipPath}`)
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出数据备份',
+        defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+        filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+      })
 
-    return {
-      success: true,
-      message: '数据备份导出成功',
-      zipPath,
-    }
-  } catch (error) {
-    if (partialPath) {
-      await fs.promises.unlink(partialPath).catch(() => undefined)
-    }
+      if (result.canceled || !result.filePath) {
+        return { success: false, error: '用户取消' }
+      }
 
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`导出数据备份失败: ${errorMsg}`)
-    return { success: false, error: errorMsg }
-  }
+      const zipPath = result.filePath
+      partialPath = `${zipPath}.part-${process.pid}-${Date.now()}`
+      const response = await fetch(`${getLocalApiEndpoint()}/api/setting/backup`, {
+        method: 'GET',
+      })
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
+        )
+      }
+      if (!response.body) {
+        throw new Error('后端未返回备份文件内容')
+      }
+
+      const file = await fs.promises.open(partialPath, 'wx')
+      try {
+        for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+          await file.write(chunk)
+        }
+      } finally {
+        await file.close()
+      }
+
+      await fs.promises.rename(partialPath, zipPath)
+      partialPath = undefined
+      logger.info(`数据备份已导出: ${zipPath}`)
+
+      return {
+        success: true,
+        message: '数据备份导出成功',
+        zipPath,
+      }
+    } catch (error) {
+      if (partialPath) {
+        await fs.promises.unlink(partialPath).catch(() => undefined)
+      }
+
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`导出数据备份失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+  })
 })
 
 // 传了 fromOffset 走增量形态，返回 { content, size, reset }；否则沿用整份字符串
@@ -1814,6 +1906,12 @@ ipcMain.handle('app-restart-on-quit', () => {
 })
 
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
+ipcMain.on('app-backend-close-observed', event => {
+  if (!isAnalyticsSender(event)) return
+  closeTelemetry ??= beginMainFeature('app_close_finished')
+  closeTelemetryKind = 'backend'
+})
+
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
 })
@@ -1835,6 +1933,7 @@ ipcMain.handle('app-wait-for-quit-confirmation', () => {
 ipcMain.handle('app-prepare-quit', () => {
   if (coordinatedQuit || forceQuitInProgress) return null
   if (activeQuitPreparation !== null) return activeQuitPreparation
+  closeTelemetry ??= beginMainFeature('app_close_finished')
   clearQuitFallback()
   quitConfirmationPending = false
   quitRequestInFlight = true
@@ -2124,8 +2223,11 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
 })
 
 // 新增：同步后端配置的IPC处理器
-ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
+ipcMain.handle('sync-backend-config', async (event, backendSettings) => {
   try {
+    if (isAnalyticsSender(event) && backendSettings.Function) {
+      syncAnalyticsPreference(backendSettings.Function.IfEnableTelemetry)
+    }
     const currentConfig = loadConfig()
 
     // 同步UI配置
@@ -2287,6 +2389,7 @@ app.on('child-process-gone', (_event, details) => {
 })
 
 app.on('will-quit', () => {
+  disposeAnalytics()
   desktopMascot.dispose()
   globalShortcut.unregisterAll()
 })
@@ -2304,6 +2407,13 @@ app.on('before-quit', event => {
 })
 
 app.whenReady().then(async () => {
+  registerAnalyticsHandlers(() => mainWindow)
+  refreshAnalyticsPreference()
+  analyticsService.recordAppStarted({
+    launch_kind: isAutoStart ? 'auto_start' : 'manual',
+    runtime_mode: resolveRuntimeLaunchModeDetail(getAppRoot()).mode,
+    release_channel: app.getVersion().includes('-beta.') ? 'beta' : 'stable',
+  })
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)
