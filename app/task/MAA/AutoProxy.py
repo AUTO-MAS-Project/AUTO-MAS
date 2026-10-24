@@ -934,7 +934,7 @@ def _build_cultivate_task(
         "SkipDuringResourceCollection": skip_during_resource_collection,
         "OnlyFirstInsufficientPlan": False,
         "SortByProgress": False,
-        "UseAutoSeries": False,
+        "UseAutoSeries": source_task.get("UseAutoSeries", False),
         "UseMedicine": False,
         "UseStone": False,
         "UseExpiringMedicine": False,
@@ -961,7 +961,6 @@ def _build_stock_cultivate_task(
         {
             "OnlyFirstInsufficientPlan": False,
             "SortByProgress": False,
-            "UseAutoSeries": False,
             "UseExpiringMedicine": False,
             "SkipDuringActivity": False,
             "SkipDuringResourceCollection": False,
