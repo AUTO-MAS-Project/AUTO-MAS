@@ -1009,6 +1009,18 @@ class _AvdCore(DeviceBase):
         # 7) 崩溃 / 无响应弹窗没人点，挡在游戏前面；关掉（持久）
         await self._shell(idx, "settings put global hide_error_dialogs 1")
 
+        # 7b) 关掉 NetworkWatchlistService（持久）：距上次开机满一天时，它为日报给每个 APK 整个算一遍
+        #     SHA-256（明日方舟安装包一个就 1.8 GB，合计约 4 GB 读进页缓存），实例内存在宿主上整块常驻。
+        #     开关在 system_server 启动时读：从下次开机起生效，第 11 步重启 zygote 后也不会再起来
+        code, output = await self._shell(
+            idx, "settings put global network_watchlist_enabled 0"
+        )
+        if code != 0:
+            logger.warning(
+                f"实例 {idx} 关闭 NetworkWatchlistService 失败（下次开机仍会把安装包整个读一遍）: "
+                f"{output.strip()[-200:] or f'退出码 {code}'}"
+            )
+
         # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
         await self._setup_network(idx)
