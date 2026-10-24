@@ -4632,6 +4632,7 @@ __metadata:
     monaco-editor: "npm:0.54.0"
     openapi-typescript-codegen: "npm:^0.29.0"
     pinia: "npm:^3.0.3"
+    pinyin-pro: "npm:^3.29.5"
     qrcode: "npm:1.5.4"
     three: "npm:^0.184.0"
     typescript: "npm:^5.9.2"
@@ -7338,6 +7339,13 @@ __metadata:
     typescript:
       optional: true
   checksum: 10c0/4123efbf28c6d11f3dd052dbcf08da7ef85747fd3499807b9ca1d32dcda7807b2e68f9a7e31a06148b05093a9ebcd0c3b26e6a31b62775c6421429bd03265949
+  languageName: node
+  linkType: hard
+
+"pinyin-pro@npm:^3.29.5":
+  version: 3.29.5
+  resolution: "pinyin-pro@npm:3.29.5"
+  checksum: 10c0/a10d201833c98f2d719253961b16b107e44308bb7c1e8b37f3a36397fa3b72b2c64298226204c9b2933d1a095473cef7afa5bcce51349660948f4d43d3f4682e
   languageName: node
   linkType: hard
 

@@ -1,22 +1,29 @@
 <template>
   <div class="cultivate-preview" :aria-busy="loading">
+    <!-- 面板头：理智合计是侧栏的关键数字（tooltip 说明估算口径） -->
+    <div class="preview-head">
+      <span class="preview-title">{{ t('edit.maaCultivatePreviewTitle') }}</span>
+      <span
+        class="preview-total"
+        :title="t('edit.maaCultivatePreviewSanityTotal')"
+        role="status"
+        :aria-label="loading ? t('edit.maaCultivatePreviewComputing') : undefined"
+      >
+        <template v-if="preview?.totalExpectedSanity != null">
+          ≈ {{ preview.totalExpectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
+        </template>
+        <template v-else>—</template>
+      </span>
+      <a-spin v-if="loading" size="small" />
+    </div>
     <a-tabs default-active-key="stages" size="small">
-      <template #rightExtra>
-        <span
-          class="preview-loading"
-          role="status"
-          :aria-label="loading ? t('edit.maaCultivatePreviewComputing') : undefined"
-        >
-          <a-spin v-if="loading" size="small" />
-        </span>
-      </template>
       <a-tab-pane
         v-for="tab in ['stages', 'demands']"
         :key="tab"
         :tab="
           t(
             tab === 'stages'
-              ? 'edit.maaCultivatePreviewTitle'
+              ? 'edit.maaCultivatePreviewStageHeading'
               : 'edit.maaCultivatePreviewDemandHeading'
           )
         "
@@ -33,7 +40,6 @@
           {{ t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
         </div>
         <template v-if="preview && tab === 'stages'">
-          <div class="preview-heading">{{ t('edit.maaCultivatePreviewStageHeading') }}</div>
           <!-- 刷取计划四列：材料名称 → 关卡 → 数量 → 理智（固定列宽对齐） -->
           <div
             v-for="entry in preview.stages"
@@ -58,15 +64,6 @@
           </div>
           <div v-if="!preview.stages.length" class="preview-empty">
             {{ t('edit.maaCultivatePreviewNone') }}
-          </div>
-          <div v-if="preview.totalExpectedSanity != null" class="preview-line preview-total">
-            <span class="preview-item">
-              {{ t('edit.maaCultivatePreviewSanityTotal') }}
-            </span>
-            <span class="preview-sanity">
-              ≈ {{ preview.totalExpectedSanity }}
-              {{ t('edit.maaCultivateSanityUnit') }}
-            </span>
           </div>
         </template>
         <template v-else-if="preview">
@@ -129,24 +126,41 @@ const availabilityNotice = computed(() => {
 }
 
 .cultivate-preview {
-  padding: 12px;
+  padding: 12px 16px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
+  background: var(--ant-color-bg-container);
 }
 
-.preview-loading {
+.preview-head {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
-.preview-heading {
-  margin: 8px 0 4px;
-  font-size: 12px;
+.preview-title {
+  font-size: 14px;
   font-weight: 600;
-  color: var(--ant-color-text-secondary);
+  color: var(--ant-color-text);
+}
+
+.preview-total {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+
+.preview-head .ant-spin {
+  align-self: center;
 }
 
 .preview-line {
@@ -200,11 +214,6 @@ const availabilityNotice = computed(() => {
 .preview-sanity {
   color: var(--ant-color-text-secondary);
   white-space: nowrap;
-}
-
-.preview-total {
-  margin-top: 4px;
-  font-weight: 600;
 }
 
 .preview-unobtainable {

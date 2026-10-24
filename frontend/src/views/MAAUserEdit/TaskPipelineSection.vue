@@ -122,18 +122,6 @@
         :depot-inventory-time="depotInventoryTime"
         :depot-plan-editor="depotPlanEditor"
         :event-depot-plan-editor="eventDepotPlanEditor"
-        :cultivate-operator-catalog="cultivateOperatorCatalog"
-        :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
-        :cultivate-operator-options-error="cultivateOperatorOptionsError"
-        :skland-role-options="sklandRoleOptions"
-        :skland-role-loading="sklandRoleLoading"
-        :skland-role-error="sklandRoleError"
-        :load-skland-role-options="loadSklandRoleOptions"
-        :cultivate-preview="cultivatePreview"
-        :cultivate-preview-loading="cultivatePreviewLoading"
-        :cultivate-preview-error="cultivatePreviewError"
-        :load-cultivate-preview="loadCultivatePreview"
-        :import-cultivate-targets="importCultivateTargets"
         :fight-summary="fightSummary"
         @save="emitSave"
         @retry-activity="emit('retryActivity')"
@@ -255,11 +243,6 @@ import LabelWithHint from './LabelWithHint.vue'
 import StaminaPipelineSection from './StaminaPipelineSection.vue'
 import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 
-import type {
-  CultivateOperatorCatalogEntry as OperatorCatalogEntry,
-  CultivateImportResult,
-} from './cultivateTargets'
-import type { CultivatePreviewOut } from '@/api'
 import type { ActivityItem } from '@/types/home'
 import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
@@ -297,23 +280,6 @@ const props = defineProps<{
   depotInventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
-  cultivateOperatorCatalog: OperatorCatalogEntry[]
-  /** 森空岛绑定下拉：合并所有已配置凭据账号组的角色 */
-  sklandRoleOptions: SelectOption[]
-  sklandRoleLoading: boolean
-  sklandRoleError: string
-  /** 按需加载角色列表（下拉展开时触发，父级负责请求） */
-  loadSklandRoleOptions: () => Promise<void>
-  cultivateOperatorOptionsLoading: boolean
-  cultivateOperatorOptionsError: string
-  /** 养成需求预览（后端纯计算结果） */
-  cultivatePreview: CultivatePreviewOut | null
-  cultivatePreviewLoading: boolean
-  cultivatePreviewError: string
-  /** 目标行变化时由子组件触发（父级负责请求与竞态守卫） */
-  loadCultivatePreview: (targetsJson: string) => Promise<void>
-  importCultivateTargets: (content: string) => Promise<CultivateImportResult>
   fightSummary: string
   isEdit: boolean
   infrastructureImporting: boolean
