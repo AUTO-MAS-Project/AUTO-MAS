@@ -649,8 +649,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         plan = plans[0]
         launching = task_name == _MAAEND_LAUNCH_GAME_PRETASK
         action = "启动游戏" if launching else "应用游戏显示设置"
-        # 新版还需等待启动器和游戏窗口，上游等待上限合计 180 秒。
-        timeout = 240 if launching else 60
+        # MaaEnd v2.35.0 的启动器和游戏窗口各可等待 300 秒，另留 300 秒
+        # 给框架初始化、启动器操作与窗口稳定等待；整轮时限和用户取消仍生效。
+        timeout = 900 if launching else 60
         try:
             result = await ProcessRunner.run_process(
                 plan.executable,
