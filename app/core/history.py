@@ -234,7 +234,9 @@ class HistoryStore:
             self.database.parent.mkdir(parents=True, exist_ok=True)
             self.root.mkdir(parents=True, exist_ok=True)
             with closing(self._connect(cancel)) as connection:
-                version = cast(int, connection.execute("PRAGMA user_version").fetchone()[0])
+                version = cast(
+                    int, connection.execute("PRAGMA user_version").fetchone()[0]
+                )
                 if version == 0:
                     connection.execute("PRAGMA journal_mode=WAL").close()
                     if cancel.is_set():
@@ -361,7 +363,6 @@ class HistoryStore:
             self._initialized = True
 
         await self._run(initialize_storage)
-
 
     async def close(self) -> None:
         """等待在途操作，超时后请求取消并关闭服务。"""
@@ -1019,7 +1020,10 @@ class HistoryStore:
             ).fetchall(),
         ):
             pending_record_id = UUID(cast(str, row["record_id"]))
-            if protected_record_id is not None and pending_record_id == protected_record_id:
+            if (
+                protected_record_id is not None
+                and pending_record_id == protected_record_id
+            ):
                 continue
             pending_id = UUID(cast(str, row["attachment_id"]))
             target = Path(cast(str, row["target_path"]))
@@ -1079,7 +1083,10 @@ class HistoryStore:
                             message=str(error),
                         )
                     )
-            if not target.exists() and not target.with_name(target.name + ".temp").exists():
+            if (
+                not target.exists()
+                and not target.with_name(target.name + ".temp").exists()
+            ):
                 if item.id in pending_targets:
                     try:
                         connection.execute(
