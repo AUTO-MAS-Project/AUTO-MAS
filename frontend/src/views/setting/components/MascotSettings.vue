@@ -104,18 +104,13 @@ const handleFpsChange = (next: SelectValue): void => {
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="enabled"
+          <a-switch
+            :checked="enabled"
             :loading="toggling"
             :disabled="busy || toggling || !available || loadFailed"
-            size="large"
-            style="width: 100%"
             :aria-label="t('setting.basic.desktopMascot')"
             @change="(next: unknown) => setEnabled(next === true)"
-          >
-            <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-          </a-select>
+          />
         </div>
       </a-col>
     </a-row>

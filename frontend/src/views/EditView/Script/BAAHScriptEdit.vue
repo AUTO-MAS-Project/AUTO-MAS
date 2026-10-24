@@ -84,15 +84,10 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="baahConfig.Script.IfManageConfig"
-                  size="large"
-                  style="width: 100%"
+                <a-switch
+                  v-model:checked="baahConfig.Script.IfManageConfig"
                   @change="handleChange('Script', 'IfManageConfig', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -105,15 +100,10 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="baahConfig.Script.PushLogEnabled"
-                  size="large"
-                  style="width: 100%"
+                <a-switch
+                  v-model:checked="baahConfig.Script.PushLogEnabled"
                   @change="handleChange('Script', 'PushLogEnabled', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
           </a-row>

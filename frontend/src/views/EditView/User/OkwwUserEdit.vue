@@ -83,14 +83,10 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
+                  <a-switch
+                    v-model:checked="formData.Info.Status"
                     @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
+                  />
                 </a-form-item>
               </a-col>
             </a-row>

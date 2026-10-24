@@ -55,16 +55,17 @@
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
-              <a-select
-                v-model:value="record.enabled"
+              <a-switch
+                :checked="record.enabled"
                 size="small"
-                style="width: 80px"
                 class="status-select"
-                @change="updateTimeSetStatus(record)"
-              >
-                <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
-                <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
-              </a-select>
+                @change="
+                  (checked: any) => {
+                    record.enabled = checked
+                    updateTimeSetStatus(record)
+                  }
+                "
+              />
             </div>
             <div class="row-cell days-cell">
               <a-select

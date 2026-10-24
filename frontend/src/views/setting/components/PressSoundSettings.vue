@@ -72,16 +72,12 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="enabled"
+          <a-switch
+            :checked="enabled"
             :disabled="saving"
-            size="large"
-            style="width: 100%"
+            :loading="saving"
             @change="(value: unknown) => emit('enabledChange', value === true)"
-          >
-            <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
-          </a-select>
+          />
         </div>
       </a-col>
       <a-col :xs="24" :md="12">

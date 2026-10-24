@@ -160,15 +160,10 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="whimboxConfig.Run.UseAdmin"
-                  size="large"
-                  style="width: 100%"
+                <a-switch
+                  v-model:checked="whimboxConfig.Run.UseAdmin"
                   @change="handleChange('Run', 'UseAdmin', whimboxConfig.Run.UseAdmin)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
           </a-row>

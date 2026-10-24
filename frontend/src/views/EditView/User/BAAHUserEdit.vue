@@ -77,16 +77,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.Status"
+                <a-switch
+                  v-model:checked="formData.Info.Status"
                   :disabled="loading"
-                  size="large"
-                  style="width: 100%"
                   @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <a-col :span="4">
@@ -184,16 +179,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="formData.Info.IfEventFirst"
+                <a-switch
+                  v-model:checked="formData.Info.IfEventFirst"
                   :disabled="loading"
-                  size="large"
-                  style="width: 100%"
                   @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
             <!-- 活动排期服务器：「活动关优先」也按它判断所选服当前有没有进行中的活动 -->
