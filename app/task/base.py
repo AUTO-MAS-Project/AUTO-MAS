@@ -21,6 +21,7 @@ from app.models.config import (
 )
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
 from app.utils.logger import get_logger
 
@@ -68,6 +69,13 @@ type ProxyScriptConfigType = (
 
 
 class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):
+    _failure_capture: FailureCapture | None = None
+
+    def _on_finalize_cancel_requested(self) -> None:
+        if self._failure_capture is not None:
+            self.stopped_manually = True
+            self._failure_capture.cancel()
+
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
     wait_for_finalizer_on_cancel = True
 
