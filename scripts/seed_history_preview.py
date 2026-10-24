@@ -107,7 +107,9 @@ def build_log(rng: random.Random, when: datetime, message: str) -> str:
 
     def stamp(offset: float) -> str:
         moment = when + timedelta(seconds=offset)
-        return f"[{moment.strftime('%Y-%m-%d %H:%M:%S')}.{moment.microsecond // 1000:03d}]"
+        return (
+            f"[{moment.strftime('%Y-%m-%d %H:%M:%S')}.{moment.microsecond // 1000:03d}]"
+        )
 
     lines = [
         f"{stamp(0)}[INF][Bootstrapper]           <2> ===================================",
@@ -127,20 +129,29 @@ def build_log(rng: random.Random, when: datetime, message: str) -> str:
         )
     else:
         lines.append(f"{stamp(duration)}[ERR][AsstProxy]              <2> {message}")
-    lines.append(f"{stamp(duration + 1)}[INF][VersionUpdateViewState] <2> 任务结束：{message}")
+    lines.append(
+        f"{stamp(duration + 1)}[INF][VersionUpdateViewState] <2> 任务结束：{message}"
+    )
     return "\n".join(lines)
 
 
 async def main() -> None:
     root = Path.cwd()
-    if not (root / "app" / "core" / "history.py").is_file() or "Program Files" in str(root):
+    if not (root / "app" / "core" / "history.py").is_file() or "Program Files" in str(
+        root
+    ):
         raise SystemExit("必须在开发仓库根目录运行，拒绝在其它目录构造样例")
 
     rng = random.Random(1546)
     for target in (root / "history",):
         if target.exists():
             shutil.rmtree(target)
-    for name in ("history.db", "history.db-journal", "history.db-shm", "history.db-wal"):
+    for name in (
+        "history.db",
+        "history.db-journal",
+        "history.db-shm",
+        "history.db-wal",
+    ):
         (root / "data" / name).unlink(missing_ok=True)
     staging = root / "data" / "_seed_replays"
     if staging.exists():
@@ -257,10 +268,17 @@ async def main() -> None:
                                 time=when,
                                 username=username,
                                 script_name="MaaEnd",
-                                status="success" if message.endswith("Success!") else "error",
+                                status="success"
+                                if message.endswith("Success!")
+                                else "error",
                                 message=message,
                                 logs=build_log(rng, when, message),
-                                data={"maaend_result": {"kind": "snapshot", "value": message}},
+                                data={
+                                    "maaend_result": {
+                                        "kind": "snapshot",
+                                        "value": message,
+                                    }
+                                },
                             )
                         )
             print(f"已写入 {day.isoformat()}，累计 {count} 条")

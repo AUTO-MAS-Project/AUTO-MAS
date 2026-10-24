@@ -994,11 +994,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                                 id=self.task_info.task_id,
                                 type=protocol.TASK_NOTICE,
                                 data=WSTaskNoticeData(
-                                    level="warning", message=f"历史记录保存失败：{error}"
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
                                 ),
                             )
                         except Exception:
-                            logger.opt(exception=True).warning("发送历史保存失败提示时出现异常")
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
             finally:
                 await self.task_info.discard_user_history_capture(
                     self.script_info, self.cur_user_item
