@@ -3286,34 +3286,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     ),
                 )
 
-        if self.run_book["Annihilation"] and self.run_book["Routine"]:
-            if (
-                self.cur_user_config.Data.ProxyTimes == 0
-                and self.cur_user_config.Info.RemainedDay != -1
-            ):
-                self.cur_user_config.Info.RemainedDay = (
-                    self.cur_user_config.Info.RemainedDay - 1
-                )
-                await self.cur_user_config.commit()
-            self.cur_user_config.Data.ProxyTimes = (
-                self.cur_user_config.Data.ProxyTimes + 1
-            )
-            await self.cur_user_config.commit()
-
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await self.task_info.local_notifier.send_notice(
-                LocalNotice(
-                    title="成功完成一个自动代理任务！",
-                    message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                    ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                    duration_seconds=3,
-                )
-            )
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
-
         logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
