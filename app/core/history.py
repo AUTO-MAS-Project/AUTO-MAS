@@ -249,12 +249,22 @@ class HistoryStore:
                             log_path TEXT, log_text_fallback TEXT, storage_errors TEXT NOT NULL
                         );
                         CREATE TABLE IF NOT EXISTS attachments (
-                            id TEXT PRIMARY KEY,
+                        archive_order INTEGER PRIMARY KEY AUTOINCREMENT,
+                        id TEXT NOT NULL UNIQUE,
                             record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
                             kind TEXT NOT NULL, role TEXT NOT NULL, display_name TEXT NOT NULL,
                             relative_path TEXT, byte_size INTEGER NOT NULL,
                             saved_via TEXT, available INTEGER NOT NULL, unavailable_reason TEXT
                         );
+                    CREATE TABLE IF NOT EXISTS pending_files (
+                        attachment_id TEXT PRIMARY KEY,
+                        record_id TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        target_path TEXT NOT NULL,
+                        source_path TEXT,
+                        byte_size INTEGER NOT NULL,
+                        created_at TEXT NOT NULL
+                    );
                         CREATE INDEX IF NOT EXISTS history_date ON records(date, timestamp, id);
                         CREATE INDEX IF NOT EXISTS history_user ON records(username, timestamp, id);
                         CREATE INDEX IF NOT EXISTS history_script ON records(script_name, timestamp, id);
@@ -269,8 +279,20 @@ class HistoryStore:
                     != "ok"
                 ):
                     raise HistoryStorageError("历史数据库损坏")
-                for table in ("records", "attachments"):
+                for table in ("records", "attachments", "pending_files"):
                     connection.execute(f"SELECT * FROM {table} LIMIT 0").close()
+                for row in cast(
+                    list[sqlite3.Row],
+                    connection.execute(
+                        "SELECT target_path FROM pending_files"
+                    ).fetchall(),
+                ):
+                    for path in (
+                        Path(cast(str, row["target_path"])),
+                        Path(cast(str, row["target_path"]) + ".temp"),
+                    ):
+                        path.unlink(missing_ok=True)
+                connection.execute("DELETE FROM pending_files").close()
                 complete_paths: set[str] = set()
                 for row in cast(
                     list[sqlite3.Row],
@@ -436,16 +458,10 @@ class HistoryStore:
                         attachment.byte_size = size
                         if source.kind == "video":
                             quota = self._enforce_quota(
-                                connection,
-                                extra=size,
-                                pending=attachments[:-1],
-                                cancel=cancel,
+                                connection, extra=size, cancel=cancel
                             )
                             errors.extend(quota.errors)
-                            if (
-                                self._video_usage(connection, attachments[:-1]) + size
-                                > self._video_limit
-                            ):
+                            if self._video_usage(connection) + size > self._video_limit:
                                 attachment.unavailable_reason = "quota"
                                 errors.append(
                                     HistoryStorageIssue(
@@ -458,6 +474,24 @@ class HistoryStore:
                                     )
                                 )
                                 continue
+                        connection.execute(
+                            """
+                            INSERT INTO pending_files
+                                (attachment_id, record_id, kind, target_path,
+                                 source_path, byte_size, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                str(attachment.id),
+                                str(record_id),
+                                source.kind,
+                                str(self.root / attachment.relative_path),
+                                str(source.path),
+                                size,
+                                record.time.isoformat(),
+                            ),
+                        ).close()
+                        connection.commit()
                         try:
                             if cancel.is_set():
                                 raise HistoryStorageError(
@@ -579,7 +613,12 @@ class HistoryStore:
                         ),
                     ).close()
                     connection.executemany(
-                        "INSERT INTO attachments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        """
+                        INSERT INTO attachments
+                            (id, record_id, kind, role, display_name, relative_path,
+                             byte_size, saved_via, available, unavailable_reason)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
                         [
                             (
                                 str(item.id),
@@ -595,6 +634,10 @@ class HistoryStore:
                             )
                             for item in attachments
                         ],
+                    ).close()
+                    connection.execute(
+                        "DELETE FROM pending_files WHERE record_id=?",
+                        (str(record_id),),
                     ).close()
                     if cancel.is_set():
                         raise HistoryStorageError("历史服务正在关闭，归档已停止")
@@ -933,6 +976,15 @@ class HistoryStore:
             for file in (target, target.with_name(target.name + ".temp")):
                 if file.is_file():
                     total += file.stat().st_size
+        total += sum(
+            cast(int, row["byte_size"])
+            for row in cast(
+                list[sqlite3.Row],
+                connection.execute(
+                    "SELECT byte_size FROM pending_files WHERE kind='video'"
+                ).fetchall(),
+            )
+        )
         return total
 
     def _enforce_quota(
@@ -954,7 +1006,7 @@ class HistoryStore:
             for row in cast(
                 list[sqlite3.Row],
                 connection.execute(
-                    "SELECT * FROM attachments WHERE kind='video' AND relative_path IS NOT NULL ORDER BY id"
+                    "SELECT * FROM attachments WHERE kind='video' AND relative_path IS NOT NULL ORDER BY archive_order"
                 ).fetchall(),
             )
         ]
