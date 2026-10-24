@@ -26,6 +26,7 @@ import asyncio
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import aclosing
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,21 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.update_files import file_size, native_path
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
+
+
+class MirrorResourceError(RuntimeError):
+    """Mirror 酱业务错误，保留状态查询需要的错误码和到期时间。"""
+
+    def __init__(self, code: int, message: str, data: Any) -> None:
+        super().__init__(f"Mirror酱 code={code}: {message}")
+        self.code = code
+        self.data = data
+
+
+@dataclass(frozen=True)
+class MirrorCdkStatus:
+    status: str
+    expired_time: int | None = None
 
 
 async def request_mirror_resource(
@@ -61,11 +77,73 @@ async def request_mirror_resource(
         raise RuntimeError(f"Mirror酱响应 code 非整数: {code!r}")
     if code != 0:
         message = MIRROR_ERROR_INFO.get(code, str(payload.get("msg", "")))
-        raise RuntimeError(f"Mirror酱 code={code}: {message}")
+        raise MirrorResourceError(code=code, message=message, data=payload.get("data"))
     if not response.is_success:
         # raise_for_status 的异常会包含完整 URL，查询参数中可能带有 CDK。
         raise RuntimeError(f"Mirror酱 HTTP 响应异常: {response.status_code}")
     return payload
+
+
+async def query_mirror_cdk_status(
+    resource_id: str,
+    *,
+    cdk: str,
+    channel: str,
+    proxy: httpx.Proxy | None = None,
+    platform_os: str = "win",
+    platform_arch: str = "x64",
+    timeout: float = 10,
+) -> MirrorCdkStatus:
+    """以最新版本校验 CDK，避免为状态查询签发下载地址。"""
+    cdk = cdk.strip()
+    if not cdk:
+        return MirrorCdkStatus(status="absent")
+
+    params = {"os": platform_os, "arch": platform_arch, "channel": channel}
+    latest = await request_mirror_resource(
+        resource_id, params=params, proxy=proxy, timeout=timeout
+    )
+    data = latest.get("data")
+    latest_version = data.get("version_name") if isinstance(data, dict) else None
+    if not isinstance(latest_version, str) or not latest_version.strip():
+        raise RuntimeError("Mirror酱未返回最新版本号")
+
+    status = "ok"
+    try:
+        authorized = await request_mirror_resource(
+            resource_id,
+            params={**params, "current_version": latest_version, "cdk": cdk},
+            proxy=proxy,
+            timeout=timeout,
+        )
+        data = authorized.get("data")
+        if not isinstance(data, dict):
+            raise RuntimeError("Mirror酱未返回版本数据")
+    except MirrorResourceError as error:
+        statuses = {
+            7001: "expired",
+            7002: "invalid",
+            7003: "quota",
+            7004: "mismatched",
+            7005: "blocked",
+        }
+        if error.code not in statuses:
+            raise
+        status = statuses[error.code]
+        data = error.data
+
+    expires = (
+        data.get("cdk_expired_time", data.get("cdkExpiredTime"))
+        if isinstance(data, dict)
+        else None
+    )
+    try:
+        expired_time = int(expires) if expires is not None else None
+    except (TypeError, ValueError, OverflowError):
+        expired_time = None
+    if isinstance(expires, bool) or (expired_time is not None and expired_time <= 0):
+        expired_time = None
+    return MirrorCdkStatus(status=status, expired_time=expired_time)
 
 
 async def download_file(

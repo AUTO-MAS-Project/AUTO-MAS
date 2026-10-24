@@ -1663,6 +1663,8 @@ export default {
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このマネージドスクリプト専用のものに置き換えてください',
+    cdkHintGlobal: 'グローバル CDK を使用中',
+    cdkHintAbsent: 'CDK が未設定です。ここに入力するか、グローバル CDK を設定してください。',
     cdkHintRemaining: '残り {days} 日（{date} 期限）',
     cdkHintLessThanDay: '残り 1 日未満（{date} 期限）',
     cdkHintExpired: 'CDK の有効期限が切れています',
@@ -4614,7 +4616,11 @@ export default {
       cdkGet: '。',
       cdkPlaceholder: 'Mirror ソースを使う場合は MirrorChyan CDK を入力してください',
       cdkHint:
-        'MAS 自身の更新のみに使用します。MAA と MaaFW プロジェクトの更新は各スクリプト編集ページで個別に CDK を設定してください',
+        'MAS の更新と MAA 専用 CDK が空欄の場合に使用します。MaaFW プロジェクトの CDK は各スクリプト編集ページで設定してください。',
+      cdkValid: 'CDK は有効です',
+      cdkChecking: 'CDK を確認中…',
+      cdkCheckFailed: '現在 CDK を確認できません。再試行してください',
+      cdkGetLink: 'MirrorChyan CDK を入手',
       linkSection: 'プロジェクトのリンク',
       site: '公式サイト',
       siteDesc: '最新版と機能の紹介',
