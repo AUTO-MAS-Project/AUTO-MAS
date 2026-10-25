@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { GetService } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
@@ -12,6 +13,12 @@ interface AzurlaneActivity {
   endTime?: string
   cover?: string
   kind?: string
+}
+
+/** 后端回包：`stale` 为真表示这是取数失败后退回的上一次缓存 */
+interface AzurlanePayload {
+  activities?: AzurlaneActivity[]
+  stale?: boolean
 }
 
 const toTimestamp = (value: string) => {
@@ -33,9 +40,17 @@ const buildActivities = (raw: AzurlaneActivity[]): SraActivityItem[] =>
     }))
     .sort((left, right) => toTimestamp(left.startTime) - toTimestamp(right.startTime))
 
-/** 横幅报当前那一期，口径与其它活动源一致：进行中的优先，其次未开始，最后退到刚结束的 */
-const buildOverview = (raw: AzurlaneActivity[]): SraActivityOverview => {
-  const activities = buildActivities(raw)
+/**
+ * 横幅报当前那一期。
+ *
+ * 碧蓝航线会同时开着好几期：世界巡游、信标这类是长期玩法，当期海域活动才是主线，
+ * 所以取「最新开的那一场」而不是最早开的那一场。同一时刻开的（如海域活动与它的
+ * 故事集）保持日历里的先后，取先出现的那个。
+ *
+ * `stale` 是后端回退旧缓存时给的标记，透出到概览上让卡片提示「可能已过期」。
+ */
+const buildOverview = (payload: AzurlanePayload, staleMessage: string): SraActivityOverview => {
+  const activities = buildActivities(payload.activities ?? [])
   const now = Date.now()
 
   const running = activities.filter(
@@ -43,19 +58,17 @@ const buildOverview = (raw: AzurlaneActivity[]): SraActivityOverview => {
   )
   const upcoming = activities.filter(activity => toTimestamp(activity.startTime) > now)
   const ended = activities.filter(activity => toTimestamp(activity.endTime) <= now)
-  // 碧蓝航线会同时开着好几期：世界巡游、信标这类是长期玩法，当期海域活动才是主线，
-  // 所以横幅报「最新开的那一场」而不是最早开的那一场。同一时刻开的（如海域活动与
-  // 它的故事集）保持日历里的先后，取先出现的那个
   const current = running.length
     ? running.reduce((best, item) =>
         toTimestamp(item.startTime) > toTimestamp(best.startTime) ? item : best
       )
     : (upcoming[0] ?? ended[ended.length - 1])
+  const stale = payload.stale === true
 
   return {
     Available: true,
-    Stale: false,
-    Message: '',
+    Stale: stale,
+    Message: stale ? staleMessage : '',
     version: '',
     versionName: current?.name ?? '',
     cover: current?.cover ?? '',
@@ -69,39 +82,55 @@ const buildOverview = (raw: AzurlaneActivity[]): SraActivityOverview => {
  * 碧蓝航线活动数据的后端中转数据源。
  *
  * 数据取自碧蓝海事局 WIKI 的活动日历：官方站与日服站都是纯前端渲染、GameKee 也没
- * 开放这条线，能稳定拿到的只有那份维基文本；日历只写月日，时刻由后端补齐。
+ * 开放这条线，能稳定拿到的只有那份维基文本；日历只写月日，年份与时刻由后端补齐。
  * 取数走后端 `POST /api/info/azurlane/activity`，这里只做收口与失败降级——与星塔旅人、
  * 碧蓝档案那两条链路同一形状。重试节奏与可见性挂起交给公共骨架。
  */
 export const useAzurlaneActivitySource = () => {
+  const { t } = useI18n()
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
 
-  const source = useHomeActivitySource<AzurlaneActivity[]>({
+  const source = useHomeActivitySource<AzurlanePayload>({
     // 日志里沿用原本的中文名字，不随界面语言变
     label: () => '碧蓝航线',
     // 后端要现去 WIKI 取数，慢起来比其它源久，但也不能让卡片一直转
     timeoutMs: 20_000,
     loadingOnInit: false,
     loadingOnStart: true,
-    fetchData: async () => {
-      const response = await GetService.getAzurlaneActivityApiInfoAzurlaneActivityPost()
-      // 生成的客户端对 200 响应一律 resolve，后端用 code=500 表达取数失败，
-      // 不查这一层就会把失败当成「拿到了空排期」，卡片显示「暂无进行中的活动」
-      if (response.code !== 200) {
-        throw new Error(response.message || 'HTTP ' + response.code)
+    fetchData: async signal => {
+      const request = GetService.getAzurlaneActivityApiInfoAzurlaneActivityPost()
+      // 生成的客户端只认自己的 cancel，得把骨架的 signal 接上去，
+      // 否则超时后 abort 结束不了这个 Promise，卡片会一直转
+      const cancelOnAbort = () => request.cancel()
+      signal.addEventListener('abort', cancelOnAbort, { once: true })
+      try {
+        const response = await request
+        // 生成的客户端对 200 响应一律 resolve，后端用 code=500 表达取数失败，
+        // 不查这一层就会把失败当成「拿到了空排期」，卡片显示「暂无进行中的活动」
+        if (response.code !== 200) {
+          throw new Error(response.message || 'HTTP ' + response.code)
+        }
+        return (response.data ?? {}) as AzurlanePayload
+      } finally {
+        signal.removeEventListener('abort', cancelOnAbort)
       }
-      const payload = (response.data ?? {}) as { activities?: AzurlaneActivity[] }
-      return payload.activities ?? []
     },
-    applyData: activities => {
-      overview.value = buildOverview(activities)
+    applyData: payload => {
+      overview.value = buildOverview(payload, t('home.sra.staleMessage'))
     },
     markStale: () => {
       // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
-      overview.value = { ...overview.value, Stale: true }
+      overview.value = {
+        ...overview.value,
+        Stale: true,
+        Message: t('home.sra.staleMessage'),
+      }
     },
     markUnavailable: () => {
-      overview.value = createEmptySraActivityOverview()
+      // 不能只清空：展示器只看 Message 决定要不要出错误提示，空着一句话都不给
+      overview.value = createEmptySraActivityOverview(
+        t('home.sra.unavailable', { name: '碧蓝航线' })
+      )
     },
   })
 

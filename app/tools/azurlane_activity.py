@@ -169,12 +169,17 @@ def _build_activity(row: re.Match[str], now: datetime) -> dict[str, Any] | None:
     if running:
         start, end = running[-1]
     else:
-        upcoming = sorted(
-            (item for item in candidates if item[0] > now), key=lambda item: item[0]
-        )
-        start, end = (
-            upcoming[0] if upcoming else max(candidates, key=lambda item: item[1])
-        )
+        ## 没有进行中的就取「离现在最近」的一场：刚结束的和马上要开始的都算。
+        ## 不能无条件挑未来那种——日历里已经到期、还没撤下的活动会被推成下一年的
+        ## 排期，横幅也会拿它当下一场
+        def distance(item: tuple[datetime, datetime]) -> float:
+            start_at, end_at = item
+            return min(
+                abs((start_at - now).total_seconds()),
+                abs((now - end_at).total_seconds()),
+            )
+
+        start, end = min(candidates, key=distance)
 
     cover = WORLD_PATROL_COVER if WORLD_PATROL_KEYWORD in name else DEFAULT_COVER
 
@@ -230,8 +235,11 @@ async def fetch_azurlane_activities(*, force: bool = False) -> dict[str, Any] | 
         logger.opt(exception=True).warning(
             f"获取碧蓝航线活动失败: {type(e).__name__}: {e}"
         )
-        ## 取不到就给上次成功的结果：宁可显示可能过期的排期，也好过整块空着
-        return _cache[1] if _cache is not None else None
+        ## 取不到就给上次成功的结果，但要说清楚这是旧数据：前端据此提示「可能已过期」，
+        ## 也不会把它当成一次成功而清掉重试
+        if _cache is not None:
+            return {**_cache[1], "stale": True}
+        return None
 
     data = {
         "version": "",
@@ -240,6 +248,8 @@ async def fetch_azurlane_activities(*, force: bool = False) -> dict[str, Any] | 
         "endTime": "",
         "cover": "",
         "activities": activities,
+        # 正常取到就是新鲜数据；回退旧缓存时上面会把它改成 True
+        "stale": False,
     }
     _cache = (time.time(), data)
     return data
