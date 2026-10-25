@@ -28,12 +28,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from app.models.config import EmulatorConfig
 from app.utils import get_logger
 
+from ..detect import avd_root_of
+from ..facade import load_paths
 from . import components, precheck
 from .constants import POWER_CLOSE_TIMEOUT_SECONDS
 
@@ -72,15 +75,10 @@ async def status(
 # ---- 关机 / 重启 / 注销前 ---------------------------------------------------
 
 
-def _avd_roots() -> list[Path]:
+def managed_roots(configs: Iterable[EmulatorConfig]) -> list[Path]:
     """Emulator 2.0 配置里纳管的全部魔改 AVD 根目录（去重）。"""
-    from app.core import Config
-
-    from ..detect import avd_root_of
-    from ..facade import load_paths
-
     roots: dict[str, Path] = {}
-    for config in list(Config.EmulatorConfig.values()):
+    for config in configs:
         try:
             if config.Info.Type != "emulator2":
                 continue
@@ -134,11 +132,14 @@ async def close_running_instances(
     电源路径之后会按进程名强杀模拟器，强杀不走客体关机流程，页缓存里没写回的数据会丢（10-03 星铁
     热更新清单变 0 字节）。这里整体限时，不让关机卡住；出任何错都只记日志。
     """
+    from app.core import Config
+
     from .components import manager_key_exe
     from .manager import AvdManager
 
     targets: list[tuple[str, Callable[[], Awaitable[object]]]] = []
-    for root in await asyncio.to_thread(_avd_roots):
+    roots = await asyncio.to_thread(managed_roots, list(Config.EmulatorConfig.values()))
+    for root in roots:
         try:
             manager = AvdManager(manager_key_exe(root), 60, False)
             running = await asyncio.to_thread(manager._scan_processes)
