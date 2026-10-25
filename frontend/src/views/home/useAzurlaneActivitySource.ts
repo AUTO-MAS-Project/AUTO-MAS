@@ -89,6 +89,9 @@ const buildOverview = (payload: AzurlanePayload, staleMessage: string): SraActiv
 export const useAzurlaneActivitySource = () => {
   const { t } = useI18n()
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
+  /** 后端回了旧缓存时先存在这里：数据要显示，但这次取数不算成功，见 fetchData */
+  let stalePayload: AzurlanePayload | null = null
+  const staleMessage = () => t('home.sra.staleMessage')
 
   const source = useHomeActivitySource<AzurlanePayload>({
     // 日志里沿用原本的中文名字，不随界面语言变
@@ -110,21 +113,29 @@ export const useAzurlaneActivitySource = () => {
         if (response.code !== 200) {
           throw new Error(response.message || 'HTTP ' + response.code)
         }
-        return (response.data ?? {}) as AzurlanePayload
+        const payload = (response.data ?? {}) as AzurlanePayload
+        if (payload.stale === true) {
+          // 后端取数失败、退回了上次缓存：数据要显示，但这次没取成功。
+          // 抛出去让公共骨架按失败处理（释放加载态并安排退避重试），
+          // 数据在 markStale 里补上——否则 WIKI 恢复后这一轮不会自动重拉
+          stalePayload = payload
+          throw new Error('活动数据取数失败，已回退上次结果')
+        }
+        return payload
       } finally {
         signal.removeEventListener('abort', cancelOnAbort)
       }
     },
     applyData: payload => {
-      overview.value = buildOverview(payload, t('home.sra.staleMessage'))
+      overview.value = buildOverview(payload, staleMessage())
     },
     markStale: () => {
-      // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
-      overview.value = {
-        ...overview.value,
-        Stale: true,
-        Message: t('home.sra.staleMessage'),
-      }
+      const fallback = stalePayload
+      stalePayload = null
+      // 有回退数据就照常展示并挂上「可能已过期」，没有就保留上一份内容
+      overview.value = fallback
+        ? buildOverview(fallback, staleMessage())
+        : { ...overview.value, Stale: true, Message: staleMessage() }
     },
     markUnavailable: () => {
       // 不能只清空：展示器只看 Message 决定要不要出错误提示，空着一句话都不给
