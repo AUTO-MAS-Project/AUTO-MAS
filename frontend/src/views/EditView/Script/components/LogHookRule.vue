@@ -172,7 +172,9 @@ const typeOptions = [
 
     <!-- 规则底部提示 -->
     <div class="rule-footer">
-      <span class="footer-type-tag">{{ local.type === 'drop' ? '丢弃' : '改写' }}</span>
+      <span class="footer-type-tag">{{
+        local.type === 'drop' ? t('edit.drop') : t('edit.rewrite')
+      }}</span>
       <span class="footer-hint">{{ getTypeHint(local.type) }}</span>
     </div>
   </div>

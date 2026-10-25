@@ -32,7 +32,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
+        {{ showMaaEndConfigMask ? t('comp.configuring') : t('comp.configureMaaend') }}
       </a-button>
     </template>
   </ScriptEditHeader>
@@ -54,14 +54,14 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
-                >QQ群</a
+                >{{ t('edit.qqGroup') }}</a
               >
               {{ t('edit.reportIssueGo') }}
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
                 @click="handleExternalLink"
-                >BUG收集页</a
-              >留言
+                >{{ t('edit.bugReportPage') }}</a
+              >{{ t('edit.leaveMessage') }}
             </p>
           </div>
         </template>

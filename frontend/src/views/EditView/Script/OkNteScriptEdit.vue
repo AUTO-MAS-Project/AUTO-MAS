@@ -140,7 +140,7 @@
                 <template #label>
                   <a-tooltip :title="t('edit.oknteAccountSwitchHint')">
                     <span class="form-label">
-                      运行前强制切换账号
+                      {{ t('edit.forceSwitchAccountBeforeRun') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -152,8 +152,8 @@
                   :disabled="!oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
                 <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>

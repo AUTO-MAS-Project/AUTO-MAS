@@ -128,7 +128,7 @@ const configPreview = computed(() => {
       <div class="debug-result-pane">
         <div class="debug-result-header">
           <span class="debug-section-label">
-            结果（{{ debug.hitCount }}/{{ debug.results.length }}）
+            {{ t('edit.debugResultCount', { n: debug.hitCount, m: debug.results.length }) }}
           </span>
           <a-checkbox v-model:checked="debug.onlyHit" size="small">{{
             t('edit.matchesOnly')
@@ -154,7 +154,9 @@ const configPreview = computed(() => {
             <div class="debug-result-line">
               <span class="debug-result-line-num">{{ item.idx + 1 }}</span>
               <span v-if="!debug.isMultiline" class="debug-result-line-text">{{ item.line }}</span>
-              <span v-else class="debug-result-line-text">窗口 {{ item.idx + 1 }}</span>
+              <span v-else class="debug-result-line-text">
+                {{ t('edit.debugWindow', { n: item.idx + 1 }) }}
+              </span>
             </div>
             <div class="debug-result-out">
               <a-tag v-if="item.hit" color="green" class="debug-result-tag">{{
