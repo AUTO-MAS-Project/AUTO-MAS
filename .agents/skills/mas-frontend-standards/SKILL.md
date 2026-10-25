@@ -172,7 +172,7 @@ Do not write tests that `readFileSync` a `.vue`, `.ts`, or `.css` file and asser
 Reading source text is acceptable only when nothing importable exists:
 
 1. **Cross-language contracts** — a shared protocol value that must mirror the backend and has no importable contract; it must also meet the permanent-suite criteria above.
-2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`. See `i18n/locales.test.ts`.
+2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`, and `en-US` / `ja-JP` covering every `zh-CN` key. See `i18n/locales.test.ts`; `yarn audit:i18n` reports the same catalog facts (missing translations, dead keys, untranslated template text) without failing the build.
 
 When an existing source-text test fails because you refactored the code it greps, and it guards neither kind of contract, delete it rather than re-pinning the new string.
 
@@ -186,7 +186,7 @@ When an existing source-text test fails because you refactored the code it greps
 | "Shared state is easiest to put in localStorage." | Shared reactive application state belongs in Pinia; `localStorage` is only the narrow fallback for durable, non-sensitive local preferences. |
 | "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
-| "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language); `en-US.ts` is partial by design and missing keys fall back. |
+| "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language) **and** to `en-US.ts` / `ja-JP.ts` in the same change — both catalogs must cover every `zh-CN` key, and `locales.test.ts` fails otherwise. Run `yarn audit:i18n` to list what is missing. |
 | "This Chinese literal is untranslated; I'll translate it." | **Chinese literals that drive logic must stay verbatim** — e.g. `tab.status === '运行'`, `result.includes('异常')`, `SchedulerStatus` values. Translating them breaks behaviour silently, with no error. Leave them and add a comment saying why. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
 | "`yarn lint` is failing, but the repo baseline is dirty anyway." | Reproduce the same check on the untouched base commit before calling it pre-existing; never assume a historical baseline still holds. |

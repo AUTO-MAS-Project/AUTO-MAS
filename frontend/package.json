@@ -43,6 +43,7 @@
     "e2e:report": "playwright show-report playwright-report/browser",
     "e2e:check": "node --test e2e/harness.check.mjs && tsc -p tsconfig.e2e.json",
     "audit:baseline": "node scripts/audit-baseline.mjs",
+    "audit:i18n": "node scripts/i18n-audit.mjs",
     "audit:unused": "knip --no-progress",
     "audit:duplicates": "jscpd src electron"
   },
