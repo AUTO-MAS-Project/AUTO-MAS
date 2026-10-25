@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ReplayRecord } from './ReplayRecord';
-export type ReplayListOut = {
+import type { ScriptMirrorCdkData } from './ScriptMirrorCdkData';
+export type ScriptMirrorCdkOut = {
     /**
      * 状态码
      */
@@ -16,7 +16,6 @@ export type ReplayListOut = {
      * 操作消息
      */
     message?: string;
-    replays?: Array<ReplayRecord>;
-    directory?: string;
+    data: ScriptMirrorCdkData;
 };
 

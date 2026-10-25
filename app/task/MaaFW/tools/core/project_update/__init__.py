@@ -13,7 +13,6 @@ from .precheck_memo import (
 )
 from .updater import (
     ALERT_LOG_PREFIX,
-    MaaFWMirrorCdkStatus,
     MaaFWProjectUpdateCandidate,
     MaaFWProjectUpdateDiscovery,
     MaaFWProjectUpdateError,
@@ -22,13 +21,11 @@ from .updater import (
     can_check_project_update,
     detect_maafw_project_shell_hint,
     discover_maafw_project_update,
-    query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
 )
 
 __all__ = [
     "ALERT_LOG_PREFIX",
-    "MaaFWMirrorCdkStatus",
     "MaaFWProjectUpdateCandidate",
     "MaaFWProjectUpdateDiscovery",
     "MaaFWProjectUpdateError",
@@ -42,7 +39,6 @@ __all__ = [
     "discover_maafw_project_update",
     "precheck_memo_path",
     "project_state_dir_for",
-    "query_mirrorchyan_cdk_status",
     "read_runtime_precheck",
     "update_maafw_project_if_needed",
     "write_runtime_precheck",

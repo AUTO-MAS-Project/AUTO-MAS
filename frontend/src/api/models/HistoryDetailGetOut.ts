@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HistoryData } from './HistoryData';
-export type HistoryDataGetOut = {
+import type { HistoryDetail } from './HistoryDetail';
+export type HistoryDetailGetOut = {
     /**
      * 状态码
      */
@@ -16,9 +16,6 @@ export type HistoryDataGetOut = {
      * 操作消息
      */
     message?: string;
-    /**
-     * 历史记录数据
-     */
-    data: HistoryData;
+    data: HistoryDetail;
 };
 

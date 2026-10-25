@@ -378,7 +378,7 @@ const showRunScope = computed(
 // 启动按钮的禁用条件集中在这里维护，模板里的表达式不再继续膨胀
 const startDisabled = computed(() => {
   if (props.status === '运行') return false
-  if (!localSelectedTaskId.value || props.disabled) return true
+  if (!localSelectedTaskId.value || props.disabled || props.taskOptionsLoading) return true
   if (!props.taskOptions.some(option => option.value === localSelectedTaskId.value)) return true
   // 脚本任务：账号还在加载、或显式取消到一个人都不剩时不让启动（与启动守卫同口径）
   if (showScriptRunScope.value) {

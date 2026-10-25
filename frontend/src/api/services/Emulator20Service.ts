@@ -8,6 +8,10 @@ import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
 import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
 import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
+import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
+import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
+import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
+import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
@@ -374,6 +378,50 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 根目录的更新状态
+     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
+     * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
+        requestBody: Emulator2AvdUpdateStatusIn,
+    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新魔改 AVD
+     * 一键更新：查最新版本，下载（Mirror 酱或 GitHub，整包或增量）并核对，再换上。
+     * 有实例开着或正在开机时什么都不动，返回 ``instances_running``；开始后到结束这个根目录不许开机。
+     * 换上前发现还有程序开着模拟器文件时停在「已下载好」，下次直接换上。
+     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateApiEmulator2AvdUpdatePost(
+        requestBody: Emulator2AvdUpdateIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
