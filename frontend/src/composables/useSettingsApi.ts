@@ -1,4 +1,4 @@
-import { getApiErrorMessage } from '@/utils/apiError'
+import { getApiErrorMessage, resolveOutBaseMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -28,7 +28,7 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.settingsLoadFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.settingsLoadFailed')
         throw new Error(errorMsg)
       }
 
@@ -55,7 +55,7 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.settingsSaveFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.settingsSaveFailed')
         throw new Error(errorMsg)
       }
 

@@ -19,6 +19,14 @@ export type BetterGIGlobalDomainSettingsOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 秘境刷取配置键值（camelCase 扁平键：specifyResinUse/originalResinUseCount/condensedResinUseCount/transientResinUseCount/fragileResinUseCount/autoArtifactSalvage/maxArtifactStar/rewardRecognitionEnabled）
      */
     data?: Record<string, any>;

@@ -19,6 +19,14 @@ export type BetterGIGameInfoOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 生效游戏路径（用户级优先，否则 BGI 全局配置）
      */
     installPath?: (string | null);

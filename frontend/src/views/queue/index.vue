@@ -275,6 +275,7 @@ import {
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
+import { resolveOutBaseMessage } from '@/utils/apiError'
 
 const { t } = useI18n()
 
@@ -656,7 +657,9 @@ const handleAddQueue = async () => {
       message.info(t('queue.toast.created'), 3)
     } else {
       message.error(
-        t('queue.toast.createFailed', { error: response.message || t('queue.toast.unknownError') })
+        t('queue.toast.createFailed', {
+          error: resolveOutBaseMessage(response, 'apiErrors.queueItemAddFailed'),
+        })
       )
     }
   } catch (error) {
@@ -692,7 +695,9 @@ const handleRemoveQueue = async (queueId: string) => {
       message.success(t('queue.toast.deleted'))
     } else {
       message.error(
-        t('queue.toast.deleteFailed', { error: response.message || t('queue.toast.unknownError') })
+        t('queue.toast.deleteFailed', {
+          error: resolveOutBaseMessage(response, 'apiErrors.queueItemDeleteFailed'),
+        })
       )
     }
   } catch (error) {
@@ -782,7 +787,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     })
 
     if (response.code !== 200) {
-      message.error(response.message || t('queue.toast.saveFailed'))
+      message.error(resolveOutBaseMessage(response, 'apiErrors.queueItemUpdateFailed'))
       // 保存失败时界面控件仍停在用户刚选的值，回读真实配置以纠正显示
       await refreshQueueConfig(queueId)
       return false

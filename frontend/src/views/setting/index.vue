@@ -16,6 +16,7 @@ import {
 } from '@/components/satellite/pressSound'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
+import { resolveOutBaseMessage } from '@/utils/apiError'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
@@ -486,7 +487,7 @@ const testNotify = async () => {
   try {
     const res = await Service.testNotifyApiSettingTestNotifyPost()
     if (res?.code && res.code !== 200)
-      message.warning(res?.message || t('setting.toast.testUnknown'))
+      message.warning(resolveOutBaseMessage(res, 'setting.toast.testUnknown'))
     else message.success(res?.message || t('setting.toast.testSent'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

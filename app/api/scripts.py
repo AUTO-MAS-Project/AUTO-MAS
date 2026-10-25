@@ -43,6 +43,7 @@ from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
+from app.models.error_codes import ErrorCode, fail
 from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
@@ -1967,6 +1968,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.SCRIPT_ADD_FAILED,
             scriptId="",
             data=GeneralConfig(**{}),
         )
@@ -2003,6 +2005,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.SCRIPT_LOAD_FAILED,
             index=[],
             data={},
         )
@@ -2023,14 +2026,14 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
         # 魔改 AVD 目前只支持 MaaFW 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
         refusal = await emulator2_service.mod_avd_binding_error(script.scriptId, data)
         if refusal:
-            return OutBase(code=500, status="error", message=refusal)
+            return fail(ErrorCode.SCRIPT_MOD_AVD_BINDING_REJECTED, refusal, code=500)
         await Config.update_script(script.scriptId, data)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.SCRIPT_SAVE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 
@@ -2142,8 +2145,8 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
         logger.opt(exception=True).warning(
             f"delete_script失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.SCRIPT_DELETE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 
@@ -2345,6 +2348,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.USER_LIST_FAILED,
             index=[],
             data={},
         )
@@ -2403,6 +2407,7 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.USER_ADD_FAILED,
             userId="",
             data=GeneralUserConfig(**{}),
         )
@@ -2464,8 +2469,8 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
         await Config.update_user(user.scriptId, user.userId, data)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.USER_SAVE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 

@@ -187,6 +187,7 @@ When an existing source-text test fails because you refactored the code it greps
 | "Pinia should hold every frontend value." | Keep isolated short-lived state local, and keep persistent authoritative data in its backend or Electron configuration owner. |
 | "I can tweak generated API files." | `src/api` is generated; regenerate through the project command instead. |
 | "New UI text is just a string; inline is faster." | User-facing text goes through the i18n catalog in `src/i18n/locales`. Add the key to `zh-CN.ts` (source language); `en-US.ts` is partial by design and missing keys fall back. |
+| "Failure toasts can just print the backend message." | Backend `message` is the Chinese fallback. Show failures with `resolveOutBaseMessage(response, fallbackKey)` from `utils/apiError`, which prefers the language-neutral `errorCode` (see `app/models/error_codes.py`) so English/Japanese UI stops showing Chinese. |
 | "This Chinese literal is untranslated; I'll translate it." | **Chinese literals that drive logic must stay verbatim** — e.g. `tab.status === '运行'`, `result.includes('异常')`, `SchedulerStatus` values. Translating them breaks behaviour silently, with no error. Leave them and add a comment saying why. |
 | "This UI-only change can ignore engineering rules." | UI tasks still obey module, state, API, and verification boundaries. |
 | "`yarn lint` is failing, but the repo baseline is dirty anyway." | Reproduce the same check on the untouched base commit before calling it pre-existing; never assume a historical baseline still holds. |

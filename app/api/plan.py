@@ -33,6 +33,7 @@ import app.models.config as _config_models
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
 from app.core import Config
 from app.models.config import PLAN_BOOK
+from app.models.error_codes import ErrorCode, fail
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -144,6 +145,7 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.PLAN_ADD_FAILED,
             planId="",
             data=cast(PlanConfigData, plan_contract(**{})),
         )
@@ -199,8 +201,8 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
         await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
     except Exception as e:
         logger.opt(exception=True).warning(f"update_plan失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.PLAN_UPDATE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 
@@ -218,8 +220,8 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
         await Config.del_plan(plan.planId)
     except Exception as e:
         logger.opt(exception=True).warning(f"delete_plan失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.PLAN_DELETE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 

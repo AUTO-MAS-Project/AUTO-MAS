@@ -17,6 +17,14 @@ export type HistorySearchOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 日期 → 用户名 → 记录与统计
      */
     data: Record<string, Record<string, HistoryBucket>>;

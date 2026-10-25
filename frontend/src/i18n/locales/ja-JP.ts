@@ -34,6 +34,28 @@ export default {
     requestFailed: 'リクエストに失敗しました。再試行してください',
     userLoadRetry: 'アカウントの読み込みに失敗しました：{reason}',
     retry: '再試行',
+    scriptModAvdBindingRejected:
+      '選択した改造 AVD はこのスクリプトでは使用できません。バインドを解除するか通常のエミュレーターを選択してください',
+    settingNotifyChannelMissing:
+      '有効な通知チャネルがありません。先にチャンネルを登録して通知を有効にしてください',
+    settingNotifySendFailed: '一部の通知チャネルへの送信に失敗しました',
+    emulatorOperateFailed: 'エミュレーターの操作に失敗しました',
+    queueItemAddFailed: 'キュー項目の追加に失敗しました',
+    queueItemUpdateFailed: 'キュー項目の保存に失敗しました',
+    queueItemDeleteFailed: 'キュー項目の削除に失敗しました',
+    planAddFailed: 'プランの追加に失敗しました',
+    planUpdateFailed: 'プランの保存に失敗しました',
+    planDeleteFailed: 'プランの削除に失敗しました',
+    gameSignBusy:
+      'ゲームコミュニティのチェックインを実行中です。しばらくしてから再試行してください',
+    gameSignFailed:
+      'ゲームコミュニティのチェックインに失敗しました。しばらくしてから再試行してください',
+    updateDownloadBusy: '更新タスクが実行中です。重ねて実行しないでください',
+    updateNoActiveDownload: '実行中のダウンロードはありません',
+    updateSourceSwitchUnavailable:
+      '現在ダウンロード元を切り替えられません。GitHub からダウンロード中か確認してください',
+    updateDownloadCancelFailed: '更新のダウンロードのキャンセルに失敗しました',
+    updateSourceSwitchFailed: 'ダウンロード元の切り替えに失敗しました',
   },
   eventDepotPreview: {
     runtimeUnresolved:

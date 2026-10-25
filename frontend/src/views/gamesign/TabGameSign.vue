@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { resolveOutBaseMessage } from '@/utils/apiError'
 import { formatConfigDate } from '@/utils/configDateTime'
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted } from 'vue'
@@ -196,7 +197,7 @@ const onDragEnd = async (evt: DragEndEvent) => {
     const order = accounts.value.map(a => a.uid)
     const response = await reorderAccounts(order)
     if (response.code !== 200) {
-      throw new Error(response.message || t('gamesign.toast.reorderFailed'))
+      throw new Error(resolveOutBaseMessage(response, 'gamesign.toast.reorderFailed'))
     }
     logger.info('用户排序已保存')
   } catch (error) {
@@ -337,17 +338,17 @@ const handleManualSign = async () => {
   try {
     const response = await manualSign()
     if (response.code === 409) {
-      const warning = response.message || t('gamesign.toast.autoSignRunning')
+      const warning = resolveOutBaseMessage(response, 'gamesign.toast.autoSignRunning')
       logger.warn(`手动签到被拒绝: ${warning}`)
       message.warning(warning)
       return
     }
     if (response.code !== 200 && response.code !== 0) {
-      throw new Error(response.message || t('gamesign.toast.signFailed'))
+      throw new Error(resolveOutBaseMessage(response, 'gamesign.toast.signFailed'))
     }
     logger.info('游戏社区签到完成')
     if (response.status === 'warning') {
-      message.warning(response.message || t('gamesign.toast.signPartialNotify'))
+      message.warning(resolveOutBaseMessage(response, 'gamesign.toast.signPartialNotify'))
     } else {
       message.success(response.message || t('gamesign.toast.signDone'))
     }

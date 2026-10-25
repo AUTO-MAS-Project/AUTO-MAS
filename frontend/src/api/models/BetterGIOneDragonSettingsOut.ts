@@ -19,6 +19,14 @@ export type BetterGIOneDragonSettingsOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 一条龙设置项键值（camelCase，与 BGI 一条龙 JSON 顶层一致）
      */
     data?: Record<string, any>;

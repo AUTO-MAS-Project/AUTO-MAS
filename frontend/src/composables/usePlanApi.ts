@@ -5,6 +5,7 @@ import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn
 import { Service } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getPlanCreateType, type PlanConfigType } from '@/utils/planTypeRegistry'
+import { resolveOutBaseMessage } from '@/utils/apiError'
 
 const logger = window.electronAPI.getLogger('计划API')
 
@@ -62,7 +63,7 @@ export function usePlanApi() {
 
       const response = await Service.updatePlanApiPlanUpdatePost(params)
       if (response.code !== 200) {
-        throw new Error(response.message || t('misc.couldNotUpdatePlan'))
+        throw new Error(resolveOutBaseMessage(response, 'misc.couldNotUpdatePlan'))
       }
       return response
     } catch (error) {

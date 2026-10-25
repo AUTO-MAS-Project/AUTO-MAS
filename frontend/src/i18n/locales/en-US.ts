@@ -32,6 +32,26 @@ export default {
     requestFailed: 'Request failed. Please retry.',
     userLoadRetry: 'Could not load accounts: {reason}',
     retry: 'Retry',
+    scriptModAvdBindingRejected:
+      'The selected modded AVD cannot be used by this script. Unbind it or pick a regular emulator.',
+    settingNotifyChannelMissing:
+      'No notification channel is enabled yet. Bind a channel and turn on notifications first.',
+    settingNotifySendFailed: 'Some notification channels failed to send',
+    emulatorOperateFailed: 'Emulator operation failed',
+    queueItemAddFailed: 'Failed to add the queue item',
+    queueItemUpdateFailed: 'Failed to save the queue item',
+    queueItemDeleteFailed: 'Failed to delete the queue item',
+    planAddFailed: 'Failed to add the plan',
+    planUpdateFailed: 'Failed to save the plan',
+    planDeleteFailed: 'Failed to delete the plan',
+    gameSignBusy: 'Community sign-in is already running. Please retry later.',
+    gameSignFailed: 'Community sign-in failed. Please retry later.',
+    updateDownloadBusy: 'An update task is already running. Do not start another one.',
+    updateNoActiveDownload: 'There is no download in progress',
+    updateSourceSwitchUnavailable:
+      'Cannot switch the download source now. Make sure the download is running from GitHub.',
+    updateDownloadCancelFailed: 'Failed to cancel the update download',
+    updateSourceSwitchFailed: 'Failed to switch the download source',
   },
   eventDepotPreview: {
     runtimeUnresolved:

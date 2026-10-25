@@ -231,6 +231,12 @@ class OutBase(BaseModel):
     code: int = Field(default=200, description="状态码")
     status: str = Field(default="success", description="操作状态")
     message: str = Field(default="操作成功", description="操作消息")
+    errorCode: Optional[str] = Field(
+        default=None, description="稳定错误码，前端据此取当前界面语言的文案"
+    )
+    errorParams: Optional[Dict[str, Any]] = Field(
+        default=None, description="错误码文案里的占位符参数"
+    )
 
 
 class TagItem(BaseModel):

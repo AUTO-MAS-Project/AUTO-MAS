@@ -39,6 +39,7 @@ from app.api.ws_command import ws_command
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.config import QueueItemNotFoundError, QueueNotFoundError
+from app.models.error_codes import ErrorCode, fail
 from app.models.schema import OutBase
 from app.utils import get_logger
 
@@ -407,6 +408,7 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.QUEUE_ITEM_ADD_FAILED,
             queueItemId="",
             data=QueueItem(**{}),
         )
@@ -428,8 +430,10 @@ async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"update_item失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.QUEUE_ITEM_UPDATE_FAILED,
+            f"{type(e).__name__}: {str(e)}",
+            code=500,
         )
     return OutBase()
 
@@ -447,8 +451,10 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
         await Config.del_queue_item(item.queueId, item.queueItemId)
     except Exception as e:
         logger.opt(exception=True).warning(f"delete_item失败: {type(e).__name__}: {e}")
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.QUEUE_ITEM_DELETE_FAILED,
+            f"{type(e).__name__}: {str(e)}",
+            code=500,
         )
     return OutBase()
 

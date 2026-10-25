@@ -17,6 +17,14 @@ export type UserInfrastPlanComboxOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 排班表时段形态（mixed=时段不一致不可用）
      */
     state: UserInfrastPlanComboxOut.state;

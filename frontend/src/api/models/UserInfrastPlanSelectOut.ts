@@ -16,6 +16,14 @@ export type UserInfrastPlanSelectOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 当前基建班次索引（-1=按时段自动）
      */
     index: number;

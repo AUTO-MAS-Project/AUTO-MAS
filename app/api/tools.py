@@ -51,6 +51,7 @@ from app.core.community_sign import (
     community_sign_flow,
     run_community_sign_in,
 )
+from app.models.error_codes import ErrorCode, fail
 from app.models.notification_ports import CommunityNotifier
 from app.models.schema import OutBase
 from app.utils.constants import UTC8
@@ -369,17 +370,13 @@ async def manual_game_sign(
 
     except CommunitySignInProgressError as e:
         _log_community_api_error("游戏社区签到并发冲突", e)
-        return OutBase(
-            code=409,
-            status="error",
-            message="游戏社区签到正在执行，请稍后重试",
+        return fail(
+            ErrorCode.GAME_SIGN_BUSY, "游戏社区签到正在执行，请稍后重试", code=409
         )
     except Exception as e:
         _log_community_api_error("游戏社区签到失败", e)
-        return OutBase(
-            code=500,
-            status="error",
-            message="游戏社区签到失败，请稍后重试",
+        return fail(
+            ErrorCode.GAME_SIGN_FAILED, "游戏社区签到失败，请稍后重试", code=500
         )
     return OutBase(message="签到完成")
 

@@ -17,6 +17,14 @@ export type Emulator2SearchOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 搜索结果, 不可添加的也会列出并说明原因
      */
     emulators?: Array<Emulator2SearchItem>;

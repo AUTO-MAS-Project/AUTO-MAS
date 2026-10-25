@@ -20,6 +20,14 @@ export type OpenClawQQGroupsOut = {
      */
     message?: string;
     /**
+     * 可本地化的错误标识
+     */
+    errorCode?: string;
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 绑定版本，用于拒绝旧页面保存
      */
     bindingId?: string;
@@ -31,10 +39,6 @@ export type OpenClawQQGroupsOut = {
      * 自动记录的群
      */
     groups?: Array<OpenClawQQGroup>;
-    /**
-     * 可本地化的错误标识
-     */
-    errorCode?: string;
 };
 export namespace OpenClawQQGroupsOut {
     /**

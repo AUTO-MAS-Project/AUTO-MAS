@@ -38,6 +38,7 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, EmulatorManager
+from app.models.error_codes import ErrorCode, fail
 from app.models.schema import DeviceInfo, EmulatorDeleteIn, OutBase
 from app.utils import get_logger
 from app.utils.emulator.tools import search_all_emulators
@@ -210,8 +211,8 @@ async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase
         logger.opt(exception=True).warning(
             f"operation_emulator失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.EMULATOR_OPERATE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 

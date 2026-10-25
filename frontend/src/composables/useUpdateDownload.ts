@@ -14,6 +14,7 @@ import {
 } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
+import { resolveOutBaseMessage } from '@/utils/apiError'
 import { updateDownloadApi, type UpdateDownloadSnapshot } from '@/services/updateDownloadApi'
 import type { ChangelogData } from '@/utils/changelog'
 
@@ -297,7 +298,7 @@ const start = async (version: string, data: ChangelogData) => {
     const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
-      receiveFailed(response.message || '下载请求失败')
+      receiveFailed(resolveOutBaseMessage(response, 'apiErrors.requestFailed'))
       return
     }
     invalidateSnapshot()
@@ -320,7 +321,7 @@ const cancel = async () => {
       message.success(t('misc.downloadCancelled'))
       receiveCancelled()
     } else {
-      message.error(response.message || '取消下载失败')
+      message.error(resolveOutBaseMessage(response, 'apiErrors.updateDownloadCancelFailed'))
       invalidateSnapshot()
       status.value = 'downloading'
     }
@@ -359,7 +360,7 @@ const switchToCnb = async () => {
       lowSpeedDetector.reset()
       startRuntimeMonitoring()
     } else {
-      const failureMessage = response.message || '切换下载源失败'
+      const failureMessage = resolveOutBaseMessage(response, 'apiErrors.updateSourceSwitchFailed')
       message.error(failureMessage)
       receiveFailed(failureMessage)
     }

@@ -1,4 +1,4 @@
-import { getApiErrorCode, getApiErrorMessage } from '@/utils/apiError'
+import { getApiErrorCode, getApiErrorMessage, resolveOutBaseMessage } from '@/utils/apiError'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
@@ -54,7 +54,7 @@ export function useUserApi() {
 
       if (response.code !== 200) {
         addUserErrorCode.value = response.code ?? null
-        const errorMsg = response.message || t('apiErrors.userAddFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -104,7 +104,7 @@ export function useUserApi() {
       logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userSaveFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userSaveFailed')
         logger.error(`更新用户失败: ${errorMsg}`)
         throw new Error(errorMsg)
       }
@@ -134,7 +134,7 @@ export function useUserApi() {
       const response = await Service.getUserApiScriptsUserGetPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userListFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userListFailed')
         throw new Error(errorMsg)
       }
 
@@ -170,7 +170,7 @@ export function useUserApi() {
       const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userDeleteFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -210,7 +210,7 @@ export function useUserApi() {
       const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userOrderFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userOrderFailed')
         throw new Error(errorMsg)
       }
 
@@ -239,7 +239,7 @@ export function useUserApi() {
       const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userConfigPathFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.userConfigPathFailed')
         throw new Error(errorMsg)
       }
 

@@ -50,6 +50,7 @@ from app.core import Config, notify_channels
 from app.core.data_backup import create_data_backup
 from app.core.notify import HostNotificationService
 from app.models.config import Webhook as WebhookConfig
+from app.models.error_codes import ErrorCode, fail
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.notification_ports import WebhookTester
 from app.models.schema import (
@@ -361,6 +362,7 @@ async def get_scripts() -> SettingGetOut:
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
+            errorCode=ErrorCode.SETTINGS_LOAD_FAILED,
             data=GlobalConfig(**{}),
         )
     return SettingGetOut(data=GlobalConfig(**data))
@@ -384,8 +386,8 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        return fail(
+            ErrorCode.SETTINGS_SAVE_FAILED, f"{type(e).__name__}: {str(e)}", code=500
         )
     return OutBase()
 
@@ -413,16 +415,16 @@ async def test_notify(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     if result.failed:
-        return OutBase(
+        return fail(
+            ErrorCode.SETTING_NOTIFY_SEND_FAILED,
+            f"部分通知发送失败: {'、'.join(result.failed)}",
             code=500,
-            status="error",
-            message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
     if result.attempted == 0:
-        return OutBase(
+        return fail(
+            ErrorCode.SETTING_NOTIFY_CHANNEL_MISSING,
+            "没有已启用的通知渠道，请先完成绑定并开启通知",
             code=400,
-            status="error",
-            message="没有已启用的通知渠道，请先完成绑定并开启通知",
         )
     return OutBase(message=f"测试通知已提交至：{'、'.join(result.succeeded)}")
 

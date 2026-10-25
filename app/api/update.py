@@ -34,6 +34,7 @@ from pydantic import (
 )
 
 from app.core import Config
+from app.models.error_codes import ErrorCode, fail
 from app.models.schema import OutBase, UpdateDownloadSnapshot
 from app.services import Updater
 from app.utils import get_logger
@@ -111,10 +112,10 @@ async def download_update(
 
     try:
         if not await Updater.start_download(target_version=target_version):
-            return OutBase(
+            return fail(
+                ErrorCode.UPDATE_DOWNLOAD_BUSY,
+                "已有更新任务在进行中, 请勿重复操作",
                 code=409,
-                status="error",
-                message="已有更新任务在进行中, 请勿重复操作",
             )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -137,17 +138,19 @@ async def cancel_update_download() -> OutBase:
 
     try:
         if not await Updater.cancel_download():
-            return OutBase(
-                code=409, status="error", message="当前没有正在进行中的下载任务"
+            return fail(
+                ErrorCode.UPDATE_NO_ACTIVE_DOWNLOAD,
+                "当前没有正在进行中的下载任务",
+                code=409,
             )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"cancel_update_download失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
+        return fail(
+            ErrorCode.UPDATE_DOWNLOAD_CANCEL_FAILED,
+            f"取消更新下载失败: {type(e).__name__}: {str(e)}",
             code=500,
-            status="error",
-            message=f"取消更新下载失败: {type(e).__name__}: {str(e)}",
         )
     return OutBase()
 
@@ -163,19 +166,19 @@ async def switch_update_download_to_cnb() -> OutBase:
 
     try:
         if not await Updater.switch_to_cnb():
-            return OutBase(
+            return fail(
+                ErrorCode.UPDATE_SOURCE_SWITCH_UNAVAILABLE,
+                "当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
                 code=409,
-                status="error",
-                message="当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
             )
     except Exception as e:
         logger.opt(exception=True).warning(
             f"switch_update_download_to_cnb失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
+        return fail(
+            ErrorCode.UPDATE_SOURCE_SWITCH_FAILED,
+            f"切换至 CNB 源失败: {type(e).__name__}: {str(e)}",
             code=500,
-            status="error",
-            message=f"切换至 CNB 源失败: {type(e).__name__}: {str(e)}",
         )
     return OutBase()
 

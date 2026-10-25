@@ -16,6 +16,14 @@ export type VirtualDisplayDetachOut = {
      */
     message?: string;
     /**
+     * 稳定错误码，前端据此取当前界面语言的文案
+     */
+    errorCode?: (string | null);
+    /**
+     * 错误码文案里的占位符参数
+     */
+    errorParams?: (Record<string, any> | null);
+    /**
      * 有没有真的拆掉一块屏；没挂着时为 False
      */
     detached?: boolean;

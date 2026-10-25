@@ -19,6 +19,7 @@ import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
+import { resolveOutBaseMessage } from '@/utils/apiError'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
@@ -320,7 +321,7 @@ const loadEmulators = async () => {
         }
       })
     } else {
-      message.error(response.message || t('emulator.toast.loadFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.loadFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -343,7 +344,7 @@ const handleAdd = async () => {
       saveActiveKey(activeKey.value)
       await loadDevices(response.emulatorId)
     } else {
-      message.error(response.message || t('emulator.toast.addFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.addFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -448,7 +449,7 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       // 保存成功后重新获取最新配置
       await refreshEmulatorConfig(uuid)
     } else {
-      message.error(response.message || t('emulator.toast.saveFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.saveFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -485,7 +486,7 @@ const handleDelete = async (uuid: string) => {
 
       await loadEmulators()
     } else {
-      message.error(response.message || t('emulator.toast.deleteFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.deleteFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -508,7 +509,7 @@ const handleSearch = async () => {
         message.info(t('emulator.toast.searchNone'))
       }
     } else {
-      message.error(response.message || t('emulator.toast.searchFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.searchFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -544,10 +545,10 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
         await loadEmulators()
         showSearchModal.value = false
       } else {
-        message.error(updateResponse.message || t('emulator.toast.importFailed'))
+        message.error(resolveOutBaseMessage(updateResponse, 'emulator.toast.importFailed'))
       }
     } else {
-      message.error(response.message || t('emulator.toast.importFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.importFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -581,7 +582,7 @@ const loadDevices = async (uuid: string) => {
       const currentDevices = allDevicesData[uuid] || {}
       devicesData.value[uuid] = currentDevices
     } else {
-      message.error(response.message || t('emulator.toast.deviceInfoFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.deviceInfoFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -613,7 +614,7 @@ const startEmulator = async (uuid: string, index: string) => {
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      message.error(response.message || t('emulator.toast.startFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.startFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -643,7 +644,7 @@ const stopEmulator = async (uuid: string, index: string) => {
       // 刷新设备状态
       await loadDevices(uuid)
     } else {
-      message.error(response.message || t('emulator.toast.stopFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.stopFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -671,7 +672,7 @@ const showEmulator = async (uuid: string, index: string) => {
     if (response.code === 200) {
       message.success(response.message || t('emulator.toast.showOk', { index }))
     } else {
-      message.error(response.message || t('emulator.toast.showFailed'))
+      message.error(resolveOutBaseMessage(response, 'emulator.toast.showFailed'))
     }
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)

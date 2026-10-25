@@ -1,4 +1,4 @@
-import { getApiErrorMessage } from '@/utils/apiError'
+import { getApiErrorMessage, resolveOutBaseMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -83,7 +83,7 @@ export function useScriptApi() {
       const response = await Service.addScriptApiScriptsAddPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptAddFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -136,7 +136,7 @@ export function useScriptApi() {
       const response = await sharedRequest.promise
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptListFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptListFailed')
         throw new Error(errorMsg)
       }
 
@@ -173,7 +173,7 @@ export function useScriptApi() {
       const response = await Service.getScriptApiScriptsGetPost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptLoadFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptLoadFailed')
         throw new Error(errorMsg)
       }
 
@@ -285,7 +285,7 @@ export function useScriptApi() {
       const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptDeleteFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -333,7 +333,7 @@ export function useScriptApi() {
       })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptSaveFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptSaveFailed')
         throw new Error(errorMsg)
       }
 
@@ -362,7 +362,7 @@ export function useScriptApi() {
       const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.scriptOrderFailed')
+        const errorMsg = resolveOutBaseMessage(response, 'apiErrors.scriptOrderFailed')
         throw new Error(errorMsg)
       }
 
