@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ $t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/baah`" class="breadcrumb-link">
@@ -11,7 +11,7 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+          {{ isEdit ? $t('comp.editUser') : $t('comp.addUser2') }}
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
@@ -21,13 +21,13 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ $t('comp.openConfigFolder') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('edit.back') }}
+        {{ $t('edit.back') }}
       </a-button>
     </a-space>
   </div>
@@ -38,11 +38,11 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ $t('edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
@@ -50,16 +50,16 @@
             <a-col :span="8">
               <a-form-item name="userName" required>
                 <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
+                  <a-tooltip :title="$t('edit.displayNameUsedIdentify')">
                     <span class="form-label">
-                      {{ t('edit.username') }}
+                      {{ $t('edit.username') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.userName"
-                  :placeholder="t('edit.enterUsername')"
+                  :placeholder="$t('edit.enterUsername')"
                   :disabled="loading"
                   size="large"
                   class="modern-input"
@@ -70,9 +70,9 @@
             <a-col :span="4">
               <a-form-item name="status">
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+                  <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
                     <span class="form-label">
-                      {{ t('edit.enabled') }}
+                      {{ $t('edit.enabled') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -84,17 +84,17 @@
                   style="width: 100%"
                   @change="handleFieldSave('Info.Status', formData.Info.Status)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="4">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
+                  <a-tooltip :title="$t('edit.daysLeftAccount1')">
                     <span class="form-label">
-                      {{ t('edit.daysLeft') }}
+                      {{ $t('edit.daysLeft') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -114,16 +114,16 @@
             <a-col :span="8">
               <a-form-item name="configName">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahConfigNameHint')">
+                  <a-tooltip :title="$t('edit.baahConfigNameHint')">
                     <span class="form-label">
-                      {{ t('edit.baahConfigName') }}
+                      {{ $t('edit.baahConfigName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-select
                   v-model:value="formData.Info.ConfigName"
-                  :placeholder="t('edit.baahConfigNamePlaceholder')"
+                  :placeholder="$t('edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
                   :loading="configNamesLoading"
                   :options="configNameOptions"
@@ -147,9 +147,9 @@
             <a-col :span="8">
               <a-form-item name="stageMode">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahStageModeHint')">
+                  <a-tooltip :title="$t('edit.baahStageModeHint')">
                     <span class="form-label">
-                      {{ t('edit.baahStageMode') }}
+                      {{ $t('edit.baahStageMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -170,16 +170,16 @@
                   @click="handleGoToPlans"
                 >
                   <template #icon><CalendarOutlined /></template>
-                  {{ t('edit.goPlan') }}
+                  {{ $t('edit.goPlan') }}
                 </a-button>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="ifEventFirst">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahIfEventFirstHint')">
+                  <a-tooltip :title="$t('edit.baahIfEventFirstHint')">
                     <span class="form-label">
-                      {{ t('edit.baahIfEventFirst') }}
+                      {{ $t('edit.baahIfEventFirst') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -191,8 +191,8 @@
                   style="width: 100%"
                   @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -200,9 +200,9 @@
             <a-col :span="8">
               <a-form-item name="activityLineType">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
+                  <a-tooltip :title="$t('edit.baahActivityLineTypeHint')">
                     <span class="form-label">
-                      {{ t('edit.baahActivityLineType') }}
+                      {{ $t('edit.baahActivityLineType') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -215,13 +215,13 @@
                   @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
                 >
                   <a-select-option value="CN">
-                    {{ t('edit.baahActivityLineCN') }}
+                    {{ $t('edit.baahActivityLineCN') }}
                   </a-select-option>
                   <a-select-option value="JP">
-                    {{ t('edit.baahActivityLineJP') }}
+                    {{ $t('edit.baahActivityLineJP') }}
                   </a-select-option>
                   <a-select-option value="Globle">
-                    {{ t('edit.baahActivityLineGloble') }}
+                    {{ $t('edit.baahActivityLineGloble') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -232,16 +232,16 @@
             <a-col :span="16">
               <a-form-item name="notes">
                 <template #label>
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
+                  <a-tooltip :title="$t('edit.addNoteAboutThis')">
                     <span class="form-label">
-                      {{ t('edit.note') }}
+                      {{ $t('edit.note') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-textarea
                   v-model:value="formData.Info.Notes"
-                  :placeholder="t('edit.enterNote3')"
+                  :placeholder="$t('edit.enterNote3')"
                   :rows="3"
                   :disabled="loading"
                   class="modern-input"
@@ -252,9 +252,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.baahUserTagHint')">
+                  <a-tooltip :title="$t('edit.baahUserTagHint')">
                     <span class="form-label">
-                      {{ t('edit.baahUserTag') }}
+                      {{ $t('edit.baahUserTag') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -279,7 +279,7 @@
                 :model-value="formData.Info.Base"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
-                :alert-message="t('edit.configSourceHintBase')"
+                :alert-message="$t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -289,15 +289,15 @@
         <!-- 数据统计（只读，由本软件自动写入） -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.statistics') }}</h3>
+            <h3>{{ $t('edit.statistics') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.baahLastProxyDate') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
+                    {{ $t('edit.baahLastProxyDate') }}
+                    <a-tooltip :title="$t('edit.baahDataReadOnlyHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -313,8 +313,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.baahProxyTimes') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
+                    {{ $t('edit.baahProxyTimes') }}
+                    <a-tooltip :title="$t('edit.baahDataReadOnlyHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -337,15 +337,15 @@
     :script-name="BAAH_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.baahConfigRestoreUserDesc')"
-    :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+    :user-desc="$t('edit.baahConfigRestoreUserDesc')"
+    :script-desc="$t('edit.baahConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
     <template #preview="{ raw }">
       <a-empty
         v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
+        :description="$t('edit.configRestorePreviewEmpty')"
       />
       <div v-else>
         <template v-for="s in previewSections(raw)" :key="s.name">

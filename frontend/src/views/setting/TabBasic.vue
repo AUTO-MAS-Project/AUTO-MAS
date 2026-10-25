@@ -6,7 +6,6 @@ import {
   SkinOutlined,
   UploadOutlined,
 } from '@ant-design/icons-vue'
-import { useI18n } from 'vue-i18n'
 
 import { navigateTo } from '@/router'
 import { useLocale } from '@/composables/useLocale'
@@ -113,7 +112,6 @@ const {
   handleSettingChange,
 } = defineProps<TabBasicProps>()
 
-const { t } = useI18n()
 const { locale, setLocale } = useLocale()
 
 const handleLocaleChange = (value: unknown): void => {
@@ -125,18 +123,18 @@ const handleLocaleChange = (value: unknown): void => {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.appearance') }}</h3>
+        <h3>{{ $t('setting.basic.appearance') }}</h3>
         <a-button :loading="themeResetting" :disabled="appearanceBusy" @click="handleThemeReset">
           <template #icon><ReloadOutlined /></template>
-          {{ t('setting.basic.resetTheme') }}
+          {{ $t('setting.basic.resetTheme') }}
         </a-button>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.themeMode') }}</span>
-              <a-tooltip :title="t('setting.basic.themeModeTip')">
+              <span class="form-label">{{ $t('setting.basic.themeMode') }}</span>
+              <a-tooltip :title="$t('setting.basic.themeModeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -157,28 +155,28 @@ const handleLocaleChange = (value: unknown): void => {
                 </a-select-option>
               </a-select>
               <a-button
-                :aria-label="t('setting.basic.importAppearance')"
+                :aria-label="$t('setting.basic.importAppearance')"
                 :loading="appearanceBusy"
                 :disabled="appearanceBusy"
                 @click="handleAppearanceImport"
               >
                 <template #icon><UploadOutlined /></template>
-                {{ t('setting.basic.importAppearance') }}
+                {{ $t('setting.basic.importAppearance') }}
               </a-button>
               <a-button :disabled="appearanceBusy" @click="navigateTo('/theme-store')">
                 <template #icon><SkinOutlined /></template>
-                {{ t('setting.basic.themeStore') }}
+                {{ $t('setting.basic.themeStore') }}
               </a-button>
               <a-button
                 v-if="appearanceValue.startsWith('appearance:')"
                 danger
                 :loading="appearanceBusy"
                 :disabled="appearanceBusy"
-                :aria-label="t('setting.basic.removeAppearance')"
+                :aria-label="$t('setting.basic.removeAppearance')"
                 @click="handleAppearanceRemove"
               >
                 <template #icon><DeleteOutlined /></template>
-                {{ t('setting.basic.removeAppearance') }}
+                {{ $t('setting.basic.removeAppearance') }}
               </a-button>
             </div>
           </div>
@@ -186,8 +184,8 @@ const handleLocaleChange = (value: unknown): void => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.themeColor') }}</span>
-              <a-tooltip :title="t('setting.basic.themeColorTip')">
+              <span class="form-label">{{ $t('setting.basic.themeColor') }}</span>
+              <a-tooltip :title="$t('setting.basic.themeColorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -223,14 +221,14 @@ const handleLocaleChange = (value: unknown): void => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('common.language') }}</span>
-              <a-tooltip :title="t('common.languageTip')">
+              <span class="form-label">{{ $t('common.language') }}</span>
+              <a-tooltip :title="$t('common.languageTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-select :value="locale" size="large" style="width: 100%" @change="handleLocaleChange">
               <a-select-option v-for="item in SUPPORTED_LOCALES" :key="item" :value="item">
-                {{ t(`locale.${item}`) }}
+                {{ $t(`locale.${item}`) }}
               </a-select-option>
             </a-select>
           </div>
@@ -260,14 +258,14 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.cursorSection') }}</h3>
+        <h3>{{ $t('setting.basic.cursorSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.cursorAnim') }}</span>
-              <a-tooltip :title="t('setting.basic.cursorTip')">
+              <span class="form-label">{{ $t('setting.basic.cursorAnim') }}</span>
+              <a-tooltip :title="$t('setting.basic.cursorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -285,14 +283,14 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.perfSection') }}</h3>
+        <h3>{{ $t('setting.basic.perfSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.lowPerf') }}</span>
-              <a-tooltip :title="t('setting.basic.lowPerfTip')">
+              <span class="form-label">{{ $t('setting.basic.lowPerf') }}</span>
+              <a-tooltip :title="$t('setting.basic.lowPerfTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -304,16 +302,16 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(enabled: any) => handleLowPerformanceModeChange(enabled)"
             >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.off') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.homeSatellite') }}</span>
-              <a-tooltip :title="t('setting.basic.homeSatelliteTip')">
+              <span class="form-label">{{ $t('setting.basic.homeSatellite') }}</span>
+              <a-tooltip :title="$t('setting.basic.homeSatelliteTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -326,10 +324,10 @@ const handleLocaleChange = (value: unknown): void => {
               @change="(style: any) => handleHomeSatelliteStyleChange(style)"
             >
               <a-select-option value="classic">
-                {{ t('setting.basic.homeSatelliteClassic') }}
+                {{ $t('setting.basic.homeSatelliteClassic') }}
               </a-select-option>
               <a-select-option value="galaxy">
-                {{ t('setting.basic.homeSatelliteGalaxy') }}
+                {{ $t('setting.basic.homeSatelliteGalaxy') }}
               </a-select-option>
             </a-select>
           </div>
@@ -339,8 +337,8 @@ const handleLocaleChange = (value: unknown): void => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.pauseHomeEffects') }}</span>
-              <a-tooltip :title="t('setting.basic.pauseHomeEffectsTip')">
+              <span class="form-label">{{ $t('setting.basic.pauseHomeEffects') }}</span>
+              <a-tooltip :title="$t('setting.basic.pauseHomeEffectsTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -352,8 +350,8 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(enabled: any) => handlePauseHomeEffectsWhenRunningChange(enabled)"
             >
-              <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.on') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.off') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -362,14 +360,14 @@ const handleLocaleChange = (value: unknown): void => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.traySection') }}</h3>
+        <h3>{{ $t('setting.basic.traySection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.showTray') }}</span>
-              <a-tooltip :title="t('setting.basic.showTrayTip')">
+              <span class="form-label">{{ $t('setting.basic.showTray') }}</span>
+              <a-tooltip :title="$t('setting.basic.showTrayTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -379,16 +377,16 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfShowTray', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.minToTray') }}</span>
-              <a-tooltip :title="t('setting.basic.minToTrayTip')">
+              <span class="form-label">{{ $t('setting.basic.minToTray') }}</span>
+              <a-tooltip :title="$t('setting.basic.minToTrayTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -398,8 +396,8 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfToTray', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -408,14 +406,14 @@ const handleLocaleChange = (value: unknown): void => {
     </div>
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.windowSection') }}</h3>
+        <h3>{{ $t('setting.basic.windowSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.basic.hideClose') }}</span>
-              <a-tooltip :title="t('setting.basic.hideCloseTip')">
+              <span class="form-label">{{ $t('setting.basic.hideClose') }}</span>
+              <a-tooltip :title="$t('setting.basic.hideCloseTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -425,8 +423,8 @@ const handleLocaleChange = (value: unknown): void => {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -434,7 +432,7 @@ const handleLocaleChange = (value: unknown): void => {
     </div>
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.basic.logStyle') }}</h3>
+        <h3>{{ $t('setting.basic.logStyle') }}</h3>
       </div>
       <LogHighlightSettings />
     </div>

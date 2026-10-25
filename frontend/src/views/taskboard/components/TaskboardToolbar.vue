@@ -2,23 +2,23 @@
   <div class="tb-toolbar">
     <a-input-search
       :value="keyword"
-      :placeholder="t('taskboard.searchPlaceholder')"
+      :placeholder="$t('taskboard.searchPlaceholder')"
       allow-clear
       style="max-width: 300px"
       @update:value="emit('update:keyword', $event)"
     />
-    <span class="tb-total">{{ t('taskboard.total', { p0: total }) }}</span>
-    <a-tooltip :title="t('taskboard.editGamesTip')">
+    <span class="tb-total">{{ $t('taskboard.total', { p0: total }) }}</span>
+    <a-tooltip :title="$t('taskboard.editGamesTip')">
       <a-button class="tb-edit-btn" @click="emit('edit')">
         <template #icon><EditOutlined /></template>
-        {{ t('taskboard.editGames') }}
+        {{ $t('taskboard.editGames') }}
       </a-button>
     </a-tooltip>
   </div>
 
   <div class="tb-chips">
     <template v-if="options.length">
-      <a-tooltip :title="t('taskboard.summaryHint')">
+      <a-tooltip :title="$t('taskboard.summaryHint')">
         <a-tag
           class="tb-chip"
           role="button"
@@ -29,7 +29,7 @@
           @keydown.space.prevent="emit('update:filter', undefined)"
         >
           <AppstoreOutlined />
-          {{ t('taskboard.summary') }}
+          {{ $t('taskboard.summary') }}
         </a-tag>
       </a-tooltip>
       <a-tag
@@ -50,18 +50,17 @@
         {{ option.name }}
       </a-tag>
     </template>
-    <span v-else class="tb-no-game">{{ t('taskboard.noGames') }}</span>
+    <span v-else class="tb-no-game">{{ $t('taskboard.noGames') }}</span>
   </div>
 
   <a-tabs :active-key="tab" type="card" class="tb-tabs" @change="changeTab">
-    <a-tab-pane key="active" :tab="`${t('taskboard.tabActive')} ${counts.active}`" />
-    <a-tab-pane key="done" :tab="`${t('taskboard.tabDone')} ${counts.done}`" />
-    <a-tab-pane key="archived" :tab="`${t('taskboard.tabArchived')} ${counts.archived}`" />
+    <a-tab-pane key="active" :tab="`${$t('taskboard.tabActive')} ${counts.active}`" />
+    <a-tab-pane key="done" :tab="`${$t('taskboard.tabDone')} ${counts.done}`" />
+    <a-tab-pane key="archived" :tab="`${$t('taskboard.tabArchived')} ${counts.archived}`" />
   </a-tabs>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { AppstoreOutlined, EditOutlined } from '@ant-design/icons-vue'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
@@ -82,8 +81,6 @@ const emit = defineEmits<{
   'update:tab': [value: TabKey]
   edit: []
 }>()
-
-const { t } = useI18n()
 
 const changeTab = (value: string | number) => emit('update:tab', value as TabKey)
 </script>

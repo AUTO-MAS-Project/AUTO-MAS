@@ -4,7 +4,7 @@
       <div v-for="(row, index) in rows" :key="index" class="list-row">
         <a-input
           v-model:value="row.first"
-          :placeholder="isTeams ? t('edit.hsrInstanceName') : t('edit.hsrBorrowCharacter')"
+          :placeholder="isTeams ? $t('edit.hsrInstanceName') : $t('edit.hsrBorrowCharacter')"
           :disabled="disabled"
           class="list-first"
           @blur="commit"
@@ -14,7 +14,7 @@
           :value="teamNumber(row.second)"
           :min="1"
           :precision="0"
-          :placeholder="t('edit.hsrTeamNumber')"
+          :placeholder="$t('edit.hsrTeamNumber')"
           :disabled="disabled"
           class="list-second-number"
           @change="handleTeamChange(row, $event)"
@@ -22,7 +22,7 @@
         <a-input
           v-else
           v-model:value="row.second"
-          :placeholder="t('edit.hsrBorrowFriend')"
+          :placeholder="$t('edit.hsrBorrowFriend')"
           :disabled="disabled"
           class="list-second"
           @blur="commit"
@@ -31,7 +31,7 @@
           type="text"
           size="small"
           :disabled="disabled"
-          :aria-label="t('edit.hsrRemoveRow')"
+          :aria-label="$t('edit.hsrRemoveRow')"
           @click="removeRow(index)"
         >
           <template #icon>
@@ -40,23 +40,20 @@
         </a-button>
       </div>
     </div>
-    <div v-else class="list-empty">{{ t('edit.hsrListEmpty') }}</div>
+    <div v-else class="list-empty">{{ $t('edit.hsrListEmpty') }}</div>
     <a-button size="small" type="dashed" :disabled="disabled" class="list-add" @click="addRow">
       <template #icon>
         <PlusOutlined />
       </template>
-      {{ t('edit.hsrAddRow') }}
+      {{ $t('edit.hsrAddRow') }}
     </a-button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { listFieldToRows, rowsToListField, type HSRListRow } from './managedFields'
-
-const { t } = useI18n()
 
 // 三月七 instance_teams（副本名 + 队伍号）与 borrow_friends（角色名 + 好友名）的行编辑器。
 // 行数据是本组件自己的状态，文本框用 v-model 绑在行上、失焦才提交，父级重渲染不会冲掉输入。

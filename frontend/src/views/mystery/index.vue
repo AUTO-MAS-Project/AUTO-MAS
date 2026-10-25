@@ -123,37 +123,37 @@ const lock = async () => {
       <div class="mystery-heading">
         <a-button @click="back">
           <template #icon><ArrowLeftOutlined /></template>
-          {{ t(isFeaturePage ? 'mystery.backToOverview' : 'mystery.back') }}
+          {{ $t(isFeaturePage ? 'mystery.backToOverview' : 'mystery.back') }}
         </a-button>
         <h1>{{ pageTitle }}</h1>
       </div>
       <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
         <template #icon><LockOutlined /></template>
-        {{ t('mystery.lock') }}
+        {{ $t('mystery.lock') }}
       </a-button>
     </div>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
-      <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
+      <a-result v-if="loadFailed" status="error" :title="$t('mystery.loadFailed')">
         <template #extra>
-          <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
+          <a-button type="primary" @click="load">{{ $t('mystery.retry') }}</a-button>
         </template>
       </a-result>
       <div v-else-if="!store.initialized" class="mystery-loading">
         <a-spin />
       </div>
-      <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
+      <a-card v-else-if="!store.unlocked" :title="$t('mystery.unlockTitle')" class="mystery-unlock">
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"
-            :rules="[{ required: true, message: t('mystery.accessCodeRequired') }]"
+            :rules="[{ required: true, message: $t('mystery.accessCodeRequired') }]"
             :validate-status="error ? 'error' : undefined"
             :help="error || undefined"
           >
             <a-input-password
               v-model:value="form.accessCode"
-              :aria-label="t('mystery.accessCode')"
-              :placeholder="t('mystery.accessCodePlaceholder')"
+              :aria-label="$t('mystery.accessCode')"
+              :placeholder="$t('mystery.accessCodePlaceholder')"
               :disabled="store.saving"
               size="large"
               autocomplete="off"
@@ -161,7 +161,7 @@ const lock = async () => {
             />
           </a-form-item>
           <a-button type="primary" html-type="submit" size="large" block :loading="store.saving">
-            {{ t('mystery.unlock') }}
+            {{ $t('mystery.unlock') }}
           </a-button>
         </a-form>
       </a-card>
@@ -174,8 +174,8 @@ const lock = async () => {
         <a-col :xs="24" :sm="12" :lg="8">
           <a-card
             hoverable
-            :title="t('mystery.tokens.title')"
-            :aria-label="t('mystery.tokens.title')"
+            :title="$t('mystery.tokens.title')"
+            :aria-label="$t('mystery.tokens.title')"
             role="button"
             tabindex="0"
             @click="openTokens"
@@ -183,20 +183,20 @@ const lock = async () => {
             @keydown.space.prevent="openTokens"
           >
             <template #extra><ArrowRightOutlined /></template>
-            {{ t('mystery.tokens.entryDescription') }}
+            {{ $t('mystery.tokens.entryDescription') }}
           </a-card>
         </a-col>
         <a-col :xs="24" :sm="12" :lg="8">
           <a-card
-            :title="t('mystery.personalMss.title')"
-            :aria-label="t('mystery.personalMss.title')"
+            :title="$t('mystery.personalMss.title')"
+            :aria-label="$t('mystery.personalMss.title')"
           >
-            {{ t('mystery.personalMss.hint') }}
+            {{ $t('mystery.personalMss.hint') }}
             <div class="personal-mss-switch">
               <a-switch
                 :checked="personalMssEnabled"
                 :loading="personalMssSaving"
-                :aria-label="t('mystery.personalMss.title')"
+                :aria-label="$t('mystery.personalMss.title')"
                 @change="handlePersonalMssToggle"
               />
             </div>

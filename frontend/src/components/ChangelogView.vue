@@ -1,7 +1,7 @@
 <template>
   <div class="changelog-view">
     <div v-if="sections.length === 0" class="changelog-empty">
-      {{ emptyText || t('comp.changelog.empty') }}
+      {{ emptyText || $t('comp.changelog.empty') }}
     </div>
 
     <!-- 多个版本：最新版默认展开，更老的版本折叠 -->
@@ -29,7 +29,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import ChangelogCategoryList from './ChangelogCategoryList.vue'
 import { buildChangelogSections, type ChangelogData } from '@/utils/changelog'
 
@@ -39,8 +38,6 @@ const props = defineProps<{
   /** 没有任何内容时显示的文案；不传则用词表默认值 */
   emptyText?: string
 }>()
-
-const { t } = useI18n()
 
 const sections = computed(() => buildChangelogSections(props.data))
 

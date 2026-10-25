@@ -357,7 +357,7 @@ watch(authorized, isAuthorized => {
     :open="open"
     :width="640"
     :z-index="90"
-    :title="t('themeStore.upload.title')"
+    :title="$t('themeStore.upload.title')"
     :closable="!submitting"
     :keyboard="!submitting"
     :mask-closable="!submitting"
@@ -369,7 +369,7 @@ watch(authorized, isAuthorized => {
         v-if="!authorized"
         type="info"
         show-icon
-        :message="t('themeStore.upload.loginRequired')"
+        :message="$t('themeStore.upload.loginRequired')"
       >
         <template #description>
           <ThemeStoreAccount :account="account" class="upload-account" />
@@ -377,11 +377,11 @@ watch(authorized, isAuthorized => {
       </a-alert>
 
       <section class="upload-section">
-        <div class="upload-label">{{ t('themeStore.category') }}</div>
+        <div class="upload-label">{{ $t('themeStore.category') }}</div>
         <a-select
           :value="categoryKey ?? 'theme'"
           :disabled="!allowCategoryChange || submitting || inspecting || Boolean(zipPath)"
-          :aria-label="t('themeStore.category')"
+          :aria-label="$t('themeStore.category')"
           style="width: 100%"
           @change="
             (value: SelectValue) => {
@@ -389,17 +389,17 @@ watch(authorized, isAuthorized => {
             }
           "
         >
-          <a-select-option value="theme">{{ t('themeStore.categories.theme') }}</a-select-option>
-          <a-select-option value="mascot">{{ t('themeStore.categories.mascot') }}</a-select-option>
+          <a-select-option value="theme">{{ $t('themeStore.categories.theme') }}</a-select-option>
+          <a-select-option value="mascot">{{ $t('themeStore.categories.mascot') }}</a-select-option>
         </a-select>
       </section>
 
       <section class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.package') }}</div>
+        <div class="upload-label">{{ $t('themeStore.upload.package') }}</div>
         <div class="upload-file-row">
           <a-button :loading="inspecting" :disabled="submitting" @click="pickPackage">
             <template #icon><FileZipOutlined /></template>
-            {{ zipPath ? t('themeStore.upload.repick') : t('themeStore.upload.pick') }}
+            {{ zipPath ? $t('themeStore.upload.repick') : $t('themeStore.upload.pick') }}
           </a-button>
           <span v-if="zipPath" class="upload-file-name">
             {{ fileName(zipPath) }} · {{ formatAppearanceFileSize(packageInfo?.fileSize ?? 0) }}
@@ -411,23 +411,23 @@ watch(authorized, isAuthorized => {
           <span v-if="packageInfo.appearance.mode">
             {{
               packageInfo.appearance.mode === 'dark'
-                ? t('setting.themeMode.dark')
-                : t('setting.themeMode.light')
+                ? $t('setting.themeMode.dark')
+                : $t('setting.themeMode.light')
             }}
           </span>
         </div>
       </section>
 
       <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.target') }}</div>
+        <div class="upload-label">{{ $t('themeStore.upload.target') }}</div>
         <a-radio-group
           :value="target"
           :disabled="submitting || lockedFileId !== null"
           @update:value="changeTarget"
         >
-          <a-radio value="new">{{ t('themeStore.upload.targetNew') }}</a-radio>
+          <a-radio value="new">{{ $t('themeStore.upload.targetNew') }}</a-radio>
           <a-radio value="update" :disabled="targetOptions.length === 0 && lockedFileId === null">
-            {{ t('themeStore.upload.targetUpdate') }}
+            {{ $t('themeStore.upload.targetUpdate') }}
           </a-radio>
         </a-radio-group>
         <a-select
@@ -436,14 +436,14 @@ watch(authorized, isAuthorized => {
           :options="targetOptions"
           :loading="mineLoading"
           :disabled="submitting || lockedFileId !== null"
-          :placeholder="t('themeStore.upload.targetPlaceholder')"
+          :placeholder="$t('themeStore.upload.targetPlaceholder')"
           class="upload-target-select"
           @change="selectTarget"
         />
       </section>
 
       <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.cover') }}</div>
+        <div class="upload-label">{{ $t('themeStore.upload.cover') }}</div>
         <div class="upload-cover">
           <div class="upload-cover-frame">
             <img
@@ -462,7 +462,7 @@ watch(authorized, isAuthorized => {
               class="upload-cover-modes"
             >
               <a-radio v-for="mode in coverModes" :key="mode" :value="mode">
-                {{ t(COVER_MODE_LABELS[mode]) }}
+                {{ $t(COVER_MODE_LABELS[mode]) }}
               </a-radio>
             </a-radio-group>
             <span v-if="coverMode === 'custom' && coverPath" class="upload-file-name">
@@ -470,15 +470,15 @@ watch(authorized, isAuthorized => {
             </span>
             <template v-else-if="!updating">
               <span v-if="coverMode === 'package'" class="upload-hint">
-                {{ t('themeStore.upload.coverFromPackage') }}
+                {{ $t('themeStore.upload.coverFromPackage') }}
               </span>
               <span v-else class="upload-hint upload-hint-warning">
-                {{ t('themeStore.upload.coverRequired') }}
+                {{ $t('themeStore.upload.coverRequired') }}
               </span>
             </template>
             <span v-if="!updating || coverMode === 'custom'" class="upload-cover-buttons">
               <a-button size="small" :disabled="submitting" @click="pickCover">
-                {{ t('themeStore.upload.pickCover') }}
+                {{ $t('themeStore.upload.pickCover') }}
               </a-button>
               <a-button
                 v-if="!updating && coverMode === 'custom' && packagePreview"
@@ -487,18 +487,18 @@ watch(authorized, isAuthorized => {
                 :disabled="submitting"
                 @click="usePackageCover"
               >
-                {{ t('themeStore.upload.usePackageCover') }}
+                {{ $t('themeStore.upload.usePackageCover') }}
               </a-button>
             </span>
             <span v-if="!updating || coverMode === 'custom'" class="upload-hint">
-              {{ t('themeStore.upload.coverSpec') }}
+              {{ $t('themeStore.upload.coverSpec') }}
             </span>
           </div>
         </div>
       </section>
 
       <a-form v-if="packageInfo" layout="vertical" class="upload-form">
-        <a-form-item v-if="!updating" :label="t('themeStore.upload.name')" required>
+        <a-form-item v-if="!updating" :label="$t('themeStore.upload.name')" required>
           <a-input
             v-model:value="form.displayName"
             :maxlength="DISPLAY_NAME_MAX"
@@ -506,7 +506,7 @@ watch(authorized, isAuthorized => {
             :disabled="submitting"
           />
         </a-form-item>
-        <a-form-item v-if="!updating" :label="t('themeStore.upload.description')">
+        <a-form-item v-if="!updating" :label="$t('themeStore.upload.description')">
           <a-textarea
             v-model:value="form.description"
             :maxlength="DESCRIPTION_MAX"
@@ -514,7 +514,7 @@ watch(authorized, isAuthorized => {
             :disabled="submitting"
           />
         </a-form-item>
-        <a-form-item :label="t('themeStore.upload.changeNote')">
+        <a-form-item :label="$t('themeStore.upload.changeNote')">
           <a-input
             v-model:value="form.changeNote"
             :maxlength="CHANGE_NOTE_MAX"
@@ -525,9 +525,9 @@ watch(authorized, isAuthorized => {
     </div>
 
     <template #footer>
-      <a-button :disabled="submitting" @click="close">{{ t('common.cancel') }}</a-button>
+      <a-button :disabled="submitting" @click="close">{{ $t('common.cancel') }}</a-button>
       <a-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
-        {{ t('themeStore.upload.submit') }}
+        {{ $t('themeStore.upload.submit') }}
       </a-button>
     </template>
   </a-modal>

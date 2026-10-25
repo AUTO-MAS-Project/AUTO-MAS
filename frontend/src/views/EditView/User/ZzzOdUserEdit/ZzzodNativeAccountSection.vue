@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ZzzOdNativeAccountField } from '@/api'
 import { pickZzzGameExe } from './pickZzzGameExe'
@@ -12,7 +11,6 @@ const props = defineProps<{
   selected: number | null
   save: () => Promise<boolean>
 }>()
-const { t } = useI18n()
 const nativeAccountFields = computed(() => props.fields)
 const nativeAccountValues = props.values
 const nativeLoading = computed(() => props.loading)
@@ -45,7 +43,7 @@ const selectDirectGamePath = async () => {
                 {{ f.title }}
                 <a-tooltip
                   v-if="isRequiredAccountKey(f.key)"
-                  :title="t('edit.zzzodAccountRequiredTip')"
+                  :title="$t('edit.zzzodAccountRequiredTip')"
                 >
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
@@ -54,7 +52,7 @@ const selectDirectGamePath = async () => {
             <a-input-group v-if="f.key === 'game_path'" compact class="path-input-group">
               <a-input
                 v-model:value="nativeAccountValues[f.key]"
-                :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                :placeholder="$t('edit.zzzodGamePathPlaceholder')"
                 size="large"
                 class="path-input"
                 readonly
@@ -63,13 +61,13 @@ const selectDirectGamePath = async () => {
                 <template #icon>
                   <FolderOpenOutlined />
                 </template>
-                {{ t('edit.pickFile') }}
+                {{ $t('edit.pickFile') }}
               </a-button>
             </a-input-group>
             <a-input-password
               v-else-if="f.key === 'password'"
               v-model:value="nativeAccountValues[f.key]"
-              :placeholder="t('edit.zzzodDirectPasswordPlaceholder')"
+              :placeholder="$t('edit.zzzodDirectPasswordPlaceholder')"
               size="large"
               class="modern-input"
             />
@@ -91,11 +89,11 @@ const selectDirectGamePath = async () => {
       </a-row>
       <div class="native-save-row">
         <a-button type="primary" size="large" :loading="nativeSaving" @click="saveNativeAccount">
-          {{ t('edit.saveSettings') }}
+          {{ $t('edit.saveSettings') }}
         </a-button>
       </div>
     </template>
-    <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
+    <a-empty v-else :description="$t('edit.zzzodDirectPickInstanceFirst')" />
   </a-spin>
 </template>
 <style scoped>

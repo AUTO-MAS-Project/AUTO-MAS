@@ -4,20 +4,20 @@
     <GuiSessionMask
       :open="showMaaConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.maaConfigurationProgress')"
-      :description="`${t('edit.maaConfigurationThisUser')}\n${t('edit.clickSaveSettingsWhen')}`"
+      :title="$t('edit.maaConfigurationProgress')"
+      :description="`${$t('edit.maaConfigurationThisUser')}\n${$t('edit.clickSaveSettingsWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
-          {{ t('edit.saveConfiguration') }}
+          {{ $t('edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showMaaViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.maaViewingTitle')"
-      :description="`${t('edit.maaViewingDesc')}\n${t('edit.maaViewingDesc2')}`"
+      :title="$t('edit.maaViewingTitle')"
+      :description="`${$t('edit.maaViewingDesc')}\n${$t('edit.maaViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -27,7 +27,7 @@
           :loading="stoppingMaaConfig"
           @click="handleCloseMaaView"
         >
-          {{ t('edit.maaViewClose') }}
+          {{ $t('edit.maaViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -62,7 +62,7 @@
 
           <!-- 配置文件来源：base 三态 ⊕ overlay 两态，与 MaaEnd / Okww 共用同一套面板 -->
           <a-flex class="section-header" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.configurationSource') }}</h3>
+            <h3>{{ $t('edit.configurationSource') }}</h3>
           </a-flex>
           <GeneralConfigModeSelector
             :model-value="formData.Info.Base"
@@ -70,7 +70,7 @@
             :disabled="loading"
             :quick-config="formData.Info.IfQuickConfig"
             :quick-config-disabled="loading || isInitializing"
-            :alert-message="t('edit.configSourceHintBase')"
+            :alert-message="$t('edit.configSourceHintBase')"
             :show-gui-hint="false"
             @change="handleConfigModeChange"
             @quick-config-change="handleQuickConfigChange"
@@ -94,11 +94,11 @@
             wrap="wrap"
             gap="small"
           >
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
+            <h3>{{ $t('edit.taskConfiguration') }}</h3>
             <a-space>
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ $t('edit.configRestoreTitle') }}
               </a-button>
             </a-space>
           </a-flex>
@@ -204,14 +204,14 @@
       :script-name="MAA_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.maaConfigRestoreScriptDesc')"
+      :script-desc="$t('edit.maaConfigRestoreScriptDesc')"
       :on-detail="handleRestoreView"
     >
       <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="$t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">

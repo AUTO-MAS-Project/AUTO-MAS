@@ -242,12 +242,12 @@ onUnmounted(() => {
     <template #icon>
       <CloudUploadOutlined />
     </template>
-    {{ t('edit.shareThisConfigurationConfig') }}
+    {{ $t('edit.shareThisConfigurationConfig') }}
   </a-button>
   <!-- 上传脚本弹窗 -->
   <a-modal
     v-model:open="uploadModalVisible"
-    :title="t('edit.uploadThisScriptConfiguration')"
+    :title="$t('edit.uploadThisScriptConfiguration')"
     :confirm-loading="uploadLoading || dialogLoading || shareAuthLoading"
     width="600px"
     :mask-closable="false"
@@ -261,10 +261,10 @@ onUnmounted(() => {
       layout="vertical"
       class="upload-form"
     >
-      <a-form-item name="config_name" :label="t('edit.configurationName')">
+      <a-form-item name="config_name" :label="$t('edit.configurationName')">
         <a-input
           v-model:value="uploadForm.config_name"
-          :placeholder="t('edit.giveYourScriptConfiguration')"
+          :placeholder="$t('edit.giveYourScriptConfiguration')"
           size="large"
           :maxlength="50"
           show-count
@@ -272,10 +272,10 @@ onUnmounted(() => {
         />
       </a-form-item>
 
-      <a-form-item name="description" :label="t('edit.description')">
+      <a-form-item name="description" :label="$t('edit.description')">
         <a-textarea
           v-model:value="uploadForm.description"
-          :placeholder="t('edit.brieflyDescribeWhatThis')"
+          :placeholder="$t('edit.brieflyDescribeWhatThis')"
           size="large"
           :rows="4"
           :maxlength="200"
@@ -289,13 +289,15 @@ onUnmounted(() => {
         type="success"
         show-icon
         class="share-auth-alert"
-        :message="t('edit.share.signedInAs', { name: shareAuth.displayName || shareAuth.username })"
+        :message="
+          $t('edit.share.signedInAs', { name: shareAuth.displayName || shareAuth.username })
+        "
       >
         <template #description>
           <div class="share-auth-idle">
-            <p>{{ t('edit.share.signedInDesc') }}</p>
+            <p>{{ $t('edit.share.signedInDesc') }}</p>
             <a-button size="small" :loading="shareAuthLoading" @click="handleStartShareAuth">{{
-              t('edit.share.switchAccount')
+              $t('edit.share.switchAccount')
             }}</a-button>
           </div>
         </template>
@@ -305,29 +307,29 @@ onUnmounted(() => {
         type="warning"
         show-icon
         class="share-auth-alert"
-        :message="t('edit.share.loginRequired')"
+        :message="$t('edit.share.loginRequired')"
       >
         <template #description>
           <div v-if="shareAuth.status === 'pending'" class="share-auth-pending">
-            <p>{{ t('edit.share.pendingDesc') }}</p>
+            <p>{{ $t('edit.share.pendingDesc') }}</p>
             <p class="share-user-code">{{ shareAuth.userCode }}</p>
             <a-space>
               <a-button size="small" @click="openShareVerificationPage">{{
-                t('edit.share.reopenBrowser')
+                $t('edit.share.reopenBrowser')
               }}</a-button>
               <a-button size="small" @click="handleCancelShareAuth">{{
-                t('edit.share.cancelAuth')
+                $t('edit.share.cancelAuth')
               }}</a-button>
             </a-space>
           </div>
           <div v-else class="share-auth-idle">
-            <p>{{ shareAuth.message || t('edit.share.loginRequiredDesc') }}</p>
+            <p>{{ shareAuth.message || $t('edit.share.loginRequiredDesc') }}</p>
             <a-button
               type="primary"
               size="small"
               :loading="shareAuthLoading"
               @click="handleStartShareAuth"
-              >{{ t('edit.share.startLogin') }}</a-button
+              >{{ $t('edit.share.startLogin') }}</a-button
             >
           </div>
         </template>
@@ -338,7 +340,7 @@ onUnmounted(() => {
         type="warning"
         show-icon
         class="share-risk-alert"
-        :message="t('edit.share.riskTitle')"
+        :message="$t('edit.share.riskTitle')"
       >
         <template #description>
           <ul class="share-risk-list">
@@ -347,14 +349,14 @@ onUnmounted(() => {
             </li>
           </ul>
           <a-checkbox v-model:checked="riskAcknowledged">{{
-            t('edit.share.riskConfirm')
+            $t('edit.share.riskConfirm')
           }}</a-checkbox>
         </template>
       </a-alert>
 
-      <a-alert :message="t('edit.aboutSharing')" type="info">
+      <a-alert :message="$t('edit.aboutSharing')" type="info">
         <template #description>
-          <p>{{ t('edit.share.privacyNotice') }}</p>
+          <p>{{ $t('edit.share.privacyNotice') }}</p>
         </template>
       </a-alert>
     </a-form>

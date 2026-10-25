@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+          <router-link to="/scripts">{{ $t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/src`" class="breadcrumb-link">
@@ -21,7 +21,7 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ $t('comp.openConfigFolder') }}
       </a-button>
       <a-button
         v-if="userMode === 'independent' && !showSrcConfigMask"
@@ -35,7 +35,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('edit.srcConfiguration') }}
+        {{ $t('edit.srcConfiguration') }}
       </a-button>
       <a-button
         v-if="userMode === 'independent' && showSrcConfigMask"
@@ -47,24 +47,21 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('edit.configuring') }}
+        {{ $t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('edit.back') }}
+        {{ $t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
-
-const { t } = useI18n()
 
 const props = defineProps<{
   scriptId: string

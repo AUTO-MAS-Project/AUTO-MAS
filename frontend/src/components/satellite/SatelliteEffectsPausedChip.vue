@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { PauseCircleOutlined } from '@ant-design/icons-vue'
-import { useI18n } from 'vue-i18n'
 
 const emit = defineEmits<{ resume: [] }>()
-
-const { t } = useI18n()
 </script>
 
 <template>
@@ -19,7 +16,7 @@ const { t } = useI18n()
     @click.stop="emit('resume')"
   >
     <PauseCircleOutlined />
-    <span>{{ t('home.satelliteEffectsPaused') }}</span>
+    <span>{{ $t('home.satelliteEffectsPaused') }}</span>
   </button>
 </template>
 

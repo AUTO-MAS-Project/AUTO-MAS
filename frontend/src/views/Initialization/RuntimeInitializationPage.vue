@@ -28,14 +28,13 @@
       :progress="statusProgress"
       :details="statusDetails"
       :steps="launchSteps"
-      :action-label="t('launch.viewLog')"
+      :action-label="$t('launch.viewLog')"
       @action="openLaunchLogWindow('初始化流程')"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import LaunchStatus from '@/components/LaunchStatus.vue'
 import { openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './components/LaunchFailure.vue'
@@ -44,7 +43,6 @@ import { useInitializationFlow } from './useInitializationFlow'
 
 defineOptions({ name: 'RuntimeInitializationPage' })
 
-const { t } = useI18n()
 const {
   currentStep,
   failureProps,

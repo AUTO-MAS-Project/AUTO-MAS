@@ -53,7 +53,7 @@ const hintType = computed(() => {
     <a-typography-text :type="hintType">
       <LoadingOutlined v-if="checking" />
       <template v-if="state?.usingGlobalCdk && !checking && state.status !== 'absent'">
-        {{ t('edit.cdkHintGlobal') }} ·
+        {{ $t('edit.cdkHintGlobal') }} ·
       </template>
       {{ hintText }}
     </a-typography-text>
@@ -63,7 +63,7 @@ const hintType = computed(() => {
       size="small"
       @click="$emit('retry')"
     >
-      {{ t('apiErrors.retry') }}
+      {{ $t('apiErrors.retry') }}
     </a-button>
   </div>
 </template>

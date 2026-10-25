@@ -3,10 +3,10 @@
     <!-- 全局选项每个用户只设一次，队列里的所有任务共用；任务配置里不再列它们 -->
     <div v-if="!interfaceLoading && previewData && showGlobalOptions" class="global-option-section">
       <div class="column-header">
-        <span class="column-title">{{ t('edit.maafwGlobalOptions') }}</span>
+        <span class="column-title">{{ $t('edit.maafwGlobalOptions') }}</span>
       </div>
       <div class="global-option-panel">
-        <div class="global-option-hint">{{ t('edit.maafwGlobalOptionsHint') }}</div>
+        <div class="global-option-hint">{{ $t('edit.maafwGlobalOptionsHint') }}</div>
         <MaaFWTaskOptionEditor
           :option-names="previewData.globalOption"
           :options="previewData.options"
@@ -20,25 +20,25 @@
       </div>
     </div>
     <div v-if="interfaceLoading" class="task-loading">
-      <a-spin :tip="t('edit.readingInterfaceJson')">
+      <a-spin :tip="$t('edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          :message="t('edit.loadingMaafwProjectInterface')"
-          :description="t('edit.readingTaskOptionPreset')"
+          :message="$t('edit.loadingMaafwProjectInterface')"
+          :description="$t('edit.readingTaskOptionPreset')"
         />
       </a-spin>
     </div>
     <a-empty
       v-else-if="!previewData"
-      :description="t('edit.interfaceJsonHasNot')"
+      :description="$t('edit.interfaceJsonHasNot')"
       class="task-empty"
     />
     <a-row v-else :gutter="24" class="task-editor-layout">
       <!-- 队列行只剩标题，左窄右宽：9 / 15 -->
       <a-col :xs="24" :lg="9" class="task-list-column">
         <div class="column-header">
-          <span class="column-title">{{ t('edit.taskQueue') }}</span>
+          <span class="column-title">{{ $t('edit.taskQueue') }}</span>
           <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
           <div class="column-actions">
             <!-- 队列为空时空态里已列出模板与预设；但有自定义模板时仍要能进弹窗改名、删除
@@ -49,7 +49,7 @@
               size="small"
               @click="showPresetModalModel = true"
             >
-              {{ t('edit.queueTemplate') }}
+              {{ $t('edit.queueTemplate') }}
             </a-button>
             <!-- 下拉宽度不跟输入框走（搜索时默认会跟）：每栏给够宽，任务名别被截断 -->
             <a-cascader
@@ -57,7 +57,7 @@
               :options="addTaskCascaderOptions"
               :show-search="{ filter: filterAddTaskOption, matchInputWidth: false }"
               :dropdown-menu-column-style="ADD_TASK_MENU_COLUMN_STYLE"
-              :placeholder="t('edit.addTask')"
+              :placeholder="$t('edit.addTask')"
               expand-trigger="hover"
               class="add-task-cascader"
               :disabled="interfaceDependentDisabled || availableTasks.length === 0"
@@ -79,7 +79,7 @@
             class="preset-section"
           >
             <template v-if="queueTemplates.length > 0">
-              <div class="preset-group-title">{{ t('edit.queueTemplateMine') }}</div>
+              <div class="preset-group-title">{{ $t('edit.queueTemplateMine') }}</div>
               <MaaFWQueueCard
                 v-for="template in queueTemplates"
                 :key="template.name"
@@ -95,13 +95,13 @@
                     :disabled="template.entries.length === 0"
                     @click="emit('applyQueueTemplate', template.name)"
                   >
-                    {{ t('edit.queueTemplateApply') }}
+                    {{ $t('edit.queueTemplateApply') }}
                   </a-button>
                 </template>
               </MaaFWQueueCard>
             </template>
             <template v-if="presetTemplates.length > 0">
-              <div class="preset-group-title">{{ t('edit.queueTemplatePresets') }}</div>
+              <div class="preset-group-title">{{ $t('edit.queueTemplatePresets') }}</div>
               <MaaFWQueueCard
                 v-for="template in presetTemplates"
                 :key="template.preset.name"
@@ -117,7 +117,7 @@
                     :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
-                    {{ t('edit.applyPreset2') }}
+                    {{ $t('edit.applyPreset2') }}
                   </a-button>
                 </template>
               </MaaFWQueueCard>
@@ -125,7 +125,7 @@
           </div>
           <a-empty
             v-else-if="orderedTasks.length === 0"
-            :description="t('edit.addTaskAbove')"
+            :description="$t('edit.addTaskAbove')"
             class="task-queue-empty"
           />
           <!-- 右键菜单整列共用一个：行上右键时先记下是哪一行，空白处右键不弹 -->
@@ -172,12 +172,12 @@
                           #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
-                      <span class="task-missing-tag">{{ t('edit.missingTaskTag') }}</span>
+                      <span class="task-missing-tag">{{ $t('edit.missingTaskTag') }}</span>
                     </div>
                     <a-popconfirm
-                      :title="t('edit.deleteThisTask2')"
-                      :ok-text="t('edit.ok')"
-                      :cancel-text="t('edit.cancel')"
+                      :title="$t('edit.deleteThisTask2')"
+                      :ok-text="$t('edit.ok')"
+                      :cancel-text="$t('edit.cancel')"
                       :disabled="interfaceDependentDisabled"
                       @confirm="emit('deleteTask', queuedTask.id)"
                     >
@@ -185,7 +185,7 @@
                         type="text"
                         size="small"
                         :disabled="interfaceDependentDisabled"
-                        :aria-label="t('edit.deleteThisTask')"
+                        :aria-label="$t('edit.deleteThisTask')"
                         @click.stop
                       >
                         <template #icon>
@@ -229,7 +229,7 @@
                       <!-- 多选项勾选数不满足 min_count / max_count：运行器会让整个用户的计划构建失败 -->
                       <a-tooltip
                         v-if="checkboxIssueTaskIds.has(queuedTask.id)"
-                        :title="t('edit.maafwQueueTaskCheckboxCountInvalid')"
+                        :title="$t('edit.maafwQueueTaskCheckboxCountInvalid')"
                       >
                         <ExclamationCircleOutlined class="task-option-issue" />
                       </a-tooltip>
@@ -253,7 +253,7 @@
                         <button
                           type="button"
                           :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
-                          :aria-label="t('edit.moveTaskUp')"
+                          :aria-label="$t('edit.moveTaskUp')"
                           @click.stop="emit('moveTask', queuedTask.id, -1)"
                         >
                           <UpOutlined />
@@ -261,7 +261,7 @@
                         <button
                           type="button"
                           :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
-                          :aria-label="t('edit.moveTaskDown')"
+                          :aria-label="$t('edit.moveTaskDown')"
                           @click.stop="emit('moveTask', queuedTask.id, 1)"
                         >
                           <DownOutlined />
@@ -276,14 +276,14 @@
               <a-menu @click="handleContextMenuClick">
                 <template v-if="contextTask && !contextTask.missing">
                   <a-menu-item key="duplicate" :disabled="!canDuplicateContextTask">
-                    {{ t('edit.queueTaskDuplicate') }}
+                    {{ $t('edit.queueTaskDuplicate') }}
                   </a-menu-item>
                   <a-menu-item key="rename" :disabled="interfaceDependentDisabled">
-                    {{ t('edit.queueTaskRename') }}
+                    {{ $t('edit.queueTaskRename') }}
                   </a-menu-item>
                 </template>
                 <a-menu-item key="delete" danger :disabled="interfaceDependentDisabled">
-                  {{ t('edit.queueTaskDelete') }}
+                  {{ $t('edit.queueTaskDelete') }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -292,7 +292,7 @@
       </a-col>
       <a-col :xs="24" :lg="15" class="task-option-column">
         <div class="column-header">
-          <span>{{ t('edit.taskConfiguration') }}</span>
+          <span>{{ $t('edit.taskConfiguration') }}</span>
         </div>
         <div v-if="selectedTask" class="task-option-panel">
           <div class="selected-task-header">
@@ -331,7 +331,7 @@
           />
           <div v-if="selectedTask.description" class="selected-task-description">
             <div class="selected-task-description-label">
-              {{ t('edit.taskDescriptionLabel') }}
+              {{ $t('edit.taskDescriptionLabel') }}
             </div>
             <MaaFWDescriptionView
               :content="selectedTask.description"
@@ -339,9 +339,9 @@
             />
           </div>
           <a-popconfirm
-            :title="t('edit.deleteThisTask2')"
-            :ok-text="t('edit.ok')"
-            :cancel-text="t('edit.cancel')"
+            :title="$t('edit.deleteThisTask2')"
+            :ok-text="$t('edit.ok')"
+            :cancel-text="$t('edit.cancel')"
             :disabled="interfaceDependentDisabled"
             @confirm="emit('deleteSelectedTask')"
           >
@@ -354,7 +354,7 @@
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('edit.deleteThisTask') }}
+              {{ $t('edit.deleteThisTask') }}
             </a-button>
           </a-popconfirm>
         </div>
@@ -367,20 +367,20 @@
                   #{{ selectedTaskTitle.index }}
                 </span>
               </div>
-              <div class="selected-task-meta">{{ t('edit.missingTaskHint') }}</div>
+              <div class="selected-task-meta">{{ $t('edit.missingTaskHint') }}</div>
             </div>
           </div>
           <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
-            <div class="missing-task-settings-title">{{ t('edit.missingTaskSettings') }}</div>
+            <div class="missing-task-settings-title">{{ $t('edit.missingTaskSettings') }}</div>
             <div v-for="row in missingTaskSettings" :key="row.key" class="missing-task-setting">
               <span class="missing-task-setting-label">{{ row.label }}</span>
               <span class="missing-task-setting-value">{{ row.value }}</span>
             </div>
           </div>
           <a-popconfirm
-            :title="t('edit.deleteThisTask2')"
-            :ok-text="t('edit.ok')"
-            :cancel-text="t('edit.cancel')"
+            :title="$t('edit.deleteThisTask2')"
+            :ok-text="$t('edit.ok')"
+            :cancel-text="$t('edit.cancel')"
             :disabled="interfaceDependentDisabled"
             @confirm="emit('deleteSelectedTask')"
           >
@@ -393,12 +393,12 @@
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('edit.deleteThisTask') }}
+              {{ $t('edit.deleteThisTask') }}
             </a-button>
           </a-popconfirm>
         </div>
         <div v-else class="task-option-empty">
-          <a-empty :description="t('edit.pickTaskLeftConfigure')" />
+          <a-empty :description="$t('edit.pickTaskLeftConfigure')" />
         </div>
       </a-col>
     </a-row>
@@ -418,17 +418,17 @@
 
     <a-modal
       v-model:open="renameOpen"
-      :title="t('edit.queueTaskRenameTitle')"
+      :title="$t('edit.queueTaskRenameTitle')"
       width="480px"
-      :ok-text="t('edit.ok')"
-      :cancel-text="t('edit.cancel')"
+      :ok-text="$t('edit.ok')"
+      :cancel-text="$t('edit.cancel')"
       destroy-on-close
       @ok="confirmRename"
     >
       <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
       <a-input
         v-model:value="renameDraft"
-        :placeholder="t('edit.queueTaskDisplayName')"
+        :placeholder="$t('edit.queueTaskDisplayName')"
         :maxlength="MAAFW_TASK_LABEL_MAX_LENGTH"
         autofocus
         @press-enter="confirmRename"

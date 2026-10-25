@@ -1,20 +1,20 @@
 <template>
   <PipelineRow
     class="cultivate-editor"
-    :name="t('edit.maaCultivate')"
+    :name="$t('edit.maaCultivate')"
     :summary="summary"
     :checked="formData.Task?.IfCultivate ?? false"
     :disabled="editorLoading"
-    :hint="t('edit.maaCultivateHint')"
+    :hint="$t('edit.maaCultivateHint')"
     @change="emit('save', 'Task.IfCultivate', $event)"
   >
     <template #actions>
-      <a-tooltip :title="t('edit.maaCultivateSettings')">
+      <a-tooltip :title="$t('edit.maaCultivateSettings')">
         <a-button
           class="cultivate-settings-button"
           type="text"
           shape="circle"
-          :aria-label="t('edit.maaCultivateSettings')"
+          :aria-label="$t('edit.maaCultivateSettings')"
           aria-haspopup="dialog"
           :disabled="editorLoading"
           :loading="openingEditor"
@@ -33,7 +33,7 @@
       class="cultivate-alert"
     />
     <a-alert
-      :message="t('edit.maaCultivateTakeoverHint')"
+      :message="$t('edit.maaCultivateTakeoverHint')"
       type="info"
       show-icon
       class="cultivate-alert"
@@ -53,32 +53,32 @@
         :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
       >
-        {{ t('edit.maaCultivateAutoRaise') }}
+        {{ $t('edit.maaCultivateAutoRaise') }}
       </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringActivity"
         :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
       >
-        {{ t('edit.maaCultivateSkipActivity') }}
+        {{ $t('edit.maaCultivateSkipActivity') }}
       </a-checkbox>
       <a-checkbox
         :checked="formData.Task?.CultivateSkipDuringResourceCollection"
         :disabled="editorLoading"
         @change="emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)"
       >
-        {{ t('edit.maaCultivateSkipResource') }}
+        {{ $t('edit.maaCultivateSkipResource') }}
       </a-checkbox>
     </div>
-    <div class="skland-feedback skland-hint">{{ t('edit.maaCultivateSkipHint') }}</div>
+    <div class="skland-feedback skland-hint">{{ $t('edit.maaCultivateSkipHint') }}</div>
     <div class="skland-feedback skland-hint">
-      {{ t('edit.maaCultivateAutoRaiseVersionHint') }}
+      {{ $t('edit.maaCultivateAutoRaiseVersionHint') }}
     </div>
   </PipelineRow>
 
   <a-modal
     v-model:open="editorOpen"
-    :title="t('edit.maaCultivateSettings')"
+    :title="$t('edit.maaCultivateSettings')"
     :width="1100"
     wrap-class-name="maa-plan-settings-modal cultivate-settings-modal"
     centered
@@ -89,14 +89,14 @@
   >
     <div class="cultivate-editor">
       <a-alert
-        :message="t('edit.maaCultivateRecognitionHint')"
+        :message="$t('edit.maaCultivateRecognitionHint')"
         type="info"
         show-icon
         class="cultivate-alert"
       />
       <div class="skland-feedback skland-hint cultivate-mastery-hint">
-        <div>{{ t('edit.maaCultivateAutoRaiseHint') }}</div>
-        <div>{{ t('edit.maaCultivateMasterySkillHint') }}</div>
+        <div>{{ $t('edit.maaCultivateAutoRaiseHint') }}</div>
+        <div>{{ $t('edit.maaCultivateMasterySkillHint') }}</div>
       </div>
       <!-- 绑定面板与干员选择器并排一行：专精/模组目标的练度与达成检测来自
          森空岛（决策 37/38） -->
@@ -105,15 +105,15 @@
           <a-form-item class="cultivate-skland-item">
             <template #label>
               <LabelWithHint
-                :text="t('edit.maaCultivateSklandTitle')"
-                :hint="t('edit.maaCultivateSklandHint')"
+                :text="$t('edit.maaCultivateSklandTitle')"
+                :hint="$t('edit.maaCultivateSklandHint')"
               />
             </template>
             <a-select
               :value="sklandBoundComposite"
               :options="sklandRoleOptionsWithBound"
               :loading="sklandRoleLoading"
-              :placeholder="t('edit.maaCultivateSklandRole')"
+              :placeholder="$t('edit.maaCultivateSklandRole')"
               :disabled="editorLoading"
               allow-clear
               :get-popup-container="getPopupContainer"
@@ -125,7 +125,7 @@
               {{ sklandRoleError }}
             </div>
             <div v-if="!sklandBound" class="skland-feedback skland-hint">
-              {{ t('edit.maaCultivateSklandUnboundHint') }}
+              {{ $t('edit.maaCultivateSklandUnboundHint') }}
             </div>
           </a-form-item>
         </div>
@@ -133,8 +133,8 @@
         <a-form-item class="cultivate-picker">
           <template #label>
             <LabelWithHint
-              :text="t('edit.maaCultivatePickOperators')"
-              :hint="t('edit.maaCultivatePickOperatorsHint')"
+              :text="$t('edit.maaCultivatePickOperators')"
+              :hint="$t('edit.maaCultivatePickOperatorsHint')"
             />
           </template>
           <div class="cultivate-picker-actions">
@@ -168,8 +168,8 @@
         <a-input
           v-model:value="operatorFilter"
           class="cultivate-target-search"
-          :placeholder="t('edit.maaCultivateSearchOperators')"
-          :aria-label="t('edit.maaCultivateSearchOperators')"
+          :placeholder="$t('edit.maaCultivateSearchOperators')"
+          :aria-label="$t('edit.maaCultivateSearchOperators')"
           allow-clear
         >
           <template #prefix><SearchOutlined /></template>
@@ -182,7 +182,7 @@
             @change="selectAllOperators($event.target.checked)"
           >
             {{
-              t(
+              $t(
                 operatorFilter.trim()
                   ? 'edit.maaCultivateSelectMatches'
                   : 'edit.maaCultivateSelectAll'
@@ -194,16 +194,16 @@
             :disabled="editorLoading || !operatorSelection.size"
             @click="removeSelectedOperators"
           >
-            {{ t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
+            {{ $t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
           </a-button>
         </a-space>
         <a-space class="cultivate-module-toggle">
           <a-switch
             v-model:checked="showModules"
             :disabled="editorLoading"
-            :aria-label="t('edit.maaCultivateShowModules')"
+            :aria-label="$t('edit.maaCultivateShowModules')"
           />
-          <span>{{ t('edit.maaCultivateShowModules') }}</span>
+          <span>{{ $t('edit.maaCultivateShowModules') }}</span>
         </a-space>
       </div>
 
@@ -226,7 +226,7 @@
                   :checked="operatorSelection.has(row.operatorId)"
                   :disabled="editorLoading"
                   :aria-label="
-                    t('edit.maaCultivateSelectOperator', { name: operatorName(row.operatorId) })
+                    $t('edit.maaCultivateSelectOperator', { name: operatorName(row.operatorId) })
                   "
                   @change="toggleOperatorSelection(row.operatorId, $event.target.checked)"
                 />
@@ -234,7 +234,7 @@
                   class="group-toggle"
                   type="text"
                   size="small"
-                  :aria-label="t('edit.maaCultivateToggleGoals')"
+                  :aria-label="$t('edit.maaCultivateToggleGoals')"
                   :aria-expanded="!isGroupCollapsed(row)"
                   @click="toggleGroup(row.operatorId)"
                 >
@@ -250,20 +250,20 @@
                   v-if="!row.elite.achieved"
                   :value="row.elite.savedLevel || undefined"
                   :options="row.elite.options"
-                  :placeholder="t('edit.maaCultivateGoalNone')"
+                  :placeholder="$t('edit.maaCultivateGoalNone')"
                   allow-clear
                   :disabled="row.elite.disabled"
                   :get-popup-container="getPopupContainer"
                   :list-height="popupListHeight"
                   class="goal-level"
-                  :aria-label="t('edit.maaCultivateGoalElite')"
+                  :aria-label="$t('edit.maaCultivateGoalElite')"
                   @change="(v: unknown) => handleGoalChange(row, 'elite', '', v)"
                 />
                 <span v-else class="goal-level goal-achieved-level">
                   {{ row.elite.levelLabel }}
                 </span>
                 <a-tag v-if="row.elite.overLimit" color="warning">
-                  {{ t('edit.maaCultivateOverLimit') }}
+                  {{ $t('edit.maaCultivateOverLimit') }}
                 </a-tag>
                 <a-button
                   size="small"
@@ -271,14 +271,14 @@
                   :disabled="editorLoading"
                   @click="handleRemoveOperator(row.operatorId)"
                 >
-                  {{ t('edit.maaCultivateRemove') }}
+                  {{ $t('edit.maaCultivateRemove') }}
                 </a-button>
               </div>
               <div class="group-elite-current">
                 <span
                   class="goal-current"
                   :title="
-                    row.elite.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
+                    row.elite.currentUnknown ? $t('edit.maaCultivateCurrentUnknownHint') : undefined
                   "
                   >{{ row.elite.current }}</span
                 >
@@ -295,20 +295,20 @@
                     <span
                       class="goal-current"
                       :title="
-                        line.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined
+                        line.currentUnknown ? $t('edit.maaCultivateCurrentUnknownHint') : undefined
                       "
                       >{{ line.current }}</span
                     >
                     <a-tag v-if="line.overLimit" color="warning">
-                      {{ t('edit.maaCultivateOverLimitShort') }}
+                      {{ $t('edit.maaCultivateOverLimitShort') }}
                     </a-tag>
                     <a-tag v-if="line.state" :color="line.state.color">
-                      {{ t(line.state.i18n) }}
+                      {{ $t(line.state.i18n) }}
                     </a-tag>
                     <a-select
                       :value="line.savedLevel || undefined"
                       :options="line.options"
-                      :placeholder="t('edit.maaCultivateGoalNone')"
+                      :placeholder="$t('edit.maaCultivateGoalNone')"
                       allow-clear
                       :disabled="line.disabled"
                       :get-popup-container="getPopupContainer"
@@ -321,16 +321,16 @@
               </div>
             </div>
             <div v-if="!sklandBound" class="skland-feedback skland-hint">
-              {{ t('edit.maaCultivateSklandLockedHint') }}
+              {{ $t('edit.maaCultivateSklandLockedHint') }}
             </div>
             <div v-else-if="sklandDegraded" class="skland-feedback skland-hint">
-              {{ t('edit.maaCultivateSklandDegradedHint') }}
+              {{ $t('edit.maaCultivateSklandDegradedHint') }}
             </div>
           </div>
           <a-empty
             v-else
             :description="
-              t(operatorFilter.trim() ? 'edit.maaCultivateSearchEmpty' : 'edit.maaCultivateEmpty')
+              $t(operatorFilter.trim() ? 'edit.maaCultivateSearchEmpty' : 'edit.maaCultivateEmpty')
             "
             :image-style="{ height: '48px' }"
           />
@@ -352,12 +352,12 @@
         rel="noreferrer"
         @click="handleExternalLink"
       >
-        {{ t('edit.maaDataSourceYituliu') }}
+        {{ $t('edit.maaDataSourceYituliu') }}
       </a-typography-link>
     </div>
     <template #footer>
       <a-button :disabled="editorLoading" @click="editorOpen = false">
-        {{ t('common.close') }}
+        {{ $t('common.close') }}
       </a-button>
     </template>
   </a-modal>

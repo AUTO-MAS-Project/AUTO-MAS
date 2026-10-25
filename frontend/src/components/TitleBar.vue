@@ -11,7 +11,7 @@
           {{ version }}
           <span v-if="isBootstrapping" class="startup-status">
             <LoadingOutlined />
-            {{ t('comp.backendStarting') }}
+            {{ $t('comp.backendStarting') }}
           </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
@@ -26,9 +26,9 @@
           <span
             v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"
             class="update-hint disabled"
-            :title="t('comp.backendUpdateDevUnsupported')"
+            :title="$t('comp.backendUpdateDevUnsupported')"
           >
-            {{ t('comp.backendUpdateDevUnsupported') }}
+            {{ $t('comp.backendUpdateDevUnsupported') }}
           </span>
           <span
             v-else-if="
@@ -39,7 +39,7 @@
             @click="handleBackendUpdateClick"
           >
             {{
-              t(
+              $t(
                 runtimeBackendUpdateAvailable
                   ? 'comp.backendUpdateReady'
                   : 'comp.backendUpdateAvailableClick'
@@ -58,14 +58,14 @@
       <div class="window-controls">
         <button
           class="control-button minimize-button"
-          :title="t('comp.minimize')"
+          :title="$t('comp.minimize')"
           @click="minimizeWindow"
         >
           <MinusOutlined />
         </button>
         <button
           class="control-button maximize-button"
-          :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
+          :title="isMaximized ? $t('comp.restoreWindow') : $t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
           <SwitcherOutlined v-if="isMaximized" />
@@ -74,7 +74,7 @@
         <button
           v-if="!hideCloseButton"
           class="control-button close-button"
-          :title="t('comp.close')"
+          :title="$t('comp.close')"
           @click="closeWindow"
         >
           <CloseOutlined />
@@ -85,7 +85,7 @@
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
       v-model:open="updateModalVisible"
-      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
+      :title="$t('comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
       :footer="null"
       :mask-closable="false"
@@ -103,7 +103,7 @@
           </p>
           <div class="backend-update-actions">
             <a-button danger :loading="updateCancelling" @click="cancelUpdate">
-              {{ t('comp.backendUpdateCancelAction') }}
+              {{ $t('comp.backendUpdateCancelAction') }}
             </a-button>
           </div>
         </template>
@@ -116,14 +116,14 @@
             show-icon
           />
           <p v-if="updateOutcome.code" class="backend-update-meta">
-            {{ t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
+            {{ $t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
           </p>
           <p v-if="updateOutcome.logPath" class="backend-update-meta">
-            {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
+            {{ $t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
           </p>
           <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
           <p v-if="updateActions.showContactSupport" class="backend-update-meta">
-            {{ t('comp.backendUpdateContactSupport') }}
+            {{ $t('comp.backendUpdateContactSupport') }}
           </p>
 
           <div class="backend-update-actions">
@@ -141,9 +141,9 @@
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
             >
-              {{ t('comp.backendUpdateRestartBackend') }}
+              {{ $t('comp.backendUpdateRestartBackend') }}
             </a-button>
-            <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
+            <a-button @click="closeUpdateModal">{{ $t('comp.close') }}</a-button>
           </div>
         </template>
       </div>

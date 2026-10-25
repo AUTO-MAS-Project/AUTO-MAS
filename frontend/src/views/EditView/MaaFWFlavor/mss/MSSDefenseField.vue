@@ -5,8 +5,8 @@
   <a-form-item
     v-if="enabled"
     class="flavor-mss-defense"
-    :label="t('edit.mssFlavorDefense')"
-    :extra="t('edit.mssFlavorDefenseHint')"
+    :label="$t('edit.mssFlavorDefense')"
+    :extra="$t('edit.mssFlavorDefenseHint')"
   >
     <a-space :size="12">
       <a-switch

@@ -1,17 +1,17 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('edit.taskTimeLimitOverrides')"
+    :title="$t('edit.taskTimeLimitOverrides')"
     :width="560"
     destroy-on-close
     @cancel="emit('update:open', false)"
   >
     <div class="task-limit-modal">
       <div class="task-limit-row loop-guard-row">
-        <span class="task-limit-label">{{ t('edit.loopGuard') }}</span>
+        <span class="task-limit-label">{{ $t('edit.loopGuard') }}</span>
         <a-switch v-model:checked="loopGuardDraft" />
       </div>
-      <div class="task-limit-modal-sub">{{ t('edit.taskTimeLimitModalSub') }}</div>
+      <div class="task-limit-modal-sub">{{ $t('edit.taskTimeLimitModalSub') }}</div>
       <!-- 列表定高、内部滚动：任务多的项目也不会把弹窗撑出屏幕 -->
       <div class="task-limit-modal-list">
         <div
@@ -24,7 +24,7 @@
           <span v-if="isChanged(task.value)" class="task-limit-hint">
             {{ defaultText }}
             <a class="task-limit-link" @click="draft[task.value] = null">
-              {{ t('edit.taskTimeLimitRestore') }}
+              {{ $t('edit.taskTimeLimitRestore') }}
             </a>
           </span>
           <a-input-number
@@ -47,12 +47,12 @@
           :disabled="!anyChanged"
           @click="resetAll"
         >
-          {{ t('edit.taskTimeLimitRestoreAll') }}
+          {{ $t('edit.taskTimeLimitRestoreAll') }}
         </a-button>
         <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
+          <a-button @click="emit('update:open', false)">{{ $t('common.cancel') }}</a-button>
           <a-button type="primary" @click="handleSave">
-            {{ t('edit.taskTimeLimitSave') }}
+            {{ $t('edit.taskTimeLimitSave') }}
           </a-button>
         </a-space>
       </div>

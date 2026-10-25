@@ -1,14 +1,14 @@
 <template>
   <ScriptEditHeader
     script-type="BetterGI"
-    :title="t('edit.editScript')"
+    :title="$t('edit.editScript')"
     :doc-url="MAS_DOC_URLS.scripts"
     @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.bettergiScriptConfiguration')"
+      :title="$t('edit.bettergiScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -19,22 +19,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.bettergiInstanceNameHint')">
+                    {{ $t('edit.scriptName') }}
+                    <a-tooltip :title="$t('edit.bettergiInstanceNameHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -45,8 +45,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.bettergiPath') }}
-                    <a-tooltip :title="t('edit.bettergiPickExeDir')">
+                    {{ $t('edit.bettergiPath') }}
+                    <a-tooltip :title="$t('edit.bettergiPickExeDir')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -54,7 +54,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
+                    :placeholder="$t('edit.bettergiPickExeDirPlaceholder')"
                     size="large"
                     class="path-input"
                     readonly
@@ -68,7 +68,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickDirectory') }}
+                    {{ $t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -78,15 +78,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ $t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.bettergiControllerHint')">
+                    {{ $t('edit.controller') }}
+                    <a-tooltip :title="$t('edit.bettergiControllerHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -98,13 +98,13 @@
                   @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
                 >
                   <a-select-option value="电脑端-前台">
-                    {{ t('edit.bettergiControllerForeground') }}
+                    {{ $t('edit.bettergiControllerForeground') }}
                   </a-select-option>
                   <a-select-option value="电脑端-云原神" disabled>
-                    {{ t('edit.bettergiControllerCloud') }}
+                    {{ $t('edit.bettergiControllerCloud') }}
                   </a-select-option>
                   <a-select-option value="电脑端-桌面分身" disabled>
-                    {{ t('edit.bettergiControllerDesktopClone') }}
+                    {{ $t('edit.bettergiControllerDesktopClone') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -113,8 +113,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.bettergiCloseGameOnFinish') }}
-                    <a-tooltip :title="t('edit.bettergiCloseGameOnFinishHint')">
+                    {{ $t('edit.bettergiCloseGameOnFinish') }}
+                    <a-tooltip :title="$t('edit.bettergiCloseGameOnFinishHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -125,8 +125,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -137,8 +137,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.genshinUpdateAuto') }}
-                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
+                    {{ $t('edit.genshinUpdateAuto') }}
+                    <a-tooltip :title="$t('edit.genshinUpdateAutoHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -149,8 +149,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -158,8 +158,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.bettergiAccountSwitchMethod') }}
-                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
+                    {{ $t('edit.bettergiAccountSwitchMethod') }}
+                    <a-tooltip :title="$t('edit.bettergiAccountSwitchMethodHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -171,13 +171,13 @@
                   @change="handleAccountSwitchMethodChange"
                 >
                   <a-select-option value="BGI">
-                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                    {{ $t('edit.bettergiAccountSwitchMethodBgi') }}
                   </a-select-option>
                   <a-select-option value="MAS">
-                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                    {{ $t('edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
+                <span class="control-hint">{{ $t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -185,7 +185,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="bettergiConfig.Run.HardTimeLimit"
@@ -196,8 +196,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                    {{ $t('edit.runsPerDay') }}
+                    <a-tooltip :title="$t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -216,8 +216,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.bettergiRetryLimitHint')">
+                    {{ $t('edit.retryLimit2') }}
+                    <a-tooltip :title="$t('edit.bettergiRetryLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -236,8 +236,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.bettergiRunTimeoutHint')">
+                    {{ $t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="$t('edit.bettergiRunTimeoutHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>

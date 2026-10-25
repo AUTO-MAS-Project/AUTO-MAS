@@ -88,10 +88,10 @@
           <template v-if="column.key === 'globalControl'">
             <a-space>
               <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">{{
-                t('plan.table.on')
+                $t('plan.table.on')
               }}</a-button>
               <a-button size="small" danger @click="disableAllStages(record.key)">{{
-                t('plan.table.off')
+                $t('plan.table.off')
               }}</a-button>
             </a-space>
           </template>
@@ -124,16 +124,16 @@
         <a-col v-for="i in 4" :key="i" :span="6">
           <a-form-item :colon="false" class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('plan.table.customStageTip')">
+              <a-tooltip :title="$t('plan.table.customStageTip')">
                 <span class="form-label">
-                  {{ t('plan.table.customStage', { n: i }) }}
+                  {{ $t('plan.table.customStage', { n: i }) }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-              :placeholder="t('plan.table.stagePlaceholder')"
+              :placeholder="$t('plan.table.stagePlaceholder')"
               :maxlength="50"
               allow-clear
               size="large"

@@ -108,7 +108,7 @@ const copyAllInfo = async () => {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.others.updateSection') }}</h3>
+        <h3>{{ $t('setting.others.updateSection') }}</h3>
         <a-button type="primary" size="small" class="section-update-button" @click="checkUpdate">
           <template #icon>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -117,7 +117,7 @@ const copyAllInfo = async () => {
               />
             </svg>
           </template>
-          {{ t('setting.others.checkUpdate') }}
+          {{ $t('setting.others.checkUpdate') }}
         </a-button>
       </div>
       <!-- 暂停中：显著状态条（含副标题提示）；日期选择器常驻，暂停期间也可改截止日期 -->
@@ -126,15 +126,15 @@ const copyAllInfo = async () => {
         type="info"
         show-icon
         class="pause-status-alert"
-        :message="t('setting.others.pauseStatus', { date: pauseUntilDisplay })"
-        :description="t('setting.others.pauseStatusHint')"
+        :message="$t('setting.others.pauseStatus', { date: pauseUntilDisplay })"
+        :description="$t('setting.others.pauseStatusHint')"
       />
       <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.pauseUpdates') }}</span>
-              <a-tooltip :title="t('setting.others.pauseUpdatesTip')">
+              <span class="form-label">{{ $t('setting.others.pauseUpdates') }}</span>
+              <a-tooltip :title="$t('setting.others.pauseUpdatesTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -143,7 +143,7 @@ const copyAllInfo = async () => {
               format="YYYY-MM-DD"
               value-format="YYYY-MM-DD"
               :disabled-date="pauseDisabledDate"
-              :placeholder="t('setting.others.pausePlaceholder')"
+              :placeholder="$t('setting.others.pausePlaceholder')"
               size="large"
               style="width: 100%"
               @change="handlePauseUntilChange"
@@ -155,8 +155,8 @@ const copyAllInfo = async () => {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.updateBackend') }}</span>
-              <a-tooltip :title="t('setting.others.updateBackendTip')">
+              <span class="form-label">{{ $t('setting.others.updateBackend') }}</span>
+              <a-tooltip :title="$t('setting.others.updateBackendTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -166,16 +166,16 @@ const copyAllInfo = async () => {
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.updateSource') }}</span>
-              <a-tooltip :title="t('setting.others.updateSourceTip')">
+              <span class="form-label">{{ $t('setting.others.updateSource') }}</span>
+              <a-tooltip :title="$t('setting.others.updateSourceTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -191,8 +191,8 @@ const copyAllInfo = async () => {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.updateChannel') }}</span>
-              <a-tooltip :title="t('setting.others.updateChannelTip')">
+              <span class="form-label">{{ $t('setting.others.updateChannel') }}</span>
+              <a-tooltip :title="$t('setting.others.updateChannelTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -210,14 +210,14 @@ const copyAllInfo = async () => {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.proxy') }}</span>
-              <a-tooltip :title="t('setting.others.proxyTip')">
+              <span class="form-label">{{ $t('setting.others.proxy') }}</span>
+              <a-tooltip :title="$t('setting.others.proxyTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
             <a-input
               :value="settings.Update?.ProxyAddress"
-              :placeholder="t('setting.others.proxyPlaceholder')"
+              :placeholder="$t('setting.others.proxyPlaceholder')"
               size="large"
               @blur="(e: any) => handleSettingChange('Update', 'ProxyAddress', e.target.value)"
             />
@@ -226,8 +226,8 @@ const copyAllInfo = async () => {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.githubMirror') }}</span>
-              <a-tooltip :title="t('setting.others.githubMirrorTip')">
+              <span class="form-label">{{ $t('setting.others.githubMirror') }}</span>
+              <a-tooltip :title="$t('setting.others.githubMirrorTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -249,7 +249,7 @@ const copyAllInfo = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.others.linkSection') }}</h3>
+        <h3>{{ $t('setting.others.linkSection') }}</h3>
       </div>
       <div class="link-grid">
         <div class="link-item">
@@ -258,10 +258,10 @@ const copyAllInfo = async () => {
               <HomeOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.site') }}</h4>
-              <p>{{ t('setting.others.siteDesc') }}</p>
+              <h4>{{ $t('setting.others.site') }}</h4>
+              <p>{{ $t('setting.others.siteDesc') }}</p>
               <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink">{{
-                t('setting.others.visitSite')
+                $t('setting.others.visitSite')
               }}</a>
             </div>
           </div>
@@ -272,13 +272,13 @@ const copyAllInfo = async () => {
               <GithubOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.repo') }}</h4>
-              <p>{{ t('setting.others.repoDesc') }}</p>
+              <h4>{{ $t('setting.others.repo') }}</h4>
+              <p>{{ $t('setting.others.repoDesc') }}</p>
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
                 class="link-button"
                 @click="handleExternalLink"
-                >{{ t('setting.others.visitRepo') }}</a
+                >{{ $t('setting.others.visitRepo') }}</a
               >
             </div>
           </div>
@@ -289,10 +289,10 @@ const copyAllInfo = async () => {
               <QqOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.qq') }}</h4>
-              <p>{{ t('setting.others.qqDesc') }}</p>
+              <h4>{{ $t('setting.others.qq') }}</h4>
+              <p>{{ $t('setting.others.qqDesc') }}</p>
               <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink">{{
-                t('setting.others.joinQq')
+                $t('setting.others.joinQq')
               }}</a>
             </div>
           </div>
@@ -302,26 +302,26 @@ const copyAllInfo = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.others.appSection') }}</h3>
+        <h3>{{ $t('setting.others.appSection') }}</h3>
       </div>
       <div class="app-info-container">
         <div class="app-info-left">
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.appName') }}</span>
+            <span class="info-label">{{ $t('setting.others.appName') }}</span>
             <span class="info-value">AUTO-MAS</span>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.developer') }}</span>
+            <span class="info-label">{{ $t('setting.others.developer') }}</span>
             <span class="info-value">AUTO-MAS Team</span>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.license') }}</span>
+            <span class="info-label">{{ $t('setting.others.license') }}</span>
             <span class="info-value">AGPL-3.0 license</span>
           </div>
         </div>
         <div class="app-info-right">
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.appVersion') }}</span>
+            <span class="info-label">{{ $t('setting.others.appVersion') }}</span>
             <a-tag color="blue" class="info-badge" @click="copyAllInfo">
               {{ version }}
             </a-tag>
@@ -331,16 +331,16 @@ const copyAllInfo = async () => {
               class="changelog-button"
               @click="changelogVisible = true"
             >
-              {{ t('setting.others.viewChangelog') }}
+              {{ $t('setting.others.viewChangelog') }}
             </a-button>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.backendHash') }}</span>
+            <span class="info-label">{{ $t('setting.others.backendHash') }}</span>
             <a-tag color="purple" class="info-badge" @click="copyAllInfo">
               {{
                 backendUpdateInfo?.current_hash
                   ? backendUpdateInfo.current_hash.substring(0, 8)
-                  : t('common.unknown')
+                  : $t('common.unknown')
               }}
             </a-tag>
           </div>
@@ -351,7 +351,7 @@ const copyAllInfo = async () => {
 
   <a-modal
     v-model:open="changelogVisible"
-    :title="t('setting.others.changelogTitle', { version })"
+    :title="$t('setting.others.changelogTitle', { version })"
     :width="800"
     :footer="null"
     class="changelog-modal"

@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { handleExternalLink } from '@/utils/openExternal'
 
-const { t } = useI18n()
 const { loading, error, getSettings, updateSettings } = useSettingsApi()
 const enabled = ref(false)
 const loaded = ref(false)
@@ -29,22 +27,22 @@ onMounted(load)
 </script>
 
 <template>
-  <a-card :title="t('setting.func.biliPolicy')">
-    <p>{{ t('setting.func.biliIntro') }}</p>
+  <a-card :title="$t('setting.func.biliPolicy')">
+    <p>{{ $t('setting.func.biliIntro') }}</p>
     <ul>
       <li>
         <a href="https://www.bilibili.com/protocal/licence.html" @click="handleExternalLink">
-          {{ t('setting.func.biliTerms') }}
+          {{ $t('setting.func.biliTerms') }}
         </a>
       </li>
       <li>
         <a href="https://www.bilibili.com/blackboard/privacy-pc.html" @click="handleExternalLink">
-          {{ t('setting.func.biliPrivacy') }}
+          {{ $t('setting.func.biliPrivacy') }}
         </a>
       </li>
       <li>
         <a href="https://game.bilibili.com/yhxy" @click="handleExternalLink">
-          {{ t('setting.func.biliGame') }}
+          {{ $t('setting.func.biliGame') }}
         </a>
       </li>
     </ul>
@@ -53,11 +51,11 @@ onMounted(load)
         :checked="enabled"
         :loading="loading"
         :disabled="!loaded"
-        :aria-label="t('setting.func.biliPolicy')"
+        :aria-label="$t('setting.func.biliPolicy')"
         @change="toggle"
       />
       <a-alert v-if="error" type="error" show-icon :message="error" />
-      <a-button v-if="!loaded && !loading" @click="load">{{ t('mystery.retry') }}</a-button>
+      <a-button v-if="!loaded && !loading" @click="load">{{ $t('mystery.retry') }}</a-button>
     </a-space>
   </a-card>
 </template>

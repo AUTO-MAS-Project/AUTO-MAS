@@ -2,8 +2,8 @@
   <div class="team-config-section">
     <div class="section-header">
       <h3>
-        {{ t('edit.bettergiTeamConfig') }}
-        <a-tooltip :title="t('edit.bettergiTeamConfigHint')">
+        {{ $t('edit.bettergiTeamConfig') }}
+        <a-tooltip :title="$t('edit.bettergiTeamConfigHint')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
         <div class="team-master-capsule" :class="{ active: teamsOn }" @click="toggleMaster">
@@ -14,29 +14,29 @@
 
     <a-alert v-if="!editable" type="info" show-icon class="mode-guide-alert">
       <template #message>
-        <span class="mode-guide-message">{{ t('edit.bettergiDirectModeAlert') }}</span>
+        <span class="mode-guide-message">{{ $t('edit.bettergiDirectModeAlert') }}</span>
       </template>
     </a-alert>
 
     <a-alert v-if="editable" type="info" show-icon class="mode-guide-alert">
       <template #message>
         <span class="mode-guide-message team-howto-title">
-          {{ t('edit.bettergiTeamHowToTitle') }}
+          {{ $t('edit.bettergiTeamHowToTitle') }}
         </span>
       </template>
       <template #description>
-        <p>{{ t('edit.bettergiTeamHowTo') }}</p>
+        <p>{{ $t('edit.bettergiTeamHowTo') }}</p>
       </template>
     </a-alert>
 
-    <p v-if="!teamsOn" class="team-off-tip">{{ t('edit.bettergiTeamOffTip') }}</p>
+    <p v-if="!teamsOn" class="team-off-tip">{{ $t('edit.bettergiTeamOffTip') }}</p>
 
     <template v-else>
       <div class="team-toolbar">
         <a-space size="small" wrap>
           <a-button size="small" type="primary" :disabled="!canEdit" @click="openEdit()">
             <template #icon><PlusOutlined /></template>
-            {{ t('edit.bettergiTeamAdd') }}
+            {{ $t('edit.bettergiTeamAdd') }}
           </a-button>
           <a-button
             size="small"
@@ -45,36 +45,36 @@
             @click="deleteSelected"
           >
             <template #icon><DeleteOutlined /></template>
-            {{ t('edit.bettergiTeamBatchDelete') }}
+            {{ $t('edit.bettergiTeamBatchDelete') }}
           </a-button>
           <a-button size="small" @click="emit('open-strategy-dir')">
             <template #icon><FolderOpenOutlined /></template>
-            {{ t('edit.bettergiTeamOpenStrategyDir') }}
+            {{ $t('edit.bettergiTeamOpenStrategyDir') }}
           </a-button>
           <a-button size="small" disabled>
-            {{ t('edit.bettergiTeamAdvanced') }}
+            {{ $t('edit.bettergiTeamAdvanced') }}
           </a-button>
         </a-space>
-        <span class="team-toolbar-tip">{{ t('edit.bettergiTeamDragTip') }}</span>
+        <span class="team-toolbar-tip">{{ $t('edit.bettergiTeamDragTip') }}</span>
       </div>
 
       <div class="team-table">
         <div class="team-table-head">
           <span class="team-cell team-cell-check"></span>
-          <span class="team-cell team-cell-index">{{ t('edit.bettergiTeamIndexColumn') }}</span>
-          <span class="team-cell team-cell-name">{{ t('edit.bettergiTeamNameColumn') }}</span>
+          <span class="team-cell team-cell-index">{{ $t('edit.bettergiTeamIndexColumn') }}</span>
+          <span class="team-cell team-cell-name">{{ $t('edit.bettergiTeamNameColumn') }}</span>
           <span class="team-cell team-cell-strategy">{{
-            t('edit.bettergiTeamStrategyColumn')
+            $t('edit.bettergiTeamStrategyColumn')
           }}</span>
-          <span class="team-cell team-cell-scenes">{{ t('edit.bettergiTeamScenesColumn') }}</span>
-          <span class="team-cell team-cell-note">{{ t('edit.bettergiTeamNoteColumn') }}</span>
-          <span class="team-cell team-cell-actions">{{ t('edit.bettergiTeamActionColumn') }}</span>
+          <span class="team-cell team-cell-scenes">{{ $t('edit.bettergiTeamScenesColumn') }}</span>
+          <span class="team-cell team-cell-note">{{ $t('edit.bettergiTeamNoteColumn') }}</span>
+          <span class="team-cell team-cell-actions">{{ $t('edit.bettergiTeamActionColumn') }}</span>
         </div>
 
         <!-- 通用队伍：固定首位、不可拖拽、不可删除；名称与策略直绑任务配置字段（双向同步） -->
         <div class="team-row team-row-general">
           <span class="team-cell team-cell-check">
-            <a-tag size="small" color="blue">{{ t('edit.bettergiTeamGeneralTag') }}</a-tag>
+            <a-tag size="small" color="blue">{{ $t('edit.bettergiTeamGeneralTag') }}</a-tag>
           </span>
           <span class="team-cell team-cell-index">0</span>
           <span class="team-cell team-cell-name">
@@ -82,7 +82,7 @@
               :value="generalName"
               size="small"
               :disabled="!editable"
-              :placeholder="t('edit.bettergiEnterBattleParty')"
+              :placeholder="$t('edit.bettergiEnterBattleParty')"
               @update:value="(v: string) => saveGeneral('OneDragon.PartyName', v)"
             />
           </span>
@@ -94,7 +94,7 @@
               allow-clear
               show-search
               :disabled="!editable"
-              :placeholder="t('edit.bettergiTeamStrategyFollowGeneral')"
+              :placeholder="$t('edit.bettergiTeamStrategyFollowGeneral')"
               :options="strategyOptions"
               @update:value="
                 (v: string | undefined) => saveGeneral('OneDragon.AutoBossStrategyName', v ?? '')
@@ -102,11 +102,11 @@
             />
           </span>
           <span class="team-cell team-cell-scenes">
-            <a-tag size="small">{{ t('edit.bettergiTeamGeneralScene') }}</a-tag>
+            <a-tag size="small">{{ $t('edit.bettergiTeamGeneralScene') }}</a-tag>
           </span>
           <span class="team-cell team-cell-note">—</span>
           <span class="team-cell team-cell-actions">
-            <span class="team-row-hint">{{ t('edit.bettergiTeamGeneralHint') }}</span>
+            <span class="team-row-hint">{{ $t('edit.bettergiTeamGeneralHint') }}</span>
           </span>
         </div>
 
@@ -130,21 +130,21 @@
               <span class="team-cell team-cell-strategy">
                 <span v-if="element.strategy">{{ element.strategy }}</span>
                 <span v-else class="team-muted">{{
-                  t('edit.bettergiTeamStrategyFollowGeneral')
+                  $t('edit.bettergiTeamStrategyFollowGeneral')
                 }}</span>
               </span>
               <span class="team-cell team-cell-scenes">
                 <template v-if="sceneTags(element).length">
                   <a-tag v-for="tag in sceneTags(element)" :key="tag" size="small">{{ tag }}</a-tag>
                 </template>
-                <span v-else class="team-muted">{{ t('edit.bettergiTeamNoScene') }}</span>
+                <span v-else class="team-muted">{{ $t('edit.bettergiTeamNoScene') }}</span>
                 <a-button
                   type="link"
                   size="small"
                   :disabled="!canEdit"
                   @click="openScenesForRow(element)"
                 >
-                  {{ t('edit.bettergiTeamEditScenes') }}
+                  {{ $t('edit.bettergiTeamEditScenes') }}
                 </a-button>
               </span>
               <span class="team-cell team-cell-note">{{ element.note || '—' }}</span>
@@ -154,7 +154,7 @@
                   type="text"
                   size="small"
                   :disabled="!canEdit"
-                  :aria-label="t('edit.bettergiTeamEdit')"
+                  :aria-label="$t('edit.bettergiTeamEdit')"
                   @click="openEdit(element)"
                 >
                   <template #icon><EditOutlined /></template>
@@ -164,7 +164,7 @@
                   type="text"
                   size="small"
                   :disabled="!canEdit"
-                  :aria-label="t('edit.bettergiTeamDuplicate')"
+                  :aria-label="$t('edit.bettergiTeamDuplicate')"
                   @click="duplicateRow(element)"
                 >
                   <template #icon><CopyOutlined /></template>
@@ -175,7 +175,7 @@
                   size="small"
                   danger
                   :disabled="!canEdit"
-                  :aria-label="t('edit.bettergiTeamDelete')"
+                  :aria-label="$t('edit.bettergiTeamDelete')"
                   @click="removeRow(element)"
                 >
                   <template #icon><DeleteOutlined /></template>
@@ -192,53 +192,55 @@
           </template>
         </draggable>
 
-        <a-empty v-if="!rows.length" :description="t('edit.bettergiTeamEmpty')" />
+        <a-empty v-if="!rows.length" :description="$t('edit.bettergiTeamEmpty')" />
       </div>
     </template>
 
     <!-- 添加 / 编辑队伍弹窗（备注为最后一栏） -->
     <a-modal
       v-model:open="editModal.open"
-      :title="editModal.index == null ? t('edit.bettergiTeamAdd') : t('edit.bettergiTeamEditTitle')"
+      :title="
+        editModal.index == null ? $t('edit.bettergiTeamAdd') : $t('edit.bettergiTeamEditTitle')
+      "
       :confirm-loading="editModal.saving"
       @ok="confirmEdit"
     >
       <a-form layout="vertical">
-        <a-form-item :label="t('edit.bettergiTeamNameColumn')" required>
+        <a-form-item :label="$t('edit.bettergiTeamNameColumn')" required>
           <a-input
             v-model:value="editModal.draft.name"
-            :placeholder="t('edit.bettergiEnterBattleParty')"
+            :placeholder="$t('edit.bettergiEnterBattleParty')"
             :maxlength="60"
           />
         </a-form-item>
-        <a-form-item :label="t('edit.bettergiTeamStrategyColumn')">
+        <a-form-item :label="$t('edit.bettergiTeamStrategyColumn')">
           <a-select
             v-model:value="editModal.draft.strategy"
             allow-clear
             show-search
-            :placeholder="t('edit.bettergiTeamStrategyFollowGeneral')"
+            :placeholder="$t('edit.bettergiTeamStrategyFollowGeneral')"
             :options="strategyOptions"
           />
-          <p class="team-field-tip">{{ t('edit.bettergiTeamStrategyTip') }}</p>
+          <p class="team-field-tip">{{ $t('edit.bettergiTeamStrategyTip') }}</p>
         </a-form-item>
-        <a-form-item :label="t('edit.bettergiTeamScenesColumn')">
+        <a-form-item :label="$t('edit.bettergiTeamScenesColumn')">
           <a-space size="small" wrap>
             <a-tag v-for="tag in sceneTags(editModal.draft)" :key="tag" size="small">{{
               tag
             }}</a-tag>
             <span v-if="!sceneTags(editModal.draft).length" class="team-muted">
-              {{ t('edit.bettergiTeamNoScene') }}
+              {{ $t('edit.bettergiTeamNoScene') }}
             </span>
           </a-space>
           <div>
             <a-button size="small" type="dashed" @click="openScenesForDraft">
               <template #icon><PlusOutlined /></template>
-              {{ t('edit.bettergiTeamEditScenes') }}
+              {{ $t('edit.bettergiTeamEditScenes') }}
             </a-button>
           </div>
-          <p class="team-field-tip">{{ t('edit.bettergiTeamSceneTip') }}</p>
+          <p class="team-field-tip">{{ $t('edit.bettergiTeamSceneTip') }}</p>
         </a-form-item>
-        <a-form-item :label="t('edit.bettergiTeamNoteColumn')">
+        <a-form-item :label="$t('edit.bettergiTeamNoteColumn')">
           <a-textarea v-model:value="editModal.draft.note" :rows="2" :maxlength="200" />
         </a-form-item>
       </a-form>
@@ -247,18 +249,18 @@
     <!-- 战斗场景弹窗：三个标签页，条件可跨标签页任意叠加 -->
     <a-modal
       v-model:open="sceneModal.open"
-      :title="t('edit.bettergiTeamScenesColumn')"
+      :title="$t('edit.bettergiTeamScenesColumn')"
       width="820px"
       @ok="confirmScenes"
     >
       <a-tabs v-model:activeKey="sceneModal.tab">
-        <a-tab-pane key="domain" :tab="t('edit.bettergiTeamSceneDomainTab')">
+        <a-tab-pane key="domain" :tab="$t('edit.bettergiTeamSceneDomainTab')">
           <div v-for="(cond, i) in editModal.draft.scenes.domain" :key="`d${i}`" class="scene-cond">
             <a-select
               :value="cond.region || undefined"
               style="width: 130px"
               allow-clear
-              :placeholder="t('edit.bettergiTeamSceneRegion')"
+              :placeholder="$t('edit.bettergiTeamSceneRegion')"
               :options="domainRegionOptions"
               @update:value="(v: string | undefined) => onDomainRegion(cond, v)"
             />
@@ -266,7 +268,7 @@
               :value="cond.domain || undefined"
               style="width: 210px"
               show-search
-              :placeholder="t('edit.bettergiTeamSceneDomain')"
+              :placeholder="$t('edit.bettergiTeamSceneDomain')"
               :options="domainNameOptions(cond.region)"
               @update:value="(v: string | undefined) => onDomainName(cond, v)"
             />
@@ -274,7 +276,7 @@
               :value="cond.reward || undefined"
               style="width: 200px"
               allow-clear
-              :placeholder="t('edit.bettergiTeamSceneReward')"
+              :placeholder="$t('edit.bettergiTeamSceneReward')"
               :options="domainRewardOptions(cond.domain)"
               @update:value="(v: string | undefined) => (cond.reward = v ?? '')"
             />
@@ -283,18 +285,18 @@
             </a-button>
           </div>
           <div v-if="domainCatalogError && !domainCatalog.length" class="scene-empty-tip">
-            <span>{{ t('edit.bettergiTeamSceneDomainEmpty') }}</span>
+            <span>{{ $t('edit.bettergiTeamSceneDomainEmpty') }}</span>
             <a-button size="small" type="link" @click="emit('reload-domain-catalog')">
-              {{ t('edit.bettergiTeamSceneDomainRetry') }}
+              {{ $t('edit.bettergiTeamSceneDomainRetry') }}
             </a-button>
           </div>
           <a-button size="small" type="dashed" block @click="addCond('domain')">
             <template #icon><PlusOutlined /></template>
-            {{ t('edit.bettergiTeamSceneAddDomain') }}
+            {{ $t('edit.bettergiTeamSceneAddDomain') }}
           </a-button>
         </a-tab-pane>
 
-        <a-tab-pane key="leyline" :tab="t('edit.bettergiTeamSceneLeylineTab')">
+        <a-tab-pane key="leyline" :tab="$t('edit.bettergiTeamSceneLeylineTab')">
           <div
             v-for="(cond, i) in editModal.draft.scenes.leyline"
             :key="`l${i}`"
@@ -303,14 +305,14 @@
             <a-select
               :value="cond.country || undefined"
               style="width: 150px"
-              :placeholder="t('edit.bettergiTeamSceneCountry')"
+              :placeholder="$t('edit.bettergiTeamSceneCountry')"
               :options="leylineCountryOptions"
               @update:value="(v: string) => (cond.country = v)"
             />
             <a-select
               :value="cond.type || undefined"
               style="width: 240px"
-              :placeholder="t('edit.bettergiTeamSceneLeylineType')"
+              :placeholder="$t('edit.bettergiTeamSceneLeylineType')"
               :options="leylineTypeOptions"
               @update:value="(v: string) => (cond.type = v)"
             />
@@ -320,17 +322,17 @@
           </div>
           <a-button size="small" type="dashed" block @click="addCond('leyline')">
             <template #icon><PlusOutlined /></template>
-            {{ t('edit.bettergiTeamSceneAddLeyline') }}
+            {{ $t('edit.bettergiTeamSceneAddLeyline') }}
           </a-button>
         </a-tab-pane>
 
-        <a-tab-pane key="boss" :tab="t('edit.bettergiTeamSceneBossTab')">
+        <a-tab-pane key="boss" :tab="$t('edit.bettergiTeamSceneBossTab')">
           <div v-for="(cond, i) in editModal.draft.scenes.boss" :key="`b${i}`" class="scene-cond">
             <a-select
               :value="cond.region || undefined"
               style="width: 130px"
               allow-clear
-              :placeholder="t('edit.bettergiTeamSceneRegion')"
+              :placeholder="$t('edit.bettergiTeamSceneRegion')"
               :options="bossRegionOptions"
               @update:value="(v: string | undefined) => onBossRegion(cond, v)"
             />
@@ -338,7 +340,7 @@
               :value="cond.boss || undefined"
               style="width: 240px"
               show-search
-              :placeholder="t('edit.bettergiTeamSceneBoss')"
+              :placeholder="$t('edit.bettergiTeamSceneBoss')"
               :options="bossOptions(cond.region)"
               @update:value="(v: string) => (cond.boss = v)"
             />
@@ -348,11 +350,11 @@
           </div>
           <a-button size="small" type="dashed" block @click="addCond('boss')">
             <template #icon><PlusOutlined /></template>
-            {{ t('edit.bettergiTeamSceneAddBoss') }}
+            {{ $t('edit.bettergiTeamSceneAddBoss') }}
           </a-button>
         </a-tab-pane>
       </a-tabs>
-      <p class="team-field-tip">{{ t('edit.bettergiTeamSceneDialogTip') }}</p>
+      <p class="team-field-tip">{{ $t('edit.bettergiTeamSceneDialogTip') }}</p>
     </a-modal>
   </div>
 </template>

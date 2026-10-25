@@ -6,7 +6,7 @@
           <a-select
             v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
-            :placeholder="t('scheduler.control.taskPlaceholder')"
+            :placeholder="$t('scheduler.control.taskPlaceholder')"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
@@ -17,12 +17,12 @@
           />
           <div v-if="status === '运行'" class="running-info">
             <span class="info-item">
-              <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
+              <span class="label">{{ $t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">{{ t('scheduler.control.modeLabel') }}</span>
+              <span class="label">{{ $t('scheduler.control.modeLabel') }}</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -36,14 +36,14 @@
             <template #content>
               <div class="queue-scope">
                 <div class="queue-scope-head">
-                  <span class="queue-scope-title">{{ t('scheduler.control.runScopeTitle') }}</span>
-                  <a-tooltip :title="t('scheduler.control.runScopeTip')">
+                  <span class="queue-scope-title">{{ $t('scheduler.control.runScopeTitle') }}</span>
+                  <a-tooltip :title="$t('scheduler.control.runScopeTip')">
                     <QuestionCircleOutlined class="queue-scope-help" />
                   </a-tooltip>
                   <template v-if="!scopeLoading && !scopeFailed">
                     <span class="queue-scope-summary">
                       {{
-                        t('scheduler.control.runScopeSelected', {
+                        $t('scheduler.control.runScopeSelected', {
                           selected: scopeSelectedCount,
                           total: scopeUserCount,
                         })
@@ -55,7 +55,7 @@
                       :disabled="scopeSelectedCount >= scopeUserCount"
                       @click="selectAllScopeUsers"
                     >
-                      {{ t('scheduler.control.selectAllUsers') }}
+                      {{ $t('scheduler.control.selectAllUsers') }}
                     </a-button>
                     <a-button
                       type="link"
@@ -63,21 +63,21 @@
                       :disabled="scopeSelectedCount === 0"
                       @click="clearAllScopeUsers"
                     >
-                      {{ t('scheduler.control.clearAllUsers') }}
+                      {{ $t('scheduler.control.clearAllUsers') }}
                     </a-button>
                   </template>
                 </div>
                 <div v-if="scopeLoading" class="queue-scope-tip">
-                  {{ t('scheduler.control.runScopeLoading') }}
+                  {{ $t('scheduler.control.runScopeLoading') }}
                 </div>
                 <div v-else-if="scopeFailed" class="queue-scope-error">
-                  {{ t('scheduler.control.runScopeLoadFailed') }}
+                  {{ $t('scheduler.control.runScopeLoadFailed') }}
                   <a-button type="link" size="small" @click="retryScope">
-                    {{ t('scheduler.control.runScopeRetry') }}
+                    {{ $t('scheduler.control.runScopeRetry') }}
                   </a-button>
                 </div>
                 <div v-else-if="!scopeRows.length" class="queue-scope-tip">
-                  {{ t('scheduler.control.runScopeNoUsers') }}
+                  {{ $t('scheduler.control.runScopeNoUsers') }}
                 </div>
                 <div v-else class="queue-scope-groups">
                   <div v-for="row in scopeRows" :key="row.group.scriptId" class="queue-scope-group">
@@ -85,7 +85,7 @@
                       {{ row.group.scriptName }}
                     </span>
                     <span v-if="!row.group.users.length" class="queue-scope-group-empty">
-                      {{ t('scheduler.control.runScopeNoUsers') }}
+                      {{ $t('scheduler.control.runScopeNoUsers') }}
                     </span>
                     <a-checkbox
                       v-for="user in row.group.users"
@@ -105,7 +105,7 @@
                       {{ user.label }}
                       <span class="queue-scope-user-note">
                         {{
-                          t(
+                          $t(
                             user.reason === 'expired'
                               ? 'scheduler.control.runScopeUserExpired'
                               : 'scheduler.control.runScopeUserDisabled'
@@ -121,7 +121,7 @@
               <template #icon>
                 <TeamOutlined />
               </template>
-              {{ t('scheduler.control.runScopeTitle') }}
+              {{ $t('scheduler.control.runScopeTitle') }}
               <span
                 v-if="!scopeLoading && !scopeFailed"
                 class="queue-scope-count"
@@ -137,7 +137,7 @@
           <a-select
             v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            :placeholder="t('scheduler.control.resumePlaceholder')"
+            :placeholder="$t('scheduler.control.resumePlaceholder')"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
@@ -158,13 +158,13 @@
               <StopOutlined v-if="status === '运行'" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
+            {{ status === '运行' ? $t('scheduler.control.stop') : $t('scheduler.control.start') }}
           </a-button>
         </a-space>
       </div>
       <!-- 循环运行的下轮预览 -->
       <div v-if="cyclePreview.length" class="cycle-preview">
-        <span class="cycle-preview-label">{{ t('scheduler.cycle.nextTitle') }}</span>
+        <span class="cycle-preview-label">{{ $t('scheduler.cycle.nextTitle') }}</span>
         <a-space size="small" wrap>
           <a-tag
             v-for="item in cyclePreview"
@@ -175,9 +175,9 @@
             <span class="cycle-preview-time">
               {{
                 item.isRunning
-                  ? t('scheduler.cycle.running')
+                  ? $t('scheduler.cycle.running')
                   : item.isDue
-                    ? t('scheduler.cycle.due')
+                    ? $t('scheduler.cycle.due')
                     : item.nextRunAt
               }}
             </span>

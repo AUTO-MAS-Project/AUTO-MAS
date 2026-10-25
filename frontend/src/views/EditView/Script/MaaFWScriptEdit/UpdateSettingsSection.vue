@@ -2,7 +2,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.projectUpdate') }}</h3>
+      <h3>{{ $t('edit.projectUpdate') }}</h3>
     </div>
     <a-alert
       v-if="isAutoUpdateDisabled"
@@ -15,9 +15,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.autoUpdateModeTip')">
+            <a-tooltip :title="$t('edit.autoUpdateModeTip')">
               <span class="form-label">
-                {{ t('edit.autoUpdateMode') }}
+                {{ $t('edit.autoUpdateMode') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -34,9 +34,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateSourceTip')">
+            <a-tooltip :title="$t('edit.updateSourceTip')">
               <span class="form-label">
-                {{ t('edit.updateSource') }}
+                {{ $t('edit.updateSource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -50,7 +50,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item :label="t('edit.updateChannel')">
+        <a-form-item :label="$t('edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
             size="large"
@@ -68,17 +68,17 @@
                  只在「选了 Mirror 酱却没填」时冒一行警告 -->
             <a-tooltip>
               <template #title>
-                {{ t('edit.cdkTip') }}
+                {{ $t('edit.cdkTip') }}
                 <a :href="MIRRORCHYAN_CDK_URL" class="tooltip-link" @click="handleExternalLink">{{
-                  t('edit.cdkGetLink')
+                  $t('edit.cdkGetLink')
                 }}</a>
               </template>
               <span class="form-label">
-                {{ t('edit.mirrorchyanCdk') }}
+                {{ $t('edit.mirrorchyanCdk') }}
                 <a
                   :href="MIRRORCHYAN_CDK_URL"
                   class="help-link"
-                  :aria-label="t('edit.cdkGetLink')"
+                  :aria-label="$t('edit.cdkGetLink')"
                   @click.stop="handleExternalLink"
                 >
                   <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -88,14 +88,14 @@
           </template>
           <a-input-password
             v-model:value="maafwConfig.Update.MirrorChyanCDK"
-            :placeholder="t('edit.cdkPlaceholder')"
+            :placeholder="$t('edit.cdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"
             @blur="handleCdkBlur"
           />
           <div v-if="isCdkMissingForMirror" class="form-hint form-hint--warning">
-            {{ t('edit.cdkMissingForMirror') }}
+            {{ $t('edit.cdkMissingForMirror') }}
           </div>
           <!-- CDK 还剩多久到期，或者 CDK 有什么问题；查询中、查不到、没有到期时间时整行不显示 -->
           <div
@@ -105,22 +105,22 @@
           >
             {{ cdkHintText }}
           </div>
-          <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
+          <div v-if="cdkPrefilled" class="form-hint">{{ $t('edit.cdkPrefilledFromGlobal') }}</div>
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.proxyAddressTip')">
+            <a-tooltip :title="$t('edit.proxyAddressTip')">
               <span class="form-label">
-                {{ t('edit.proxyAddress') }}
+                {{ $t('edit.proxyAddress') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="maafwConfig.Update.ProxyAddress"
-            :placeholder="t('edit.proxyAddressPlaceholder')"
+            :placeholder="$t('edit.proxyAddressPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"
@@ -144,21 +144,21 @@
     <div v-if="previewData" class="update-info-grid">
       <div class="update-info-column">
         <div class="update-info-item">
-          <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
+          <div class="update-info-label">{{ $t('edit.currentVersion') }}</div>
           <div class="update-info-value">
-            {{ previewData.project.version || t('edit.notDeclared') }}
+            {{ previewData.project.version || $t('edit.notDeclared') }}
           </div>
         </div>
         <div class="update-info-item">
           <div class="update-info-label">GitHub</div>
           <div class="update-info-value">
-            {{ previewData.project.github || t('edit.notDeclared') }}
+            {{ previewData.project.github || $t('edit.notDeclared') }}
           </div>
         </div>
       </div>
       <div class="update-process">
         <div class="update-process-header">
-          <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
+          <span class="update-process-title">{{ $t('edit.updateProcess') }}</span>
           <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
           <!-- 检查 / 更新的入口就放在过程面板标题行右侧：点完按钮，结果就在下面这个日志框里，
                与「运行环境」面板把「准备运行环境」放标题行右侧同一口径 -->
@@ -170,7 +170,7 @@
               :loading="updateChecking"
               :disabled="updateApplying"
               @click="emit('check-update')"
-              >{{ t('edit.checkUpdates2') }}</a-button
+              >{{ $t('edit.checkUpdates2') }}</a-button
             >
             <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏 -->
             <a-button
@@ -181,7 +181,7 @@
               :disabled="updateChecking"
               @click="emit('apply-update')"
             >
-              {{ t('edit.update') }}
+              {{ $t('edit.update') }}
             </a-button>
           </div>
         </div>
@@ -191,7 +191,7 @@
             v-if="updateProgress.phase === 'idle'"
             class="update-log-line update-log-line--empty"
           >
-            {{ t('edit.updateProcessPlaceholder') }}
+            {{ $t('edit.updateProcessPlaceholder') }}
           </div>
           <div
             v-for="(line, index) in updateProgress.logs"

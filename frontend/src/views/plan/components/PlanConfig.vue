@@ -3,7 +3,7 @@
     <template #title>
       <div class="plan-title-container">
         <div v-if="!isEditingPlanName" class="plan-title-display">
-          <span class="plan-title-text">{{ currentPlanName || t('plan.configTitle') }}</span>
+          <span class="plan-title-text">{{ currentPlanName || $t('plan.configTitle') }}</span>
           <a-button
             type="text"
             size="small"
@@ -19,7 +19,7 @@
           <a-input
             ref="planNameInputRef"
             :value="currentPlanName"
-            :placeholder="t('plan.namePlaceholder')"
+            :placeholder="$t('plan.namePlaceholder')"
             class="plan-title-input"
             :maxlength="50"
             @update:value="$emit('update:current-plan-name', $event)"
@@ -31,20 +31,20 @@
     </template>
     <template #extra>
       <a-space :wrap="compact">
-        <span class="mode-label">{{ t('plan.modeLabel') }}</span>
+        <span class="mode-label">{{ $t('plan.modeLabel') }}</span>
         <a-segmented
           :value="currentMode"
           :disabled="disabled"
           :options="[
-            { label: t('plan.modeAll'), value: 'ALL' },
-            { label: t('plan.modeWeekly'), value: 'Weekly' },
-            { label: t('plan.modeRotate'), value: 'Rotate' },
+            { label: $t('plan.modeAll'), value: 'ALL' },
+            { label: $t('plan.modeWeekly'), value: 'Weekly' },
+            { label: $t('plan.modeRotate'), value: 'Rotate' },
           ]"
           @change="handleModeChange"
         />
         <!-- 只有多天轮换用得上这个天数，别的模式下摆出来会让人以为周计划也按它排 -->
         <template v-if="currentMode === 'Rotate'">
-          <span class="mode-label">{{ t('plan.rotateDaysLabel') }}</span>
+          <span class="mode-label">{{ $t('plan.rotateDaysLabel') }}</span>
           <a-input-number
             :value="rotateDays"
             :disabled="disabled"
@@ -57,12 +57,12 @@
         </template>
         <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
         <template v-if="supportsSimpleView">
-          <span class="view-label">{{ t('plan.viewLabel') }}</span>
+          <span class="view-label">{{ $t('plan.viewLabel') }}</span>
           <a-segmented
             :value="viewMode"
             :options="[
-              { label: t('plan.viewConfig'), value: 'config' },
-              { label: t('plan.viewSimple'), value: 'simple' },
+              { label: $t('plan.viewConfig'), value: 'config' },
+              { label: $t('plan.viewSimple'), value: 'simple' },
             ]"
             @change="$emit('update:view-mode', $event)"
           />
@@ -78,7 +78,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
 import {
   PLAN_ROTATE_DAYS_MAX,
@@ -86,8 +85,6 @@ import {
   clampRotateDays,
   type PlanMode,
 } from '@/utils/planDays'
-
-const { t } = useI18n()
 
 interface Props {
   currentPlanName: string

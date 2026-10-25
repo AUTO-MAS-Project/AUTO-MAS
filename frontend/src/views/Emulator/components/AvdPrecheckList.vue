@@ -27,7 +27,7 @@ const failing = (item: Emulator2AvdPrecheckItem) => {
 </script>
 
 <template>
-  <h4 class="block-title">{{ t('emulator2.avd.prechecks') }}</h4>
+  <h4 class="block-title">{{ $t('emulator2.avd.prechecks') }}</h4>
   <div class="precheck-list">
     <template v-for="item in items" :key="item.id">
       <a-alert

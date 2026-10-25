@@ -8,7 +8,7 @@
   >
     <div class="baah-editor-title">{{ title }}</div>
     <a-form layout="vertical" class="baah-editor-form">
-      <a-form-item :label="t('plan.baah.rowState')">
+      <a-form-item :label="$t('plan.baah.rowState')">
         <a-radio-group
           :value="state"
           :disabled="saving"
@@ -23,30 +23,30 @@
         <a-form-item
           v-for="(part, index) in spec.parts"
           :key="part.hintKey"
-          :label="t(part.hintKey)"
+          :label="$t(part.hintKey)"
         >
           <a-select
             :value="values[index]"
             :options="partOptions(part.hintKey, part.min, values[index])"
-            :aria-label="t(part.hintKey)"
+            :aria-label="$t(part.hintKey)"
             :disabled="saving"
             @update:value="updatePart(index, $event)"
           />
         </a-form-item>
       </template>
       <p v-else class="baah-editor-hint">
-        {{ t(state === 'off' ? 'plan.baah.skipToday' : 'plan.baah.upstreamSettings') }}
+        {{ $t(state === 'off' ? 'plan.baah.skipToday' : 'plan.baah.upstreamSettings') }}
       </p>
       <a-alert
         v-if="saveError"
         type="error"
         show-icon
-        :message="t('plan.baah.saveFailed')"
+        :message="$t('plan.baah.saveFailed')"
         :description="saveErrorReason || undefined"
       >
         <template #action>
           <a-button size="small" :loading="saving" @click="$emit('retry')">{{
-            t('plan.baah.retry')
+            $t('plan.baah.retry')
           }}</a-button>
         </template>
       </a-alert>

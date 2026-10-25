@@ -4,8 +4,8 @@
       <a-form-item>
         <template #label>
           <a-space size="small">
-            {{ t('edit.hardTimeoutMinutes') }}
-            <a-tooltip :title="t('edit.hardTimeoutHint')">
+            {{ $t('edit.hardTimeoutMinutes') }}
+            <a-tooltip :title="$t('edit.hardTimeoutHint')">
               <QuestionCircleOutlined />
             </a-tooltip>
           </a-space>
@@ -26,11 +26,9 @@
 
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { useI18n } from 'vue-i18n'
 
 const value = defineModel<number>('value', { required: true })
 const emit = defineEmits<{ save: [] }>()
-const { t } = useI18n()
 
 const handleSave = () => {
   // 清空输入时恢复默认时限，避免保存空值后界面与实际运行限制不一致。

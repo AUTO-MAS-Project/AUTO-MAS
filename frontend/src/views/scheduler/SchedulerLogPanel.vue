@@ -1,25 +1,25 @@
 <template>
   <div class="log-panel">
     <div class="scheduler-panel-header">
-      <h3>{{ t('scheduler.log.title') }}</h3>
+      <h3>{{ $t('scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
           <a-select
             v-model:value="logThemeMode"
             size="small"
             class="log-theme-select"
-            :aria-label="t('scheduler.log.theme')"
+            :aria-label="$t('scheduler.log.theme')"
           >
-            <a-select-option value="theme">{{ t('scheduler.log.followTheme') }}</a-select-option>
-            <a-select-option value="dark">{{ t('comp.darkTheme') }}</a-select-option>
-            <a-select-option value="light">{{ t('comp.lightTheme') }}</a-select-option>
+            <a-select-option value="theme">{{ $t('scheduler.log.followTheme') }}</a-select-option>
+            <a-select-option value="dark">{{ $t('comp.darkTheme') }}</a-select-option>
+            <a-select-option value="light">{{ $t('comp.lightTheme') }}</a-select-option>
           </a-select>
           <a-button
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
             @click="toggleLogMode"
           >
-            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
+            {{ logMode === 'follow' ? $t('scheduler.log.follow') : $t('scheduler.log.browse') }}
           </a-button>
         </a-space>
       </div>
@@ -33,7 +33,7 @@
       <div v-if="!logContent" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="$t('scheduler.log.empty')" class="empty-image" />
           </div>
         </div>
       </div>

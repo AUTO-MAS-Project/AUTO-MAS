@@ -262,8 +262,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
       <a-form-item>
         <template #label>
           <span class="form-label">
-            {{ t('edit.bettergiGameServer') }}
-            <a-tooltip :title="t('edit.bettergiGameServerHint')">
+            {{ $t('edit.bettergiGameServer') }}
+            <a-tooltip :title="$t('edit.bettergiGameServerHint')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </span>
@@ -274,13 +274,13 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
           class="modern-select"
           @change="handleResourceChange"
         >
-          <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
-          <a-select-option value="B服">{{ t('edit.bettergiServerBili') }}</a-select-option>
-          <a-select-option value="亚服">{{ t('edit.bettergiServerAsia') }}</a-select-option>
-          <a-select-option value="欧服">{{ t('edit.bettergiServerEurope') }}</a-select-option>
-          <a-select-option value="美服">{{ t('edit.bettergiServerAmerica') }}</a-select-option>
+          <a-select-option value="官服">{{ $t('edit.bettergiServerCn') }}</a-select-option>
+          <a-select-option value="B服">{{ $t('edit.bettergiServerBili') }}</a-select-option>
+          <a-select-option value="亚服">{{ $t('edit.bettergiServerAsia') }}</a-select-option>
+          <a-select-option value="欧服">{{ $t('edit.bettergiServerEurope') }}</a-select-option>
+          <a-select-option value="美服">{{ $t('edit.bettergiServerAmerica') }}</a-select-option>
           <a-select-option value="港澳台服">
-            {{ t('edit.bettergiServerTwHkMo') }}
+            {{ $t('edit.bettergiServerTwHkMo') }}
           </a-select-option>
         </a-select>
       </a-form-item>
@@ -293,8 +293,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
         <a-form-item>
           <template #label>
             <span class="form-label">
-              {{ t('edit.bettergiGameClient') }}
-              <a-tooltip :title="t('edit.bettergiGameClientHint')">
+              {{ $t('edit.bettergiGameClient') }}
+              <a-tooltip :title="$t('edit.bettergiGameClientHint')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -311,7 +311,7 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
               <template #icon>
                 <FolderOpenOutlined />
               </template>
-              {{ t('edit.pickFile') }}
+              {{ $t('edit.pickFile') }}
             </a-button>
             <a-button
               size="large"
@@ -319,17 +319,17 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
               :disabled="!gamePathInput"
               @click="clearGameClient"
             >
-              {{ t('edit.bettergiGameClientRestore') }}
+              {{ $t('edit.bettergiGameClientRestore') }}
             </a-button>
           </a-input-group>
         </a-form-item>
-        <a-tooltip :title="updateUnsupported ? t('edit.bettergiUpdateUnsupportedHint') : ''">
+        <a-tooltip :title="updateUnsupported ? $t('edit.bettergiUpdateUnsupportedHint') : ''">
           <span class="game-client-check">
             <a-button size="large" :disabled="updateCheckDisabled" @click="handleCheckUpdate">
               <template #icon>
                 <ThunderboltOutlined />
               </template>
-              {{ t('edit.checkUpdates') }}
+              {{ $t('edit.checkUpdates') }}
             </a-button>
           </span>
         </a-tooltip>
@@ -341,8 +341,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     v-model:open="updateModal.open"
     :title="
       updateModal.running
-        ? t('edit.bettergiUpdateProgressTitle')
-        : t('edit.bettergiCheckUpdateTitle')
+        ? $t('edit.bettergiUpdateProgressTitle')
+        : $t('edit.bettergiCheckUpdateTitle')
     "
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
@@ -354,12 +354,12 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     <template v-if="updateModal.running || updateModal.done">
       <div class="update-log-area">
         <pre class="update-log-content">{{
-          updateModal.log || t('edit.bettergiUpdateConnecting')
+          updateModal.log || $t('edit.bettergiUpdateConnecting')
         }}</pre>
       </div>
     </template>
     <template v-else>
-      <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
+      <a-alert type="info" show-icon :message="$t('edit.bettergiWillBeUpdated')" />
     </template>
   </a-modal>
 </template>

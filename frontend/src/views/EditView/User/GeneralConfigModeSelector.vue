@@ -2,10 +2,10 @@
   <a-form-item class="config-mode-form-item">
     <template #label>
       <span class="config-mode-label">
-        {{ t('edit.configurationManagement') }}
+        {{ $t('edit.configurationManagement') }}
         <span v-if="saving" class="config-mode-saving">
           <LoadingOutlined spin />
-          {{ t('edit.saving') }}
+          {{ $t('edit.saving') }}
         </span>
       </span>
     </template>
@@ -15,7 +15,7 @@
       :disabled="disabled || saving"
       class="config-mode-options"
       :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
-      :aria-label="t('edit.configurationManagement')"
+      :aria-label="$t('edit.configurationManagement')"
       @change="handleChange"
     >
       <a-tooltip
@@ -66,12 +66,12 @@
     <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
       <template #label>
         <span class="config-mode-label">
-          {{ t('edit.enableQuickConfiguration') }}
-          <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
+          {{ $t('edit.enableQuickConfiguration') }}
+          <a-tooltip :title="$t('edit.overridesCurrentScriptConfiguration')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
           <span v-if="quickConfigReadonly" class="config-mode-derived">
-            {{ t('edit.quickConfigDerivedHint') }}
+            {{ $t('edit.quickConfigDerivedHint') }}
           </span>
         </span>
       </template>
@@ -80,7 +80,7 @@
         :disabled="overlayDisabled"
         class="config-mode-options"
         :style="{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }"
-        :aria-label="t('edit.enableQuickConfiguration')"
+        :aria-label="$t('edit.enableQuickConfiguration')"
         @change="handleOverlayChange"
       >
         <label
@@ -110,7 +110,7 @@
       developer/config-semantics.html）。未接入 overlay 的专项没有子态可讲，整块不渲染。
     -->
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
-      <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
+      <span class="config-effective-title">{{ $t('edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
       <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
       <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>

@@ -1,6 +1,6 @@
 <template>
-  <a-card class="shortcut-card" :title="t('home.quick.title')">
-    <section class="quick-actions" :aria-label="t('home.quick.aria')">
+  <a-card class="shortcut-card" :title="$t('home.quick.title')">
+    <section class="quick-actions" :aria-label="$t('home.quick.aria')">
       <button
         v-for="action in quickActions"
         :key="action.path"

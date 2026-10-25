@@ -4,11 +4,11 @@
     <!-- 页面头部 -->
     <div class="scheduler-header">
       <div class="header-left">
-        <h1 class="page-title">{{ t('scheduler.title') }}</h1>
+        <h1 class="page-title">{{ $t('scheduler.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
-          <span class="power-label">{{ t('scheduler.powerLabel') }}</span>
+          <span class="power-label">{{ $t('scheduler.powerLabel') }}</span>
           <a-select
             v-model:value="powerAction"
             class="power-select"
@@ -21,7 +21,7 @@
               :key="signal"
               :value="signal"
             >
-              {{ t(labelKey) }}
+              {{ $t(labelKey) }}
             </a-select-option>
           </a-select>
         </a-space>
@@ -38,14 +38,14 @@
       >
         <template #tabBarExtraContent>
           <div class="tab-actions">
-            <a-tooltip :title="t('scheduler.addTab')" placement="top">
+            <a-tooltip :title="$t('scheduler.addTab')" placement="top">
               <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
                 <template #icon>
                   <PlusOutlined />
                 </template>
               </a-button>
             </a-tooltip>
-            <a-tooltip :title="t('scheduler.removeIdleTabs')" placement="top">
+            <a-tooltip :title="$t('scheduler.removeIdleTabs')" placement="top">
               <a-button
                 class="tab-action-btn tab-remove-btn"
                 size="middle"
@@ -127,7 +127,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-tab-content">
-            <a-empty :description="t('scheduler.emptyTabs')" />
+            <a-empty :description="$t('scheduler.emptyTabs')" />
           </div>
         </template>
       </a-tabs>

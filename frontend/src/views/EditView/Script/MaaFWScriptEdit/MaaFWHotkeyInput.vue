@@ -10,7 +10,7 @@
     @keydown="handleKeydown"
     @blur="setRecording(false)"
   >
-    <span v-if="recording" class="hotkey-placeholder">{{ t('edit.mfwHotkeyPressKeys') }}</span>
+    <span v-if="recording" class="hotkey-placeholder">{{ $t('edit.mfwHotkeyPressKeys') }}</span>
     <template v-else>
       <template v-for="(key, index) in keys" :key="index">
         <span v-if="index > 0" class="hotkey-plus">+</span>
@@ -22,7 +22,6 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import {
   displayKey,
   hotkeyFromKeyboardEvent,
@@ -47,8 +46,6 @@ const emit = defineEmits<{
   /** 录制状态变化：弹窗据此在录制中屏蔽 Esc 关闭 */
   recording: [value: boolean]
 }>()
-
-const { t } = useI18n()
 
 const boxRef = ref<HTMLDivElement>()
 const recording = ref(false)

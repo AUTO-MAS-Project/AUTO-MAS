@@ -2,7 +2,7 @@
   <Transition name="race-fade">
     <div v-if="state" ref="stage" class="race" @pointerdown.stop @click.stop="close">
       <div v-if="state.phase !== 'ready'" class="race-message">
-        {{ t(MESSAGE_KEYS[state.phase]) }}
+        {{ $t(MESSAGE_KEYS[state.phase]) }}
       </div>
       <template v-else>
         <div class="race-countdown">

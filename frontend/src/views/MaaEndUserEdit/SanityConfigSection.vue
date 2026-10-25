@@ -1,18 +1,18 @@
 <template>
   <div>
     <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showSanityDetail }">
-      <span>{{ t('edit.maaEndEnableSanity') }}</span>
+      <span>{{ $t('edit.maaEndEnableSanity') }}</span>
       <a-switch
         v-model:checked="formData.Task.IfSanity"
         :disabled="controlsDisabled"
-        :aria-label="t('edit.maaEndEnableSanity')"
+        :aria-label="$t('edit.maaEndEnableSanity')"
         @change="emitSave('Task.IfSanity', formData.Task.IfSanity)"
       />
     </div>
 
     <a-row v-if="showSanityDetail" :gutter="24">
       <a-col :xs="24" :sm="12">
-        <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
+        <a-form-item :label="$t('edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
             :options="resolvedSanityModeOptions"
@@ -26,16 +26,16 @@
       <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickSanityTaskType')">
+            <a-tooltip :title="$t('edit.pickSanityTaskType')">
               <span class="form-label">
-                {{ t('edit.sanityTask') }}
+                {{ $t('edit.sanityTask') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ $t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -49,10 +49,10 @@
       </a-col>
 
       <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
-        <a-form-item :label="t('edit.maaEndEssenceFarmMode')">
+        <a-form-item :label="$t('edit.maaEndEssenceFarmMode')">
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayEssenceMenu }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ $t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -77,7 +77,7 @@
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ $t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -94,16 +94,16 @@
       <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
+            <a-tooltip :title="$t('edit.rewardGroupsProtocolSpace')">
               <span class="form-label">
-                {{ t('edit.rewardGroup') }}
+                {{ $t('edit.rewardGroup') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ $t('edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else

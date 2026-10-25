@@ -2,7 +2,7 @@
   <!-- ══ 配置恢复（历史备份浏览 / 预览 / 查看详细 / 一键恢复；MAS 在前脚本在后）══ -->
   <a-modal
     :open="open"
-    :title="t('edit.configRestoreTitle')"
+    :title="$t('edit.configRestoreTitle')"
     :footer="null"
     width="520px"
     @update:open="onOpenChange"
@@ -12,7 +12,7 @@
       class="restore-lock-alert"
       type="warning"
       show-icon
-      :message="t('edit.configLocked')"
+      :message="$t('edit.configLocked')"
     />
     <a-segmented
       v-model:value="restoreTarget"
@@ -23,16 +23,16 @@
     <p class="restore-desc">
       {{
         currentTarget?.kind === 'user'
-          ? (userDesc ?? t('edit.configRestoreMasDesc', { script: scriptName }))
-          : (scriptDesc ?? t('edit.configRestoreScriptDesc', { script: scriptName }))
+          ? (userDesc ?? $t('edit.configRestoreMasDesc', { script: scriptName }))
+          : (scriptDesc ?? $t('edit.configRestoreScriptDesc', { script: scriptName }))
       }}
       <!-- 当前配置来源（三态专项才有；用户靠它与备份标签对比是否需要跨来源恢复） -->
       <span v-if="currentSource" class="restore-current-source">
-        {{ t('edit.configRestoreCurrentSource', { mode: t(sourceLabelKey(currentSource)) }) }}
+        {{ $t('edit.configRestoreCurrentSource', { mode: $t(sourceLabelKey(currentSource)) }) }}
       </span>
     </p>
     <a-spin :spinning="backupsLoading">
-      <a-empty v-if="!backups.length" :description="t('edit.configRestoreEmpty')" />
+      <a-empty v-if="!backups.length" :description="$t('edit.configRestoreEmpty')" />
       <a-list v-else :data-source="backups" size="small" row-key="time">
         <template #renderItem="{ item }">
           <a-list-item>
@@ -45,14 +45,14 @@
             </div>
             <a-space>
               <a-button type="link" size="small" @click="handlePreview(item)">
-                {{ t('edit.configRestorePreview') }}
+                {{ $t('edit.configRestorePreview') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="disabled || isRestoreBlocked(item)"
                 @click="confirmRestore(item)"
               >
-                {{ t('edit.configRestoreAction') }}
+                {{ $t('edit.configRestoreAction') }}
               </a-button>
             </a-space>
           </a-list-item>
@@ -71,7 +71,7 @@
     <template #title>
       <!-- 预览标题区：专项可用 #preview-title 插槽自定义，缺省用「配置预览 · 时间」 -->
       <slot name="preview-title" :time="previewTime">
-        {{ `${t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
+        {{ `${$t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
       </slot>
     </template>
     <a-spin :spinning="previewLoading">
@@ -81,10 +81,10 @@
         class="preview-warning"
         type="warning"
         show-icon
-        :message="t('edit.configRestoreUnrestorableTitle')"
+        :message="$t('edit.configRestoreUnrestorableTitle')"
       >
         <template #description>
-          <div>{{ t('edit.configRestoreUnrestorableDesc') }}</div>
+          <div>{{ $t('edit.configRestoreUnrestorableDesc') }}</div>
           <div v-for="warning in previewWarnings" :key="warning">{{ warning }}</div>
         </template>
       </a-alert>
@@ -104,13 +104,13 @@
              但保留「无可展示摘要」提示（与脚本级一致的基座默认兜底） -->
         <template v-if="currentTarget?.kind === 'user'">
           <template v-if="previewRows.length || previewData.tasks.length">
-            <h4 class="preview-section-title">{{ t('edit.basicInfo') }}</h4>
+            <h4 class="preview-section-title">{{ $t('edit.basicInfo') }}</h4>
             <a-descriptions :column="1" size="small" bordered class="preview-box">
               <a-descriptions-item v-for="row in previewRows" :key="row.label" :label="row.label">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
-            <h4 class="preview-section-title">{{ t('edit.configRestorePreviewTasks') }}</h4>
+            <h4 class="preview-section-title">{{ $t('edit.configRestorePreviewTasks') }}</h4>
             <div v-if="previewData.tasks.length" class="preview-task-list">
               <span
                 v-for="task in previewData.tasks"
@@ -121,15 +121,15 @@
                 {{ task.app_name }}
               </span>
             </div>
-            <a-empty v-else :description="t('edit.configRestorePreviewNoTasks')" />
+            <a-empty v-else :description="$t('edit.configRestorePreviewNoTasks')" />
           </template>
-          <a-empty v-else :description="t('edit.configRestorePreviewEmpty')" />
+          <a-empty v-else :description="$t('edit.configRestorePreviewEmpty')" />
         </template>
         <!-- 脚本级：实例列表可展开查看账号/任务明细 -->
         <template v-else>
           <a-empty
             v-if="!previewData.instances.length"
-            :description="t('edit.configRestorePreviewEmpty')"
+            :description="$t('edit.configRestorePreviewEmpty')"
           />
           <a-collapse v-else class="preview-instance-list" :bordered="false">
             <a-collapse-panel v-for="inst in previewData.instances" :key="inst.idx">
@@ -138,7 +138,7 @@
                   {{ `${String(inst.idx).padStart(2, '0')} - ${inst.name}` }}
                 </span>
                 <a-tag v-if="inst.active" color="blue">
-                  {{ t('edit.configRestorePreviewActive') }}
+                  {{ $t('edit.configRestorePreviewActive') }}
                 </a-tag>
               </template>
               <a-descriptions :column="1" size="small" bordered class="preview-box">
@@ -172,7 +172,7 @@
         <a-collapse-panel>
           <template #header>
             <span class="preview-files-title">
-              {{ `${t('edit.configRestoreBackupFiles')} (${previewFiles.length})` }}
+              {{ `${$t('edit.configRestoreBackupFiles')} (${previewFiles.length})` }}
             </span>
           </template>
           <div class="preview-file-list">
@@ -197,14 +197,14 @@
       <div class="preview-actions">
         <a-tooltip
           v-if="onDetail"
-          :title="t('edit.configRestoreDetailHint', { script: scriptName })"
+          :title="$t('edit.configRestoreDetailHint', { script: scriptName })"
         >
           <a-button :disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail">
-            {{ t('edit.configRestoreDetailView') }}
+            {{ $t('edit.configRestoreDetailView') }}
           </a-button>
         </a-tooltip>
         <a-button @click="previewOpen = false">
-          {{ t('edit.close') }}
+          {{ $t('edit.close') }}
         </a-button>
       </div>
     </template>
@@ -222,7 +222,7 @@
       <div class="file-modal-title">
         <span class="file-modal-path">{{ fileItem?.path }}</span>
         <a-button type="text" size="small" @click="copyFileContent">
-          {{ t('edit.configRestoreCopy') }}
+          {{ $t('edit.configRestoreCopy') }}
         </a-button>
       </div>
     </template>

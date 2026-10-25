@@ -3,9 +3,9 @@
     <div v-if="visible" class="backend-startup-overlay">
       <div class="startup-card">
         <LaunchStatus
-          :title="t('launch.starting')"
-          :hint="slow ? t('launch.slowHint') : ''"
-          :action-label="slow ? t('launch.viewLog') : ''"
+          :title="$t('launch.starting')"
+          :hint="slow ? $t('launch.slowHint') : ''"
+          :action-label="slow ? $t('launch.viewLog') : ''"
           @action="openLaunchLogWindow('后端启动遮罩')"
         />
       </div>
@@ -15,7 +15,6 @@
 
 <script setup lang="ts">
 import { onUnmounted, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import LaunchStatus from './LaunchStatus.vue'
 import { SLOW_LAUNCH_THRESHOLD_MS, openLaunchLogWindow } from '@/utils/launch'
 
@@ -24,8 +23,6 @@ defineOptions({ name: 'BackendStartupOverlay' })
 const props = defineProps<{
   visible: boolean
 }>()
-
-const { t } = useI18n()
 
 const slow = ref(false)
 let slowTimer: ReturnType<typeof setTimeout> | null = null

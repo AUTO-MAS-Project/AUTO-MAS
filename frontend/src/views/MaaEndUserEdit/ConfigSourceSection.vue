@@ -8,7 +8,7 @@
           :disabled="loading"
           :quick-config="quickConfig"
           :quick-config-disabled="quickConfigDisabled"
-          :alert-message="t('edit.configSourceHintBase')"
+          :alert-message="$t('edit.configSourceHintBase')"
           :show-gui-hint="false"
           @change="$emit('modeChange', $event)"
           @quick-config-change="$emit('quickConfigChange', $event)"

@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ $t('comp.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
@@ -28,7 +28,7 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('comp.back') }}
+        {{ $t('comp.back') }}
       </a-button>
     </a-space>
   </div>

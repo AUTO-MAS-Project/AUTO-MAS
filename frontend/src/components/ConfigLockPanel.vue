@@ -6,7 +6,7 @@
         class="config-lock-alert"
         type="warning"
         show-icon
-        :message="t('edit.configLocked')"
+        :message="$t('edit.configLocked')"
       />
       <slot />
     </ConfigProvider>
@@ -14,7 +14,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { ConfigProvider } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
@@ -23,7 +22,6 @@ const props = defineProps<{
   contentClass: string
 }>()
 
-const { t } = useI18n()
 const { configLocked } = useScriptConfigLock(() => props.scriptId)
 </script>
 

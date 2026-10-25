@@ -161,16 +161,16 @@ onBeforeUnmount(() => {
   <div class="theme-store-page">
     <component :is="modalContextHolder" />
     <div class="theme-store-header">
-      <h1 class="page-title">{{ t('themeStore.title') }}</h1>
+      <h1 class="page-title">{{ $t('themeStore.title') }}</h1>
       <div class="theme-store-actions">
         <ThemeStoreAccount :account="account" />
         <a-button type="primary" @click="openDocs">
           <template #icon><FileTextOutlined /></template>
-          {{ t('themeStore.openDocs') }}
+          {{ $t('themeStore.openDocs') }}
         </a-button>
         <a-button type="primary" @click="openUpload()">
           <template #icon><UploadOutlined /></template>
-          {{ t('themeStore.upload.open') }}
+          {{ $t('themeStore.upload.open') }}
         </a-button>
       </div>
     </div>
@@ -193,7 +193,7 @@ onBeforeUnmount(() => {
         />
       </template>
       <div v-else-if="!authorized" class="theme-store-login">
-        <a-empty :description="t('themeStore.mine.loginRequired')">
+        <a-empty :description="$t('themeStore.mine.loginRequired')">
           <ThemeStoreAccount :account="account" class="theme-store-login-account" />
         </a-empty>
       </div>

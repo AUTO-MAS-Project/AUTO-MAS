@@ -103,7 +103,7 @@ onMounted(() => {
   <section
     v-if="hasCommunityData || showNoteFeedback"
     class="home-activity-notes"
-    :aria-label="t('home.activityNotes.title')"
+    :aria-label="$t('home.activityNotes.title')"
   >
     <HomeSignSummary
       v-if="signSummary"
@@ -123,11 +123,11 @@ onMounted(() => {
       <div v-if="showNoteFeedback" class="note-feedback" role="status">
         <a-spin v-if="loading" size="small" />
         <span>{{
-          loading ? t('home.activityNotes.loading') : t('gamesign.activity.queryFailed')
+          loading ? $t('home.activityNotes.loading') : $t('gamesign.activity.queryFailed')
         }}</span>
         <span v-if="!loading" class="notes-daily-hint">{{ activityError }}</span>
         <a-button v-if="!loading" type="link" size="small" @click="refresh">{{
-          t('gamesign.activity.refresh')
+          $t('gamesign.activity.refresh')
         }}</a-button>
       </div>
       <HomeActivityNoteStrip
@@ -145,7 +145,7 @@ onMounted(() => {
             option-filter-prop="label"
             :value="activityNoteKey(selectedNote)"
             :options="noteOptions"
-            :aria-label="t('home.activityNotes.selectUser')"
+            :aria-label="$t('home.activityNotes.selectUser')"
             :title="noteLabel(selectedNote)"
             @change="selectNote(String($event))"
           />

@@ -27,7 +27,7 @@ const markFailed = (id: string) => {
   <a-collapse v-if="attachments.length" class="history-attachments">
     <a-collapse-panel
       key="attachments"
-      :header="t('history.attachments.title', { count: attachments.length })"
+      :header="$t('history.attachments.title', { count: attachments.length })"
     >
       <div v-for="attachment in attachments" :key="attachment.id" class="history-attachment">
         <div class="attachment-heading">
@@ -39,7 +39,7 @@ const markFailed = (id: string) => {
             rel="noopener noreferrer"
             :download="attachment.display_name"
           >
-            {{ t('history.attachments.download') }}
+            {{ $t('history.attachments.download') }}
           </a>
         </div>
         <a-alert

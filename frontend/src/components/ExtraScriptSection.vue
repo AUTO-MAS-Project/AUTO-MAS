@@ -1,17 +1,17 @@
 <template>
   <div class="form-section">
     <div v-if="!hideSectionHeader" class="section-header">
-      <h3>{{ t('comp.extraScripts') }}</h3>
+      <h3>{{ $t('comp.extraScripts') }}</h3>
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
         <a-tooltip
           :title="
-            t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
+            $t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
           "
         >
           <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask') }}
+            {{ $t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -29,7 +29,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.Info.ScriptBeforeTask"
-              :placeholder="t('comp.pickScriptFile')"
+              :placeholder="$t('comp.pickScriptFile')"
               :disabled="loading || !formData.Info.IfScriptBeforeTask"
               size="large"
               class="path-input"
@@ -44,7 +44,7 @@
               <template #icon>
                 <FileOutlined />
               </template>
-              {{ t('comp.pickFile') }}
+              {{ $t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>
@@ -53,10 +53,12 @@
     <a-form-item name="scriptAfterTask">
       <template #label>
         <a-tooltip
-          :title="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
+          :title="
+            $t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')
+          "
         >
           <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask') }}
+            {{ $t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
@@ -74,7 +76,7 @@
           <a-input-group compact class="path-input-group">
             <a-input
               v-model:value="formData.Info.ScriptAfterTask"
-              :placeholder="t('comp.pickScriptFile')"
+              :placeholder="$t('comp.pickScriptFile')"
               :disabled="loading || !formData.Info.IfScriptAfterTask"
               size="large"
               class="path-input"
@@ -89,7 +91,7 @@
               <template #icon>
                 <FileOutlined />
               </template>
-              {{ t('comp.pickFile') }}
+              {{ $t('comp.pickFile') }}
             </a-button>
           </a-input-group>
         </a-col>

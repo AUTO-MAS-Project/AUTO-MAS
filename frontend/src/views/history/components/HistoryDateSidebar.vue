@@ -2,7 +2,7 @@
   <div class="date-sidebar">
     <div class="sidebar-header">
       <CalendarOutlined />
-      <span>{{ t('history.dateList') }}</span>
+      <span>{{ $t('history.dateList') }}</span>
     </div>
     <div class="date-list">
       <a-collapse
@@ -37,8 +37,8 @@
                     class="result-count success-count"
                     :class="{ 'is-zero': !row.successCount }"
                     role="img"
-                    :aria-label="t('history.successCount', { count: row.successCount })"
-                    :title="t('history.successCount', { count: row.successCount })"
+                    :aria-label="$t('history.successCount', { count: row.successCount })"
+                    :title="$t('history.successCount', { count: row.successCount })"
                   >
                     <CheckOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.successCount }}</span>
@@ -47,8 +47,8 @@
                     class="result-count failure-count"
                     :class="{ 'is-zero': !row.failureCount }"
                     role="img"
-                    :aria-label="t('history.failureCount', { count: row.failureCount })"
-                    :title="t('history.failureCount', { count: row.failureCount })"
+                    :aria-label="$t('history.failureCount', { count: row.failureCount })"
+                    :title="$t('history.failureCount', { count: row.failureCount })"
                   >
                     <CloseOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.failureCount }}</span>
@@ -62,15 +62,14 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.empty') }}</span>
+        <img src="@/assets/NoData.png" :alt="$t('history.noData')" class="empty-image" />
+        <span class="empty-text">{{ $t('history.empty') }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import type { HistoryBucket } from '@/api'
 import {
   CalendarOutlined,
@@ -82,8 +81,6 @@ import {
 import { computed, ref, watch } from 'vue'
 import { formatHistoryGroupLabel } from '@/utils/dateDisplay'
 import type { HistoryDateGroup } from '../useHistoryLogic.ts'
-
-const { t } = useI18n()
 
 interface Props {
   historyData: HistoryDateGroup[]

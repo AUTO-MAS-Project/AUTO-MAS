@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import draggable from 'vuedraggable'
 import {
   SettingOutlined,
@@ -39,7 +38,6 @@ const {
 } = props.editor
 
 const openRestoreModal = () => props.restore()
-const { t } = useI18n()
 /** 拖拽排序的渲染数据源：跟随当前模式任务列表，拖拽过程由 vuedraggable 就地更新 */
 const taskDragCards = ref<TaskCard[]>([])
 watch(
@@ -67,21 +65,21 @@ const jumpFromTaskCard = (appId: string) => {
 <template>
   <div class="section-header">
     <h3>
-      {{ t('edit.zzzodOneDragonConfig') }}
-      <a-tooltip :title="t('edit.zzzodOneDragonConfigHint')">
+      {{ $t('edit.zzzodOneDragonConfig') }}
+      <a-tooltip :title="$t('edit.zzzodOneDragonConfigHint')">
         <QuestionCircleOutlined class="help-icon" />
       </a-tooltip>
     </h3>
     <div class="section-header-actions">
-      <a-tooltip :title="t('edit.zzzodSortTasksHint')">
+      <a-tooltip :title="$t('edit.zzzodSortTasksHint')">
         <a-button size="small" class="restore-entry" @click="handleSortTasks">
           <template #icon><SortAscendingOutlined /></template>
-          {{ t('edit.zzzodSortTasks') }}
+          {{ $t('edit.zzzodSortTasks') }}
         </a-button>
       </a-tooltip>
       <a-button size="small" class="restore-entry" @click="openRestoreModal">
         <template #icon><HistoryOutlined /></template>
-        {{ t('edit.configRestoreTitle') }}
+        {{ $t('edit.configRestoreTitle') }}
       </a-button>
     </div>
   </div>
@@ -103,8 +101,8 @@ const jumpFromTaskCard = (appId: string) => {
         <div class="task-card-main">
           <span
             class="drag-handle"
-            :title="t('edit.zzzodDragSortHint')"
-            :aria-label="t('edit.zzzodDragSortHint')"
+            :title="$t('edit.zzzodDragSortHint')"
+            :aria-label="$t('edit.zzzodDragSortHint')"
           >
             <span class="drag-dots" aria-hidden="true"></span>
           </span>
@@ -152,7 +150,7 @@ const jumpFromTaskCard = (appId: string) => {
                 </div>
               </template>
               <a-tooltip
-                :title="t('edit.zzzodTaskConfigHint')"
+                :title="$t('edit.zzzodTaskConfigHint')"
                 :open="taskTipVisible[card.app_id] === true"
                 @open-change="(o: boolean) => (taskTipVisible[card.app_id] = o)"
               >
@@ -169,7 +167,7 @@ const jumpFromTaskCard = (appId: string) => {
             </a-popover>
             <a-tooltip
               v-if="card.jump"
-              :title="t('edit.zzzodTaskJumpHint')"
+              :title="$t('edit.zzzodTaskJumpHint')"
               :open="jumpTipVisible[card.app_id] === true"
               @open-change="(o: boolean) => (jumpTipVisible[card.app_id] = o)"
             >

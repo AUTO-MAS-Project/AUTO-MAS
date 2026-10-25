@@ -11,7 +11,7 @@
           @click="handleExternalLink"
           >{{ section.source.label }}</a-typography-link
         >
-        <a-tag v-if="section.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+        <a-tag v-if="section.stale" color="orange">{{ $t('home.sra.stale') }}</a-tag>
         <a-button
           v-if="section.refresh"
           type="text"
@@ -93,7 +93,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import type { HomeActivitySection } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -106,7 +105,6 @@ const emit = defineEmits<{
   action: [id: string]
   dismiss: [id: string]
 }>()
-const { t } = useI18n()
 // 相同时间的活动边界只刷新一次，各倒计时的帧回调可能分属不同微任务。
 const handledBoundaries = new Set<number>()
 const handleBoundary = (time: number) => {

@@ -1,7 +1,7 @@
 <template>
   <LaunchFailure
     v-if="status === 'failed'"
-    :title="t('init.steps.backend')"
+    :title="$t('init.steps.backend')"
     :message="errorMessage"
     :failure-actions="BACKEND_FAILURE_ACTIONS"
     :failure-logs="backendLogs"
@@ -15,9 +15,9 @@
   />
   <LaunchStatus
     v-else
-    :title="retrying ? t('launch.retrying') : t('launch.starting')"
+    :title="retrying ? $t('launch.retrying') : $t('launch.starting')"
     :hint="hintText"
-    :action-label="slow ? t('launch.viewLog') : ''"
+    :action-label="slow ? $t('launch.viewLog') : ''"
     @action="openLaunchLogWindow('后端启动步骤')"
   />
 </template>

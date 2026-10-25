@@ -5,7 +5,7 @@
         <span
           class="preview-loading"
           role="status"
-          :aria-label="loading ? t('edit.maaCultivatePreviewComputing') : undefined"
+          :aria-label="loading ? $t('edit.maaCultivatePreviewComputing') : undefined"
         >
           <a-spin v-if="loading" size="small" />
         </span>
@@ -14,7 +14,7 @@
         v-for="tab in ['stages', 'demands']"
         :key="tab"
         :tab="
-          t(
+          $t(
             tab === 'stages'
               ? 'edit.maaCultivatePreviewTitle'
               : 'edit.maaCultivatePreviewDemandHeading'
@@ -30,10 +30,10 @@
           class="cultivate-alert"
         />
         <div v-if="unobtainableText" class="preview-unobtainable">
-          {{ t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
+          {{ $t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
         </div>
         <template v-if="preview && tab === 'stages'">
-          <div class="preview-heading">{{ t('edit.maaCultivatePreviewStageHeading') }}</div>
+          <div class="preview-heading">{{ $t('edit.maaCultivatePreviewStageHeading') }}</div>
           <!-- 刷取计划四列：材料名称 → 关卡 → 数量 → 理智（固定列宽对齐） -->
           <div
             v-for="entry in preview.stages"
@@ -48,7 +48,7 @@
             <template v-if="entry.expectedSanity != null">
               <span class="preview-sanity-sym">≈</span>
               <span class="preview-sanity">
-                {{ entry.expectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
+                {{ entry.expectedSanity }} {{ $t('edit.maaCultivateSanityUnit') }}
               </span>
             </template>
             <template v-else>
@@ -57,15 +57,15 @@
             </template>
           </div>
           <div v-if="!preview.stages.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewNone') }}
+            {{ $t('edit.maaCultivatePreviewNone') }}
           </div>
           <div v-if="preview.totalExpectedSanity != null" class="preview-line preview-total">
             <span class="preview-item">
-              {{ t('edit.maaCultivatePreviewSanityTotal') }}
+              {{ $t('edit.maaCultivatePreviewSanityTotal') }}
             </span>
             <span class="preview-sanity">
               ≈ {{ preview.totalExpectedSanity }}
-              {{ t('edit.maaCultivateSanityUnit') }}
+              {{ $t('edit.maaCultivateSanityUnit') }}
             </span>
           </div>
         </template>
@@ -77,7 +77,7 @@
             <span class="preview-count">× {{ item.count }}</span>
           </div>
           <div v-if="!preview.demands.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewDemandNone') }}
+            {{ $t('edit.maaCultivatePreviewDemandNone') }}
           </div>
         </template>
       </a-tab-pane>

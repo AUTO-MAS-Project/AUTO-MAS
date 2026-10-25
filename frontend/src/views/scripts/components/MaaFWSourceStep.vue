@@ -12,22 +12,22 @@
       <a-radio value="new" />
       <span class="choice-icon"><FolderOpenOutlined /></span>
       <span class="choice-copy">
-        <span class="choice-title">{{ t('scripts.create.mfwNewProject') }}</span>
-        <span class="choice-description">{{ t('scripts.create.mfwNewProjectDesc') }}</span>
+        <span class="choice-title">{{ $t('scripts.create.mfwNewProject') }}</span>
+        <span class="choice-description">{{ $t('scripts.create.mfwNewProjectDesc') }}</span>
       </span>
     </label>
     <div class="choice-group-heading">
-      <span class="choice-group-title">{{ t('scripts.create.mfwReuse') }}</span>
-      <span class="choice-group-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
+      <span class="choice-group-title">{{ $t('scripts.create.mfwReuse') }}</span>
+      <span class="choice-group-description">{{ $t('scripts.create.mfwReuseDesc') }}</span>
     </div>
     <a-alert v-if="error" type="error" show-icon :message="error" class="template-alert">
       <template #action>
-        <a-button size="small" @click="emit('retry')">{{ t('scripts.create.retry') }}</a-button>
+        <a-button size="small" @click="emit('retry')">{{ $t('scripts.create.retry') }}</a-button>
       </template>
     </a-alert>
     <div v-if="loading" class="choice-placeholder">
       <a-spin size="small" />
-      <span>{{ t('scripts.create.mfwReuseLoading') }}</span>
+      <span>{{ $t('scripts.create.mfwReuseLoading') }}</span>
     </div>
     <template v-else-if="choices.length">
       <label
@@ -44,7 +44,7 @@
       </label>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
-      {{ t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
+      {{ $t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
     </div>
   </a-radio-group>
 </template>

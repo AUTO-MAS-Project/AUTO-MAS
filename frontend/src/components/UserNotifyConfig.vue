@@ -1,13 +1,13 @@
 <template>
   <div class="form-section">
     <div v-if="!hideSectionHeader" class="section-header">
-      <h3>{{ t('edit.notificationSettings') }}</h3>
+      <h3>{{ $t('edit.notificationSettings') }}</h3>
     </div>
 
     <div class="notify-channel-list">
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.enableNotifications') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.enableNotifications') }}</span>
           <a-switch
             v-model:checked="notify.Enabled"
             :disabled="loading"
@@ -18,7 +18,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.statistics') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.statistics') }}</span>
           <a-switch
             v-model:checked="notify.IfSendStatistic"
             :disabled="loading || !notify.Enabled"
@@ -29,7 +29,7 @@
 
       <div v-if="showSixStar" class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.notifyRecruit') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.notifyRecruit') }}</span>
           <a-switch
             v-model:checked="notify.IfSendSixStar"
             :disabled="loading || !notify.Enabled"
@@ -40,7 +40,7 @@
 
       <div v-if="showDropStatistics" class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.notifyDropStatistics') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.notifyDropStatistics') }}</span>
           <a-switch
             v-model:checked="notify.IfSendDropStatistics"
             :disabled="loading || !notify.Enabled"
@@ -53,8 +53,8 @@
       <div v-if="showPushLogMode" class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">
-            {{ t('edit.collectNodeDetails') }}
-            <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+            {{ $t('edit.collectNodeDetails') }}
+            <a-tooltip mouse-enter-delay="0.5" :title="$t('edit.collectsKeyMomentsFrom')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </span>
@@ -71,7 +71,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.emailNotification') }}</span>
           <a-switch
             v-model:checked="notify.IfSendMail"
             :disabled="loading || !notify.Enabled"
@@ -79,13 +79,13 @@
           />
         </div>
         <div v-if="notify.IfSendMail" class="notify-channel-config">
-          <a-form-item :label="t('edit.recipient')">
+          <a-form-item :label="$t('edit.recipient')">
             <a-input
               v-model:value="notify.ToAddress"
               type="email"
               inputmode="email"
               autocomplete="email"
-              :placeholder="t('edit.enterRecipientAddress')"
+              :placeholder="$t('edit.enterRecipientAddress')"
               size="large"
               :disabled="loading || !notify.Enabled"
               @blur="emitSave('Notify.ToAddress', notify.ToAddress)"
@@ -96,7 +96,7 @@
 
       <div class="notify-channel-item">
         <div class="notify-channel-header">
-          <span class="notify-channel-name">{{ t('edit.serverchan') }}</span>
+          <span class="notify-channel-name">{{ $t('edit.serverchan') }}</span>
           <a-switch
             v-model:checked="notify.IfServerChan"
             :disabled="loading || !notify.Enabled"
@@ -104,11 +104,11 @@
           />
         </div>
         <div v-if="notify.IfServerChan" class="notify-channel-config">
-          <a-form-item :label="t('edit.serverchan')">
+          <a-form-item :label="$t('edit.serverchan')">
             <a-input-password
               v-model:value="notify.ServerChanKey"
               autocomplete="off"
-              :placeholder="t('edit.enterSendkey')"
+              :placeholder="$t('edit.enterSendkey')"
               size="large"
               :disabled="loading || !notify.Enabled"
               @blur="emitSave('Notify.ServerChanKey', notify.ServerChanKey)"

@@ -15,17 +15,17 @@
       <div v-if="activeGroup" class="task-group-detail">
         <div class="task-group-detail-header">
           <span>{{
-            t('edit.maaEndGroupEnabled', {
+            $t('edit.maaEndGroupEnabled', {
               n: enabledGroupTaskCount(activeGroup),
               m: activeGroup.tasks.length,
             })
           }}</span>
           <label v-if="activeGroup.tasks.length > 1" class="task-group-toggle">
-            <span>{{ t('edit.maaEndEnableGroup') }}</span>
+            <span>{{ $t('edit.maaEndEnableGroup') }}</span>
             <a-switch
               :checked="isGroupEnabled(activeGroup)"
               :disabled="controlsDisabled"
-              :aria-label="t('edit.maaEndEnableGroup')"
+              :aria-label="$t('edit.maaEndEnableGroup')"
               @change="handleGroupSwitchChange(activeGroup, $event)"
             />
           </label>
@@ -48,11 +48,8 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { MAAEND_TASK_GROUPS, type MaaEndTaskSwitch } from '@/utils/maaEndProtocolSpace'
-
-const { t } = useI18n()
 
 interface FieldChange {
   key: string

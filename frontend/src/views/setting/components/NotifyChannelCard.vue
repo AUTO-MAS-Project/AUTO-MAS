@@ -48,7 +48,7 @@ const hintText = computed(() =>
     <span class="chan-icon sm" :style="{ '--c': iconColor, color: iconColor }">
       <component :is="icon" />
     </span>
-    <span class="row-name">{{ t(channel.nameKey) }}</span>
+    <span class="row-name">{{ $t(channel.nameKey) }}</span>
     <span class="state idle"><i class="dot off" />{{ stateText }}</span>
   </div>
 
@@ -62,7 +62,7 @@ const hintText = computed(() =>
       </span>
     </div>
     <div class="chan-name">
-      {{ t(channel.nameKey) }}<span class="tag">{{ groupTag }}</span>
+      {{ $t(channel.nameKey) }}<span class="tag">{{ groupTag }}</span>
     </div>
     <div v-if="summary" class="chan-summary" :title="summary">{{ summary }}</div>
     <div class="chan-hint">{{ hintText }} ›</div>

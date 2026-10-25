@@ -5,19 +5,19 @@
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
       :title="maaEndConfigMaskTitle"
-      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :description="`${maaEndConfigMaskDesc}\n${$t('edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-          {{ t('edit.saveConfiguration') }}
+          {{ $t('edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showMaaEndViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.maaendViewingTitle')"
-      :description="`${t('edit.maaendViewingDesc')}\n${t('edit.maaendViewingDesc2')}`"
+      :title="$t('edit.maaendViewingTitle')"
+      :description="`${$t('edit.maaendViewingDesc')}\n${$t('edit.maaendViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -27,7 +27,7 @@
           :loading="stoppingMaaEndConfig"
           @click="handleCloseMaaEndView"
         >
-          {{ t('edit.maaendViewClose') }}
+          {{ $t('edit.maaendViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -50,7 +50,7 @@
           class="config-form sections-column"
         >
           <a-card id="section-basic" class="section-card">
-            <template #title>{{ t('edit.basicInfo') }}</template>
+            <template #title>{{ $t('edit.basicInfo') }}</template>
             <BasicInfoSection
               v-model:form-data="formData"
               :loading="loading"
@@ -61,7 +61,7 @@
           </a-card>
 
           <a-card id="section-source" class="section-card">
-            <template #title>{{ t('edit.configurationSource') }}</template>
+            <template #title>{{ $t('edit.configurationSource') }}</template>
             <ConfigSourceSection
               v-model:form-data="formData"
               :loading="loading"
@@ -81,11 +81,11 @@
           </a-card>
 
           <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
+            <h3>{{ $t('edit.taskConfiguration') }}</h3>
             <a-space>
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ $t('edit.configRestoreTitle') }}
               </a-button>
             </a-space>
           </a-flex>
@@ -100,7 +100,7 @@
           </a-card>
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
-            <template #title>{{ t('edit.maaEndSanitySection') }}</template>
+            <template #title>{{ $t('edit.maaEndSanitySection') }}</template>
             <template #extra>
               <a-button
                 v-if="formData.Task.IfSanity && isSanityPlanMode"
@@ -109,7 +109,7 @@
                 @click="handleGoToPlans"
               >
                 <template #icon><CalendarOutlined /></template>
-                {{ t('edit.goPlan') }}
+                {{ $t('edit.goPlan') }}
               </a-button>
             </template>
             <SanityConfigSection
@@ -130,7 +130,7 @@
           </a-card>
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
-            <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
+            <template #title>{{ $t('edit.maaEndAutoCollectConfig') }}</template>
             <AutoCollectConfigSection
               :groups="autoCollectGroups"
               :options-loading="maaEndOptionsLoading"
@@ -141,7 +141,7 @@
           </a-card>
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-delivery" class="section-card">
-            <template #title>{{ t('edit.maaEndDeliveryConfig') }}</template>
+            <template #title>{{ $t('edit.maaEndDeliveryConfig') }}</template>
             <DeliveryConfigSection
               :form-data="formData"
               :loading="loading"
@@ -155,7 +155,7 @@
             class="optional-section"
             :bordered="false"
           >
-            <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
+            <a-collapse-panel key="limits" :header="$t('edit.maaEndDailyOnceTasks')">
               <DailyOnceSection
                 :value="formData.Task.DailyOnceTasks"
                 :loading="loading"
@@ -165,7 +165,7 @@
           </a-collapse>
 
           <a-collapse id="section-script" class="optional-section" :bordered="false">
-            <a-collapse-panel key="script" :header="t('comp.extraScripts')">
+            <a-collapse-panel key="script" :header="$t('comp.extraScripts')">
               <ExtraScriptSection
                 v-model:form-data="formData"
                 :loading="loading"
@@ -176,7 +176,7 @@
           </a-collapse>
 
           <a-collapse id="section-notify" class="optional-section" :bordered="false">
-            <a-collapse-panel key="notify" :header="t('edit.notificationSettings')">
+            <a-collapse-panel key="notify" :header="$t('edit.notificationSettings')">
               <UserNotifyConfig
                 v-model="formData.Notify"
                 :loading="loading"
@@ -209,7 +209,7 @@
       :script-name="MAAEND_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.maaendConfigRestoreScriptDesc')"
+      :script-desc="$t('edit.maaendConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -217,7 +217,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="$t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">

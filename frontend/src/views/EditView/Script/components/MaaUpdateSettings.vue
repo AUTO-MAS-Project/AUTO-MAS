@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ScriptMirrorCdkData } from '@/api'
 import type { MAAScriptConfig } from '@/types/script'
@@ -16,7 +15,6 @@ const emit = defineEmits<{
   'update:cdk': [value: string]
   'update:enabled': [value: boolean]
 }>()
-const { t } = useI18n()
 const { queryMirrorCdk } = useScriptApi()
 const checking = ref(false)
 const state = ref<ScriptMirrorCdkData | null>(null)
@@ -64,15 +62,15 @@ const handleEnabled = (enabled: boolean) => {
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.updateTakeover') }}</h3>
+      <h3>{{ $t('edit.updateTakeover') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverTip')">
+            <a-tooltip :title="$t('edit.updateTakeoverTip')">
               <span class="form-label">
-                {{ t('edit.updateTakeoverSwitch') }}
+                {{ $t('edit.updateTakeoverSwitch') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -88,16 +86,16 @@ const handleEnabled = (enabled: boolean) => {
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverCdkTip')">
+            <a-tooltip :title="$t('edit.updateTakeoverCdkTip')">
               <span class="form-label">
-                {{ t('edit.updateTakeoverCdk') }}
+                {{ $t('edit.updateTakeoverCdk') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input-password
             :value="update.MirrorChyanCDK"
-            :placeholder="t('edit.updateTakeoverCdkPlaceholder')"
+            :placeholder="$t('edit.updateTakeoverCdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"

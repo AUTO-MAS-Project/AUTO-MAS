@@ -1,4 +1,5 @@
 import { configDefaults, defineConfig } from 'vite-plus'
+import VueI18nPlugin from '@intlify/unplugin-vue-i18n/vite'
 import vue from '@vitejs/plugin-vue'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
@@ -62,7 +63,19 @@ export default defineConfig(({ command }) => {
   return {
     lint: lintConfig,
     fmt: formatConfig,
-    plugins: [vue(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
+    plugins: [
+      vue(),
+      // 词表在构建期预编译成消息函数，运行时也就不必再打包 vue-i18n 的消息编译器。
+      // 语料只在 src/i18n/locales 下，include 到该目录即可，不会波及其它 JSON。
+      VueI18nPlugin({
+        include: path.resolve(__dirname, './src/i18n/locales/**'),
+        runtimeOnly: true,
+        // 词表里有字面量的 '<' '>'（如「= < > ! などの演算子」的说明文案），
+        // 这里不做 HTML 检查；词条的尖括号安全性由 locales.test.ts 断言守着。
+        strictMessage: false,
+      }),
+      ...(sentryUploadPlugin ? [sentryUploadPlugin] : []),
+    ],
     base: './',
     resolve: {
       extensions: ['.js', '.ts', '.vue', '.json'],

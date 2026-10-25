@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('edit.mfwHotkey')"
+    :title="$t('edit.mfwHotkey')"
     :width="560"
     :keyboard="!recording"
     :mask-closable="!recording"
@@ -44,9 +44,9 @@
                 }}</span>
               </span>
               <span v-if="isChanged(option.name, field)" class="hotkey-hint">
-                {{ t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
+                {{ $t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
                 <a class="hotkey-link" @click="resetField(option.name, field)">
-                  {{ t('edit.mfwHotkeyRestore') }}
+                  {{ $t('edit.mfwHotkeyRestore') }}
                 </a>
               </span>
               <MaaFWHotkeyInput
@@ -69,20 +69,20 @@
       <div class="hotkey-footer">
         <div class="hotkey-footer-left">
           <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
-            {{ t('edit.mfwHotkeyRestoreAll') }}
+            {{ $t('edit.mfwHotkeyRestoreAll') }}
           </a-button>
           <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
                来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
           <a-dropdown :trigger="['click']">
             <a-button type="link" class="hotkey-reset-all">
-              {{ t('edit.mfwHotkeyImport') }}
+              {{ $t('edit.mfwHotkeyImport') }}
               <DownOutlined />
             </a-button>
             <template #overlay>
               <a-menu>
                 <a-menu-item-group
                   v-if="shownCandidates.length > 0"
-                  :title="t('edit.mfwHotkeyImportFrom', { dir: shownDir })"
+                  :title="$t('edit.mfwHotkeyImportFrom', { dir: shownDir })"
                 >
                   <a-menu-item
                     v-for="candidate in shownCandidates"
@@ -91,23 +91,23 @@
                   >
                     {{ candidate.source }} · {{ candidate.name }}
                     <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
-                      {{ t('edit.mfwHotkeyImportLastUsed') }}
+                      {{ $t('edit.mfwHotkeyImportLastUsed') }}
                     </a-tag>
                   </a-menu-item>
                 </a-menu-item-group>
                 <a-menu-divider v-if="shownCandidates.length > 0" />
                 <a-menu-item key="__pick-dir" @click="pickImportDirectory">
                   <FolderOpenOutlined />
-                  {{ t('edit.mfwHotkeyImportPickDir') }}
+                  {{ $t('edit.mfwHotkeyImportPickDir') }}
                 </a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
         </div>
         <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
+          <a-button @click="emit('update:open', false)">{{ $t('common.cancel') }}</a-button>
           <a-button type="primary" :disabled="invalidCount > 0" @click="handleSave">
-            {{ t('edit.mfwHotkeySave') }}
+            {{ $t('edit.mfwHotkeySave') }}
           </a-button>
         </a-space>
       </div>

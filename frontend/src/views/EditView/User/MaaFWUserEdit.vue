@@ -42,7 +42,7 @@
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
-            :account-placeholder="t(flavor.userPage.text.accountPlaceholderKey)"
+            :account-placeholder="$t(flavor.userPage.text.accountPlaceholderKey)"
             @save="handleFieldSave"
           />
 
@@ -144,15 +144,15 @@
       :script-name="MAAFW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.maafwConfigRestoreUserDesc')"
-      :script-desc="t('edit.maafwConfigRestoreScriptDesc')"
+      :user-desc="$t('edit.maafwConfigRestoreUserDesc')"
+      :script-desc="$t('edit.maafwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
     >
       <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="$t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">
@@ -177,7 +177,6 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue/es/form'
@@ -189,8 +188,6 @@ import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
 import { normalizeTaskSnapshot } from './MaaFWUserEdit/maafwTaskSnapshot'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/pageKit'
-
-const { t } = useI18n()
 
 const route = useRoute()
 

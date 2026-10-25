@@ -151,11 +151,11 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
     <!-- Tab1：配置组（默认内置 + 专项体力 + BetterGI User/ScriptGroup 内容）→ 配置组模式冻结 -->
     <a-tab-pane
       key="scriptgroup"
-      :tab="t('edit.bettergiTabScriptGroup')"
+      :tab="$t('edit.bettergiTabScriptGroup')"
       :disabled="props.groupMode"
     >
       <div v-if="!props.groupCandidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('edit.bettergiScriptGroupEmptyDir')" />
+        <a-empty :description="$t('edit.bettergiScriptGroupEmptyDir')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -177,23 +177,23 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
           </a-tag>
           <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
           <a-tag v-if="isGroupFrozen(candidate)" color="orange" size="small">
-            {{ t('edit.bettergiGroupFrozen') }}
+            {{ $t('edit.bettergiGroupFrozen') }}
           </a-tag>
           <a-tag
             v-else-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)"
             color="default"
             size="small"
           >
-            {{ t('edit.bettergiInQueue') }}
+            {{ $t('edit.bettergiInQueue') }}
           </a-tag>
         </div>
       </div>
     </a-tab-pane>
 
     <!-- Tab2：JS脚本（JS 脚本 / 自定义组候选） -->
-    <a-tab-pane key="js" :tab="t('edit.bettergiTabJsScript')">
+    <a-tab-pane key="js" :tab="$t('edit.bettergiTabJsScript')">
       <div v-if="!props.candidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('edit.bettergiTabJsEmpty')" />
+        <a-empty :description="$t('edit.bettergiTabJsEmpty')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -215,23 +215,23 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
           </a-tag>
           <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
           <a-tag v-if="isGroupFrozen(candidate)" color="orange" size="small">
-            {{ t('edit.bettergiGroupFrozen') }}
+            {{ $t('edit.bettergiGroupFrozen') }}
           </a-tag>
           <a-tag
             v-else-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)"
             color="default"
             size="small"
           >
-            {{ t('edit.bettergiInQueue') }}
+            {{ $t('edit.bettergiInQueue') }}
           </a-tag>
         </div>
       </div>
     </a-tab-pane>
 
     <!-- Tab4：录制（KeyMouseScript 键鼠脚本） -->
-    <a-tab-pane key="keymouse" :tab="t('edit.bettergiTabKeyMouse')">
+    <a-tab-pane key="keymouse" :tab="$t('edit.bettergiTabKeyMouse')">
       <div v-if="!props.keyMouseCandidates.length" class="add-dragon-candidates-empty">
-        <a-empty :description="t('edit.bettergiKeyMouseEmptyDir')" />
+        <a-empty :description="$t('edit.bettergiKeyMouseEmptyDir')" />
       </div>
       <div v-else class="add-dragon-candidates">
         <div
@@ -253,15 +253,15 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
           </a-tag>
           <span class="add-dragon-candidate-label">{{ groupLabel(candidate) }}</span>
           <a-tag v-if="!ALLOW_DUPLICATE_GROUPS && inDragon(candidate)" color="default" size="small">
-            {{ t('edit.bettergiInQueue') }}
+            {{ $t('edit.bettergiInQueue') }}
           </a-tag>
         </div>
       </div>
     </a-tab-pane>
 
     <!-- Tab3：地图追踪（AutoPathing 左树右表） -->
-    <a-tab-pane key="pathing" :tab="t('edit.bettergiTabPathing')" :force-render="true">
-      <p class="add-dragon-pathing-hint">{{ t('edit.bettergiPathingSelectHint') }}</p>
+    <a-tab-pane key="pathing" :tab="$t('edit.bettergiTabPathing')" :force-render="true">
+      <p class="add-dragon-pathing-hint">{{ $t('edit.bettergiPathingSelectHint') }}</p>
       <div class="add-dragon-pathing-layout">
         <a-tree
           v-if="pathingTreeData.length"
@@ -272,7 +272,7 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
           @select="handlePathingSelect"
         />
         <div v-else class="add-dragon-pathing-empty">
-          <a-empty :description="t('edit.bettergiPathingEmptyTree')" />
+          <a-empty :description="$t('edit.bettergiPathingEmptyTree')" />
         </div>
         <div class="add-dragon-pathing-files">
           <template v-if="selectedPathingFiles.length">
@@ -284,12 +284,12 @@ const handlePathingFileClick = (file: string, index: number, event: MouseEvent) 
             >
               <span class="add-dragon-pathing-file-name">{{ pathingDisplayName(file) }}</span>
               <a-tag size="small" :class="kindTagClass('pathing')">
-                {{ t('edit.bettergiGroupKindPathing') }}
+                {{ $t('edit.bettergiGroupKindPathing') }}
               </a-tag>
             </div>
           </template>
           <div v-else class="add-dragon-pathing-empty">
-            <a-empty :description="t('edit.bettergiPathingEmptyDir')" />
+            <a-empty :description="$t('edit.bettergiPathingEmptyDir')" />
           </div>
         </div>
       </div>

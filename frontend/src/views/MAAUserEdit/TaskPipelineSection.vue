@@ -1,61 +1,61 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <span class="section-note">{{ t('edit.annihilationDailyRunStart') }}</span>
+      <span class="section-note">{{ $t('edit.annihilationDailyRunStart') }}</span>
     </div>
 
     <a-alert
-      :message="t('edit.annihilationDailyTasksEach')"
-      :description="t('edit.annihilationMaaStartsOnce')"
+      :message="$t('edit.annihilationDailyTasksEach')"
+      :description="$t('edit.annihilationMaaStartsOnce')"
       type="info"
       show-icon
       class="task-alert"
     />
 
     <div class="task-list">
-      <div class="pipeline-phase">{{ t('edit.firstMaaSessionAnnihilation') }}</div>
+      <div class="pipeline-phase">{{ $t('edit.firstMaaSessionAnnihilation') }}</div>
       <!-- 绿票商店：任务链只认主界面、跑完也停在商店页，所以自己占一次启动，排在剿灭之前 -->
       <PipelineRow
-        :name="t('edit.maaGreenTicketStore')"
+        :name="$t('edit.maaGreenTicketStore')"
         :summary="greenTicketStoreSummary"
         :checked="formData.Task.IfGreenTicketStore"
         :disabled="loading"
-        :hint="t('edit.maaGreenTicketStoreHint')"
+        :hint="$t('edit.maaGreenTicketStoreHint')"
         @change="emitSave('Task.IfGreenTicketStore', $event)"
       >
         <div class="detail-inline">
           <a-tag :color="greenTicketStoreDoneThisMonth ? 'success' : 'warning'">
-            {{ t('edit.maaMonthStatus') }}
-            {{ greenTicketStoreDoneThisMonth ? t('edit.maaDone') : t('edit.maaNotDone') }}
+            {{ $t('edit.maaMonthStatus') }}
+            {{ greenTicketStoreDoneThisMonth ? $t('edit.maaDone') : $t('edit.maaNotDone') }}
           </a-tag>
           <a-button
             size="small"
             :disabled="loading"
             @click="emitSave('Data.GreenTicketStoreMonth', null)"
           >
-            {{ t('edit.resetState') }}
+            {{ $t('edit.resetState') }}
           </a-button>
           <a-button
             size="small"
             :disabled="loading"
             @click="emitSave('Data.GreenTicketStoreMonth', new Date().toISOString())"
           >
-            {{ t('edit.markAsDone2') }}
+            {{ $t('edit.markAsDone2') }}
           </a-button>
         </div>
       </PipelineRow>
 
       <PipelineRow
-        :name="t('edit.maaAnnihilation')"
+        :name="$t('edit.maaAnnihilation')"
         :summary="annihilationSummary"
         :checked="annihilationEnabled"
         :disabled="loading"
-        :hint="t('edit.maaAnnihilationHint')"
+        :hint="$t('edit.maaAnnihilationHint')"
         @change="handleAnnihilationToggle"
       >
         <a-row :gutter="16">
           <a-col :xs="24" :md="12">
-            <a-form-item :label="t('edit.annihilationStage')" class="detail-item">
+            <a-form-item :label="$t('edit.annihilationStage')" class="detail-item">
               <a-select
                 :value="formData.Task.Annihilation"
                 :options="annihilationStageOptions"
@@ -68,8 +68,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  :text="t('edit.maaAnnihilationStartDay')"
-                  :hint="t('edit.maaAnnihilationStartDayHint')"
+                  :text="$t('edit.maaAnnihilationStartDay')"
+                  :hint="$t('edit.maaAnnihilationStartDayHint')"
                 />
               </template>
               <a-select
@@ -83,29 +83,29 @@
           <a-col :span="24">
             <div class="detail-inline">
               <a-tag :color="annihilationCompletedThisWeek ? 'success' : 'warning'">
-                {{ t('edit.maaWeekStatus') }}
-                {{ annihilationCompletedThisWeek ? t('edit.maaDone') : t('edit.maaNotDone') }}
+                {{ $t('edit.maaWeekStatus') }}
+                {{ annihilationCompletedThisWeek ? $t('edit.maaDone') : $t('edit.maaNotDone') }}
               </a-tag>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', null)"
               >
-                {{ t('edit.resetState') }}
+                {{ $t('edit.resetState') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="loading"
                 @click="emitSave('Data.AnnihilationCompletedWeek', serverWeekMarker())"
               >
-                {{ t('edit.markAsDone2') }}
+                {{ $t('edit.markAsDone2') }}
               </a-button>
             </div>
           </a-col>
         </a-row>
       </PipelineRow>
 
-      <div class="pipeline-phase">{{ t('edit.secondMaaSessionDaily') }}</div>
+      <div class="pipeline-phase">{{ $t('edit.secondMaaSessionDaily') }}</div>
       <StaminaPipelineSection
         v-model:form-data="formData"
         :loading="loading"
@@ -143,7 +143,7 @@
 
       <!-- 基建换班：模式与自定义排班是它的附属配置，跟着它走 -->
       <PipelineRow
-        :name="t('edit.maaInfrast')"
+        :name="$t('edit.maaInfrast')"
         :summary="infrastSummary"
         :checked="formData.Task.IfInfrast"
         :disabled="loading"
@@ -154,8 +154,8 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  :text="t('edit.maaInfrastMode')"
-                  :hint="t('edit.maaInfrastModeHint')"
+                  :text="$t('edit.maaInfrastMode')"
+                  :hint="$t('edit.maaInfrastModeHint')"
                 />
               </template>
               <a-select
@@ -172,14 +172,14 @@
             <a-form-item class="detail-item">
               <template #label>
                 <LabelWithHint
-                  :text="t('edit.maaCustomInfrastFile')"
-                  :hint="t('edit.maaCustomInfrastFileHint')"
+                  :text="$t('edit.maaCustomInfrastFile')"
+                  :hint="$t('edit.maaCustomInfrastFileHint')"
                 />
               </template>
               <div class="detail-inline">
                 <a-input
                   :value="formData.Task.InfrastName"
-                  :placeholder="t('edit.noConfigurationImportedYet')"
+                  :placeholder="$t('edit.noConfigurationImportedYet')"
                   readonly
                   class="infrast-name"
                 />
@@ -189,7 +189,7 @@
                   :loading="infrastructureImporting"
                   @click="emit('selectAndImportInfrastructureConfig')"
                 >
-                  {{ t('edit.pickImport') }}
+                  {{ $t('edit.pickImport') }}
                 </a-button>
               </div>
             </a-form-item>
@@ -197,14 +197,14 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint :text="t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
+                <LabelWithHint :text="$t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
               </template>
               <a-select
                 :value="String(infrastPlanSelect)"
                 :options="infrastSelectOptions"
                 :loading="infrastructureOptionsLoading"
                 :disabled="loading"
-                :placeholder="t('edit.pickCustomBaseLayout')"
+                :placeholder="$t('edit.pickCustomBaseLayout')"
                 @change="handleInfrastPlanChange"
               />
             </a-form-item>
@@ -214,7 +214,7 @@
 
       <!-- 无配置的一键任务：低频改动，压成一行 -->
       <PipelineRow
-        :name="t('edit.maaDaily')"
+        :name="$t('edit.maaDaily')"
         :checked="dailyTasks.some(task => formData.Task[task.key])"
         :toggleable="false"
         :has-detail="false"
@@ -236,8 +236,8 @@
 
       <!-- 更换主题：主题名称在 MAA 中配置，MAS 仅提供调度开关并透传；排在任务队列最后 -->
       <PipelineRow
-        :name="t('edit.maaSwitchTheme')"
-        :summary="formData.Task.IfSwitchTheme ? t('edit.maaSwitchThemeHint') : ''"
+        :name="$t('edit.maaSwitchTheme')"
+        :summary="formData.Task.IfSwitchTheme ? $t('edit.maaSwitchThemeHint') : ''"
         :checked="formData.Task.IfSwitchTheme"
         :disabled="loading"
         :has-detail="false"

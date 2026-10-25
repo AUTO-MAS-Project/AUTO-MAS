@@ -3,7 +3,7 @@
     <div class="failure-body">
       <h2 class="failure-title">
         <i class="failure-dot" aria-hidden="true"></i>
-        {{ t('init.step.failed', { title }) }}
+        {{ $t('init.step.failed', { title }) }}
       </h2>
 
       <p v-if="message" class="failure-message">{{ message }}</p>
@@ -19,7 +19,7 @@
           :disabled="updating && action.kind !== 'open-log'"
           @click="emit('action', action.kind)"
         >
-          {{ t(action.labelKey) }}
+          {{ $t(action.labelKey) }}
         </a-button>
         <a-button
           v-if="runtimeMode === 'managed' && canUpdateRuntime"
@@ -27,10 +27,10 @@
           :disabled="doctorRunning"
           @click="updateRuntime"
         >
-          {{ t('init.failure.updateRuntime') }}
+          {{ $t('init.failure.updateRuntime') }}
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
-          {{ t('init.backend.viewDocs') }}
+          {{ $t('init.backend.viewDocs') }}
         </a-button>
       </div>
 
@@ -42,7 +42,7 @@
       />
 
       <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
-        <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
+        <p class="mirrors-title">{{ $t('init.failure.mirrorTitle') }}</p>
         <button
           v-for="mirror in mirrors"
           :key="mirror.key"
@@ -57,7 +57,7 @@
           <span class="mirror-radio" aria-hidden="true"></span>
           <span class="mirror-name">{{ mirror.name }}</span>
           <span class="mirror-note">
-            {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
+            {{ mirror.recommended ? $t('init.failure.mirrorRecommended') : mirror.description }}
           </span>
         </button>
       </div>
@@ -68,9 +68,9 @@
         :open="detailsOpen"
         @toggle="detailsOpen = ($event.target as HTMLDetailsElement).open"
       >
-        <summary>{{ t('init.failure.details') }}</summary>
+        <summary>{{ $t('init.failure.details') }}</summary>
 
-        <div v-if="doctorRunning" class="details-line">{{ t('init.failure.doctorRunning') }}</div>
+        <div v-if="doctorRunning" class="details-line">{{ $t('init.failure.doctorRunning') }}</div>
         <template v-else-if="doctorChecks">
           <div v-if="doctorChecks.length > 0" class="doctor-checks">
             <span v-for="check in doctorChecks" :key="check.id" class="doctor-check">
@@ -78,31 +78,31 @@
               <b :class="{ bad: check.status !== 'ok' }">{{ check.message || check.status }}</b>
             </span>
           </div>
-          <div v-else class="details-line">{{ t('init.failure.doctorEmpty') }}</div>
+          <div v-else class="details-line">{{ $t('init.failure.doctorEmpty') }}</div>
         </template>
 
         <pre v-if="failureLogs" class="failure-log">{{ failureLogs }}</pre>
       </details>
 
       <div class="failure-support">
-        <p class="support-hint">{{ t('init.failure.exportLogsHint') }}</p>
+        <p class="support-hint">{{ $t('init.failure.exportLogsHint') }}</p>
         <a-space wrap>
           <a-button :loading="exportingLogs" @click="packageLogs">
             <template #icon><FileZipOutlined /></template>
-            {{ t('logs.package') }}
+            {{ $t('logs.package') }}
           </a-button>
           <a-button class="failure-help" @click="handleJoinGroup">
             <template #icon><TeamOutlined /></template>
-            {{ t('init.failure.joinGroup') }}
+            {{ $t('init.failure.joinGroup') }}
           </a-button>
         </a-space>
       </div>
 
       <p v-if="showSkipButton" class="failure-skip">
         <button type="button" :disabled="updating" @click="emit('skip')">
-          {{ t('init.step.skip') }}
+          {{ $t('init.step.skip') }}
         </button>
-        {{ t('init.step.skipConsequence') }}
+        {{ $t('init.step.skipConsequence') }}
       </p>
     </div>
   </div>

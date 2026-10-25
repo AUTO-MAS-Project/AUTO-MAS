@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useEventListener, useTimeoutFn } from '@vueuse/core'
-import { useI18n } from 'vue-i18n'
 import { CloseOutlined } from '@ant-design/icons-vue'
 import { kindTagClass } from './bettergiQueueIdentity'
 import type { ConfigGroupIdentity } from './bettergiQueueIdentity'
@@ -11,7 +10,6 @@ const props = defineProps<{ groupLabel: (item: ConfigGroupIdentity) => string }>
 const items = defineModel<AddChipItem[]>('items', { required: true })
 const draft = defineModel<string>('draft', { required: true })
 const emit = defineEmits<{ commit: [] }>()
-const { t } = useI18n()
 const addDraftInputRef = ref<HTMLInputElement | null>(null)
 
 const addDraftFocused = ref(false)
@@ -199,7 +197,7 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
         kindTagClass(chip.kind),
         { 'add-dragon-tag-chip-selected': isChipSelected(chip.chipUid) },
       ]"
-      :title="t('edit.bettergiChipSelectHint')"
+      :title="$t('edit.bettergiChipSelectHint')"
       @mousedown="handleChipMouseDown(chip, $event)"
       @mouseenter="handleChipMouseEnter(chip)"
       @click.stop="handleChipClick(chip, $event)"
@@ -215,7 +213,7 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
       ref="addDraftInputRef"
       v-model="draft"
       class="add-dragon-tag-draft-input"
-      :placeholder="items.length ? '' : t('edit.bettergiInputGroupNames')"
+      :placeholder="items.length ? '' : $t('edit.bettergiInputGroupNames')"
       @focus="addDraftFocused = true"
       @blur="addDraftFocused = false"
       @keydown="handleAddDraftKeydown"

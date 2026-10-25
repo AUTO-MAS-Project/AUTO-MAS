@@ -1,8 +1,8 @@
 <template>
-  <ScriptEditHeader script-type="Okww" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="Okww" :title="$t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card :title="$t('edit.okWwScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ok-ww</a-tag>
       </template>
@@ -10,22 +10,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsOkWwScript')">
+                    {{ $t('edit.scriptName') }}
+                    <a-tooltip :title="$t('edit.tellsOkWwScript')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -36,8 +36,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.okWwPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
+                    {{ $t('edit.okWwPath') }}
+                    <a-tooltip :title="$t('edit.pickDirectoryHoldingOk4')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -45,7 +45,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
+                    :placeholder="$t('edit.pickDirectoryHoldingOk2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -61,7 +61,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    {{ t('edit.import') }}
+                    {{ $t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -72,7 +72,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickDirectory') }}
+                    {{ $t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -82,15 +82,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ $t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.masTakesOverStarting')">
+                  <a-tooltip :title="$t('edit.masTakesOverStarting')">
                     <span class="form-label">
-                      {{ t('edit.enableGameConfiguration') }}
+                      {{ $t('edit.enableGameConfiguration') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -101,15 +101,15 @@
                   class="modern-input"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
+                  <a-tooltip :title="$t('edit.okwwAccountSwitchHint')">
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -127,7 +127,7 @@
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
                 <span class="control-hint">
-                  {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
+                  {{ $t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
                 </span>
               </a-form-item>
             </a-col>
@@ -137,9 +137,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
+                  <a-tooltip :title="$t('edit.beforeLaunchingGameRun')">
                     <span class="form-label">
-                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
+                      {{ $t('edit.updateAutomaticallyBeforeLaunching') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -151,8 +151,8 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'IfAutoUpdate', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
                 <span
                   v-if="
@@ -161,16 +161,16 @@
                   "
                   class="control-hint"
                 >
-                  {{ t('edit.autoUpdateNeedsLauncher') }}
+                  {{ $t('edit.autoUpdateNeedsLauncher') }}
                 </span>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
+                  <a-tooltip :title="$t('edit.largeVersionGapNeeds')">
                     <span class="form-label">
-                      {{ t('edit.wholeFileSyncLimit') }}
+                      {{ $t('edit.wholeFileSyncLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -202,12 +202,12 @@
                 <template #icon>
                   <ThunderboltOutlined />
                 </template>
-                {{ t('edit.checkUpdates') }}
+                {{ $t('edit.checkUpdates') }}
               </a-button>
             </a-col>
             <a-col :span="12">
               <span class="label-hint">
-                {{ t('edit.masChecksOfficialVersion') }}
+                {{ $t('edit.masChecksOfficialVersion') }}
               </span>
             </a-col>
           </a-row>
@@ -218,8 +218,8 @@
                 <template #label>
                   <div class="launch-type-label">
                     <span class="form-label">
-                      {{ t('edit.launchType') }}
-                      <a-tooltip :title="t('edit.launchTypeHint')">
+                      {{ $t('edit.launchType') }}
+                      <a-tooltip :title="$t('edit.launchTypeHint')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -232,10 +232,10 @@
                       :disabled="!okwwConfig.Game.Enabled"
                     >
                       <a-radio-button value="Client">
-                        {{ t('edit.launchDirectly') }}
+                        {{ $t('edit.launchDirectly') }}
                       </a-radio-button>
                       <a-radio-button value="Launcher">
-                        {{ t('edit.launchViaLauncher') }}
+                        {{ $t('edit.launchViaLauncher') }}
                       </a-radio-button>
                     </a-radio-group>
                   </div>
@@ -243,7 +243,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="okwwConfig.Game.Path"
-                    :placeholder="t('edit.pickLauncherDirectory')"
+                    :placeholder="$t('edit.pickLauncherDirectory')"
                     size="large"
                     class="path-input"
                     readonly
@@ -260,7 +260,7 @@
                     <template #icon>
                       <ImportOutlined />
                     </template>
-                    {{ t('edit.import') }}
+                    {{ $t('edit.import') }}
                   </a-button>
                   <a-button
                     size="large"
@@ -271,7 +271,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickDirectory') }}
+                    {{ $t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
                 <a-alert
@@ -283,10 +283,10 @@
                 />
                 <div class="derived-client-row">
                   <span class="label-hint">
-                    {{ t('edit.gameClientPathLabel') }}
+                    {{ $t('edit.gameClientPathLabel') }}
                     <a-tooltip
                       v-if="okwwConfig.Game.Type === 'Launcher'"
-                      :title="t('edit.clientPathOptionalHint')"
+                      :title="$t('edit.clientPathOptionalHint')"
                     >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
@@ -294,7 +294,7 @@
                   <a-input-group compact class="path-input-group">
                     <a-input
                       :value="okwwConfig.Game.ClientPath || derivedClientPath"
-                      :placeholder="t('edit.clientPathPending')"
+                      :placeholder="$t('edit.clientPathPending')"
                       size="large"
                       class="path-input"
                       readonly
@@ -309,7 +309,7 @@
                       <template #icon>
                         <FolderOpenOutlined />
                       </template>
-                      {{ t('edit.selectFile') }}
+                      {{ $t('edit.selectFile') }}
                     </a-button>
                     <a-button
                       v-if="okwwConfig.Game.ClientPath"
@@ -318,7 +318,7 @@
                       :disabled="!okwwConfig.Game.Enabled || isSaving"
                       @click="resetClientPath"
                     >
-                      {{ t('edit.resetAutoLocate') }}
+                      {{ $t('edit.resetAutoLocate') }}
                     </a-button>
                   </a-input-group>
                 </div>
@@ -328,15 +328,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
+                    {{ $t('edit.launchArguments') }}
+                    <a-tooltip :title="$t('edit.gameLaunchArgumentsNot2')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
-                  :placeholder="t('edit.enterGameLaunchArguments')"
+                  :placeholder="$t('edit.enterGameLaunchArguments')"
                   size="large"
                   class="modern-input"
                   :disabled="!okwwConfig.Game.Enabled"
@@ -348,8 +348,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
+                    {{ $t('edit.startupWait') }}
+                    <a-tooltip :title="$t('edit.howLongWaitAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -370,7 +370,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="okwwConfig.Run.HardTimeLimit"
@@ -381,8 +381,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                    {{ $t('edit.runsPerDay') }}
+                    <a-tooltip :title="$t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -401,8 +401,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.giveUpAfterThis')">
+                    {{ $t('edit.retryLimit2') }}
+                    <a-tooltip :title="$t('edit.giveUpAfterThis')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -421,8 +421,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
+                    {{ $t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="$t('edit.logThatStaysUnchanged')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -445,7 +445,7 @@
 
   <a-modal
     v-model:open="updateModal.open"
-    :title="updateModal.running ? t('edit.okwwUpdateProgress') : t('edit.okwwCheckUpdateTitle')"
+    :title="updateModal.running ? $t('edit.okwwUpdateProgress') : $t('edit.okwwCheckUpdateTitle')"
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
     :footer="updateModal.running ? null : undefined"
@@ -454,14 +454,14 @@
   >
     <template v-if="!updateModal.running">
       <a-form layout="vertical">
-        <a-form-item :label="t('edit.pickUserWhoseServer')">
+        <a-form-item :label="$t('edit.pickUserWhoseServer')">
           <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
             <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
               {{ user.name }}（{{ user.resource }}）
             </a-select-option>
           </a-select>
         </a-form-item>
-        <a-alert type="info" show-icon :message="t('edit.wutheringWavesWillBe')" />
+        <a-alert type="info" show-icon :message="$t('edit.wutheringWavesWillBe')" />
       </a-form>
     </template>
     <template v-else>
@@ -473,13 +473,13 @@
 
   <a-modal
     v-model:open="candidateModal.open"
-    :title="t('edit.pickImportPath')"
+    :title="$t('edit.pickImportPath')"
     :confirm-loading="candidateModal.loading"
     @ok="confirmCandidateSelection"
     @cancel="closeCandidateModal"
   >
     <a-form layout="vertical">
-      <a-form-item :label="t('edit.severalUsablePathsWere')">
+      <a-form-item :label="$t('edit.severalUsablePathsWere')">
         <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
           <a-select-option
             v-for="candidate in candidateModal.candidates"

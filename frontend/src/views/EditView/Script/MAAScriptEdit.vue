@@ -1,17 +1,17 @@
 <template>
-  <ScriptEditHeader script-type="MAA" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="MAA" :title="$t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.maaScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card :title="$t('edit.maaScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag"> MAA </a-tag>
       </template>
 
-      <a-alert :message="t('edit.howUseThis')" type="info" show-icon class="notice-alert">
+      <a-alert :message="$t('edit.howUseThis')" type="info" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
-            <p>{{ t('edit.annihilationLaunchesItsOwn') }}</p>
-            <p>{{ t('edit.maaAdapterSupportsEmulators') }}</p>
+            <p>{{ $t('edit.annihilationLaunchesItsOwn') }}</p>
+            <p>{{ $t('edit.maaAdapterSupportsEmulators') }}</p>
           </div>
         </template>
       </a-alert>
@@ -20,22 +20,22 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip :title="t('edit.giveScriptNameYou')">
+                  <a-tooltip :title="$t('edit.giveScriptNameYou')">
                     <span class="form-label">
-                      {{ t('edit.scriptName') }}
+                      {{ $t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -45,9 +45,9 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <a-tooltip :title="t('edit.pickFolderHoldingMaa2')">
+                  <a-tooltip :title="$t('edit.pickFolderHoldingMaa2')">
                     <span class="form-label">
-                      {{ t('edit.maaPath') }}
+                      {{ $t('edit.maaPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -55,7 +55,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    :placeholder="t('edit.pickFolderHoldingMaa')"
+                    :placeholder="$t('edit.pickFolderHoldingMaa')"
                     size="large"
                     class="path-input"
                     readonly
@@ -64,7 +64,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFolder') }}
+                    {{ $t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -75,15 +75,15 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ $t('edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.pickEmulatorUse')">
+                  <a-tooltip :title="$t('edit.pickEmulatorUse')">
                     <span class="form-label">
-                      {{ t('edit.emulator') }}
+                      {{ $t('edit.emulator') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -91,7 +91,7 @@
                 <a-select
                   v-model:value="maaConfig.Emulator.Id"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="$t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -111,12 +111,12 @@
                   <a-tooltip
                     :title="
                       emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
+                        ? $t('edit.thisEmulatorCannotBe')
+                        : $t('edit.pickEmulatorInstance')
                     "
                   >
                     <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
+                      {{ $t('edit.emulatorInstance') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -130,7 +130,7 @@
                   "
                   v-model:value="maaConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="$t('edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)"
                 />
@@ -139,7 +139,7 @@
                   v-else
                   v-model:value="maaConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :placeholder="$t('edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!maaConfig.Emulator.Id"
                   @change="handleChange('Emulator', 'Index', $event)"
@@ -161,7 +161,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="maaConfig.Run.HardTimeLimit"
@@ -171,9 +171,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whatDoWhenSwitching')">
+                  <a-tooltip :title="$t('edit.whatDoWhenSwitching')">
                     <span class="form-label">
-                      {{ t('edit.accountSwitchingMethod') }}
+                      {{ $t('edit.accountSwitchingMethod') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -184,13 +184,13 @@
                   @change="handleChange('Run', 'TaskTransitionMethod', $event)"
                 >
                   <a-select-option value="ExitEmulator">{{
-                    t('edit.restartEmulator')
+                    $t('edit.restartEmulator')
                   }}</a-select-option>
                   <a-select-option value="ExitGame">{{
-                    t('edit.restartArknights')
+                    $t('edit.restartArknights')
                   }}</a-select-option>
                   <a-select-option value="NoAction">{{
-                    t('edit.switchAccountDirectly')
+                    $t('edit.switchAccountDirectly')
                   }}</a-select-option>
                 </a-select>
               </a-form-item>
@@ -198,9 +198,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.skipRunOnceThis')">
+                  <a-tooltip :title="$t('edit.skipRunOnceThis')">
                     <span class="form-label">
-                      {{ t('edit.runsPerDayThis') }}
+                      {{ $t('edit.runsPerDayThis') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -221,9 +221,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatAnnihilationRunAs')">
+                  <a-tooltip :title="$t('edit.treatAnnihilationRunAs')">
                     <span class="form-label">
-                      {{ t('edit.annihilationTimeoutMinutes') }}
+                      {{ $t('edit.annihilationTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -248,9 +248,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatDailyRunAs2')">
+                  <a-tooltip :title="$t('edit.treatDailyRunAs2')">
                     <span class="form-label">
-                      {{ t('edit.dailyRunTimeoutMinutes') }}
+                      {{ $t('edit.dailyRunTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -269,9 +269,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
+                  <a-tooltip :title="$t('edit.ifRunStillUnfinished')">
                     <span class="form-label">
-                      {{ t('edit.retryLimit') }}
+                      {{ $t('edit.retryLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -291,15 +291,15 @@
         </div>
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameUpdate') }}</h3>
+            <h3>{{ $t('edit.gameUpdate') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeStartingMaaCompare')">
+                  <a-tooltip :title="$t('edit.beforeStartingMaaCompare')">
                     <span class="form-label">
-                      {{ t('edit.checkGameUpdateBefore') }}
+                      {{ $t('edit.checkGameUpdateBefore') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -310,17 +310,17 @@
                   style="width: 100%"
                   @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
+                  <a-tooltip :title="$t('edit.whenClientDetectedAs')">
                     <span class="form-label">
-                      {{ t('edit.installGamePackageAutomatically') }}
+                      {{ $t('edit.installGamePackageAutomatically') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -332,17 +332,17 @@
                   :disabled="!maaConfig.Run.IfCheckGameUpdate"
                   @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
+                  <a-tooltip :title="$t('edit.timeoutDownloadingInstallingGame')">
                     <span class="form-label">
-                      {{ t('edit.gameUpdateTimeoutMinutes') }}
+                      {{ $t('edit.gameUpdateTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>

@@ -70,13 +70,13 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
 <template>
   <a-row :gutter="12">
     <a-col v-if="showResolution" :span="12">
-      <a-form-item :label="t('emulator2.fieldResolution')">
+      <a-form-item :label="$t('emulator2.fieldResolution')">
         <a-select
           :value="model.resolution ?? undefined"
           :options="resolutionOptions"
           :disabled="isAvd"
           :allow-clear="clearable"
-          :placeholder="t('emulator2.keepCurrent')"
+          :placeholder="$t('emulator2.keepCurrent')"
           size="large"
           style="width: 100%"
           @update:value="(value: TierForm['resolution']) => update('resolution', value)"
@@ -85,12 +85,12 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
       </a-form-item>
     </a-col>
     <a-col :span="12">
-      <a-form-item :label="t('emulator2.fieldFps')">
+      <a-form-item :label="$t('emulator2.fieldFps')">
         <a-select
           :value="model.fps ?? undefined"
           :options="fpsOptions"
           :allow-clear="clearable"
-          :placeholder="t('emulator2.keepCurrent')"
+          :placeholder="$t('emulator2.keepCurrent')"
           size="large"
           style="width: 100%"
           @update:value="(value: number) => update('fps', value)"
@@ -99,12 +99,12 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
       </a-form-item>
     </a-col>
     <a-col :span="12">
-      <a-form-item :label="t('emulator2.fieldCpu')">
+      <a-form-item :label="$t('emulator2.fieldCpu')">
         <a-select
           :value="model.cpu ?? undefined"
           :options="cpuOptions"
           :allow-clear="clearable"
-          :placeholder="t('emulator2.keepCurrent')"
+          :placeholder="$t('emulator2.keepCurrent')"
           size="large"
           style="width: 100%"
           @update:value="(value: number) => update('cpu', value)"
@@ -114,14 +114,14 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
     </a-col>
     <a-col :span="12">
       <a-form-item
-        :label="t('emulator2.fieldMemory')"
-        :extra="isAvd ? t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
+        :label="$t('emulator2.fieldMemory')"
+        :extra="isAvd ? $t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
       >
         <a-select
           :value="model.memoryMb ?? undefined"
           :options="memoryOptions"
           :allow-clear="clearable"
-          :placeholder="t('emulator2.keepCurrent')"
+          :placeholder="$t('emulator2.keepCurrent')"
           size="large"
           style="width: 100%"
           @update:value="(value: number) => update('memoryMb', value)"

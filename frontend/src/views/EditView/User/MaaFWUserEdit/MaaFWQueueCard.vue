@@ -11,11 +11,11 @@
           <div class="preset-title-row">
             <h3 class="preset-name">{{ title }}</h3>
             <span v-if="invalidCount" class="queue-invalid-tag">
-              {{ t('edit.queueInvalidCount', { count: invalidCount }) }}
+              {{ $t('edit.queueInvalidCount', { count: invalidCount }) }}
             </span>
           </div>
           <div v-if="taskCount !== undefined" class="preset-task-count">
-            {{ t('edit.queueTaskCount', { count: taskCount }) }}
+            {{ $t('edit.queueTaskCount', { count: taskCount }) }}
           </div>
           <MaaFWDescriptionView
             v-if="description && basePath !== undefined"
@@ -35,7 +35,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { BookOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
@@ -53,8 +52,6 @@ defineProps<{
   invalidCount?: number
   chips: ReadonlyArray<{ id: string; label: string; invalid?: boolean }>
 }>()
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

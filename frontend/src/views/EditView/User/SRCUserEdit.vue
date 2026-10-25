@@ -4,8 +4,8 @@
     <GuiSessionMask
       :open="showSrcConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.srcConfigurationProgress')"
-      :description="`${t('edit.srcConfigurationThisUser')}\n${t('edit.clickSaveConfigurationWhen2')}`"
+      :title="$t('edit.srcConfigurationProgress')"
+      :description="`${$t('edit.srcConfigurationThisUser')}\n${$t('edit.clickSaveConfigurationWhen2')}`"
     >
       <template #actions>
         <a-button
@@ -15,15 +15,15 @@
           :loading="stoppingSrcConfig"
           @click="handleSaveSRCConfig"
         >
-          {{ t('edit.saveConfiguration') }}
+          {{ $t('edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showSrcViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.srcViewingTitle')"
-      :description="`${t('edit.srcViewingDesc')}\n${t('edit.srcViewingDesc2')}`"
+      :title="$t('edit.srcViewingTitle')"
+      :description="`${$t('edit.srcViewingDesc')}\n${$t('edit.srcViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -32,7 +32,7 @@
           :loading="stoppingSrcConfig"
           @click="handleSaveSRCConfig"
         >
-          {{ t('edit.srcViewClose') }}
+          {{ $t('edit.srcViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -80,13 +80,13 @@
             wrap="wrap"
             gap="small"
           >
-            <h3>{{ t('edit.stageConfiguration') }}</h3>
+            <h3>{{ $t('edit.stageConfiguration') }}</h3>
             <a-space>
               <a-button size="small" @click="restoreOpen = true">
                 <template #icon>
                   <HistoryOutlined />
                 </template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ $t('edit.configRestoreTitle') }}
               </a-button>
             </a-space>
           </a-flex>
@@ -123,8 +123,8 @@
       :script-name="SRC_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.srcConfigRestoreUserDesc')"
-      :script-desc="t('edit.srcConfigRestoreScriptDesc')"
+      :user-desc="$t('edit.srcConfigRestoreUserDesc')"
+      :script-desc="$t('edit.srcConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -132,7 +132,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="$t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">

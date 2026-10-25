@@ -71,11 +71,11 @@
       <div v-if="item.endTime" class="activity-meta">
         <div class="activity-countdown">
           <span v-if="item.countdownLabel">{{
-            t(upcoming ? 'home.countdown.startsIn' : 'home.countdown.left')
+            $t(upcoming ? 'home.countdown.startsIn' : 'home.countdown.left')
           }}</span>
           <a-statistic-countdown
             :value="targetTime"
-            :format="t(item.countdownDaysOnly ? 'home.countdown.d' : 'home.countdown.dh')"
+            :format="$t(item.countdownDaysOnly ? 'home.countdown.d' : 'home.countdown.dh')"
             :value-style="countdownStyle"
             @finish="emit('boundary', targetTime)"
           />

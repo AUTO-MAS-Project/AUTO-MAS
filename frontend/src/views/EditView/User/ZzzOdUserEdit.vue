@@ -4,7 +4,7 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+            <router-link to="/scripts">{{ $t('edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="`/scripts/${scriptId}/edit/zzzod`" class="breadcrumb-link">
@@ -12,7 +12,7 @@
             </router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+            {{ isEdit ? $t('comp.editUser') : $t('comp.addUser2') }}
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
@@ -22,9 +22,9 @@
           <template #icon>
             <FolderOpenOutlined />
           </template>
-          {{ t('comp.openConfigFolder') }}
+          {{ $t('comp.openConfigFolder') }}
         </a-button>
-        <a-tooltip :title="t('edit.zzzodOpenNativeConfigHint')">
+        <a-tooltip :title="$t('edit.zzzodOpenNativeConfigHint')">
           <a-button
             v-if="!showZzzodConfigMask && !showZzzodViewMask"
             type="primary"
@@ -37,7 +37,7 @@
             <template #icon>
               <SettingOutlined />
             </template>
-            {{ t('edit.zzzodOpenNativeConfig') }}
+            {{ $t('edit.zzzodOpenNativeConfig') }}
           </a-button>
         </a-tooltip>
         <a-button
@@ -50,13 +50,13 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.configuring') }}
+          {{ $t('edit.configuring') }}
         </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
-          {{ t('edit.back') }}
+          {{ $t('edit.back') }}
         </a-button>
       </a-space>
     </div>
@@ -64,8 +64,8 @@
     <GuiSessionMask
       :open="showZzzodConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.zzzodConfiguringTitle')"
-      :description="`${t('edit.zzzodConfiguringDesc')}\n${t('edit.zzzodConfiguringDesc2')}`"
+      :title="$t('edit.zzzodConfiguringTitle')"
+      :description="`${$t('edit.zzzodConfiguringDesc')}\n${$t('edit.zzzodConfiguringDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -74,15 +74,15 @@
           size="large"
           @click="handleSaveZzzodConfig"
         >
-          {{ t('edit.saveSettings') }}
+          {{ $t('edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showZzzodViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.zzzodViewingTitle')"
-      :description="`${t('edit.zzzodViewingDesc')}\n${t('edit.zzzodViewingDesc2')}`"
+      :title="$t('edit.zzzodViewingTitle')"
+      :description="`${$t('edit.zzzodViewingDesc')}\n${$t('edit.zzzodViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -92,7 +92,7 @@
           :loading="stoppingZzzodConfig"
           @click="handleCloseZzzodView"
         >
-          {{ t('edit.zzzodViewClose') }}
+          {{ $t('edit.zzzodViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -103,7 +103,7 @@
           <a-form :model="formData" layout="vertical" class="config-form">
             <div class="form-section">
               <div class="section-header">
-                <h3>{{ t('edit.basicInfo') }}</h3>
+                <h3>{{ $t('edit.basicInfo') }}</h3>
               </div>
 
               <a-row :gutter="24">
@@ -111,15 +111,15 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.username') }}
-                        <a-tooltip :title="t('edit.zzzodUserNameHint')">
+                        {{ $t('edit.username') }}
+                        <a-tooltip :title="$t('edit.zzzodUserNameHint')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
                     </template>
                     <a-input
                       v-model:value="formData.userName"
-                      :placeholder="t('edit.enterUsername')"
+                      :placeholder="$t('edit.enterUsername')"
                       size="large"
                       class="modern-input"
                       @blur="handleNameBlur"
@@ -130,8 +130,8 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.enabled') }}
-                        <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+                        {{ $t('edit.enabled') }}
+                        <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
@@ -142,8 +142,8 @@
                       class="modern-select"
                       @change="saveField('Info.Status', formData.Info.Status)"
                     >
-                      <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                      <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                      <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                      <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                     </a-select>
                   </a-form-item>
                 </a-col>
@@ -169,8 +169,8 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodDirectInstanceRun') }}
-                        <a-tooltip :title="t('edit.zzzodDirectInstanceRunHint')">
+                        {{ $t('edit.zzzodDirectInstanceRun') }}
+                        <a-tooltip :title="$t('edit.zzzodDirectInstanceRunHint')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
@@ -189,8 +189,8 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodQuickImport') }}
-                        <a-tooltip :title="t('edit.zzzodImportConfigHint')">
+                        {{ $t('edit.zzzodQuickImport') }}
+                        <a-tooltip :title="$t('edit.zzzodImportConfigHint')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
@@ -199,7 +199,7 @@
                       <a-select
                         v-model:value="importSourceIdx"
                         :options="importInstanceOptions"
-                        :placeholder="t('edit.zzzodImportPlaceholder')"
+                        :placeholder="$t('edit.zzzodImportPlaceholder')"
                         :loading="instancesLoading"
                         size="large"
                         class="modern-select import-source-select"
@@ -211,7 +211,7 @@
                         :disabled="importSourceIdx === null"
                         @click="confirmImport"
                       >
-                        {{ t('edit.zzzodImport') }}
+                        {{ $t('edit.zzzodImport') }}
                       </a-button>
                     </div>
                   </a-form-item>
@@ -220,7 +220,7 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodLauncherMode') }}
+                        {{ $t('edit.zzzodLauncherMode') }}
                       </span>
                     </template>
                     <a-select
@@ -234,24 +234,24 @@
                         value="自动"
                         :disabled="!launchersReady || !launchersUsable.smart"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
-                          <span>{{ t('edit.zzzodLauncherAuto') }}</span>
+                        <a-tooltip :title="$t('edit.zzzodLauncherAutoHint')">
+                          <span>{{ $t('edit.zzzodLauncherAuto') }}</span>
                         </a-tooltip>
                       </a-select-option>
                       <a-select-option
                         value="原始"
                         :disabled="!launchersReady || !launchersUsable.original"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
-                          <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
+                        <a-tooltip :title="$t('edit.zzzodLauncherOriginalHint')">
+                          <span>{{ $t('edit.zzzodLauncherOriginal') }}</span>
                         </a-tooltip>
                       </a-select-option>
                       <a-select-option
                         value="集成"
                         :disabled="!launchersReady || !launchersUsable.integrated"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
-                          <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
+                        <a-tooltip :title="$t('edit.zzzodLauncherIntegratedHint')">
+                          <span>{{ $t('edit.zzzodLauncherIntegrated') }}</span>
                         </a-tooltip>
                       </a-select-option>
                     </a-select>
@@ -278,8 +278,8 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodDirectInstance') }}
-                          <a-tooltip :title="t('edit.zzzodDirectInstanceHint')">
+                          {{ $t('edit.zzzodDirectInstance') }}
+                          <a-tooltip :title="$t('edit.zzzodDirectInstanceHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
@@ -287,7 +287,7 @@
                       <a-select
                         :value="nativeInstanceIdx"
                         :options="instanceOptions"
-                        :placeholder="t('edit.zzzodDirectPickInstance')"
+                        :placeholder="$t('edit.zzzodDirectPickInstance')"
                         :loading="instancesLoading"
                         size="large"
                         class="modern-select"
@@ -301,7 +301,7 @@
                   type="info"
                   show-icon
                   class="native-bind-alert"
-                  :message="t('edit.zzzodDirectBindAlert')"
+                  :message="$t('edit.zzzodDirectBindAlert')"
                 />
 
                 <!-- 原生来源：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
@@ -322,8 +322,8 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodGameRegion') }}
-                          <a-tooltip :title="t('edit.zzzodGameRegionHint')">
+                          {{ $t('edit.zzzodGameRegion') }}
+                          <a-tooltip :title="$t('edit.zzzodGameRegionHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
@@ -341,8 +341,8 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodGameLanguage') }}
-                          <a-tooltip :title="t('edit.zzzodGameLanguageHint')">
+                          {{ $t('edit.zzzodGameLanguage') }}
+                          <a-tooltip :title="$t('edit.zzzodGameLanguageHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
@@ -363,8 +363,8 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodGamePath') }}
-                          <a-tooltip :title="t('edit.zzzodGamePathHint')">
+                          {{ $t('edit.zzzodGamePath') }}
+                          <a-tooltip :title="$t('edit.zzzodGamePathHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
@@ -372,7 +372,7 @@
                       <a-input-group compact class="path-input-group">
                         <a-input
                           v-model:value="formData.Game.GamePath"
-                          :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                          :placeholder="$t('edit.zzzodGamePathPlaceholder')"
                           size="large"
                           class="path-input"
                           readonly
@@ -381,7 +381,7 @@
                           <template #icon>
                             <FolderOpenOutlined />
                           </template>
-                          {{ t('edit.pickFile') }}
+                          {{ $t('edit.pickFile') }}
                         </a-button>
                       </a-input-group>
                     </a-form-item>
@@ -393,15 +393,15 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodAccount') }}
-                          <a-tooltip :title="t('edit.zzzodAccountHint')">
+                          {{ $t('edit.zzzodAccount') }}
+                          <a-tooltip :title="$t('edit.zzzodAccountHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
                       </template>
                       <a-input
                         v-model:value="formData.Game.Account"
-                        :placeholder="t('edit.zzzodEnterAccount')"
+                        :placeholder="$t('edit.zzzodEnterAccount')"
                         size="large"
                         class="modern-input"
                         @blur="saveField('Game.Account', formData.Game.Account)"
@@ -412,15 +412,15 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.password') }}
-                          <a-tooltip :title="t('edit.zzzodPasswordHint')">
+                          {{ $t('edit.password') }}
+                          <a-tooltip :title="$t('edit.zzzodPasswordHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
                       </template>
                       <a-input-password
                         v-model:value="formData.Game.Password"
-                        :placeholder="t('edit.zzzodEnterPasswordPlaceholder')"
+                        :placeholder="$t('edit.zzzodEnterPasswordPlaceholder')"
                         size="large"
                         class="modern-input"
                         @blur="saveField('Game.Password', formData.Game.Password)"
@@ -434,15 +434,15 @@
                     <a-form-item>
                       <template #label>
                         <span class="form-label">
-                          {{ t('edit.zzzodBilibiliAccount') }}
-                          <a-tooltip :title="t('edit.zzzodBilibiliAccountHint')">
+                          {{ $t('edit.zzzodBilibiliAccount') }}
+                          <a-tooltip :title="$t('edit.zzzodBilibiliAccountHint')">
                             <QuestionCircleOutlined class="help-icon" />
                           </a-tooltip>
                         </span>
                       </template>
                       <a-input
                         v-model:value="formData.Game.BilibiliAccountName"
-                        :placeholder="t('edit.zzzodEnterBilibiliAccount')"
+                        :placeholder="$t('edit.zzzodEnterBilibiliAccount')"
                         size="large"
                         class="modern-input"
                         @blur="
@@ -459,8 +459,8 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.daysLeft') }}
-                        <a-tooltip :title="t('edit.daysLeftAccount1')">
+                        {{ $t('edit.daysLeft') }}
+                        <a-tooltip :title="$t('edit.daysLeftAccount1')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
@@ -479,15 +479,15 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.note') }}
-                        <a-tooltip :title="t('edit.addNoteAboutThis')">
+                        {{ $t('edit.note') }}
+                        <a-tooltip :title="$t('edit.addNoteAboutThis')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
                     </template>
                     <a-input
                       v-model:value="formData.Info.Notes"
-                      :placeholder="t('edit.enterNote')"
+                      :placeholder="$t('edit.enterNote')"
                       size="large"
                       class="modern-input"
                       @blur="saveField('Info.Notes', formData.Info.Notes)"
@@ -501,10 +501,10 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.collectNodeDetails') }}
+                        {{ $t('edit.collectNodeDetails') }}
                         <a-tooltip
                           mouse-enter-delay="0.5"
-                          :title="t('edit.collectsKeyMomentsFrom')"
+                          :title="$t('edit.collectsKeyMomentsFrom')"
                         >
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
@@ -523,8 +523,8 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodAfterDone') }}
-                        <a-tooltip :title="t('edit.zzzodAfterDoneHint')">
+                        {{ $t('edit.zzzodAfterDone') }}
+                        <a-tooltip :title="$t('edit.zzzodAfterDoneHint')">
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
                       </span>
@@ -550,8 +550,8 @@
             <div class="form-section">
               <div class="section-header">
                 <h3>
-                  {{ t('edit.zzzodLaunchArgsTitle') }}
-                  <a-tooltip :title="t('edit.zzzodLaunchArgsSwitchHint')">
+                  {{ $t('edit.zzzodLaunchArgsTitle') }}
+                  <a-tooltip :title="$t('edit.zzzodLaunchArgsSwitchHint')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </h3>
@@ -571,14 +571,14 @@
                 </div>
               </div>
               <p class="section-desc">
-                {{ t('edit.zzzodLaunchArgsDesc') }}
+                {{ $t('edit.zzzodLaunchArgsDesc') }}
               </p>
               <a-collapse
                 v-model:activeKey="launchArgsOpen"
                 class="optional-section"
                 :bordered="false"
               >
-                <a-collapse-panel key="launch-args" :header="t('edit.zzzodLaunchArgsDetail')">
+                <a-collapse-panel key="launch-args" :header="$t('edit.zzzodLaunchArgsDetail')">
                   <!-- 原生来源：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
                   <template v-if="formData.Info.Base === 'native'">
                     <a-spin :spinning="nativeLoading">
@@ -587,7 +587,7 @@
                           <a-col :span="12">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
+                                <span class="form-label">{{ $t('edit.zzzodScreenSize') }}</span>
                               </template>
                               <a-select
                                 v-model:value="nativeLaunchArgs.screen_size"
@@ -607,7 +607,7 @@
                           <a-col :span="12">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
+                                <span class="form-label">{{ $t('edit.zzzodFullScreen') }}</span>
                               </template>
                               <a-select
                                 v-model:value="nativeLaunchArgs.full_screen"
@@ -629,7 +629,7 @@
                           <a-col :span="12">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
+                                <span class="form-label">{{ $t('edit.zzzodPopupWindow') }}</span>
                               </template>
                               <a-switch
                                 v-model:checked="nativeLaunchArgs.popup_window"
@@ -645,8 +645,8 @@
                             <a-form-item>
                               <template #label>
                                 <span class="form-label">
-                                  {{ t('edit.zzzodDx12') }}
-                                  <a-tooltip :title="t('edit.zzzodDx12Hint')">
+                                  {{ $t('edit.zzzodDx12') }}
+                                  <a-tooltip :title="$t('edit.zzzodDx12Hint')">
                                     <QuestionCircleOutlined class="help-icon" />
                                   </a-tooltip>
                                 </span>
@@ -664,7 +664,7 @@
                           <a-col :span="12">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
+                                <span class="form-label">{{ $t('edit.zzzodMonitor') }}</span>
                               </template>
                               <a-select
                                 v-model:value="nativeLaunchArgs.monitor"
@@ -683,11 +683,11 @@
                           <a-col :span="24">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
+                                <span class="form-label">{{ $t('edit.zzzodAdvanceArgs') }}</span>
                               </template>
                               <a-input
                                 v-model:value="nativeLaunchArgs.launch_argument_advance"
-                                :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
+                                :placeholder="$t('edit.zzzodAdvanceArgsPlaceholder')"
                                 size="large"
                                 class="modern-input"
                                 :disabled="!nativeLaunchArgs.launch_argument"
@@ -702,7 +702,7 @@
                           </a-col>
                         </a-row>
                       </template>
-                      <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
+                      <a-empty v-else :description="$t('edit.zzzodDirectPickInstanceFirst')" />
                     </a-spin>
                   </template>
                   <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
@@ -711,7 +711,7 @@
                       <a-col :span="12">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
+                            <span class="form-label">{{ $t('edit.zzzodScreenSize') }}</span>
                           </template>
                           <a-select
                             v-model:value="formData.Game.ScreenSize"
@@ -726,7 +726,7 @@
                       <a-col :span="12">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
+                            <span class="form-label">{{ $t('edit.zzzodFullScreen') }}</span>
                           </template>
                           <a-select
                             v-model:value="formData.Game.FullScreen"
@@ -743,7 +743,7 @@
                       <a-col :span="12">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
+                            <span class="form-label">{{ $t('edit.zzzodPopupWindow') }}</span>
                           </template>
                           <a-switch
                             v-model:checked="formData.Game.PopupWindow"
@@ -757,8 +757,8 @@
                         <a-form-item>
                           <template #label>
                             <span class="form-label">
-                              {{ t('edit.zzzodDx12') }}
-                              <a-tooltip :title="t('edit.zzzodDx12Hint')">
+                              {{ $t('edit.zzzodDx12') }}
+                              <a-tooltip :title="$t('edit.zzzodDx12Hint')">
                                 <QuestionCircleOutlined class="help-icon" />
                               </a-tooltip>
                             </span>
@@ -776,7 +776,7 @@
                       <a-col :span="12">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
+                            <span class="form-label">{{ $t('edit.zzzodMonitor') }}</span>
                           </template>
                           <a-select
                             v-model:value="formData.Game.Monitor"
@@ -793,11 +793,11 @@
                       <a-col :span="24">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
+                            <span class="form-label">{{ $t('edit.zzzodAdvanceArgs') }}</span>
                           </template>
                           <a-input
                             v-model:value="formData.Game.LaunchArgumentAdvance"
-                            :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
+                            :placeholder="$t('edit.zzzodAdvanceArgsPlaceholder')"
                             size="large"
                             class="modern-input"
                             :disabled="!formData.Game.LaunchArgument"
@@ -834,8 +834,8 @@
                 <p class="section-desc">
                   {{
                     formData.Info.Base === 'native'
-                      ? t('edit.zzzodDirectTasksDesc')
-                      : t('edit.zzzodOneDragonDesc')
+                      ? $t('edit.zzzodDirectTasksDesc')
+                      : $t('edit.zzzodOneDragonDesc')
                   }}
                 </p>
               </ZzzodTaskBoard>

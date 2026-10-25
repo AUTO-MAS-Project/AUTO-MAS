@@ -4,7 +4,6 @@
  * 也不是实例选项：手动启动带窗口，任务拉起跟静默模式走。已有实例的内存、帧率在齿轮「实例设置」里改。
  */
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 
 import {
   FPS_CHOICES,
@@ -14,8 +13,6 @@ import {
 } from '../avdLogic'
 
 const model = defineModel<AvdOptionsForm>({ required: true })
-
-const { t } = useI18n()
 
 const memoryOptions = computed(() =>
   MEMORY_CHOICES_MB.map(mb => ({ value: mb, label: `${mb / 1024} GB` }))
@@ -30,8 +27,8 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
 <template>
   <div class="avd-options-fields">
     <a-form-item
-      :label="t('emulator2.avd.fieldMemory')"
-      :extra="t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB)"
+      :label="$t('emulator2.avd.fieldMemory')"
+      :extra="$t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB)"
     >
       <a-select
         :value="model.memoryMb"
@@ -40,7 +37,7 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
         @update:value="(value: number) => update('memoryMb', value)"
       />
     </a-form-item>
-    <a-form-item :label="t('emulator2.fieldFps')">
+    <a-form-item :label="$t('emulator2.fieldFps')">
       <a-select
         :value="model.fps"
         :options="fpsOptions"

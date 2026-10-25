@@ -144,14 +144,14 @@ const runSaveReplay = async () => {
 <template>
   <div class="form-section replay-settings">
     <div class="section-header">
-      <h3>{{ t('setting.replay.section') }}</h3>
+      <h3>{{ $t('setting.replay.section') }}</h3>
     </div>
 
     <a-alert type="info" show-icon class="replay-intro">
-      <template #message>{{ t('setting.replay.intro') }}</template>
+      <template #message>{{ $t('setting.replay.intro') }}</template>
       <template #description>
-        <p>{{ t('setting.replay.obsGuide') }}</p>
-        <p>{{ t('setting.replay.durationGuide') }}</p>
+        <p>{{ $t('setting.replay.obsGuide') }}</p>
+        <p>{{ $t('setting.replay.durationGuide') }}</p>
       </template>
     </a-alert>
 
@@ -159,8 +159,8 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.enable') }}</span>
-            <a-tooltip :title="t('setting.replay.enableTip')">
+            <span class="form-label">{{ $t('setting.replay.enable') }}</span>
+            <a-tooltip :title="$t('setting.replay.enableTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -170,16 +170,16 @@ const runSaveReplay = async () => {
             style="width: 100%"
             @change="(value: any) => updateReplaySetting('Enabled', value)"
           >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.port') }}</span>
-            <a-tooltip :title="t('setting.replay.portTip')">
+            <span class="form-label">{{ $t('setting.replay.port') }}</span>
+            <a-tooltip :title="$t('setting.replay.portTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -198,8 +198,8 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.videoLimit') }}</span>
-            <a-tooltip :title="t('setting.replay.videoLimitTip')">
+            <span class="form-label">{{ $t('setting.replay.videoLimit') }}</span>
+            <a-tooltip :title="$t('setting.replay.videoLimitTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -217,7 +217,7 @@ const runSaveReplay = async () => {
               :loading="savingVideoStorageLimit"
               @click="saveVideoStorageLimit"
             >
-              {{ t('setting.replay.saveVideoLimit') }}
+              {{ $t('setting.replay.saveVideoLimit') }}
             </a-button>
           </a-space-compact>
         </div>
@@ -228,8 +228,8 @@ const runSaveReplay = async () => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.password') }}</span>
-            <a-tooltip :title="t('setting.replay.passwordTip')">
+            <span class="form-label">{{ $t('setting.replay.password') }}</span>
+            <a-tooltip :title="$t('setting.replay.passwordTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -237,7 +237,7 @@ const runSaveReplay = async () => {
             <a-input-password
               v-model:value="password"
               :disabled="!replayEnabled"
-              :placeholder="t('setting.replay.passwordPlaceholder')"
+              :placeholder="$t('setting.replay.passwordPlaceholder')"
               style="width: calc(100% - 160px)"
               @press-enter="savePassword"
             />
@@ -246,15 +246,15 @@ const runSaveReplay = async () => {
               :loading="savingPassword"
               @click="savePassword"
             >
-              {{ t('setting.replay.savePassword') }}
+              {{ $t('setting.replay.savePassword') }}
             </a-button>
           </a-input-group>
           <div class="replay-password-status">
             <a-tag :color="passwordConfigured ? 'success' : 'default'">
               {{
                 passwordConfigured
-                  ? t('setting.replay.passwordConfigured')
-                  : t('setting.replay.passwordNotConfigured')
+                  ? $t('setting.replay.passwordConfigured')
+                  : $t('setting.replay.passwordNotConfigured')
               }}
             </a-tag>
             <a-button
@@ -265,7 +265,7 @@ const runSaveReplay = async () => {
               :disabled="!replayEnabled"
               @click="clearPassword"
             >
-              {{ t('setting.replay.clearPassword') }}
+              {{ $t('setting.replay.clearPassword') }}
             </a-button>
           </div>
         </div>
@@ -273,14 +273,14 @@ const runSaveReplay = async () => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.actions') }}</span>
+            <span class="form-label">{{ $t('setting.replay.actions') }}</span>
           </div>
           <a-space wrap>
             <a-button :disabled="!replayEnabled" :loading="checking" @click="runConnectionCheck">
-              {{ t('setting.replay.check') }}
+              {{ $t('setting.replay.check') }}
             </a-button>
             <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
-              {{ t('setting.replay.saveTest') }}
+              {{ $t('setting.replay.saveTest') }}
             </a-button>
           </a-space>
         </div>
@@ -292,7 +292,7 @@ const runSaveReplay = async () => {
       type="info"
       show-icon
       class="replay-check-result"
-      :message="t('setting.replay.capturePath')"
+      :message="$t('setting.replay.capturePath')"
       :description="capturePath"
     />
     <a-alert
@@ -304,21 +304,23 @@ const runSaveReplay = async () => {
       <template #message>
         {{
           checkResult.connected && checkResult.replayActive
-            ? t('setting.replay.checkPassed')
-            : t('setting.replay.checkIssue')
+            ? $t('setting.replay.checkPassed')
+            : $t('setting.replay.checkIssue')
         }}
       </template>
       <template #description>
         <div>
-          {{ t('setting.replay.connection') }}:
-          {{ checkResult.connected ? t('common.yes') : t('common.no') }}
+          {{ $t('setting.replay.connection') }}:
+          {{ checkResult.connected ? $t('common.yes') : $t('common.no') }}
         </div>
         <div>
-          {{ t('setting.replay.buffer') }}:
-          {{ checkResult.replayActive ? t('setting.replay.active') : t('setting.replay.inactive') }}
+          {{ $t('setting.replay.buffer') }}:
+          {{
+            checkResult.replayActive ? $t('setting.replay.active') : $t('setting.replay.inactive')
+          }}
         </div>
         <div v-if="checkResult.version">
-          {{ t('setting.replay.version') }}: {{ checkResult.version }}
+          {{ $t('setting.replay.version') }}: {{ checkResult.version }}
         </div>
         <div v-if="checkResult.directory" class="replay-path">{{ checkResult.directory }}</div>
       </template>

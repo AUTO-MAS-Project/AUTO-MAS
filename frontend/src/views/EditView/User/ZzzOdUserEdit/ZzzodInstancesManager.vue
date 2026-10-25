@@ -217,14 +217,14 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   <div class="instance-manage">
     <div class="instance-manage-header">
       <span class="form-label">
-        {{ t('edit.zzzodInstancesManage') }}
-        <a-tooltip :title="t('edit.zzzodInstancesManageHint')">
+        {{ $t('edit.zzzodInstancesManage') }}
+        <a-tooltip :title="$t('edit.zzzodInstancesManageHint')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </span>
       <a-button type="primary" size="small" :loading="instanceOpLoading" @click="openAddInstance">
         <template #icon><PlusOutlined /></template>
-        {{ t('edit.zzzodAddInstance') }}
+        {{ $t('edit.zzzodAddInstance') }}
       </a-button>
     </div>
     <div v-if="instances.length" class="instance-manage-list">
@@ -241,25 +241,25 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
           >
             {{ String(inst.idx).padStart(2, '0') }} - {{ inst.name }}
           </span>
-          <a-tooltip v-if="inst.active" :title="t('edit.zzzodInstanceActiveTagHint')">
+          <a-tooltip v-if="inst.active" :title="$t('edit.zzzodInstanceActiveTagHint')">
             <a-tag color="processing" class="instance-manage-tag">
-              {{ t('edit.zzzodInstanceActiveTag') }}
+              {{ $t('edit.zzzodInstanceActiveTag') }}
             </a-tag>
           </a-tooltip>
-          <a-tooltip v-else :title="t('edit.zzzodSetInstanceActive')">
+          <a-tooltip v-else :title="$t('edit.zzzodSetInstanceActive')">
             <a-tag
               class="instance-manage-tag instance-manage-tag-set"
               @click="setActiveInstance(inst)"
             >
-              {{ t('edit.zzzodInstanceSetActiveTag') }}
+              {{ $t('edit.zzzodInstanceSetActiveTag') }}
             </a-tag>
           </a-tooltip>
         </div>
         <div class="instance-manage-ops">
           <span class="instance-manage-switch-label">
-            {{ t('edit.zzzodInstanceRunAllSwitch') }}
+            {{ $t('edit.zzzodInstanceRunAllSwitch') }}
           </span>
-          <a-tooltip :title="t('edit.zzzodInstanceActiveInOd')">
+          <a-tooltip :title="$t('edit.zzzodInstanceActiveInOd')">
             <a-switch
               size="small"
               :checked="inst.active_in_od"
@@ -267,9 +267,9 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
             />
           </a-tooltip>
           <span class="instance-manage-switch-label">
-            {{ t('edit.zzzodInstanceForceLoginSwitch') }}
+            {{ $t('edit.zzzodInstanceForceLoginSwitch') }}
           </span>
-          <a-tooltip :title="t('edit.zzzodInstanceForceLoginHint')">
+          <a-tooltip :title="$t('edit.zzzodInstanceForceLoginHint')">
             <a-switch
               size="small"
               :checked="inst.force_login_before_run"
@@ -277,22 +277,22 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
             />
           </a-tooltip>
           <a-divider type="vertical" class="instance-manage-divider" />
-          <a-tooltip :title="t('edit.zzzodRenameInstance')">
+          <a-tooltip :title="$t('edit.zzzodRenameInstance')">
             <a-button
               size="small"
               type="text"
-              :aria-label="t('edit.zzzodRenameInstance')"
+              :aria-label="$t('edit.zzzodRenameInstance')"
               @click="openRenameInstance(inst)"
             >
               <template #icon><EditOutlined /></template>
             </a-button>
           </a-tooltip>
-          <a-tooltip :title="t('edit.zzzodDeleteInstance')">
+          <a-tooltip :title="$t('edit.zzzodDeleteInstance')">
             <a-button
               size="small"
               type="text"
               danger
-              :aria-label="t('edit.zzzodDeleteInstance')"
+              :aria-label="$t('edit.zzzodDeleteInstance')"
               @click="openDeleteInstance(inst)"
             >
               <template #icon><DeleteOutlined /></template>
@@ -304,9 +304,9 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   </div>
   <a-modal
     v-model:open="addInstanceOpen"
-    :title="t('edit.zzzodAddInstance')"
-    :ok-text="t('edit.zzzodAddInstance')"
-    :cancel-text="t('edit.cancel')"
+    :title="$t('edit.zzzodAddInstance')"
+    :ok-text="$t('edit.zzzodAddInstance')"
+    :cancel-text="$t('edit.cancel')"
     :confirm-loading="instanceOpLoading"
     @ok="confirmAddInstance"
   >
@@ -314,15 +314,15 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
       <a-form-item>
         <template #label>
           <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
+            {{ $t('edit.zzzodInstanceName') }}
+            <a-tooltip :title="$t('edit.zzzodInstanceNameHint')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </span>
         </template>
         <a-input
           v-model:value="instanceName"
-          :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
+          :placeholder="$t('edit.zzzodInstanceNamePlaceholder')"
           size="large"
           class="modern-input"
           @press-enter="confirmAddInstance"
@@ -332,9 +332,9 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
   </a-modal>
   <a-modal
     v-model:open="renameInstanceOpen"
-    :title="t('edit.zzzodRenameInstance')"
-    :ok-text="t('edit.zzzodRenameInstance')"
-    :cancel-text="t('edit.cancel')"
+    :title="$t('edit.zzzodRenameInstance')"
+    :ok-text="$t('edit.zzzodRenameInstance')"
+    :cancel-text="$t('edit.cancel')"
     :confirm-loading="instanceOpLoading"
     @ok="confirmRenameInstance"
   >
@@ -342,15 +342,15 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
       <a-form-item>
         <template #label>
           <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
+            {{ $t('edit.zzzodInstanceName') }}
+            <a-tooltip :title="$t('edit.zzzodInstanceNameHint')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </span>
         </template>
         <a-input
           v-model:value="instanceName"
-          :placeholder="t('edit.zzzodInstanceNamePlaceholder')"
+          :placeholder="$t('edit.zzzodInstanceNamePlaceholder')"
           size="large"
           class="modern-input"
           @press-enter="confirmRenameInstance"

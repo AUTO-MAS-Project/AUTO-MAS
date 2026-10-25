@@ -1,22 +1,22 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ $t('edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
         <a-form-item name="userName" required>
           <template #label>
-            <a-tooltip :title="t('edit.nameUsedTellUsers')">
+            <a-tooltip :title="$t('edit.nameUsedTellUsers')">
               <span class="form-label">
-                {{ t('edit.username') }}
+                {{ $t('edit.username') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.userName"
-            :placeholder="t('edit.enterUsername')"
+            :placeholder="$t('edit.enterUsername')"
             :disabled="loading"
             size="large"
             class="modern-input"
@@ -27,16 +27,16 @@
       <a-col :span="12">
         <a-form-item name="userId">
           <template #label>
-            <a-tooltip :title="t('edit.usedSwitchAccountsCn')">
+            <a-tooltip :title="$t('edit.usedSwitchAccountsCn')">
               <span class="form-label">
-                {{ t('edit.accountId') }}
+                {{ $t('edit.accountId') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.userId"
-            :placeholder="t('edit.enterAccountId')"
+            :placeholder="$t('edit.enterAccountId')"
             :disabled="loading"
             size="large"
             @blur="emitSave('userId', formData.userId)"
@@ -49,9 +49,9 @@
       <a-col :span="12">
         <a-form-item name="status">
           <template #label>
-            <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+            <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
               <span class="form-label">
-                {{ t('edit.enabled') }}
+                {{ $t('edit.enabled') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -62,24 +62,24 @@
             :disabled="loading"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item :name="['Info', 'Password']">
           <template #label>
-            <a-tooltip :title="t('edit.userSPasswordStored')">
+            <a-tooltip :title="$t('edit.userSPasswordStored')">
               <span class="form-label">
-                {{ t('edit.password') }}
+                {{ $t('edit.password') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            :placeholder="t('edit.passwordStoredOnlySo')"
+            :placeholder="$t('edit.passwordStoredOnlySo')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -92,16 +92,16 @@
       <a-col :span="12">
         <a-form-item name="server">
           <template #label>
-            <a-tooltip :title="t('edit.pickGameServerThis')">
+            <a-tooltip :title="$t('edit.pickGameServerThis')">
               <span class="form-label">
-                {{ t('edit.server') }}
+                {{ $t('edit.server') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
             v-model:value="formData.Info.Server"
-            :placeholder="t('edit.pickServer')"
+            :placeholder="$t('edit.pickServer')"
             :disabled="loading"
             :options="serverOptions"
             size="large"
@@ -113,9 +113,9 @@
       <a-col :span="12">
         <a-form-item name="remainedDay">
           <template #label>
-            <a-tooltip :title="t('edit.daysLeftAccount1')">
+            <a-tooltip :title="$t('edit.daysLeftAccount1')">
               <span class="form-label">
-                {{ t('edit.daysLeft') }}
+                {{ $t('edit.daysLeft') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -136,16 +136,16 @@
 
     <a-form-item name="notes">
       <template #label>
-        <a-tooltip :title="t('edit.addNoteAboutThis')">
+        <a-tooltip :title="$t('edit.addNoteAboutThis')">
           <span class="form-label">
-            {{ t('edit.note') }}
+            {{ $t('edit.note') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
       </template>
       <a-textarea
         v-model:value="formData.Info.Notes"
-        :placeholder="t('edit.enterNote3')"
+        :placeholder="$t('edit.enterNote3')"
         :rows="4"
         :disabled="loading"
         class="modern-input"
@@ -156,10 +156,7 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-
-const { t } = useI18n()
 
 const formData = defineModel<any>('formData', { required: true })
 

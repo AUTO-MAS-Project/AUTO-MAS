@@ -1,8 +1,8 @@
 <template>
-  <ScriptEditHeader script-type="ZzzOd" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="ZzzOd" :title="$t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.zzzodScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card :title="$t('edit.zzzodScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ZZZ-OD</a-tag>
       </template>
@@ -10,22 +10,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.zzzodScriptNameHint')">
+                    {{ $t('edit.scriptName') }}
+                    <a-tooltip :title="$t('edit.zzzodScriptNameHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -36,8 +36,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.zzzodRootPath') }}
-                    <a-tooltip :title="t('edit.zzzodRootPathHint')">
+                    {{ $t('edit.zzzodRootPath') }}
+                    <a-tooltip :title="$t('edit.zzzodRootPathHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -45,7 +45,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    :placeholder="t('edit.zzzodRootPathPlaceholder')"
+                    :placeholder="$t('edit.zzzodRootPathPlaceholder')"
                     size="large"
                     class="path-input"
                     readonly
@@ -59,7 +59,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickDirectory') }}
+                    {{ $t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -69,15 +69,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ $t('edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.enableGameConfiguration') }}
-                    <a-tooltip :title="t('edit.masTakesOverStarting')">
+                    {{ $t('edit.enableGameConfiguration') }}
+                    <a-tooltip :title="$t('edit.masTakesOverStarting')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -88,8 +88,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'Enabled', zzzodConfig.Game.Enabled)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -97,8 +97,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.launchGameBeforeTask') }}
-                    <a-tooltip :title="t('edit.zzzodLaunchBeforeTaskHint')">
+                    {{ $t('edit.launchGameBeforeTask') }}
+                    <a-tooltip :title="$t('edit.zzzodLaunchBeforeTaskHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -112,8 +112,8 @@
                     handleChange('Game', 'LaunchBeforeTask', zzzodConfig.Game.LaunchBeforeTask)
                   "
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -123,8 +123,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.zzzodGamePath') }}
-                    <a-tooltip :title="t('edit.zzzodGamePathHint')">
+                    {{ $t('edit.zzzodGamePath') }}
+                    <a-tooltip :title="$t('edit.zzzodGamePathHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -132,7 +132,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="zzzodConfig.Game.Path"
-                    :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                    :placeholder="$t('edit.zzzodGamePathPlaceholder')"
                     size="large"
                     class="path-input"
                     readonly
@@ -147,7 +147,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -156,15 +156,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.zzzodGameArgumentsHint')">
+                    {{ $t('edit.launchArguments') }}
+                    <a-tooltip :title="$t('edit.zzzodGameArgumentsHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="zzzodConfig.Game.Arguments"
-                  :placeholder="t('edit.enterGameLaunchArguments')"
+                  :placeholder="$t('edit.enterGameLaunchArguments')"
                   size="large"
                   style="width: 100%"
                   :disabled="!zzzodConfig.Game.Enabled"
@@ -176,8 +176,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
+                    {{ $t('edit.startupWait') }}
+                    <a-tooltip :title="$t('edit.howLongWaitAfter')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -199,8 +199,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.zzzodCloseGameOnFinish') }}
-                    <a-tooltip :title="t('edit.zzzodCloseGameOnFinishHint')">
+                    {{ $t('edit.zzzodCloseGameOnFinish') }}
+                    <a-tooltip :title="$t('edit.zzzodCloseGameOnFinishHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -211,8 +211,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', zzzodConfig.Game.CloseOnFinish)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -220,8 +220,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.zzzodAccountSwitch') }}
-                    <a-tooltip :title="t('edit.zzzodAccountSwitchHint')">
+                    {{ $t('edit.zzzodAccountSwitch') }}
+                    <a-tooltip :title="$t('edit.zzzodAccountSwitchHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -242,7 +242,7 @@
                 </a-select>
                 <span class="control-hint">
                   {{
-                    t('edit.accountSwitch16x9ArgHint', {
+                    $t('edit.accountSwitch16x9ArgHint', {
                       p0: '-screen-width 1920 -screen-height 1080',
                     })
                   }}
@@ -254,7 +254,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="zzzodConfig.Run.HardTimeLimit"
@@ -265,8 +265,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                    {{ $t('edit.runsPerDay') }}
+                    <a-tooltip :title="$t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -285,8 +285,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.zzzodRetryLimitHint')">
+                    {{ $t('edit.retryLimit2') }}
+                    <a-tooltip :title="$t('edit.zzzodRetryLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -305,8 +305,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.zzzodRunTimeoutHint')">
+                    {{ $t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="$t('edit.zzzodRunTimeoutHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>

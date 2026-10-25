@@ -61,14 +61,14 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
 <template>
   <div class="form-section press-sound-settings">
     <div class="section-header">
-      <h3>{{ t('setting.basic.pressSoundSection') }}</h3>
+      <h3>{{ $t('setting.basic.pressSoundSection') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :xs="24" :md="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.pressSoundEnabled') }}</span>
-            <a-tooltip :title="t('setting.basic.pressSoundEnabledTip')">
+            <span class="form-label">{{ $t('setting.basic.pressSoundEnabled') }}</span>
+            <a-tooltip :title="$t('setting.basic.pressSoundEnabledTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -79,15 +79,15 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
             style="width: 100%"
             @change="(value: unknown) => emit('enabledChange', value === true)"
           >
-            <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('common.on') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('common.off') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
       <a-col :xs="24" :md="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.pressSoundPreset') }}</span>
+            <span class="form-label">{{ $t('setting.basic.pressSoundPreset') }}</span>
           </div>
           <a-select
             :value="isCustom ? 'custom' : preset"
@@ -103,7 +103,7 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
 
     <div v-if="isCustom" class="form-item-vertical">
       <div class="form-label-wrapper">
-        <span class="form-label">{{ t('setting.basic.pressSoundMode') }}</span>
+        <span class="form-label">{{ $t('setting.basic.pressSoundMode') }}</span>
       </div>
       <a-radio-group
         :value="preset"
@@ -111,14 +111,14 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
         class="sound-mode"
         @change="(event: RadioChangeEvent) => emit('presetChange', event.target.value)"
       >
-        <a-radio-button value="custom">{{ t('setting.basic.pressSoundSame') }}</a-radio-button>
+        <a-radio-button value="custom">{{ $t('setting.basic.pressSoundSame') }}</a-radio-button>
         <a-radio-button value="customPair">{{
-          t('setting.basic.pressSoundSeparate')
+          $t('setting.basic.pressSoundSeparate')
         }}</a-radio-button>
       </a-radio-group>
       <p class="sound-help">
         {{
-          t(
+          $t(
             preset === 'customPair'
               ? 'setting.basic.pressSoundSeparateTip'
               : 'setting.basic.pressSoundSameTip'
@@ -129,7 +129,7 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
         <span class="sound-file-label">{{ file.label }}</span>
         <a-input
           :value="file.name || file.path.split(/[\\/]/).pop()"
-          :placeholder="t('setting.basic.pressSoundNoFile')"
+          :placeholder="$t('setting.basic.pressSoundNoFile')"
           :title="file.path || undefined"
           :aria-label="file.label"
           readonly
@@ -137,23 +137,23 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
         />
         <a-button :disabled="saving" @click="emit('import', file.kind)">
           <template #icon><UploadOutlined /></template>
-          {{ t('setting.basic.pressSoundChooseFile') }}
+          {{ $t('setting.basic.pressSoundChooseFile') }}
         </a-button>
         <a-button
           :disabled="saving || !file.path"
-          :aria-label="t('setting.basic.pressSoundPreviewFile', { name: file.label })"
+          :aria-label="$t('setting.basic.pressSoundPreviewFile', { name: file.label })"
           @click="emit('preview', file.phase)"
         >
           <template #icon><PlayCircleOutlined /></template>
-          {{ t('setting.basic.pressSoundPreviewAction') }}
+          {{ $t('setting.basic.pressSoundPreviewAction') }}
         </a-button>
       </div>
-      <p class="sound-help">{{ t('setting.basic.pressSoundFileHint') }}</p>
+      <p class="sound-help">{{ $t('setting.basic.pressSoundFileHint') }}</p>
     </div>
 
     <div class="form-item-vertical">
       <div class="form-label-wrapper">
-        <span class="form-label">{{ t('setting.basic.pressSoundVolume') }}</span>
+        <span class="form-label">{{ $t('setting.basic.pressSoundVolume') }}</span>
       </div>
       <div class="sound-volume-row">
         <a-slider
@@ -162,14 +162,14 @@ const ready = computed(() => !isCustom.value || fileRows.value.every(file => Boo
           :max="1"
           :step="0.05"
           :disabled="saving"
-          :aria-label="t('setting.basic.pressSoundVolume')"
+          :aria-label="$t('setting.basic.pressSoundVolume')"
           class="sound-volume-slider"
           @change="(value: unknown) => emit('volumeChange', value as number)"
         />
         <span class="sound-percent">{{ Math.round(volume * 100) }}%</span>
         <a-button :disabled="saving || !ready" @click="emit('preview')">
           <template #icon><PlayCircleOutlined /></template>
-          {{ t('setting.basic.pressSoundPreviewPair') }}
+          {{ $t('setting.basic.pressSoundPreviewPair') }}
         </a-button>
       </div>
     </div>

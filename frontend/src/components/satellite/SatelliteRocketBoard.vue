@@ -1,7 +1,7 @@
 <template>
   <aside class="board" @click.stop>
-    <header>{{ t('home.satelliteEgg.rocketBoardTitle') }}</header>
-    <small>{{ t('home.satelliteEgg.rocketBoardLive', { time: fetchedAt }) }}</small>
+    <header>{{ $t('home.satelliteEgg.rocketBoardTitle') }}</header>
+    <small>{{ $t('home.satelliteEgg.rocketBoardLive', { time: fetchedAt }) }}</small>
     <ol>
       <li v-for="(item, index) in list.slice(0, 10)" :key="item.login">
         <span class="board-rank">{{ index + 1 }}</span>
@@ -21,7 +21,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { sizedAvatar, type Contributor } from './contributors'
 
 /** 火箭乱飞赛右边的本周 commit 榜，倒数结束时滑进来 */
@@ -32,8 +31,6 @@ defineProps<{
   /** 拉到榜单的时刻 */
   fetchedAt: string
 }>()
-
-const { t } = useI18n()
 </script>
 
 <style scoped>

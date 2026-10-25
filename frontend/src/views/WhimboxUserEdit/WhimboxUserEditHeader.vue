@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ $t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/whimbox`" class="breadcrumb-link">
@@ -11,7 +11,7 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+          {{ isEdit ? $t('comp.editUser') : $t('comp.addUser2') }}
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
@@ -21,27 +21,25 @@
         <template #icon>
           <HistoryOutlined />
         </template>
-        {{ t('edit.configRestoreTitle') }}
+        {{ $t('edit.configRestoreTitle') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="emit('back')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('edit.back') }}
+        {{ $t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 
 // 刻意不带「打开配置文件夹」入口（其余专项头组件均有）：通用 /user/config-dir
 // 指向 data/{scriptId}/{userId}，对奇想盒是空目录——它的双池备份实际位于
 // data/{scriptId}/WhimboxBackups/（见 app/task/Whimbox/tools/restore_service.py），
 // 通用端点指不到。要补入口需先扩端点，不在本 PR 范围。
-const { t } = useI18n()
 
 defineProps<{
   scriptId: string

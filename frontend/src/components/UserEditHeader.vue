@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ $t('comp.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link
@@ -16,7 +16,7 @@
         <a-breadcrumb-item>
           <span class="breadcrumb-current">
             <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-            {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
+            {{ currentLabel ?? (isEdit ? $t('comp.editUser') : $t('comp.addUser2')) }}
           </span>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -49,7 +49,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ $t('comp.configuring') }}
       </a-button>
 
       <a-button
@@ -61,26 +61,23 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ $t('comp.openConfigFolder') }}
       </a-button>
 
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('comp.back') }}
+        {{ $t('comp.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
-
-const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{

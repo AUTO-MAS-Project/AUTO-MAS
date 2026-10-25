@@ -11,7 +11,7 @@ import antdZhCN from 'ant-design-vue/es/locale/zh_CN'
 import { message } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 
-import { i18n, normalizeLocale, t, type AppLocale } from '@/i18n'
+import { ensureLocaleMessages, i18n, normalizeLocale, t, type AppLocale } from '@/i18n'
 import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 
 const logger = window.electronAPI.getLogger('语言设置')
@@ -38,6 +38,22 @@ function applyLocale(next: AppLocale): void {
   dayjs.locale(DAYJS_LOCALE[next])
 }
 
+/**
+ * 切到某语言前先备好它的词表。
+ *
+ * 词表是按语言的独立分块，locale 先改而词表没到，界面会先渲染出一批裸 key。
+ * 加载失败时保留当前语言，并把失败原因交给调用方决定要不要提示。
+ */
+async function prepareLocale(next: AppLocale): Promise<boolean> {
+  try {
+    await ensureLocaleMessages(next)
+    return true
+  } catch (error) {
+    logger.error(`加载语言词表失败: ${error instanceof Error ? error.message : error}`)
+    return false
+  }
+}
+
 watch(locale, applyLocale, { immediate: true })
 
 /**
@@ -49,12 +65,13 @@ async function initLocale(preloadedConfig?: FrontendConfig): Promise<void> {
   initialized = true
   try {
     const config = preloadedConfig ?? (await getConfig())
-    if (config.language) {
-      locale.value = normalizeLocale(config.language)
-      return
-    }
     // 未设置过则跟随系统：渲染进程的 navigator.language 即 Electron 的应用语言
-    locale.value = normalizeLocale(navigator.language)
+    const next = config.language
+      ? normalizeLocale(config.language)
+      : normalizeLocale(navigator.language)
+    // 拉不到就先停在源语言上，总比界面上全是裸 key 好
+    if (!(await prepareLocale(next))) return
+    locale.value = next
   } catch (error) {
     // 配置读不出来时仍能拿到系统语言，没必要连它一起放弃——
     // 「读取失败」和「语言标记不认识」是同一类情况，应给同一个答案。
@@ -71,6 +88,11 @@ async function setLocale(next: AppLocale): Promise<void> {
   // 不在此处按当前值早退：首启跟随系统时选择器已显示该语言，
   // 用户再显式选一次的意图是"钉住它"，必须落盘，否则日后仍会跟着系统变。
   const previous = locale.value
+  // 词表没到就切 locale，界面会先闪一帧裸 key，所以失败时不切
+  if (!(await prepareLocale(next))) {
+    message.error(t('common.languageLoadFailed'))
+    return
+  }
   locale.value = next
 
   savePending = savePending.catch(() => {}).then(() => saveConfig({ language: next }))

@@ -1,7 +1,7 @@
 <template>
   <div class="overview-panel">
     <div class="scheduler-panel-header">
-      <h3>{{ t('scheduler.overview.title') }}</h3>
+      <h3>{{ $t('scheduler.overview.title') }}</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
     </div>
     <div class="overview-content">

@@ -3,7 +3,7 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+          <router-link to="/scripts">{{ $t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
@@ -21,7 +21,7 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ $t('comp.openConfigFolder') }}
       </a-button>
       <a-button
         v-if="!showGeneralConfigMask"
@@ -35,7 +35,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('edit.generalConfiguration') }}
+        {{ $t('edit.generalConfiguration') }}
       </a-button>
       <a-button
         v-if="showGeneralConfigMask"
@@ -47,13 +47,13 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('edit.configuring') }}
+        {{ $t('edit.configuring') }}
       </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('edit.back') }}
+        {{ $t('edit.back') }}
       </a-button>
     </a-space>
   </div>
@@ -70,17 +70,17 @@
           <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
         </div>
         <template v-if="generalSessionViewOnly">
-          <h2 class="mask-title">{{ t('edit.generalViewingTitle') }}</h2>
+          <h2 class="mask-title">{{ $t('edit.generalViewingTitle') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalViewingDesc') }}
+            {{ $t('edit.generalViewingDesc') }}
             <br />
-            {{ t('edit.generalViewingDesc2') }}
+            {{ $t('edit.generalViewingDesc2') }}
           </p>
         </template>
         <template v-else>
-          <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
+          <h2 class="mask-title">{{ $t('edit.generalConfigurationProgress') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalConfigurationThisUser') }}
+            {{ $t('edit.generalConfigurationThisUser') }}
             <br />
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
@@ -92,7 +92,9 @@
             size="large"
             @click="handleSaveGeneralConfig"
           >
-            {{ generalSessionViewOnly ? t('edit.generalViewClose') : t('edit.saveConfiguration') }}
+            {{
+              generalSessionViewOnly ? $t('edit.generalViewClose') : $t('edit.saveConfiguration')
+            }}
           </a-button>
         </div>
       </div>
@@ -105,11 +107,11 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ $t('edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
@@ -117,16 +119,16 @@
             <a-col :span="12">
               <a-form-item name="userName" required>
                 <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
+                  <a-tooltip :title="$t('edit.displayNameUsedIdentify')">
                     <span class="form-label">
-                      {{ t('edit.username') }}
+                      {{ $t('edit.username') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.userName"
-                  :placeholder="t('edit.enterUsername')"
+                  :placeholder="$t('edit.enterUsername')"
                   :disabled="loading"
                   size="large"
                   class="modern-input"
@@ -137,9 +139,9 @@
             <a-col :span="6">
               <a-form-item name="status">
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+                  <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
                     <span class="form-label">
-                      {{ t('edit.enabled') }}
+                      {{ $t('edit.enabled') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -149,17 +151,17 @@
                   size="large"
                   @change="handleFieldSave('Info.Status', formData.Info.Status)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
+                  <a-tooltip :title="$t('edit.daysLeftAccount1')">
                     <span class="form-label">
-                      {{ t('edit.daysLeft') }}
+                      {{ $t('edit.daysLeft') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -182,7 +184,7 @@
                 :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :alert-message="t('edit.configSourceHintBase')"
+                :alert-message="$t('edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -190,16 +192,16 @@
 
           <a-form-item name="notes">
             <template #label>
-              <a-tooltip :title="t('edit.addNoteAboutThis')">
+              <a-tooltip :title="$t('edit.addNoteAboutThis')">
                 <span class="form-label">
-                  {{ t('edit.note') }}
+                  {{ $t('edit.note') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-textarea
               v-model:value="formData.Info.Notes"
-              :placeholder="t('edit.enterNote3')"
+              :placeholder="$t('edit.enterNote3')"
               :rows="4"
               :disabled="loading"
               class="modern-input"
@@ -233,8 +235,8 @@
     :script-name="GENERAL_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.generalConfigRestoreUserDesc')"
-    :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+    :user-desc="$t('edit.generalConfigRestoreUserDesc')"
+    :script-desc="$t('edit.generalConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
     :on-detail="handleRestoreView"
   />

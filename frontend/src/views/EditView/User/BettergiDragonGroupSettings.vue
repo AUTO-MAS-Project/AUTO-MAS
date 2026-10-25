@@ -10,12 +10,12 @@
         <a-tabs v-model:activeKey="activeTabKey" class="bettergi-groups-tabs">
           <!-- 标签栏最右侧：放大按钮（弹窗态不再嵌套放大） -->
           <template v-if="!embedded" #tabBarExtraContent>
-            <a-tooltip :title="t('edit.bettergiGroupSettingsZoom')" placement="top">
+            <a-tooltip :title="$t('edit.bettergiGroupSettingsZoom')" placement="top">
               <a-button
                 type="text"
                 size="small"
                 class="bettergi-groups-zoom-btn"
-                :aria-label="t('edit.bettergiGroupSettingsZoom')"
+                :aria-label="$t('edit.bettergiGroupSettingsZoom')"
                 @click="zoomed = true"
               >
                 <template #icon><FullscreenOutlined /></template>
@@ -41,7 +41,7 @@
                   <QuestionCircleOutlined class="bettergi-setting-help-icon" />
                 </a-tooltip>
                 <a-popconfirm
-                  :title="t('edit.bettergiDomainPickerClearAllConfirm')"
+                  :title="$t('edit.bettergiDomainPickerClearAllConfirm')"
                   :disabled="!weeklySectionEnabled(section)"
                   @confirm="clearWeeklyTable(section)"
                 >
@@ -50,7 +50,7 @@
                     class="bettergi-weekly-clear-btn"
                     :disabled="!weeklySectionEnabled(section)"
                   >
-                    {{ t('edit.bettergiDomainPickerClearAll') }}
+                    {{ $t('edit.bettergiDomainPickerClearAll') }}
                   </a-button>
                 </a-popconfirm>
               </div>
@@ -68,7 +68,7 @@
                     v-if="column.key === 'party'"
                     :value="String(tableCellValue(record, 'party') ?? '')"
                     :disabled="!weeklySectionEnabled(section)"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     @change="
                       (e: Event) =>
                         emit(
@@ -85,7 +85,7 @@
                     :value="String(tableCellValue(record, 'strategy') ?? '')"
                     readonly
                     :disabled="!weeklySectionEnabled(section)"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     class="bettergi-setting-strategy-input"
                     @click="openWeeklyStrategyPicker(section, record)"
                   >
@@ -109,13 +109,13 @@
                     :disabled="!weeklySectionEnabled(section)"
                     @click="openDomainPicker(record)"
                   >
-                    {{ weeklyDomainText(record) || t('edit.bettergiGroupSettingsPlaceholder') }}
+                    {{ weeklyDomainText(record) || $t('edit.bettergiGroupSettingsPlaceholder') }}
                   </a-button>
                   <a-input
                     v-else-if="column.key === 'domain'"
                     :value="String(tableCellValue(record, 'domain') ?? '')"
                     :disabled="!weeklySectionEnabled(section)"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     @change="
                       (e: Event) =>
                         emit(
@@ -131,7 +131,7 @@
                     :value="weeklyRewardDisplayValue(record)"
                     :options="weeklyRewardOptions(record)"
                     :disabled="!weeklySectionEnabled(section) || !weeklyRewardEnabled(record)"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     @change="
                       (value: unknown) =>
                         emit(
@@ -179,7 +179,7 @@
                   <QuestionCircleOutlined class="bettergi-setting-help-icon" />
                 </a-tooltip>
                 <a-popconfirm
-                  :title="t('edit.bettergiDomainPickerClearAllConfirm')"
+                  :title="$t('edit.bettergiDomainPickerClearAllConfirm')"
                   :disabled="!weeklySectionEnabled(section)"
                   @confirm="clearWeeklyFieldTable(section)"
                 >
@@ -188,7 +188,7 @@
                     class="bettergi-weekly-clear-btn"
                     :disabled="!weeklySectionEnabled(section)"
                   >
-                    {{ t('edit.bettergiDomainPickerClearAll') }}
+                    {{ $t('edit.bettergiDomainPickerClearAll') }}
                   </a-button>
                 </a-popconfirm>
               </div>
@@ -208,7 +208,7 @@
                   </span>
                   <a-input
                     :value="String(fieldValue(field) ?? '')"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="!weeklySectionEnabled(section) || fieldLocked(field)"
                     @change="
                       (e: Event) => emit('update', field, (e.target as HTMLInputElement).value)
@@ -243,7 +243,7 @@
                         v-else-if="weeklyFieldCell(record, column.key)?.type === 'select'"
                         :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
                         :options="weeklyFieldCell(record, column.key)!.options"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         allow-clear
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
@@ -260,7 +260,7 @@
                         :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
                         readonly
                         :disabled="!weeklySectionEnabled(section)"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         class="bettergi-setting-strategy-input"
                         @click="openWeeklyFieldStrategyPicker(section, record, column.key)"
                       >
@@ -276,7 +276,7 @@
                       <a-input
                         v-else-if="weeklyFieldCell(record, column.key)"
                         :value="String(fieldValue(weeklyFieldCell(record, column.key)!) ?? '')"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
                           (e: Event) =>
@@ -325,7 +325,7 @@
                   </span>
                   <a-input
                     :value="String(fieldValue(field) ?? '')"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="!weeklySectionEnabled(section) || fieldLocked(field)"
                     @change="
                       (e: Event) => emit('update', field, (e.target as HTMLInputElement).value)
@@ -358,7 +358,7 @@
                         v-else-if="dailyCell(record, column.key)?.type === 'select'"
                         :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
                         :options="dailyCell(record, column.key)!.options"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         allow-clear
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
@@ -373,7 +373,7 @@
                       <a-input
                         v-else-if="dailyCell(record, column.key)?.type === 'text'"
                         :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         :disabled="!weeklySectionEnabled(section)"
                         @change="
                           (e: Event) =>
@@ -390,7 +390,7 @@
                         :value="String(fieldValue(dailyCell(record, column.key)!) ?? '')"
                         readonly
                         :disabled="!weeklySectionEnabled(section)"
-                        :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                        :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                         class="bettergi-setting-strategy-input"
                         @click="openDailyStrategyPicker(section, record)"
                       >
@@ -478,7 +478,7 @@
                     mode="multiple"
                     :value="Array.isArray(fieldValue(field)) ? (fieldValue(field) as string[]) : []"
                     :options="field.options"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="fieldLocked(field)"
                     @change="
                       (values: unknown) =>
@@ -502,7 +502,7 @@
                   <a-select
                     :value="selectDisplayValue(field)"
                     :options="field.options"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :show-search="field.searchable"
                     :option-filter-prop="field.searchable ? 'label' : undefined"
                     allow-clear
@@ -528,7 +528,7 @@
                   <a-input
                     :value="String(fieldValue(field) ?? '')"
                     readonly
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="fieldLocked(field)"
                     class="bettergi-setting-strategy-input"
                     @click="openStrategyFieldPicker(field)"
@@ -559,7 +559,7 @@
                   <a-input
                     :value="bossDisplayValue(field)"
                     readonly
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="fieldLocked(field)"
                     class="bettergi-setting-boss-input"
                     @click="openBossFieldPicker(field)"
@@ -589,7 +589,7 @@
                   </span>
                   <a-input
                     :value="String(fieldValue(field) ?? '')"
-                    :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                    :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                     :disabled="fieldLocked(field)"
                     @change="
                       (e: Event) => emit('update', field, (e.target as HTMLInputElement).value)
@@ -603,7 +603,7 @@
       </template>
       <!-- 无设置项的内置组（领取邮件等）：提示空态 -->
       <div v-else-if="!embedded" class="bettergi-groups-settings-none">
-        {{ t('edit.bettergiGroupSettingsNone') }}
+        {{ $t('edit.bettergiGroupSettingsNone') }}
       </div>
     </a-spin>
 
@@ -639,7 +639,7 @@
     <a-modal
       v-if="domainPickerOpen"
       :open="domainPickerOpen"
-      :title="t('edit.bettergiDomainPickerTitle')"
+      :title="$t('edit.bettergiDomainPickerTitle')"
       :width="860"
       centered
       :z-index="1100"
@@ -649,14 +649,14 @@
       <div class="bettergi-domain-picker-cols">
         <!-- 第一级：地区（顶部固定「按提升指南选择」哨兵项，见 GUIDE_DOMAIN_SENTINEL） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiColRegion') }}</div>
+          <div class="bettergi-domain-picker-col-title">{{ $t('edit.bettergiColRegion') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               class="bettergi-domain-picker-item"
               :class="{ active: pickGuide }"
               @click="onPickGuideClick"
             >
-              {{ t('edit.bettergiDomainPickerGuide') }}
+              {{ $t('edit.bettergiDomainPickerGuide') }}
             </div>
             <div
               v-for="region in domainRegions"
@@ -672,11 +672,11 @@
         <!-- 第二级：该地区的秘境（地点-秘境类型）；提升指南模式下显示说明 -->
         <div class="bettergi-domain-picker-col">
           <div class="bettergi-domain-picker-col-title">
-            {{ t('edit.bettergiPickerDomainType') }}
+            {{ $t('edit.bettergiPickerDomainType') }}
           </div>
           <div class="bettergi-domain-picker-list">
             <div v-if="pickGuide" class="bettergi-domain-picker-note">
-              {{ t('edit.bettergiDomainPickerGuideTip') }}
+              {{ $t('edit.bettergiDomainPickerGuideTip') }}
             </div>
             <template v-else>
               <div
@@ -693,16 +693,16 @@
         </div>
         <!-- 第三级：奖励物品（圣遗物本无档位，不可选）；提升指南模式下显示说明 -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerReward') }}</div>
+          <div class="bettergi-domain-picker-col-title">{{ $t('edit.bettergiPickerReward') }}</div>
           <div class="bettergi-domain-picker-list">
             <template v-if="pickGuide">
               <div class="bettergi-domain-picker-note">
-                {{ t('edit.bettergiDomainPickerGuideTip') }}
+                {{ $t('edit.bettergiDomainPickerGuideTip') }}
               </div>
             </template>
             <template v-else-if="pickIsArtifact">
               <div class="bettergi-domain-picker-empty">
-                {{ t('edit.bettergiDomainPickerNone') }}
+                {{ $t('edit.bettergiDomainPickerNone') }}
               </div>
             </template>
             <template v-else>
@@ -716,23 +716,23 @@
                 {{ reward }}
               </div>
               <div v-if="!pickRewards.length" class="bettergi-domain-picker-note">
-                {{ t('edit.bettergiPickerSelectDomainFirst') }}
+                {{ $t('edit.bettergiPickerSelectDomainFirst') }}
               </div>
             </template>
           </div>
         </div>
       </div>
       <template #footer>
-        <a-button @click="closeDomainPicker">{{ t('edit.cancel') }}</a-button>
+        <a-button @click="closeDomainPicker">{{ $t('edit.cancel') }}</a-button>
         <a-button class="bettergi-domain-picker-clear" @click="onClearDomainPicker">
-          {{ t('edit.bettergiDomainPickerClear') }}
+          {{ $t('edit.bettergiDomainPickerClear') }}
         </a-button>
         <a-button
           type="primary"
           :disabled="!pickDomain && !pickGuide"
           @click="onConfirmDomainPicker"
         >
-          {{ t('edit.bettergiDomainPickerOk') }}
+          {{ $t('edit.bettergiDomainPickerOk') }}
         </a-button>
       </template>
     </a-modal>
@@ -741,7 +741,7 @@
     <a-modal
       v-if="bossPickerOpen"
       :open="bossPickerOpen"
-      :title="t('edit.bettergiBossPickerTitle')"
+      :title="$t('edit.bettergiBossPickerTitle')"
       :width="720"
       centered
       :z-index="1100"
@@ -751,7 +751,7 @@
       <div class="bettergi-domain-picker-cols bettergi-boss-picker-cols">
         <!-- 第一级：地区 -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiColRegion') }}</div>
+          <div class="bettergi-domain-picker-col-title">{{ $t('edit.bettergiColRegion') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="region in bossRegions"
@@ -766,7 +766,7 @@
         </div>
         <!-- 第二级：该地区首领（首领名称-地点） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerBoss') }}</div>
+          <div class="bettergi-domain-picker-col-title">{{ $t('edit.bettergiPickerBoss') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="item in pickRegionBosses"
@@ -778,18 +778,18 @@
               {{ item.label }}
             </div>
             <div v-if="!pickRegionBosses.length" class="bettergi-domain-picker-note">
-              {{ t('edit.bettergiPickerSelectRegionFirst') }}
+              {{ $t('edit.bettergiPickerSelectRegionFirst') }}
             </div>
           </div>
         </div>
       </div>
       <template #footer>
-        <a-button @click="closeBossPicker">{{ t('edit.cancel') }}</a-button>
+        <a-button @click="closeBossPicker">{{ $t('edit.cancel') }}</a-button>
         <a-button class="bettergi-domain-picker-clear" @click="onClearBossPicker">
-          {{ t('edit.bettergiDomainPickerClear') }}
+          {{ $t('edit.bettergiDomainPickerClear') }}
         </a-button>
         <a-button type="primary" :disabled="!pickBossName" @click="onConfirmBossPicker">
-          {{ t('edit.bettergiDomainPickerOk') }}
+          {{ $t('edit.bettergiDomainPickerOk') }}
         </a-button>
       </template>
     </a-modal>

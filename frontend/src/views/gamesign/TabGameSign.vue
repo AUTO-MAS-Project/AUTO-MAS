@@ -376,7 +376,7 @@ onMounted(() => {
     <!-- 全局设置区 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('gamesign.section.settings') }}</h3>
+        <h3>{{ $t('gamesign.section.settings') }}</h3>
         <div class="section-header-actions">
           <DocLink :url="MAS_DOC_URLS.gameSign" />
           <a-button
@@ -388,12 +388,12 @@ onMounted(() => {
             @click="handleManualSign"
           >
             <template #icon><SwapOutlined /></template>
-            {{ t('gamesign.section.signAll') }}
+            {{ $t('gamesign.section.signAll') }}
           </a-button>
         </div>
       </div>
       <a-alert class="game-sign-notice" type="info" show-icon>
-        <template #message>{{ t('gamesign.section.noticeTitle') }}</template>
+        <template #message>{{ $t('gamesign.section.noticeTitle') }}</template>
         <template #description>
           <div>{{ credentialToolDescription }}</div>
           <div>{{ credentialPrivacyNotice }}</div>
@@ -402,8 +402,8 @@ onMounted(() => {
       <div class="settings-list">
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.enable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.enableDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.enable') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.enableDesc') }}</span>
           </div>
           <a-switch
             :checked="config.Enabled"
@@ -413,8 +413,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.activityEnable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.activityEnableDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.activityEnable') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.activityEnableDesc') }}</span>
           </div>
           <a-switch
             :checked="config.ActivityEnabled !== false"
@@ -424,8 +424,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.homeActivityEnable') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.homeActivityEnableDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.homeActivityEnable') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.homeActivityEnableDesc') }}</span>
           </div>
           <a-switch
             :checked="homeActivityNotesVisible"
@@ -436,8 +436,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.notify') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.notifyDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.notify') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.notifyDesc') }}</span>
           </div>
           <a-switch
             :checked="config.NotifyEnabled"
@@ -448,8 +448,8 @@ onMounted(() => {
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.runOnStartup') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.runOnStartupDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.runOnStartup') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.runOnStartupDesc') }}</span>
           </div>
           <a-switch
             :checked="config.RunOnStartup"
@@ -459,13 +459,13 @@ onMounted(() => {
         </div>
         <div class="setting-row setting-row-static">
           <div class="setting-info">
-            <span class="setting-title">{{ t('gamesign.section.lastSign') }}</span>
-            <span class="setting-desc">{{ t('gamesign.section.lastSignDesc') }}</span>
+            <span class="setting-title">{{ $t('gamesign.section.lastSign') }}</span>
+            <span class="setting-desc">{{ $t('gamesign.section.lastSignDesc') }}</span>
           </div>
           <span class="setting-value">{{
             config.LastSignDate && formatConfigDate(config.LastSignDate, 8 * 60) !== '2000-01-01'
               ? formatConfigDate(config.LastSignDate, 8 * 60)
-              : t('gamesign.section.neverSigned')
+              : $t('gamesign.section.neverSigned')
           }}</span>
         </div>
       </div>
@@ -474,7 +474,7 @@ onMounted(() => {
     <!-- 用户列表 -->
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('gamesign.list.title') }}</h3>
+        <h3>{{ $t('gamesign.list.title') }}</h3>
         <a-button
           type="primary"
           ghost
@@ -484,7 +484,7 @@ onMounted(() => {
           @click="handleAddAccount"
         >
           <template #icon><PlusOutlined /></template>
-          {{ t('gamesign.list.add') }}
+          {{ $t('gamesign.list.add') }}
         </a-button>
       </div>
 
@@ -492,10 +492,10 @@ onMounted(() => {
         <!-- 表头 -->
         <div class="user-table-header">
           <div class="header-cell drag-cell"></div>
-          <div class="header-cell name-cell">{{ t('gamesign.list.colName') }}</div>
-          <div class="header-cell status-cell">{{ t('gamesign.list.colEnabled') }}</div>
-          <div class="header-cell tags-cell">{{ t('gamesign.list.colTags') }}</div>
-          <div class="header-cell actions-cell">{{ t('gamesign.list.colActions') }}</div>
+          <div class="header-cell name-cell">{{ $t('gamesign.list.colName') }}</div>
+          <div class="header-cell status-cell">{{ $t('gamesign.list.colEnabled') }}</div>
+          <div class="header-cell tags-cell">{{ $t('gamesign.list.colTags') }}</div>
+          <div class="header-cell actions-cell">{{ $t('gamesign.list.colActions') }}</div>
         </div>
 
         <!-- 拖拽内容 -->
@@ -515,7 +515,7 @@ onMounted(() => {
             <div class="user-row">
               <!-- 拖拽手柄 -->
               <div class="row-cell drag-cell">
-                <span class="drag-handle" :title="t('gamesign.list.drag')">
+                <span class="drag-handle" :title="$t('gamesign.list.drag')">
                   <span class="drag-dots"></span>
                 </span>
               </div>
@@ -542,7 +542,7 @@ onMounted(() => {
                     <template #title>
                       <div class="sign-tooltip">
                         <div class="sign-tooltip-title">
-                          {{ t('gamesign.list.tooltipTitle', { platform: tag.platform }) }}
+                          {{ $t('gamesign.list.tooltipTitle', { platform: tag.platform }) }}
                         </div>
                         <template
                           v-for="(group, gIdx) in getAccountGroupsForPlatformReactive(
@@ -556,18 +556,18 @@ onMounted(() => {
                             :key="`${game.account || group.account_alias}-${game.game}-${game.kind}`"
                           >
                             <div class="sign-tooltip-alias">
-                              {{ getSignDetailAlias(group, game, t('gamesign.unknownUser')) }}
+                              {{ getSignDetailAlias(group, game, $t('gamesign.unknownUser')) }}
                             </div>
                             <div class="sign-tooltip-row">
                               <span>{{
                                 game.kind === 'community'
-                                  ? t('gamesign.list.kuroCoinSign')
+                                  ? $t('gamesign.list.kuroCoinSign')
                                   : game.kind === 'game'
-                                    ? t('gamesign.list.gameSignTask', { game: game.game })
+                                    ? $t('gamesign.list.gameSignTask', { game: game.game })
                                     : game.game
                               }}</span>
                               <span :class="getSignDetailClass(game.status)">
-                                ● {{ t(getSignStatusKey(game.status)) }}
+                                ● {{ $t(getSignStatusKey(game.status)) }}
                               </span>
                               <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
                               <span v-if="game.reason" class="tt-reason">{{ game.reason }}</span>
@@ -575,14 +575,14 @@ onMounted(() => {
                           </template>
                         </template>
                         <div v-if="tag.games.length === 0" class="sign-tooltip-empty">
-                          {{ t('gamesign.list.noSignData') }}
+                          {{ $t('gamesign.list.noSignData') }}
                         </div>
                       </div>
                     </template>
                     <span :class="['platform-tag', getTagClass(tag.status)]">
                       {{ getTagText(tag) }}
                       <template v-if="tag.status === 'partial' && tag.failedCount > 0">
-                        · {{ t('gamesign.signStatus.partialFailure') }}
+                        · {{ $t('gamesign.signStatus.partialFailure') }}
                       </template>
                     </span>
                   </a-tooltip>
@@ -597,7 +597,7 @@ onMounted(() => {
                     @click="openEditModal(account)"
                   >
                     <template #icon><EditOutlined /></template>
-                    {{ t('gamesign.list.edit') }}
+                    {{ $t('gamesign.list.edit') }}
                   </a-button>
                   <a-button
                     size="middle"
@@ -605,7 +605,7 @@ onMounted(() => {
                     @click="handleDeleteAccount(account)"
                   >
                     <template #icon><DeleteOutlined /></template>
-                    {{ t('gamesign.list.del') }}
+                    {{ $t('gamesign.list.del') }}
                   </a-button>
                 </a-space>
               </div>
@@ -615,8 +615,8 @@ onMounted(() => {
 
         <!-- 空状态 -->
         <div v-if="accounts.length === 0" class="empty-state">
-          <div class="empty-hint">{{ t('gamesign.list.empty') }}</div>
-          <div class="empty-guide">{{ t('gamesign.list.emptyGuide') }}</div>
+          <div class="empty-hint">{{ $t('gamesign.list.empty') }}</div>
+          <div class="empty-guide">{{ $t('gamesign.list.emptyGuide') }}</div>
         </div>
       </div>
     </div>
@@ -624,9 +624,9 @@ onMounted(() => {
     <!-- 编辑 Token 模态框 -->
     <a-modal
       v-model:open="editModalVisible"
-      :title="t('gamesign.edit.title', { name: editingAccount?.Name || '' })"
-      :ok-text="t('gamesign.edit.save')"
-      :cancel-text="t('common.cancel')"
+      :title="$t('gamesign.edit.title', { name: editingAccount?.Name || '' })"
+      :ok-text="$t('gamesign.edit.save')"
+      :cancel-text="$t('common.cancel')"
       :width="560"
       :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
       centered
@@ -635,50 +635,50 @@ onMounted(() => {
     >
       <div v-if="editingAccount" class="modal-form">
         <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.edit.userName') }}</span>
+          <span class="form-label">{{ $t('gamesign.edit.userName') }}</span>
           <a-input v-model:value="editingAccount.Name" size="large" />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.miyoushe')
+          $t('gamesign.edit.miyoushe')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.MiyousheToken"
             size="large"
-            :placeholder="t('gamesign.edit.miyoushePlaceholder')"
+            :placeholder="$t('gamesign.edit.miyoushePlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.kuro')
+          $t('gamesign.edit.kuro')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.KuroToken"
             size="large"
-            :placeholder="t('gamesign.edit.kuroPlaceholder')"
+            :placeholder="$t('gamesign.edit.kuroPlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.skland')
+          $t('gamesign.edit.skland')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.SklandToken"
             size="large"
-            :placeholder="t('gamesign.edit.sklandPlaceholder')"
+            :placeholder="$t('gamesign.edit.sklandPlaceholder')"
             allow-clear
           />
         </div>
         <a-divider orientation="left" class="community-divider">{{
-          t('gamesign.edit.taygedo')
+          $t('gamesign.edit.taygedo')
         }}</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.TaygedoToken"
             size="large"
-            :placeholder="t('gamesign.edit.taygedoPlaceholder')"
+            :placeholder="$t('gamesign.edit.taygedoPlaceholder')"
             allow-clear
           />
         </div>

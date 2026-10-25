@@ -1,7 +1,7 @@
 <template>
   <div class="plans-header">
     <div class="header-left">
-      <h1 class="page-title">{{ t('plan.title') }}</h1>
+      <h1 class="page-title">{{ $t('plan.title') }}</h1>
     </div>
     <div class="header-actions">
       <a-space size="middle">
@@ -10,28 +10,28 @@
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
               <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
-                {{ t('plan.createTyped', { name: t(planType.displayNameKey) }) }}
+                {{ $t('plan.createTyped', { name: $t(planType.displayNameKey) }) }}
               </a-menu-item>
             </a-menu>
           </template>
           <a-button type="primary" size="large">
-            {{ t('plan.create') }}
+            {{ $t('plan.create') }}
             <DownOutlined />
           </a-button>
         </a-dropdown>
 
         <a-popconfirm
           v-if="planList.length > 0"
-          :title="t('plan.deleteConfirm')"
-          :ok-text="t('common.confirm')"
-          :cancel-text="t('common.cancel')"
+          :title="$t('plan.deleteConfirm')"
+          :ok-text="$t('common.confirm')"
+          :cancel-text="$t('common.cancel')"
           @confirm="$emit('remove-plan', activePlanId)"
         >
           <a-button danger size="large" :disabled="!activePlanId">
             <template #icon>
               <DeleteOutlined />
             </template>
-            {{ t('plan.deleteCurrent') }}
+            {{ $t('plan.deleteCurrent') }}
           </a-button>
         </a-popconfirm>
       </a-space>
@@ -40,13 +40,10 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
-
-const { t } = useI18n()
 
 interface Plan {
   id: string

@@ -5,9 +5,9 @@
       <a-col :span="12">
         <a-form-item name="Channel">
           <template #label>
-            <a-tooltip :title="t('edit.pickStageTypeFarm')">
+            <a-tooltip :title="$t('edit.pickStageTypeFarm')">
               <span class="form-label">
-                {{ t('edit.farmType') }}
+                {{ $t('edit.farmType') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -15,21 +15,21 @@
           <a-select
             v-model:value="formData.Stage.Channel"
             size="large"
-            :placeholder="t('edit.pickFarmType')"
+            :placeholder="$t('edit.pickFarmType')"
             @change="emitSave('Stage.Channel', formData.Stage.Channel)"
           >
-            <a-select-option value="Relic">{{ t('edit.relic') }}</a-select-option>
-            <a-select-option value="Materials">{{ t('edit.material') }}</a-select-option>
-            <a-select-option value="Ornament">{{ t('edit.ornament') }}</a-select-option>
+            <a-select-option value="Relic">{{ $t('edit.relic') }}</a-select-option>
+            <a-select-option value="Materials">{{ $t('edit.material') }}</a-select-option>
+            <a-select-option value="Ornament">{{ $t('edit.ornament') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.activeStageTakenFrom')">
+            <a-tooltip :title="$t('edit.activeStageTakenFrom')">
               <span class="form-label">
-                {{ t('edit.activeStage') }}
+                {{ $t('edit.activeStage') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -48,9 +48,9 @@
       <a-col :span="12">
         <a-form-item name="Relic">
           <template #label>
-            <a-tooltip :title="t('edit.pickRelicStageFarm')">
+            <a-tooltip :title="$t('edit.pickRelicStageFarm')">
               <span class="form-label">
-                {{ t('edit.relicStage') }}
+                {{ $t('edit.relicStage') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -58,12 +58,12 @@
           <a-select
             v-model:value="formData.Stage.Relic"
             size="large"
-            :placeholder="t('edit.pickRelicStage')"
+            :placeholder="$t('edit.pickRelicStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Relic', formData.Stage.Relic)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{ $t('edit.keepOriginalConfiguration') }}</a-select-option>
             <a-select-option value="Cavern_of_Corrosion_Path_of_Insight"
               >遗器：领航员 & 名冶（观火之径）</a-select-option
             >
@@ -118,9 +118,9 @@
       <a-col :span="12">
         <a-form-item name="Ornament">
           <template #label>
-            <a-tooltip :title="t('edit.pickOrnamentStageFarm')">
+            <a-tooltip :title="$t('edit.pickOrnamentStageFarm')">
               <span class="form-label">
-                {{ t('edit.ornamentStage') }}
+                {{ $t('edit.ornamentStage') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -128,12 +128,12 @@
           <a-select
             v-model:value="formData.Stage.Ornament"
             size="large"
-            :placeholder="t('edit.pickOrnamentStage')"
+            :placeholder="$t('edit.pickOrnamentStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Ornament', formData.Stage.Ornament)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{ $t('edit.keepOriginalConfiguration') }}</a-select-option>
             <a-select-option value="Divergent_Universe_Bugs_Incoming"
               >饰品：坠星 & 寰宇（虫虫来袭）</a-select-option
             >
@@ -186,19 +186,19 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.filteredByMaterialStage')">
+            <a-tooltip :title="$t('edit.filteredByMaterialStage')">
               <span class="form-label">
-                {{ t('edit.materialCategory') }}
+                {{ $t('edit.materialCategory') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="materialCategory" size="large" :placeholder="t('edit.all')">
-            <a-select-option value="">{{ t('edit.all') }}</a-select-option>
-            <a-select-option value="Calyx_Golden">{{ t('edit.calyxGolden') }}</a-select-option>
-            <a-select-option value="Calyx_Crimson">{{ t('edit.calyxCrimson') }}</a-select-option>
+          <a-select v-model:value="materialCategory" size="large" :placeholder="$t('edit.all')">
+            <a-select-option value="">{{ $t('edit.all') }}</a-select-option>
+            <a-select-option value="Calyx_Golden">{{ $t('edit.calyxGolden') }}</a-select-option>
+            <a-select-option value="Calyx_Crimson">{{ $t('edit.calyxCrimson') }}</a-select-option>
             <a-select-option value="Stagnant_Shadow">{{
-              t('edit.stagnantShadow')
+              $t('edit.stagnantShadow')
             }}</a-select-option>
           </a-select>
         </a-form-item>
@@ -206,9 +206,9 @@
       <a-col :span="12">
         <a-form-item name="Materials">
           <template #label>
-            <a-tooltip :title="t('edit.pickMaterialStageFarm')">
+            <a-tooltip :title="$t('edit.pickMaterialStageFarm')">
               <span class="form-label">
-                {{ t('edit.materialStage') }}
+                {{ $t('edit.materialStage') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -216,12 +216,12 @@
           <a-select
             v-model:value="formData.Stage.Materials"
             size="large"
-            :placeholder="t('edit.pickMaterialStage')"
+            :placeholder="$t('edit.pickMaterialStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Materials', formData.Stage.Materials)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{ $t('edit.keepOriginalConfiguration') }}</a-select-option>
             <template v-for="option in filteredMaterialOptions" :key="option.value">
               <a-select-option :value="option.value">{{ option.label }}</a-select-option>
             </template>
@@ -235,9 +235,9 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip :title="t('edit.pickDivergentUniverseStage3')">
+            <a-tooltip :title="$t('edit.pickDivergentUniverseStage3')">
               <span class="form-label">
-                {{ t('edit.echoOfWar') }}
+                {{ $t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -245,12 +245,12 @@
           <a-select
             v-model:value="formData.Stage.EchoOfWar"
             size="large"
-            :placeholder="t('edit.pickDivergentUniverseStage2')"
+            :placeholder="$t('edit.pickDivergentUniverseStage2')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.EchoOfWar', formData.Stage.EchoOfWar)"
           >
-            <a-select-option value="-">{{ t('edit.disabled') }}</a-select-option>
+            <a-select-option value="-">{{ $t('edit.disabled') }}</a-select-option>
             <a-select-option value="Echo_of_War_The_Comedy_of_Doom"
               >坏灭的喜剧（二相乐园）</a-select-option
             >
@@ -284,9 +284,9 @@
       <a-col :span="12">
         <a-form-item name="SimulatedUniverseWorld">
           <template #label>
-            <a-tooltip :title="t('edit.pickSimulatedUniverseWorld2')">
+            <a-tooltip :title="$t('edit.pickSimulatedUniverseWorld2')">
               <span class="form-label">
-                {{ t('edit.simulatedUniverse') }}
+                {{ $t('edit.simulatedUniverse') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -294,28 +294,28 @@
           <a-select
             v-model:value="formData.Stage.SimulatedUniverseWorld"
             size="large"
-            :placeholder="t('edit.pickSimulatedUniverseWorld')"
+            :placeholder="$t('edit.pickSimulatedUniverseWorld')"
             show-search
             :filter-option="filterOption"
             @change="
               emitSave('Stage.SimulatedUniverseWorld', formData.Stage.SimulatedUniverseWorld)
             "
           >
-            <a-select-option value="-">{{ t('edit.disabled') }}</a-select-option>
+            <a-select-option value="-">{{ $t('edit.disabled') }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_3">{{
-              t('edit.world3')
+              $t('edit.world3')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_4">{{
-              t('edit.world4')
+              $t('edit.world4')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_5">{{
-              t('edit.world5')
+              $t('edit.world5')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_6">{{
-              t('edit.world6')
+              $t('edit.world6')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_8">{{
-              t('edit.world8')
+              $t('edit.world8')
             }}</a-select-option>
           </a-select>
         </a-form-item>
@@ -327,9 +327,9 @@
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="ExtractReservedTrailblazePower">
           <template #label>
-            <a-tooltip :title="t('edit.whetherReservedTrailblazePower')">
+            <a-tooltip :title="$t('edit.whetherReservedTrailblazePower')">
               <span class="form-label">
-                {{ t('edit.useReservedTrailblazePower') }}
+                {{ $t('edit.useReservedTrailblazePower') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -344,17 +344,17 @@
               )
             "
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="UseFuel">
           <template #label>
-            <a-tooltip :title="t('edit.whetherFuelUsed')">
+            <a-tooltip :title="$t('edit.whetherFuelUsed')">
               <span class="form-label">
-                {{ t('edit.useFuel') }}
+                {{ $t('edit.useFuel') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -364,17 +364,17 @@
             size="large"
             @change="emitSave('Stage.UseFuel', formData.Stage.UseFuel)"
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
       <a-col v-if="formData.Stage.UseFuel" :span="8">
         <a-form-item name="FuelReserve">
           <template #label>
-            <a-tooltip :title="t('edit.fuelKeepReserveWhen')">
+            <a-tooltip :title="$t('edit.fuelKeepReserveWhen')">
               <span class="form-label">
-                {{ t('edit.fuelKeep') }}
+                {{ $t('edit.fuelKeep') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>

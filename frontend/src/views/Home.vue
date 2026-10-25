@@ -14,7 +14,7 @@
           <template #icon>
             <EditOutlined />
           </template>
-          {{ t('home.editLayout') }}
+          {{ $t('home.editLayout') }}
         </a-button>
         <a-button
           type="primary"
@@ -26,7 +26,7 @@
           <template #icon>
             <BellOutlined />
           </template>
-          {{ t('home.viewNotice') }}
+          {{ $t('home.viewNotice') }}
         </a-button>
       </div>
     </div>

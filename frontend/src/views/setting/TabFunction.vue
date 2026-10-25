@@ -125,14 +125,14 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.func.startupSection') }}</h3>
+        <h3>{{ $t('setting.func.startupSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.autoStart') }}</span>
-              <a-tooltip :title="t('setting.func.autoStartTip')">
+              <span class="form-label">{{ $t('setting.func.autoStart') }}</span>
+              <a-tooltip :title="$t('setting.func.autoStartTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -142,16 +142,16 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.startMinimized') }}</span>
-              <a-tooltip :title="t('setting.func.startMinimizedTip')">
+              <span class="form-label">{{ $t('setting.func.startMinimized') }}</span>
+              <a-tooltip :title="$t('setting.func.startMinimizedTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -163,8 +163,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
               "
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -173,14 +173,14 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.func.featureSection') }}</h3>
+        <h3>{{ $t('setting.func.featureSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.retention') }}</span>
-              <a-tooltip :title="t('setting.func.retentionTip')">
+              <span class="form-label">{{ $t('setting.func.retention') }}</span>
+              <a-tooltip :title="$t('setting.func.retentionTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -198,8 +198,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.silent') }}</span>
-              <a-tooltip :title="t('setting.func.silentTip')">
+              <span class="form-label">{{ $t('setting.func.silent') }}</span>
+              <a-tooltip :title="$t('setting.func.silentTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -209,16 +209,16 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.preventSleep') }}</span>
-              <a-tooltip :title="t('setting.func.preventSleepTip')">
+              <span class="form-label">{{ $t('setting.func.preventSleep') }}</span>
+              <a-tooltip :title="$t('setting.func.preventSleepTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -228,8 +228,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -238,8 +238,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.telemetry') }}</span>
-              <a-tooltip :title="t('setting.func.telemetryTip')">
+              <span class="form-label">{{ $t('setting.func.telemetry') }}</span>
+              <a-tooltip :title="$t('setting.func.telemetryTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -251,27 +251,27 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 (checked: any) => handleSettingChange('Function', 'IfEnableTelemetry', checked)
               "
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.blockAds') }}</span>
+              <span class="form-label">{{ $t('setting.func.blockAds') }}</span>
               <a-tooltip>
                 <template #title>
                   <div style="max-width: 300px">
-                    <p>{{ t('setting.func.blockAdsIntro') }}</p>
+                    <p>{{ $t('setting.func.blockAdsIntro') }}</p>
                     <ul style="margin: 8px 0; padding-left: 16px">
                       <li>
-                        <strong>{{ t('emulator.type.mumu') }}</strong
-                        >: {{ t('setting.func.blockAdsMumu') }}
+                        <strong>{{ $t('emulator.type.mumu') }}</strong
+                        >: {{ $t('setting.func.blockAdsMumu') }}
                       </li>
                       <li>
-                        <strong>{{ t('emulator.type.ldplayer') }}</strong
-                        >: {{ t('setting.func.blockAdsLd') }}
+                        <strong>{{ $t('emulator.type.ldplayer') }}</strong
+                        >: {{ $t('setting.func.blockAdsLd') }}
                       </li>
                     </ul>
                   </div>
@@ -285,8 +285,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
@@ -295,14 +295,14 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.func.voiceSection') }}</h3>
+        <h3>{{ $t('setting.func.voiceSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.voiceEnable') }}</span>
-              <a-tooltip :title="t('setting.func.voiceEnableTip')">
+              <span class="form-label">{{ $t('setting.func.voiceEnable') }}</span>
+              <a-tooltip :title="$t('setting.func.voiceEnableTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -312,16 +312,16 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               style="width: 100%"
               @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="12">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.func.voiceType') }}</span>
-              <a-tooltip :title="t('setting.func.voiceTypeTip')">
+              <span class="form-label">{{ $t('setting.func.voiceType') }}</span>
+              <a-tooltip :title="$t('setting.func.voiceTypeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -342,14 +342,14 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.display.section') }}</h3>
+        <h3>{{ $t('setting.display.section') }}</h3>
       </div>
       <a-alert type="info" show-icon class="vdd-alert">
         <template #message>
           <i18n-t keypath="setting.display.intro" tag="span" scope="global">
             <template #driverLink>
               <a href="#" @click.prevent="openVddDownload">{{
-                t('setting.display.introDriverLink')
+                $t('setting.display.introDriverLink')
               }}</a>
             </template>
           </i18n-t>
@@ -359,8 +359,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.enable') }}</span>
-              <a-tooltip :title="t('setting.display.enableTip')">
+              <span class="form-label">{{ $t('setting.display.enable') }}</span>
+              <a-tooltip :title="$t('setting.display.enableTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -373,16 +373,16 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 (checked: any) => handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
               "
             >
-              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+              <a-select-option :value="true">{{ $t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ $t('common.no') }}</a-select-option>
             </a-select>
           </div>
         </a-col>
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.mode') }}</span>
-              <a-tooltip :title="t('setting.display.modeTip')">
+              <span class="form-label">{{ $t('setting.display.mode') }}</span>
+              <a-tooltip :title="$t('setting.display.modeTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -399,8 +399,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.check') }}</span>
-              <a-tooltip :title="t('setting.display.checkTip')">
+              <span class="form-label">{{ $t('setting.display.check') }}</span>
+              <a-tooltip :title="$t('setting.display.checkTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -410,15 +410,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               :loading="vddChecking"
               @click="runVirtualDisplayCheck"
             >
-              {{ t('setting.display.checkAction') }}
+              {{ $t('setting.display.checkAction') }}
             </a-button>
           </div>
         </a-col>
         <a-col :span="6">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.display.detach') }}</span>
-              <a-tooltip :title="t('setting.display.detachTip')">
+              <span class="form-label">{{ $t('setting.display.detach') }}</span>
+              <a-tooltip :title="$t('setting.display.detachTip')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
@@ -430,7 +430,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               :loading="vddDetaching"
               @click="runVirtualDisplayDetach"
             >
-              {{ t('setting.display.detachAction') }}
+              {{ $t('setting.display.detachAction') }}
             </a-button>
           </div>
         </a-col>
@@ -440,8 +440,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
           <p class="vdd-holding">
             {{
               vddHolding
-                ? t('setting.display.holdingNow', { holding: vddHolding })
-                : t('setting.display.holdingNone')
+                ? $t('setting.display.holdingNow', { holding: vddHolding })
+                : $t('setting.display.holdingNone')
             }}
           </p>
         </a-col>
@@ -451,7 +451,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
           <a-alert type="warning" show-icon :message="vddWarning">
             <template #description>
               <a href="#" @click.prevent="openVddDownload">
-                {{ t('setting.display.download') }}
+                {{ $t('setting.display.download') }}
               </a>
             </template>
           </a-alert>
@@ -463,7 +463,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
           <a-alert :type="vddAllPassed ? 'success' : 'warning'" show-icon>
             <template #message>
               {{
-                vddAllPassed ? t('setting.display.checkPassed') : t('setting.display.checkIssue')
+                vddAllPassed ? $t('setting.display.checkPassed') : $t('setting.display.checkIssue')
               }}
             </template>
             <template #description>
@@ -474,15 +474,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <li v-for="item in vddResult.results ?? []" :key="item.stage">
                   <CheckCircleOutlined v-if="item.passed" class="vdd-ok" />
                   <CloseCircleOutlined v-else class="vdd-fail" />
-                  {{ t(`setting.display.stage.${item.stage}`) }} — {{ item.message }}
+                  {{ $t(`setting.display.stage.${item.stage}`) }} — {{ item.message }}
                 </li>
               </ul>
               <p v-if="vddResult.monitors" class="vdd-monitors">
-                {{ t('setting.display.monitors') }}: {{ vddResult.monitors }}
+                {{ $t('setting.display.monitors') }}: {{ vddResult.monitors }}
               </p>
               <p v-if="!(vddResult.results ?? []).some(item => item.stage === 'openable')">
                 <a href="#" @click.prevent="openVddDownload">
-                  {{ t('setting.display.download') }}
+                  {{ $t('setting.display.download') }}
                 </a>
               </p>
             </template>
@@ -494,7 +494,7 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
     <div class="flavor-entries">
       <div class="mystery-entry">
         <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
-          {{ t('mystery.entry') }}
+          {{ $t('mystery.entry') }}
         </a-button>
       </div>
     </div>

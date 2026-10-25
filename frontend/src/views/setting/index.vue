@@ -509,11 +509,11 @@ onMounted(() => {
   <div class="settings-container">
     <component :is="modalContextHolder" />
     <div class="settings-header">
-      <h1 class="page-title">{{ t('setting.title') }}</h1>
+      <h1 class="page-title">{{ $t('setting.title') }}</h1>
     </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="basic" :tab="t('setting.tab.basic')">
+        <a-tab-pane key="basic" :tab="$t('setting.tab.basic')">
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
@@ -559,7 +559,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="function" :tab="t('setting.tab.function')">
+        <a-tab-pane key="function" :tab="$t('setting.tab.function')">
           <TabFunction
             :settings="settings"
             :history-retention-options="historyRetentionOptions"
@@ -567,7 +567,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
+        <a-tab-pane key="notify" :tab="$t('setting.tab.notify')">
           <TabNotify
             :settings="settings"
             :handle-setting-change="handleSettingChange"
@@ -575,10 +575,10 @@ onMounted(() => {
             :testing-notify="testingNotify"
           />
         </a-tab-pane>
-        <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
+        <a-tab-pane key="advanced" :tab="$t('setting.tab.advanced')">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
-        <a-tab-pane key="others" :tab="t('setting.tab.others')">
+        <a-tab-pane key="others" :tab="$t('setting.tab.others')">
           <TabOthers
             :version="version"
             :backend-update-info="backendUpdateInfo"

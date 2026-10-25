@@ -147,18 +147,18 @@ const toggleExpand = (id: string) => {
 <template>
   <div class="taskboard-container">
     <div class="tb-header">
-      <h1 class="page-title">{{ t('taskboard.title') }}</h1>
+      <h1 class="page-title">{{ $t('taskboard.title') }}</h1>
       <span class="tb-updated">
         {{
           updatedAt
-            ? t('taskboard.dataUpdated', { p0: updatedAt })
+            ? $t('taskboard.dataUpdated', { p0: updatedAt })
             : loading || completionLoading
-              ? t('taskboard.loading')
-              : t('taskboard.notUpdated')
+              ? $t('taskboard.loading')
+              : $t('taskboard.notUpdated')
         }}
       </span>
       <a-button :loading="refreshing || loading" @click="load">
-        {{ t('taskboard.refresh') }}
+        {{ $t('taskboard.refresh') }}
       </a-button>
     </div>
 
@@ -181,12 +181,12 @@ const toggleExpand = (id: string) => {
         type="warning"
         show-icon
         class="tb-alert"
-        :message="t('taskboard.completionFailed')"
+        :message="$t('taskboard.completionFailed')"
         :description="completionError"
       >
         <template #action>
           <a-button size="small" :loading="completionLoading" @click="reloadCompletions">
-            {{ t('taskboard.retry') }}
+            {{ $t('taskboard.retry') }}
           </a-button>
         </template>
       </a-alert>
@@ -195,10 +195,10 @@ const toggleExpand = (id: string) => {
         type="warning"
         show-icon
         class="tb-alert"
-        :message="t('taskboard.sourceIssue')"
+        :message="$t('taskboard.sourceIssue')"
         :description="sourceIssues.join('；')"
       />
-      <div v-if="tab === 'archived'" class="tb-hint">{{ t('taskboard.archiveHint') }}</div>
+      <div v-if="tab === 'archived'" class="tb-hint">{{ $t('taskboard.archiveHint') }}</div>
 
       <a-spin :spinning="loading && !allEvents.length" class="tb-spin">
         <div v-for="sec in sections" :key="sec.id" class="tb-group">
@@ -235,12 +235,12 @@ const toggleExpand = (id: string) => {
           >
             {{
               expanded[sec.id]
-                ? t('taskboard.collapse')
-                : t('taskboard.more', { p0: sec.items.length - 4 })
+                ? $t('taskboard.collapse')
+                : $t('taskboard.more', { p0: sec.items.length - 4 })
             }}
           </a-button>
         </div>
-        <a-empty v-if="!sections.length && !loading" :description="t('taskboard.empty')" />
+        <a-empty v-if="!sections.length && !loading" :description="$t('taskboard.empty')" />
       </a-spin>
     </div>
 

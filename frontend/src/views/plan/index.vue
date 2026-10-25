@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" :tip="t('plan.loading')" />
+      <a-spin size="large" :tip="$t('plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -19,11 +19,11 @@
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
         <div class="empty-content">
           <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('plan.noData')" class="empty-image" />
+            <img src="@/assets/NoData.png" :alt="$t('plan.noData')" class="empty-image" />
           </div>
           <div class="empty-text-content">
-            <h3 class="empty-title">{{ t('plan.emptyTitle') }}</h3>
-            <p class="empty-description">{{ t('plan.emptyDesc') }}</p>
+            <h3 class="empty-title">{{ $t('plan.emptyTitle') }}</h3>
+            <p class="empty-description">{{ $t('plan.emptyDesc') }}</p>
           </div>
         </div>
       </div>

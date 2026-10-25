@@ -5,18 +5,15 @@
         <div class="closing-spinner">
           <LoadingOutlined />
         </div>
-        <div class="closing-text">{{ t('comp.closingBackend') }}</div>
-        <div class="closing-subtitle">{{ t('comp.pleaseWaitAppClosing') }}</div>
+        <div class="closing-text">{{ $t('comp.closingBackend') }}</div>
+        <div class="closing-subtitle">{{ $t('comp.pleaseWaitAppClosing') }}</div>
       </div>
     </div>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { LoadingOutlined } from '@ant-design/icons-vue'
-
-const { t } = useI18n()
 
 defineProps<{
   visible: boolean

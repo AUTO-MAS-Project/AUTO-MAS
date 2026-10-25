@@ -3,13 +3,13 @@
     <div class="panel-header">
       <div class="header-left">
         <UnorderedListOutlined />
-        <span>{{ t('history.recordList') }}</span>
+        <span>{{ $t('history.recordList') }}</span>
       </div>
       <div class="header-right">
-        <span class="record-count">{{ t('history.recordCount', { count: records.length }) }}</span>
+        <span class="record-count">{{ $t('history.recordCount', { count: records.length }) }}</span>
         <a-popover placement="bottomRight">
           <template #content>
-            <p style="margin: 0">{{ t('history.timeRule') }}</p>
+            <p style="margin: 0">{{ $t('history.timeRule') }}</p>
           </template>
           <HistoryOutlined class="info-icon" />
         </a-popover>
@@ -18,8 +18,8 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.emptyRecords') }}</span>
+        <img src="@/assets/NoData.png" :alt="$t('history.noData')" class="empty-image" />
+        <span class="empty-text">{{ $t('history.emptyRecords') }}</span>
       </div>
 
       <div v-else class="records-scroll">
@@ -45,14 +45,14 @@
                   v-else-if="record.status === 'skipped' || record.status === 'cancelled'"
                 />
                 <CloseCircleOutlined v-else />
-                {{ record.message || t(statusLabelKey(record.status)) }}
+                {{ record.message || $t(statusLabelKey(record.status)) }}
               </a-tag>
             </div>
             <div class="record-file">
               {{ record.script_name }} · #{{ record.id }}
               <span v-if="record.storage_error_count">
                 ·
-                {{ t('history.storageWarningCount', { count: record.storage_error_count }) }}</span
+                {{ $t('history.storageWarningCount', { count: record.storage_error_count }) }}</span
               >
             </div>
           </div>
@@ -64,7 +64,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -76,8 +75,6 @@ import {
 import type { HistoryIndexItem } from '@/api'
 import { formatStoredDateTime } from '@/utils/dateDisplay'
 import { statusClass, statusTagColor, statusLabelKey } from '../historyStatus'
-
-const { t } = useI18n()
 
 interface Props {
   records: HistoryIndexItem[]

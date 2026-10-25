@@ -150,8 +150,8 @@ watch(
     <header class="activity-card-header">
       <span
         class="activity-drag-handle"
-        :title="t('gamesign.activity.drag')"
-        :aria-label="t('gamesign.activity.drag')"
+        :title="$t('gamesign.activity.drag')"
+        :aria-label="$t('gamesign.activity.drag')"
         ><HolderOutlined
       /></span>
       <span class="activity-game-mark">
@@ -159,7 +159,7 @@ watch(
         <component v-else :is="visual?.icon ?? AppstoreOutlined" aria-hidden="true" />
       </span>
       <div class="activity-card-title">
-        <strong>{{ visual?.labelKey ? t(visual.labelKey) : snapshot.game }}</strong>
+        <strong>{{ visual?.labelKey ? $t(visual.labelKey) : snapshot.game }}</strong>
         <span>{{ platform }}</span>
       </div>
       <a-tag :color="statusMeta.color">{{ statusMeta.label }}</a-tag>
@@ -195,7 +195,7 @@ watch(
           :key="group.labelKey"
           class="activity-section"
         >
-          <h3 v-if="group.labelKey">{{ t(group.labelKey) }}</h3>
+          <h3 v-if="group.labelKey">{{ $t(group.labelKey) }}</h3>
           <CommunityActivityMetric
             v-for="metric in group.metrics"
             :key="`${metric.period}-${metric.name}`"
@@ -214,9 +214,9 @@ watch(
     />
     <footer class="activity-card-footer">
       <span v-if="snapshot.roleUid">{{
-        t('gamesign.activity.roleUid', { uid: snapshot.roleUid })
+        $t('gamesign.activity.roleUid', { uid: snapshot.roleUid })
       }}</span>
-      <span v-else>{{ t('gamesign.activity.noRole') }}</span>
+      <span v-else>{{ $t('gamesign.activity.noRole') }}</span>
       <span v-if="updatedAt">{{ updatedAt }}</span>
     </footer>
   </a-card>

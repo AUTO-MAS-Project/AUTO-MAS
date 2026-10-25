@@ -32,7 +32,7 @@
               class="users-load-error"
               type="error"
               show-icon
-              :message="t('apiErrors.userLoadRetry', { reason: script.usersLoadError })"
+              :message="$t('apiErrors.userLoadRetry', { reason: script.usersLoadError })"
             >
               <template #action>
                 <a-button
@@ -40,7 +40,7 @@
                   :loading="props.retryingUsers?.has(script.id)"
                   @click="emit('retryUsers', script.id)"
                 >
-                  {{ t('apiErrors.retry') }}
+                  {{ $t('apiErrors.retry') }}
                 </a-button>
               </template>
             </a-alert>
@@ -84,7 +84,7 @@
               class="empty-users"
             >
               <div class="empty-content">
-                <img src="@/assets/NoData.png" :alt="t('comp.noData')" class="empty-image" />
+                <img src="@/assets/NoData.png" :alt="$t('comp.noData')" class="empty-image" />
               </div>
             </div>
           </a-card>

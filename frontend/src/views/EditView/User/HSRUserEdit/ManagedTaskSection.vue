@@ -1,10 +1,10 @@
 <template>
   <div class="managed-task-section">
     <div class="section-header">
-      <h3>{{ t('edit.hsrTaskConfig') }}</h3>
+      <h3>{{ $t('edit.hsrTaskConfig') }}</h3>
       <!-- 共享来源编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
-      <a-tooltip v-if="shared" :title="t('edit.hsrSharedPlanHint')">
-        <a-tag color="blue" class="shared-tag">{{ t('edit.hsrSharedPlanTag') }}</a-tag>
+      <a-tooltip v-if="shared" :title="$t('edit.hsrSharedPlanHint')">
+        <a-tag color="blue" class="shared-tag">{{ $t('edit.hsrSharedPlanTag') }}</a-tag>
       </a-tooltip>
     </div>
     <!-- 快照诊断合成一条：区块内最多一条提示 -->
@@ -17,7 +17,7 @@
     />
 
     <a-spin :spinning="loading">
-      <a-empty v-if="!snapshot && !loading" :description="t('edit.nativeTaskConfigurationHas')" />
+      <a-empty v-if="!snapshot && !loading" :description="$t('edit.nativeTaskConfigurationHas')" />
       <!-- 与 MFW 任务队列同一种布局：左边模块列表、右边所选模块的设置，两栏定高各自滚动 -->
       <a-row v-else-if="snapshot" :gutter="24" class="module-layout">
         <a-col :xs="24" :lg="9" class="module-list-column">
@@ -41,7 +41,7 @@
                   <span class="module-name">{{ task.name }}</span>
                   <a-tag class="phase-tag">{{ phaseLabel(task.phase) }}</a-tag>
                   <a-tag v-if="droppedOverridesOf(task).length" color="warning">
-                    {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
+                    {{ $t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
                   </a-tag>
                 </div>
                 <div class="module-summary" :title="taskSummary(task)">{{ taskSummary(task) }}</div>

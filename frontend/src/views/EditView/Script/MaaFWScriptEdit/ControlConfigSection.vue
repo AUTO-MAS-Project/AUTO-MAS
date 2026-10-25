@@ -2,19 +2,19 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.controlModeGameResource') }}</h3>
+      <h3>{{ $t('edit.controlModeGameResource') }}</h3>
     </div>
 
     <a-row :gutter="24" class="controller-resource-row">
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.controlMode') }}</span>
+            <span class="form-label">{{ $t('edit.controlMode') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Controller"
             size="large"
-            :placeholder="t('edit.automatic')"
+            :placeholder="$t('edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('controller-change')"
@@ -27,7 +27,7 @@
             >
               {{ item.label || item.name }} · {{ item.type }}
               <span v-if="!isDirectControllerType(item.type)">{{
-                t('edit.originalUiRecommended')
+                $t('edit.originalUiRecommended')
               }}</span>
             </a-select-option>
           </a-select>
@@ -36,9 +36,9 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwResourceLeave')">
+            <a-tooltip :title="$t('edit.pickMfwResourceLeave')">
               <span class="form-label">
-                {{ t('edit.gameResource') }}
+                {{ $t('edit.gameResource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -46,7 +46,7 @@
           <a-select
             v-model:value="maafwConfig.Info.Resource"
             size="large"
-            :placeholder="t('edit.automatic')"
+            :placeholder="$t('edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('resource-change')"
@@ -65,12 +65,12 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.emulator') }}</span>
+                <span class="form-label">{{ $t('edit.emulator') }}</span>
               </template>
               <a-select
                 v-model:value="emulatorIdValue"
                 size="large"
-                :placeholder="t('edit.pickEmulator')"
+                :placeholder="$t('edit.pickEmulator')"
                 :loading="emulatorLoading"
                 :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
@@ -88,7 +88,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.emulatorInstance') }}</span>
+                <span class="form-label">{{ $t('edit.emulatorInstance') }}</span>
               </template>
               <a-input
                 v-if="
@@ -99,7 +99,7 @@
                 "
                 v-model:value="emulatorIndexValue"
                 size="large"
-                :placeholder="t('edit.enterEmulatorInstanceIndex')"
+                :placeholder="$t('edit.enterEmulatorInstanceIndex')"
                 class="modern-input"
                 :disabled="!emulatorOptionsReady"
                 @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
@@ -108,7 +108,7 @@
                 v-else
                 v-model:value="emulatorIndexValue"
                 size="large"
-                :placeholder="t('edit.pickEmulatorFirst')"
+                :placeholder="$t('edit.pickEmulatorFirst')"
                 :loading="emulatorDeviceLoading"
                 :disabled="
                   !emulatorOptionsReady ||
@@ -140,16 +140,16 @@
               <a-col :xs="24" :xl="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                    <a-tooltip :title="$t('edit.mfwGamePackageNamePassed')">
                       <span class="form-label">
-                        {{ t('edit.mfwGamePackageName') }}
+                        {{ $t('edit.mfwGamePackageName') }}
                         <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="maafwConfig.Game.PackageName"
-                    :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    :placeholder="$t('edit.mfwGamePackageNamePlaceholder')"
                     size="large"
                     allow-clear
                     @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
@@ -162,9 +162,9 @@
               <a-col :xs="24" :xl="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                    <a-tooltip :title="$t('edit.mfwWaitTimeTip')">
                       <span class="form-label">
-                        {{ t('edit.waitTimeSeconds') }}
+                        {{ $t('edit.waitTimeSeconds') }}
                         <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                       </span>
                     </a-tooltip>
@@ -202,7 +202,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
+                <span class="form-label">{{ $t('edit.howPcGameLaunched') }}</span>
               </template>
               <!-- 收起时只显示标题（option-label-prop），说明只在展开的选项里出现 -->
               <a-select
@@ -212,16 +212,16 @@
                 option-label-prop="label"
                 @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
               >
-                <a-select-option value="DirectExe" :label="t('edit.letMasLaunchGame')">
+                <a-select-option value="DirectExe" :label="$t('edit.letMasLaunchGame')">
                   <div class="launch-option">
-                    <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
-                    <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
+                    <span class="launch-option-title">{{ $t('edit.letMasLaunchGame') }}</span>
+                    <span class="launch-option-hint">{{ $t('edit.pickGameSOwn') }}</span>
                   </div>
                 </a-select-option>
-                <a-select-option value="AttachOnly" :label="t('edit.launchGameOtherWay')">
+                <a-select-option value="AttachOnly" :label="$t('edit.launchGameOtherWay')">
                   <div class="launch-option">
-                    <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
-                    <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
+                    <span class="launch-option-title">{{ $t('edit.launchGameOtherWay') }}</span>
+                    <span class="launch-option-hint">{{ $t('edit.masOnlyTakesOver') }}</span>
                   </div>
                 </a-select-option>
               </a-select>
@@ -230,12 +230,12 @@
           <a-col v-if="launchMode === 'DirectExe'" :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.gameExecutable') }}</span>
+                <span class="form-label">{{ $t('edit.gameExecutable') }}</span>
               </template>
               <a-input-group compact class="path-input-group">
                 <a-input
                   v-model:value="maafwConfig.Game.LaunchPath"
-                  :placeholder="t('edit.pickGameExeThat')"
+                  :placeholder="$t('edit.pickGameExeThat')"
                   size="large"
                   class="path-input"
                   readonly
@@ -244,7 +244,7 @@
                   <template #icon>
                     <FolderOpenOutlined />
                   </template>
-                  {{ t('edit.pickExe') }}
+                  {{ $t('edit.pickExe') }}
                 </a-button>
               </a-input-group>
             </a-form-item>
@@ -265,9 +265,9 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
+                <a-tooltip :title="$t('edit.mfwUnityResolutionTip')">
                   <span class="form-label">
-                    {{ t('edit.mfwUnityResolution') }}
+                    {{ $t('edit.mfwUnityResolution') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -286,11 +286,11 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.launchArguments') }}</span>
+                <span class="form-label">{{ $t('edit.launchArguments') }}</span>
               </template>
               <a-input
                 v-model:value="maafwConfig.Game.Arguments"
-                :placeholder="t('edit.optional')"
+                :placeholder="$t('edit.optional')"
                 size="large"
                 class="modern-input"
                 @blur="emit('change', 'Game', 'Arguments', maafwConfig.Game.Arguments)"
@@ -300,9 +300,9 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                <a-tooltip :title="$t('edit.mfwWaitTimeTip')">
                   <span class="form-label">
-                    {{ t('edit.waitTimeSeconds') }}
+                    {{ $t('edit.waitTimeSeconds') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>

@@ -1,7 +1,7 @@
 <template>
   <!-- 加载状态 -->
   <div v-if="loading" class="loading-container">
-    <a-spin size="large" :tip="t('queue.loading')" />
+    <a-spin size="large" :tip="$t('queue.loading')" />
   </div>
 
   <!-- 主要内容 -->
@@ -9,7 +9,7 @@
     <!-- 页面头部 -->
     <div class="queue-header">
       <div class="header-left">
-        <h1 class="page-title">{{ t('queue.title') }}</h1>
+        <h1 class="page-title">{{ $t('queue.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
@@ -17,21 +17,21 @@
             <template #icon>
               <PlusOutlined />
             </template>
-            {{ t('queue.create') }}
+            {{ $t('queue.create') }}
           </a-button>
 
           <a-popconfirm
             v-if="queueList.length > 0"
-            :title="t('queue.deleteConfirm')"
-            :ok-text="t('queue.ok')"
-            :cancel-text="t('queue.cancel')"
+            :title="$t('queue.deleteConfirm')"
+            :ok-text="$t('queue.ok')"
+            :cancel-text="$t('queue.cancel')"
             @confirm="handleRemoveQueue(activeQueueId)"
           >
             <a-button danger size="large" :disabled="!activeQueueId || cycleRunning">
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('queue.deleteCurrent') }}
+              {{ $t('queue.deleteCurrent') }}
             </a-button>
           </a-popconfirm>
         </a-space>
@@ -42,11 +42,11 @@
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
-          <img src="../../assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
+          <img src="../../assets/NoData.png" :alt="$t('queue.noData')" class="empty-image" />
         </div>
         <div class="empty-text-content">
-          <h3 class="empty-title">{{ t('queue.emptyTitle') }}</h3>
-          <p class="empty-description">{{ t('queue.emptyDesc') }}</p>
+          <h3 class="empty-title">{{ $t('queue.emptyTitle') }}</h3>
+          <p class="empty-description">{{ $t('queue.emptyDesc') }}</p>
         </div>
       </div>
     </div>
@@ -57,9 +57,9 @@
       <a-card class="queue-selector-card" :bordered="false">
         <template #title>
           <div class="card-title">
-            <span>{{ t('queue.selectLabel') }}</span>
+            <span>{{ $t('queue.selectLabel') }}</span>
             <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
-              {{ t('queue.count', { count: queueList.length }, queueList.length) }}
+              {{ $t('queue.count', { count: queueList.length }, queueList.length) }}
             </a-tag>
           </div>
         </template>
@@ -88,7 +88,9 @@
         <template #title>
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
-              <span class="queue-title-text">{{ currentQueueName || t('queue.configTitle') }}</span>
+              <span class="queue-title-text">{{
+                currentQueueName || $t('queue.configTitle')
+              }}</span>
               <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
                 <template #icon>
                   <EditOutlined />
@@ -99,7 +101,7 @@
               <a-input
                 ref="queueNameInputRef"
                 v-model:value="currentQueueName"
-                :placeholder="t('queue.namePlaceholder')"
+                :placeholder="$t('queue.namePlaceholder')"
                 class="queue-title-input"
                 :maxlength="50"
                 @blur="finishEditQueueName"
@@ -115,9 +117,9 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.cycleType') }}</span>
+                  <span class="form-label">{{ $t('queue.cycleType') }}</span>
                   <a-tooltip
-                    :title="cycleRunning ? t('queue.cycleLocked') : t('queue.cycleTypeTip')"
+                    :title="cycleRunning ? $t('queue.cycleLocked') : $t('queue.cycleTypeTip')"
                   >
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
@@ -129,16 +131,16 @@
                   :disabled="cycleRunning"
                   @change="(value: any) => handleConfigChange('CycleEnabled', value)"
                 >
-                  <a-select-option :value="false">{{ t('queue.typeTimed') }}</a-select-option>
-                  <a-select-option :value="true">{{ t('queue.typeCycle') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('queue.typeTimed') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('queue.typeCycle') }}</a-select-option>
                 </a-select>
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.runOnStart') }}</span>
-                  <a-tooltip :title="t('queue.runOnStartTip')">
+                  <span class="form-label">{{ $t('queue.runOnStart') }}</span>
+                  <a-tooltip :title="$t('queue.runOnStartTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -148,10 +150,10 @@
                   size="large"
                   @change="(value: any) => handleConfigChange('StartUpMode', value)"
                 >
-                  <a-select-option :value="'Always'">{{ t('queue.always') }}</a-select-option>
-                  <a-select-option :value="'Never'">{{ t('queue.never') }}</a-select-option>
+                  <a-select-option :value="'Always'">{{ $t('queue.always') }}</a-select-option>
+                  <a-select-option :value="'Never'">{{ $t('queue.never') }}</a-select-option>
                   <a-select-option :value="'DailyFirst'">{{
-                    t('queue.dailyFirst')
+                    $t('queue.dailyFirst')
                   }}</a-select-option>
                 </a-select>
               </div>
@@ -159,8 +161,8 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.scheduled') }}</span>
-                  <a-tooltip :title="t('queue.scheduledTip')">
+                  <span class="form-label">{{ $t('queue.scheduled') }}</span>
+                  <a-tooltip :title="$t('queue.scheduledTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -171,16 +173,16 @@
                   :disabled="currentCycleEnabled"
                   @change="(value: any) => handleConfigChange('TimeEnabled', value)"
                 >
-                  <a-select-option :value="true">{{ t('queue.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('queue.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('queue.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('queue.no') }}</a-select-option>
                 </a-select>
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.afterDone') }}</span>
-                  <a-tooltip :title="t('queue.afterDoneTip')">
+                  <span class="form-label">{{ $t('queue.afterDone') }}</span>
+                  <a-tooltip :title="$t('queue.afterDoneTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -188,7 +190,7 @@
                   v-model:value="currentAfterAccomplish"
                   style="width: 100%"
                   :options="afterAccomplishOptions"
-                  :placeholder="t('queue.actionPlaceholder')"
+                  :placeholder="$t('queue.actionPlaceholder')"
                   size="large"
                   @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
                 />
@@ -197,8 +199,8 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.afterDoneDelay') }}</span>
-                  <a-tooltip :title="t('queue.afterDoneDelayTip')">
+                  <span class="form-label">{{ $t('queue.afterDoneDelay') }}</span>
+                  <a-tooltip :title="$t('queue.afterDoneDelayTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -208,7 +210,7 @@
                   :max="1440"
                   :precision="0"
                   :disabled="currentAfterAccomplish === 'NoAction'"
-                  :addon-after="t('queue.afterDoneDelayUnit')"
+                  :addon-after="$t('queue.afterDoneDelayUnit')"
                   size="large"
                   style="width: 100%"
                   @blur="handleAfterAccomplishDelayBlur"

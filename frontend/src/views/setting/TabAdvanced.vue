@@ -194,7 +194,7 @@ const exportDataBackup = async () => {
   <div class="tab-content">
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.backupSection') }}</h3>
+        <h3>{{ $t('setting.advanced.backupSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -203,9 +203,9 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportBackup') }}
+              {{ $t('setting.advanced.exportBackup') }}
             </a-button>
-            <span class="backup-description">{{ t('setting.advanced.backupDesc') }}</span>
+            <span class="backup-description">{{ $t('setting.advanced.backupDesc') }}</span>
           </div>
         </a-col>
       </a-row>
@@ -213,7 +213,7 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.logSection') }}</h3>
+        <h3>{{ $t('setting.advanced.logSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -221,7 +221,7 @@ const exportDataBackup = async () => {
             <template #icon>
               <DownloadOutlined />
             </template>
-            {{ t('setting.advanced.exportLog') }}
+            {{ $t('setting.advanced.exportLog') }}
           </a-button>
         </a-col>
       </a-row>
@@ -229,7 +229,7 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.issueSection') }}</h3>
+        <h3>{{ $t('setting.advanced.issueSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
@@ -243,7 +243,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportMaa') }}
+              {{ $t('setting.advanced.exportMaa') }}
             </a-button>
             <a-button
               v-if="hasScriptType('MaaEnd')"
@@ -254,7 +254,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportMaaEnd') }}
+              {{ $t('setting.advanced.exportMaaEnd') }}
             </a-button>
             <a-button
               v-if="hasScriptType('Okww')"
@@ -265,7 +265,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportOkww') }}
+              {{ $t('setting.advanced.exportOkww') }}
             </a-button>
             <a-button
               v-if="hasScriptType('OkNte')"
@@ -276,7 +276,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportOkNte') }}
+              {{ $t('setting.advanced.exportOkNte') }}
             </a-button>
             <a-button
               v-if="hasScriptType('ZzzOd')"
@@ -287,7 +287,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportZzzOd') }}
+              {{ $t('setting.advanced.exportZzzOd') }}
             </a-button>
             <a-button
               v-if="hasScriptType('Whimbox')"
@@ -298,7 +298,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportWhimbox') }}
+              {{ $t('setting.advanced.exportWhimbox') }}
             </a-button>
             <a-button
               v-if="hasScriptType('BetterGI')"
@@ -309,7 +309,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportBetterGI') }}
+              {{ $t('setting.advanced.exportBetterGI') }}
             </a-button>
             <a-dropdown
               v-if="hasScriptType('MaaFW', 'M9A', 'MSS')"
@@ -321,7 +321,7 @@ const exportDataBackup = async () => {
                 <template #icon>
                   <DownloadOutlined />
                 </template>
-                {{ t('setting.advanced.exportMaaFW') }}
+                {{ $t('setting.advanced.exportMaaFW') }}
                 <DownOutlined />
               </a-button>
               <template #overlay>
@@ -333,7 +333,7 @@ const exportDataBackup = async () => {
                     </a-tag>
                   </a-menu-item>
                   <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
-                    {{ t('setting.advanced.exportMaaFWEmpty') }}
+                    {{ $t('setting.advanced.exportMaaFWEmpty') }}
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -347,7 +347,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportM9A') }}
+              {{ $t('setting.advanced.exportM9A') }}
             </a-button>
             <a-button
               v-if="hasScriptType('MSS')"
@@ -358,7 +358,7 @@ const exportDataBackup = async () => {
               <template #icon>
                 <DownloadOutlined />
               </template>
-              {{ t('setting.advanced.exportMSS') }}
+              {{ $t('setting.advanced.exportMSS') }}
             </a-button>
           </a-space>
         </a-col>
@@ -367,13 +367,13 @@ const exportDataBackup = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.advanced.devSection') }}</h3>
+        <h3>{{ $t('setting.advanced.devSection') }}</h3>
       </div>
       <a-row :gutter="24">
         <a-col :span="24">
           <a-space size="large">
             <a-button size="large" @click="openDevTools">
-              {{ t('setting.advanced.openDevTools') }}
+              {{ $t('setting.advanced.openDevTools') }}
             </a-button>
           </a-space>
         </a-col>
@@ -383,8 +383,8 @@ const exportDataBackup = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>
-          {{ t('setting.advanced.runtimeLaunchMode') }}
-          <a-tooltip :title="t('setting.advanced.runtimeLaunchModeTip')">
+          {{ $t('setting.advanced.runtimeLaunchMode') }}
+          <a-tooltip :title="$t('setting.advanced.runtimeLaunchModeTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </h3>
@@ -393,7 +393,7 @@ const exportDataBackup = async () => {
         <a-col :span="12">
           <div class="form-item-vertical">
             <a-select
-              :aria-label="t('setting.advanced.runtimeLaunchMode')"
+              :aria-label="$t('setting.advanced.runtimeLaunchMode')"
               :value="runtimeLaunchMode"
               :options="runtimeLaunchModeOptions"
               :loading="runtimeLaunchModeLoading"
@@ -403,11 +403,11 @@ const exportDataBackup = async () => {
             />
             <span v-if="runtimeLaunchModeState" class="runtime-mode-hint">
               {{
-                t('setting.advanced.runtimeLaunchModeEffective', {
+                $t('setting.advanced.runtimeLaunchModeEffective', {
                   mode: effectiveModeLabel,
                 })
               }}
-              · {{ t('setting.advanced.runtimeLaunchModeRestartHint') }}
+              · {{ $t('setting.advanced.runtimeLaunchModeRestartHint') }}
             </span>
           </div>
         </a-col>

@@ -4,12 +4,12 @@
     <a-tabs :active-key="shellPaneKey" class="bgi-project-shell-tabs">
       <!-- 标签栏最右：放大图标（点击后居中大弹窗展示更大编辑区） -->
       <template #tabBarExtraContent>
-        <a-tooltip :title="t('edit.bettergiProjectZoom')" placement="top">
+        <a-tooltip :title="$t('edit.bettergiProjectZoom')" placement="top">
           <a-button
             type="text"
             size="small"
             class="bgi-project-zoom-btn"
-            :aria-label="t('edit.bettergiProjectZoom')"
+            :aria-label="$t('edit.bettergiProjectZoom')"
             @click="zoomed = true"
           >
             <template #icon><FullscreenOutlined /></template>

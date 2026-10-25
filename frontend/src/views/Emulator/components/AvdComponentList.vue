@@ -28,14 +28,14 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
 </script>
 
 <template>
-  <h4 class="block-title">{{ t('emulator2.avd.components') }}</h4>
+  <h4 class="block-title">{{ $t('emulator2.avd.components') }}</h4>
   <div class="component-list">
     <div v-for="item in components" :key="item.id" class="component-row">
       <span class="component-name">{{ item.name }}</span>
       <span class="component-meta">
         <template v-if="componentDetail(item).build">
           {{
-            t('emulator2.avd.testPackageVersion', {
+            $t('emulator2.avd.testPackageVersion', {
               build: componentDetail(item).build,
               version: componentDetail(item).version,
             })
@@ -44,13 +44,13 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
         <template v-else>
           {{ componentDetail(item).version }}
           <template v-if="componentDetail(item).testPackage">
-            · {{ t('emulator2.avd.testPackage') }}</template
+            · {{ $t('emulator2.avd.testPackage') }}</template
           >
           <template v-else-if="componentDetail(item).localSdk">
-            · {{ t('emulator2.avd.localSdk') }}</template
+            · {{ $t('emulator2.avd.localSdk') }}</template
           >
         </template>
-        <template v-if="item.optional"> · {{ t('emulator2.avd.optional') }}</template>
+        <template v-if="item.optional"> · {{ $t('emulator2.avd.optional') }}</template>
       </span>
       <a-tag :color="componentColor(item)">{{ componentText(item) }}</a-tag>
     </div>

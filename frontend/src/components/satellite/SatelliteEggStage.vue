@@ -4,7 +4,7 @@
   <Transition name="egg-polaroid">
     <figure v-if="polaroid" :key="polaroid.key" class="egg-polaroid">
       <img :src="polaroid.src" alt="" />
-      <figcaption>{{ t('home.satelliteEgg.photoCaption') }} · {{ polaroid.caption }}</figcaption>
+      <figcaption>{{ $t('home.satelliteEgg.photoCaption') }} · {{ polaroid.caption }}</figcaption>
     </figure>
   </Transition>
 
@@ -20,7 +20,7 @@
       >
         <div class="egg-genshin-gate"></div>
         <div class="egg-genshin-content">
-          <div class="egg-genshin-title">{{ t('home.satelliteEgg.genshinLaunch') }}</div>
+          <div class="egg-genshin-title">{{ $t('home.satelliteEgg.genshinLaunch') }}</div>
           <div class="egg-genshin-ornament"></div>
           <div class="egg-genshin-elements">
             <span
@@ -29,7 +29,7 @@
               :style="{ '--element': color, '--delay': `${0.6 + index * 0.22}s` }"
             ></span>
           </div>
-          <div class="egg-genshin-enter">{{ t('home.satelliteEgg.clickToEnter') }}</div>
+          <div class="egg-genshin-enter">{{ $t('home.satelliteEgg.clickToEnter') }}</div>
         </div>
       </div>
     </Transition>
@@ -44,7 +44,7 @@
     @click.stop="launchRockets"
   >
     <RocketOutlined />
-    <span>{{ t('home.satelliteEgg.rocketButton') }}</span>
+    <span>{{ $t('home.satelliteEgg.rocketButton') }}</span>
   </button>
   <SatelliteRocketRace ref="race" />
 </template>
@@ -52,7 +52,6 @@
 <script setup lang="ts">
 import { RocketOutlined } from '@ant-design/icons-vue'
 import { onUnmounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import SatelliteRocketRace from './SatelliteRocketRace.vue'
 
 defineProps<{
@@ -66,8 +65,6 @@ const ELEMENT_COLORS = ['#74c2a8', '#fab632', '#af8ec1', '#a5c83b', '#4cc2f1', '
 const GENSHIN_ENTER_MS = 3200
 const GENSHIN_MS = 5600
 const POLAROID_MS = 4200
-
-const { t } = useI18n()
 
 const shutterKey = ref(0)
 const polaroid = ref<{ key: number; src: string; caption: string } | null>(null)

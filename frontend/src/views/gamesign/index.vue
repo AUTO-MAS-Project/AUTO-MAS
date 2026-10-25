@@ -198,11 +198,11 @@ onUnmounted(() => {
 <template>
   <div class="gamesign-container">
     <div class="gamesign-header">
-      <h1 class="page-title">{{ t('gamesign.title') }}</h1>
+      <h1 class="page-title">{{ $t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
       <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
-        <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
+        <a-tab-pane key="sign" :tab="$t('gamesign.nav.sign')">
           <TabGameSign
             v-if="editingConfig.GameSign"
             :config="editingConfig.GameSign"
@@ -211,7 +211,7 @@ onUnmounted(() => {
             :on-refresh-config="refreshGameSignConfig"
           />
         </a-tab-pane>
-        <a-tab-pane v-if="activityEnabled" key="activity" :tab="t('gamesign.nav.activity')">
+        <a-tab-pane v-if="activityEnabled" key="activity" :tab="$t('gamesign.nav.activity')">
           <CommunityActivityView />
         </a-tab-pane>
       </a-tabs>

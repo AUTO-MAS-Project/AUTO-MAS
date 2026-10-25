@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="t('comp.foundNewVersion', { version: latestVersion || '' })"
+    :title="$t('comp.foundNewVersion', { version: latestVersion || '' })"
     :width="800"
     :footer="null"
     :mask-closable="false"
@@ -11,14 +11,16 @@
     <div class="update-container">
       <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
-        <ChangelogView :data="updateData" :empty-text="t('comp.changelog.loadFailed')" />
+        <ChangelogView :data="updateData" :empty-text="$t('comp.changelog.loadFailed')" />
       </div>
 
       <!-- 操作按钮 -->
       <div class="update-footer">
         <div class="update-actions">
-          <a-button @click="handleCancel">{{ t('comp.notNow') }}</a-button>
-          <a-button type="primary" @click="handleDownload">{{ t('comp.downloadUpdate') }}</a-button>
+          <a-button @click="handleCancel">{{ $t('comp.notNow') }}</a-button>
+          <a-button type="primary" @click="handleDownload">{{
+            $t('comp.downloadUpdate')
+          }}</a-button>
         </div>
       </div>
     </div>
@@ -29,14 +31,12 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import ChangelogView from './ChangelogView.vue'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import type { ChangelogData } from '@/utils/changelog'
 
-const { t } = useI18n()
 const logger = window.electronAPI.getLogger('更新模态框')
 
 // Props 定义

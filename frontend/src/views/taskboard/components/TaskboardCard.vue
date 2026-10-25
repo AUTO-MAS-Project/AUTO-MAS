@@ -30,10 +30,10 @@
         </span>
       </div>
       <div class="tb-card-time">
-        <span>{{ t('taskboard.startsAt') }} {{ startText }}</span>
-        <span>{{ t('taskboard.endsAt') }} {{ endText }}</span>
+        <span>{{ $t('taskboard.startsAt') }} {{ startText }}</span>
+        <span>{{ $t('taskboard.endsAt') }} {{ endText }}</span>
         <span v-if="state === 'done' && doneText" class="tb-card-done">
-          {{ t('taskboard.doneAt', { p0: doneText }) }}
+          {{ $t('taskboard.doneAt', { p0: doneText }) }}
         </span>
       </div>
       <a-progress
@@ -54,10 +54,10 @@
           :disabled="!ready"
           @click="emit('complete')"
         >
-          {{ t('taskboard.complete') }}
+          {{ $t('taskboard.complete') }}
         </a-button>
         <a-button v-else-if="state === 'done'" size="small" :loading="saving" @click="emit('undo')">
-          {{ t('taskboard.undo') }}
+          {{ $t('taskboard.undo') }}
         </a-button>
       </div>
     </div>
@@ -65,7 +65,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import type { TaskboardActivity } from '@/types/taskboard'
 
 interface Props {
@@ -86,7 +85,6 @@ interface Props {
 
 defineProps<Props>()
 const emit = defineEmits<{ complete: []; undo: [] }>()
-const { t } = useI18n()
 
 const hideCover = (ev: Event) => {
   const img = ev.target as HTMLImageElement

@@ -15,38 +15,38 @@
           @click="emit('add-script')"
         >
           <template #icon><PlusOutlined /></template>
-          {{ t('edit.bettergiProjectAddScript') }}
+          {{ $t('edit.bettergiProjectAddScript') }}
         </a-button>
         <a-popconfirm
-          :title="t('edit.bettergiProjectRemoveConfirm')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="$t('edit.bettergiProjectRemoveConfirm')"
+          :ok-text="$t('edit.ok')"
+          :cancel-text="$t('edit.cancel')"
           :disabled="!selectedDeleteUids.size"
           @confirm="removeSelectedProjects"
         >
           <a-button size="small" danger :disabled="!selectedDeleteUids.size">
             <template #icon><DeleteOutlined /></template>
-            {{ t('edit.bettergiProjectRemoveScript') }}
+            {{ $t('edit.bettergiProjectRemoveScript') }}
           </a-button>
         </a-popconfirm>
         <a-popconfirm
-          :title="t('edit.bettergiProjectClearConfirm')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="$t('edit.bettergiProjectClearConfirm')"
+          :ok-text="$t('edit.ok')"
+          :cancel-text="$t('edit.cancel')"
           :disabled="!projects.length || isStandaloneSingle"
           @confirm="clearProjects"
         >
           <a-button size="small" danger :disabled="!projects.length || isStandaloneSingle">
             <template #icon><ClearOutlined /></template>
-            {{ t('edit.bettergiProjectClearScript') }}
+            {{ $t('edit.bettergiProjectClearScript') }}
           </a-button>
         </a-popconfirm>
       </a-space>
       <span class="bgi-project-toolbar-tip">
         {{
           isStandaloneSingle
-            ? t('edit.bettergiProjectStandaloneTip')
-            : t('edit.bettergiProjectToolbarTip')
+            ? $t('edit.bettergiProjectStandaloneTip')
+            : $t('edit.bettergiProjectToolbarTip')
         }}
       </span>
     </div>
@@ -54,11 +54,11 @@
     <!-- 多选操作提示条（Ctrl 逐个 / Shift 区间，选中超过 1 行时显示） -->
     <div v-if="hasMultiSelection" class="bgi-project-multi-hint">
       <a-tag color="processing" size="small">
-        {{ t('edit.bettergiMultiSelected', { count: selectedDeleteUids.size }) }}
+        {{ $t('edit.bettergiMultiSelected', { count: selectedDeleteUids.size }) }}
       </a-tag>
-      <span>{{ t('edit.bettergiProjectMultiHint') }}</span>
+      <span>{{ $t('edit.bettergiProjectMultiHint') }}</span>
       <a-button size="small" type="link" @click="clearSelection">
-        {{ t('edit.bettergiProjectClearSelection') }}
+        {{ $t('edit.bettergiProjectClearSelection') }}
       </a-button>
     </div>
 
@@ -85,7 +85,7 @@
                   'bgi-project-row-disabled': !editable,
                   'bgi-project-row-selected': isRowSelected(element),
                 }"
-                :title="t('edit.bettergiProjectRowTip')"
+                :title="$t('edit.bettergiProjectRowTip')"
                 @click="handleRowClick(element, index, $event)"
                 @dblclick.stop="openProjectSettings(element, index)"
               >
@@ -112,8 +112,8 @@
                     v-if="isRowSelected(element)"
                     type="button"
                     class="bgi-project-row-unselect"
-                    :title="t('edit.bettergiProjectUnselect')"
-                    :aria-label="t('edit.bettergiProjectUnselect')"
+                    :title="$t('edit.bettergiProjectUnselect')"
+                    :aria-label="$t('edit.bettergiProjectUnselect')"
                     @click.stop="unselectRow(element)"
                     @dblclick.stop
                   >
@@ -125,13 +125,13 @@
           </draggable>
         </div>
         <div v-else class="bgi-project-empty">
-          <a-empty :description="t('edit.bettergiProjectEmpty')" />
+          <a-empty :description="$t('edit.bettergiProjectEmpty')" />
         </div>
       </template>
     </a-spin>
 
     <p v-if="projects.length && !(isScriptGroup && editable)" class="bgi-project-tip">
-      {{ t('edit.bettergiProjectListTip') }}
+      {{ $t('edit.bettergiProjectListTip') }}
     </p>
 
     <!-- 双击项目：设置弹窗（脚本配置 / 脚本说明 标签页）。
@@ -139,8 +139,8 @@
     <a-modal
       v-model:open="settingsModal.open"
       :title="settingsModal.title"
-      :ok-text="t('edit.bettergiProjectSettingsSave')"
-      :cancel-text="t('edit.cancel')"
+      :ok-text="$t('edit.bettergiProjectSettingsSave')"
+      :cancel-text="$t('edit.cancel')"
       :confirm-loading="settingsModal.saving"
       width="720px"
       :z-index="1100"
@@ -151,7 +151,7 @@
     >
       <a-tabs v-model:activeKey="settingsTab" size="small" class="bgi-project-settings-tabs">
         <!-- Tab1：脚本配置 -->
-        <a-tab-pane key="config" :tab="t('edit.bettergiProjectConfigTab')">
+        <a-tab-pane key="config" :tab="$t('edit.bettergiProjectConfigTab')">
           <a-spin :spinning="settingsModal.loading" size="small">
             <template v-if="settingsModal.items.length">
               <div class="bgi-project-settings-fields">
@@ -181,7 +181,7 @@
                     <a-select
                       :value="String(fieldValue(item.name) ?? '')"
                       :options="optionList(item)"
-                      :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
@@ -199,7 +199,7 @@
                       mode="multiple"
                       :value="fieldListValue(item.name)"
                       :options="optionList(item)"
-                      :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :placeholder="$t('edit.bettergiGroupSettingsPlaceholder')"
                       :get-popup-container="
                         (triggerNode: HTMLElement) => triggerNode.parentElement!
                       "
@@ -220,18 +220,18 @@
               </div>
             </template>
             <div v-else class="bgi-project-settings-empty">
-              <a-empty :description="t('edit.bettergiProjectNoSettingsFile')" />
+              <a-empty :description="$t('edit.bettergiProjectNoSettingsFile')" />
             </div>
           </a-spin>
         </a-tab-pane>
 
         <!-- Tab2：脚本说明（README） -->
-        <a-tab-pane key="readme" :tab="t('edit.bettergiProjectReadmeTab')">
+        <a-tab-pane key="readme" :tab="$t('edit.bettergiProjectReadmeTab')">
           <div v-if="settingsModal.readme" class="bgi-project-readme">
             <pre>{{ settingsModal.readme }}</pre>
           </div>
           <div v-else class="bgi-project-settings-empty">
-            <a-empty :description="t('edit.bettergiProjectReadmeEmpty')" />
+            <a-empty :description="$t('edit.bettergiProjectReadmeEmpty')" />
           </div>
         </a-tab-pane>
       </a-tabs>

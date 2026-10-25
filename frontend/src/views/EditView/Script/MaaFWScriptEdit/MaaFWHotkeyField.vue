@@ -3,7 +3,7 @@
   <a-col v-if="options.length > 0" :span="6">
     <a-form-item>
       <template #label>
-        <span class="form-label">{{ t('edit.mfwHotkey') }}</span>
+        <span class="form-label">{{ $t('edit.mfwHotkey') }}</span>
       </template>
       <a-input-group compact class="path-input-group">
         <a-input :value="summary" size="large" class="path-input" readonly />
@@ -11,7 +11,7 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.mfwHotkeySet') }}
+          {{ $t('edit.mfwHotkeySet') }}
         </a-button>
       </a-input-group>
     </a-form-item>

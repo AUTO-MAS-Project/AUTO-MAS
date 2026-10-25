@@ -4,9 +4,9 @@
        游戏包名并排（插入点 besidePackageName） -->
   <a-form-item>
     <template #label>
-      <a-tooltip :title="t('edit.m9aFlavorGameUpdateHint')">
+      <a-tooltip :title="$t('edit.m9aFlavorGameUpdateHint')">
         <span class="form-label">
-          {{ t('edit.gameUpdate') }}
+          {{ $t('edit.gameUpdate') }}
           <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
         </span>
       </a-tooltip>

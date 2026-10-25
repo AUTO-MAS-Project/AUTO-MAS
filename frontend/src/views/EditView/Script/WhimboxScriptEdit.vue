@@ -1,14 +1,14 @@
 <template>
   <ScriptEditHeader
     script-type="Whimbox"
-    :title="t('edit.editScript')"
+    :title="$t('edit.editScript')"
     :doc-url="MAS_DOC_URLS.scripts"
     @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.whimboxScriptConfiguration')"
+      :title="$t('edit.whimboxScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -24,22 +24,22 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.whimboxInstanceNameHint')">
+                    {{ $t('edit.scriptName') }}
+                    <a-tooltip :title="$t('edit.whimboxInstanceNameHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -50,8 +50,8 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.whimboxPath') }}
-                    <a-tooltip :title="t('edit.whimboxPickExeDir')">
+                    {{ $t('edit.whimboxPath') }}
+                    <a-tooltip :title="$t('edit.whimboxPickExeDir')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -59,7 +59,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    :placeholder="t('edit.whimboxPickExeDirPlaceholder')"
+                    :placeholder="$t('edit.whimboxPickExeDirPlaceholder')"
                     size="large"
                     class="path-input"
                     readonly
@@ -73,7 +73,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickDirectory') }}
+                    {{ $t('edit.pickDirectory') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -83,7 +83,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="whimboxConfig.Run.HardTimeLimit"
@@ -94,8 +94,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                    {{ $t('edit.runsPerDay') }}
+                    <a-tooltip :title="$t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -114,8 +114,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.whimboxRetryLimitHint')">
+                    {{ $t('edit.retryLimit2') }}
+                    <a-tooltip :title="$t('edit.whimboxRetryLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -134,8 +134,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.whimboxRunTimeoutHint')">
+                    {{ $t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="$t('edit.whimboxRunTimeoutHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -154,8 +154,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.whimboxUseAdmin') }}
-                    <a-tooltip :title="t('edit.whimboxUseAdminHint')">
+                    {{ $t('edit.whimboxUseAdmin') }}
+                    <a-tooltip :title="$t('edit.whimboxUseAdminHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -166,8 +166,8 @@
                   style="width: 100%"
                   @change="handleChange('Run', 'UseAdmin', whimboxConfig.Run.UseAdmin)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>

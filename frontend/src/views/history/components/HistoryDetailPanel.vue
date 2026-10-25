@@ -4,8 +4,8 @@
     <div v-if="!hasUserSelected" class="empty-state">
       <div class="empty-content">
         <UserSwitchOutlined class="empty-icon" />
-        <span class="empty-title">{{ t('history.selectUser') }}</span>
-        <span class="empty-desc">{{ t('history.selectUserDesc') }}</span>
+        <span class="empty-title">{{ $t('history.selectUser') }}</span>
+        <span class="empty-desc">{{ $t('history.selectUserDesc') }}</span>
       </div>
     </div>
 
@@ -16,7 +16,7 @@
         type="warning"
         show-icon
         class="aggregate-warning"
-        :message="t('history.aggregateWarning')"
+        :message="$t('history.aggregateWarning')"
         :description="aggregateErrors.map(error => `${error.key}: ${error.message}`).join('; ')"
       />
       <!-- 统计信息卡片 -->
@@ -38,14 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
 import type { HistoryIndexItem, HistoryAggregateError } from '@/api'
-
-const { t } = useI18n()
 
 interface Props {
   hasUserSelected: boolean

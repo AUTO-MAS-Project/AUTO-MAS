@@ -43,10 +43,10 @@ const onInputSave = (event: FocusEvent) => {
 <template>
   <div class="field-item" :class="{ inline }">
     <div class="field-label-wrapper">
-      <span class="field-label">{{ t(field.labelKey) }}</span>
+      <span class="field-label">{{ $t(field.labelKey) }}</span>
       <a-tooltip
         v-if="field.tipKey"
-        :title="t(field.tipKey)"
+        :title="$t(field.tipKey)"
         :get-popup-container="getPopupContainer"
       >
         <QuestionCircleOutlined class="help-icon" />

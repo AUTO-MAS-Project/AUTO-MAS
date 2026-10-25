@@ -3,7 +3,7 @@
     <div v-if="taskData.length === 0" class="empty-state">
       <div class="empty-content">
         <div class="empty-image-container">
-          <img src="@/assets/NoData.png" :alt="t('comp.noData2')" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="$t('comp.noData2')" class="empty-image" />
         </div>
       </div>
     </div>
@@ -30,7 +30,7 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="isWaitingWithoutUsers(script)" class="user-item last-item">
             <div class="user-content">
-              <span class="user-name">{{ t('scheduler.overview.userNotLoaded') }}</span>
+              <span class="user-name">{{ $t('scheduler.overview.userNotLoaded') }}</span>
               <a-tag :color="getStatusColor('等待')" size="small" class="status-tag">
                 {{ statusLabel('等待') }}
               </a-tag>
@@ -38,7 +38,7 @@
           </div>
           <div v-else-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
+              <span class="no-users-text">{{ $t('comp.noUsersYet') }}</span>
             </div>
           </div>
           <div
@@ -61,14 +61,11 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
 
 import { useStatusLabel } from '@/i18n/status'
 import { isWaitingWithoutUsers } from './taskTreePresentation'
-
-const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('任务树组件')
 

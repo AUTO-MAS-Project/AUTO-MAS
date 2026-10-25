@@ -14,7 +14,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.hsrStageType') }}</span>
+            <span class="form-label">{{ $t('edit.hsrStageType') }}</span>
           </template>
           <a-select
             :value="activeChannel"
@@ -27,16 +27,16 @@
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t(CHANNEL_TIP_KEYS[activeChannel])">
+            <a-tooltip :title="$t(CHANNEL_TIP_KEYS[activeChannel])">
               <span class="form-label">
-                {{ t('edit.hsrStage') }}
+                {{ $t('edit.hsrStage') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
             :value="activeStageValue"
-            :placeholder="t('edit.skip')"
+            :placeholder="$t('edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="loading || stageOptionsLoading || !activeCategory"
@@ -58,16 +58,16 @@
         <a-form-item>
           <template #label>
             <!-- 遗器自动分解提醒放在悬停说明里 -->
-            <a-tooltip :title="t('edit.turnAutomaticRelicSalvage')">
+            <a-tooltip :title="$t('edit.turnAutomaticRelicSalvage')">
               <span class="form-label">
-                {{ t('edit.echoOfWar') }}
+                {{ $t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
             :value="eowSelectValue"
-            :placeholder="t('edit.skip')"
+            :placeholder="$t('edit.skip')"
             show-search
             :disabled="loading || stageOptionsLoading || !dynamicEowCategory"
             :loading="stageOptionsLoading"
@@ -81,9 +81,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.startDayIfIt')">
+            <a-tooltip :title="$t('edit.startDayIfIt')">
               <span class="form-label">
-                {{ t('edit.echoOfWarStartDay') }}
+                {{ $t('edit.echoOfWarStartDay') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>

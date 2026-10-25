@@ -1,8 +1,8 @@
 <template>
-  <ScriptEditHeader script-type="BAAH" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="BAAH" :title="$t('edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.baahScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card :title="$t('edit.baahScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="magenta" class="type-tag">BAAH</a-tag>
       </template>
@@ -11,22 +11,22 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.baahScriptNameHint')">
+                    {{ $t('edit.scriptName') }}
+                    <a-tooltip :title="$t('edit.baahScriptNameHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -39,15 +39,15 @@
         <!-- 脚本配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptConfiguration') }}</h3>
+            <h3>{{ $t('edit.scriptConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.mainProgramPath') }}
-                    <a-tooltip :title="t('edit.baahScriptPathHint')">
+                    {{ $t('edit.mainProgramPath') }}
+                    <a-tooltip :title="$t('edit.baahScriptPathHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -55,7 +55,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.baahPath"
-                    :placeholder="t('edit.pickScriptSMain')"
+                    :placeholder="$t('edit.pickScriptSMain')"
                     size="large"
                     class="path-input"
                     readonly
@@ -69,7 +69,7 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -78,8 +78,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.baahManageConfig') }}
-                    <a-tooltip :title="t('edit.baahManageConfigHint')">
+                    {{ $t('edit.baahManageConfig') }}
+                    <a-tooltip :title="$t('edit.baahManageConfigHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -90,8 +90,8 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'IfManageConfig', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -99,8 +99,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.baahPushLogEnabled') }}
-                    <a-tooltip :title="t('edit.baahPushLogEnabledHint')">
+                    {{ $t('edit.baahPushLogEnabled') }}
+                    <a-tooltip :title="$t('edit.baahPushLogEnabledHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -111,8 +111,8 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'PushLogEnabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -122,7 +122,7 @@
           <a-alert
             type="warning"
             show-icon
-            :message="t('edit.baahAutoStartNotice')"
+            :message="$t('edit.baahAutoStartNotice')"
             style="margin-top: 16px"
           />
         </div>
@@ -130,15 +130,15 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ $t('edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.baahEmulatorHint')">
+                    {{ $t('edit.emulator') }}
+                    <a-tooltip :title="$t('edit.baahEmulatorHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -146,7 +146,7 @@
                 <a-select
                   v-model:value="baahConfig.Emulator.Id"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="$t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -164,8 +164,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
+                    {{ $t('edit.emulatorInstance') }}
+                    <a-tooltip :title="$t('edit.pickEmulatorInstance')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -179,7 +179,7 @@
                   "
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="$t('edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Emulator', 'Index', baahConfig.Emulator.Index)"
                 />
@@ -188,7 +188,7 @@
                   v-else
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :placeholder="$t('edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!baahConfig.Emulator.Id"
                   @change="handleChange('Emulator', 'Index', $event)"
@@ -210,7 +210,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="baahConfig.Run.HardTimeLimit"
@@ -221,8 +221,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.baahRunTimesLimitHint')">
+                    {{ $t('edit.retryLimit2') }}
+                    <a-tooltip :title="$t('edit.baahRunTimesLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -241,8 +241,8 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.baahRunTimeLimitHint')">
+                    {{ $t('edit.runTimeoutMinutes') }}
+                    <a-tooltip :title="$t('edit.baahRunTimeLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>

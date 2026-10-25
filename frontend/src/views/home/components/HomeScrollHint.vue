@@ -3,19 +3,16 @@
     <button
       v-if="visible"
       class="scroll-hint"
-      :aria-label="t('home.scrollHint.aria')"
+      :aria-label="$t('home.scrollHint.aria')"
       @click="scrollDown"
     >
-      <span class="scroll-hint-text">{{ t('home.scrollHint.text') }}</span>
+      <span class="scroll-hint-text">{{ $t('home.scrollHint.text') }}</span>
       <DownOutlined class="scroll-hint-arrow" />
     </button>
   </Transition>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
-
-const { t } = useI18n()
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { DownOutlined } from '@ant-design/icons-vue'
 

@@ -5,8 +5,8 @@
         <div class="plan-item">
           <span
             class="plan-drag-handle"
-            :title="t('edit.zzzodDragSortHint')"
-            :aria-label="t('edit.zzzodDragSortHint')"
+            :title="$t('edit.zzzodDragSortHint')"
+            :aria-label="$t('edit.zzzodDragSortHint')"
           >
             <span class="drag-dots" aria-hidden="true"></span>
           </span>
@@ -32,13 +32,13 @@
           </div>
           <div class="plan-item-side">
             <span class="plan-run-times">
-              {{ t('edit.zzzodPlanRunTimes', { count: Number(plan.run_times) || 0 }) }}
+              {{ $t('edit.zzzodPlanRunTimes', { count: Number(plan.run_times) || 0 }) }}
             </span>
             <a-button
               size="small"
               type="text"
               class="plan-delete"
-              :aria-label="t('edit.zzzodPlanDelete')"
+              :aria-label="$t('edit.zzzodPlanDelete')"
               @click="removePlan(index)"
             >
               <template #icon><DeleteOutlined /></template>
@@ -50,14 +50,13 @@
 
     <a-button size="small" type="dashed" block class="plan-add" @click="addPlan">
       <template #icon><PlusOutlined /></template>
-      {{ t('edit.zzzodPlanAdd') }}
+      {{ $t('edit.zzzodPlanAdd') }}
     </a-button>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 
@@ -102,8 +101,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: PlanItem[]): void }>()
-
-const { t } = useI18n()
 
 const plans = computed<PlanItem[]>({
   get: () => {

@@ -2,7 +2,7 @@
   <div class="history-page">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">{{ t('history.title') }}</h1>
+      <h1 class="page-title">{{ $t('history.title') }}</h1>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -26,9 +26,9 @@
       <a-spin :spinning="searchLoading">
         <!-- 空状态 -->
         <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
-          <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-          <span class="empty-text">{{ t('history.emptyHistory') }}</span>
-          <span class="empty-hint">{{ t('history.emptyHint') }}</span>
+          <img src="@/assets/NoData.png" :alt="$t('history.noData')" class="empty-image" />
+          <span class="empty-text">{{ $t('history.emptyHistory') }}</span>
+          <span class="empty-hint">{{ $t('history.emptyHint') }}</span>
         </div>
 
         <!-- 数据展示 -->
@@ -87,7 +87,6 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { HistoryIndexItem } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
@@ -97,8 +96,6 @@ import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { historyStatistics } from './historyData'
 import { formatStoredDateTime } from '@/utils/dateDisplay'
-
-const { t } = useI18n()
 
 defineOptions({
   name: 'HistoryPage',

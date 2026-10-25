@@ -197,14 +197,14 @@ onBeforeUnmount(() => {
   <div class="tray-menu-editor">
     <div class="tray-menu-section-head">
       <div class="tray-menu-section-title">
-        <span class="tray-menu-label">{{ t('setting.tray.section') }}</span>
-        <a-tooltip :title="t('setting.tray.sectionTip')">
+        <span class="tray-menu-label">{{ $t('setting.tray.section') }}</span>
+        <a-tooltip :title="$t('setting.tray.sectionTip')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </div>
       <a-space :size="8">
-        <a-button size="middle" @click="add">{{ t('setting.tray.add') }}</a-button>
-        <a-button size="middle" @click="confirmReset">{{ t('setting.tray.reset') }}</a-button>
+        <a-button size="middle" @click="add">{{ $t('setting.tray.add') }}</a-button>
+        <a-button size="middle" @click="confirmReset">{{ $t('setting.tray.reset') }}</a-button>
       </a-space>
     </div>
 
@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
             v-if="column.key === 'label'"
             v-model:value="record.label"
             size="middle"
-            :placeholder="t('setting.tray.colLabel')"
+            :placeholder="$t('setting.tray.colLabel')"
             :maxlength="30"
             style="width: 100%"
             @change="schedulePersist"
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
               v-model:value="record.taskId"
               size="middle"
               style="width: 100%"
-              :placeholder="t('setting.tray.taskPlaceholder')"
+              :placeholder="$t('setting.tray.taskPlaceholder')"
               show-search
               option-filter-prop="label"
               :options="taskOptions"
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               :disabled="index === 0"
-              :aria-label="t('setting.tray.moveUp')"
+              :aria-label="$t('setting.tray.moveUp')"
               @click="move(index, -1)"
             >
               <UpOutlined />
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               :disabled="index === items.length - 1"
-              :aria-label="t('setting.tray.moveDown')"
+              :aria-label="$t('setting.tray.moveDown')"
               @click="move(index, 1)"
             >
               <DownOutlined />
@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               danger
-              :aria-label="t('setting.tray.remove')"
+              :aria-label="$t('setting.tray.remove')"
               @click="remove(index)"
             >
               <DeleteOutlined />

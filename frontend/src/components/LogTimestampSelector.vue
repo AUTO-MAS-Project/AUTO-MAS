@@ -7,8 +7,8 @@
       class="view-mode-group"
       @change="onViewModeChange"
     >
-      <a-radio-button value="input">{{ t('comp.textInput') }}</a-radio-button>
-      <a-radio-button value="visual">{{ t('comp.visualSelection') }}</a-radio-button>
+      <a-radio-button value="input">{{ $t('comp.textInput') }}</a-radio-button>
+      <a-radio-button value="visual">{{ $t('comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
@@ -18,9 +18,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
-              <a-tooltip :title="t('comp.logTimestampStartPosition')">
+              <a-tooltip :title="$t('comp.logTimestampStartPosition')">
                 <span class="form-label">
-                  {{ t('comp.logTimestampStart') }}
+                  {{ $t('comp.logTimestampStart') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -38,9 +38,9 @@
         <a-col :span="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
-              <a-tooltip :title="t('comp.logTimestampEndPosition')">
+              <a-tooltip :title="$t('comp.logTimestampEndPosition')">
                 <span class="form-label">
-                  {{ t('comp.logTimestampEnd') }}
+                  {{ $t('comp.logTimestampEnd') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
@@ -62,14 +62,14 @@
     <div v-else-if="viewMode === 'visual'">
       <div class="visual-mode-container">
         <div class="log-preview-header">
-          <span>{{ t('comp.logPreviewSelectTimestamp') }}</span>
+          <span>{{ $t('comp.logPreviewSelectTimestamp') }}</span>
           <a-button
             type="primary"
             :loading="loadingPreview"
             :disabled="!logFilePath"
             @click="loadLogFile"
           >
-            {{ t('comp.loadLog') }}
+            {{ $t('comp.loadLog') }}
           </a-button>
         </div>
 
@@ -105,7 +105,7 @@
             <span v-if="selectedText">(内容: "{{ selectedText }}")</span>
           </div>
           <a-button type="primary" :disabled="!selection.valid" @click="applySelection">
-            {{ t('comp.appSelection') }}
+            {{ $t('comp.appSelection') }}
           </a-button>
         </div>
       </div>

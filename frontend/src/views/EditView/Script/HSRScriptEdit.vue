@@ -1,10 +1,10 @@
 <template>
-  <ScriptEditHeader script-type="HSR" :title="t('edit.editHsrScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="HSR" :title="$t('edit.editHsrScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.hsrScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card :title="$t('edit.hsrScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="purple" class="type-tag">{{ t('edit.hsrMarch7thSra') }}</a-tag>
+        <a-tag color="purple" class="type-tag">{{ $t('edit.hsrMarch7thSra') }}</a-tag>
       </template>
 
       <a-alert
@@ -27,22 +27,22 @@
         <!-- 脚本名称 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.giveHsrScriptName')">
+                  <a-tooltip :title="$t('edit.giveHsrScriptName')">
                     <span class="form-label">
-                      {{ t('edit.scriptName') }}
+                      {{ $t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.infoName"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   @blur="handleChange('Info', 'Name', formData.infoName)"
                 />
@@ -54,27 +54,27 @@
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptGameConfiguration') }}</h3>
+            <h3>{{ $t('edit.scriptGameConfiguration') }}</h3>
           </div>
           <a-alert
             v-if="isCloud"
             type="info"
             show-icon
-            :message="t('edit.hsrCloudIntro')"
+            :message="$t('edit.hsrCloudIntro')"
             class="cloud-intro"
           />
           <div class="engine-path-hint">
             <a-typography-text type="secondary">
-              {{ t('edit.fillingPathEnablesThat') }}
+              {{ $t('edit.fillingPathEnablesThat') }}
             </a-typography-text>
           </div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrGamePlatformTip')">
+                  <a-tooltip :title="$t('edit.hsrGamePlatformTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrGamePlatform') }}
+                      {{ $t('edit.hsrGamePlatform') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -91,9 +91,9 @@
             <a-col v-if="!isCloud" :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.turnThisOffWhen')">
+                  <a-tooltip :title="$t('edit.turnThisOffWhen')">
                     <span class="form-label">
-                      {{ t('edit.masManagesGame') }}
+                      {{ $t('edit.masManagesGame') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -109,9 +109,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.march7thAssistantInstallDirectory')">
+                  <a-tooltip :title="$t('edit.march7thAssistantInstallDirectory')">
                     <span class="form-label">
-                      {{ t('edit.march7thPath') }}
+                      {{ $t('edit.march7thPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -119,7 +119,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.M7APath"
-                    :placeholder="t('edit.pickMarch7thFolderContains')"
+                    :placeholder="$t('edit.pickMarch7thFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -128,11 +128,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFolder') }}
+                    {{ $t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.M7APath"
-                    :title="t('edit.clearMarch7thPath')"
+                    :title="$t('edit.clearMarch7thPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('M7APath')"
@@ -146,9 +146,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starrailassistantInstallDirectoryContain')">
+                  <a-tooltip :title="$t('edit.starrailassistantInstallDirectoryContain')">
                     <span class="form-label">
-                      {{ t('edit.sraPath') }}
+                      {{ $t('edit.sraPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -156,7 +156,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Info.SRAPath"
-                    :placeholder="t('edit.pickSraFolderContains')"
+                    :placeholder="$t('edit.pickSraFolderContains')"
                     size="large"
                     class="path-input"
                     readonly
@@ -165,11 +165,11 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFolder') }}
+                    {{ $t('edit.pickFolder') }}
                   </a-button>
                   <a-button
                     v-if="hsrConfig.Info.SRAPath"
-                    :title="t('edit.clearSraPath')"
+                    :title="$t('edit.clearSraPath')"
                     size="large"
                     class="path-clear-button"
                     @click="clearPath('SRAPath')"
@@ -179,7 +179,7 @@
                 </a-input-group>
                 <!-- 云平台保留 SRA 路径（外部脚本更新照常），但任务不经 SRA -->
                 <a-typography-text v-if="isCloud" type="secondary" class="field-hint">
-                  {{ t('edit.hsrCloudNoSra') }}
+                  {{ $t('edit.hsrCloudNoSra') }}
                 </a-typography-text>
               </a-form-item>
             </a-col>
@@ -190,7 +190,7 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">{{ t('edit.hsrCloudUsePaidTime') }}</span>
+                  <span class="form-label">{{ $t('edit.hsrCloudUsePaidTime') }}</span>
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -199,7 +199,7 @@
                     @change="handleCloudConfigChange('UsePaidTime', Boolean($event))"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.hsrCloudUsePaidTimeHint')
+                    $t('edit.hsrCloudUsePaidTimeHint')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -207,9 +207,9 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudMaxQueueTip')">
+                  <a-tooltip :title="$t('edit.hsrCloudMaxQueueTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrCloudMaxQueue') }}
+                      {{ $t('edit.hsrCloudMaxQueue') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -218,7 +218,7 @@
                   v-model:value="hsrConfig.Cloud.MaxQueueMinutes"
                   :min="1"
                   :max="9999"
-                  :addon-after="t('edit.hsrCloudMinutes')"
+                  :addon-after="$t('edit.hsrCloudMinutes')"
                   size="large"
                   style="width: 100%"
                   data-testid="hsr-cloud-max-queue"
@@ -229,9 +229,9 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudLoginWaitTip')">
+                  <a-tooltip :title="$t('edit.hsrCloudLoginWaitTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrCloudLoginWait') }}
+                      {{ $t('edit.hsrCloudLoginWait') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -240,7 +240,7 @@
                   v-model:value="hsrConfig.Cloud.LoginTimeoutMinutes"
                   :min="1"
                   :max="9999"
-                  :addon-after="t('edit.hsrCloudMinutes')"
+                  :addon-after="$t('edit.hsrCloudMinutes')"
                   size="large"
                   style="width: 100%"
                   data-testid="hsr-cloud-login-wait"
@@ -255,9 +255,9 @@
             <a-col :span="12" :offset="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.sraProfileTooltip')">
+                  <a-tooltip :title="$t('edit.sraProfileTooltip')">
                     <span class="form-label">
-                      {{ t('edit.sraProfile') }}
+                      {{ $t('edit.sraProfile') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -294,9 +294,9 @@
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starRailGameRoot')">
+                  <a-tooltip :title="$t('edit.starRailGameRoot')">
                     <span class="form-label">
-                      {{ t('edit.gamePath') }}
+                      {{ $t('edit.gamePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -304,7 +304,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="hsrConfig.Game.Path"
-                    :placeholder="t('edit.pickStarRailInstall')"
+                    :placeholder="$t('edit.pickStarRailInstall')"
                     size="large"
                     class="path-input"
                     readonly
@@ -313,7 +313,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFolder') }}
+                    {{ $t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -321,9 +321,9 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.howLongMasWaits')">
+                  <a-tooltip :title="$t('edit.howLongMasWaits')">
                     <span class="form-label">
-                      {{ t('edit.maximumGameLaunchWait') }}
+                      {{ $t('edit.maximumGameLaunchWait') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -332,7 +332,7 @@
                   v-model:value="hsrConfig.Game.WaitTime"
                   :min="0"
                   :max="9999"
-                  :addon-after="t('edit.seconds')"
+                  :addon-after="$t('edit.seconds')"
                   size="large"
                   style="width: 100%"
                   @change="handleGameConfigChange('WaitTime', $event)"
@@ -349,9 +349,9 @@
             <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.writtenCurrentUserS')">
+                  <a-tooltip :title="$t('edit.writtenCurrentUserS')">
                     <span class="form-label">
-                      {{ t('edit.run1920x1080WindowedMode') }}
+                      {{ $t('edit.run1920x1080WindowedMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -362,7 +362,7 @@
                     @change="handleGameResolutionChange"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.restoreOriginalRegistryValue')
+                    $t('edit.restoreOriginalRegistryValue')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -371,9 +371,9 @@
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.runsOncePerUser')">
+                  <a-tooltip :title="$t('edit.runsOncePerUser')">
                     <span class="form-label">
-                      {{ t('edit.redeemCodesRunOnly') }}
+                      {{ $t('edit.redeemCodesRunOnly') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -384,7 +384,7 @@
                     @change="handleRedeemCodePolicyChange"
                   />
                   <a-typography-text type="secondary">{{
-                    t('edit.runOnceNewUser')
+                    $t('edit.runOnceNewUser')
                   }}</a-typography-text>
                 </div>
               </a-form-item>
@@ -395,15 +395,15 @@
         <!-- 执行限制 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runLimits') }}</h3>
+            <h3>{{ $t('edit.runLimits') }}</h3>
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runsPerDayThis') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
+                    {{ $t('edit.runsPerDayThis') }}
+                    <a-tooltip :title="$t('edit.k0MeansNoLimit')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
@@ -419,7 +419,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
+              <a-form-item :label="$t('edit.maximumAttemptsFailedTask')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.RunTimesLimit"
                   :min="1"
@@ -431,7 +431,7 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item :label="t('edit.dailyTaskTimeoutMinutes')">
+              <a-form-item :label="$t('edit.dailyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.DailyTimeLimit"
                   :min="1"
@@ -445,7 +445,7 @@
           </a-row>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item :label="t('edit.weeklyTaskTimeoutMinutes')">
+              <a-form-item :label="$t('edit.weeklyTaskTimeoutMinutes')">
                 <a-input-number
                   v-model:value="hsrConfig.Run.WeeklyTimeLimit"
                   :min="1"
@@ -460,13 +460,13 @@
           <!-- 低性能兼容只作用于三月七，没填三月七路径时不渲染 -->
           <a-row v-if="hsrConfig.Info.M7APath" :gutter="16">
             <a-col :span="12">
-              <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
+              <a-form-item :label="$t('edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
                   @change="handleRunConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
-                  {{ t('edit.appliesMarch7thDivergentUniverse') }}
+                  {{ $t('edit.appliesMarch7thDivergentUniverse') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -476,16 +476,16 @@
         <!-- 外部脚本更新 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.hsrExternalUpdate') }}</h3>
+            <h3>{{ $t('edit.hsrExternalUpdate') }}</h3>
           </div>
-          <div class="section-hint">{{ t('edit.hsrUpdateSectionHint') }}</div>
+          <div class="section-hint">{{ $t('edit.hsrUpdateSectionHint') }}</div>
           <a-row :gutter="24">
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateModeTip')">
+                  <a-tooltip :title="$t('edit.hsrUpdateModeTip')">
                     <span class="form-label">
-                      {{ t('edit.autoUpdateMode') }}
+                      {{ $t('edit.autoUpdateMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -502,9 +502,9 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateChannelTip')">
+                  <a-tooltip :title="$t('edit.hsrUpdateChannelTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrUpdateChannel') }}
+                      {{ $t('edit.hsrUpdateChannel') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -524,9 +524,9 @@
             <a-col v-if="hsrConfig.Info.M7APath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateM7ASourceTip')">
+                  <a-tooltip :title="$t('edit.hsrUpdateM7ASourceTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrUpdateM7ASource') }}
+                      {{ $t('edit.hsrUpdateM7ASource') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -543,9 +543,9 @@
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateSRASourceTip')">
+                  <a-tooltip :title="$t('edit.hsrUpdateSRASourceTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrUpdateSRASource') }}
+                      {{ $t('edit.hsrUpdateSRASource') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -564,16 +564,16 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateCdkTip')">
+                  <a-tooltip :title="$t('edit.hsrUpdateCdkTip')">
                     <span class="form-label">
-                      {{ t('edit.hsrUpdateCdk') }}
+                      {{ $t('edit.hsrUpdateCdk') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input-password
                   v-model:value="hsrConfig.Update.MirrorChyanCDK"
-                  :placeholder="t('edit.hsrUpdateCdkPlaceholder')"
+                  :placeholder="$t('edit.hsrUpdateCdkPlaceholder')"
                   size="large"
                   autocomplete="off"
                   @blur="
@@ -586,14 +586,14 @@
                 >
                   {{
                     isCdkMissingForMirror
-                      ? t('edit.hsrUpdateCdkMissing')
-                      : t('edit.hsrUpdateCdkHint')
+                      ? $t('edit.hsrUpdateCdkMissing')
+                      : $t('edit.hsrUpdateCdkHint')
                   }}
                   <a
                     :href="MIRRORCHYAN_CDK_URL"
                     class="form-hint-link"
                     @click="handleExternalLink"
-                    >{{ t('edit.hsrUpdateCdkGetLink') }}</a
+                    >{{ $t('edit.hsrUpdateCdkGetLink') }}</a
                   >
                 </div>
               </a-form-item>
@@ -602,15 +602,15 @@
 
           <a-form-item>
             <template #label>
-              <a-tooltip :title="t('edit.hsrUpdateManualTip')">
+              <a-tooltip :title="$t('edit.hsrUpdateManualTip')">
                 <span class="form-label">
-                  {{ t('edit.hsrUpdateManual') }}
+                  {{ $t('edit.hsrUpdateManual') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-typography-text v-if="!updateEngines.length" type="secondary">
-              {{ t('edit.hsrUpdateNeedPath') }}
+              {{ $t('edit.hsrUpdateNeedPath') }}
             </a-typography-text>
             <a-row v-else :gutter="24">
               <a-col v-for="engine in updateEngines" :key="engine" :xs="24" :lg="12">
@@ -619,8 +619,8 @@
                     <span class="update-engine-name">{{ engineLabel(engine) }}</span>
                     <a-typography-text type="secondary" class="update-engine-version">
                       {{
-                        t('edit.hsrUpdateInstalledVersion', {
-                          version: installedVersion(engine) || t('edit.hsrUpdateVersionUnknown'),
+                        $t('edit.hsrUpdateInstalledVersion', {
+                          version: installedVersion(engine) || $t('edit.hsrUpdateVersionUnknown'),
                         })
                       }}
                     </a-typography-text>
@@ -631,7 +631,7 @@
                       :disabled="updateStates[engine].applying"
                       @click="runManualUpdate(engine, 'check')"
                     >
-                      {{ t('edit.hsrUpdateCheckNow') }}
+                      {{ $t('edit.hsrUpdateCheckNow') }}
                     </a-button>
                     <a-button
                       type="primary"
@@ -639,7 +639,7 @@
                       :disabled="updateStates[engine].checking"
                       @click="runManualUpdate(engine, 'apply')"
                     >
-                      {{ t('edit.hsrUpdateApplyNow') }}
+                      {{ $t('edit.hsrUpdateApplyNow') }}
                     </a-button>
                   </a-space>
                   <a-alert
@@ -647,7 +647,7 @@
                     type="error"
                     show-icon
                     class="update-alert"
-                    :message="t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })"
+                    :message="$t('edit.hsrUpdateRequestFailed', { engine: engineLabel(engine) })"
                     :description="updateStates[engine].error"
                   />
                   <a-alert

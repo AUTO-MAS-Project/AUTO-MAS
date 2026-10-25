@@ -24,7 +24,7 @@
       <div class="banner-badge">
         <span class="banner-dot" :style="{ background: item.accent }" />
         <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
-        <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+        <a-tag v-if="item.stale" color="orange">{{ $t('home.sra.stale') }}</a-tag>
       </div>
       <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
     </div>

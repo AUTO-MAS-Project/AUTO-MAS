@@ -102,6 +102,7 @@
   "devDependencies": {
     "@ant-design/icons-vue": "^7.0.1",
     "@guolao/vue-monaco-editor": "^1.6.0",
+    "@intlify/unplugin-vue-i18n": "^11.2.7",
     "@playwright/test": "1.64.0",
     "@sentry/vite-plugin": "^5.4.0",
     "@tanstack/vue-query": "^5.104.4",

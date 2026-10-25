@@ -7,8 +7,8 @@
       @click="collapsed = !collapsed"
     >
       <CaretRightOutlined class="teams-caret" :class="{ expanded: !collapsed }" />
-      <span class="teams-title">{{ t('edit.zzzodPredefinedTeams') }}</span>
-      <a-tooltip :title="t('edit.zzzodPredefinedTeamsHint')">
+      <span class="teams-title">{{ $t('edit.zzzodPredefinedTeams') }}</span>
+      <a-tooltip :title="$t('edit.zzzodPredefinedTeamsHint')">
         <QuestionCircleOutlined class="teams-help" @click.stop />
       </a-tooltip>
       <a-button
@@ -20,7 +20,7 @@
         :disabled="!dirty"
         @click.stop="saveTeams()"
       >
-        {{ t('edit.zzzodTeamsSaveButton') }}
+        {{ $t('edit.zzzodTeamsSaveButton') }}
       </a-button>
     </div>
 
@@ -31,10 +31,10 @@
             <span class="team-idx">{{ team.idx + 1 }}</span>
             <a-input
               v-model:value="team.name"
-              :placeholder="t('edit.zzzodTeamNamePlaceholder')"
+              :placeholder="$t('edit.zzzodTeamNamePlaceholder')"
               class="team-name-input"
             />
-            <span class="team-field-label">{{ t('edit.zzzodTeamBattleConfig') }}</span>
+            <span class="team-field-label">{{ $t('edit.zzzodTeamBattleConfig') }}</span>
             <a-select
               v-model:value="team.autoBattle"
               :options="autoBattles"

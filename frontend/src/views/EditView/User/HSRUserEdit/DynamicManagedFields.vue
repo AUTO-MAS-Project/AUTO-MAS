@@ -25,7 +25,7 @@
         <!-- 标记与恢复放在复选框外面，点它们不会顺带切换勾选 -->
         <span v-if="isFieldOverridden(field)" class="override-actions">
           <a-tooltip :title="overrideTooltip(field)">
-            <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+            <a-tag color="blue" class="override-tag">{{ $t('edit.hsrFieldOverridden') }}</a-tag>
           </a-tooltip>
           <a-button
             v-if="canResetField(field)"
@@ -35,7 +35,7 @@
             :disabled="disabled"
             @click="emit('reset', field.key)"
           >
-            {{ t('edit.hsrFieldReset') }}
+            {{ $t('edit.hsrFieldReset') }}
           </a-button>
         </span>
       </div>
@@ -48,7 +48,7 @@
           </a-tooltip>
           <template v-if="isFieldOverridden(field)">
             <a-tooltip :title="overrideTooltip(field)">
-              <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+              <a-tag color="blue" class="override-tag">{{ $t('edit.hsrFieldOverridden') }}</a-tag>
             </a-tooltip>
             <a-button
               v-if="canResetField(field)"
@@ -58,7 +58,7 @@
               :disabled="disabled"
               @click="emit('reset', field.key)"
             >
-              {{ t('edit.hsrFieldReset') }}
+              {{ $t('edit.hsrFieldReset') }}
             </a-button>
           </template>
         </div>

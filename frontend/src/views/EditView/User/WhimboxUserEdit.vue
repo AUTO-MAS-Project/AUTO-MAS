@@ -47,15 +47,15 @@
     :script-name="WHIMBOX_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.whimboxConfigRestoreUserDesc')"
-    :script-desc="t('edit.whimboxConfigRestoreScriptDesc')"
+    :user-desc="$t('edit.whimboxConfigRestoreUserDesc')"
+    :script-desc="$t('edit.whimboxConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
     <template #preview="{ raw }">
       <a-empty
         v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
+        :description="$t('edit.configRestorePreviewEmpty')"
       />
       <template v-else>
         <template v-for="section in previewSections(raw)" :key="section.name">

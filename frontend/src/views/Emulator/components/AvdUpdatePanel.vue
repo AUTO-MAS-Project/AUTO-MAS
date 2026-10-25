@@ -187,7 +187,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="avd-update">
-    <h4 class="block-title">{{ t('emulator2.avd.update.title') }}</h4>
+    <h4 class="block-title">{{ $t('emulator2.avd.update.title') }}</h4>
     <div v-if="!status" class="update-loading">
       <a-spin :spinning="api.loading.value" />
     </div>
@@ -202,31 +202,31 @@ onBeforeUnmount(() => {
         v-if="status.belowMinimum"
         type="error"
         show-icon
-        :message="t('emulator2.avd.update.belowMinimum', { current, minimum })"
+        :message="$t('emulator2.avd.update.belowMinimum', { current, minimum })"
       />
       <div class="version-row">
-        <span>{{ t('emulator2.avd.update.current') }}：{{ current || '—' }}</span>
+        <span>{{ $t('emulator2.avd.update.current') }}：{{ current || '—' }}</span>
         <span>
-          {{ t('emulator2.avd.update.latest') }}：{{
-            (checked && latest) || t('emulator2.avd.update.notChecked')
+          {{ $t('emulator2.avd.update.latest') }}：{{
+            (checked && latest) || $t('emulator2.avd.update.notChecked')
           }}
           <a-tag
             v-if="checked && !status.checkError && status.latestVersion && !status.updateAvailable"
             color="success"
             class="version-tag"
           >
-            {{ t('emulator2.avd.update.upToDate') }}
+            {{ $t('emulator2.avd.update.upToDate') }}
           </a-tag>
         </span>
       </div>
       <div v-if="checked && status.checkError" class="update-error">
-        {{ t('emulator2.avd.update.checkFailed', { reason: status.checkError }) }}
+        {{ $t('emulator2.avd.update.checkFailed', { reason: status.checkError }) }}
       </div>
       <a-alert
         v-if="checked && status.requiredAutoMas"
         type="warning"
         show-icon
-        :message="t('emulator2.avd.update.requiredAutoMas', { version: status.requiredAutoMas })"
+        :message="$t('emulator2.avd.update.requiredAutoMas', { version: status.requiredAutoMas })"
       />
       <div v-if="running" class="update-progress">
         <div class="progress-text">
@@ -242,13 +242,13 @@ onBeforeUnmount(() => {
       <a-alert v-else-if="resultType" :type="resultType" show-icon :message="shown?.message" />
       <div class="update-actions">
         <a-button v-if="button === 'check'" :loading="checking" @click="check">
-          {{ t('emulator2.avd.update.check') }}
+          {{ $t('emulator2.avd.update.check') }}
         </a-button>
         <a-button v-else-if="button" type="primary" :loading="acting" @click="run">
           {{
             button === 'install'
-              ? t('emulator2.avd.update.install', { version: prepared })
-              : t('emulator2.avd.update.update', { version: latest })
+              ? $t('emulator2.avd.update.install', { version: prepared })
+              : $t('emulator2.avd.update.update', { version: latest })
           }}
         </a-button>
       </div>

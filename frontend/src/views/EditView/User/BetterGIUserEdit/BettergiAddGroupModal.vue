@@ -388,7 +388,7 @@ defineExpose({ open: openAddToDragonModal, openForGroup: openAddScriptToGroup })
     :title="addModalTitle"
     :ok-text="addModalOkText"
     :ok-button-props="addModalOkButtonProps"
-    :cancel-text="t('edit.cancel')"
+    :cancel-text="$t('edit.cancel')"
     width="920px"
     :z-index="1200"
     class="add-dragon-modal"
@@ -409,35 +409,35 @@ defineExpose({ open: openAddToDragonModal, openForGroup: openAddScriptToGroup })
           <a-space size="small">
             <a-button size="small" @click="openBettergiScriptSite">
               <template #icon><GlobalOutlined /></template>
-              {{ t('edit.bettergiOpenScriptRepo') }}
+              {{ $t('edit.bettergiOpenScriptRepo') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('jsScript')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenScriptDir') }}
+              {{ $t('edit.bettergiOpenScriptDir') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('autoPathing')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenTaskDir') }}
+              {{ $t('edit.bettergiOpenTaskDir') }}
             </a-button>
           </a-space>
           <a-space size="small">
             <a-button size="small" @click="openBettergiScheduler">
               <template #icon><PlayCircleOutlined /></template>
-              {{ t('edit.bettergiOpenBgi') }}
+              {{ $t('edit.bettergiOpenBgi') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('keyMouse')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenKeyMouseDir') }}
+              {{ $t('edit.bettergiOpenKeyMouseDir') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('scriptGroup')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenScriptGroupDir') }}
+              {{ $t('edit.bettergiOpenScriptGroupDir') }}
             </a-button>
           </a-space>
         </a-space>
       </div>
     </div>
-    <p class="add-dragon-input-tip">{{ t('edit.bettergiInputGroupNamesTip') }}</p>
+    <p class="add-dragon-input-tip">{{ $t('edit.bettergiInputGroupNamesTip') }}</p>
 
     <BettergiAddSources
       ref="sourcePicker"

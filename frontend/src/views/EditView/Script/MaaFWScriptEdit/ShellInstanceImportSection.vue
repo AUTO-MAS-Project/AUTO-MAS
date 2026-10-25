@@ -1,10 +1,10 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.shellImportTitle') }}</h3>
+      <h3>{{ $t('edit.shellImportTitle') }}</h3>
     </div>
     <p class="shell-import-hint">
-      {{ t('edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
+      {{ $t('edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
     </p>
 
     <div class="shell-import-list">
@@ -15,11 +15,11 @@
           :disabled="disabled"
           @change="toggleAll"
         >
-          {{ t('edit.shellImportSelectAll') }}
+          {{ $t('edit.shellImportSelectAll') }}
         </a-checkbox>
         <span class="shell-import-count">
           {{
-            t('edit.shellImportSelectedCount', {
+            $t('edit.shellImportSelectedCount', {
               selected: selectedSet.size,
               total: instances.length,
             })
@@ -45,13 +45,13 @@
             <span class="shell-import-name">{{ item.name }}</span>
             <a-tag class="shell-import-tag">{{ item.source }}</a-tag>
             <a-tag v-if="item.active" color="green" class="shell-import-tag">
-              {{ t('edit.shellImportActive') }}
+              {{ $t('edit.shellImportActive') }}
             </a-tag>
           </div>
           <div class="shell-import-meta">{{ describeMeta(item) }}</div>
         </div>
         <div class="shell-import-user">
-          {{ t('edit.shellImportUserName', { name: item.userName }) }}
+          {{ $t('edit.shellImportUserName', { name: item.userName }) }}
         </div>
       </div>
     </div>
@@ -64,7 +64,7 @@
       :disabled="disabled"
       @change="emit('update:importHotkeys', !importHotkeys)"
     >
-      {{ t('edit.mfwHotkeyImportToScript') }}
+      {{ $t('edit.mfwHotkeyImportToScript') }}
     </a-checkbox>
   </div>
 </template>

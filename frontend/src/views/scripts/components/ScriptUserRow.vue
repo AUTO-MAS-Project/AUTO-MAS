@@ -94,8 +94,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
   <div :key="user.id" class="user-item">
     <span
       class="user-drag-handle"
-      :title="t('comp.dragReorder')"
-      :aria-label="t('comp.dragReorder')"
+      :title="$t('comp.dragReorder')"
+      :aria-label="$t('comp.dragReorder')"
     >
       <span class="script-drag-dots" aria-hidden="true"></span>
     </span>
@@ -166,15 +166,15 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             :class="{ 'is-overlay-on': getOverlayState(script, user) }"
           >
             <span class="user-config-summary__label">{{
-              t('comp.currentConfig', { source: getConfigSource(script, user) })
+              $t('comp.currentConfig', { source: getConfigSource(script, user) })
             }}</span>
             <template v-if="getOverlayState(script, user) !== null">
               <span class="user-config-summary__sep" aria-hidden="true">·</span>
               <span class="user-config-summary__dot" aria-hidden="true"></span>
               {{
                 getOverlayState(script, user)
-                  ? t('comp.configOverrideEnabled')
-                  : t('comp.configOverrideDisabled')
+                  ? $t('comp.configOverrideEnabled')
+                  : $t('comp.configOverrideDisabled')
               }}
             </template>
           </div>
@@ -200,15 +200,15 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
       <div class="user-status">
         <a-switch
           :checked="Boolean(user.Info.Status)"
-          :checked-children="t('comp.enabled')"
-          :un-checked-children="t('comp.disabled')"
+          :checked-children="$t('comp.enabled')"
+          :un-checked-children="$t('comp.disabled')"
           class="status-switch"
           @click="handleToggleUserStatus(user)"
         />
       </div>
 
       <div class="user-actions">
-        <a-tooltip :title="t('comp.editUserConfiguration')">
+        <a-tooltip :title="$t('comp.editUserConfiguration')">
           <a-button
             type="default"
             size="middle"
@@ -218,22 +218,22 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             <template #icon>
               <EditOutlined />
             </template>
-            {{ t('comp.edit') }}
+            {{ $t('comp.edit') }}
           </a-button>
         </a-tooltip>
         <a-popconfirm
-          :title="t('comp.deleteThisUser')"
-          :description="t('comp.thisCannotBeUndone')"
-          :ok-text="t('comp.ok')"
-          :cancel-text="t('comp.cancel')"
+          :title="$t('comp.deleteThisUser')"
+          :description="$t('comp.thisCannotBeUndone')"
+          :ok-text="$t('comp.ok')"
+          :cancel-text="$t('comp.cancel')"
           @confirm="handleDeleteUser(user)"
         >
-          <a-tooltip :title="t('comp.deleteUser')">
+          <a-tooltip :title="$t('comp.deleteUser')">
             <a-button type="default" size="middle" danger class="user-action-btn">
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('comp.delete') }}
+              {{ $t('comp.delete') }}
             </a-button>
           </a-tooltip>
         </a-popconfirm>

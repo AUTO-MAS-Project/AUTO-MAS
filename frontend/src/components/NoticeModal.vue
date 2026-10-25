@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="t('comp.announcement')"
+    :title="$t('comp.announcement')"
     :width="800"
     :footer="null"
     :closable="false"
@@ -48,7 +48,7 @@
             class="confirm-button"
             @click="confirmNotices"
           >
-            {{ t('comp.gotIt') }}
+            {{ $t('comp.gotIt') }}
           </a-button>
         </div>
       </div>

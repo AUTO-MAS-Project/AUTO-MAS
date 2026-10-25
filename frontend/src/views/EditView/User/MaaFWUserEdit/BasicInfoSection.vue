@@ -2,30 +2,30 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ $t('edit.basicInfo') }}</h3>
     </div>
 
     <a-row :gutter="24">
       <a-col :xs="24" :md="8">
         <a-form-item name="userName">
           <template #label>
-            <a-tooltip :title="t('edit.giveThisConfigurationName')">
+            <a-tooltip :title="$t('edit.giveThisConfigurationName')">
               <span class="form-label">
-                {{ t('edit.userName') }}
+                {{ $t('edit.userName') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.userName"
-            :placeholder="t('edit.enterUserName')"
+            :placeholder="$t('edit.enterUserName')"
             size="large"
             @blur="emitSave('Info.Name', formData.Info.Name)"
           />
         </a-form-item>
       </a-col>
       <a-col :xs="12" :md="8">
-        <a-form-item :label="t('edit.enabled2')">
+        <a-form-item :label="$t('edit.enabled2')">
           <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
           <a-select
             v-model:value="statusValue"
@@ -36,7 +36,7 @@
         </a-form-item>
       </a-col>
       <a-col :xs="12" :md="8">
-        <a-form-item :label="t('edit.daysLeft')">
+        <a-form-item :label="$t('edit.daysLeft')">
           <a-input-number
             v-model:value="formData.Info.RemainedDay"
             :min="-1"
@@ -54,13 +54,13 @@
         <!-- 账号 / 密码的说明只在下面的提示框里写一次，标签上不再挂同一句的问号 -->
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.account') }}</span>
+            <span class="form-label">{{ $t('edit.account') }}</span>
           </template>
           <a-input
             v-model:value="formData.Info.Account"
             size="large"
             autocomplete="off"
-            :placeholder="accountPlaceholder || t('edit.localNoteOnly')"
+            :placeholder="accountPlaceholder || $t('edit.localNoteOnly')"
             @blur="emitSave('Info.Account', formData.Info.Account)"
           />
         </a-form-item>
@@ -68,23 +68,23 @@
       <a-col :xs="24" :md="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.password') }}</span>
+            <span class="form-label">{{ $t('edit.password') }}</span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
             size="large"
             autocomplete="off"
-            :placeholder="t('edit.localNoteOnly')"
+            :placeholder="$t('edit.localNoteOnly')"
             @blur="emitSave('Info.Password', formData.Info.Password)"
           />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :md="8">
-        <a-form-item :label="t('edit.note')">
+        <a-form-item :label="$t('edit.note')">
           <a-input
             v-model:value="formData.Info.Notes"
             allow-clear
-            :placeholder="t('edit.enterNote2')"
+            :placeholder="$t('edit.enterNote2')"
             size="large"
             @blur="emitSave('Info.Notes', formData.Info.Notes)"
           />

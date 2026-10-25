@@ -922,7 +922,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 <template>
   <div class="emulator-page">
     <div class="page-header">
-      <h1>{{ t('emulator.title') }}</h1>
+      <h1>{{ $t('emulator.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.emulator" />
     </div>
 
@@ -939,10 +939,10 @@ const handleBossKeyInputChange = (uuid: string) => {
               :loading="searching"
               @click="handleSearch"
             >
-              {{ t('emulator.autoSearch') }}
+              {{ $t('emulator.autoSearch') }}
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAdd">
-              {{ t('emulator.manualAdd') }}
+              {{ $t('emulator.manualAdd') }}
             </a-button>
           </a-space>
         </div>
@@ -960,7 +960,7 @@ const handleBossKeyInputChange = (uuid: string) => {
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
               <span class="tab-title">
-                {{ emulatorData[element.uid]?.Info?.Name || t('emulator.unnamed') }}
+                {{ emulatorData[element.uid]?.Info?.Name || $t('emulator.unnamed') }}
               </span>
             </template>
 
@@ -969,17 +969,17 @@ const handleBossKeyInputChange = (uuid: string) => {
               <!-- 配置区域 -->
               <div class="config-section">
                 <div class="section-header">
-                  <h3>{{ t('emulator.configTitle') }}</h3>
+                  <h3>{{ $t('emulator.configTitle') }}</h3>
                   <div class="section-actions">
                     <a-spin v-if="savingMap.get(element.uid)" size="small" />
                     <a-popconfirm
-                      :title="t('emulator.deleteConfirm')"
-                      :ok-text="t('emulator.ok')"
-                      :cancel-text="t('emulator.cancel')"
+                      :title="$t('emulator.deleteConfirm')"
+                      :ok-text="$t('emulator.ok')"
+                      :cancel-text="$t('emulator.cancel')"
                       @confirm="handleDelete(element.uid)"
                     >
                       <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
-                        {{ t('emulator.del') }}
+                        {{ $t('emulator.del') }}
                       </a-button>
                     </a-popconfirm>
                   </div>
@@ -988,10 +988,10 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <!-- 直接可编辑的配置表单（无边框） -->
                 <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
-                    <a-descriptions-item :label="t('emulator.nameLabel')">
+                    <a-descriptions-item :label="$t('emulator.nameLabel')">
                       <a-input
                         v-model:value="getEditingData(element.uid).name"
-                        :placeholder="t('emulator.namePlaceholder')"
+                        :placeholder="$t('emulator.namePlaceholder')"
                         size="small"
                         :bordered="false"
                         @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
@@ -1002,14 +1002,14 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
-                        <span>{{ t('emulator.typeLabel') }}</span>
-                        <a-tooltip :title="t('emulator.typeTip')">
+                        <span>{{ $t('emulator.typeLabel') }}</span>
+                        <a-tooltip :title="$t('emulator.typeTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-select
                         v-model:value="getEditingData(element.uid).type"
-                        :placeholder="t('emulator.typePlaceholder')"
+                        :placeholder="$t('emulator.typePlaceholder')"
                         :options="emulatorTypeOptions"
                         size="small"
                         :bordered="false"
@@ -1019,12 +1019,12 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item
                       v-if="isEmulator2(element.uid)"
-                      :label="t('emulator.pathLabel')"
+                      :label="$t('emulator.pathLabel')"
                       :span="2"
                     >
                       <div class="emulator2-path-entry">
                         <span class="emulator2-path-summary">
-                          {{ t('emulator2.pathsEntryHint') }}
+                          {{ $t('emulator2.pathsEntryHint') }}
                         </span>
                         <a-button
                           size="small"
@@ -1032,18 +1032,18 @@ const handleBossKeyInputChange = (uuid: string) => {
                           :icon="h(FolderOpenOutlined)"
                           @click="openEmulator2Paths(element.uid)"
                         >
-                          {{ t('emulator2.managePaths') }}
+                          {{ $t('emulator2.managePaths') }}
                         </a-button>
                       </div>
                     </a-descriptions-item>
                     <a-descriptions-item
                       v-if="!isEmulator2(element.uid)"
-                      :label="t('emulator.pathLabel')"
+                      :label="$t('emulator.pathLabel')"
                       :span="2"
                     >
                       <a-input
                         v-model:value="getEditingData(element.uid).path"
-                        :placeholder="t('emulator.pathPlaceholder')"
+                        :placeholder="$t('emulator.pathPlaceholder')"
                         size="small"
                         :bordered="false"
                         readonly
@@ -1058,21 +1058,21 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
-                        <span>{{ t('emulator.waitLabel') }}</span>
-                        <a-tooltip :title="t('emulator.waitTip')">
+                        <span>{{ $t('emulator.waitLabel') }}</span>
+                        <a-tooltip :title="$t('emulator.waitTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-input-number
                         v-model:value="getEditingData(element.uid).max_wait_time"
-                        :placeholder="t('emulator.waitPlaceholder')"
+                        :placeholder="$t('emulator.waitPlaceholder')"
                         size="small"
                         :bordered="false"
                         style="width: 100%"
                         :min="10"
                         :max="9999"
                         :step="5"
-                        :suffix="t('emulator.seconds')"
+                        :suffix="$t('emulator.seconds')"
                         @blur="
                           handleSaveChange(
                             element.uid,
@@ -1084,8 +1084,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator2.stableMode') }}</span>
-                        <a-tooltip :title="t('emulator2.stableSwitchTip')">
+                        <span>{{ $t('emulator2.stableMode') }}</span>
+                        <a-tooltip :title="$t('emulator2.stableSwitchTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1098,8 +1098,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator2.configGuard') }}</span>
-                        <a-tooltip :title="t('emulator2.guardTip')">
+                        <span>{{ $t('emulator2.configGuard') }}</span>
+                        <a-tooltip :title="$t('emulator2.guardTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1112,8 +1112,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                     </a-descriptions-item>
                     <a-descriptions-item v-if="!isEmulator2(element.uid)">
                       <template #label>
-                        <span>{{ t('emulator.bossKeyLabel') }}</span>
-                        <a-tooltip :title="t('emulator.bossKeyTip')">
+                        <span>{{ $t('emulator.bossKeyLabel') }}</span>
+                        <a-tooltip :title="$t('emulator.bossKeyTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
@@ -1122,8 +1122,8 @@ const handleBossKeyInputChange = (uuid: string) => {
                         v-model:value="bossKeyInputMap[element.uid]"
                         :placeholder="
                           recordingBossKeyMap.get(element.uid)
-                            ? t('emulator.bossKeyRecording')
-                            : t('emulator.bossKeyPlaceholder')
+                            ? $t('emulator.bossKeyRecording')
+                            : $t('emulator.bossKeyPlaceholder')
                         "
                         size="small"
                         :bordered="false"
@@ -1139,7 +1139,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                             size="small"
                             @click="startRecordBossKey(element.uid)"
                           >
-                            {{ t('emulator.record') }}
+                            {{ $t('emulator.record') }}
                           </a-button>
                           <a-button
                             v-else
@@ -1148,39 +1148,39 @@ const handleBossKeyInputChange = (uuid: string) => {
                             size="small"
                             @click="stopRecordBossKey(element.uid)"
                           >
-                            {{ t('emulator.stopRecord') }}
+                            {{ $t('emulator.stopRecord') }}
                           </a-button>
                         </template>
                       </a-input>
                       <span v-else style="color: var(--ant-color-text-tertiary); font-size: 12px">
-                        {{ t('emulator.bossKeyUnsupported') }}
+                        {{ $t('emulator.bossKeyUnsupported') }}
                       </span>
                     </a-descriptions-item>
                     <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
                       <template #label>
-                        <span>{{ t('emulator.forceCloseLabel') }}</span>
-                        <a-tooltip :title="t('emulator.forceCloseTip')">
+                        <span>{{ $t('emulator.forceCloseLabel') }}</span>
+                        <a-tooltip :title="$t('emulator.forceCloseTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-switch
                         v-model:checked="getEditingData(element.uid).force_kill_on_close"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                        :checked-children="$t('emulator.on')"
+                        :un-checked-children="$t('emulator.off')"
                         @change="handleSaveChange(element.uid, 'force_kill_on_close', $event)"
                       />
                     </a-descriptions-item>
                     <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
                       <template #label>
-                        <span>{{ t('emulator.forceCleanLaunchLabel') }}</span>
-                        <a-tooltip :title="t('emulator.forceCleanLaunchTip')">
+                        <span>{{ $t('emulator.forceCleanLaunchLabel') }}</span>
+                        <a-tooltip :title="$t('emulator.forceCleanLaunchTip')">
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
                       <a-switch
                         v-model:checked="getEditingData(element.uid).force_kill_before_launch"
-                        :checked-children="t('emulator.on')"
-                        :un-checked-children="t('emulator.off')"
+                        :checked-children="$t('emulator.on')"
+                        :un-checked-children="$t('emulator.off')"
                         @change="handleSaveChange(element.uid, 'force_kill_before_launch', $event)"
                       />
                     </a-descriptions-item>
@@ -1200,7 +1200,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
               <div v-else class="devices-panel">
                 <div class="panel-header">
-                  <h4 class="panel-title">{{ t('emulator.deviceList') }}</h4>
+                  <h4 class="panel-title">{{ $t('emulator.deviceList') }}</h4>
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
@@ -1211,7 +1211,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                     "
                     class="empty-devices"
                   >
-                    <a-empty :description="t('emulator.noDevice')">
+                    <a-empty :description="$t('emulator.noDevice')">
                       <template #extra>
                         <a-button
                           type="primary"
@@ -1219,7 +1219,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           :icon="h(PlayCircleOutlined)"
                           @click="startEmulator(element.uid, '0')"
                         >
-                          {{ t('emulator.startEmulator') }}
+                          {{ $t('emulator.startEmulator') }}
                         </a-button>
                       </template>
                     </a-empty>
@@ -1236,31 +1236,31 @@ const handleBossKeyInputChange = (uuid: string) => {
                       "
                       :columns="[
                         {
-                          title: t('emulator.colDevice'),
+                          title: $t('emulator.colDevice'),
                           dataIndex: 'index',
                           key: 'index',
                           width: 60,
                           customRender: ({ text }: any) => `#${text}`,
                         },
                         {
-                          title: t('emulator.colStatus'),
+                          title: $t('emulator.colStatus'),
                           dataIndex: 'status',
                           key: 'status',
                           width: 60,
                         },
                         {
-                          title: t('emulator.colName'),
+                          title: $t('emulator.colName'),
                           dataIndex: 'title',
                           key: 'title',
                           ellipsis: true,
                         },
                         {
-                          title: t('emulator.colAdb'),
+                          title: $t('emulator.colAdb'),
                           dataIndex: 'adb_address',
                           key: 'adb_address',
                           ellipsis: true,
                         },
-                        { title: t('emulator.colAction'), key: 'action', width: 160 },
+                        { title: $t('emulator.colAction'), key: 'action', width: 160 },
                       ]"
                       :pagination="false"
                       size="small"
@@ -1280,7 +1280,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="showingDevices.has(`${element.uid}-${record.index}`)"
                               @click="showEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.show') }}
+                              {{ $t('emulator.show') }}
                             </a-button>
                             <a-button
                               v-if="canStartDevice(record.status)"
@@ -1289,7 +1289,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
                               @click="startEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.start') }}
+                              {{ $t('emulator.start') }}
                             </a-button>
                             <a-button
                               v-else-if="canStopDevice(record.status)"
@@ -1298,7 +1298,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
                               @click="stopEmulator(element.uid, String(record.index))"
                             >
-                              {{ t('emulator.stop') }}
+                              {{ $t('emulator.stop') }}
                             </a-button>
                             <a-button v-else disabled>
                               {{ getDeviceStatusInfo(record.status).text }}
@@ -1324,10 +1324,10 @@ const handleBossKeyInputChange = (uuid: string) => {
                   :loading="searching"
                   @click="handleSearch()"
                 >
-                  {{ t('emulator.autoSearch') }}
+                  {{ $t('emulator.autoSearch') }}
                 </a-button>
                 <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAdd">
-                  {{ t('emulator.manualAddMulti') }}
+                  {{ $t('emulator.manualAddMulti') }}
                 </a-button>
               </a-space>
             </div>
@@ -1339,13 +1339,13 @@ const handleBossKeyInputChange = (uuid: string) => {
     <!-- 搜索结果导入模态框 -->
     <a-modal
       v-model:visible="showSearchModal"
-      :title="t('emulator.searchModalTitle')"
+      :title="$t('emulator.searchModalTitle')"
       width="600"
       :footer="null"
     >
       <a-spin :spinning="searching">
         <div v-if="searchResults.length === 0" class="empty-state">
-          <a-empty :description="t('emulator.searchEmpty')" />
+          <a-empty :description="$t('emulator.searchEmpty')" />
         </div>
 
         <a-list v-else item-layout="horizontal" :data-source="searchResults">
@@ -1353,7 +1353,7 @@ const handleBossKeyInputChange = (uuid: string) => {
             <a-list-item>
               <template #actions>
                 <a-button type="primary" size="small" @click="handleSearchAndImport(item)">
-                  {{ t('emulator.import') }}
+                  {{ $t('emulator.import') }}
                 </a-button>
               </template>
               <a-list-item-meta :title="item.name" :description="`${item.type} - ${item.path}`" />

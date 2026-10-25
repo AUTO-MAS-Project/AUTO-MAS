@@ -2,17 +2,17 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ $t('edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item name="name">
           <template #label>
-            <span class="form-label">{{ t('edit.scriptName') }}</span>
+            <span class="form-label">{{ $t('edit.scriptName') }}</span>
           </template>
           <a-input
             v-model:value="formData.name"
-            :placeholder="t('edit.enterScriptName')"
+            :placeholder="$t('edit.enterScriptName')"
             size="large"
             class="modern-input"
             @blur="emit('change', 'Info', 'Name', formData.name)"
@@ -24,7 +24,7 @@
           <template #label>
             <a-tooltip :title="directoryHint">
               <span class="form-label">
-                {{ sourceDirectoryLabel || t('edit.localProjectDirectory') }}
+                {{ sourceDirectoryLabel || $t('edit.localProjectDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -34,13 +34,13 @@
           <a-input-group compact class="path-input-group">
             <a-input
               :value="displayedPath"
-              :placeholder="sourcePlaceholder || t('edit.pickActualMfwProject')"
+              :placeholder="sourcePlaceholder || $t('edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
               aria-readonly="true"
             />
-            <a-tooltip :title="directoryLocked ? t('edit.maafwDirectoryLockedHint') : ''">
+            <a-tooltip :title="directoryLocked ? $t('edit.maafwDirectoryLockedHint') : ''">
               <a-button
                 size="large"
                 class="path-button"
@@ -50,7 +50,7 @@
                 <template #icon>
                   <FolderOpenOutlined />
                 </template>
-                {{ t('edit.pickProjectDirectory') }}
+                {{ $t('edit.pickProjectDirectory') }}
               </a-button>
             </a-tooltip>
           </a-input-group>
@@ -63,7 +63,7 @@
               size="small"
             />
             <span class="import-progress-text">{{
-              importMessage || t('edit.maafwImportingCopy')
+              importMessage || $t('edit.maafwImportingCopy')
             }}</span>
           </div>
           <div v-else-if="importError && !guideOwnsImport" class="import-error">
@@ -86,21 +86,21 @@
         />
         <!-- 说明只在问号里（源码形态换成源码形态那句），开关下面不留说明行 -->
         <a-tooltip
-          :title="sourceForm ? t('edit.maafwSourceFormHint') : t('edit.maafwFollowSourceHint')"
+          :title="sourceForm ? $t('edit.maafwSourceFormHint') : $t('edit.maafwFollowSourceHint')"
         >
           <span class="form-label">
-            {{ t('edit.maafwFollowSource') }}
+            {{ $t('edit.maafwFollowSource') }}
             <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
           </span>
         </a-tooltip>
         <a-tag v-if="sourceForm" color="processing" class="follow-source-tag">
-          {{ t('edit.maafwSourceFormTag') }}
+          {{ $t('edit.maafwSourceFormTag') }}
         </a-tag>
       </div>
       <div v-if="followSource" class="follow-source-status">
         <span>{{ followSourceStatus }}</span>
         <span v-if="!embeddedStatus.sourceExists" class="follow-source-missing">
-          {{ t('edit.maafwFollowSourceMissing') }}
+          {{ $t('edit.maafwFollowSourceMissing') }}
         </span>
         <a-button
           size="small"
@@ -109,7 +109,7 @@
           :disabled="interfaceLoading || updateApplying || embeddedBusy"
           @click="emit('sync-source')"
         >
-          {{ t('edit.maafwFollowSourceSyncNow') }}
+          {{ $t('edit.maafwFollowSourceSyncNow') }}
         </a-button>
       </div>
     </div>
@@ -133,7 +133,7 @@
       </a-descriptions>
       <div class="env-panel">
         <div class="env-panel-header">
-          <span class="env-panel-title">{{ t('edit.envPanelTitle') }}</span>
+          <span class="env-panel-title">{{ $t('edit.envPanelTitle') }}</span>
           <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
                重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
           <a-button
@@ -145,7 +145,7 @@
             <template #icon>
               <ToolOutlined />
             </template>
-            {{ envTone === 'failed' ? t('edit.envRetry') : t('edit.prepareRuntimeEnv') }}
+            {{ envTone === 'failed' ? $t('edit.envRetry') : $t('edit.prepareRuntimeEnv') }}
           </a-button>
         </div>
         <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
@@ -153,7 +153,7 @@
         <div class="env-log-wrap">
           <div ref="envLogBoxRef" class="env-log-box">
             <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
-              {{ t('edit.envPanelPlaceholder') }}
+              {{ $t('edit.envPanelPlaceholder') }}
             </div>
             <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
               {{ line }}
@@ -168,7 +168,7 @@
               <CloseCircleOutlined v-else class="env-log-status-icon" />
               <span>{{ envStatusText }}</span>
               <div v-if="envTone === 'failed'" class="env-log-status-hint">
-                {{ t('edit.envFailedHint') }}
+                {{ $t('edit.envFailedHint') }}
               </div>
             </div>
           </div>
@@ -176,12 +176,12 @@
       </div>
     </div>
     <div v-else-if="interfaceLoading" class="interface-loading">
-      <a-spin :tip="t('edit.readingInterfaceJson')">
+      <a-spin :tip="$t('edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          :message="t('edit.loadingMfwInterface')"
-          :description="t('edit.readingControllersResourcesTasks')"
+          :message="$t('edit.loadingMfwInterface')"
+          :description="$t('edit.readingControllersResourcesTasks')"
         />
       </a-spin>
     </div>
@@ -192,7 +192,7 @@
         class="interface-guide-icon interface-guide-icon--warning"
         aria-hidden="true"
       />
-      <h3>{{ t('edit.maafwPreviewFailed') }}</h3>
+      <h3>{{ $t('edit.maafwPreviewFailed') }}</h3>
       <p v-if="previewError" class="interface-guide-error">{{ previewError }}</p>
       <a-button
         type="primary"
@@ -203,13 +203,13 @@
         <template #icon>
           <ReloadOutlined />
         </template>
-        {{ t('edit.envRetry') }}
+        {{ $t('edit.envRetry') }}
       </a-button>
     </div>
     <div v-else class="interface-guide-card">
       <InboxOutlined class="interface-guide-icon" aria-hidden="true" />
-      <h3>{{ t('edit.pickMfwProject') }}</h3>
-      <p>{{ t('edit.pickProjectDirectoryContaining') }}</p>
+      <h3>{{ $t('edit.pickMfwProject') }}</h3>
+      <p>{{ $t('edit.pickProjectDirectoryContaining') }}</p>
       <a-button
         v-if="!embeddedBusy"
         type="primary"
@@ -220,7 +220,7 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('edit.pickProjectDirectory') }}
+        {{ $t('edit.pickProjectDirectory') }}
       </a-button>
       <div v-else class="import-progress import-progress--guide">
         <a-progress
@@ -229,7 +229,7 @@
           size="small"
         />
         <span class="import-progress-text">{{
-          importMessage || t('edit.maafwImportingCopy')
+          importMessage || $t('edit.maafwImportingCopy')
         }}</span>
       </div>
       <p v-if="!embeddedBusy && (importError || previewError)" class="interface-guide-error">

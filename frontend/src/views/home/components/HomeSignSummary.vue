@@ -56,14 +56,14 @@ const renderUser = (user: GameSignUser) => {
     <div class="sign-heading">
       <CheckCircleOutlined :class="summary.signed === summary.total ? 'is-signed' : 'is-pending'" />
       <strong>{{
-        t('home.activityNotes.sign', { signed: summary.signed, total: summary.total })
+        $t('home.activityNotes.sign', { signed: summary.signed, total: summary.total })
       }}</strong>
       <a-button
         v-if="showRefresh"
         type="text"
         size="small"
         :loading="loading"
-        :aria-label="t('gamesign.activity.refresh')"
+        :aria-label="$t('gamesign.activity.refresh')"
         @click="$emit('refresh')"
         ><ReloadOutlined
       /></a-button>
@@ -80,11 +80,11 @@ const renderUser = (user: GameSignUser) => {
     >
       {{
         expanded
-          ? t('home.activityNotes.collapse')
-          : t('home.activityNotes.expand', { count: hiddenCount })
+          ? $t('home.activityNotes.collapse')
+          : $t('home.activityNotes.expand', { count: hiddenCount })
       }}
     </a-button>
-    <span v-if="error" class="sign-error">{{ t('home.activityNotes.signFailed') }}</span>
+    <span v-if="error" class="sign-error">{{ $t('home.activityNotes.signFailed') }}</span>
   </div>
 </template>
 

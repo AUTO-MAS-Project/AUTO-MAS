@@ -99,14 +99,14 @@ watch(open, value => {
 </script>
 
 <template>
-  <a-modal v-model:open="open" :title="t('emulator2.avd.title')" width="760px" :footer="null">
+  <a-modal v-model:open="open" :title="$t('emulator2.avd.title')" width="760px" :footer="null">
     <div class="avd-root-dialog">
       <a-form layout="vertical">
-        <a-form-item :label="t('emulator2.avd.root')">
+        <a-form-item :label="$t('emulator2.avd.root')">
           <div class="root-row">
             <a-input
               v-model:value="root"
-              :placeholder="t('emulator2.avd.rootPlaceholder')"
+              :placeholder="$t('emulator2.avd.rootPlaceholder')"
               @press-enter="check(true)"
             >
               <template #suffix>
@@ -114,7 +114,7 @@ watch(open, value => {
               </template>
             </a-input>
             <a-button :loading="checking" :disabled="!root.trim()" @click="check(true)">
-              {{ t('emulator2.avd.check') }}
+              {{ $t('emulator2.avd.check') }}
             </a-button>
           </div>
         </a-form-item>
@@ -130,7 +130,7 @@ watch(open, value => {
 
       <div class="dialog-footer">
         <a-button @click="open = false">
-          {{ alreadyAdded ? t('emulator2.avd.close') : t('emulator.cancel') }}
+          {{ alreadyAdded ? $t('emulator2.avd.close') : $t('emulator.cancel') }}
         </a-button>
         <a-button
           v-if="!alreadyAdded"
@@ -139,7 +139,7 @@ watch(open, value => {
           :disabled="!ready"
           @click="addRoot"
         >
-          {{ t('emulator2.add') }}
+          {{ $t('emulator2.add') }}
         </a-button>
       </div>
     </div>

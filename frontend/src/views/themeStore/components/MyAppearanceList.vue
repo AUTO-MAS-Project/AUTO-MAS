@@ -70,21 +70,21 @@ const editDescription = (item: MyAppearanceItem): void => {
   <div class="mine-toolbar">
     <slot name="filters" />
     <a-button :loading="loading" @click="load">
-      {{ t('themeStore.refresh') }}
+      {{ $t('themeStore.refresh') }}
     </a-button>
   </div>
   <div v-if="loading && items.length === 0" class="mine-state">
-    <a-spin size="large" :tip="t('themeStore.loading')" />
+    <a-spin size="large" :tip="$t('themeStore.loading')" />
   </div>
   <div v-else-if="error" class="mine-state">
-    <a-result status="warning" :title="t('themeStore.mine.loadFailed')" :sub-title="error">
+    <a-result status="warning" :title="$t('themeStore.mine.loadFailed')" :sub-title="error">
       <template #extra>
-        <a-button type="primary" @click="load">{{ t('themeStore.retry') }}</a-button>
+        <a-button type="primary" @click="load">{{ $t('themeStore.retry') }}</a-button>
       </template>
     </a-result>
   </div>
   <div v-else-if="items.length === 0" class="mine-state">
-    <a-empty :description="t('themeStore.mine.empty')" />
+    <a-empty :description="$t('themeStore.mine.empty')" />
   </div>
   <div v-else class="mine-grid">
     <div v-for="item in items" :key="item.fileId" class="mine-card">
@@ -109,16 +109,16 @@ const editDescription = (item: MyAppearanceItem): void => {
         </span>
         <span class="mine-meta">{{ formatOnlineAppearanceTime(item.updatedAt) }}</span>
         <span v-if="item.categoryKey" class="mine-meta">{{
-          t(`themeStore.categories.${item.categoryKey}`)
+          $t(`themeStore.categories.${item.categoryKey}`)
         }}</span>
         <span class="mine-description">
-          {{ item.description || t('themeStore.noDescription') }}
+          {{ item.description || $t('themeStore.noDescription') }}
         </span>
         <span
           v-if="getMyAppearanceState(item).kind === 'rejected' && item.latestReviewComment.trim()"
           class="mine-reject-reason"
         >
-          {{ t('themeStore.mine.rejectReason', { reason: item.latestReviewComment.trim() }) }}
+          {{ $t('themeStore.mine.rejectReason', { reason: item.latestReviewComment.trim() }) }}
         </span>
         <div class="mine-actions">
           <a-button
@@ -126,10 +126,10 @@ const editDescription = (item: MyAppearanceItem): void => {
             type="primary"
             @click="emit('upload-version', item.fileId, item.categoryKey)"
           >
-            {{ t('themeStore.mine.uploadVersion') }}
+            {{ $t('themeStore.mine.uploadVersion') }}
           </a-button>
           <a-button size="small" @click="editDescription(item)">
-            {{ t('themeStore.mine.editDescription') }}
+            {{ $t('themeStore.mine.editDescription') }}
           </a-button>
           <a-button
             v-if="isInStore(item)"
@@ -137,7 +137,7 @@ const editDescription = (item: MyAppearanceItem): void => {
             type="link"
             @click="emit('view-in-store', item)"
           >
-            {{ t('themeStore.mine.viewInStore') }}
+            {{ $t('themeStore.mine.viewInStore') }}
           </a-button>
         </div>
       </div>

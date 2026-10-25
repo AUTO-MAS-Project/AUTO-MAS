@@ -82,16 +82,18 @@ const handleDetach = async () => {
   <div class="vdd-prompt">
     <div class="vdd-prompt-header">
       <DesktopOutlined class="vdd-prompt-icon" />
-      <span class="vdd-prompt-title">{{ t('setting.display.prompt.title') }}</span>
+      <span class="vdd-prompt-title">{{ $t('setting.display.prompt.title') }}</span>
     </div>
-    <p class="vdd-prompt-body">{{ t('setting.display.prompt.body', { devices }) }}</p>
+    <p class="vdd-prompt-body">{{ $t('setting.display.prompt.body', { devices }) }}</p>
     <p v-if="errorText" class="vdd-prompt-error">{{ errorText }}</p>
     <div class="vdd-prompt-actions">
       <a-button type="primary" :disabled="detaching" @click="handleKeep">
-        {{ t('setting.display.prompt.keep') }}
+        {{ $t('setting.display.prompt.keep') }}
       </a-button>
       <a-button danger :loading="detaching" @click="handleDetach">
-        {{ detaching ? t('setting.display.prompt.detaching') : t('setting.display.prompt.detach') }}
+        {{
+          detaching ? $t('setting.display.prompt.detaching') : $t('setting.display.prompt.detach')
+        }}
       </a-button>
     </div>
   </div>

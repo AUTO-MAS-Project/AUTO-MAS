@@ -112,18 +112,18 @@ const toggleCollapsed = () => {
   <div class="push-log-config" :class="{ collapsed }">
     <div class="push-config-header">
       <h3>
-        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+        <a-tooltip :title="collapsed ? $t('edit.expandRulesArea') : $t('edit.collapseRulesArea')">
           <span class="push-config-title-text" @click="toggleCollapsed">
-            {{ t('edit.pushSettings') }}
+            {{ $t('edit.pushSettings') }}
             <DownOutlined class="push-config-title-arrow" :class="{ collapsed }" />
           </span>
         </a-tooltip>
-        <a-tooltip :title="t('edit.whenTaskProgressCollected')">
+        <a-tooltip :title="$t('edit.whenTaskProgressCollected')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
       <div class="push-config-actions">
-        <a-tooltip :title="t('edit.progressCollectedOnlyWhen')">
+        <a-tooltip :title="$t('edit.progressCollectedOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -131,10 +131,10 @@ const toggleCollapsed = () => {
             @change="onEnabledChange"
           />
         </a-tooltip>
-        <a-tooltip :title="t('edit.readExtractionPatternReference')">
+        <a-tooltip :title="$t('edit.readExtractionPatternReference')">
           <a-button size="small" class="docs-btn" @click="openDocs('regex')">
             <BookOutlined />
-            {{ t('edit.documentation') }}
+            {{ $t('edit.documentation') }}
           </a-button>
         </a-tooltip>
       </div>
@@ -142,7 +142,7 @@ const toggleCollapsed = () => {
 
     <div v-show="!collapsed" class="push-config-body">
       <div v-if="!enabled" class="push-config-disabled-tip">
-        {{ t('edit.pushCollectionOffRules') }}
+        {{ $t('edit.pushCollectionOffRules') }}
       </div>
 
       <draggable
@@ -175,7 +175,7 @@ const toggleCollapsed = () => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-pattern-btn">
             <PlusOutlined />
-            {{ t('edit.addRule') }}
+            {{ $t('edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>

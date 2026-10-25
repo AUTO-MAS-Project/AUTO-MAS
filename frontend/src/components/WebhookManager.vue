@@ -1,12 +1,12 @@
 <template>
   <div class="webhook-manager" :class="{ compact }">
     <div v-if="!compact" class="webhook-header">
-      <h3>{{ t('comp.customWebhooks') }}</h3>
+      <h3>{{ $t('comp.customWebhooks') }}</h3>
       <a-button type="primary" size="middle" @click="showAddModal">
         <template #icon>
           <PlusOutlined />
         </template>
-        {{ t('comp.addWebhook') }}
+        {{ $t('comp.addWebhook') }}
       </a-button>
     </div>
 
@@ -43,13 +43,13 @@
               :loading="testingWebhooks[webhook.uid]"
               @click="testWebhook(webhook)"
             >
-              {{ t('comp.test') }}
+              {{ $t('comp.test') }}
             </a-button>
             <a-button type="text" size="small" @click="editWebhook(webhook)">
-              {{ t('comp.edit') }}
+              {{ $t('comp.edit') }}
             </a-button>
             <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
-              {{ t('comp.delete') }}
+              {{ $t('comp.delete') }}
             </a-button>
           </template>
           <template v-else>
@@ -62,19 +62,19 @@
               <template #icon>
                 <PlayCircleOutlined />
               </template>
-              {{ t('comp.test') }}
+              {{ $t('comp.test') }}
             </a-button>
             <a-button type="text" size="small" @click="editWebhook(webhook)">
               <template #icon>
                 <EditOutlined />
               </template>
-              {{ t('comp.edit') }}
+              {{ $t('comp.edit') }}
             </a-button>
             <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('comp.delete') }}
+              {{ $t('comp.delete') }}
             </a-button>
           </template>
         </div>
@@ -85,9 +85,9 @@
       <div class="empty-icon">
         <ApiOutlined />
       </div>
-      <div class="empty-text">{{ t('comp.noCustomWebhooks') }}</div>
+      <div class="empty-text">{{ $t('comp.noCustomWebhooks') }}</div>
       <div v-if="!compact" class="empty-description">
-        {{ t('comp.useButtonAboveAdd') }}
+        {{ $t('comp.useButtonAboveAdd') }}
       </div>
     </div>
 
@@ -96,13 +96,13 @@
       <template #icon>
         <PlusOutlined />
       </template>
-      {{ t('comp.addWebhook') }}
+      {{ $t('comp.addWebhook') }}
     </a-button>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="isEditing ? t('comp.editWebhook') : t('comp.addWebhook')"
+      :title="isEditing ? $t('comp.editWebhook') : $t('comp.addWebhook')"
       :width="compact ? '560px' : '800px'"
       :get-container="getPopupContainer"
       :z-index="compact ? 1050 : undefined"
@@ -115,10 +115,10 @@
     >
       <a-form ref="formRef" :model="formData" layout="vertical">
         <!-- 模板选择放在最上面 -->
-        <a-form-item :label="t('comp.pickTemplate')">
+        <a-form-item :label="$t('comp.pickTemplate')">
           <a-select
             v-model:value="selectedTemplate"
-            :placeholder="t('comp.pickPresetTemplateWrite')"
+            :placeholder="$t('comp.pickPresetTemplateWrite')"
             :get-popup-container="getPopupContainer"
             allow-clear
             @change="applyTemplate"
@@ -128,7 +128,7 @@
               :key="template.name"
               :value="template.name"
             >
-              {{ template.name }} - {{ t(template.descriptionKey) }}
+              {{ template.name }} - {{ $t(template.descriptionKey) }}
             </a-select-option>
           </a-select>
         </a-form-item>
@@ -136,15 +136,15 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item
-              :label="t('comp.webhookName')"
+              :label="$t('comp.webhookName')"
               name="name"
               :rules="[{ required: true, message: '请输入 Webhook 名称' }]"
             >
-              <a-input v-model:value="formData.name" :placeholder="t('comp.enterWebhookName')" />
+              <a-input v-model:value="formData.name" :placeholder="$t('comp.enterWebhookName')" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item :label="t('comp.method')" name="method">
+            <a-form-item :label="$t('comp.method')" name="method">
               <a-select v-model:value="formData.method">
                 <a-select-option value="POST">POST</a-select-option>
                 <a-select-option value="GET">GET</a-select-option>
@@ -164,15 +164,15 @@
           />
         </a-form-item>
 
-        <a-form-item :label="t('comp.messageTemplate')">
+        <a-form-item :label="$t('comp.messageTemplate')">
           <a-textarea
             v-model:value="formData.template"
             :rows="6"
-            :placeholder="t('comp.enterMessageTemplateVariables')"
+            :placeholder="$t('comp.enterMessageTemplateVariables')"
           />
           <div class="template-help">
             <a-typography-text type="secondary" style="font-size: 12px">
-              {{ t('comp.supportedVariables') }}
+              {{ $t('comp.supportedVariables') }}
               <a-tag v-for="variable in TEMPLATE_VARIABLES" :key="variable.name" size="small">
                 {{ variable.name }}
               </a-tag>
@@ -180,17 +180,17 @@
           </div>
         </a-form-item>
 
-        <a-form-item :label="t('comp.customHeadersOptional')">
+        <a-form-item :label="$t('comp.customHeadersOptional')">
           <div class="headers-input">
             <div v-for="(header, index) in formData.headersList" :key="index" class="header-row">
               <a-input
                 v-model:value="header.key"
-                :placeholder="t('comp.headerName')"
+                :placeholder="$t('comp.headerName')"
                 style="width: 40%; margin-right: 8px"
               />
               <a-input
                 v-model:value="header.value"
-                :placeholder="t('comp.headerValue')"
+                :placeholder="$t('comp.headerValue')"
                 style="width: 40%; margin-right: 8px"
               />
               <a-button type="text" danger size="small" @click="removeHeader(index)">
@@ -208,14 +208,14 @@
               <template #icon>
                 <PlusOutlined />
               </template>
-              {{ t('comp.addHeader') }}
+              {{ $t('comp.addHeader') }}
             </a-button>
           </div>
         </a-form-item>
 
         <a-form-item>
           <a-checkbox v-model:checked="formData.enabled">{{
-            t('comp.enableThisWebhook')
+            $t('comp.enableThisWebhook')
           }}</a-checkbox>
         </a-form-item>
       </a-form>

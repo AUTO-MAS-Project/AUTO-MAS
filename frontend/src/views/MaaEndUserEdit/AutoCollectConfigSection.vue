@@ -5,8 +5,8 @@
         <a-form-item name="IfAutoCollect">
           <template #label>
             <span class="form-label">
-              {{ t('edit.maaEndAutoCollectEnabled') }}
-              <a-tooltip :title="t('edit.maaEndAutoCollectEnabledHint')">
+              {{ $t('edit.maaEndAutoCollectEnabled') }}
+              <a-tooltip :title="$t('edit.maaEndAutoCollectEnabledHint')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -18,7 +18,7 @@
         <a-form-item name="AutoCollectMode">
           <template #label>
             <span class="form-label">
-              {{ t('edit.maaEndAutoCollectMode') }}
+              {{ $t('edit.maaEndAutoCollectMode') }}
               <a-tooltip :title="modeHint">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -40,7 +40,7 @@
         v-if="!optionsLoading && !groups.length"
         type="warning"
         show-icon
-        :message="t('edit.maaEndAutoCollectOptionsUnavailable')"
+        :message="$t('edit.maaEndAutoCollectOptionsUnavailable')"
       />
       <div class="route-panel-list">
         <div v-for="panel in groups" :key="panel.value" class="route-panel">
@@ -49,7 +49,7 @@
               [panel.regionLabel, panel.label].filter(Boolean).join(' · ')
             }}</span>
             <span class="route-panel-count">{{
-              t('edit.maaEndRouteSelectedCount', {
+              $t('edit.maaEndRouteSelectedCount', {
                 n: panelValues(panel).length,
                 m: panel.options.length,
               })
@@ -65,14 +65,14 @@
                     panel.options.map(option => String(option.value))
                   )
                 "
-                >{{ t('edit.maaEndRouteSelectAll') }}</a-button
+                >{{ $t('edit.maaEndRouteSelectAll') }}</a-button
               >
               <a-button
                 type="link"
                 size="small"
                 :disabled="controlsDisabled"
                 @click="applyValues(panel, [])"
-                >{{ t('edit.maaEndRouteClear') }}</a-button
+                >{{ $t('edit.maaEndRouteClear') }}</a-button
               >
             </span>
           </div>

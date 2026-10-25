@@ -122,18 +122,18 @@ const handleVersionChange = (value: SelectValue): void => {
   <div class="online-detail-bar">
     <a-button type="text" :disabled="installing" @click="backToList">
       <template #icon><ArrowLeftOutlined /></template>
-      {{ t('themeStore.back') }}
+      {{ $t('themeStore.back') }}
     </a-button>
   </div>
   <div class="online-scroll">
     <div v-if="detailLoading" class="online-state">
-      <a-spin size="large" :tip="t('themeStore.loading')" />
+      <a-spin size="large" :tip="$t('themeStore.loading')" />
     </div>
     <div v-else-if="detailError" class="online-state">
-      <a-result status="warning" :title="t('themeStore.detailFailed')" :sub-title="detailError">
+      <a-result status="warning" :title="$t('themeStore.detailFailed')" :sub-title="detailError">
         <template #extra>
           <a-button type="primary" @click="retryDetail">
-            {{ t('themeStore.retry') }}
+            {{ $t('themeStore.retry') }}
           </a-button>
         </template>
       </a-result>
@@ -147,13 +147,13 @@ const handleVersionChange = (value: SelectValue): void => {
             :alt="detailItem.displayName"
             class="online-preview-image online-preview-dim"
           />
-          <a-spin :tip="t('themeStore.preparing')" class="online-preview-spin" />
+          <a-spin :tip="$t('themeStore.preparing')" class="online-preview-spin" />
         </div>
         <div v-else-if="prepareError" class="online-preview-state">
           <a-result status="warning" :sub-title="prepareError">
             <template #extra>
               <a-button @click="prepareSelected">
-                {{ t('themeStore.retry') }}
+                {{ $t('themeStore.retry') }}
               </a-button>
             </template>
           </a-result>
@@ -175,11 +175,11 @@ const handleVersionChange = (value: SelectValue): void => {
           </div>
         </template>
         <div v-else-if="versions.length === 0" class="online-preview-state">
-          <a-empty :description="t('themeStore.noVersions')" />
+          <a-empty :description="$t('themeStore.noVersions')" />
         </div>
         <div v-else class="online-preview-state">
           <a-button @click="prepareSelected">
-            {{ t('themeStore.downloadPreview') }}
+            {{ $t('themeStore.downloadPreview') }}
           </a-button>
         </div>
       </section>
@@ -189,7 +189,7 @@ const handleVersionChange = (value: SelectValue): void => {
         <div class="online-meta">
           <span>
             <UserOutlined />
-            {{ detailItem.ownerUsername || t('themeStore.unknownAuthor') }}
+            {{ detailItem.ownerUsername || $t('themeStore.unknownAuthor') }}
           </span>
           <span>
             <ClockCircleOutlined />
@@ -197,11 +197,11 @@ const handleVersionChange = (value: SelectValue): void => {
           </span>
         </div>
         <p class="online-description">
-          {{ detailItem.description || t('themeStore.noDescription') }}
+          {{ detailItem.description || $t('themeStore.noDescription') }}
         </p>
 
         <div class="online-field">
-          <span class="online-field-label">{{ t('themeStore.version') }}</span>
+          <span class="online-field-label">{{ $t('themeStore.version') }}</span>
           <a-select
             :value="selectedVersionNo ?? undefined"
             :options="versionOptions"
@@ -215,22 +215,22 @@ const handleVersionChange = (value: SelectValue): void => {
         </p>
 
         <dl v-if="prepared" class="online-facts">
-          <dt>{{ t('themeStore.packageName') }}</dt>
+          <dt>{{ $t('themeStore.packageName') }}</dt>
           <dd>{{ prepared.appearance.name }}</dd>
           <dt>ID</dt>
           <dd class="online-mono">{{ prepared.appearance.id }}</dd>
           <template v-if="prepared.appearance.mode">
-            <dt>{{ t('themeStore.mode') }}</dt>
+            <dt>{{ $t('themeStore.mode') }}</dt>
             <dd>
               {{
                 prepared.appearance.mode === 'dark'
-                  ? t('setting.themeMode.dark')
-                  : t('setting.themeMode.light')
+                  ? $t('setting.themeMode.dark')
+                  : $t('setting.themeMode.light')
               }}
             </dd>
           </template>
           <template v-if="prepared.existing">
-            <dt>{{ t('themeStore.localCopy') }}</dt>
+            <dt>{{ $t('themeStore.localCopy') }}</dt>
             <dd>{{ prepared.existing.name }}</dd>
           </template>
         </dl>
@@ -238,7 +238,7 @@ const handleVersionChange = (value: SelectValue): void => {
         <div class="online-actions">
           <a-button v-if="isOwner" :loading="locatingOwnFile" @click="uploadVersion">
             <template #icon><UploadOutlined /></template>
-            {{ t('themeStore.mine.uploadVersion') }}
+            {{ $t('themeStore.mine.uploadVersion') }}
           </a-button>
           <a-button
             type="primary"
@@ -246,7 +246,7 @@ const handleVersionChange = (value: SelectValue): void => {
             :disabled="preparing || !prepared"
             @click="install"
           >
-            {{ t('themeStore.install') }}
+            {{ $t('themeStore.install') }}
           </a-button>
         </div>
       </section>

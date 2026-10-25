@@ -4,15 +4,12 @@
     class="flavor-controller-hint"
     type="warning"
     show-icon
-    :message="t('edit.mssFlavorControllerHint')"
+    :message="$t('edit.mssFlavorControllerHint')"
   />
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import type { MaaFWScriptSlotContext } from '@/composables/maafwFlavorTypes'
-
-const { t } = useI18n()
 
 // 插入点组件统一以 context 一个 prop 接收上下文；这条提示用不到它
 defineProps<{

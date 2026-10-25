@@ -4,8 +4,8 @@
       <a-form-item :help="launchHint">
         <template #label>
           <span class="form-label">
-            {{ t('edit.launchType') }}
-            <a-tooltip :title="t('edit.maaEndLaunchTypeHint')">
+            {{ $t('edit.launchType') }}
+            <a-tooltip :title="$t('edit.maaEndLaunchTypeHint')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </span>
@@ -28,20 +28,20 @@
         "
       >
         <template #label>
-          <span class="form-label">{{ t('edit.maaEndLauncherPath') }}</span>
+          <span class="form-label">{{ $t('edit.maaEndLauncherPath') }}</span>
         </template>
         <a-space-compact v-if="usesMasLauncher || source === 'manual'" block size="large">
           <a-input
             :value="path"
             :title="path"
             :placeholder="
-              t(
+              $t(
                 usesMasLauncher
                   ? 'edit.maaEndPickClientBeforeLauncher'
                   : 'edit.maaEndLauncherSourceNative'
               )
             "
-            :aria-label="t('edit.maaEndLauncherPath')"
+            :aria-label="$t('edit.maaEndLauncherPath')"
             size="large"
             readonly
             :disabled="disabled || !canConfigureLauncher"
@@ -62,7 +62,7 @@
               <FolderOpenOutlined v-else />
             </template>
             {{
-              t(
+              $t(
                 usesMasLauncher && source === 'auto'
                   ? 'edit.maaEndRefreshLauncher'
                   : 'edit.maaEndChangeLauncher'
@@ -74,7 +74,7 @@
           <a-radio-group
             :value="source"
             :options="sourceOptions"
-            :aria-label="t('edit.maaEndLauncherPathSource')"
+            :aria-label="$t('edit.maaEndLauncherPathSource')"
             :disabled="disabled || detecting || !canConfigureLauncher"
             @change="emit('changeSource', $event.target.value)"
           />
@@ -82,7 +82,7 @@
             :title="
               !usesMasLauncher
                 ? nativeLauncherHint
-                : t(
+                : $t(
                     source === 'auto'
                       ? 'edit.maaEndLauncherAutoHint'
                       : 'edit.maaEndLauncherManualHint'

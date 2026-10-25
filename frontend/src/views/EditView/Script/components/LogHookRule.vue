@@ -107,7 +107,7 @@ const typeOptions = [
           v-model:value="nameValue"
           class="rule-title-input"
           size="small"
-          :placeholder="t('edit.ruleTitle')"
+          :placeholder="$t('edit.ruleTitle')"
           @blur="finishEditName"
           @press-enter="finishEditName"
         />
@@ -116,7 +116,7 @@ const typeOptions = [
       <div class="rule-header-right">
         <a-switch :checked="local.enabled !== false" size="small" @change="onEnabledChange" />
 
-        <a-tooltip :title="t('edit.delete')">
+        <a-tooltip :title="$t('edit.delete')">
           <a-button size="small" danger class="rule-op-btn" @click="emit('remove')">
             <DeleteOutlined />
           </a-button>
@@ -134,16 +134,16 @@ const typeOptions = [
             :help="matchError || undefined"
           >
             <template #label>
-              <a-tooltip :title="t('edit.requiredEmptyValueDisables3')">
+              <a-tooltip :title="$t('edit.requiredEmptyValueDisables3')">
                 <span class="form-label">
-                  {{ t('edit.matchPattern') }}
+                  {{ $t('edit.matchPattern') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.match"
-              :placeholder="t('edit.exampleHeartbeatCurrentProgress')"
+              :placeholder="$t('edit.exampleHeartbeatCurrentProgress')"
               size="middle"
               @blur="commit"
             />
@@ -152,16 +152,16 @@ const typeOptions = [
         <a-col v-if="local.type === 'replace'" :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.replacementTextMatchBack')">
+              <a-tooltip :title="$t('edit.replacementTextMatchBack')">
                 <span class="form-label">
-                  {{ t('edit.replace') }}
+                  {{ $t('edit.replace') }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.replace"
-              :placeholder="t('edit.exampleToken')"
+              :placeholder="$t('edit.exampleToken')"
               size="middle"
               @blur="commit"
             />

@@ -1,7 +1,7 @@
 <template>
   <a-form-item>
     <template #label>
-      <span class="form-label">{{ t('edit.taskTimeLimitOverrides') }}</span>
+      <span class="form-label">{{ $t('edit.taskTimeLimitOverrides') }}</span>
     </template>
     <a-input-group compact class="path-input-group">
       <a-input :value="summary" size="large" class="path-input" readonly />
@@ -9,7 +9,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('edit.taskTimeLimitSet') }}
+        {{ $t('edit.taskTimeLimitSet') }}
       </a-button>
     </a-input-group>
   </a-form-item>

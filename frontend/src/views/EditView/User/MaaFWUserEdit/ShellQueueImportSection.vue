@@ -3,14 +3,14 @@
     <template #icon>
       <ImportOutlined />
     </template>
-    {{ t('edit.shellQueueImport') }}
+    {{ $t('edit.shellQueueImport') }}
   </a-button>
 
   <a-modal
     v-model:open="modalOpen"
-    :title="t('edit.shellQueueImportTitle')"
-    :ok-text="t('edit.shellQueueImportOk')"
-    :cancel-text="t('common.cancel')"
+    :title="$t('edit.shellQueueImportTitle')"
+    :ok-text="$t('edit.shellQueueImportOk')"
+    :cancel-text="$t('common.cancel')"
     :ok-button-props="{ disabled: !canApply }"
     :confirm-loading="applying"
     @ok="apply"
@@ -41,13 +41,13 @@
             <div class="queue-import-user-head">
               <span class="queue-import-user-name">{{ candidate.name }}</span>
               <span class="queue-import-user-count">
-                {{ t('edit.queueTaskCount', { count: candidate.chips.length }) }}
+                {{ $t('edit.queueTaskCount', { count: candidate.chips.length }) }}
               </span>
               <span v-if="candidate.invalidCount > 0" class="queue-invalid-tag">
-                {{ t('edit.queueInvalidCount', { count: candidate.invalidCount }) }}
+                {{ $t('edit.queueInvalidCount', { count: candidate.invalidCount }) }}
               </span>
               <span v-if="candidate.passwordCount > 0" class="queue-password-tag">
-                {{ t('edit.queueImportPasswordCount', { count: candidate.passwordCount }) }}
+                {{ $t('edit.queueImportPasswordCount', { count: candidate.passwordCount }) }}
               </span>
             </div>
             <MaaFWQueueChips :chips="candidate.chips" />
@@ -56,7 +56,7 @@
         <a-empty
           v-else-if="!userLoading"
           class="shell-queue-import-empty"
-          :description="t('edit.queueImportNoUsers')"
+          :description="$t('edit.queueImportNoUsers')"
         />
       </a-spin>
     </template>
@@ -66,10 +66,10 @@
            用户把脚本位置挪了、或者平时用的是另一份外壳时用得上 -->
       <div class="shell-queue-import-source">
         <span class="shell-queue-import-dir" :title="shownDir">
-          {{ t('edit.shellQueueImportDir', { dir: shownDir }) }}
+          {{ $t('edit.shellQueueImportDir', { dir: shownDir }) }}
         </span>
         <a-button type="link" size="small" @click="pickDirectory">
-          {{ t('edit.mfwHotkeyImportPickDir') }}
+          {{ $t('edit.mfwHotkeyImportPickDir') }}
         </a-button>
       </div>
 
@@ -83,12 +83,12 @@
         <a-empty
           v-else-if="!shellLoading"
           class="shell-queue-import-empty"
-          :description="t('edit.shellQueueImportNone')"
+          :description="$t('edit.shellQueueImportNone')"
         />
       </a-spin>
     </template>
 
-    <a-alert type="warning" show-icon :message="t('edit.shellQueueImportNote')" />
+    <a-alert type="warning" show-icon :message="$t('edit.shellQueueImportNote')" />
   </a-modal>
 </template>
 

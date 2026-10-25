@@ -22,45 +22,45 @@
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
-      <h1 class="page-title">{{ t('scripts.title') }}</h1>
+      <h1 class="page-title">{{ $t('scripts.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.scripts" />
       <a-input
         v-model:value="scriptSearchKeyword"
         allow-clear
         class="script-search"
-        :placeholder="t('scripts.searchPlaceholder')"
-        :aria-label="t('scripts.searchAria')"
+        :placeholder="$t('scripts.searchPlaceholder')"
+        :aria-label="$t('scripts.searchAria')"
       >
         <template #prefix><SearchOutlined /></template>
       </a-input>
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-tooltip :title="t('scripts.collapseAllTip')">
+        <a-tooltip :title="$t('scripts.collapseAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleCollapseAll"
           >
             <template #icon><UpOutlined /></template>
-            {{ t('scripts.collapseAll') }}
+            {{ $t('scripts.collapseAll') }}
           </a-button>
         </a-tooltip>
-        <a-tooltip :title="t('scripts.expandAllTip')">
+        <a-tooltip :title="$t('scripts.expandAllTip')">
           <a-button
             size="large"
             :disabled="scripts.length === 0 || isSearching"
             @click="handleExpandAll"
           >
             <template #icon><DownOutlined /></template>
-            {{ t('scripts.expandAll') }}
+            {{ $t('scripts.expandAll') }}
           </a-button>
         </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('scripts.create.title') }}
+          {{ $t('scripts.create.title') }}
         </a-button>
       </a-space>
     </div>
@@ -74,7 +74,7 @@
     class="script-list-error"
   >
     <template #action>
-      <a-button :loading="listLoading" @click="loadScripts">{{ t('apiErrors.retry') }}</a-button>
+      <a-button :loading="listLoading" @click="loadScripts">{{ $t('apiErrors.retry') }}</a-button>
     </template>
   </a-alert>
 
@@ -91,11 +91,11 @@
   >
     <div class="empty-content">
       <div class="empty-image-container">
-        <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
+        <img src="@/assets/NoData.png" :alt="$t('scripts.empty.alt')" class="empty-image" />
       </div>
       <div class="empty-text-content">
-        <h3 class="empty-title">{{ t('scripts.empty.title') }}</h3>
-        <p class="empty-description">{{ t('scripts.empty.desc') }}</p>
+        <h3 class="empty-title">{{ $t('scripts.empty.title') }}</h3>
+        <p class="empty-description">{{ $t('scripts.empty.desc') }}</p>
       </div>
     </div>
   </div>
@@ -106,8 +106,8 @@
     "
     class="empty-state"
   >
-    <a-empty :description="t('scripts.empty.noMatch')">
-      <a-button @click="scriptSearchKeyword = ''">{{ t('scripts.clearSearch') }}</a-button>
+    <a-empty :description="$t('scripts.empty.noMatch')">
+      <a-button @click="scriptSearchKeyword = ''">{{ $t('scripts.clearSearch') }}</a-button>
     </a-empty>
   </div>
 

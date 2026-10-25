@@ -2,14 +2,12 @@
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { useI18n } from 'vue-i18n'
 import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useLogExport } from '@/composables/useLogExport'
 const logger = window.electronAPI.getLogger('日志查看')
 const route = useRoute()
-const { t } = useI18n()
 const { registerLogLanguage, editorTheme } = useLogHighlight()
 
 defineOptions({ name: 'LogViewer' })
@@ -247,7 +245,7 @@ onUnmounted(() => {
 <template>
   <div class="logs-container">
     <div class="logs-header">
-      <h1 class="page-title">{{ t('logs.pageTitle') }}</h1>
+      <h1 class="page-title">{{ $t('logs.pageTitle') }}</h1>
       <div class="header-actions">
         <a-space :size="12" wrap>
           <a-radio-group
@@ -255,12 +253,12 @@ onUnmounted(() => {
             button-style="solid"
             @change="onLogFileChange"
           >
-            <a-radio-button value="app">{{ t('logs.backendLog') }}</a-radio-button>
-            <a-radio-button value="frontend">{{ t('logs.frontendLog') }}</a-radio-button>
+            <a-radio-button value="app">{{ $t('logs.backendLog') }}</a-radio-button>
+            <a-radio-button value="frontend">{{ $t('logs.frontendLog') }}</a-radio-button>
           </a-radio-group>
 
           <a-button :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
-            {{ logMode === 'follow' ? t('logs.followLatest') : t('logs.freeBrowse') }}
+            {{ logMode === 'follow' ? $t('logs.followLatest') : $t('logs.freeBrowse') }}
           </a-button>
 
           <a-button :type="realTimeEnabled ? 'primary' : 'default'" @click="toggleRealTime">
@@ -274,7 +272,7 @@ onUnmounted(() => {
             <template #icon>
               <FileZipOutlined />
             </template>
-            {{ t('logs.package') }}
+            {{ $t('logs.package') }}
           </a-button>
         </a-space>
       </div>

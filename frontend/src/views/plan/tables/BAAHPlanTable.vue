@@ -11,7 +11,7 @@
       :scroll="{ x: 'max-content' }"
     >
       <template #bodyCell="{ column, record }">
-        <a-tooltip v-if="column.key === 'fieldName'" :title="t('plan.baah.rowStateHint')">
+        <a-tooltip v-if="column.key === 'fieldName'" :title="$t('plan.baah.rowStateHint')">
           {{ record.fieldName }}
         </a-tooltip>
         <a-popover

@@ -1,27 +1,27 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('taskboard.editGames')"
+    :title="$t('taskboard.editGames')"
     :width="'min(1000px, 92vw)'"
-    :ok-text="t('taskboard.save')"
-    :cancel-text="t('taskboard.cancel')"
+    :ok-text="$t('taskboard.save')"
+    :cancel-text="$t('taskboard.cancel')"
     @ok="onOk"
     @cancel="close"
   >
-    <p class="tb-edit-hint">{{ t('taskboard.editGamesHint') }}</p>
+    <p class="tb-edit-hint">{{ $t('taskboard.editGamesHint') }}</p>
     <div class="tb-edit-tools">
       <a-input-search
         v-model:value="keyword"
-        :placeholder="t('taskboard.searchGames')"
+        :placeholder="$t('taskboard.searchGames')"
         allow-clear
         style="flex: 1"
       />
       <a-button size="small" @click="draft = options.map(option => option.key)">
-        {{ t('taskboard.selectAll') }}
+        {{ $t('taskboard.selectAll') }}
       </a-button>
-      <a-button size="small" @click="draft = []">{{ t('taskboard.clear') }}</a-button>
+      <a-button size="small" @click="draft = []">{{ $t('taskboard.clear') }}</a-button>
       <span class="tb-edit-count-total">
-        {{ t('taskboard.selectedCount', { p0: draft.length }) }}
+        {{ $t('taskboard.selectedCount', { p0: draft.length }) }}
       </span>
     </div>
     <div class="tb-pick-grid">
@@ -49,17 +49,16 @@
         </div>
         <div class="tb-pick-name" :title="option.name">{{ option.name }}</div>
         <div class="tb-pick-cnt">
-          {{ t('taskboard.activeCount', { p0: option.activeCount }) }}
+          {{ $t('taskboard.activeCount', { p0: option.activeCount }) }}
         </div>
       </div>
-      <div v-if="!filteredOptions.length" class="tb-pick-empty">{{ t('taskboard.empty') }}</div>
+      <div v-if="!filteredOptions.length" class="tb-pick-empty">{{ $t('taskboard.empty') }}</div>
     </div>
   </a-modal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import type { TaskboardGameOption } from '@/types/taskboard'
 
 interface PickerOption extends TaskboardGameOption {
@@ -77,7 +76,6 @@ const emit = defineEmits<{
   save: [keys: string[]]
 }>()
 
-const { t } = useI18n()
 const draft = ref<string[]>([])
 const keyword = ref('')
 

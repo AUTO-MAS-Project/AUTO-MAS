@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="openModel"
-    :title="t('edit.queueTemplate')"
+    :title="$t('edit.queueTemplate')"
     :footer="null"
     width="720px"
     class="preset-template-modal"
@@ -23,7 +23,7 @@
         <template #icon>
           <PlusOutlined />
         </template>
-        {{ t('edit.queueTemplateSaveCurrent') }}
+        {{ $t('edit.queueTemplateSaveCurrent') }}
       </a-button>
     </div>
 
@@ -44,10 +44,10 @@
               :disabled="template.entries.length === 0"
               @click="emit('applyQueueTemplate', template.name)"
             >
-              {{ t('edit.queueTemplateApply') }}
+              {{ $t('edit.queueTemplateApply') }}
             </a-button>
             <a-dropdown :trigger="['click']">
-              <a-button :aria-label="t('comp.more')">
+              <a-button :aria-label="$t('comp.more')">
                 <template #icon>
                   <EllipsisOutlined />
                 </template>
@@ -55,10 +55,10 @@
               <template #overlay>
                 <a-menu>
                   <a-menu-item key="rename" @click="openRenameDialog(template.name)">
-                    {{ t('edit.queueTemplateRename') }}
+                    {{ $t('edit.queueTemplateRename') }}
                   </a-menu-item>
                   <a-menu-item key="delete" danger @click="confirmDelete(template.name)">
-                    {{ t('edit.queueTemplateDelete') }}
+                    {{ $t('edit.queueTemplateDelete') }}
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -66,7 +66,7 @@
           </template>
         </MaaFWQueueCard>
       </div>
-      <a-empty v-else :description="t('edit.queueTemplateEmpty')" />
+      <a-empty v-else :description="$t('edit.queueTemplateEmpty')" />
     </template>
 
     <div v-else class="preset-section-modal">
@@ -85,7 +85,7 @@
             :disabled="template.entries.length === 0"
             @click="emit('applyPresetTemplate', template.preset.name)"
           >
-            {{ t('edit.applyPreset2') }}
+            {{ $t('edit.applyPreset2') }}
           </a-button>
         </template>
       </MaaFWQueueCard>
@@ -96,15 +96,15 @@
   <a-modal
     v-model:open="nameDialogOpen"
     :title="
-      nameDialogMode === 'save' ? t('edit.queueTemplateSaveTitle') : t('edit.queueTemplateRename')
+      nameDialogMode === 'save' ? $t('edit.queueTemplateSaveTitle') : $t('edit.queueTemplateRename')
     "
     width="480px"
-    :ok-text="t('edit.queueTemplateSave')"
-    :cancel-text="t('common.cancel')"
+    :ok-text="$t('edit.queueTemplateSave')"
+    :cancel-text="$t('common.cancel')"
     :ok-button-props="{ disabled: !canSubmitName }"
     @ok="submitName"
   >
-    <div class="queue-template-name-label">{{ t('edit.queueTemplateName') }}</div>
+    <div class="queue-template-name-label">{{ $t('edit.queueTemplateName') }}</div>
     <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
     <a-input
       v-model:value="nameDraft"
@@ -112,11 +112,11 @@
       @press-enter="submitName"
     />
     <div v-if="nameProblem === 'duplicate'" class="queue-template-name-error">
-      {{ t('edit.queueTemplateNameExists') }}
+      {{ $t('edit.queueTemplateNameExists') }}
     </div>
     <template v-if="nameDialogMode === 'save'">
       <div class="queue-template-draft-title">
-        {{ t('edit.queueTemplateCurrentCount', { count: draft.length }) }}
+        {{ $t('edit.queueTemplateCurrentCount', { count: draft.length }) }}
       </div>
       <MaaFWQueueChips :chips="draft" />
     </template>

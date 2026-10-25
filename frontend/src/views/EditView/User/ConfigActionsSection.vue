@@ -1,5 +1,5 @@
 <template>
-  <a-form-item :label="t('edit.configSourceActions')">
+  <a-form-item :label="$t('edit.configSourceActions')">
     <div class="config-actions-control">
       <a-button
         v-if="showOpen"
@@ -13,7 +13,9 @@
           <SettingOutlined />
         </template>
         {{
-          configuring ? t('edit.configuring') : t('edit.openConfigWindow', { script: scriptLabel })
+          configuring
+            ? $t('edit.configuring')
+            : $t('edit.openConfigWindow', { script: scriptLabel })
         }}
       </a-button>
       <a-button
@@ -26,13 +28,13 @@
         <template #icon>
           <ImportOutlined />
         </template>
-        {{ t('edit.import2') }}
+        {{ $t('edit.import2') }}
       </a-button>
       <a-button type="default" :disabled="disabled" @click="$emit('scriptConfig')">
         <template #icon>
           <EditOutlined />
         </template>
-        {{ t('edit.editScriptSettings') }}
+        {{ $t('edit.editScriptSettings') }}
       </a-button>
     </div>
 
@@ -43,7 +45,7 @@
     <div v-if="hint" class="config-actions-hint">
       <p class="config-actions-hint-target">
         <span class="config-actions-hint-action">
-          {{ t('edit.openConfigWindow', { script: scriptLabel }) }}
+          {{ $t('edit.openConfigWindow', { script: scriptLabel }) }}
         </span>
         <span class="config-actions-hint-arrow" aria-hidden="true">→</span>
         <strong>{{ hint.target }}</strong>

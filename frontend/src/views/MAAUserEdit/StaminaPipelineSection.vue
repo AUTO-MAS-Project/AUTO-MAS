@@ -1,8 +1,8 @@
 <template>
   <div class="stamina-pipeline">
-    <p class="pipeline-overview">{{ t('maaStaminaPipeline.orderHint') }}</p>
+    <p class="pipeline-overview">{{ $t('maaStaminaPipeline.orderHint') }}</p>
     <PipelineRow
-      :name="t('eventDepotPreview.name')"
+      :name="$t('eventDepotPreview.name')"
       :step="1"
       :summary="eventDepotSummary"
       :checked="formData.Task.IfEventDepotMaintain"
@@ -29,7 +29,7 @@
       />
     </PipelineRow>
     <PipelineRow
-      :name="t('maaStaminaPipeline.inventoryCultivate')"
+      :name="$t('maaStaminaPipeline.inventoryCultivate')"
       :step="2"
       :summary="inventoryCultivateSummary"
       :checked="formData.Task.IfDepotMaintain || formData.Task.IfCultivate"
@@ -58,7 +58,7 @@
       />
       <!-- 固定与计划表仅控制第三段，库存目标仍独立保存。 -->
       <PipelineRow
-        :name="t('edit.maaDepot')"
+        :name="$t('edit.maaDepot')"
         :summary="depotSummary"
         :checked="formData.Task.IfDepotMaintain"
         :disabled="loading"
@@ -66,11 +66,11 @@
         @change="emitSave('Task.IfDepotMaintain', $event)"
       >
         <template #actions>
-          <a-tooltip :title="t('edit.maaDepotSettings')">
+          <a-tooltip :title="$t('edit.maaDepotSettings')">
             <a-button
               type="text"
               shape="circle"
-              :aria-label="t('edit.maaDepotSettings')"
+              :aria-label="$t('edit.maaDepotSettings')"
               aria-haspopup="dialog"
               :disabled="loading"
               @click="depotSettingsOpen = true"
@@ -82,7 +82,7 @@
       </PipelineRow>
       <a-modal
         v-model:open="depotSettingsOpen"
-        :title="t('edit.maaDepotSettings')"
+        :title="$t('edit.maaDepotSettings')"
         :width="1100"
         wrap-class-name="maa-plan-settings-modal"
         centered
@@ -106,7 +106,7 @@
         />
         <template #footer>
           <a-button :disabled="loading" @click="depotSettingsOpen = false">
-            {{ t('common.close') }}
+            {{ $t('common.close') }}
           </a-button>
         </template>
       </a-modal>
@@ -114,9 +114,9 @@
 
     <!-- 理智作战 -->
     <PipelineRow
-      :name="t('maaStaminaPipeline.sanityFallback')"
+      :name="$t('maaStaminaPipeline.sanityFallback')"
       :step="3"
-      :hint="t('maaStaminaPipeline.sanityHint')"
+      :hint="$t('maaStaminaPipeline.sanityHint')"
       :summary="fightSummary"
       :checked="formData.Task.IfFight"
       :disabled="loading"

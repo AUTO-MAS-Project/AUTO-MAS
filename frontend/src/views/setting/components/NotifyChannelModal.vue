@@ -111,7 +111,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
           <span class="chan-icon-head" :style="{ '--c': iconColor, color: iconColor }">
             <component :is="icon" />
           </span>
-          <span class="name">{{ t(channel.nameKey) }}</span>
+          <span class="name">{{ $t(channel.nameKey) }}</span>
           <span class="tag">{{ groupTag }}</span>
           <a
             v-if="channel.docUrl"
@@ -119,18 +119,18 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
             class="doc-link"
             @click="handleExternalLink"
           >
-            {{ t('common.doc') }}
+            {{ $t('common.doc') }}
           </a>
           <button
             type="button"
             class="close"
-            :aria-label="t('common.close')"
+            :aria-label="$t('common.close')"
             @click="emit('close')"
           >
             ✕
           </button>
         </div>
-        <div v-if="channel.descKey" class="modal-desc">{{ t(channel.descKey) }}</div>
+        <div v-if="channel.descKey" class="modal-desc">{{ $t(channel.descKey) }}</div>
       </div>
 
       <div class="modal-body">
@@ -145,9 +145,9 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
               @change="setEnabled"
             />
           </div>
-          <div class="state-hint">{{ t('setting.notify.instantHint') }}</div>
+          <div class="state-hint">{{ $t('setting.notify.instantHint') }}</div>
         </div>
-        <div v-else class="body-hint">{{ t('setting.notify.instantHint') }}</div>
+        <div v-else class="body-hint">{{ $t('setting.notify.instantHint') }}</div>
 
         <ClawBinding
           v-if="isClaw && clawBinding"

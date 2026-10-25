@@ -170,83 +170,83 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="token-tools">
-    <a-card :title="t('mystery.tokens.title')">
-      <p>{{ t('mystery.tokens.description') }}</p>
+    <a-card :title="$t('mystery.tokens.title')">
+      <p>{{ $t('mystery.tokens.description') }}</p>
       <a-alert
         v-if="accountsError"
         type="error"
         show-icon
-        :message="t('mystery.tokens.loadFailed')"
+        :message="$t('mystery.tokens.loadFailed')"
         class="token-notice"
       >
         <template #action>
           <a-button size="small" :loading="accountsLoading" @click="loadAccounts">
-            {{ t('mystery.retry') }}
+            {{ $t('mystery.retry') }}
           </a-button>
         </template>
       </a-alert>
       <a-empty
         v-else-if="!accountsLoading && !accounts.length"
-        :description="t('mystery.tokens.noAccounts')"
+        :description="$t('mystery.tokens.noAccounts')"
       >
         <a-button @click="navigateTo('/gamesign')">{{
-          t('mystery.tokens.manageAccounts')
+          $t('mystery.tokens.manageAccounts')
         }}</a-button>
       </a-empty>
       <a-form v-else layout="vertical">
-        <a-form-item :label="t('mystery.tokens.account')" required>
+        <a-form-item :label="$t('mystery.tokens.account')" required>
           <a-select
             v-model:value="accountId"
             :options="accountOptions"
-            :placeholder="t('mystery.tokens.accountPlaceholder')"
+            :placeholder="$t('mystery.tokens.accountPlaceholder')"
             :loading="accountsLoading"
             :disabled="accountsLoading || busy"
-            :aria-label="t('mystery.tokens.account')"
+            :aria-label="$t('mystery.tokens.account')"
             class="account-select"
           />
         </a-form-item>
       </a-form>
-      <a-alert v-if="saved" type="success" show-icon :message="t('mystery.tokens.saved', saved)" />
+      <a-alert v-if="saved" type="success" show-icon :message="$t('mystery.tokens.saved', saved)" />
     </a-card>
 
     <a-row :gutter="[16, 16]">
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('gamesign.edit.miyoushe')" class="token-card">
-          <p>{{ t('mystery.tokens.miyousheDescription') }}</p>
+        <a-card :title="$t('gamesign.edit.miyoushe')" class="token-card">
+          <p>{{ $t('mystery.tokens.miyousheDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openQr('miyoushe')">
             <template #icon><QrcodeOutlined /></template>
-            {{ t('gamesign.edit.qrLogin') }}
+            {{ $t('gamesign.edit.qrLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('gamesign.edit.skland')" class="token-card">
-          <p>{{ t('mystery.tokens.sklandDescription') }}</p>
+        <a-card :title="$t('gamesign.edit.skland')" class="token-card">
+          <p>{{ $t('mystery.tokens.sklandDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openQr('skland')">
             <template #icon><QrcodeOutlined /></template>
-            {{ t('gamesign.edit.qrLogin') }}
+            {{ $t('gamesign.edit.qrLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('gamesign.edit.taygedo')" class="token-card">
-          <p>{{ t('mystery.tokens.taygedoDescription') }}</p>
+        <a-card :title="$t('gamesign.edit.taygedo')" class="token-card">
+          <p>{{ $t('mystery.tokens.taygedoDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openTaygedo">
-            {{ t('gamesign.edit.passwordLogin') }}
+            {{ $t('gamesign.edit.passwordLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('gamesign.edit.kuro')" class="token-card">
-          <p>{{ t('mystery.tokens.kuroDescription') }}</p>
-          <a-button @click="openBmt">{{ t('mystery.tokens.openBmt') }}</a-button>
+        <a-card :title="$t('gamesign.edit.kuro')" class="token-card">
+          <p>{{ $t('mystery.tokens.kuroDescription') }}</p>
+          <a-button @click="openBmt">{{ $t('mystery.tokens.openBmt') }}</a-button>
         </a-card>
       </a-col>
     </a-row>
 
     <a-modal
       :open="taygedoVisible"
-      :title="t('gamesign.login.taygedoTitle')"
+      :title="$t('gamesign.login.taygedoTitle')"
       :footer="null"
       :width="420"
       :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
@@ -256,21 +256,21 @@ onBeforeUnmount(() => {
       <a-alert
         type="info"
         show-icon
-        :message="t('mystery.tokens.privacyNotice')"
+        :message="$t('mystery.tokens.privacyNotice')"
         class="token-notice"
       />
       <a-form :model="taygedoForm" layout="vertical" @finish="submitTaygedo">
-        <a-form-item :label="t('gamesign.login.currentAccount')">
+        <a-form-item :label="$t('gamesign.login.currentAccount')">
           <a-input :value="selectedAccount?.name || ''" disabled />
         </a-form-item>
         <a-form-item
           name="phone"
-          :label="t('gamesign.login.taygedoAccount')"
+          :label="$t('gamesign.login.taygedoAccount')"
           :rules="[
             {
               required: true,
               whitespace: true,
-              message: t('gamesign.login.taygedoAccountPlaceholder'),
+              message: $t('gamesign.login.taygedoAccountPlaceholder'),
             },
           ]"
         >
@@ -278,25 +278,25 @@ onBeforeUnmount(() => {
             v-model:value="taygedoForm.phone"
             autocomplete="off"
             :disabled="taygedoLoading"
-            :placeholder="t('gamesign.login.taygedoAccountPlaceholder')"
+            :placeholder="$t('gamesign.login.taygedoAccountPlaceholder')"
           />
         </a-form-item>
         <a-form-item
           name="password"
-          :label="t('gamesign.login.password')"
-          :rules="[{ required: true, message: t('gamesign.login.taygedoPasswordPlaceholder') }]"
+          :label="$t('gamesign.login.password')"
+          :rules="[{ required: true, message: $t('gamesign.login.taygedoPasswordPlaceholder') }]"
         >
           <a-input-password
             v-model:value="taygedoForm.password"
             autocomplete="new-password"
             :disabled="taygedoLoading"
-            :placeholder="t('gamesign.login.taygedoPasswordPlaceholder')"
+            :placeholder="$t('gamesign.login.taygedoPasswordPlaceholder')"
           />
         </a-form-item>
         <a-space class="login-actions">
-          <a-button @click="closeTaygedo">{{ t('common.cancel') }}</a-button>
+          <a-button @click="closeTaygedo">{{ $t('common.cancel') }}</a-button>
           <a-button type="primary" html-type="submit" :loading="taygedoLoading">
-            {{ t('gamesign.login.submit') }}
+            {{ $t('gamesign.login.submit') }}
           </a-button>
         </a-space>
       </a-form>

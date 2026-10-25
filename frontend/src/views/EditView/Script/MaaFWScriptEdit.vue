@@ -41,9 +41,9 @@
             :import-message="importMessage"
             :import-error="importError"
             :preview-error="previewError"
-            :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
-            :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
-            :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
+            :source-directory-label="$t(flavor.scriptPage.text.sourceDirectoryKey)"
+            :source-hint="$t(flavor.scriptPage.text.sourceHintKey)"
+            :source-placeholder="$t(flavor.scriptPage.text.sourcePlaceholderKey)"
             :env-preparing="envPreparing"
             :env-ready="envReady"
             :env-failed="envFailed"
@@ -188,7 +188,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          {{ t('edit.previousStep') }}
+          {{ $t('edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
@@ -197,7 +197,7 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          {{ t('edit.next') }}
+          {{ $t('edit.next') }}
         </a-button>
         <a-button
           v-else
@@ -216,7 +216,6 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -225,8 +224,6 @@ import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFW
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
-
-const { t } = useI18n()
 
 const route = useRoute()
 

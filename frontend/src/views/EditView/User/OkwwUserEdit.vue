@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="okww"
       :user-id="userId"
-      :config-label="t('edit.configureOkww')"
+      :config-label="$t('edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
       :config-disabled="configActionsDisabled"
@@ -18,20 +18,20 @@
     <GuiSessionMask
       :open="showOkwwConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.okWwSetupProgress')"
-      :description="`${t('edit.finishSetupOkWw')}\n${t('edit.clickSaveSettingsWhen')}`"
+      :title="$t('edit.okWwSetupProgress')"
+      :description="`${$t('edit.finishSetupOkWw')}\n${$t('edit.clickSaveSettingsWhen')}`"
     >
       <template #actions>
         <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-          {{ t('edit.saveSettings') }}
+          {{ $t('edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showOkwwViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.okwwViewingTitle')"
-      :description="`${t('edit.okwwViewingDesc')}\n${t('edit.okwwViewingDesc2')}`"
+      :title="$t('edit.okwwViewingTitle')"
+      :description="`${$t('edit.okwwViewingDesc')}\n${$t('edit.okwwViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -41,7 +41,7 @@
           :loading="stoppingOkwwConfig"
           @click="handleCloseOkwwView"
         >
-          {{ t('edit.okwwViewClose') }}
+          {{ $t('edit.okwwViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -51,7 +51,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ $t('edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -59,15 +59,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.nameUsedTellUsers')">
+                      {{ $t('edit.username') }}
+                      <a-tooltip :title="$t('edit.nameUsedTellUsers')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.userName"
-                    :placeholder="t('edit.enterUsername')"
+                    :placeholder="$t('edit.enterUsername')"
                     size="large"
                     @blur="saveField('Info.Name', formData.userName)"
                   />
@@ -77,8 +77,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+                      {{ $t('edit.enabled') }}
+                      <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -88,8 +88,8 @@
                     size="large"
                     @change="saveField('Info.Status', formData.Info.Status)"
                   >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                    <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
@@ -100,8 +100,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                      {{ $t('edit.collectNodeDetails') }}
+                      <a-tooltip mouse-enter-delay="0.5" :title="$t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -122,15 +122,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.account') }}
-                      <a-tooltip :title="t('edit.usedSwitchAccountsLeave')">
+                      {{ $t('edit.account') }}
+                      <a-tooltip :title="$t('edit.usedSwitchAccountsLeave')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.enterAccount')"
+                    :placeholder="$t('edit.enterAccount')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -140,15 +140,15 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.gameResource') }}
-                      <a-tooltip :title="t('edit.pickGameResourceThis')">
+                      {{ $t('edit.gameResource') }}
+                      <a-tooltip :title="$t('edit.pickGameResourceThis')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    :placeholder="t('edit.pickResource')"
+                    :placeholder="$t('edit.pickResource')"
                     size="large"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
@@ -159,8 +159,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
+                      {{ $t('edit.daysLeft') }}
+                      <a-tooltip :title="$t('edit.daysLeftAccount1')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -180,15 +180,15 @@
             <a-form-item>
               <template #label>
                 <span class="form-label">
-                  {{ t('edit.note') }}
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
+                  {{ $t('edit.note') }}
+                  <a-tooltip :title="$t('edit.addNoteAboutThis')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
-                :placeholder="t('edit.enterNote')"
+                :placeholder="$t('edit.enterNote')"
                 :rows="4"
                 @blur="saveField('Info.Notes', formData.Info.Notes)"
               />
@@ -202,7 +202,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.configurationSource') }}</h3>
+              <h3>{{ $t('edit.configurationSource') }}</h3>
             </div>
             <a-row :gutter="24">
               <a-col :span="24">
@@ -213,7 +213,7 @@
                   :saving="isSaving"
                   :quick-config="formData.Info.IfQuickConfig"
                   :quick-config-disabled="configActionsDisabled || isInitializing"
-                  :alert-message="t('edit.configSourceHintBase')"
+                  :alert-message="$t('edit.configSourceHintBase')"
                   :show-gui-hint="false"
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
@@ -240,11 +240,11 @@
       </a-card>
 
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <h3>{{ $t('edit.taskConfiguration') }}</h3>
         <a-space>
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
+            {{ $t('edit.configRestoreTitle') }}
           </a-button>
         </a-space>
       </a-flex>
@@ -256,8 +256,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.currentLaunchArguments') }}
-                      <a-tooltip :title="t('edit.argumentsGeneratedFromTask')">
+                      {{ $t('edit.currentLaunchArguments') }}
+                      <a-tooltip :title="$t('edit.argumentsGeneratedFromTask')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -269,7 +269,7 @@
 
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item :label="t('edit.spendSanityFarm')">
+                <a-form-item :label="$t('edit.spendSanityFarm')">
                   <a-select
                     v-model:value="formData.Task.WhichToFarm"
                     size="large"
@@ -279,7 +279,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
-                <a-form-item :label="t('edit.sonanceCasketNumberF2')">
+                <a-form-item :label="$t('edit.sonanceCasketNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichTacetSuppressionToFarm"
                     :min="1"
@@ -291,7 +291,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
-                <a-form-item :label="t('edit.echoDomainNumberF2')">
+                <a-form-item :label="$t('edit.echoDomainNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichForgeryChallengeToFarm"
                     :min="1"
@@ -303,7 +303,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else :span="12">
-                <a-form-item :label="t('edit.simulatedUniverseMaterials')">
+                <a-form-item :label="$t('edit.simulatedUniverseMaterials')">
                   <a-select
                     v-model:value="formData.Task.MaterialSelection"
                     size="large"
@@ -314,14 +314,14 @@
               </a-col>
             </a-row>
 
-            <a-form-item :label="t('edit.useNightmareNestDaily')">
+            <a-form-item :label="$t('edit.useNightmareNestDaily')">
               <a-switch
                 v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
                 @change="saveTaskConfig"
               />
             </a-form-item>
 
-            <a-form-item :label="t('edit.extraTasksThatRun')">
+            <a-form-item :label="$t('edit.extraTasksThatRun')">
               <a-checkbox-group
                 v-model:value="formData.Task.AdditionalTasks"
                 :options="additionalTaskOptions"
@@ -362,7 +362,7 @@
       :script-name="OKWW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.okwwConfigRestoreScriptDesc')"
+      :script-desc="$t('edit.okwwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -370,7 +370,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="$t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">

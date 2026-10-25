@@ -5,8 +5,8 @@
         <a-form-item name="IfSeizeDeliveryJobs">
           <template #label>
             <span class="form-label">
-              {{ t('edit.maaEndSeizeDeliveryJobs') }}
-              <a-tooltip :title="t('edit.maaEndSeizeDeliveryJobsHint')">
+              {{ $t('edit.maaEndSeizeDeliveryJobs') }}
+              <a-tooltip :title="$t('edit.maaEndSeizeDeliveryJobsHint')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -24,8 +24,8 @@
           <a-form-item name="SeizeDeliveryJobsReward">
             <template #label>
               <span class="form-label">
-                {{ t('edit.maaEndSeizeDeliveryJobsReward') }}
-                <a-tooltip :title="t('edit.maaEndSeizeDeliveryJobsRewardHint')">
+                {{ $t('edit.maaEndSeizeDeliveryJobsReward') }}
+                <a-tooltip :title="$t('edit.maaEndSeizeDeliveryJobsRewardHint')">
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
               </span>
@@ -46,7 +46,7 @@
         <a-col :span="8">
           <a-form-item
             name="SeizeDeliveryJobsCommissionSource"
-            :label="t('edit.maaEndDeliveryCommissionSource')"
+            :label="$t('edit.maaEndDeliveryCommissionSource')"
           >
             <a-select
               v-model:value="formData.Task.SeizeDeliveryJobsCommissionSource"
@@ -63,14 +63,11 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS,
   type MaaEndDeliveryCommissionSource,
 } from '@/utils/maaEndProtocolSpace'
-
-const { t } = useI18n()
 
 const props = defineProps<{
   formData: any

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
 import type { useClawBinding } from '../useClawBinding'
@@ -14,8 +13,6 @@ const props = defineProps<{
   // 二维码弹窗容器；通知配置弹窗场景传其 wrap 节点，其余挂 body
   getContainer?: () => HTMLElement
 }>()
-
-const { t } = useI18n()
 
 const binding = computed(() => props.binding)
 
@@ -78,7 +75,7 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
       </template>
     </a-alert>
     <div class="bind-section">
-      <div class="bind-label">{{ t('setting.notify.bindStatus') }}</div>
+      <div class="bind-label">{{ $t('setting.notify.bindStatus') }}</div>
       <div class="bind-row">
         <a-space :size="8">
           <a-spin v-if="binding.statusLoading" size="small" />
@@ -141,7 +138,7 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
       <a-alert v-if="binding.groupsError" type="error" show-icon :message="binding.groupsError" />
       <a-typography-paragraph v-if="binding.groups" class="binding-hint">
         {{
-          t('setting.notify.openclawQqDiscoveredGroups', {
+          $t('setting.notify.openclawQqDiscoveredGroups', {
             count: binding.groups.groups?.length || 0,
           })
         }}
@@ -194,7 +191,7 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
         class="qr-hint"
       />
       <a-button v-if="binding.state === 'connected'" type="primary" block @click="binding.close">{{
-        t('common.confirm')
+        $t('common.confirm')
       }}</a-button>
     </div>
   </a-modal>

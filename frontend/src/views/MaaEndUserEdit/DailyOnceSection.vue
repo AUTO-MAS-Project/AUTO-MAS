@@ -1,16 +1,16 @@
 <template>
   <div class="daily-once-section">
-    <p class="daily-once-hint">{{ t('edit.maaEndDailyOnceTasksHint') }}</p>
+    <p class="daily-once-hint">{{ $t('edit.maaEndDailyOnceTasksHint') }}</p>
     <a-select
       :value="dailyOnceTaskValues"
       mode="multiple"
       :options="dailyOnceTaskOptions"
       :disabled="loading"
-      :aria-label="t('edit.maaEndDailyOnceTasks')"
+      :aria-label="$t('edit.maaEndDailyOnceTasks')"
       option-filter-prop="label"
       show-search
       max-tag-count="responsive"
-      :placeholder="t('edit.maaEndDailyOnceTasksPlaceholder')"
+      :placeholder="$t('edit.maaEndDailyOnceTasksPlaceholder')"
       @change="handleChange"
     />
   </div>
@@ -18,12 +18,10 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { MAAEND_DAILY_ONCE_TASK_OPTIONS } from '@/utils/maaEndProtocolSpace'
 
 const props = defineProps<{ value: unknown; loading: boolean }>()
 const emit = defineEmits<{ save: [value: string] }>()
-const { t } = useI18n()
 
 const dailyOnceTaskValues = computed(() => {
   const value = props.value

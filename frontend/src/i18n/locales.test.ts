@@ -2,9 +2,12 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vite-plus/test'
-import enUS from './locales/en-US'
-import jaJP from './locales/ja-JP'
-import zhCN from './locales/zh-CN'
+
+// 直接读 JSON 原文，不 import：词表会被 @intlify/unplugin-vue-i18n
+// 在构建/测试期预编译成消息函数，import 进来的已经不是可遍历的对象了。
+const localesDir = fileURLToPath(new URL('./locales/', import.meta.url))
+const readLocale = (locale: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(join(localesDir, `${locale}.json`), 'utf8'))
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
@@ -13,11 +16,12 @@ const flatten = (node: unknown, prefix = ''): [string, string][] =>
         flatten(v, prefix ? `${prefix}.${k}` : k)
       )
 
+const zhCN = readLocale('zh-CN')
 const zhEntries = flatten(zhCN)
 // 中文が源言語。ほかの言語はここに無いキーを持てない
 const TRANSLATIONS = [
-  ['en-US', flatten(enUS)],
-  ['ja-JP', flatten(jaJP)],
+  ['en-US', flatten(readLocale('en-US'))],
+  ['ja-JP', flatten(readLocale('ja-JP'))],
 ] as const
 
 describe('词表', () => {
@@ -72,9 +76,11 @@ describe('词表', () => {
     const missing: string[] = []
     for (const file of walk(srcDir)) {
       const source = readFileSync(file, 'utf8')
-      for (const match of source.matchAll(/\bt\(\s*'([\w.]+)'/g)) {
+      // 模板里是 $t()，脚本里是 t()，有的地方还会写 i18n.global.t()；
+      // 三种写法的 key 都要在词表里。只校验带命名空间前缀的字面量 key，
+      // 动态拼接的（t(`x.${y}`)）匹配不到。
+      for (const match of source.matchAll(/(?<![\w.$])\$?\bt\(\s*'([\w.]+)'/g)) {
         const key = match[1]
-        // 只校验带命名空间前缀的字面量 key，动态拼接的（t(`x.${y}`)）匹配不到
         if (namespaces.has(key.split('.')[0]) && !zhKeys.has(key)) {
           missing.push(`${file.slice(srcDir.length)}: ${key}`)
         }

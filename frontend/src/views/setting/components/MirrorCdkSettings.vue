@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig, SettingMirrorCdkData } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -13,7 +12,6 @@ const props = defineProps<{
   handleSettingChange: (category: keyof GlobalConfig, key: string, value: unknown) => Promise<void>
 }>()
 
-const { t } = useI18n()
 const { queryMirrorCdk } = useSettingsApi()
 const { enqueue } = useSaveQueue()
 const cdk = ref('')
@@ -87,18 +85,18 @@ const handleBlur = async () => {
 <template>
   <div class="form-item-vertical">
     <div class="form-label-wrapper">
-      <span class="form-label">{{ t('setting.others.cdk') }}</span>
+      <span class="form-label">{{ $t('setting.others.cdk') }}</span>
       <a-tooltip>
         <template #title>
           <div>
-            {{ t('setting.others.cdkIntro') }}
+            {{ $t('setting.others.cdkIntro') }}
             <a
               href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
               class="tooltip-link"
               @click="handleExternalLink"
-              >{{ t('setting.others.cdkSite') }}</a
+              >{{ $t('setting.others.cdkSite') }}</a
             >
-            {{ t('setting.others.cdkGet') }}
+            {{ $t('setting.others.cdkGet') }}
           </div>
         </template>
         <QuestionCircleOutlined class="help-icon" />
@@ -107,7 +105,7 @@ const handleBlur = async () => {
     <a-input-password
       :value="cdk"
       :disabled="settings.Update?.Source !== 'MirrorChyan'"
-      :placeholder="t('setting.others.cdkPlaceholder')"
+      :placeholder="$t('setting.others.cdkPlaceholder')"
       :visibility-toggle="true"
       size="large"
       autocomplete="off"
@@ -116,12 +114,12 @@ const handleBlur = async () => {
     />
     <MirrorCdkStatusHint :state="state" :checking="checking" @retry="refresh" />
     <div class="form-hint">
-      {{ t('setting.others.cdkHint') }}
+      {{ $t('setting.others.cdkHint') }}
       <a
         href="https://mirrorchyan.com?source=automas_settings"
         class="form-hint-link"
         @click="handleExternalLink"
-        >{{ t('setting.others.cdkGetLink') }}</a
+        >{{ $t('setting.others.cdkGetLink') }}</a
       >
     </div>
   </div>

@@ -1,10 +1,13 @@
 <template>
   <div class="direct-control-section">
     <div class="section-header">
-      <h3>{{ t('edit.directControl') }}</h3>
+      <h3>{{ $t('edit.directControl') }}</h3>
     </div>
     <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
-    <a-empty v-if="availableEngines.length === 0" :description="t('edit.noSraMarch7thAssistant')" />
+    <a-empty
+      v-if="availableEngines.length === 0"
+      :description="$t('edit.noSraMarch7thAssistant')"
+    />
     <div v-else class="engine-grid">
       <div v-for="engine in availableEngines" :key="engine" class="engine-card">
         <div class="engine-card-header">
@@ -12,14 +15,14 @@
             <div class="engine-name">{{ engineLabel(engine) }}</div>
             <!-- 云平台下 SRA 卡只在仍勾着时出现：说明它为何不能用，让用户关掉 -->
             <div class="engine-description">
-              {{ cloud && engine === 'SRA' ? t('edit.hsrCloudNoSra') : engineDescription(engine) }}
+              {{ cloud && engine === 'SRA' ? $t('edit.hsrCloudNoSra') : engineDescription(engine) }}
             </div>
           </div>
           <a-switch
             :checked="Boolean(control[engine])"
             :disabled="saving"
-            :checked-children="t('edit.run')"
-            :un-checked-children="t('edit.skip2')"
+            :checked-children="$t('edit.run')"
+            :un-checked-children="$t('edit.skip2')"
             @change="emit('toggle', engine, Boolean($event))"
           />
         </div>

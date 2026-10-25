@@ -12,7 +12,7 @@
         <a-input
           ref="inputRef"
           v-model:value="customStageName"
-          :placeholder="t('edit.enterCustomStageE')"
+          :placeholder="$t('edit.enterCustomStageE')"
           style="flex: 1"
           size="small"
           @keyup.enter="addCustomStage"
@@ -21,7 +21,7 @@
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('edit.addStage') }}
+          {{ $t('edit.addStage') }}
         </a-button>
       </a-space>
     </template>
@@ -40,7 +40,7 @@
           size="small"
           style="margin-left: 8px"
         >
-          {{ t('edit.custom') }}
+          {{ $t('edit.custom') }}
         </a-tag>
       </template>
     </a-select-option>

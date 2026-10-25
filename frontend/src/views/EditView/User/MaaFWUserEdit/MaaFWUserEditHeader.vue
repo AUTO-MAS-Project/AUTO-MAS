@@ -3,7 +3,7 @@
     <div class="header-left">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{ $t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <router-link :to="scriptRoute" class="breadcrumb-link">
@@ -12,7 +12,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <span class="breadcrumb-current">{{
-            isEdit ? t('comp.editUser') : t('comp.addUser2')
+            isEdit ? $t('comp.editUser') : $t('comp.addUser2')
           }}</span>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -23,15 +23,15 @@
         >
           <LoadingOutlined v-if="saveStatus === 'saving'" spin />
           <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
+          <a-tooltip v-else :title="saveErrorMessage || $t('edit.saveFailedRetry')">
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
             saveStatus === 'saving'
-              ? t('edit.savingNow')
+              ? $t('edit.savingNow')
               : saveStatus === 'saved'
-                ? t('edit.autoSaved')
-                : t('edit.saveFailedShort')
+                ? $t('edit.autoSaved')
+                : $t('edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>
@@ -42,21 +42,20 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ $t('comp.openConfigFolder') }}
       </a-button>
       <!-- 点了「返回」在等保存 / 确认框开着时转圈，不再重复触发 -->
       <a-button size="large" :loading="props.leaving" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('edit.back') }}
+        {{ $t('edit.back') }}
       </a-button>
     </a-space>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
@@ -69,8 +68,6 @@ import type {
   MaaFWUserHeaderSectionEmits,
   MaaFWUserHeaderSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
-
-const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
 const props = defineProps<MaaFWUserHeaderSectionProps>()

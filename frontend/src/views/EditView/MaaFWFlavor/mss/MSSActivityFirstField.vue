@@ -4,8 +4,8 @@
        不必给 MaaFW 用户塞一个它没有的字段 -->
   <a-form-item
     class="flavor-activity-first"
-    :label="t('edit.mssFlavorActivityFirst')"
-    :extra="t('edit.mssFlavorActivityFirstHint')"
+    :label="$t('edit.mssFlavorActivityFirst')"
+    :extra="$t('edit.mssFlavorActivityFirstHint')"
   >
     <a-switch
       :checked="context.formData.Info.IfActivityFirst !== false"
@@ -16,10 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { useI18n } from 'vue-i18n'
 import type { MaaFWUserSlotContext } from '@/composables/maafwFlavorTypes'
-
-const { t } = useI18n()
 
 const props = defineProps<{
   context: MaaFWUserSlotContext

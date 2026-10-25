@@ -1,22 +1,22 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ $t('edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
         <a-form-item name="userName" required>
           <template #label>
-            <a-tooltip :title="t('edit.nameUsedTellUsers')">
+            <a-tooltip :title="$t('edit.nameUsedTellUsers')">
               <span class="form-label">
-                {{ t('edit.username') }}
+                {{ $t('edit.username') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.userName"
-            :placeholder="t('edit.enterUsername')"
+            :placeholder="$t('edit.enterUsername')"
             :disabled="loading"
             size="large"
             class="modern-input"
@@ -27,9 +27,9 @@
       <a-col :span="12">
         <a-form-item name="status">
           <template #label>
-            <a-tooltip :title="t('edit.whetherThisUserEnabled')">
+            <a-tooltip :title="$t('edit.whetherThisUserEnabled')">
               <span class="form-label">
-                {{ t('edit.enabled') }}
+                {{ $t('edit.enabled') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -39,8 +39,8 @@
             size="large"
             @change="emitSave('Info.Status', formData.Info.Status)"
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -53,21 +53,21 @@
             <a-tooltip>
               <template #title>
                 <div style="max-width: 520px; line-height: 1.6; white-space: normal">
-                  {{ t('edit.srcAccountSwitchTipIntro') }}<br />
-                  {{ t('edit.cnServersEnter11') }}<br />
-                  {{ t('edit.bilibiliEnterPartUsername') }}
-                  {{ t('edit.accountEmailPhoneNumber2') }}
+                  {{ $t('edit.srcAccountSwitchTipIntro') }}<br />
+                  {{ $t('edit.cnServersEnter11') }}<br />
+                  {{ $t('edit.bilibiliEnterPartUsername') }}
+                  {{ $t('edit.accountEmailPhoneNumber2') }}
                 </div>
               </template>
               <span class="form-label">
-                {{ t('edit.accountId') }}
+                {{ $t('edit.accountId') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="formData.Info.Id"
-            :placeholder="t('edit.enterAccount')"
+            :placeholder="$t('edit.enterAccount')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Id', formData.Info.Id)"
@@ -77,16 +77,16 @@
       <a-col :span="12">
         <a-form-item :name="['Info', 'Password']">
           <template #label>
-            <a-tooltip :title="t('edit.userSPasswordWhen')">
+            <a-tooltip :title="$t('edit.userSPasswordWhen')">
               <span class="form-label">
-                {{ t('edit.password') }}
+                {{ $t('edit.password') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            :placeholder="t('edit.enterPassword')"
+            :placeholder="$t('edit.enterPassword')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -99,16 +99,16 @@
       <a-col :span="12">
         <a-form-item name="server">
           <template #label>
-            <a-tooltip :title="t('edit.pickGameServerThis')">
+            <a-tooltip :title="$t('edit.pickGameServerThis')">
               <span class="form-label">
-                {{ t('edit.server') }}
+                {{ $t('edit.server') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
             v-model:value="formData.Info.Server"
-            :placeholder="t('edit.pickServer')"
+            :placeholder="$t('edit.pickServer')"
             :disabled="loading"
             :options="serverOptions"
             size="large"
@@ -119,9 +119,9 @@
       <a-col :span="12">
         <a-form-item name="remainedDay">
           <template #label>
-            <a-tooltip :title="t('edit.daysLeftAccount1')">
+            <a-tooltip :title="$t('edit.daysLeftAccount1')">
               <span class="form-label">
-                {{ t('edit.daysLeft') }}
+                {{ $t('edit.daysLeft') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -149,7 +149,7 @@
           :saving="quickConfigDisabled"
           :quick-config="quickConfig"
           :quick-config-disabled="quickConfigDisabled"
-          :alert-message="t('edit.configSourceHintBase')"
+          :alert-message="$t('edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
           @quick-config-change="emit('quickConfigChange', $event)"
         />
@@ -158,16 +158,16 @@
 
     <a-form-item name="notes">
       <template #label>
-        <a-tooltip :title="t('edit.addNoteAboutThis')">
+        <a-tooltip :title="$t('edit.addNoteAboutThis')">
           <span class="form-label">
-            {{ t('edit.note') }}
+            {{ $t('edit.note') }}
             <QuestionCircleOutlined class="help-icon" />
           </span>
         </a-tooltip>
       </template>
       <a-textarea
         v-model:value="formData.Info.Notes"
-        :placeholder="t('edit.enterNote3')"
+        :placeholder="$t('edit.enterNote3')"
         :rows="4"
         :disabled="loading"
         class="modern-input"

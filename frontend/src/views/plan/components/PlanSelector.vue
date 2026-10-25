@@ -2,9 +2,9 @@
   <a-card class="plan-selector-card" :bordered="false">
     <template #title>
       <div class="card-title">
-        <span>{{ t('plan.selectLabel') }}</span>
+        <span>{{ $t('plan.selectLabel') }}</span>
         <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-          {{ t('plan.count', { count: planList.length }, planList.length) }}
+          {{ $t('plan.count', { count: planList.length }, planList.length) }}
         </a-tag>
       </div>
     </template>
@@ -35,8 +35,8 @@
               class="plan-drag-handle"
               role="button"
               tabindex="0"
-              :aria-label="t('plan.drag')"
-              :title="t('plan.drag')"
+              :aria-label="$t('plan.drag')"
+              :title="$t('plan.drag')"
               @click.stop
             >
               <span class="plan-drag-dots" aria-hidden="true"></span>
@@ -48,7 +48,7 @@
               class="plan-rename-input"
               size="small"
               :maxlength="50"
-              :placeholder="t('plan.namePlaceholder')"
+              :placeholder="$t('plan.namePlaceholder')"
               @click.stop
               @press-enter="finishRename"
               @blur="finishRename"
@@ -65,8 +65,8 @@
               type="text"
               size="small"
               class="plan-rename-btn"
-              :aria-label="t('plan.rename')"
-              :title="t('plan.rename')"
+              :aria-label="$t('plan.rename')"
+              :title="$t('plan.rename')"
               @click.stop="startRename(plan)"
             >
               <template #icon>
@@ -82,12 +82,9 @@
 
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
-
-const { t } = useI18n()
 
 interface Plan {
   id: string

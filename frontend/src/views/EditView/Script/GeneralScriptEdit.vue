@@ -1,5 +1,5 @@
 <template>
-  <ScriptEditHeader script-type="General" :title="t('edit.editScript')" @cancel="handleCancel">
+  <ScriptEditHeader script-type="General" :title="$t('edit.editScript')" @cancel="handleCancel">
     <template #after-doc-actions>
       <GeneralTemplateUpload :script-id="scriptId" :script-name="formData.name" />
     </template>
@@ -7,7 +7,7 @@
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.generalScriptConfiguration')"
+      :title="$t('edit.generalScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -19,22 +19,22 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ $t('edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip :title="t('edit.giveScriptNameYou')">
+                  <a-tooltip :title="$t('edit.giveScriptNameYou')">
                     <span class="form-label">
-                      {{ t('edit.scriptName') }}
+                      {{ $t('edit.scriptName') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="$t('edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -44,9 +44,9 @@
             <a-col :span="16">
               <a-form-item name="rootPath" :rules="rules.rootPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.rootDirectoryScriptEvery')">
+                  <a-tooltip :title="$t('edit.rootDirectoryScriptEvery')">
                     <span class="form-label">
-                      {{ t('edit.scriptRootDirectory') }}
+                      {{ $t('edit.scriptRootDirectory') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -54,7 +54,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.rootPath"
-                    :placeholder="t('edit.pickScriptRootDirectory2')"
+                    :placeholder="$t('edit.pickScriptRootDirectory2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -63,7 +63,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFolder') }}
+                    {{ $t('edit.pickFolder') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -74,15 +74,15 @@
         <!-- 基础配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptConfiguration') }}</h3>
+            <h3>{{ $t('edit.scriptConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item name="scriptPath" :rules="rules.scriptPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.pathScriptSMain')">
+                  <a-tooltip :title="$t('edit.pathScriptSMain')">
                     <span class="form-label">
-                      {{ t('edit.mainProgramPath') }}
+                      {{ $t('edit.mainProgramPath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -90,7 +90,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.scriptPath"
-                    :placeholder="t('edit.pickScriptSMain')"
+                    :placeholder="$t('edit.pickScriptSMain')"
                     size="large"
                     class="path-input"
                     readonly
@@ -99,7 +99,7 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -107,16 +107,16 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.extraArgumentsUsedWhen')">
+                  <a-tooltip :title="$t('edit.extraArgumentsUsedWhen')">
                     <span class="form-label">
-                      {{ t('edit.launchArguments') }}
+                      {{ $t('edit.launchArguments') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.Arguments"
-                  :placeholder="t('edit.enterScriptLaunchArguments')"
+                  :placeholder="$t('edit.enterScriptLaunchArguments')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)"
@@ -126,9 +126,9 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatScriptAsFinished')">
+                  <a-tooltip :title="$t('edit.treatScriptAsFinished')">
                     <span class="form-label">
-                      {{ t('edit.trackChildProcesses') }}
+                      {{ $t('edit.trackChildProcesses') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -138,8 +138,8 @@
                   size="large"
                   @change="handleChange('Script', 'IfTrackProcess', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -149,16 +149,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.nameProcessTrackOpen')">
+                  <a-tooltip :title="$t('edit.nameProcessTrackOpen')">
                     <span class="form-label">
-                      {{ t('edit.nameTrackedProcess') }}
+                      {{ $t('edit.nameTrackedProcess') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessName"
-                  :placeholder="t('edit.enterProcessNameTrack')"
+                  :placeholder="$t('edit.enterProcessNameTrack')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -174,9 +174,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.executablePathProcessTrack')">
+                  <a-tooltip :title="$t('edit.executablePathProcessTrack')">
                     <span class="form-label">
-                      {{ t('edit.pathTrackedProcess') }}
+                      {{ $t('edit.pathTrackedProcess') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -184,7 +184,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Script.TrackProcessExe"
-                    :placeholder="t('edit.pickProcessExecutablePath')"
+                    :placeholder="$t('edit.pickProcessExecutablePath')"
                     size="large"
                     class="path-input"
                     readonly
@@ -193,12 +193,12 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                   <a-button
                     size="large"
                     class="path-clear-icon-btn"
-                    :aria-label="t('edit.clearPath')"
+                    :aria-label="$t('edit.clearPath')"
                     @click="clearTrackProcessExe"
                   >
                     <template #icon>
@@ -211,16 +211,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.commandLineProcessTrack')">
+                  <a-tooltip :title="$t('edit.commandLineProcessTrack')">
                     <span class="form-label">
-                      {{ t('edit.trackedProcessCommandLine') }}
+                      {{ $t('edit.trackedProcessCommandLine') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessCmdline"
-                  :placeholder="t('edit.enterProcessCommandLine')"
+                  :placeholder="$t('edit.enterProcessCommandLine')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -241,12 +241,12 @@
                   <a-tooltip
                     :title="
                       generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pathFolderHoldingScript')
-                        : t('edit.pathScriptConfigurationFile')
+                        ? $t('edit.pathFolderHoldingScript')
+                        : $t('edit.pathScriptConfigurationFile')
                     "
                   >
                     <span class="form-label">
-                      {{ t('edit.configurationFilePath') }}
+                      {{ $t('edit.configurationFilePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -256,8 +256,8 @@
                     v-model:value="formData.configPath"
                     :placeholder="
                       generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pickConfigurationFolder')
-                        : t('edit.pickConfigurationFile')
+                        ? $t('edit.pickConfigurationFolder')
+                        : $t('edit.pickConfigurationFile')
                     "
                     size="large"
                     class="path-input"
@@ -278,9 +278,9 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.scriptConfigurationFileType')">
+                  <a-tooltip :title="$t('edit.scriptConfigurationFileType')">
                     <span class="form-label">
-                      {{ t('edit.configurationFileType') }}
+                      {{ $t('edit.configurationFileType') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -290,17 +290,17 @@
                   size="large"
                   @change="handleChange('Script', 'ConfigPathMode', $event)"
                 >
-                  <a-select-option value="File">{{ t('edit.singleFile') }}</a-select-option>
-                  <a-select-option value="Folder">{{ t('edit.folder') }}</a-select-option>
+                  <a-select-option value="File">{{ $t('edit.singleFile') }}</a-select-option>
+                  <a-select-option value="Folder">{{ $t('edit.folder') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.updateScriptConfigurationFile')">
+                  <a-tooltip :title="$t('edit.updateScriptConfigurationFile')">
                     <span class="form-label">
-                      {{ t('edit.whenConfigurationFileUpdated') }}
+                      {{ $t('edit.whenConfigurationFileUpdated') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -310,10 +310,10 @@
                   size="large"
                   @change="handleChange('Script', 'UpdateConfigMode', $event)"
                 >
-                  <a-select-option value="Never">{{ t('edit.never') }}</a-select-option>
-                  <a-select-option value="Success">{{ t('edit.success') }}</a-select-option>
-                  <a-select-option value="Failure">{{ t('edit.failure') }}</a-select-option>
-                  <a-select-option value="Always">{{ t('edit.always') }}</a-select-option>
+                  <a-select-option value="Never">{{ $t('edit.never') }}</a-select-option>
+                  <a-select-option value="Success">{{ $t('edit.success') }}</a-select-option>
+                  <a-select-option value="Failure">{{ $t('edit.failure') }}</a-select-option>
+                  <a-select-option value="Always">{{ $t('edit.always') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -322,9 +322,9 @@
             <a-col :span="12">
               <a-form-item name="logPath" :rules="rules.logPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.pathFileScriptWrites')">
+                  <a-tooltip :title="$t('edit.pathFileScriptWrites')">
                     <span class="form-label">
-                      {{ t('edit.logFilePath') }}
+                      {{ $t('edit.logFilePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -332,7 +332,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.logPath"
-                    :placeholder="t('edit.pickLogFile')"
+                    :placeholder="$t('edit.pickLogFile')"
                     size="large"
                     class="path-input"
                     readonly
@@ -341,7 +341,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -350,18 +350,18 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.logFileNameFormat') }}
-                    <a-tooltip :title="t('edit.formatLogFileName')">
+                    {{ $t('edit.logFileNameFormat') }}
+                    <a-tooltip :title="$t('edit.formatLogFileName')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
-                    <a-tooltip :title="t('edit.mxuLogsNamedBy')">
+                    <a-tooltip :title="$t('edit.mxuLogsNamedBy')">
                       <QuestionCircleOutlined class="help-icon" style="margin-left: 2px" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.LogPathFormat"
-                  :placeholder="t('edit.logFileNameFormat2')"
+                  :placeholder="$t('edit.logFileNameFormat2')"
                   size="large"
                   class="modern-input"
                   @blur="
@@ -384,26 +384,26 @@
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
-                  <a-tooltip :title="t('edit.timestampFormatUsedScript')">
+                  <a-tooltip :title="$t('edit.timestampFormatUsedScript')">
                     <span class="form-label">
-                      {{ t('edit.logTimestampFormat') }}
+                      {{ $t('edit.logTimestampFormat') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="formData.logTimeFormat"
-                  :placeholder="t('edit.enterScriptLogTimestamp')"
+                  :placeholder="$t('edit.enterScriptLogTimestamp')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                 />
                 <div class="format-preview">
-                  {{ t('edit.examplePreview')
+                  {{ $t('edit.examplePreview')
                   }}<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
-                  {{ t('edit.tipFAcceptsBoth') }} {{ t('edit.k123456DigitCountLog') }}
+                  {{ $t('edit.tipFAcceptsBoth') }} {{ $t('edit.k123456DigitCountLog') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -419,9 +419,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whenSetIfAny')">
+                  <a-tooltip :title="$t('edit.whenSetIfAny')">
                     <span class="form-label">
-                      {{ t('edit.successLog') }}
+                      {{ $t('edit.successLog') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -440,8 +440,8 @@
                         class="log-sign-mode-select"
                         @change="handleChange('Script', 'SuccessLogMode', $event)"
                       >
-                        <a-select-option value="Split">{{ t('edit.keyword2') }}</a-select-option>
-                        <a-select-option value="Regex">{{ t('edit.regex') }}</a-select-option>
+                        <a-select-option value="Split">{{ $t('edit.keyword2') }}</a-select-option>
+                        <a-select-option value="Regex">{{ $t('edit.regex') }}</a-select-option>
                       </a-select>
                     </a-tooltip>
                   </template>
@@ -454,9 +454,9 @@
             <a-col :span="12">
               <a-form-item name="errorLog" :rules="rules.errorLog">
                 <template #label>
-                  <a-tooltip :title="t('edit.ifFailureLogAppears')">
+                  <a-tooltip :title="$t('edit.ifFailureLogAppears')">
                     <span class="form-label">
-                      {{ t('edit.failureLog') }}
+                      {{ $t('edit.failureLog') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -475,8 +475,8 @@
                         class="log-sign-mode-select"
                         @change="handleChange('Script', 'ErrorLogMode', $event)"
                       >
-                        <a-select-option value="Split">{{ t('edit.keyword2') }}</a-select-option>
-                        <a-select-option value="Regex">{{ t('edit.regex') }}</a-select-option>
+                        <a-select-option value="Split">{{ $t('edit.keyword2') }}</a-select-option>
+                        <a-select-option value="Regex">{{ $t('edit.regex') }}</a-select-option>
                       </a-select>
                     </a-tooltip>
                   </template>
@@ -496,16 +496,16 @@
           />
 
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ $t('edit.gameConfiguration') }}</h3>
           </div>
 
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherAutoMasManages')">
+                  <a-tooltip :title="$t('edit.whetherAutoMasManages')">
                     <span class="form-label">
-                      {{ t('edit.enableGameRelatedFeatures') }}
+                      {{ $t('edit.enableGameRelatedFeatures') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -515,17 +515,17 @@
                   size="large"
                   @change="handleChange('Game', 'Enabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whichPlatformGameRuns')">
+                  <a-tooltip :title="$t('edit.whichPlatformGameRuns')">
                     <span class="form-label">
-                      {{ t('edit.launchMode') }}
+                      {{ $t('edit.launchMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -535,9 +535,9 @@
                   size="large"
                   @change="handleGameTypeChange"
                 >
-                  <a-select-option value="Emulator">{{ t('edit.emulator2') }}</a-select-option>
-                  <a-select-option value="Client">{{ t('edit.pcClient') }}</a-select-option>
-                  <a-select-option value="URL">{{ t('edit.urlProtocolEG') }}</a-select-option>
+                  <a-select-option value="Emulator">{{ $t('edit.emulator2') }}</a-select-option>
+                  <a-select-option value="Client">{{ $t('edit.pcClient') }}</a-select-option>
+                  <a-select-option value="URL">{{ $t('edit.urlProtocolEG') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -545,9 +545,9 @@
             <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.pathGameExecutable')">
+                  <a-tooltip :title="$t('edit.pathGameExecutable')">
                     <span class="form-label">
-                      {{ t('edit.gamePath') }}
+                      {{ $t('edit.gamePath') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -555,7 +555,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable2')"
+                    :placeholder="$t('edit.pickGameExecutable2')"
                     size="large"
                     class="path-input"
                     readonly
@@ -564,7 +564,7 @@
                     <template #icon>
                       <FileOutlined />
                     </template>
-                    {{ t('edit.pickFile') }}
+                    {{ $t('edit.pickFile') }}
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -573,9 +573,9 @@
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.pickEmulatorUse')">
+                  <a-tooltip :title="$t('edit.pickEmulatorUse')">
                     <span class="form-label">
-                      {{ t('edit.emulator') }}
+                      {{ $t('edit.emulator') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -583,7 +583,7 @@
                 <a-select
                   v-model:value="generalConfig.Game.EmulatorId"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="$t('edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorChange"
                 >
@@ -601,9 +601,9 @@
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.urlCustomProtocol')">
+                  <a-tooltip :title="$t('edit.urlCustomProtocol')">
                     <span class="form-label">
-                      {{ t('edit.url') }}
+                      {{ $t('edit.url') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -611,7 +611,7 @@
                 <a-input-group class="path-input-group">
                   <a-input
                     v-model:value="generalConfig.Game.URL"
-                    :placeholder="t('edit.enterUrlEG')"
+                    :placeholder="$t('edit.enterUrlEG')"
                     size="large"
                     @blur="handleChange('Game', 'URL', generalConfig.Game.URL)"
                   />
@@ -625,12 +625,12 @@
                   <a-tooltip
                     :title="
                       emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
+                        ? $t('edit.thisEmulatorCannotBe')
+                        : $t('edit.pickEmulatorInstance')
                     "
                   >
                     <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
+                      {{ $t('edit.emulatorInstance') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -644,7 +644,7 @@
                   "
                   v-model:value="generalConfig.Game.EmulatorIndex"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="$t('edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
                 />
@@ -653,7 +653,7 @@
                   v-else
                   v-model:value="generalConfig.Game.EmulatorIndex"
                   size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :placeholder="$t('edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!generalConfig.Game.EmulatorId"
                   @change="handleChange('Game', 'EmulatorIndex', $event)"
@@ -676,16 +676,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
+                  <a-tooltip :title="$t('edit.commandLineArgumentsUsed')">
                     <span class="form-label">
-                      {{ t('edit.launchArguments') }}
+                      {{ $t('edit.launchArguments') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-input
                   v-model:value="generalConfig.Game.Arguments"
-                  :placeholder="t('edit.enterLaunchArguments')"
+                  :placeholder="$t('edit.enterLaunchArguments')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)"
@@ -695,9 +695,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.howLongWaitAfter2')">
+                  <a-tooltip :title="$t('edit.howLongWaitAfter2')">
                     <span class="form-label">
-                      {{ t('edit.waitAfterLaunchSeconds') }}
+                      {{ $t('edit.waitAfterLaunchSeconds') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -716,9 +716,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherGameProcessForce')">
+                  <a-tooltip :title="$t('edit.whetherGameProcessForce')">
                     <span class="form-label">
-                      {{ t('edit.forceGameClose') }}
+                      {{ $t('edit.forceGameClose') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -728,8 +728,8 @@
                   size="large"
                   @change="handleChange('Game', 'IfForceClose', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ $t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ $t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -741,16 +741,16 @@
           <a-col :span="8">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.processNameEG')">
+                <a-tooltip :title="$t('edit.processNameEG')">
                   <span class="form-label">
-                    {{ t('edit.processName') }}
+                    {{ $t('edit.processName') }}
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </a-tooltip>
               </template>
               <a-input
                 v-model:value="generalConfig.Game.ProcessName"
-                :placeholder="t('edit.exampleStarrailExe')"
+                :placeholder="$t('edit.exampleStarrailExe')"
                 size="large"
                 class="modern-input"
                 @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)"
@@ -761,7 +761,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ $t('edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="generalConfig.Run.HardTimeLimit"
@@ -771,9 +771,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.skipRunOnceThis')">
+                  <a-tooltip :title="$t('edit.skipRunOnceThis')">
                     <span class="form-label">
-                      {{ t('edit.runsPerDay') }}
+                      {{ $t('edit.runsPerDay') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -792,9 +792,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
+                  <a-tooltip :title="$t('edit.ifRunStillUnfinished')">
                     <span class="form-label">
-                      {{ t('edit.retryLimit') }}
+                      {{ $t('edit.retryLimit') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -813,9 +813,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatRunAsTimed')">
+                  <a-tooltip :title="$t('edit.treatRunAsTimed')">
                     <span class="form-label">
-                      {{ t('edit.runTimeoutMinutes') }}
+                      {{ $t('edit.runTimeoutMinutes') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>

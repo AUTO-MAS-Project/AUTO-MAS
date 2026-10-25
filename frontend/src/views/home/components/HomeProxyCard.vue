@@ -1,6 +1,6 @@
 <template>
-  <section class="overview-grid" :aria-label="t('home.proxy.aria')">
-    <a-card class="proxy-card" :title="t('home.proxy.title')" :loading="loading">
+  <section class="overview-grid" :aria-label="$t('home.proxy.aria')">
+    <a-card class="proxy-card" :title="$t('home.proxy.title')" :loading="loading">
       <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
         <a-row :gutter="[16, 16]">
           <a-col v-for="(proxy, username) in proxyData" :key="username" :xs="24" :lg="12" :xl="8">
@@ -15,14 +15,14 @@
               <div class="proxy-stats">
                 <div class="stat-item full-width">
                   <a-statistic
-                    :title="t('home.proxy.lastTime')"
+                    :title="$t('home.proxy.lastTime')"
                     :value="formatProxyDisplay(proxy.LastProxyDate)"
                   />
                 </div>
                 <div class="stat-pair">
-                  <a-statistic :title="t('home.proxy.times')" :value="proxy.ProxyTimes" />
+                  <a-statistic :title="$t('home.proxy.times')" :value="proxy.ProxyTimes" />
                   <a-statistic
-                    :title="t('home.proxy.errors')"
+                    :title="$t('home.proxy.errors')"
                     :value="proxy.ErrorTimes"
                     :value-style="{
                       color: proxy.ErrorTimes > 0 ? 'var(--ant-color-error)' : undefined,
@@ -36,7 +36,7 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" :alt="t('home.empty.noData')" class="empty-image" />
+        <img src="@/assets/NoData.png" :alt="$t('home.empty.noData')" class="empty-image" />
       </div>
     </a-card>
   </section>

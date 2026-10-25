@@ -83,21 +83,21 @@ const onDragEnd = () => {
   <div class="log-hook-config" :class="{ collapsed }">
     <div class="hook-config-header sub-section-header">
       <h3>
-        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+        <a-tooltip :title="collapsed ? $t('edit.expandRulesArea') : $t('edit.collapseRulesArea')">
           <span class="hook-config-title-text" @click="toggleCollapsed">
-            {{ t('edit.logHooks') }}
+            {{ $t('edit.logHooks') }}
             <DownOutlined class="hook-config-title-arrow" :class="{ collapsed }" />
           </span>
         </a-tooltip>
-        <a-tooltip :title="t('edit.whenScriptLogPreprocessed')">
+        <a-tooltip :title="$t('edit.whenScriptLogPreprocessed')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
       <div class="hook-config-actions">
         <span v-if="collapsed && hookRules.length > 0" class="hook-config-summary">
-          {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
+          {{ $t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
-        <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
+        <a-tooltip :title="$t('edit.rulesApplyOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -110,7 +110,7 @@ const onDragEnd = () => {
 
     <div v-show="!collapsed" class="hook-config-body">
       <div v-if="!enabled" class="hook-config-disabled-tip">
-        {{ t('edit.logHooksOffRules') }}
+        {{ $t('edit.logHooksOffRules') }}
       </div>
 
       <draggable
@@ -141,7 +141,7 @@ const onDragEnd = () => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-hook-btn">
             <PlusOutlined />
-            {{ t('edit.addRule') }}
+            {{ $t('edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
@@ -154,7 +154,7 @@ const onDragEnd = () => {
         </a-dropdown>
 
         <span class="hook-rules-count">
-          {{ t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
+          {{ $t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
       </div>
     </div>

@@ -161,7 +161,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.fontSize') }}</span>
+            <span class="form-label">{{ $t('comp.fontSize') }}</span>
           </div>
           <a-select
             :value="editorConfig.fontSize"
@@ -178,7 +178,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.lineHeight') }}</span>
+            <span class="form-label">{{ $t('comp.lineHeight') }}</span>
           </div>
           <a-select
             :value="editorConfig.lineHeight"
@@ -195,32 +195,32 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="24">
         <div class="form-item-vertical text-style-item">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.boldText') }}</span>
+            <span class="form-label">{{ $t('comp.boldText') }}</span>
           </div>
           <div class="checkbox-row">
             <a-checkbox
               :checked="styles.timestampBold"
               @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
             >
-              {{ t('comp.boldTimestamps') }}
+              {{ $t('comp.boldTimestamps') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.levelBold"
               @change="(e: any) => setStyles({ levelBold: e.target.checked })"
             >
-              {{ t('comp.boldLogLevels') }}
+              {{ $t('comp.boldLogLevels') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.keywordBold"
               @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
             >
-              {{ t('comp.boldKeywords') }}
+              {{ $t('comp.boldKeywords') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.urlUnderline"
               @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
             >
-              {{ t('comp.urlUnderline') }}
+              {{ $t('comp.urlUnderline') }}
             </a-checkbox>
           </div>
         </div>
@@ -231,24 +231,24 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-collapse-panel key="highlight">
         <template #header>
           <div class="advanced-settings-header">
-            <span class="advanced-settings-title">{{ t('comp.highlightColorsPreview') }}</span>
+            <span class="advanced-settings-title">{{ $t('comp.highlightColorsPreview') }}</span>
           </div>
         </template>
 
         <!-- 颜色配置 -->
         <div class="config-section">
           <div class="log-section-header">
-            <div class="section-title">{{ t('comp.colors') }}</div>
+            <div class="section-title">{{ $t('comp.colors') }}</div>
             <div class="section-actions">
               <a-radio-group v-model:value="editingTheme" button-style="solid" size="small">
-                <a-radio-button value="light">{{ t('comp.lightTheme') }}</a-radio-button>
-                <a-radio-button value="dark">{{ t('comp.darkTheme') }}</a-radio-button>
+                <a-radio-button value="light">{{ $t('comp.lightTheme') }}</a-radio-button>
+                <a-radio-button value="dark">{{ $t('comp.darkTheme') }}</a-radio-button>
               </a-radio-group>
               <a-button size="small" @click="handleReset">
                 <template #icon>
                   <ReloadOutlined />
                 </template>
-                {{ t('comp.resetEverything') }}
+                {{ $t('comp.resetEverything') }}
               </a-button>
             </div>
           </div>
@@ -276,7 +276,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                   <a-button
                     size="small"
                     type="text"
-                    :title="t('comp.resetThisColor')"
+                    :title="$t('comp.resetThisColor')"
                     @click="resetSingleColor(item.key)"
                   >
                     <template #icon>
@@ -291,7 +291,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
         <!-- 预览 -->
         <div class="config-section">
-          <div class="section-title">{{ t('comp.preview') }}</div>
+          <div class="section-title">{{ $t('comp.preview') }}</div>
           <div
             class="preview-content"
             :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'"
@@ -317,7 +317,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 INFO
               </span>
               <span :style="{ color: '#' + currentColors.module }">[MainModule]</span>
-              <span>{{ t('comp.appStartedPort') }}</span>
+              <span>{{ $t('comp.appStartedPort') }}</span>
               <span :style="{ color: '#' + currentColors.port }">:8080</span>
             </div>
             <div class="preview-line">
@@ -337,7 +337,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 WARN
               </span>
               <span :style="{ color: '#' + currentColors.module }">[Network]</span>
-              <span>{{ t('comp.connectionTimedOutIp') }}</span>
+              <span>{{ $t('comp.connectionTimedOutIp') }}</span>
               <span :style="{ color: '#' + currentColors.ip }">192.168.1.100</span>
               <span :style="{ color: '#' + currentColors.variable }"> retries</span>
               <span :style="{ color: '#' + currentColors.operator }">=</span>
@@ -368,7 +368,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
                 Exception</span
               >
-              <span>{{ t('comp.connectionFailed') }}</span>
+              <span>{{ $t('comp.connectionFailed') }}</span>
               <span :style="{ color: '#' + currentColors.string }">"Connection refused"</span>
             </div>
             <div class="preview-line">
@@ -401,7 +401,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
               <span :style="{ color: '#' + currentColors.module }">[HTTP]</span>
-              <span>{{ t('comp.request') }}</span>
+              <span>{{ $t('comp.request') }}</span>
               <span
                 :style="{
                   color: '#' + currentColors.url,
@@ -420,7 +420,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
             </div>
             <div class="preview-line">
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span>{{ t('comp.response') }}</span>
+              <span>{{ $t('comp.response') }}</span>
               <span :style="{ color: '#' + currentColors.json }"
                 >{"status": "ok", "count": 42}</span
               >

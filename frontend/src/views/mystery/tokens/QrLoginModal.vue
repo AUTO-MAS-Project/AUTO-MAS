@@ -14,7 +14,7 @@
         v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
         class="qr-code-wrapper"
       >
-        <img :src="qrCodeDataUrl" :alt="t('gamesign.qr.alt')" class="qr-code-img" />
+        <img :src="qrCodeDataUrl" :alt="$t('gamesign.qr.alt')" class="qr-code-img" />
       </div>
 
       <!-- 加载中 -->
@@ -52,7 +52,7 @@
       <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
         <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
           <template #icon><ReloadOutlined /></template>
-          {{ t('gamesign.qr.retry') }}
+          {{ $t('gamesign.qr.retry') }}
         </a-button>
       </div>
     </div>
