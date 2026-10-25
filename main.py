@@ -386,10 +386,10 @@ def main():
                 await DesktopGuard.start()
 
             async def init_avd_update() -> None:
-                from app.utils.emulator2.avd import updater as avd_updater
+                from app.core import avd_update
 
                 # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
-                await avd_updater.startup()
+                await avd_update.startup()
 
             async def init_stage_info() -> None:
                 from app.task.MAA.tools.stage_service import maa_stage_service

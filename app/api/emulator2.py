@@ -36,11 +36,11 @@ from pydantic import (
     Field,
 )
 
+from app.core import avd_update as avd_updater
 from app.models.schema import OutBase
 from app.utils import get_logger
 from app.utils.emulator2 import service
 from app.utils.emulator2.avd import service as avd_service
-from app.utils.emulator2.avd import updater as avd_updater
 
 
 class Emulator2SearchIn(BaseModel):
