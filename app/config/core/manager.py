@@ -72,10 +72,37 @@ class TransactionContext:
     staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = field(
         default_factory=dict
     )
+    activations: list[_ActivationLifecycle] = field(default_factory=list)
 
     @property
     def is_current(self) -> bool:
         return self.active and self.owner is execution_owner()
+
+
+@dataclass
+class _ActivationLifecycle:
+    root: weakref.ReferenceType[ConfigNode]
+    finished: bool = False
+    complete: bool = False
+
+
+@dataclass
+class _ActivationMode:
+    owner: ExecutionOwner = field(default_factory=execution_owner)
+    active: bool = True
+    enabled: bool = True
+    lifecycle: _ActivationLifecycle | None = None
+
+
+@dataclass
+class _FastInit:
+    context: TransactionContext
+    node: ConfigNode
+    error: BaseException | None = None
+
+
+class _FastInitFallback(Exception):
+    """字段快路径在产生事务外影响之前转回原流程。"""
 
 
 @dataclass(eq=False)
@@ -133,6 +160,12 @@ class ConfigManager:
         self._init_txn: ContextVar[tuple[TransactionContext, ...] | None] = ContextVar(
             "config_framework_v2_init_txn", default=None
         )
+        self._fast_init: ContextVar[_FastInit | None] = ContextVar(
+            "config_framework_v2_fast_init", default=None
+        )
+        self._activation_mode: ContextVar[_ActivationMode | None] = ContextVar(
+            "config_framework_v2_activation_mode", default=None
+        )
         # 提交帧校验实际所有者和生命周期，子 Task 不能继承原任务的重入资格。
         self._committing_nodes: ContextVar[tuple[_NodeCommit, ...]] = ContextVar(
             "config_framework_v2_committing", default=()
@@ -156,11 +189,13 @@ class ConfigManager:
     # ──────────────── ref 池（仅 Collection）────────────────
 
     def register_collection(self, name: str, col: ConfigCollection[Any]) -> None:
-        if name in self._collections:
-            raise ValueError(f"Collection 名称已登记: {name}")
-        if self.is_registered_collection(col):
-            raise ValueError("该 Collection 实例已登记")
-        self._collections[name] = col
+        self._require_regular_activation()
+        with self._execution_gate_sync():
+            if name in self._collections:
+                raise ValueError(f"Collection 名称已登记: {name}")
+            if self.is_registered_collection(col):
+                raise ValueError("该 Collection 实例已登记")
+            self._collections[name] = col
 
     def get_collection(self, name: str) -> ConfigCollection[Any]:
         if name not in self._collections:
@@ -177,12 +212,14 @@ class ConfigManager:
     # ──────────────── 持久化根（file=）────────────────
 
     def register_root(self, node: ConfigNode, path: Path) -> None:
-        path = Path(path)
-        if path.suffix.lower() not in {".yaml", ".yml"}:
-            raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
-        with self._execution_condition:
-            self._save_failures.pop(node.uid, None)
-            self._roots[node.uid] = RootRecord(node=node, path=path)
+        self._require_regular_activation()
+        with self._execution_gate_sync():
+            path = Path(path)
+            if path.suffix.lower() not in {".yaml", ".yml"}:
+                raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
+            with self._execution_condition:
+                self._save_failures.pop(node.uid, None)
+                self._roots[node.uid] = RootRecord(node=node, path=path)
 
     def unregister_root(self, node: ConfigNode) -> None:
         """解除 ``file=`` 持久化根登记（幂等）。
@@ -191,11 +228,13 @@ class ConfigManager:
         供插件配置等临时根在禁用后离开 ``flush`` / 防抖扫描集。
         调用方须先 ``commit`` 并完成对该根的落盘，再 unregister。
         """
-        with self._execution_condition:
-            rec = self._roots.get(node.uid)
-            if rec is not None and rec.node is node:
-                del self._roots[node.uid]
-                self._save_failures.pop(node.uid, None)
+        self._require_regular_activation()
+        with self._execution_gate_sync():
+            with self._execution_condition:
+                rec = self._roots.get(node.uid)
+                if rec is not None and rec.node is node:
+                    del self._roots[node.uid]
+                    self._save_failures.pop(node.uid, None)
 
     def get_file(self, root: ConfigNode) -> Path | None:
         rec = self._roots.get(root.uid)
@@ -386,12 +425,19 @@ class ConfigManager:
             if (node := ref()) is not None:
                 node._discard_stage_scope(ctx.scope_id)
         ctx.staged_nodes.clear()
+        ctx.activations.clear()
 
     @asynccontextmanager
     async def transaction(self) -> AsyncGenerator[None, None]:
         """每 op 独立事务；同 Task 嵌套复用当前上下文，不扩大回滚边界。"""
         if self.in_transaction:
-            yield
+            try:
+                yield
+            except BaseException as exc:
+                fast = self._current_fast_init()
+                if fast is not None and fast.error is None:
+                    fast.error = exc
+                raise
             return
         need_save = False
         ctx: TransactionContext | None = None
@@ -416,7 +462,13 @@ class ConfigManager:
     def transaction_sync(self) -> Generator[None, None, None]:
         """同步等价入口；事件循环内竞争时拒绝阻塞，工作线程可以排队。"""
         if self.in_transaction:
-            yield
+            try:
+                yield
+            except BaseException as exc:
+                fast = self._current_fast_init()
+                if fast is not None and fast.error is None:
+                    fast.error = exc
+                raise
             return
         need_save = False
         ctx: TransactionContext | None = None
@@ -455,6 +507,9 @@ class ConfigManager:
                 unit._COMMIT()
         for record in roots.values():
             record.revision += 1
+        # 全部节点合并后才开放热态能力，避免先完成的子节点提前对外可用。
+        for lifecycle in ctx.activations:
+            lifecycle.complete = lifecycle.finished
         ctx.registered.clear()
         return bool(roots)
 
@@ -464,9 +519,119 @@ class ConfigManager:
                 unit._ROLLBACK_signal()
             else:
                 unit._ROLLBACK()
+        for lifecycle in ctx.activations:
+            lifecycle.finished = False
+            lifecycle.complete = False
         ctx.registered.clear()
 
     # ──────────────── Init 事务（须嵌在普通事务内）────────────────
+
+    def _current_activation_mode(self) -> _ActivationMode | None:
+        mode = self._activation_mode.get()
+        return (
+            mode
+            if mode is not None and mode.active and mode.owner is execution_owner()
+            else None
+        )
+
+    @property
+    def try_fast_activation(self) -> bool:
+        mode = self._current_activation_mode()
+        return mode is not None and mode.enabled
+
+    @contextmanager
+    def _activation_scope(self, *, try_fast: bool) -> Generator[None, None, None]:
+        if self._current_activation_mode() is not None:
+            yield
+            return
+        mode = _ActivationMode(enabled=try_fast and not self.in_transaction)
+        token = self._activation_mode.set(mode)
+        try:
+            yield
+        finally:
+            mode.active = False
+            self._activation_mode.reset(token)
+
+    @contextmanager
+    def _regular_activation(self) -> Generator[None, None, None]:
+        mode = self._current_activation_mode()
+        if mode is None:
+            yield
+            return
+        enabled = mode.enabled
+        mode.enabled = False
+        try:
+            yield
+        finally:
+            mode.enabled = enabled
+
+    def _current_fast_init(self) -> _FastInit | None:
+        fast = self._fast_init.get()
+        if fast is None:
+            return None
+        transaction = self.current
+        return (
+            fast
+            if transaction is not None
+            and fast.context.is_current
+            and fast.context.transaction_id == transaction.scope_id
+            else None
+        )
+
+    @property
+    def in_fast_activation(self) -> bool:
+        return self._current_fast_init() is not None
+
+    def _require_regular_activation(self, node: ConfigNode | None = None) -> None:
+        fast = self._current_fast_init()
+        if fast is None or node is fast.node:
+            return
+        error = _FastInitFallback("该操作不属于当前 Entry 的字段赋值")
+        if fast.error is None:
+            fast.error = error
+        raise error
+
+    def _reuse_init_workspace(self, node: ConfigNode) -> bool:
+        fast = self._current_fast_init()
+        if fast is None:
+            return False
+        # 共享工作区不代表正在处理该节点；再入资格仍按当前操作栈判定。
+        return not any(
+            unit is node
+            for ctx in self._init_txn.get() or ()
+            if ctx is not fast.context and ctx.is_current
+            for unit in ctx.registered
+        )
+
+    @asynccontextmanager
+    async def _fast_init_transaction(
+        self, node: ConfigNode
+    ) -> AsyncGenerator[_FastInit, None]:
+        transaction = self.current
+        if (
+            transaction is None
+            or self.in_fast_activation
+            or node.init_workspace is not None
+        ):
+            raise RuntimeError("快速赋值须在普通工作区内独立建立 Init 工作区")
+        ctx = TransactionContext(transaction_id=transaction.scope_id)
+        fast = _FastInit(context=ctx, node=node)
+        parent = self._init_txn.get() if self.in_init_transaction else None
+        init_token = self._init_txn.set((*(parent or ()), ctx))
+        fast_token = self._fast_init.set(fast)
+        try:
+            yield fast
+            self.COMMIT_init(ctx)
+        except BaseException:
+            self.ROLLBACK_init(ctx)
+            raise
+        finally:
+            try:
+                self._close_context(ctx)
+            finally:
+                fast.error = None
+                self._fast_init.reset(fast_token)
+                self._init_txn.reset(init_token)
 
     @property
     def in_init_transaction(self) -> bool:
@@ -491,14 +656,22 @@ class ConfigManager:
             raise RuntimeError("init_transaction 须在 transaction 内")
         transaction = self.current
         assert transaction is not None
+        fast = self._current_fast_init()
         parent = self._init_txn.get() if self.in_init_transaction else None
         ctx = TransactionContext(transaction_id=transaction.scope_id)
         token = self._init_txn.set((*(parent or ()), ctx))
         try:
             yield
-            self.COMMIT_init(ctx)
-        except BaseException:
-            self.ROLLBACK_init(ctx)
+            if fast is None:
+                self.COMMIT_init(ctx)
+            else:
+                # 保留逐操作的暂存作用域及退出检查，工作区只在快速尝试末尾合并。
+                self._check_staged(ctx)
+        except BaseException as exc:
+            if fast is None:
+                self.ROLLBACK_init(ctx)
+            elif fast.error is None:
+                fast.error = exc
             raise
         finally:
             self._close_context(ctx)
@@ -510,6 +683,9 @@ class ConfigManager:
             return
         if not any(u is node for u in ctx.registered):
             ctx.registered.append(node)
+        fast = self._current_fast_init()
+        if fast is not None and not any(u is node for u in fast.context.registered):
+            fast.context.registered.append(node)
 
     def COMMIT_init(self, ctx: TransactionContext) -> None:
         self._check_staged(ctx)
@@ -612,6 +788,8 @@ class ConfigManager:
             context = copy_context()
             context.run(self._txn.set, None)
             context.run(self._init_txn.set, None)
+            context.run(self._fast_init.set, None)
+            context.run(self._activation_mode.set, None)
             context.run(self._committing_nodes.set, ())
             self._save_handle = loop.create_task(self._save_worker(), context=context)
             self._save_handle.add_done_callback(self._save_worker_done)

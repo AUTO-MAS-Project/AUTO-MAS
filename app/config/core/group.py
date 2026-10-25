@@ -114,11 +114,15 @@ class ConfigGroup(BaseModel):
 
         entry = cast("ConfigEntry", entry)
         assert isinstance(group, str)
+        config_manager._require_regular_activation(entry)
 
         if is_virtual_model_field(field):
             raise AttributeError(f"虚拟字段 {group}.{name} 只读")
 
         if is_trigger_model_field(field):
+            config_manager._require_regular_activation()
+            if not entry._activation_ready:
+                raise ValueError("配置尚未完成激活，无法触发操作")
             if (group, name) not in type(entry)._cfg_trigger_specs:
                 raise AttributeError(f"触发器 {group}.{name} 须经 @trigger_field 注册")
             # 与 entry.update 一致：HIDE/DISABLE 不接受开闸

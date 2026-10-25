@@ -30,6 +30,8 @@ from pydantic import (
 )
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
+from app.utils.logger import get_logger
+
 from ..errors import ConfigAggregateError, DeletedNodeError
 from ..fields import (
     NestedCollectionMarker,
@@ -61,6 +63,8 @@ from .group import ConfigGroup, ConfigTableColumn
 from .manager import config_manager, x_tokens
 from .node import ConfigNode, ExportContext, NodeState
 from .staging import StagedOp, StageKind
+
+logger = get_logger("配置激活")
 
 
 class _RefReceiver:
@@ -169,6 +173,7 @@ class ConfigEntry(ConfigNode):
     ) -> None:
         # 未激活导入（官方）：field_values 承接 model_validate 注入的字段（如 info=/data=），
         # 转发给 BaseModel 冷态填充（FastAPI Body）；热化仍走 activate，不在此完成。
+        config_manager._require_regular_activation()
         super().__init__(**field_values)
         self._parent_ref = weakref.ref(parent) if parent is not None else None
         if payload is not None and file is not None:
@@ -565,12 +570,13 @@ class ConfigEntry(ConfigNode):
           插件自身的批量落配置）；此时**仅**跳过虚拟字段与未赋值字段，
           这两类与显隐无关：前者无存储、后者调用方压根没打算改。
         """
+        config_manager._require_regular_activation()
         if type(other) is not type(self):
             raise TypeError(
                 f"update 须为同类 Entry，收到 {type(other).__name__}，"
                 f"期望 {type(self).__name__}"
             )
-        if self.activation_state != NodeState.ACTIVE:
+        if not self._activation_ready:
             raise ValueError("须先 activate")
         # 与字段赋值、commit 一致：X 持票上下文可写，S 锁及无票上下文拒绝。
         if self.is_locked and self._lock_x not in x_tokens():
@@ -617,29 +623,11 @@ class ConfigEntry(ConfigNode):
         payload = omit_masked_placeholders(
             type(self), migrate_legacy_fields(type(self), payload or {})
         )
-        errors: list[Exception] = []
-
-        # Group 字段热化：与 Collection 相同 — 赋值 stage + commit（commit_op 内切 init 事务）
-        for gname in self._cfg_group_fields:
-            group = cast(ConfigGroup, self.__dict__[gname])
-            group_values = payload.get(gname)
-            if not isinstance(group_values, dict):
-                group_values = {}
-            for field_name, fld in type(group).model_fields.items():
-                if is_reactive_model_field(fld):
-                    continue
-                if field_name in group_values:
-                    value = group_values[field_name]
-                else:
-                    value = group.__dict__.get(field_name)
-                    # 空 payload 时复用已构造默认值；EncryptedValue 需经密文再入校验链
-                    if isinstance(value, EncryptedValue):
-                        value = value.ciphertext()
-                try:
-                    setattr(group, field_name, value)
-                    await self.commit()
-                except Exception as exc:  # noqa: BLE001
-                    errors.append(exc)
+        errors = (
+            await self._try_fast_fields(payload)
+            if config_manager.try_fast_activation
+            else await self._activate_fields(payload)
+        )
 
         # 嵌套 Collection：标准 activate（pending_payload）
         for cname in self._cfg_collection_fields:
@@ -683,6 +671,57 @@ class ConfigEntry(ConfigNode):
 
         if errors:
             raise ConfigAggregateError(errors)
+
+    async def _try_fast_fields(self, payload: dict[str, Any]) -> list[Exception]:
+        """只重试当前 Entry 的字段赋值，生命周期和成员实例不参与重放。"""
+        failed: Exception | None = None
+        try:
+            async with config_manager._fast_init_transaction(self) as fast:
+                try:
+                    await self._activate_fields(payload, fail_fast=True)
+                    if fast.error is not None:
+                        raise fast.error
+                except Exception as exc:
+                    failed = exc
+                    raise
+        except Exception as exc:
+            # 提交和清理错误不属于可重试的字段错误。
+            if exc is not failed:
+                raise
+            logger.debug(f"快速赋值退出，回退逐字段初始化：{type(exc).__name__}")
+        else:
+            return []
+        with config_manager._regular_activation():
+            return await self._activate_fields(payload)
+
+    async def _activate_fields(
+        self, payload: dict[str, Any], *, fail_fast: bool = False
+    ) -> list[Exception]:
+        errors: list[Exception] = []
+        # 保持逐字段校验与即时 Init 信号，仅共享快速赋值的工作区。
+        for gname in self._cfg_group_fields:
+            group = cast(ConfigGroup, self.__dict__[gname])
+            group_values = payload.get(gname)
+            if not isinstance(group_values, dict):
+                group_values = {}
+            for field_name, fld in type(group).model_fields.items():
+                if is_reactive_model_field(fld):
+                    continue
+                if field_name in group_values:
+                    value = group_values[field_name]
+                else:
+                    value = group.__dict__.get(field_name)
+                    # 复用冷态默认值；加密值仍经密文重走校验链。
+                    if isinstance(value, EncryptedValue):
+                        value = value.ciphertext()
+                try:
+                    setattr(group, field_name, value)
+                    await self.commit()
+                except Exception as exc:  # noqa: BLE001
+                    if fail_fast:
+                        raise
+                    errors.append(exc)
+        return errors
 
     # ──────────────── 工作区 ────────────────
 
@@ -730,6 +769,7 @@ class ConfigEntry(ConfigNode):
                 object.__setattr__(live, fname, values.get(fname))
         self._deleted = ws._deleted
         self._activation_state = ws._activation_state
+        self._activation_lifecycle = ws._activation_lifecycle
         self._pending_payload = ws._pending_payload
         self._workspace = None
 
@@ -752,6 +792,7 @@ class ConfigEntry(ConfigNode):
                 object.__setattr__(dst, fname, values.get(fname))
         ws._deleted = init._deleted
         ws._activation_state = init._activation_state
+        ws._activation_lifecycle = init._activation_lifecycle
         ws._pending_payload = init._pending_payload
         ws._workspace = None
 

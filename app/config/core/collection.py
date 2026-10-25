@@ -65,6 +65,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         # 未激活导入（官方）：field_values 承接 model_validate 注入的 order/data；
         # 热化仍走 activate（add+commit），不在构造时落成员生命周期。
         # 嵌套字段须经 collection() 声明，不经本构造的 name=/file= 登记路径。
+        config_manager._require_regular_activation()
         super().__init__(**field_values)
         self._parent_ref = weakref.ref(parent) if parent is not None else None
         if payload is not None and file is not None:
@@ -133,6 +134,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         return self
 
     async def _commit_op(self, op: StagedOp) -> None:
+        config_manager._require_regular_activation()
         if op.kind not in (
             StageKind.COLLECTION_ADD,
             StageKind.COLLECTION_REMOVE,
@@ -640,11 +642,15 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     def register_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """注册异步拒删守卫；在 commit 应用 remove 前依次 await。"""
-        self._remove_guards.append(guard)
+        config_manager._require_regular_activation()
+        with config_manager._execution_gate_sync():
+            self._remove_guards.append(guard)
 
     def unregister_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """移除已注册的拒删守卫。"""
-        self._remove_guards.remove(guard)
+        config_manager._require_regular_activation()
+        with config_manager._execution_gate_sync():
+            self._remove_guards.remove(guard)
 
     # ──────────────── 激活 ────────────────
 
@@ -723,6 +729,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         self._entry_types = dict(shell._entry_types)
         self._deleted = shell._deleted
         self._activation_state = shell._activation_state
+        self._activation_lifecycle = shell._activation_lifecycle
         self._pending_payload = shell._pending_payload
         self._workspace = None
 
@@ -736,6 +743,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         shell._entry_types = dict(init._entry_types)
         shell._deleted = init._deleted
         shell._activation_state = init._activation_state
+        shell._activation_lifecycle = init._activation_lifecycle
         shell._pending_payload = init._pending_payload
         shell._workspace = None
 
