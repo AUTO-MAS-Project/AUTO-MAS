@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="$t('queue.time.cardTitle')" class="time-set-card">
+  <a-card :title="t('queue.time.cardTitle')" class="time-set-card">
     <template #extra>
       <a-space>
         <a-button
@@ -11,7 +11,7 @@
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ $t('queue.time.add') }}
+          {{ t('queue.time.add') }}
         </a-button>
       </a-space>
     </template>
@@ -21,11 +21,11 @@
       <!-- 表头 -->
       <div class="draggable-table-header">
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">{{ $t('queue.item.colIndex') }}</div>
-        <div class="header-cell status-cell">{{ $t('queue.time.colStatus') }}</div>
-        <div class="header-cell days-cell">{{ $t('queue.time.colDays') }}</div>
-        <div class="header-cell time-cell">{{ $t('queue.time.colTime') }}</div>
-        <div class="header-cell actions-cell">{{ $t('queue.item.colActions') }}</div>
+        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
+        <div class="header-cell status-cell">{{ t('queue.time.colStatus') }}</div>
+        <div class="header-cell days-cell">{{ t('queue.time.colDays') }}</div>
+        <div class="header-cell time-cell">{{ t('queue.time.colTime') }}</div>
+        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
       </div>
 
       <!-- 拖拽内容区域 -->
@@ -47,8 +47,8 @@
             <div class="row-cell drag-cell">
               <span
                 class="drag-handle"
-                :title="$t('queue.item.dragSort')"
-                :aria-label="$t('queue.item.dragSort')"
+                :title="t('queue.item.dragSort')"
+                :aria-label="t('queue.item.dragSort')"
               >
                 <span class="drag-dots" aria-hidden="true"></span>
               </span>
@@ -62,8 +62,8 @@
                 class="status-select"
                 @change="updateTimeSetStatus(record)"
               >
-                <a-select-option :value="true">{{ $t('queue.time.enabled') }}</a-select-option>
-                <a-select-option :value="false">{{ $t('queue.time.disabled') }}</a-select-option>
+                <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
+                <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
               </a-select>
             </div>
             <div class="row-cell days-cell">
@@ -72,29 +72,27 @@
                 mode="multiple"
                 size="small"
                 style="width: 100%"
-                :placeholder="$t('queue.time.selectDays')"
+                :placeholder="t('queue.time.selectDays')"
                 :disabled="loading"
                 :max-tag-count="7"
                 :bordered="false"
                 class="days-select"
                 @change="updateTimeSetDays(record)"
               >
-                <a-select-option value="Monday">{{ $t('queue.time.Monday') }}</a-select-option>
-                <a-select-option value="Tuesday">{{ $t('queue.time.Tuesday') }}</a-select-option>
-                <a-select-option value="Wednesday">{{
-                  $t('queue.time.Wednesday')
-                }}</a-select-option>
-                <a-select-option value="Thursday">{{ $t('queue.time.Thursday') }}</a-select-option>
-                <a-select-option value="Friday">{{ $t('queue.time.Friday') }}</a-select-option>
-                <a-select-option value="Saturday">{{ $t('queue.time.Saturday') }}</a-select-option>
-                <a-select-option value="Sunday">{{ $t('queue.time.Sunday') }}</a-select-option>
+                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
               </a-select>
             </div>
             <div class="row-cell time-cell">
               <a-time-picker
                 :value="record.timeValue"
                 format="HH:mm"
-                :placeholder="$t('queue.time.selectTime')"
+                :placeholder="t('queue.time.selectTime')"
                 size="small"
                 :disabled="loading"
                 @change="updateTimeSetTime(record, $event)"
@@ -103,14 +101,14 @@
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
-                  :title="$t('queue.time.deleteConfirm')"
-                  :ok-text="$t('queue.ok')"
-                  :cancel-text="$t('queue.cancel')"
+                  :title="t('queue.time.deleteConfirm')"
+                  :ok-text="t('queue.ok')"
+                  :cancel-text="t('queue.cancel')"
                   @confirm="deleteTimeSet(record.id)"
                 >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
-                    {{ $t('queue.del') }}
+                    {{ t('queue.del') }}
                   </a-button>
                 </a-popconfirm>
               </a-space>
@@ -122,7 +120,7 @@
       <!-- 空状态 -->
       <div v-if="timeSets.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="@/assets/NoData.png" :alt="$t('queue.noData')" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
         </div>
       </div>
     </div>

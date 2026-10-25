@@ -5,7 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="hsr"
-      :current-label="isEdit ? $t('edit.editHsrUser') : $t('edit.addHsrUser')"
+      :current-label="isEdit ? t('edit.editHsrUser') : t('edit.addHsrUser')"
       :logo-src="hsrLogo"
       :user-id="userId"
       @cancel="handleCancel"
@@ -31,14 +31,14 @@
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
             <div class="section-header">
-              <h3>{{ $t('edit.basicInfo') }}</h3>
+              <h3>{{ t('edit.basicInfo') }}</h3>
               <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
               <div class="section-header-actions">
                 <a-button size="small" @click="restoreOpen = true">
                   <template #icon>
                     <HistoryOutlined />
                   </template>
-                  {{ $t('edit.configRestoreTitle') }}
+                  {{ t('edit.configRestoreTitle') }}
                 </a-button>
               </div>
             </div>
@@ -47,9 +47,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="$t('edit.thisNameAlsoWritten')">
+                    <a-tooltip :title="t('edit.thisNameAlsoWritten')">
                       <span class="form-label"
-                        >{{ $t('edit.username') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.username') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -63,7 +63,7 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ $t('edit.enabled2') }}</span>
+                    <span class="form-label">{{ t('edit.enabled2') }}</span>
                   </template>
                   <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
                   <a-select v-model:value="statusValue" size="large" :options="statusOptions" />
@@ -72,9 +72,9 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="$t('edit.daysLeft1Means')">
+                    <a-tooltip :title="t('edit.daysLeft1Means')">
                       <span class="form-label"
-                        >{{ $t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
@@ -94,11 +94,11 @@
               <a-col :span="8">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ $t('edit.account') }}</span>
+                    <span class="form-label">{{ t('edit.account') }}</span>
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="$t('edit.enterAccount')"
+                    :placeholder="t('edit.enterAccount')"
                     size="large"
                     @blur="handleFieldSave('Info.Id', formData.Info.Id)"
                   />
@@ -108,15 +108,15 @@
                 <a-form-item>
                   <template #label>
                     <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
-                    <a-tooltip :title="$t('edit.whenSavingMasEncrypts')">
+                    <a-tooltip :title="t('edit.whenSavingMasEncrypts')">
                       <span class="form-label"
-                        >{{ $t('edit.password') }} <QuestionCircleOutlined class="help-icon"
+                        >{{ t('edit.password') }} <QuestionCircleOutlined class="help-icon"
                       /></span>
                     </a-tooltip>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    :placeholder="$t('edit.enterPassword')"
+                    :placeholder="t('edit.enterPassword')"
                     size="large"
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
@@ -127,17 +127,15 @@
             <a-row v-if="isCloud && isEdit" :gutter="24" align="middle" class="cloud-login-row">
               <a-col :span="24">
                 <div class="cloud-login-line" data-testid="hsr-cloud-login-line">
-                  <span class="progress-label">{{ $t('edit.hsrCloudLogin') }}</span>
+                  <span class="progress-label">{{ t('edit.hsrCloudLogin') }}</span>
                   <a-tag :color="cloudLastLogin ? 'green' : 'orange'">
                     {{
                       cloudLastLogin
-                        ? $t('edit.hsrCloudLoggedIn', {
-                            time: formatCloudLoginTime(cloudLastLogin),
-                          })
-                        : $t('edit.hsrCloudNotLoggedIn')
+                        ? t('edit.hsrCloudLoggedIn', { time: formatCloudLoginTime(cloudLastLogin) })
+                        : t('edit.hsrCloudNotLoggedIn')
                     }}
                   </a-tag>
-                  <a-tooltip :title="$t('edit.hsrCloudLoginTip')">
+                  <a-tooltip :title="t('edit.hsrCloudLoginTip')">
                     <a-button
                       size="small"
                       :loading="cloudLoginLoading"
@@ -145,7 +143,7 @@
                       data-testid="hsr-cloud-login-button"
                       @click="handleCloudLogin"
                     >
-                      {{ $t('edit.hsrCloudLoginButton') }}
+                      {{ t('edit.hsrCloudLoginButton') }}
                     </a-button>
                   </a-tooltip>
                 </div>
@@ -153,7 +151,7 @@
             </a-row>
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ $t('edit.note') }}</span>
+                <span class="form-label">{{ t('edit.note') }}</span>
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
@@ -223,23 +221,23 @@
           <!-- 进度（完成态恒按用户记，共享 / 独立来源都显示；历战余响开始日在体力模块设置里） -->
           <div v-if="formData.Info.Base !== 'native'" class="form-section">
             <div class="section-header">
-              <h3>{{ $t('edit.progressReset') }}</h3>
+              <h3>{{ t('edit.progressReset') }}</h3>
             </div>
 
             <!-- 历战余响进度 -->
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ $t('edit.echoOfWar') }}</span>
+                  <span class="progress-label">{{ t('edit.echoOfWar') }}</span>
                   <a-tag :color="eowCompletedThisWeek ? 'green' : 'orange'">
-                    {{ eowCompletedThisWeek ? $t('edit.hsrWeekDone') : $t('edit.hsrWeekNotDone') }}
+                    {{ eowCompletedThisWeek ? t('edit.hsrWeekDone') : t('edit.hsrWeekNotDone') }}
                   </a-tag>
                   <span
                     v-if="hasValidCompletionDate(formData.Data.EchoOfWarLastCompletionDate)"
                     class="date-hint"
                   >
                     {{
-                      $t('edit.hsrLastCompleted', {
+                      t('edit.hsrLastCompleted', {
                         date: formatConfigDate(formData.Data.EchoOfWarLastCompletionDate, 4 * 60),
                       })
                     }}
@@ -249,10 +247,10 @@
               <a-col :span="14">
                 <a-space>
                   <a-button size="small" :disabled="eowCompletedThisWeek" @click="markEowCompleted">
-                    {{ $t('edit.markAsDone') }}
+                    {{ t('edit.markAsDone') }}
                   </a-button>
                   <a-button size="small" @click="resetEowProgress">{{
-                    $t('edit.hsrMarkNotDone')
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -262,12 +260,12 @@
             <a-row :gutter="24" align="middle" style="margin-top: 16px">
               <a-col :span="10">
                 <div class="progress-group">
-                  <span class="progress-label">{{ $t('edit.weekly') }}</span>
+                  <span class="progress-label">{{ t('edit.weekly') }}</span>
                   <a-tag :color="formData.Data.WeeklyCompletedThisWeek ? 'green' : 'orange'">
                     {{
                       formData.Data.WeeklyCompletedThisWeek
-                        ? $t('edit.hsrWeekDone')
-                        : $t('edit.hsrWeekNotDone')
+                        ? t('edit.hsrWeekDone')
+                        : t('edit.hsrWeekNotDone')
                     }}
                   </a-tag>
                   <span
@@ -275,7 +273,7 @@
                     class="date-hint"
                   >
                     {{
-                      $t('edit.hsrLastCompleted', {
+                      t('edit.hsrLastCompleted', {
                         date: formatConfigDate(formData.Data.WeeklyLastCompletionDate, 4 * 60),
                       })
                     }}
@@ -289,10 +287,10 @@
                     :disabled="formData.Data.WeeklyCompletedThisWeek"
                     @click="markWeeklyCompleted"
                   >
-                    {{ $t('edit.markAsDone') }}
+                    {{ t('edit.markAsDone') }}
                   </a-button>
                   <a-button size="small" @click="resetWeeklyProgress">{{
-                    $t('edit.hsrMarkNotDone')
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -324,15 +322,15 @@
       :script-name="HSR_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="$t('edit.hsrConfigRestoreUserDesc')"
-      :script-desc="$t('edit.hsrConfigRestoreScriptDesc')"
+      :user-desc="t('edit.hsrConfigRestoreUserDesc')"
+      :script-desc="t('edit.hsrConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
     >
       <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="$t('edit.configRestorePreviewEmpty')"
+          :description="t('edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">

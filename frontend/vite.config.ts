@@ -70,8 +70,9 @@ export default defineConfig(({ command }) => {
       VueI18nPlugin({
         include: path.resolve(__dirname, './src/i18n/locales/**'),
         runtimeOnly: true,
-        // 词表里有字面量的 '<' '>'（如「= < > ! などの演算子」的说明文案），
-        // 这里不做 HTML 检查；词条的尖括号安全性由 locales.test.ts 断言守着。
+        // 词表里有字面量的 '<' '>'（如「= < > ! などの演算子」、`BAAH.exe <名称>.json`），
+        // intlify 的 HTML 检测会把它们当标签拦下，所以关掉。消息在构建期编译成纯文本，
+        // 尖括号不会被渲染成 HTML 节点，也就没有注入面。
         strictMessage: false,
       }),
       ...(sentryUploadPlugin ? [sentryUploadPlugin] : []),

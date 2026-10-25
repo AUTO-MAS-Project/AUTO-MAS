@@ -4,7 +4,7 @@
       <a-input
         v-model:value="optionSearchQuery"
         allow-clear
-        :placeholder="$t('edit.searchSettings')"
+        :placeholder="t('edit.searchSettings')"
         class="option-search"
       />
     </div>
@@ -13,9 +13,7 @@
       v-if="filteredOptions.length === 0"
       class="option-empty"
       :description="
-        optionSearchQuery
-          ? $t('edit.maafwNoMatchingSettings')
-          : $t('edit.maafwNoConfigurableOptions')
+        optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')
       "
     />
 
@@ -60,7 +58,7 @@
           :value="getStringValue(option)"
           :disabled="props.disabled"
           class="option-control"
-          :placeholder="$t('edit.pleaseChoose')"
+          :placeholder="t('edit.pleaseChoose')"
           @change="handleSelectChange(option.name, $event)"
         >
           <a-select-option
@@ -131,7 +129,7 @@
                 :disabled="props.disabled"
                 @click="clearPassword(option.name, inputItem)"
               >
-                {{ $t('edit.maafwPasswordClear') }}
+                {{ t('edit.maafwPasswordClear') }}
               </a-button>
             </div>
             <!-- 数字与文本字段都先改草稿，失焦 / 回车时校验通过才提交（不是每敲一个字存一次）；
@@ -159,8 +157,8 @@
               v-else-if="isBooleanInput(inputItem)"
               :checked="getBooleanInputValue(option, inputItem)"
               :disabled="props.disabled"
-              :checked-children="$t('edit.yes')"
-              :un-checked-children="$t('edit.no')"
+              :checked-children="t('edit.yes')"
+              :un-checked-children="t('edit.no')"
               @change="handleInputBooleanChange(option.name, inputItem, $event)"
             />
             <a-input
@@ -187,7 +185,7 @@
           type="warning"
           show-icon
           :message="
-            $t('edit.maafwUnsupportedOptionType', { type: option.type || $t('edit.unknownType') })
+            t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })
           "
         />
 

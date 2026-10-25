@@ -1,12 +1,12 @@
 <template>
-  <a-card :title="$t('queue.item.cardTitle')" class="queue-item-card">
+  <a-card :title="t('queue.item.cardTitle')" class="queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ $t('queue.item.add') }}
+          {{ t('queue.item.add') }}
         </a-button>
       </a-space>
     </template>
@@ -16,15 +16,15 @@
       <!-- 表头 -->
       <div class="draggable-table-header">
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">{{ $t('queue.item.colIndex') }}</div>
-        <div class="header-cell script-cell">{{ $t('queue.item.colScript') }}</div>
+        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
+        <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
         <div v-if="!showCycleConfig" class="header-cell days-cell">
-          {{ $t('queue.item.colDays') }}
+          {{ t('queue.item.colDays') }}
         </div>
         <div v-if="showCycleConfig" class="header-cell cycle-cell">
-          {{ $t('queue.cycle.colConfig') }}
+          {{ t('queue.cycle.colConfig') }}
         </div>
-        <div class="header-cell actions-cell">{{ $t('queue.item.colActions') }}</div>
+        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
       </div>
 
       <!-- 拖拽内容区域 -->
@@ -46,8 +46,8 @@
             <div class="row-cell drag-cell">
               <span
                 class="drag-handle"
-                :title="$t('queue.item.dragSort')"
-                :aria-label="$t('queue.item.dragSort')"
+                :title="t('queue.item.dragSort')"
+                :aria-label="t('queue.item.dragSort')"
               >
                 <span class="drag-dots" aria-hidden="true"></span>
               </span>
@@ -59,7 +59,7 @@
                 size="small"
                 style="width: 200px"
                 class="script-select"
-                :placeholder="$t('queue.item.selectScript')"
+                :placeholder="t('queue.item.selectScript')"
                 :options="scriptOptions"
                 :disabled="locked"
                 allow-clear
@@ -73,21 +73,19 @@
                 size="small"
                 style="width: 100%"
                 class="days-select"
-                :placeholder="$t('queue.time.selectDays')"
+                :placeholder="t('queue.time.selectDays')"
                 :disabled="locked"
                 :max-tag-count="7"
                 :bordered="false"
                 @change="saveDays(record)"
               >
-                <a-select-option value="Monday">{{ $t('queue.time.Monday') }}</a-select-option>
-                <a-select-option value="Tuesday">{{ $t('queue.time.Tuesday') }}</a-select-option>
-                <a-select-option value="Wednesday">{{
-                  $t('queue.time.Wednesday')
-                }}</a-select-option>
-                <a-select-option value="Thursday">{{ $t('queue.time.Thursday') }}</a-select-option>
-                <a-select-option value="Friday">{{ $t('queue.time.Friday') }}</a-select-option>
-                <a-select-option value="Saturday">{{ $t('queue.time.Saturday') }}</a-select-option>
-                <a-select-option value="Sunday">{{ $t('queue.time.Sunday') }}</a-select-option>
+                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
               </a-select>
             </div>
             <div v-if="showCycleConfig" class="row-cell cycle-cell">
@@ -106,10 +104,10 @@
                     @change="saveSchedule(record, { Mode: record.schedule.Mode })"
                   >
                     <a-select-option value="fixed_time">
-                      {{ $t('queue.cycle.modeFixed') }}
+                      {{ t('queue.cycle.modeFixed') }}
                     </a-select-option>
                     <a-select-option value="interval">
-                      {{ $t('queue.cycle.modeInterval') }}
+                      {{ t('queue.cycle.modeInterval') }}
                     </a-select-option>
                   </a-select>
 
@@ -121,7 +119,7 @@
                       :min="1"
                       :max="10080"
                       :disabled="!record.schedule.Enabled"
-                      :addon-after="$t('queue.cycle.minuteUnit')"
+                      :addon-after="t('queue.cycle.minuteUnit')"
                       @blur="saveInterval(record)"
                       @press-enter="saveInterval(record)"
                     />
@@ -135,10 +133,10 @@
                       "
                     >
                       <a-select-option value="start">
-                        {{ $t('queue.cycle.anchorStart') }}
+                        {{ t('queue.cycle.anchorStart') }}
                       </a-select-option>
                       <a-select-option value="finish">
-                        {{ $t('queue.cycle.anchorFinish') }}
+                        {{ t('queue.cycle.anchorFinish') }}
                       </a-select-option>
                     </a-select>
                   </template>
@@ -148,7 +146,7 @@
                       format="HH:mm"
                       size="small"
                       style="width: 104px"
-                      :placeholder="$t('queue.time.selectTime')"
+                      :placeholder="t('queue.time.selectTime')"
                       :disabled="!record.schedule.Enabled"
                       :allow-clear="false"
                       @change="saveScheduleTime(record)"
@@ -158,39 +156,33 @@
                       mode="multiple"
                       size="small"
                       style="min-width: 168px"
-                      :placeholder="$t('queue.time.selectDays')"
+                      :placeholder="t('queue.time.selectDays')"
                       :disabled="!record.schedule.Enabled"
                       :max-tag-count="3"
                       @change="saveDays(record)"
                     >
-                      <a-select-option value="Monday">{{
-                        $t('queue.time.Monday')
-                      }}</a-select-option>
+                      <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
                       <a-select-option value="Tuesday">
-                        {{ $t('queue.time.Tuesday') }}
+                        {{ t('queue.time.Tuesday') }}
                       </a-select-option>
                       <a-select-option value="Wednesday">
-                        {{ $t('queue.time.Wednesday') }}
+                        {{ t('queue.time.Wednesday') }}
                       </a-select-option>
                       <a-select-option value="Thursday">
-                        {{ $t('queue.time.Thursday') }}
+                        {{ t('queue.time.Thursday') }}
                       </a-select-option>
-                      <a-select-option value="Friday">{{
-                        $t('queue.time.Friday')
-                      }}</a-select-option>
+                      <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
                       <a-select-option value="Saturday">
-                        {{ $t('queue.time.Saturday') }}
+                        {{ t('queue.time.Saturday') }}
                       </a-select-option>
-                      <a-select-option value="Sunday">{{
-                        $t('queue.time.Sunday')
-                      }}</a-select-option>
+                      <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
                     </a-select>
                   </template>
                 </div>
 
                 <div class="cycle-line cycle-next-line">
                   <span class="cycle-next-text">
-                    {{ $t('queue.cycle.nextRun') }}
+                    {{ t('queue.cycle.nextRun') }}
                     {{ formatNextRun(record.schedule.NextRunAt) }}
                   </span>
                   <a-button
@@ -199,7 +191,7 @@
                     :disabled="!record.schedule.Enabled"
                     @click="runOnce(record)"
                   >
-                    {{ $t('queue.cycle.runOnce') }}
+                    {{ t('queue.cycle.runOnce') }}
                   </a-button>
                 </div>
               </div>
@@ -207,14 +199,14 @@
             <div class="row-cell actions-cell">
               <a-space>
                 <a-popconfirm
-                  :title="$t('queue.item.deleteConfirm')"
-                  :ok-text="$t('queue.ok')"
-                  :cancel-text="$t('queue.cancel')"
+                  :title="t('queue.item.deleteConfirm')"
+                  :ok-text="t('queue.ok')"
+                  :cancel-text="t('queue.cancel')"
                   @confirm="deleteQueueItem(record.id)"
                 >
                   <a-button size="middle" danger :disabled="locked">
                     <DeleteOutlined />
-                    {{ $t('queue.del') }}
+                    {{ t('queue.del') }}
                   </a-button>
                 </a-popconfirm>
               </a-space>
@@ -226,7 +218,7 @@
       <!-- 空状态 -->
       <div v-if="queueItems.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="@/assets/NoData.png" :alt="$t('queue.noData')" class="empty-image" />
+          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
         </div>
       </div>
     </div>

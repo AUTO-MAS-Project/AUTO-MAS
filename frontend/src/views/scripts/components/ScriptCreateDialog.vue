@@ -9,21 +9,21 @@
     :z-index="900"
     :footer="null"
     class="script-create-dialog"
-    :title="$t('scripts.create.title')"
+    :title="t('scripts.create.title')"
     @cancel="handleCancel"
   >
     <div class="create-layout">
       <section class="step-content">
         <template v-if="currentStep === 'type'">
           <StepHeading
-            :title="$t('scripts.create.typeHeading')"
-            :description="$t('scripts.create.typeHeadingDesc')"
+            :title="t('scripts.create.typeHeading')"
+            :description="t('scripts.create.typeHeadingDesc')"
           />
           <div class="list-toolbar single">
             <a-input
               v-model:value="typeKeyword"
               allow-clear
-              :placeholder="$t('scripts.create.typeSearch')"
+              :placeholder="t('scripts.create.typeSearch')"
             >
               <template #prefix><SearchOutlined /></template>
             </a-input>
@@ -35,7 +35,7 @@
           >
             <section v-if="typeSections.general.length" class="type-section">
               <div class="type-section-heading">
-                <span class="type-section-title">{{ $t('scripts.create.groupGeneral') }}</span>
+                <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
               </div>
               <div class="type-grid">
                 <label
@@ -60,7 +60,7 @@
               class="type-section specialized-section"
             >
               <div class="type-section-heading">
-                <span class="type-section-title">{{ $t('scripts.create.groupSpecialized') }}</span>
+                <span class="type-section-title">{{ t('scripts.create.groupSpecialized') }}</span>
               </div>
               <div class="type-grid">
                 <label
@@ -78,8 +78,8 @@
               </div>
             </section>
           </a-radio-group>
-          <a-empty v-else :description="$t('scripts.create.noTypeMatch')">
-            <a-button @click="clearTypeFilters">{{ $t('scripts.clearSearch') }}</a-button>
+          <a-empty v-else :description="t('scripts.create.noTypeMatch')">
+            <a-button @click="clearTypeFilters">{{ t('scripts.clearSearch') }}</a-button>
           </a-empty>
         </template>
 
@@ -88,8 +88,8 @@
              之后是特调的插入点 create.afterSourceStep -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
           <StepHeading
-            :title="$t('scripts.create.mfwSourceHeading')"
-            :description="$t('scripts.create.mfwSourceHeadingDesc')"
+            :title="t('scripts.create.mfwSourceHeading')"
+            :description="t('scripts.create.mfwSourceHeadingDesc')"
           />
           <component
             :is="createSections.source"
@@ -111,26 +111,24 @@
         <template v-else-if="currentStep === 'config'">
           <template v-if="configView === 'choice'">
             <StepHeading
-              :title="$t('scripts.create.sourceHeading')"
-              :description="$t('scripts.create.sourceHeadingDesc')"
+              :title="t('scripts.create.sourceHeading')"
+              :description="t('scripts.create.sourceHeadingDesc')"
             />
             <a-radio-group v-model:value="selectedConfigMode" class="choice-list">
               <label :class="['choice-row', { selected: selectedConfigMode === 'template' }]">
                 <a-radio value="template" />
                 <span class="choice-icon"><DatabaseOutlined /></span>
                 <span class="choice-copy">
-                  <span class="choice-title">{{ $t('scripts.create.fromTemplate') }}</span>
-                  <span class="choice-description">{{
-                    $t('scripts.create.fromTemplateDesc')
-                  }}</span>
+                  <span class="choice-title">{{ t('scripts.create.fromTemplate') }}</span>
+                  <span class="choice-description">{{ t('scripts.create.fromTemplateDesc') }}</span>
                 </span>
               </label>
               <label :class="['choice-row', { selected: selectedConfigMode === 'custom' }]">
                 <a-radio value="custom" />
                 <span class="choice-icon"><SettingOutlined /></span>
                 <span class="choice-copy">
-                  <span class="choice-title">{{ $t('scripts.create.custom') }}</span>
-                  <span class="choice-description">{{ $t('scripts.create.customDesc') }}</span>
+                  <span class="choice-title">{{ t('scripts.create.custom') }}</span>
+                  <span class="choice-description">{{ t('scripts.create.customDesc') }}</span>
                 </span>
               </label>
             </a-radio-group>
@@ -138,21 +136,21 @@
 
           <template v-else>
             <StepHeading
-              :title="$t('scripts.create.templateHeading')"
-              :description="$t('scripts.create.templateHeadingDesc')"
+              :title="t('scripts.create.templateHeading')"
+              :description="t('scripts.create.templateHeadingDesc')"
             />
             <div class="list-toolbar single">
               <a-input
                 v-model:value="templateKeyword"
                 allow-clear
-                :placeholder="$t('scripts.create.templateSearch')"
+                :placeholder="t('scripts.create.templateSearch')"
                 @update:value="scheduleTemplateSearch"
                 @press-enter="requestTemplates(1)"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
               <a-button :loading="templateLoading" @click="requestTemplates(templatePage)">{{
-                $t('scripts.create.reload')
+                t('scripts.create.reload')
               }}</a-button>
             </div>
             <a-alert
@@ -164,12 +162,12 @@
             >
               <template #action>
                 <a-button size="small" @click="requestTemplates(templatePage)">{{
-                  $t('scripts.create.retry')
+                  t('scripts.create.retry')
                 }}</a-button>
               </template>
             </a-alert>
             <div v-if="templateLoading" class="template-loading-state">
-              <a-spin size="large" :tip="$t('scripts.create.templateLoading')" />
+              <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
             </div>
             <template v-else-if="templates.length">
               <a-radio-group v-model:value="selectedTemplateKey" class="entity-list template-list">
@@ -186,14 +184,14 @@
                     <span class="template-meta">
                       <span
                         ><UserOutlined />
-                        {{ template.ownerUsername || $t('scripts.template.unknownAuthor') }}</span
+                        {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}</span
                       >
                       <span
                         ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
                       >
                     </span>
                     <span class="template-description">{{
-                      template.description || $t('scripts.noDescription')
+                      template.description || t('scripts.noDescription')
                     }}</span>
                   </span>
                   <a-radio :value="template.configKey" />
@@ -215,15 +213,15 @@
               v-else
               :description="
                 templateKeyword
-                  ? $t('scripts.create.noTemplateMatch')
-                  : $t('scripts.create.noTemplates')
+                  ? t('scripts.create.noTemplateMatch')
+                  : t('scripts.create.noTemplates')
               "
             >
               <a-button v-if="templateKeyword" @click="clearTemplateKeyword">{{
-                $t('scripts.clearSearch')
+                t('scripts.clearSearch')
               }}</a-button>
               <a-button v-else @click="chooseCustomConfig">{{
-                $t('scripts.create.switchToCustom')
+                t('scripts.create.switchToCustom')
               }}</a-button>
             </a-empty>
           </template>
@@ -231,24 +229,24 @@
 
         <template v-else>
           <StepHeading
-            :title="$t('scripts.create.confirmHeading')"
-            :description="$t('scripts.create.confirmHeadingDesc')"
+            :title="t('scripts.create.confirmHeading')"
+            :description="t('scripts.create.confirmHeadingDesc')"
           />
           <a-descriptions bordered :column="1" class="confirm-summary">
-            <a-descriptions-item :label="$t('scripts.create.labelMode')">
-              {{ $t('scripts.create.modeNew') }}
+            <a-descriptions-item :label="t('scripts.create.labelMode')">
+              {{ t('scripts.create.modeNew') }}
             </a-descriptions-item>
-            <a-descriptions-item :label="$t('scripts.create.labelType')">
-              {{ $t(getTypeOption(selectedType).titleKey) }}
+            <a-descriptions-item :label="t('scripts.create.labelType')">
+              {{ t(getTypeOption(selectedType).titleKey) }}
             </a-descriptions-item>
             <a-descriptions-item
               v-if="selectedType === 'General'"
-              :label="$t('scripts.create.labelSource')"
+              :label="t('scripts.create.labelSource')"
             >
               {{
                 selectedConfigMode === 'custom'
-                  ? $t('scripts.create.custom')
-                  : $t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
+                  ? t('scripts.create.custom')
+                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -259,10 +257,10 @@
     <div class="dialog-footer">
       <a-button :disabled="!canGoBack || submitting" @click="handleBack">
         <template #icon><ArrowLeftOutlined /></template>
-        {{ $t('scripts.create.back') }}
+        {{ t('scripts.create.back') }}
       </a-button>
       <a-space>
-        <a-button :disabled="submitting" @click="handleCancel">{{ $t('common.cancel') }}</a-button>
+        <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
         <a-button type="primary" :loading="submitting" :disabled="nextDisabled" @click="handleNext">
           {{ primaryButtonText }}
         </a-button>
