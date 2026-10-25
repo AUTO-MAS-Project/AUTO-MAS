@@ -334,7 +334,7 @@
               </span>
             </a-tooltip>
           </template>
-          <BooleanSelect
+          <a-select
             v-model:value="formData.Stage.ExtractReservedTrailblazePower"
             size="large"
             @change="
@@ -343,7 +343,10 @@
                 formData.Stage.ExtractReservedTrailblazePower
               )
             "
-          />
+          >
+            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-col>
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
@@ -356,11 +359,14 @@
               </span>
             </a-tooltip>
           </template>
-          <BooleanSelect
+          <a-select
             v-model:value="formData.Stage.UseFuel"
             size="large"
             @change="emitSave('Stage.UseFuel', formData.Stage.UseFuel)"
-          />
+          >
+            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-col>
       <a-col v-if="formData.Stage.UseFuel" :span="8">
@@ -389,7 +395,6 @@
 </template>
 
 <script setup lang="ts">
-import BooleanSelect from '@/components/BooleanSelect.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'

@@ -265,10 +265,15 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="srcConfig.Run.IfCheckGameUpdate"
+                <a-select
+                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
                   @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -281,11 +286,16 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="srcConfig.Run.IfAutoInstallGameApk"
+                <a-select
+                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
                   :disabled="!srcConfig.Run.IfCheckGameUpdate"
                   @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">

@@ -136,10 +136,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Start?.IfSelfStart"
+            <a-select
+              :value="settings.Start?.IfSelfStart"
+              size="large"
+              style="width: 100%"
               @change="(checked: any) => handleSettingChange('Start', 'IfSelfStart', checked)"
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="12">
@@ -150,12 +155,17 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Start?.IfMinimizeDirectly"
+            <a-select
+              :value="settings.Start?.IfMinimizeDirectly"
+              size="large"
+              style="width: 100%"
               @change="
                 (checked: any) => handleSettingChange('Start', 'IfMinimizeDirectly', checked)
               "
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>
@@ -193,10 +203,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Function?.IfSilence"
+            <a-select
+              :value="settings.Function?.IfSilence"
+              size="large"
+              style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfSilence', checked)"
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="8">
@@ -207,10 +222,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Function?.IfAllowSleep"
+            <a-select
+              :value="settings.Function?.IfAllowSleep"
+              size="large"
+              style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfAllowSleep', checked)"
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>
@@ -223,12 +243,17 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Function?.IfEnableTelemetry !== false"
+            <a-select
+              :value="settings.Function?.IfEnableTelemetry !== false"
+              size="large"
+              style="width: 100%"
               @change="
                 (checked: any) => handleSettingChange('Function', 'IfEnableTelemetry', checked)
               "
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="12">
@@ -254,10 +279,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Function?.IfBlockAd"
+            <a-select
+              :value="settings.Function?.IfBlockAd"
+              size="large"
+              style="width: 100%"
               @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
       </a-row>
@@ -276,10 +306,15 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Voice?.Enabled"
+            <a-select
+              :value="settings.Voice?.Enabled"
+              size="large"
+              style="width: 100%"
               @change="(checked: any) => handleSettingChange('Voice', 'Enabled', checked)"
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="12">
@@ -329,13 +364,18 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-switch
-              :checked="settings.Display?.IfEnableVirtualDisplay"
+            <a-select
+              :value="settings.Display?.IfEnableVirtualDisplay"
               :disabled="vddSwitchDisabled"
+              size="large"
+              style="width: 100%"
               @change="
                 (checked: any) => handleSettingChange('Display', 'IfEnableVirtualDisplay', checked)
               "
-            />
+            >
+              <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+              <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            </a-select>
           </div>
         </a-col>
         <a-col :span="6">

@@ -133,10 +133,14 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="generalConfig.Script.IfTrackProcess"
+                <a-select
+                  v-model:value="generalConfig.Script.IfTrackProcess"
+                  size="large"
                   @change="handleChange('Script', 'IfTrackProcess', $event)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -506,10 +510,14 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="generalConfig.Game.Enabled"
+                <a-select
+                  v-model:value="generalConfig.Game.Enabled"
+                  size="large"
                   @change="handleChange('Game', 'Enabled', $event)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -715,10 +723,14 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-switch
-                  v-model:checked="generalConfig.Game.IfForceClose"
+                <a-select
+                  v-model:value="generalConfig.Game.IfForceClose"
+                  size="large"
                   @change="handleChange('Game', 'IfForceClose', $event)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>

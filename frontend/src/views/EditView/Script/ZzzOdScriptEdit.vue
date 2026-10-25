@@ -82,10 +82,15 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-switch
-                  v-model:checked="zzzodConfig.Game.Enabled"
+                <a-select
+                  v-model:value="zzzodConfig.Game.Enabled"
+                  size="large"
+                  style="width: 100%"
                   @change="handleChange('Game', 'Enabled', zzzodConfig.Game.Enabled)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -98,13 +103,18 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-switch
-                  v-model:checked="zzzodConfig.Game.LaunchBeforeTask"
+                <a-select
+                  v-model:value="zzzodConfig.Game.LaunchBeforeTask"
+                  size="large"
+                  style="width: 100%"
                   :disabled="!zzzodConfig.Game.Enabled"
                   @change="
                     handleChange('Game', 'LaunchBeforeTask', zzzodConfig.Game.LaunchBeforeTask)
                   "
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
@@ -195,10 +205,15 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-switch
-                  v-model:checked="zzzodConfig.Game.CloseOnFinish"
+                <a-select
+                  v-model:value="zzzodConfig.Game.CloseOnFinish"
+                  size="large"
+                  style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', zzzodConfig.Game.CloseOnFinish)"
-                />
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
