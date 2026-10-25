@@ -20,6 +20,9 @@
 
 """魔改 AVD 更新器：查更新，「更新」一键下载、拼新版、核对、换上，启动恢复。
 
+本模块是更新引擎，调用 ``status`` / ``update`` / ``startup`` 须显式传入 ``UpdateHost``；
+MAS 应用入口统一使用 :mod:`app.core.avd_update`，由宿主装配配置、实例查询和进度发布。
+
 流程（每个根目录各走各的）：
 
 1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问
