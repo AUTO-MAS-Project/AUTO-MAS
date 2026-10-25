@@ -37,6 +37,7 @@ from typing import Any
 import json5
 import tomli_w
 import yaml
+from yaml import CSafeDumper, CSafeLoader
 
 from .logger import get_logger
 from .tools import decode_bytes
@@ -96,18 +97,20 @@ _CODECS: dict[str, tuple[Any, Any]] = {
         ],
     ),
     ".yaml": (
-        lambda d, encoding: yaml.safe_dump(
-            d, allow_unicode=True, sort_keys=False
+        lambda d, encoding: yaml.dump(
+            d, Dumper=CSafeDumper, allow_unicode=True, sort_keys=False
         ).encode(encoding),
-        lambda data: yaml.safe_load(decode_bytes(data)),
+        lambda data: yaml.load(decode_bytes(data), Loader=CSafeLoader),
     ),
     ".sanitized.yaml": (
-        lambda d, encoding: yaml.safe_dump(
-            d, allow_unicode=True, sort_keys=False
+        lambda d, encoding: yaml.dump(
+            d, Dumper=CSafeDumper, allow_unicode=True, sort_keys=False
         ).encode(encoding),
         # 容错读: 非原子写落盘的文件可能留下 NUL 填充, YAML 解析器遇到直接抛
         # ReaderError; 只取已知字段的调用方不应因此整个失败
-        lambda data: yaml.safe_load(decode_bytes(data).translate(_INVALID_YAML_CHARS)),
+        lambda data: yaml.load(
+            decode_bytes(data).translate(_INVALID_YAML_CHARS), Loader=CSafeLoader
+        ),
     ),
 }
 
@@ -603,7 +606,7 @@ def _is_empty_yaml_document(
 ) -> bool:
     """区分真正的空 YAML 文档与显式 ``null``。
 
-    ``yaml.safe_load`` 对这两种内容都返回 ``None``，但配置文件只应把空白、
+    YAML 解析器对这两种内容都返回 ``None``，但配置文件只应把空白、
     注释和文档标记视为空文档；显式 ``null`` 仍然是错误的根节点。
     """
 
@@ -615,15 +618,15 @@ def _is_empty_yaml_document(
     if normalized == ".sanitized.yaml":
         content = content.translate(_INVALID_YAML_CHARS)
     try:
-        events = list(yaml.parse(content))
-    except Exception:  # noqa: BLE001 - safe_load 已经给出统一损坏错误
+        events = list(yaml.parse(content, Loader=CSafeLoader))
+    except Exception:  # noqa: BLE001 - 读取入口已经给出统一损坏错误
         return False
 
     scalar_events = [
         event for event in events if isinstance(event, yaml.events.ScalarEvent)
     ]
     if not scalar_events:
-        # 空白和注释没有文档节点；safe_load 已确认内容为空。
+        # 空白和注释没有文档节点；前一次解析已确认内容为空。
         return True
     if len(scalar_events) != 1:
         return False

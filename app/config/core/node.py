@@ -422,17 +422,22 @@ class ConfigNode(BaseModel):
     @property
     def init_workspace(self) -> Self | None:
         """普通 ws 上的 init 层：``live._workspace._workspace``。"""
-        if self._workspace is None or self._workspace._workspace is None:
+        workspace = self._workspace
+        if workspace is None:
             return None
-        return cast(Self, self._workspace._workspace)
+        return cast(Self | None, workspace._workspace)
 
     @property
     def effective(self) -> Self:
         """读入口：init 层（``ws.ws``）→ 普通 ws → live。"""
-        if config_manager.in_init_transaction and self.init_workspace is not None:
-            return self.init_workspace
-        if config_manager.in_transaction and self._workspace is not None:
-            return cast(Self, self._workspace)
+        if config_manager.in_init_transaction:
+            init_workspace = self.init_workspace
+            if init_workspace is not None:
+                return init_workspace
+        if config_manager.in_transaction:
+            workspace = self._workspace
+            if workspace is not None:
+                return cast(Self, workspace)
         return self
 
     def _build_workspace(self) -> None:

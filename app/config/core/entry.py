@@ -699,8 +699,10 @@ class ConfigEntry(ConfigNode):
         ws._activation_state = src._activation_state
         ws._pending_payload = src._pending_payload
         ws._is_workspace = True
+        src_data = src.__dict__
+        live_data = self.__dict__
         for gname in self._cfg_group_fields:
-            src_g = cast(ConfigGroup, src.__dict__[gname])
+            src_g = cast(ConfigGroup, src_data[gname])
             # TODO(R11): 分组浅复制仍共享可变字段；后续与读取侧保护一并处理，
             # 仅深复制工作区无法阻止事务外通过原地修改写入 live。
             dup = src_g.model_copy()
@@ -708,39 +710,50 @@ class ConfigEntry(ConfigNode):
             object.__setattr__(dup, "_group", gname)
             object.__setattr__(ws, gname, dup)
         for cname in self._cfg_collection_fields:
-            object.__setattr__(ws, cname, self.__dict__[cname])
+            object.__setattr__(ws, cname, live_data[cname])
         return ws
 
     def _COMMIT(self) -> None:
-        if self._workspace is None:
+        ws = self._workspace
+        if ws is None:
             return
+        live_data = self.__dict__
+        staged_data = ws.__dict__
+        # 逐字段回填以保留 live 分组身份，外部可能持有其引用。
         for gname in self._cfg_group_fields:
-            live = cast(ConfigGroup, self.__dict__[gname])
-            staged = cast(ConfigGroup, self._workspace.__dict__[gname])
+            live = cast(ConfigGroup, live_data[gname])
+            staged = cast(ConfigGroup, staged_data[gname])
+            values: dict[str, object] = object.__getattribute__(staged, "__dict__")
             for fname in type(live).model_fields:
                 if fname.startswith("_"):
                     continue
-                object.__setattr__(live, fname, staged.__dict__.get(fname))
-        self._deleted = self._workspace._deleted
-        self._activation_state = self._workspace._activation_state
-        self._pending_payload = self._workspace._pending_payload
+                object.__setattr__(live, fname, values.get(fname))
+        self._deleted = ws._deleted
+        self._activation_state = ws._activation_state
+        self._pending_payload = ws._pending_payload
         self._workspace = None
 
     def _COMMIT_init(self) -> None:
-        if self._workspace is None or self._workspace._workspace is None:
+        ws = self._workspace
+        if ws is None:
             return
-        init = self._workspace._workspace
+        init = ws._workspace
+        if init is None:
+            return
+        dst_data = ws.__dict__
+        src_data = init.__dict__
         for gname in self._cfg_group_fields:
-            dst = cast(ConfigGroup, self._workspace.__dict__[gname])
-            src = cast(ConfigGroup, init.__dict__[gname])
+            dst = cast(ConfigGroup, dst_data[gname])
+            src = cast(ConfigGroup, src_data[gname])
+            values: dict[str, object] = object.__getattribute__(src, "__dict__")
             for fname in type(dst).model_fields:
                 if fname.startswith("_"):
                     continue
-                object.__setattr__(dst, fname, src.__dict__.get(fname))
-        self._workspace._deleted = init._deleted
-        self._workspace._activation_state = init._activation_state
-        self._workspace._pending_payload = init._pending_payload
-        self._workspace._workspace = None
+                object.__setattr__(dst, fname, values.get(fname))
+        ws._deleted = init._deleted
+        ws._activation_state = init._activation_state
+        ws._pending_payload = init._pending_payload
+        ws._workspace = None
 
     # ──────────────── 迭代与导出 ────────────────
 

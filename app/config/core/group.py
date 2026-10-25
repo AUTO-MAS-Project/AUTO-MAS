@@ -76,9 +76,11 @@ class ConfigGroup(BaseModel):
     # TODO(R11): 后续统一处理读取引用泄漏及嵌套可变值隔离；当前原地修改会绕过
     # 锁、校验、信号和事务回滚，不能视为受配置框架保护的写入。
     def __getattribute__(self, name: str) -> object:
+        if name.startswith("_"):
+            return object.__getattribute__(self, name)
         cls: type[ConfigGroup] = object.__getattribute__(self, "__class__")
         fields = cls.model_fields
-        if name.startswith("_") or name not in fields:
+        if name not in fields:
             return object.__getattribute__(self, name)
 
         state: dict[str, object] = object.__getattribute__(self, "__dict__")
