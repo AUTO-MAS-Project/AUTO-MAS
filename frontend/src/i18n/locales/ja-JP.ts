@@ -70,9 +70,9 @@ export default {
     inventoryHint:
       '在庫目標は育成完了後に残す数量です。在庫維持と育成は元の独立したスイッチと適用条件を維持します。',
     executionHint:
-      '両方を実行する場合は、育成素材、育成消費分と目標在庫の順に補充してから育成します。今回はこの順序で単発周回し、期限間近の回復剤は使わず、達成率順と最初の不足計画のみの設定は適用しません。元の在庫設定は保持します。',
+      '両方を実行する場合は、育成素材、育成消費分と目標在庫の順に補充してから育成します。今回はこの順序で単発周回し、期限間近の回復剤は使わず、達成率順と最初の不足プランのみの設定は適用しません。元の在庫設定は保持します。',
     sanityHint:
-      '元の固定ステージ、代替ステージ、計画表と作戦設定を使います。この段階だけを制御し、オフでも前の二段階は実行できます。',
+      '元の固定ステージ、代替ステージ、プランと作戦設定を使います。この段階だけを制御し、オフでも前の二段階は実行できます。',
     inventoryOff: '在庫維持はオフ',
     cultivateOff: '育成はオフ',
   },
@@ -400,7 +400,7 @@ export default {
     maaCultivateSkill3: 'スキル3',
     maaCultivateSkillName: '{name}（{skill}）',
     maaCultivateHint:
-      '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
+      '選択したオペレーターの育成素材を周回し、目標達成後に自動でプランから削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
     maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
     maaCultivateImportClipboard: 'クリップボードからインポート',
@@ -438,7 +438,7 @@ export default {
     maaCultivateElite1: '昇進 1',
     maaCultivateElite2: '昇進 2',
     maaCultivateRemove: '削除',
-    maaCultivateSkipActivity: 'イベント中は育成計画をスキップ',
+    maaCultivateSkipActivity: 'イベント中は育成プランをスキップ',
     maaCultivateAutoRaise: 'オペレーターを自動育成',
     maaCultivateAutoRaiseOn: '自動育成：オン',
     maaCultivateAutoRaiseOff: '自動育成：オフ',
@@ -454,7 +454,7 @@ export default {
     maaCultivateAutoRaiseVersionHint: '自動育成には MAA v6.19.0-beta.1 以降が必要です',
     maaCultivateMasterySkillHint:
       '特化にはスキルレベル7が必要です。特化目標を選ぶとスキルレベルの目標が自動で7になり、特化目標を解除してもスキルレベルの目標は残ります。',
-    maaCultivateSkipResource: '資源収集期間中は育成計画をスキップ',
+    maaCultivateSkipResource: '資源収集期間中は育成プランをスキップ',
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
       '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。',
@@ -469,7 +469,7 @@ export default {
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
-    maaCultivatePreviewStageHeading: '周回計画',
+    maaCultivatePreviewStageHeading: '周回プラン',
     maaCultivatePreviewDemandHeading: '素材需要',
     maaCultivatePreviewDemandNone: '必要な素材はありません',
     maaCultivatePreviewUnobtainable:
@@ -515,8 +515,8 @@ export default {
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
     maaDepotSettings: '在庫維持の設定',
-    maaDepotPlanCount: '{count} 件の計画',
-    maaDepotEmpty: '計画はまだ追加されていません',
+    maaDepotPlanCount: '{count} 件のプラン',
+    maaDepotEmpty: 'プランはまだ追加されていません',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
     maaInfrastModeHint:
@@ -627,7 +627,7 @@ export default {
     stageConfiguration: 'ステージ設定',
     stagnantShadow: '凝結虚影',
     deleteStockKeepingPlan: '在庫維持プランを削除',
-    maaDepotDragSortHint: 'ドラッグで計画の順序を変更',
+    maaDepotDragSortHint: 'ドラッグでプランの順序を変更',
     maaDepotMoveUp: 'プラン行を上へ移動',
     maaDepotMoveDown: 'プラン行を下へ移動',
     selectPlanRows: 'すべてのプラン行を選択',
@@ -2038,10 +2038,10 @@ export default {
     baahConfigNamePlaceholder: '通常使用する設定を選択してください',
     baahStageMode: 'ステージプラン',
     baahStageModeHint:
-      '全体・週間・複数日ローテーションの計画表でステージを設定します。「固定」はBAAHの設定を使います。イベントステージはBAAH側で設定してください。',
+      '全体・週間・複数日ローテーションのプランでステージを設定します。「固定」はBAAHの設定を使います。イベントステージはBAAH側で設定してください。',
     baahIfEventFirst: 'イベントステージ優先',
     baahIfEventFirstHint:
-      'イベント開催中は計画表を使わず、BAAHで設定したイベントの掃討のみ実行します。イベントがない場合は計画表を使います。他の日課は変更せず、日程を取得できない場合は元の計画を使います。',
+      'イベント開催中はプランを使わず、BAAHで設定したイベントの掃討のみ実行します。イベントがない場合はプランを使います。他の日課は変更せず、日程を取得できない場合は元のプランを使います。',
     baahActivityLineType: 'イベント日程のサーバー',
     baahActivityLineTypeHint:
       'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください。「イベントステージ優先」もここで選んだサーバーで開催中かどうかを判定します',
@@ -2655,8 +2655,8 @@ export default {
     zzzodTaskConfigSaveFailed: 'タスク設定の保存に失敗しました',
     zzzodTaskConfigSaved: 'タスク設定を保存しました',
     zzzodTaskJumpHint: 'クリックすると一条龍で詳細設定を行えます',
-    zzzodPlanAdd: '計画を追加',
-    zzzodPlanDelete: '計画を削除',
+    zzzodPlanAdd: 'プランを追加',
+    zzzodPlanDelete: 'プランを削除',
     zzzodPlanRunTimes: '{count} 回実行済み',
     zzzodPredefinedTeams: '予備編成',
     zzzodPredefinedTeamsHint:
@@ -3032,7 +3032,7 @@ export default {
     wutheringWavesUpdateConnecting: '更新タスクに接続しています...',
     stageConfigMode: 'ステージ設定モード',
     stageConfigModeHint:
-      '「固定」はここでステージを設定します。「計画表」は計画に従って自動で切り替えます。',
+      '「固定」はここでステージを設定します。「プラン」はそのプランに従って自動で切り替えます。',
     medicineNumb: '理性回復剤の使用数',
     seriesNumb: '連戦回数',
     seriesNumbHint:
@@ -4197,7 +4197,7 @@ export default {
     configTitle: 'キュー設定',
     namePlaceholder: 'キュー名を入力してください',
     defaultName: '新規キュー',
-    newQueueName: '新規スケジュールキュー',
+    newQueueName: '新規キュー',
     unnamedIndexed: 'キュー {index}',
     runOnStart: '起動時に実行',
     runOnStartTip: 'アプリ起動時にこのキューを自動実行します',
@@ -4302,8 +4302,7 @@ export default {
       updateDaysFailed: '曜日を更新できませんでした: {error}',
       deleteTimeFailed: 'スケジュールを削除できませんでした: {error}',
       reorderTimeFailed: 'スケジュールの並び順を更新できませんでした: {error}',
-      created:
-        '新しいスケジュールキューを作成しました。分かりやすい名前に変更することをおすすめします。',
+      created: '新しいキューを作成しました。分かりやすい名前に変更することをおすすめします。',
       createFailed: 'キューを作成できませんでした: {error}',
       addQueueFailed: 'キューを追加できませんでした: {error}',
       deleted: 'キューを削除しました',

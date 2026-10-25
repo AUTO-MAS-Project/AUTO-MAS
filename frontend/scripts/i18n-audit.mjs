@@ -7,11 +7,12 @@
 //   yarn audit:i18n --check           超过阈值就退出 1（CI 用）
 //   yarn audit:i18n --max-missing=0   单项阈值，可覆盖 --check 的默认值
 //
-// 四类问题：
+// 五类问题：
 //   缺译   非源语言缺 key，运行时会静默回退到中文
 //   占位符 {name} 之类与源语言不一致，用户会看到字面量 {name}
 //   死词条 源码里找不到引用的 key（动态拼接的 key 由前缀/后缀规则兜住）
 //   硬编码 模板里写死的中文，切语言后不变
+//   术语   同一个概念在不同文案里写成两种说法（术语表见 src/i18n/README.md）
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -48,6 +49,14 @@ const TEXT_ATTRIBUTES = new Set([
 
 // 只在开发环境暴露的页面，里面的中文不进用户可见口径
 const DEV_ONLY = /(^|\/)(devtools|OCRdev|TestRouter|UpdateDownloadDev|OverlayMaskDev)(\/|\.|$)/i
+
+// 术语表里已经统一过的说法，出现旧说法就算偏离。改术语时同步改这张表和 README §6。
+const FORBIDDEN_TERMS = [
+  { locale: 'zh-CN', pattern: /调度台/, hint: '统一为「运行面板」' },
+  { locale: 'en-US', pattern: /\bconsole\b/i, hint: '统一为 run panel' },
+  { locale: 'ja-JP', pattern: /計画/, hint: '统一为「プラン」' },
+  { locale: 'ja-JP', pattern: /スケジュールキュー/, hint: '统一为「キュー」' },
+]
 
 // 按规则豁免的硬编码中文：游戏内容名称没有官方外文译名，翻错比不翻更糟
 const HARDCODED_ALLOWLIST = [
@@ -189,6 +198,13 @@ const audit = async () => {
     key => namespaces.has(key.split('.')[0]) && !sourceKeys.has(key)
   )
 
+  // ---- 术语一致性 ----
+  const terms = FORBIDDEN_TERMS.flatMap(rule =>
+    [...locales[rule.locale]]
+      .filter(([, value]) => rule.pattern.test(value))
+      .map(([key, value]) => ({ locale: rule.locale, key, value, hint: rule.hint }))
+  )
+
   const unused = [...sourceKeys].filter(key => !literalKeys.has(key) && !covered(key))
   const looseUnused = [...sourceKeys].filter(
     key => literalKeys.has(key) && !calledKeys.has(key) && !covered(key)
@@ -252,6 +268,7 @@ const audit = async () => {
     missing,
     placeholders,
     unknownSourceKeys,
+    terms,
     unused,
     looseUnused,
     hardcoded: reportable,
@@ -332,6 +349,12 @@ const report = result => {
         entry.actual.join('}{') +
         '}'
     )
+  }
+
+  lines.push('')
+  lines.push('术语偏离词表 ' + result.terms.length + ' 处（术语表见 src/i18n/README.md）')
+  for (const entry of result.terms.slice(0, verbose ? Infinity : 10)) {
+    lines.push('  ' + pad(entry.locale, 8) + pad(entry.key, 46) + entry.value + '  → ' + entry.hint)
   }
 
   lines.push('')
@@ -420,6 +443,7 @@ const main = async () => {
       actual: Object.values(result.placeholders).reduce((sum, entries) => sum + entries.length, 0),
       max: numberArg('max-placeholder', 0),
     },
+    { name: '术语偏离', actual: result.terms.length, max: numberArg('max-terms', 0) },
     { name: '死词条', actual: result.unused.length, max: numberArg('max-unused', 0) },
     { name: '硬编码中文', actual: result.hardcoded.length, max: numberArg('max-hardcoded', 0) },
   ]
