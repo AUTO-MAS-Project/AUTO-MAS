@@ -714,9 +714,10 @@ class HistoryStore:
         connection: sqlite3.Connection,
         query: HistoryRecordQuery,
         *,
+        columns: tuple[str, ...],
         limited: bool = True,
     ) -> list[sqlite3.Row]:
-        """按查询条件读取记录行，并按时间倒序排列。"""
+        """按查询条件读取所需列，并按时间倒序排列。"""
 
         where: list[str] = []
         args: list[object] = []
@@ -730,7 +731,7 @@ class HistoryStore:
             if value is not None:
                 where.append(f"{column} {operator} ?")
                 args.append(value)
-        statement = "SELECT * FROM records"
+        statement = f"SELECT {', '.join(columns)} FROM records"
         if where:
             statement += " WHERE " + " AND ".join(where)
         statement += " ORDER BY timestamp DESC, id DESC"
@@ -887,6 +888,17 @@ class HistoryStore:
                 rows = self._select(
                     connection,
                     HistoryRecordQuery(start_date=start_date, end_date=end_date),
+                    columns=(
+                        "id",
+                        "time",
+                        "date",
+                        "username",
+                        "script_name",
+                        "status",
+                        "message",
+                        "data",
+                        "storage_errors",
+                    ),
                     limited=False,
                 )
                 for row in reversed(rows):
@@ -966,6 +978,7 @@ class HistoryStore:
                 for row in self._select(
                     connection,
                     HistoryRecordQuery(start_date=day, end_date=day),
+                    columns=("id", "time", "username", "status", "message"),
                     limited=False,
                 ):
                     overview = result.setdefault(

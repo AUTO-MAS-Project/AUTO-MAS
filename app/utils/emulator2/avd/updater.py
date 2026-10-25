@@ -20,6 +20,9 @@
 
 """魔改 AVD 更新器：查更新，「更新」一键下载、拼新版、核对、换上，启动恢复。
 
+本模块是更新引擎，调用 ``status`` / ``update`` / ``startup`` 须显式传入 ``UpdateHost``；
+MAS 应用入口统一使用 :mod:`app.core.avd_update`，由宿主装配配置、实例查询和进度发布。
+
 流程（每个根目录各走各的）：
 
 1. **查更新**：按 :func:`.update_source.update_sources` 的顺序问（先 Mirror 酱，查不到或出错再问
@@ -68,7 +71,8 @@ import shutil
 import time
 import zipfile
 import zlib
-from dataclasses import asdict, dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -84,7 +88,6 @@ from . import update_stage as stage
 from .components import (
     MetadataUnreadable,
     local_sdk_root,
-    manager_key_exe,
     read_metadata_strict,
     root_key,
 )
@@ -129,7 +132,7 @@ _MIRROR_LINK_REUSE_SECONDS = 25 * 60
 
 
 @dataclass
-class _Progress:
+class UpdateProgress:
     """推给界面的进度：``stage`` 是当前在做的事，``status`` 是 running / success / failed / idle。"""
 
     stage: str = "idle"
@@ -139,6 +142,27 @@ class _Progress:
     downloadedBytes: int | None = None
     totalBytes: int | None = None
     speedBytesPerSec: float | None = None
+
+
+@dataclass(frozen=True)
+class UpdateSettings:
+    """宿主当前的更新策略；凭据不进入状态快照或对象表示。"""
+
+    github_only: bool
+    automas_version: str
+    mirror_cdk: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class UpdateHost:
+    """更新器所需的宿主能力，不持有配置总管、管理器或消息总线。"""
+
+    settings: Callable[[], UpdateSettings]
+    proxy: Callable[[], httpx.Proxy | None]
+    managed_roots: Callable[[], list[Path]]
+    running_instances: Callable[[Path], list[str]]
+    opening_instances: Callable[[Path], list[str]]
+    publish_progress: Callable[[Path, UpdateProgress], Awaitable[None]]
 
 
 @dataclass
@@ -157,7 +181,7 @@ class _Runtime:
         self.root = root
         self.lock = asyncio.Lock()
         self.job: asyncio.Task[None] | None = None
-        self.progress = _Progress()
+        self.progress = UpdateProgress()
         self.published_at = 0.0
         #: 上次没做完的换上已经按 ``state.json`` 收拾过（拿着 ``lock`` 做，见 :func:`_ensure_recovered`）
         self.recovered = False
@@ -180,7 +204,7 @@ _remote: RemoteRelease | None = None
 _remote_at = 0.0
 _remote_failed_at = 0.0
 _remote_error = ""
-#: 上面这份缓存是在哪种更新源设置下查的（``_github_only()`` 的值）；设置一改就作废。
+#: 上面这份缓存是在哪种更新源设置下查的（宿主 ``settings().github_only`` 的值）；设置一改就作废。
 _remote_github_only: bool | None = None
 _check_lock = asyncio.Lock()
 
@@ -203,30 +227,21 @@ def _set(
     message: str = "",
     **fields: Any,
 ) -> None:
-    runtime.progress = _Progress(
+    runtime.progress = UpdateProgress(
         stage=stage_name, status=status, message=message, **fields
     )
 
 
-async def _publish(runtime: _Runtime, *, force: bool = True) -> None:
+async def _publish(runtime: _Runtime, *, force: bool = True, host: UpdateHost) -> None:
     now = time.monotonic()
     if not force and now - runtime.published_at < _PUBLISH_INTERVAL_SECONDS:
         return
     runtime.published_at = now
-    from app.core.ws import Publisher, protocol
-    from app.models.schema import WSAvdUpdateProgressData
-
-    await Publisher.send(
-        id=protocol.ID_EMULATOR_MANAGER,
-        type=protocol.AVD_UPDATE_PROGRESS,
-        data=WSAvdUpdateProgressData(
-            root=str(runtime.root), **asdict(runtime.progress)
-        ),
-    )
+    await host.publish_progress(runtime.root, runtime.progress)
 
 
 def _thread_progress(
-    runtime: _Runtime, stage_name: str, message: str
+    runtime: _Runtime, stage_name: str, message: str, *, host: UpdateHost
 ) -> stage.Progress:
     """给线程里的解包 / 核对用的进度回调：改进度，并按节流把消息投回事件循环发出去。"""
     loop = asyncio.get_running_loop()
@@ -243,7 +258,7 @@ def _thread_progress(
         now = time.monotonic()
         if now - runtime.published_at >= _PUBLISH_INTERVAL_SECONDS:
             runtime.published_at = now
-            asyncio.run_coroutine_threadsafe(_publish(runtime), loop)
+            asyncio.run_coroutine_threadsafe(_publish(runtime, host=host), loop)
 
     return report
 
@@ -251,19 +266,13 @@ def _thread_progress(
 # ---- 根目录 ----------------------------------------------------------------
 
 
-def _managed_roots() -> list[Path]:
-    from .service import _avd_roots
-
-    return _avd_roots()
-
-
-async def _managed(root: str) -> Path:
+async def _managed(root: str, *, host: UpdateHost) -> Path:
     """只认 Emulator 2.0 里已经加进来的魔改 AVD 根目录：更新会改名目录，不能对任意路径动手。"""
     text = str(root or "").strip()
     if not text or not Path(text).is_absolute():
         raise ValueError("请给出魔改 AVD 根目录的完整路径")
     key = root_key(text)
-    for managed in await asyncio.to_thread(_managed_roots):
+    for managed in await asyncio.to_thread(host.managed_roots):
         if root_key(managed) == key:
             return managed
     raise ValueError(f"{text} 还没有作为魔改 AVD 加进模拟器管理，不能更新")
@@ -288,34 +297,6 @@ def _ensure_updatable(root: Path) -> None:
         raise ValueError(reason)
 
 
-def _opening_instances(root: Path) -> list[str]:
-    """这个根目录下正在开机（``open`` 还没做完，含开机前检查到拉起 emulator.exe 之间那几秒）的实例。"""
-    from .manager import _OPENING
-
-    prefix = f"{root_key(root)}|"
-    return sorted(
-        key[len(prefix) :] for key in list(_OPENING) if key.startswith(prefix)
-    )
-
-
-def _running_instances(root: Path) -> list[str]:
-    """这个根目录下开着的实例（原生索引）。
-
-    实例按 AVD 名 + 控制台端口认，各根目录的名字和端口是同一套；只算 qemu 可执行文件就在
-    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
-    """
-    from .manager import AvdManager
-
-    ours = {item["pid"] for item in stage.processes_using(root)}
-    running = AvdManager(manager_key_exe(root), 60, False)._scan_processes()
-    return sorted(idx for idx, process in running.items() if process.pid in ours)
-
-
-def _busy_instances(root: Path) -> list[str]:
-    """开着或正在开机的实例：有就不能更新。"""
-    return sorted(set(_running_instances(root)) | set(_opening_instances(root)))
-
-
 def update_in_progress(root: str | Path) -> bool:
     """这个根目录正在更新（从点「更新」开始到结束）：开机一律拒绝（``manager._launch``）。"""
     return root_key(root) in _updating
@@ -324,23 +305,8 @@ def update_in_progress(root: str | Path) -> bool:
 # ---- 查更新 ----------------------------------------------------------------
 
 
-def _mirror_cdk() -> str:
-    """MAS 全局的 Mirror 酱 CDK（和 MAS 自更新、MAA 同一个，不另设）。只放进 Mirror 酱的请求参数。"""
-    from app.core import Config
-
-    return str(Config.setting.Update.MirrorChyanCDK or "").strip()
-
-
-def _github_only() -> bool:
-    """MAS 设置的「更新源」（``Update.Source``）选了 GitHub 时只走 GitHub，查更新和下载都不碰 Mirror 酱；
-    选别的源时先问 Mirror 酱、再问 GitHub。"""
-    from app.core import Config
-
-    return Config.setting.Update.Source == "GitHub"
-
-
 async def _latest(
-    *, force: bool, current: ModAvdVersion | None = None
+    *, force: bool, current: ModAvdVersion | None = None, host: UpdateHost
 ) -> RemoteRelease:
     """最新一版。4 小时内查过就用缓存；查失败后 10 分钟内不自动重试（``force`` 例外）。
 
@@ -350,7 +316,7 @@ async def _latest(
     global _remote, _remote_at, _remote_failed_at, _remote_error, _remote_github_only
     async with _check_lock:
         now = time.monotonic()
-        github_only = _github_only()
+        github_only = host.settings().github_only
         if github_only != _remote_github_only:
             _remote, _remote_failed_at, _remote_error = None, 0.0, ""
             _remote_github_only = github_only
@@ -364,12 +330,10 @@ async def _latest(
                 if _remote is not None:
                     return _remote
                 raise UpdateSourceError(_remote_error)
-        from app.core import Config
-
         errors: list[str] = []
         for source in update_sources(github_only=github_only):
             try:
-                release = await source.latest(proxy=Config.proxy, current=current)
+                release = await source.latest(proxy=host.proxy(), current=current)
             except Exception as e:  # noqa: BLE001 - 一个源不行换下一个，全不行才报
                 errors.append(f"{source.name}: {e}")
                 logger.info(f"从 {source.name} 查 ModAVD 最新版本没成: {e}")
@@ -399,22 +363,20 @@ def _newer(release: RemoteRelease | None, local: ModAvdVersion | None) -> bool:
     return release is not None and (local is None or release.version > local)
 
 
-def _automas_block(release: RemoteRelease | None) -> str:
+def _automas_block(release: RemoteRelease | None, *, host: UpdateHost) -> str:
     """这一版要求的 MAS 版本比当前高时，返回那个版本号。"""
     if release is None:
         return ""
-    from app.core import Config
-
     return (
         release.min_automas
-        if automas_too_old(release.min_automas, Config.VERSION)
+        if automas_too_old(release.min_automas, host.settings().automas_version)
         else ""
     )
 
 
-def _automas_refusal(release: RemoteRelease) -> str:
+def _automas_refusal(release: RemoteRelease, *, host: UpdateHost) -> str:
     """这一版要求的 MAS 比当前新时给用户的那句话；不要求时返回空串。"""
-    required = _automas_block(release)
+    required = _automas_block(release, host=host)
     if not required:
         return ""
     return f"{release.version.display} 需要 AUTO-MAS {required} 或更新的版本，请先更新 AUTO-MAS"
@@ -437,7 +399,9 @@ def _staged_version(root: Path) -> str:
 # ---- 状态快照 --------------------------------------------------------------
 
 
-def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
+def _snapshot_sync(
+    root: Path, runtime: _Runtime, *, host: UpdateHost
+) -> dict[str, Any]:
     local = local_version(root)
     reason = _not_updatable_reason(root)
     state = stage.read_state(root)
@@ -456,30 +420,34 @@ def _snapshot_sync(root: Path, runtime: _Runtime) -> dict[str, Any]:
         "latestVersion": str(release.version) if release else "",
         "latestBuild": release.version.label if release else "",
         "updateAvailable": newer,
-        "requiredAutoMas": _automas_block(release) if newer else "",
+        "requiredAutoMas": _automas_block(release, host=host) if newer else "",
         # Mirror 酱没给下载地址（没填 CDK）时不知道大小
         "assetSize": release.asset.size if release and release.asset else 0,
         "phase": state.get("phase", stage.PHASE_IDLE),
         "preparedVersion": _staged_version(root) if not reason else "",
         # 开着或正在开机的实例：有就不能更新（界面据此先提示关掉，不弹确认）
-        "runningInstances": len(_busy_instances(root)) if not reason else 0,
+        "runningInstances": len(
+            set(host.running_instances(root)) | set(host.opening_instances(root))
+        )
+        if not reason
+        else 0,
         "busy": runtime.busy,
         "progress": asdict(runtime.progress),
         "lastResult": state.get("lastResult") or None,
     }
 
 
-async def status(root: str, *, check: bool = False) -> dict[str, Any]:
+async def status(root: str, *, check: bool = False, host: UpdateHost) -> dict[str, Any]:
     """一个根目录的更新现状。``check`` 为真时（界面上的「检查更新」）先强制查一次最新版本（不走缓存、
     不带 CDK；查不到写在 ``checkError``，不算接口失败）。"""
-    path = await _managed(root)
+    path = await _managed(root, host=host)
     if check and not _not_updatable_reason(path):
         try:
             current = await asyncio.to_thread(local_version, path)
-            await _latest(force=True, current=current)
+            await _latest(force=True, current=current, host=host)
         except Exception as e:  # noqa: BLE001 - 查不到不算接口失败
             logger.warning(f"检查魔改 AVD 更新失败: {e}")
-    return await asyncio.to_thread(_snapshot_sync, path, _runtime(path))
+    return await asyncio.to_thread(_snapshot_sync, path, _runtime(path), host=host)
 
 
 # ---- 选包 ------------------------------------------------------------------
@@ -529,7 +497,7 @@ def _reusable_link(
 
 
 async def _pick_package(
-    runtime: _Runtime, release: RemoteRelease, *, mirror: bool = True
+    runtime: _Runtime, release: RemoteRelease, *, mirror: bool = True, host: UpdateHost
 ) -> RemoteRelease:
     """这次下哪个包，返回带下载链接的那一版。
 
@@ -539,12 +507,10 @@ async def _pick_package(
     不带，只要全量包。Mirror 酱给不了（CDK 过期、无效、次数用完、不含此资源，或出错）就用 GitHub，原因
     记进 ``runtime.notice``；8001（这个平台没有包）不提示。「更新源」选 GitHub 时不用 CDK、不问 Mirror 酱。
     """
-    from app.core import Config
-
     root = runtime.root
     local = await asyncio.to_thread(local_version, root)
-    github_only = _github_only()
-    cdk = "" if github_only else _mirror_cdk()
+    github_only = host.settings().github_only
+    cdk = "" if github_only else host.settings().mirror_cdk
     if cdk and mirror:
         reused = _reusable_link(runtime, release.version, local)
         if reused is not None:
@@ -557,12 +523,12 @@ async def _pick_package(
         patchable = await asyncio.to_thread(stage.patch_base_ok, root, local)
         try:
             picked = await MirrorChyanSource(cdk, mirror_api_root()).package(
-                proxy=Config.proxy, current=local if patchable else None
+                proxy=host.proxy(), current=local if patchable else None
             )
             if picked.asset is not None and picked.asset.incremental and not patchable:
                 raise MirrorChyanError("没给全量包")
             if picked.asset is not None and _newer(picked, local):
-                refusal = _automas_refusal(picked)
+                refusal = _automas_refusal(picked, host=host)
                 if refusal:
                     raise RuntimeError(refusal)
                 runtime.mirror_link = _MirrorLink(picked, time.monotonic())
@@ -582,7 +548,7 @@ async def _pick_package(
     else:
         try:
             github = await GitHubReleaseSource(github_api_url()).latest(
-                proxy=Config.proxy
+                proxy=host.proxy()
             )
         except UpdateSourceError as e:
             if github_only:
@@ -594,7 +560,7 @@ async def _pick_package(
         raise RuntimeError(
             f"GitHub 上的最新版本是 {github.version.display}，不比装着的 {_shown(local)} 新"
         )
-    refusal = _automas_refusal(github)
+    refusal = _automas_refusal(github, host=host)
     if refusal:
         raise RuntimeError(refusal)
     return github
@@ -610,7 +576,9 @@ def _error_text(e: BaseException) -> str:
     return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
 
 
-async def _download(runtime: _Runtime, release: RemoteRelease) -> Path:
+async def _download(
+    runtime: _Runtime, release: RemoteRelease, *, host: UpdateHost
+) -> Path:
     """下载 ``release`` 的包，按发布记录 / Mirror 酱给的 SHA-256 核对。
 
     - GitHub：断了续传（``.part`` 留着，下次点「更新」接着下）。请求带了 Range 而服务器回 200 时，
@@ -644,8 +612,6 @@ async def _download(runtime: _Runtime, release: RemoteRelease) -> Path:
             return final
         final.unlink()
 
-    from app.core import Config
-
     if mirror:
         part.unlink(missing_ok=True)
     received = max(part.stat().st_size, 0) if part.is_file() else 0
@@ -672,7 +638,7 @@ async def _download(runtime: _Runtime, release: RemoteRelease) -> Path:
             totalBytes=asset.size,
             speedBytesPerSec=speed,
         )
-        await _publish(runtime, force=False)
+        await _publish(runtime, force=False, host=host)
 
     # 地址只记主机名：Mirror 酱的下载地址是一次性的
     logger.info(
@@ -683,7 +649,7 @@ async def _download(runtime: _Runtime, release: RemoteRelease) -> Path:
     digest: Any = None
     attempt = 0
     async with httpx.AsyncClient(
-        proxy=Config.proxy,
+        proxy=host.proxy(),
         follow_redirects=True,
         timeout=_DOWNLOAD_TIMEOUT,
         headers={"User-Agent": "AutoMasGui"},
@@ -802,7 +768,11 @@ def _range_allowed(root: Path, release: RemoteRelease) -> bool:
 
 
 async def _stage_by_range(
-    runtime: _Runtime, release: RemoteRelease, target: dict[str, Any]
+    runtime: _Runtime,
+    release: RemoteRelease,
+    target: dict[str, Any],
+    *,
+    host: UpdateHost,
 ) -> dict[str, Any] | None:
     """GitHub 的整包按区间只取变了的文件（:mod:`.update_range`），没变的从本地复制，拼出和整包解出来一样的
     ``pkg``，再照样按新版清单逐文件核对、拼 ``stage``。
@@ -810,15 +780,13 @@ async def _stage_by_range(
     服务器不认 Range、变了的太多（取回量超过整包的 40% 或 3000 个文件）、取回的数据不对、拼好后核对不过，
     或任何意外，都丢掉这一批、返回 ``None``，调用方改下整包（只退这一次）。
     """
-    from app.core import Config
-
     root = runtime.root
     asset = release.asset
     assert asset is not None
     pkg = stage.pkg_dir(root)
     try:
         async with httpx.AsyncClient(
-            proxy=Config.proxy,
+            proxy=host.proxy(),
             follow_redirects=True,
             timeout=_DOWNLOAD_TIMEOUT,
             headers={"User-Agent": "AutoMasGui"},
@@ -840,25 +808,25 @@ async def _stage_by_range(
                     downloadedBytes=min(done, total),
                     totalBytes=total,
                 )
-                await _publish(runtime, force=done == 0)
+                await _publish(runtime, force=done == 0, host=host)
 
             await on_bytes(0, plan.fetch_bytes)
             await update_range.fetch_changed(client, plan, pkg, on_bytes=on_bytes)
         copying = "正在拼新版（没变的文件从本地复制）"
         _set(runtime, "extracting", message=copying)
-        await _publish(runtime)
+        await _publish(runtime, host=host)
         await asyncio.to_thread(
             update_range.copy_unchanged,
             root,
             plan,
             pkg,
-            _thread_progress(runtime, "extracting", copying),
+            _thread_progress(runtime, "extracting", copying, host=host),
         )
         staged = await asyncio.to_thread(
             _verify_and_stage,
             root,
             target,
-            _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+            _thread_progress(runtime, "verifying", "正在按清单核对每个文件", host=host),
         )
         return {**staged, "files": len(plan.fetch) + len(plan.copy), "mode": "range"}
     except update_range.RangeUnavailable as e:
@@ -893,7 +861,9 @@ def _discard_download(archive: Path) -> None:
         logger.warning(f"删除核对不过的 {archive} 失败，下次会重新核对: {e}")
 
 
-async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str, Any]:
+async def _stage_release(
+    runtime: _Runtime, release: RemoteRelease, *, host: UpdateHost
+) -> dict[str, Any]:
     """下载 ``release`` 的包、拼好核对过，``state`` 停在 ``staged``，返回写进状态的 ``staged``。
     GitHub 的整包先试按区间只取变了的文件（:func:`_stage_by_range`），不行再下整包。
 
@@ -910,7 +880,7 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
     try:
         staged = None
         if await asyncio.to_thread(_range_allowed, root, release):
-            staged = await _stage_by_range(runtime, release, target)
+            staged = await _stage_by_range(runtime, release, target, host=host)
         if staged is None:
             _set(
                 runtime,
@@ -918,17 +888,19 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
                 message=_with_notice(runtime, label),
                 totalBytes=release.asset.size,
             )
-            await _publish(runtime)
-            archive = await _download(runtime, release)
+            await _publish(runtime, host=host)
+            archive = await _download(runtime, release, host=host)
             _set(runtime, "extracting", message=unpack)
-            await _publish(runtime)
+            await _publish(runtime, host=host)
             staged = await asyncio.to_thread(
                 _stage_sync,
                 runtime,
                 archive,
                 target,
-                _thread_progress(runtime, "extracting", unpack),
-                _thread_progress(runtime, "verifying", "正在按清单核对每个文件"),
+                _thread_progress(runtime, "extracting", unpack, host=host),
+                _thread_progress(
+                    runtime, "verifying", "正在按清单核对每个文件", host=host
+                ),
             )
         return await asyncio.to_thread(stage.finish_staging, root, target, staged)
     except BaseException as e:
@@ -940,7 +912,9 @@ async def _stage_release(runtime: _Runtime, release: RemoteRelease) -> dict[str,
         raise
 
 
-async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
+async def _prepare(
+    runtime: _Runtime, release: RemoteRelease, *, host: UpdateHost
+) -> None:
     """选包、下载并拼好新版，结束时 ``state`` 停在 ``staged``。调用方拿着这个根目录的锁。
 
     Mirror 酱的包不对（sha256 对不上、增量包拼出来核对不过、包坏了）：丢掉暂存、作废这个链接，这次改走
@@ -970,9 +944,9 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
             f"{root.anchor or root} 剩余空间 {free / 1024**3:.1f} GB，更新要临时占用约 "
             f"{UPDATE_MIN_FREE_BYTES / 1024**3:.1f} GB，请先清理{hint}"
         )
-    picked = await _pick_package(runtime, release)
+    picked = await _pick_package(runtime, release, host=host)
     try:
-        staged = await _stage_release(runtime, picked)
+        staged = await _stage_release(runtime, picked, host=host)
     except _BAD_PACKAGE_ERRORS as e:
         if picked.source != MIRROR_SOURCE or picked.asset is None:
             raise
@@ -980,8 +954,8 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
         kind = "增量包" if picked.asset.incremental else "包"
         logger.warning(f"{root} 的 Mirror 酱{kind}不对（{e}），这次改从 GitHub 下载")
         _add_notice(runtime, f"Mirror 酱的{kind}核对不过，改从 GitHub 下载")
-        picked = await _pick_package(runtime, release, mirror=False)
-        staged = await _stage_release(runtime, picked)
+        picked = await _pick_package(runtime, release, mirror=False, host=host)
+        staged = await _stage_release(runtime, picked, host=host)
     # 包已经下好、核对过：链接用不着了
     runtime.mirror_link = None
     if staged["verified"] == "manifest":
@@ -1003,20 +977,20 @@ async def _prepare(runtime: _Runtime, release: RemoteRelease) -> None:
 # ---- 换上 ------------------------------------------------------------------
 
 
-async def _swap(runtime: _Runtime) -> str:
+async def _swap(runtime: _Runtime, *, host: UpdateHost) -> str:
     """换上拼好的新版，返回版本号。现在不能换就抛 :class:`~.update_stage.SwapBlocked`，暂存原样留着。
 
     更新期间 MAS 不会开这个根目录的实例（:func:`update_in_progress`），这里再查一次进程，挡的是 MAS
     之外手动开的模拟器；``swap_in`` 改名前还会按可执行文件路径再查一遍。
     """
     root = runtime.root
-    running = await asyncio.to_thread(_running_instances, root)
+    running = await asyncio.to_thread(host.running_instances, root)
     if running:
         raise stage.SwapBlocked(
             f"还有 {len(running)} 台实例开着（不是 MAS 开的），请先关掉"
         )
     _set(runtime, "installing", message="正在换上新版")
-    await _publish(runtime)
+    await _publish(runtime, host=host)
     return await asyncio.to_thread(stage.swap_in, root)
 
 
@@ -1034,17 +1008,21 @@ async def _ensure_recovered(runtime: _Runtime) -> None:
         logger.warning(f"{runtime.root} 的魔改 AVD 更新：{done}")
 
 
-async def _update_job(runtime: _Runtime, release: RemoteRelease | None) -> None:
+async def _update_job(
+    runtime: _Runtime, release: RemoteRelease | None, *, host: UpdateHost
+) -> None:
     """一次更新。调用方（:func:`update`）已经把根目录登记成「正在更新」，这里结束时（成功、失败、
     MAS 退出都算）撤掉。"""
     root = runtime.root
     try:
-        await _run_update(runtime, release)
+        await _run_update(runtime, release, host=host)
     finally:
         _updating.discard(root_key(root))
 
 
-async def _run_update(runtime: _Runtime, release: RemoteRelease | None) -> None:
+async def _run_update(
+    runtime: _Runtime, release: RemoteRelease | None, *, host: UpdateHost
+) -> None:
     root = runtime.root
     async with runtime.lock:
         runtime.notice = ""
@@ -1059,11 +1037,11 @@ async def _run_update(runtime: _Runtime, release: RemoteRelease | None) -> None:
                 and _newer(release, local)
                 and version != str(release.version)
             ):
-                await _prepare(runtime, release)
+                await _prepare(runtime, release, host=host)
                 version = await asyncio.to_thread(_staged_version, root)
             if not version:
                 raise _NothingToDo(f"已经是最新版本（{_shown(local)}）")
-            installed = await _swap(runtime)
+            installed = await _swap(runtime, host=host)
             done = f"已更新到 {display_version(installed)}"
             _set(
                 runtime,
@@ -1092,7 +1070,7 @@ async def _run_update(runtime: _Runtime, release: RemoteRelease | None) -> None:
                 "failed",
                 f"{failed}（{runtime.notice}）" if runtime.notice else failed,
             )
-        await _publish(runtime)
+        await _publish(runtime, host=host)
 
 
 def _action(
@@ -1106,7 +1084,7 @@ def _action(
     }
 
 
-async def update(root: str) -> dict[str, Any]:
+async def update(root: str, *, host: UpdateHost) -> dict[str, Any]:
     """「更新」：查最新版、选包下载（Mirror 酱或 GitHub，整包或增量包）、拼新版、按清单核对，然后换上。
     立刻返回，进度看 WebSocket / 状态快照。
 
@@ -1114,7 +1092,7 @@ async def update(root: str) -> dict[str, Any]:
     结束（成功、失败都算），这个根目录一律不许开机（:func:`update_in_progress`），用到它的脚本也就不会
     在更新中途把它开起来。已经下好、核对过的新版不重新下载；查不到最新版本时也照样换上它。
     """
-    path = await _managed(root)
+    path = await _managed(root, host=host)
     _ensure_updatable(path)
     runtime = _runtime(path)
     if runtime.busy:
@@ -1123,13 +1101,13 @@ async def update(root: str) -> dict[str, Any]:
     release: RemoteRelease | None = None
     check_error = ""
     try:
-        release = await _latest(force=True, current=local)
+        release = await _latest(force=True, current=local, host=host)
     except Exception as e:  # noqa: BLE001 - 查不到时看有没有已经下好的
         logger.warning(f"检查魔改 AVD 更新失败: {e}")
         check_error = str(e)
     staged = await asyncio.to_thread(_staged_version, path)
     if release is not None and _newer(release, local):
-        refusal = _automas_refusal(release)
+        refusal = _automas_refusal(release, host=host)
         if refusal:
             return _action("automas_too_old", refusal)
     elif not staged:
@@ -1138,13 +1116,13 @@ async def update(root: str) -> dict[str, Any]:
         return _action("up_to_date", f"已经是最新版本（{_shown(local)}）")
     else:
         release = None  # 只换上已经下好的那一版
-    running = await asyncio.to_thread(_running_instances, path)
+    running = await asyncio.to_thread(host.running_instances, path)
     # 从这里到 create_task 之间没有 await：再看一次有没有并发的更新，登记「正在更新」（之后开机一律被拒），
     # 再看有没有正在开机的。和开机（open 先登记自己、_launch 再看「正在更新」）互斥，两边总有一边看得见
     # 另一边；开着的实例上面已经按进程查过，开机要几十秒，查完到这里不会冒出一台开好的。
     if runtime.busy:
         return _action("busy", "正在更新，请稍候")
-    busy = sorted(set(running) | set(_opening_instances(path)))
+    busy = sorted(set(running) | set(host.opening_instances(path)))
     if busy:
         return _action(
             "instances_running",
@@ -1153,7 +1131,7 @@ async def update(root: str) -> dict[str, Any]:
         )
     _updating.add(root_key(path))
     runtime.job = asyncio.create_task(
-        _update_job(runtime, release), name=f"avd-update:{path}"
+        _update_job(runtime, release, host=host), name=f"avd-update:{path}"
     )
     return _action("started", "已开始", ok=True)
 
@@ -1161,9 +1139,9 @@ async def update(root: str) -> dict[str, Any]:
 # ---- 启动 ------------------------------------------------------------------
 
 
-async def startup() -> None:
+async def startup(*, host: UpdateHost) -> None:
     """MAS 启动时收拾上次没做完的换上（要在定时器拉起实例之前）。查更新等用户打开「管理与更新」时再查。"""
-    roots = await asyncio.to_thread(_managed_roots)
+    roots = await asyncio.to_thread(host.managed_roots)
     for root in roots:
         runtime = _runtime(root)
         try:
@@ -1175,6 +1153,9 @@ async def startup() -> None:
 
 
 __all__ = [
+    "UpdateHost",
+    "UpdateProgress",
+    "UpdateSettings",
     "startup",
     "status",
     "update",

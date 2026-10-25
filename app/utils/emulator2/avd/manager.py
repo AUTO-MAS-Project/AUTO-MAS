@@ -62,11 +62,12 @@ from ..applaunch import (
 )
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
-from . import host, precheck, updater
+from . import host, precheck, update_stage, updater
 from .components import (
     component_installed,
     emulator_exe,
     launcher_apk,
+    manager_key_exe,
     missing_components_message,
     root_from_manager_exe,
     root_key,
@@ -2019,6 +2020,27 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         return targets
 
 
+def opening_instances(root: Path) -> list[str]:
+    """这个根目录下正在开机（``open`` 还没做完，含开机前检查到拉起 emulator.exe 之间那几秒）的实例。"""
+    prefix = f"{root_key(root)}|"
+    return sorted(
+        key[len(prefix) :] for key in list(_OPENING) if key.startswith(prefix)
+    )
+
+
+def running_instances(root: Path) -> list[str]:
+    """这个根目录下开着的实例（原生索引）。
+
+    实例按 AVD 名 + 控制台端口认，各根目录的名字和端口是同一套；只算 qemu 可执行文件就在
+    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
+    """
+    ours = {item["pid"] for item in update_stage.processes_using(root)}
+    running = AvdManager(
+        manager_key_exe(root), max_wait_time=60, force_kill_on_close=False
+    )._scan_processes()
+    return sorted(idx for idx, process in running.items() if process.pid in ours)
+
+
 async def build_manager(
     manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
 ) -> AvdManager:
@@ -2033,6 +2055,8 @@ __all__ = [
     "AvdManager",
     "FreezeWatchdog",
     "build_manager",
+    "opening_instances",
+    "running_instances",
     "emulator_exe",
     "shm_exists",
 ]
