@@ -83,6 +83,7 @@ from app.utils.io import (
     write_file,
 )
 
+from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
 from .push_log import MAAEND_PUSH_RULES, maaend_resolve
 from .resource_loader import (
     MaaEndResourceLoader,
@@ -101,7 +102,7 @@ from .tools.launcher_start import (
     find_launcher_pids,
 )
 from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
-from .tools.notify import collect_recent_error_images
+from .tools.notify import build_inventory_payload, collect_recent_error_images
 from .update_takeover import (
     read_new_mxu_logs,
     snapshot_mxu_logs,
@@ -455,6 +456,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
         # 用户级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
+        self.inventory_status_messages: set[str] = set()
         self.mode = "Routine"
         self.run_book: dict[str, bool] = {mode: False for mode in MAAEND_RUN_MOOD_BOOK}
         self.task_dict: dict[str, dict[str, bool]] | None = None
@@ -992,6 +994,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return self._daily_once_task_done(task_name)
         if self._daily_once_task_done(task_name):
             return True
+        if self.cur_user_config.Info.SanityStrategy == "Inventory":
+            return self._daily_once_task_done("ProtocolSpace")
+        if self.cur_user_config.Info.SanityStrategy == "Native":
+            tasks = self._source_maaend_tasks()
+            sanity_tasks = [
+                str(task["taskName"])
+                for task in tasks or []
+                if task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                and task.get("enabled", False)
+            ]
+            return bool(sanity_tasks) and all(
+                self._daily_once_task_done(name) for name in sanity_tasks
+            )
         try:
             sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
         except ValueError:
@@ -1181,6 +1196,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     def _quick_config_base_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
+        native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
+        inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
         if mode == "Delivery":
             if not self.cur_user_config.Task.IfSeizeDeliveryJobs:
                 return "快速配置未开启抢委托送货", False
@@ -1215,17 +1232,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
             # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if self.cur_user_config.Task.IfSanity and (
-                not self._quick_task_daily_once_done("Sanity")
+            if (
+                not native_sanity
+                and self.cur_user_config.Task.IfSanity
+                and not self._quick_task_daily_once_done("Sanity")
             ):
-                sanity_task_key, _ = (
-                    self.cur_user_config.get_effective_sanity_task_key()
-                )
-                target_sanity_task_name = (
-                    "AutoEssence"
-                    if sanity_task_key["SanityTaskType"] == "Essence"
-                    else "ProtocolSpace"
-                )
+                target_sanity_task_name = "ProtocolSpace"
+                if not inventory_sanity:
+                    sanity_task_key, _ = (
+                        self.cur_user_config.get_effective_sanity_task_key()
+                    )
+                    if sanity_task_key["SanityTaskType"] == "Essence":
+                        target_sanity_task_name = "AutoEssence"
                 if (
                     not any(
                         str(task.get("taskName", "")) == target_sanity_task_name
@@ -1249,15 +1267,20 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if task_name in _MAAEND_SANITY_TASK_NAMES:
                     if not self.cur_user_config.Task.IfSanity:
                         continue
+                    if native_sanity:
+                        if task.get(
+                            "enabled", False
+                        ) and not self._daily_once_task_done(task_name):
+                            return None, False
+                        continue
                     if target_sanity_task_name is None:
-                        sanity_task_key, _ = (
-                            self.cur_user_config.get_effective_sanity_task_key()
-                        )
-                        target_sanity_task_name = (
-                            "AutoEssence"
-                            if sanity_task_key["SanityTaskType"] == "Essence"
-                            else "ProtocolSpace"
-                        )
+                        target_sanity_task_name = "ProtocolSpace"
+                        if not inventory_sanity:
+                            sanity_task_key, _ = (
+                                self.cur_user_config.get_effective_sanity_task_key()
+                            )
+                            if sanity_task_key["SanityTaskType"] == "Essence":
+                                target_sanity_task_name = "AutoEssence"
                     if task_name == target_sanity_task_name:
                         if not self._quick_task_daily_once_done("Sanity"):
                             return None, False
@@ -2298,6 +2321,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.maaend_root_path,
             str(settings["language"]),
         )
+        self.inventory_status_messages.update(
+            re.sub(r"<[^>]*>", "", message).strip()
+            for key, message in maaend_interface_i18n.items()
+            if key.startswith("task.ProtocolSpace.focus.supply_plan.")
+        )
         self.account_switch_task_name = maaend_i18n["AccountSwitch"]
         self.color_match_failed_message = maaend_interface_i18n[
             "task.SceneManager.focus.color_match_failed_prefix"
@@ -2320,12 +2348,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         sanity_task_key = {}
         sanity_task_type = ""
         target_task_name = ""
-        if if_quick_config:
-            sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
-            sanity_task_type = sanity_task_key["SanityTaskType"]
-            target_task_name = (
-                "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
-            )
+        native_sanity = self.cur_user_config.Info.SanityStrategy == "Native"
+        inventory_sanity = self.cur_user_config.Info.SanityStrategy == "Inventory"
+        if if_quick_config and not native_sanity:
+            target_task_name = "ProtocolSpace"
+            if not inventory_sanity:
+                sanity_task_key, _ = (
+                    self.cur_user_config.get_effective_sanity_task_key()
+                )
+                sanity_task_type = sanity_task_key["SanityTaskType"]
+                target_task_name = (
+                    "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
+                )
             if self.cur_user_config.Task.IfSanity:
                 self._ensure_sanity_task(maaend_tasks, target_task_name)
 
@@ -2340,7 +2374,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if_quick_config and self.cur_user_config.Task.IfSanity
             )
             target_sanity_task_exists = any(
-                task.get("taskName") == target_task_name for task in maaend_tasks
+                (
+                    task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                    and task.get("enabled", False)
+                    if native_sanity
+                    else task.get("taskName") == target_task_name
+                )
+                for task in maaend_tasks
             )
             sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
             sanity_managed = if_quick_config and (
@@ -2360,7 +2400,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 task_enabled = bool(task.get("enabled", False))
                 if if_quick_config:
                     if task_name_value in ("ProtocolSpace", "AutoEssence"):
-                        if sanity_managed:
+                        if native_sanity:
+                            # 原生策略沿用已选任务，MAS 理智开关只控制整组是否运行。
+                            task_enabled = task_enabled and sanity_switch_enabled
+                        elif sanity_managed:
                             task_enabled = (
                                 sanity_switch_enabled
                                 and task_name_value == target_task_name
@@ -2403,7 +2446,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             if sanity_missing:
                 warning_message = (
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    f"用户 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
+                    "请在「配置库存目标」中启用协议空间或基质刷取"
+                    if native_sanity
+                    else f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
                     "已跳过理智任务快速配置"
                 )
                 logger.warning(warning_message)
@@ -2472,6 +2518,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 MaaEndResourceLoader.get_loaded(
                     self.maaend_root_path
                 ).write_auto_collect_options(task, self.auto_collect_routes)
+            elif (
+                if_quick_config
+                and inventory_sanity
+                and task_name_value == "ProtocolSpace"
+            ):
+                MaaEndResourceLoader.get_loaded(
+                    self.maaend_root_path
+                ).write_inventory_options(
+                    task=task,
+                    limits=self.cur_user_config.Task.SupplyPlanLimits,
+                    claim_mode=self.cur_user_config.Task.ProtocolSpaceObtainModeClaim,
+                    use_medication=self.cur_user_config.Task.IfAutoUseSpMedication,
+                )
             elif (
                 if_quick_config
                 and task_name_value == target_task_name
@@ -2870,7 +2929,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         history_records = []
         stage_log_paths = []
         stage_directory = None
-        if self.push_log_enabled:
+        inventory_notify = (
+            self.cur_user_config.Notify.Enabled
+            and self.cur_user_config.Notify.IfSendInventory
+        )
+        if self.push_log_enabled or inventory_notify:
             try:
                 stage_directory = tempfile.TemporaryDirectory(
                     prefix="mas-maaend-stage-"
@@ -2972,6 +3035,34 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             except Exception as e:
                 logger.opt(exception=True).warning(f"MaaEnd 节点采集推送失败: {e}")
 
+        inventory_lines: list[str] = []
+        if inventory_notify and stage_log_paths:
+            try:
+                report = InventoryReport(
+                    task_names={
+                        name
+                        for name, task_name in self.task_name_map.items()
+                        if task_name == "ProtocolSpace"
+                    },
+                    status_messages=self.inventory_status_messages,
+                )
+
+                def append_inventory(log_type: str, text: str, ts: float) -> None:
+                    inventory_lines.append(
+                        f"[{datetime.fromtimestamp(ts):%H:%M:%S}] {text}"
+                    )
+                    if self.push_log_enabled:
+                        append_push_log(self.cur_user_item, log_type, text, ts)
+
+                collect = log_box.get_collect(
+                    paths=stage_log_paths, sink=append_inventory, start_from_end=False
+                )
+                collect.open(report.select)
+                collect.collect(*INVENTORY_REPORT_RULE)
+                collect.close(inventory_resolve)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"MaaEnd 材料状态采集失败: {e}")
+
         if stage_directory is not None:
             try:
                 stage_directory.cleanup()
@@ -2986,6 +3077,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 ]
             ).data.items()
         }
+        statistics["inventory_report"] = inventory_lines
         statistics["user_info"] = self.cur_user_item.name
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2994,6 +3086,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         )
 
         success_symbol = "√" if completed else "X"
+
+        if inventory_notify and history_records:
+            try:
+                await self.task_info.notifications.send_user(
+                    payload=build_inventory_payload(
+                        title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的养成材料状态",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                )
+            except Exception as e:
+                logger.opt(exception=True).warning(f"养成材料通知推送失败: {e}")
 
         if history_records:
             try:

@@ -753,6 +753,43 @@ export default {
     addPreset: '添加预设',
     sanityTask: '理智任务',
     maaEndEnableSanity: '启用理智任务',
+    maaEndSanityStrategy: '执行策略',
+    maaEndMasSanityStrategy: 'MAS 指定任务',
+    maaEndNativeSanityStrategy: '使用 MaaEnd 原生策略',
+    maaEndImsTitle: 'IMS 库存计划',
+    maaEndImsStrategyHint: '本轮按下方 IMS 库存计划执行协议空间，固定关卡和周计划不应用。',
+    maaEndImsActiveHint:
+      '本轮库存目标将覆写当前来源的 MaaEnd 库存配置，运行结束后恢复原配置。目标属于当前账号。',
+    maaEndImsInactiveHint:
+      '计划已保留，当前执行策略或理智开关未启用此计划。选择“使用此库存计划”后生效。',
+    maaEndImsUnavailable:
+      '无法读取库存配置，或当前 MaaEnd 版本尚不支持目标库存。请检查脚本路径并更新 MaaEnd。',
+    maaEndImsReload: '重新读取',
+    maaEndImsInvalidTargets: '已保存的目标格式无效或含当前版本不支持的材料，请检查配置或恢复备份。',
+    maaEndImsResetInvalid: '清空无效目标',
+    maaEndImsRemoveUnknown: '移除不支持的目标',
+    maaEndImsResetHint: '当前目标格式无法读取。清空后需要重新填写，其他任务配置不受影响。',
+    maaEndImsPlannedCount: '维护 {n} 项养成材料目标',
+    maaEndImsUsePlan: '使用此库存计划',
+    maaEndImsEmpty: '尚未设置目标，请在下表填写。0 表示不参与。',
+    maaEndImsClaimMode: '领取方式',
+    maaEndImsMedication: '使用应急理智加强剂',
+    maaEndImsMaterial: '养成材料',
+    maaEndImsTarget: '目标库存／折算经验',
+    maaEndImsParticipation: '本轮计划',
+    maaEndImsIncluded: '参与补库',
+    maaEndImsExcluded: '不参与',
+    maaEndImsNotify: '养成材料状态',
+    maaEndImsNotifyHint:
+      '任务结束后向当前用户的通知渠道推送本轮扫描库存、获得数量和上游状态。与统计通知、任务节点详情独立；未收到材料报告时显示状态未知。',
+    maaEndConfigureInventory: '配置库存目标',
+    maaEndNativeSanityHint:
+      '保留 MaaEnd 中已启用的协议空间、基质刷取及全部选项，可使用目标库存。固定任务和周计划选择会保留，本轮不应用；理智开关关闭时整组不执行。',
+    maaEndInventorySourceHint:
+      '配置沿用当前来源：脚本共享、用户独立或直控。不同账号需要不同目标时，请选择用户独立配置。在 MaaEnd 中启用所需任务并设置库存目标。',
+    maaEndDirectInventoryConfigHint: '请在 MaaEnd 原生窗口中启用所需任务并设置库存目标。',
+    maaEndCollectInventoryHint:
+      'MAS 只安排今天的候选路线，MaaEnd 按原生库存条件决定是否采集。今天未安排的路线即使库存不足也不会执行；需要每轮补库时，请选集中采集并勾选全部所需路线。',
     maaEndSanitySection: '理智任务（基质刷取/协议空间）',
     sanityTaskConfigurationMode: '理智任务配置模式',
     usedSwitchAccountsCn: '用于切换账号，官服输入手机号，B服输入B站ID，无需切换则留空',

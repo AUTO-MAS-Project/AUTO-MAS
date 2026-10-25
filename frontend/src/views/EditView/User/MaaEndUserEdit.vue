@@ -99,35 +99,23 @@
             />
           </a-card>
 
-          <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
-            <template #title>{{ t('edit.maaEndSanitySection') }}</template>
-            <template #extra>
-              <a-button
-                v-if="formData.Task.IfSanity && isSanityPlanMode"
-                type="link"
-                class="plans-button"
-                @click="handleGoToPlans"
-              >
-                <template #icon><CalendarOutlined /></template>
-                {{ t('edit.goPlan') }}
-              </a-button>
-            </template>
-            <SanityConfigSection
-              :form-data="formData"
-              :loading="loading"
-              :if-quick-config="formData.Info.IfQuickConfig"
-              :essence-location-options="essenceLocationOptions"
-              :essence-menu-options="essenceMenuOptions"
-              :essence-target-weapon-groups="essenceTargetWeaponGroups"
-              :options-loading="maaEndOptionsLoading"
-              :options-loaded="maaEndOptionsLoaded"
-              :is-plan-mode="isSanityPlanMode"
-              :sanity-mode-options="sanityModeOptions"
-              :plan-mode-config="planModeConfig"
-              @save="handleFieldSave"
-              @save-batch="handleFieldsSave"
-            />
-          </a-card>
+          <MaaEndSanitySection
+            v-if="formData.Info.IfQuickConfig"
+            :form-data="formData"
+            :loading="loading"
+            :inventory="inventoryOptions"
+            :essence-location-options="essenceLocationOptions"
+            :essence-menu-options="essenceMenuOptions"
+            :essence-target-weapon-groups="essenceTargetWeaponGroups"
+            :options-loading="maaEndOptionsLoading"
+            :options-loaded="maaEndOptionsLoaded"
+            :config-loading="maaEndConfigLoading"
+            :show-config-mask="showMaaEndConfigMask"
+            @save="handleFieldSave"
+            @save-batch="handleFieldsSave"
+            @configure="handleMaaEndConfig"
+            @reload="loadMaaEndOptions"
+          />
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
             <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
@@ -183,6 +171,7 @@
                 :script-id="scriptId"
                 :user-id="userId"
                 hide-section-header
+                show-inventory
                 @save="handleFieldSave"
               />
             </a-collapse-panel>
@@ -238,32 +227,16 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  CalendarOutlined,
-  EyeOutlined,
-  HistoryOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import type { ComboBoxItem } from '@/api'
-import { Service } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn'
-import { navigateTo } from '@/router'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaEndGuiSession } from '@/composables/useMaaEndGuiSession'
-import { usePlanApi } from '@/composables/usePlanApi'
-import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
-import {
-  MAAEND_PLAN_WEEKDAY_KEYS,
-  maaEndPlanKeyToSanityConfig,
-  type MaaEndEssenceTargetGroup,
-  type MaaEndSanityConfig,
-} from '@/utils/maaEndProtocolSpace'
-import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import type { MaaEndEssenceTargetGroup } from '@/utils/maaEndProtocolSpace'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -271,10 +244,11 @@ import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DailyOnceSection from '@/views/MaaEndUserEdit/DailyOnceSection.vue'
 import ConfigSourceSection from '@/views/MaaEndUserEdit/ConfigSourceSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
-import type { MaaEndAutoCollectGroup } from '@/api'
+import type { MaaEndAutoCollectGroup, MaaEndInventoryOptions } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
+import { getDefaultMaaEndUserData } from '@/views/MaaEndUserEdit/userDefaults'
+import MaaEndSanitySection from '@/views/MaaEndUserEdit/MaaEndSanitySection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
-import SanityConfigSection from '@/views/MaaEndUserEdit/SanityConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -289,7 +263,6 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, error: userError } = useUserApi()
 const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
-const { getPlans } = usePlanApi()
 const {
   maaEndConfigLoading,
   maaEndTaskId,
@@ -324,14 +297,8 @@ const resourceOptions = [{ label: '官服', value: '官服' }]
 const essenceLocationOptions = ref<ComboBoxItem[]>([])
 const essenceMenuOptions = ref<ComboBoxItem[]>([])
 const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
+const inventoryOptions = ref<MaaEndInventoryOptions | null>(null)
 const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
-])
-const planModeConfig = ref<MaaEndSanityConfig | null>(null)
-// 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应
-let sanityPlanLoadVersion = 0
-const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
@@ -342,6 +309,7 @@ const anchorItems = computed(() => {
   if (formData.Info.IfQuickConfig) {
     items.push(
       { key: 'sanity', href: '#section-sanity', title: t('edit.maaEndSanitySection') },
+      { key: 'ims', href: '#section-ims', title: t('edit.maaEndImsTitle') },
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
       { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
       { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
@@ -352,74 +320,6 @@ const anchorItems = computed(() => {
     { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
   )
   return items
-})
-
-const getDefaultMaaEndUserData = () => ({
-  Info: {
-    Name: '',
-    Status: true,
-    Id: '',
-    Password: '',
-    Base: 'shared',
-    IfQuickConfig: true,
-    SanityMode: 'Fixed',
-    Resource: '官服',
-    RemainedDay: -1,
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-    Notes: '',
-    Tag: '',
-  },
-  Task: {
-    SanityTaskType: 'OperatorProgression',
-    OperatorProgression: 'OperatorEXP',
-    WeaponProgression: 'WeaponEXP',
-    CrisisDrills: 'AdvancedProgression1',
-    RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: '',
-    AutoEssenceMenu: 'Location',
-    AutoEssenceTargetWeapons: [],
-    SeizeDeliveryJobsReward: 15.9,
-    SeizeDeliveryJobsCommissionSource: 'Unlimited',
-    AutoCollectMode: 'Distributed',
-    AutoCollectRoutes: null,
-    AutoCollectCommonRoutes: null,
-    IfSanity: true,
-    IfAutoUseSpMedication: true,
-    IfDijiangRewards: true,
-    IfDeliveryJobs: true,
-    IfSellProduct: true,
-    IfAutoStockpile: true,
-    IfAutoStockStaple: true,
-    IfVisitFriends: true,
-    IfCreditShoppingN2: true,
-    IfSeizeDeliveryJobs: true,
-    IfAutoEcoFarm: true,
-    IfAutoSell: true,
-    IfEnvironmentMonitoring: true,
-    IfAutoCollect: true,
-    IfTrialOfSwordmancy: true,
-    IfDailyRewards: true,
-    IfResourceRecycleStation: true,
-    IfPullCountCalculator: false,
-    DailyOnceTasks: '[ ]',
-  },
-  Notify: {
-    Enabled: false,
-    PushLogMode: '汇总',
-    IfSendStatistic: false,
-    IfSendMail: false,
-    ToAddress: '',
-    IfServerChan: false,
-    ServerChanKey: '',
-  },
-  Data: {
-    LastProxyDate: '2000-01-01T00:00:00+04:00',
-    ProxyTimes: 0,
-    PeriodTaskRecords: '{ }',
-  },
 })
 
 interface FieldChange {
@@ -576,10 +476,6 @@ const handleScriptConfig = () => {
   router.push(`/scripts/${scriptId}/edit/maaend`)
 }
 
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.SanityMode } })
-}
-
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
@@ -596,6 +492,7 @@ const loadMaaEndOptions = async () => {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code === 200) {
       autoCollectGroups.value = response.autoCollectGroups ?? []
+      inventoryOptions.value = response.inventory ?? null
       essenceLocationOptions.value = response.essenceLocations
       essenceMenuOptions.value = response.essenceMenus ?? []
       essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
@@ -605,54 +502,6 @@ const loadMaaEndOptions = async () => {
     }
   } finally {
     maaEndOptionsLoading.value = false
-  }
-}
-
-const loadSanityModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.MAAEND,
-    })
-    if (response?.code === 200 && response.data) {
-      sanityModeOptions.value = response.data
-        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
-        .map(item => ({ label: item.label, value: item.value }))
-    }
-  } catch (error) {
-    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-const loadSanityPlan = async (planId: string) => {
-  const version = ++sanityPlanLoadVersion
-
-  if (!planId || planId === 'Fixed') {
-    planModeConfig.value = null
-    return
-  }
-
-  try {
-    const response = await getPlans(planId)
-    // 已切换到其他计划表：丢弃过期响应，避免旧数据覆盖当前 UI
-    if (version !== sanityPlanLoadVersion || formData.Info.SanityMode !== planId) {
-      return
-    }
-    const planData = response.data?.[planId] as unknown as Record<string, unknown> | undefined
-    const planIndex = response.index?.find(item => item.uid === planId)
-    if (planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END || !planData) {
-      planModeConfig.value = null
-      return
-    }
-    const dayKey = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
-    const info = planData.Info as Record<string, unknown> | undefined
-    const dayConfig = info?.Mode === 'Weekly' ? planData[dayKey] : planData.ALL
-    planModeConfig.value = maaEndPlanKeyToSanityConfig(dayConfig)
-  } catch (error) {
-    if (version !== sanityPlanLoadVersion) {
-      return
-    }
-    planModeConfig.value = null
-    logger.error(`加载理智任务计划失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -707,6 +556,8 @@ const loadUserData = async () => {
 const handleMaaEndConfig = async () => {
   if (configLocked.value) return
   if (!userId) return
+  // 先完成自动保存，确保配置会话沿用界面当前选择的来源。
+  if (!(await handleFieldSave('Info.Base', formData.Info.Base))) return
   await startSession(userId)
 }
 
@@ -863,7 +714,6 @@ const ensureMaaEndBackup = ensureBackup
 onMounted(async () => {
   await loadScriptInfo()
   await loadMaaEndOptions()
-  await loadSanityModeOptions()
 
   if (!isEdit.value && configLocked.value) {
     isInitializing.value = false
@@ -892,16 +742,8 @@ onMounted(async () => {
   void ensureMaaEndBackup('native')
 
   await nextTick()
-  await loadSanityPlan(formData.Info.SanityMode)
   isInitializing.value = false
 })
-
-watch(
-  () => formData.Info.SanityMode,
-  value => {
-    void loadSanityPlan(value)
-  }
-)
 
 onUnmounted(() => {
   // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
