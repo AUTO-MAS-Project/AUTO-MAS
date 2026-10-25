@@ -62,7 +62,7 @@
                   :value="targets?.[record.value] ?? '0'"
                   string-mode
                   :min="'0'"
-                  :max="'9007199254740991'"
+                  :max="INVENTORY_TARGET_MAX"
                   :precision="0"
                   :disabled="disabled || targets === null"
                   :aria-label="`${record.label} ${t('edit.maaEndImsTarget')}`"
@@ -129,7 +129,12 @@ import { SearchOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { Empty, Modal } from 'ant-design-vue'
 import type { MaaEndInventoryOptions } from '@/api'
-import { readInventoryTargets, isInventoryTargetActive } from '@/views/MaaEndUserEdit/inventoryPlan'
+import {
+  INVENTORY_TARGET_MAX,
+  readInventoryTargets,
+  isInventoryTargetActive,
+  isInventoryTargetValid,
+} from '@/views/MaaEndUserEdit/inventoryPlan'
 import { INVENTORY_CATEGORIES, inventoryCategoryFor } from './inventoryCategories'
 import { MAAEND_INVENTORY_TARGET_DEFAULTS } from './userDefaults'
 
@@ -205,7 +210,7 @@ const medicationOptions = computed(() => [
 function setTarget(key: string, quantity: string | number | null) {
   if (disabled.value || targets.value === null) return
   const value = String(quantity ?? '0')
-  if (!/^\d+$/.test(value)) return
+  if (!isInventoryTargetValid(value)) return
   props.formData.Task.SupplyPlanLimits = JSON.stringify({ ...overrides.value, [key]: value })
   emit('save', 'Task.SupplyPlanLimits', props.formData.Task.SupplyPlanLimits)
 }

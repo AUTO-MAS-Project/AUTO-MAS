@@ -761,7 +761,7 @@ export default {
     maaEndAutoSaveHint: '修改后自动保存',
     maaEndSaving: '正在保存…',
     maaEndImsSearch: '搜索材料',
-    maaEndImsTargetHint: '目标数量为 0 的材料不参与计划',
+    maaEndImsTargetHint: '目标须为 0–3000000000 的整数，不带前导零；0 表示不参与计划',
     maaEndImsNoMatches: '没有符合条件的材料',
     maaEndImsPlannedOnly: '仅显示已设置目标',
     maaEndImsExperience: '经验',
@@ -780,7 +780,8 @@ export default {
     maaEndImsUnavailable:
       '无法读取库存配置，或当前 MaaEnd 版本尚不支持目标库存。请检查脚本路径并更新 MaaEnd。',
     maaEndImsReload: '重新读取',
-    maaEndImsInvalidTargets: '已保存的目标格式无效或含当前版本不支持的材料，请检查配置或恢复备份。',
+    maaEndImsInvalidTargets:
+      '目标须为 0–3000000000 的整数且不带前导零，也不能含当前版本不支持的材料。',
     maaEndImsResetInvalid: '清空无效目标',
     maaEndImsRemoveUnknown: '移除不支持的目标',
     maaEndImsResetHint: '当前目标格式无法读取。清空后需要重新填写，其他任务配置不受影响。',

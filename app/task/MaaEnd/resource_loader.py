@@ -554,7 +554,9 @@ class MaaEndResourceLoader:
                 item["name"], MAAEND_INVENTORY_TARGET_DEFAULTS.get(item["name"], "0")
             )
             if not isinstance(value, str) or not re.fullmatch(item["verify"], value):
-                raise ValueError("IMS 库存目标必须填写非负整数")
+                raise ValueError(
+                    "IMS 库存目标的格式或范围不符合当前 MaaEnd 的要求，请重新配置"
+                )
             values[item["name"]] = value
         if not any(int(value) > 0 for value in values.values()):
             raise ValueError("IMS 库存计划尚未设置目标，请至少填写一项大于 0 的目标")
