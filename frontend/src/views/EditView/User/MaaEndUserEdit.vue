@@ -37,31 +37,28 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :user-id="userId"
+      :user-name="formData.userName"
+      :saving="isSaving"
       @handle-cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <div class="page-layout">
+      <a-spin :spinning="loading">
         <a-form
           ref="formRef"
           :model="formData"
           :rules="rules"
           layout="vertical"
-          class="config-form sections-column"
+          class="config-form"
         >
-          <a-card id="section-basic" class="section-card">
-            <template #title>{{ t('edit.basicInfo') }}</template>
-            <BasicInfoSection
-              v-model:form-data="formData"
-              :loading="loading"
-              :resource-options="resourceOptions"
-              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
-              @save="handleFieldSave"
-            />
-          </a-card>
-
           <a-card id="section-source" class="section-card">
             <template #title>{{ t('edit.configurationSource') }}</template>
+            <template #extra>
+              <a-button @click="openRestoreModal">
+                <template #icon><HistoryOutlined /></template>
+                {{ t('edit.configRestoreTitle') }}
+              </a-button>
+            </template>
             <ConfigSourceSection
               v-model:form-data="formData"
               :loading="loading"
@@ -80,16 +77,19 @@
             />
           </a-card>
 
-          <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
-            <h3>{{ t('edit.taskConfiguration') }}</h3>
-            <a-space>
-              <a-button size="small" @click="openRestoreModal">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
-              </a-button>
-            </a-space>
-          </a-flex>
-          <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
+          <a-card id="section-basic" class="section-card">
+            <template #title>{{ t('edit.basicInfo') }}</template>
+            <BasicInfoSection
+              v-model:form-data="formData"
+              :loading="loading"
+              :resource-options="resourceOptions"
+              :show-resource="controllerProtocol === 'Adb' && controllerType !== 'CloudADB'"
+              @save="handleFieldSave"
+            />
+          </a-card>
+
+          <section v-if="formData.Info.IfQuickConfig" id="section-tasks">
+            <h2 class="section-heading">{{ t('edit.taskConfiguration') }}</h2>
             <TaskConfigSection
               :form-data="formData"
               :loading="loading"
@@ -97,7 +97,17 @@
               @save="handleFieldSave"
               @save-batch="handleFieldsSave"
             />
-          </a-card>
+
+            <a-collapse id="section-limits" class="optional-section" :bordered="false">
+              <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
+                <DailyOnceSection
+                  :value="formData.Task.DailyOnceTasks"
+                  :loading="loading"
+                  @save="handleFieldSave('Task.DailyOnceTasks', $event)"
+                />
+              </a-collapse-panel>
+            </a-collapse>
+          </section>
 
           <MaaEndSanitySection
             v-if="formData.Info.IfQuickConfig"
@@ -137,21 +147,6 @@
             />
           </a-card>
 
-          <a-collapse
-            v-if="formData.Info.IfQuickConfig"
-            id="section-limits"
-            class="optional-section"
-            :bordered="false"
-          >
-            <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
-              <DailyOnceSection
-                :value="formData.Task.DailyOnceTasks"
-                :loading="loading"
-                @save="handleFieldSave('Task.DailyOnceTasks', $event)"
-              />
-            </a-collapse-panel>
-          </a-collapse>
-
           <a-collapse id="section-script" class="optional-section" :bordered="false">
             <a-collapse-panel key="script" :header="t('comp.extraScripts')">
               <ExtraScriptSection
@@ -177,18 +172,7 @@
             </a-collapse-panel>
           </a-collapse>
         </a-form>
-
-        <aside class="anchor-sidebar">
-          <!-- 页内目录只滚动内容，避免锚点覆盖应用的 hash 路由。 -->
-          <a-anchor
-            :items="anchorItems"
-            :affix="false"
-            :offset-top="96"
-            :get-container="getAnchorContainer"
-            @click.prevent
-          />
-        </aside>
-      </div>
+      </a-spin>
     </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MaaEnd 原生配置在后）══ -->
@@ -299,28 +283,6 @@ const essenceMenuOptions = ref<ComboBoxItem[]>([])
 const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
 const inventoryOptions = ref<MaaEndInventoryOptions | null>(null)
 const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-
-const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
-
-const anchorItems = computed(() => {
-  const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
-  items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
-  items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
-  if (formData.Info.IfQuickConfig) {
-    items.push(
-      { key: 'sanity', href: '#section-sanity', title: t('edit.maaEndSanitySection') },
-      { key: 'ims', href: '#section-ims', title: t('edit.maaEndImsTitle') },
-      { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
-      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
-      { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
-    )
-  }
-  items.push(
-    { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
-    { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
-  )
-  return items
-})
 
 interface FieldChange {
   key: string
@@ -758,95 +720,45 @@ onUnmounted(() => {
 
 <style scoped>
 .user-edit-container {
-  padding: 24px;
-  background: var(--ant-color-bg-layout);
+  padding-bottom: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
 }
-
 .user-edit-content {
   width: 100%;
   min-width: 0;
 }
-
-.page-layout {
-  display: grid;
-  grid-template-columns: 144px minmax(0, 1fr);
-  gap: 24px;
-  align-items: start;
-}
-
-.sections-column {
-  width: 100%;
-  max-width: none;
-  grid-column: 2;
-  grid-row: 1;
-  min-width: 0;
+.config-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
 }
-
+.section-heading {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
 .section-card {
   border-radius: 8px;
-  scroll-margin-top: 32px;
 }
-
 .section-card :deep(.ant-card-body) {
   padding: 24px;
 }
-
 .optional-section {
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
-  scroll-margin-top: 32px;
 }
-
-.daily-once-title {
-  margin: 0 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.plans-button {
-  padding-inline: 0;
-}
-
-.anchor-sidebar {
-  grid-column: 1;
-  grid-row: 1;
-  position: sticky;
-  top: 32px;
-}
-
 .maaend-preview-title {
   margin: 0 0 8px;
 }
-
 .maaend-preview-box {
   margin-bottom: 16px;
 }
-
-@media (max-width: 1100px) {
-  .page-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .sections-column {
-    grid-column: 1;
-  }
-
-  .anchor-sidebar {
-    display: none;
-  }
-}
-
 @media (max-width: 768px) {
-  .user-edit-container {
-    padding: 16px;
-  }
-
   .section-card :deep(.ant-card-body) {
-    padding: 20px;
+    padding: 16px;
   }
 }
 </style>

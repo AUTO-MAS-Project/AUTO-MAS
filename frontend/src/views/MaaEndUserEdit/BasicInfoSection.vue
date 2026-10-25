@@ -9,7 +9,6 @@
             </span>
           </template>
           <a-input
-            size="large"
             v-model:value="formData.userName"
             :placeholder="t('edit.enterUsername')"
             :disabled="loading"
@@ -28,7 +27,6 @@
             </span>
           </template>
           <a-input-number
-            size="large"
             v-model:value="formData.Info.RemainedDay"
             :min="-1"
             :max="9999"
@@ -45,21 +43,18 @@
               {{ t('edit.enabled') }}
             </span>
           </template>
-          <a-select
-            v-model:value="formData.Info.Status"
+          <a-switch
+            v-model:checked="formData.Info.Status"
             :disabled="loading"
-            size="large"
+            :aria-label="t('edit.enabled')"
             @change="emitSave('Info.Status', formData.Info.Status)"
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
+          />
         </a-form-item>
       </a-col>
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :xs="24" :sm="12">
+      <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -70,7 +65,6 @@
             </span>
           </template>
           <a-input
-            size="large"
             v-model:value="formData.Info.Id"
             :placeholder="t('edit.enterAccountId')"
             :disabled="loading"
@@ -78,7 +72,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :sm="12">
+      <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -89,7 +83,6 @@
             </span>
           </template>
           <a-input-password
-            size="large"
             v-model:value="formData.Info.Password"
             :placeholder="t('edit.passwordStoredOnlySo2')"
             :disabled="loading"
@@ -97,10 +90,28 @@
           />
         </a-form-item>
       </a-col>
+      <a-col :xs="24" :sm="24" :md="8">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.collectNodeDetails') }}
+              <a-tooltip :mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            v-model:value="formData.Notify.PushLogMode"
+            :options="pushLogModeOptions"
+            :disabled="loading"
+            @change="emitSave('Notify.PushLogMode', formData.Notify.PushLogMode)"
+          />
+        </a-form-item>
+      </a-col>
     </a-row>
 
     <a-row v-if="showResource" :gutter="24">
-      <a-col v-if="showResource" :xs="24" :sm="12">
+      <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
             <span class="form-label">
@@ -108,34 +119,11 @@
             </span>
           </template>
           <a-select
-            size="large"
             v-model:value="formData.Info.Resource"
             :placeholder="t('edit.pickResource')"
             :disabled="loading"
             :options="resourceOptions"
             @change="emitSave('Info.Resource', formData.Info.Resource)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <a-row :gutter="24">
-      <a-col :xs="24" :sm="12">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('edit.collectNodeDetails') }}
-              <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-select
-            size="large"
-            v-model:value="formData.Notify.PushLogMode"
-            :options="pushLogModeOptions"
-            :disabled="loading"
-            @change="emitSave('Notify.PushLogMode', formData.Notify.PushLogMode)"
           />
         </a-form-item>
       </a-col>

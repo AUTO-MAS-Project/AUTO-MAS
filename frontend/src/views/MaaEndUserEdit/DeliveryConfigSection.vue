@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <a-row :gutter="24" align="middle">
-      <a-col :span="6">
+      <a-col :xs="24" :sm="24">
         <a-form-item name="IfSeizeDeliveryJobs">
           <template #label>
             <span class="form-label">
@@ -20,7 +20,7 @@
       </a-col>
 
       <template v-if="formData.Task.IfSeizeDeliveryJobs">
-        <a-col :span="8">
+        <a-col :xs="24" :sm="12">
           <a-form-item name="SeizeDeliveryJobsReward">
             <template #label>
               <span class="form-label">
@@ -35,7 +35,6 @@
               :min="0"
               :step="0.1"
               :disabled="loading"
-              size="large"
               style="width: 100%"
               @change="handleRewardChange"
               @blur="handleRewardBlur"
@@ -43,7 +42,7 @@
           </a-form-item>
         </a-col>
 
-        <a-col :span="8">
+        <a-col :xs="24" :sm="12">
           <a-form-item
             name="SeizeDeliveryJobsCommissionSource"
             :label="t('edit.maaEndDeliveryCommissionSource')"
@@ -52,7 +51,6 @@
               v-model:value="formData.Task.SeizeDeliveryJobsCommissionSource"
               :options="MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS"
               :disabled="loading"
-              size="large"
               @change="handleCommissionSourceChange"
             />
           </a-form-item>

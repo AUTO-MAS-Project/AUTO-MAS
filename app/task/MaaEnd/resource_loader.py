@@ -28,6 +28,7 @@ from typing import Any
 import json5
 
 from app.utils import get_logger
+from app.utils.constants import MAAEND_INVENTORY_TARGET_DEFAULTS
 from app.utils.io import atomic_write
 
 logger = get_logger("MaaEnd 资源加载器")
@@ -537,7 +538,7 @@ class MaaEndResourceLoader:
         *,
         use_medication: bool,
     ) -> None:
-        """校验并透传库存覆写值；未指定的输入为 0，避免残留其他账号目标。"""
+        """校验并透传库存覆写值；未指定的输入使用 MAS 固定默认值。"""
 
         inventory = self._options["inventory"]
         if inventory is None:
@@ -549,7 +550,9 @@ class MaaEndResourceLoader:
             raise ValueError("IMS 库存目标包含当前 MaaEnd 不支持的材料，请重新配置")
         values = {}
         for item in inputs:
-            value = supplied.get(item["name"], "0")
+            value = supplied.get(
+                item["name"], MAAEND_INVENTORY_TARGET_DEFAULTS.get(item["name"], "0")
+            )
             if not isinstance(value, str) or not re.fullmatch(item["verify"], value):
                 raise ValueError("IMS 库存目标必须填写非负整数")
             values[item["name"]] = value

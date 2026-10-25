@@ -2,19 +2,6 @@
   <div class="sanity-section">
     <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
       <template #title>{{ t('edit.maaEndSanitySection') }}</template>
-      <template #extra>
-        <a-button
-          v-if="
-            formData.Task.IfSanity && isSanityPlanMode && formData.Info.SanityStrategy === 'MAS'
-          "
-          type="link"
-          class="plans-button"
-          @click="handleGoToPlans"
-        >
-          <template #icon><CalendarOutlined /></template>
-          {{ t('edit.goPlan') }}
-        </a-button>
-      </template>
       <SanityConfigSection
         :form-data="formData"
         :loading="loading"
@@ -33,9 +20,26 @@
         @save-batch="changes => emit('saveBatch', changes)"
         @configure="emit('configure')"
       />
+      <a-button
+        v-if="formData.Task.IfSanity && isSanityPlanMode && formData.Info.SanityStrategy === 'MAS'"
+        type="link"
+        class="plans-button"
+        @click="handleGoToPlans"
+      >
+        <template #icon><CalendarOutlined /></template>
+        {{ t('edit.goPlan') }}
+      </a-button>
     </a-card>
 
-    <a-card v-if="formData.Info.IfQuickConfig" id="section-ims" class="section-card">
+    <a-card
+      v-if="
+        formData.Info.IfQuickConfig &&
+        formData.Task.IfSanity &&
+        formData.Info.SanityStrategy === 'Inventory'
+      "
+      id="section-ims"
+      class="section-card"
+    >
       <template #title>{{ t('edit.maaEndImsTitle') }}</template>
       <InventoryConfigSection
         :form-data="formData"
@@ -43,7 +47,6 @@
         :loading="loading"
         :options-loading="optionsLoading"
         @save="(key, value) => emit('save', key, value)"
-        @save-batch="changes => emit('saveBatch', changes)"
         @reload="emit('reload')"
       />
     </a-card>
@@ -168,7 +171,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.section-card {
-  margin-bottom: 24px;
+.sanity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 </style>

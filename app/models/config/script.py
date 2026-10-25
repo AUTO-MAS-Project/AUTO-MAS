@@ -59,6 +59,7 @@ from app.config.types import (
 )
 from app.utils.constants import (
     MAA_STAGE_KEY,
+    MAAEND_INVENTORY_TARGET_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
@@ -770,7 +771,8 @@ class MaaEndUserConfig(DomainEntry):
 
     class TaskFields(ConfigGroup):
         SupplyPlanLimits: JsonDictString = Field(
-            default="{}", description="上游库存目标输入值，原字段名与字符串值透传"
+            default_factory=lambda: json.dumps(MAAEND_INVENTORY_TARGET_DEFAULTS),
+            description="上游库存目标输入值，原字段名与字符串值透传",
         )
         ProtocolSpaceObtainModeClaim: str = Field(
             default="ObtainScaling2", description="库存任务领取方式，由 MaaEnd 声明"

@@ -1,3 +1,23 @@
+// 固定采用 MaaEnd 2.36.0-beta.1 的 SupplyPlanLimits 默认值。
+export const MAAEND_INVENTORY_TARGET_DEFAULTS: Record<string, string> = {
+  SupplyPlanLimit_T_CREDS: '3580000',
+  SupplyPlanLimit_PROTOHEDRON: '1100',
+  SupplyPlanLimit_PROTOPRISM: '920',
+  SupplyPlanLimit_COGNITIVE_CARRIER_EXP: '2100000',
+  SupplyPlanLimit_COMBAT_RECORD_EXP: '1500000',
+  SupplyPlanLimit_PROTOSET: '120',
+  SupplyPlanLimit_PROTODISK: '65',
+  SupplyPlanLimit_WEAPON_EXP: '5000000',
+  SupplyPlanLimit_HEAVY_CAST_DIE: '100',
+  SupplyPlanLimit_CAST_DIE: '45',
+  SupplyPlanLimit_WARP_PLASMA_COATED_SLIDE: '260',
+  SupplyPlanLimit_TRIPHASIC_NANOFLAKE: '260',
+  SupplyPlanLimit_QUADRANT_FITTING_FLUID: '260',
+  SupplyPlanLimit_TACHYON_SCREENING_LATTICE: '260',
+  SupplyPlanLimit_D96_STEEL_SAMPLE_4: '260',
+  SupplyPlanLimit_METADIASTIMA_PHOTOEMISSION_TUBE: '260',
+}
+
 export const getDefaultMaaEndUserData = () => ({
   Info: {
     Name: '',
@@ -18,7 +38,7 @@ export const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
-    SupplyPlanLimits: '{}',
+    SupplyPlanLimits: JSON.stringify(MAAEND_INVENTORY_TARGET_DEFAULTS),
     ProtocolSpaceObtainModeClaim: 'ObtainScaling2',
     SanityTaskType: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',

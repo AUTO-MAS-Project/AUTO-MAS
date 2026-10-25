@@ -11,12 +11,20 @@
     </div>
     <template v-if="showDetail">
       <a-form-item :label="t('edit.maaEndSanityStrategy')">
-        <a-select
+        <a-radio-group
           :value="strategy"
-          :options="sanityStrategyOptions"
           :disabled="disabled"
-          @change="(value: string) => emit('save', value)"
-        />
+          class="strategy-options"
+          @change="handleStrategyChange"
+        >
+          <a-radio-button
+            v-for="option in sanityStrategyOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </a-radio-button>
+        </a-radio-group>
       </a-form-item>
       <a-form-item v-if="strategy === 'Native'">
         <a-space direction="vertical" size="middle" style="width: 100%">
@@ -34,18 +42,16 @@
       </a-form-item>
     </template>
 
-    <a-alert
-      v-if="showDetail && strategy === 'Inventory'"
-      type="info"
-      show-icon
-      :message="t('edit.maaEndImsStrategyHint')"
-    />
+    <p v-if="showDetail && strategy === 'Inventory'" class="strategy-hint">
+      {{ t('edit.maaEndImsStrategyHint') }}
+    </p>
   </div>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
+import type { RadioChangeEvent } from 'ant-design-vue'
 defineProps<{
   enabled: boolean
   showDetail: boolean
@@ -56,9 +62,10 @@ defineProps<{
 }>()
 const emit = defineEmits<{ enable: [value: boolean]; save: [value: string]; configure: [] }>()
 const { t } = useI18n()
+const handleStrategyChange = (event: RadioChangeEvent) => emit('save', event.target.value)
 const sanityStrategyOptions = computed(() => [
-  { label: t('edit.maaEndMasSanityStrategy'), value: 'MAS' },
-  { label: t('edit.maaEndNativeSanityStrategy'), value: 'Native' },
+  { label: t('edit.maaEndPlannedStrategy'), value: 'MAS' },
+  { label: t('edit.maaEndOriginalStrategy'), value: 'Native' },
   { label: t('edit.maaEndImsTitle'), value: 'Inventory' },
 ])
 </script>
@@ -68,10 +75,20 @@ const sanityStrategyOptions = computed(() => [
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .sanity-task-enabled {
-  margin-bottom: 24px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+.strategy-options {
+  display: flex;
+  flex-wrap: wrap;
+}
+.strategy-hint {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
 }
 </style>
