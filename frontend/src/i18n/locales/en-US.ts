@@ -3191,6 +3191,8 @@ export default {
     typePlaceholder: 'Select a type',
     pathLabel: 'Path',
     pathPlaceholder: 'Click the folder icon to pick the emulator path',
+    pathRequired: 'Select an emulator path to load devices',
+    selectPath: 'Select emulator path',
     waitLabel: 'Max wait time',
     waitTip: 'How long to wait after starting the emulator',
     waitPlaceholder: 'Enter the max wait time',

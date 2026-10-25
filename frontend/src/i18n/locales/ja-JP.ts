@@ -2559,6 +2559,8 @@ export default {
     typePlaceholder: 'エミュレーター種別を選択',
     pathLabel: 'エミュレーターのパス',
     pathPlaceholder: 'フォルダーアイコンからエミュレーターのパスを選択してください',
+    pathRequired: 'デバイスを読み込むにはエミュレーターのパスを選択してください',
+    selectPath: 'エミュレーターのパスを選択',
     waitLabel: '最大待機時間',
     waitTip: 'エミュレーター起動後に待機する最大時間',
     waitPlaceholder: '最大待機時間を入力',

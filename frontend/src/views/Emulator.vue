@@ -19,6 +19,7 @@ import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
+import EmulatorDeviceEmpty from '@/views/Emulator/components/EmulatorDeviceEmpty.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorOptions } from '@/composables/useEmulatorOptions'
@@ -58,6 +59,8 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 // 模拟器类型映射
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
 const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
+// 以已保存的路径为准，避免选中文件但保存失败时仍发起设备查询。
+const needsEmulatorPath = (uid: string) => !isEmulator2(uid) && !emulatorData.value[uid]?.Info?.Path
 
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('emulator.type.general') },
@@ -106,7 +109,12 @@ const route = useRoute()
 // 只轮询当前激活页签的模拟器；emulator2 类型由 Emulator2Panel 自己刷新
 const pollDevicesStatus = async () => {
   const uid = activeKey.value
-  if (!uid || !emulatorIndex.value.some(e => e.uid === uid) || isEmulator2(uid)) {
+  if (
+    !uid ||
+    !emulatorIndex.value.some(e => e.uid === uid) ||
+    isEmulator2(uid) ||
+    needsEmulatorPath(uid)
+  ) {
     return
   }
 
@@ -447,6 +455,7 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       if (key === 'path' || key === 'type') await invalidateEmulatorDeviceOptions(uuid)
       // 保存成功后重新获取最新配置
       await refreshEmulatorConfig(uuid)
+      if (key === 'path') await loadDevices(uuid)
     } else {
       message.error(response.message || t('emulator.toast.saveFailed'))
     }
@@ -566,6 +575,11 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
 
 // 加载设备信息 - 简化版，不使用缓存
 const loadDevices = async (uuid: string) => {
+  if (needsEmulatorPath(uuid)) {
+    devicesData.value[uuid] = {}
+    return
+  }
+
   loadingDevices.value.add(uuid)
   loadingDevices.value = new Set(loadingDevices.value)
 
@@ -1204,26 +1218,15 @@ const handleBossKeyInputChange = (uuid: string) => {
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
-                  <div
+                  <EmulatorDeviceEmpty
                     v-if="
                       !devicesData[element.uid] ||
                       Object.keys(devicesData[element.uid]).length === 0
                     "
-                    class="empty-devices"
-                  >
-                    <a-empty :description="t('emulator.noDevice')">
-                      <template #extra>
-                        <a-button
-                          type="primary"
-                          size="small"
-                          :icon="h(PlayCircleOutlined)"
-                          @click="startEmulator(element.uid, '0')"
-                        >
-                          {{ t('emulator.startEmulator') }}
-                        </a-button>
-                      </template>
-                    </a-empty>
-                  </div>
+                    :needs-path="needsEmulatorPath(element.uid)"
+                    @select-path="selectEmulatorPath(element.uid)"
+                    @start="startEmulator(element.uid, '0')"
+                  />
 
                   <div v-else class="devices-grid">
                     <a-table
@@ -1578,15 +1581,6 @@ const handleBossKeyInputChange = (uuid: string) => {
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-}
-
-.empty-devices {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
-  text-align: center;
 }
 
 .devices-grid {

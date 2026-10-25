@@ -3028,6 +3028,8 @@ export default {
     typePlaceholder: '选择模拟器类型',
     pathLabel: '模拟器路径',
     pathPlaceholder: '请点击文件夹图标选择模拟器路径',
+    pathRequired: '请选择模拟器路径以加载设备',
+    selectPath: '选择模拟器路径',
     waitLabel: '最大等待时间',
     waitTip: '启动模拟器后的最大等待时间',
     waitPlaceholder: '输入最大等待时间',
