@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import type { Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { GetService } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
@@ -91,6 +92,11 @@ export const useAzurlaneActivitySource = () => {
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
   /** 后端回了旧缓存时先存在这里：数据要显示，但这次取数不算成功，见 fetchData */
   let stalePayload: AzurlanePayload | null = null
+  /**
+   * 骨架的 hasData。拿到 stale 回包时得先把它置真，否则骨架会走「还没有数据」的
+   * 不可用分支把卡片清空，后端刚给的那份缓存就白给了（首次进首页就是这种情形）。
+   */
+  let hasData: Ref<boolean> | null = null
   const staleMessage = () => t('home.sra.staleMessage')
 
   const source = useHomeActivitySource<AzurlanePayload>({
@@ -116,9 +122,11 @@ export const useAzurlaneActivitySource = () => {
         const payload = (response.data ?? {}) as AzurlanePayload
         if (payload.stale === true) {
           // 后端取数失败、退回了上次缓存：数据要显示，但这次没取成功。
-          // 抛出去让公共骨架按失败处理（释放加载态并安排退避重试），
-          // 数据在 markStale 里补上——否则 WIKI 恢复后这一轮不会自动重拉
+          // 先认下「有数据」，骨架才会走 markStale 保留内容而不是 markUnavailable 清空；
+          // 再抛出走骨架的失败分支，让它释放加载态并安排退避重试——否则 WIKI 恢复后
+          // 这一轮不会自动重拉。数据在 markStale 里消费
           stalePayload = payload
+          if (hasData) hasData.value = true
           throw new Error('活动数据取数失败，已回退上次结果')
         }
         return payload
@@ -127,6 +135,8 @@ export const useAzurlaneActivitySource = () => {
       }
     },
     applyData: payload => {
+      // 新数据到手就把暂存清掉，免得之后一次普通失败又把更旧的缓存翻出来
+      stalePayload = null
       overview.value = buildOverview(payload, staleMessage())
     },
     markStale: () => {
@@ -138,12 +148,15 @@ export const useAzurlaneActivitySource = () => {
         : { ...overview.value, Stale: true, Message: staleMessage() }
     },
     markUnavailable: () => {
+      // 走不到这里也清一下，避免暂存值跨轮残留
+      stalePayload = null
       // 不能只清空：展示器只看 Message 决定要不要出错误提示，空着一句话都不给
       overview.value = createEmptySraActivityOverview(
         t('home.sra.unavailable', { name: '碧蓝航线' })
       )
     },
   })
+  hasData = source.hasData
 
   return {
     overview,
