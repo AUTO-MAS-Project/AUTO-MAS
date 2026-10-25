@@ -1,11 +1,11 @@
-"""从 MXU 用户可见日志采集协议空间材料报告，不读取 IMS 缓存。"""
+"""从 MXU 用户可见日志采集协议空间材料获得记录，不读取 IMS 缓存。"""
 
 import re
 from html import unescape
 
 from app.task.MaaEnd.push_log import _parse_line_ts
 
-INVENTORY_REPORT_RULE = (r"^(?:扫描库存|本次获得|上游报告)：", "")
+INVENTORY_REPORT_RULE = (r"^(?:本次获得|上游报告)：", "")
 _SCAN_TITLES = (
     "识别到以下物品：",
     "識別到以下物品：",
@@ -23,7 +23,7 @@ _GAIN_TITLES = (
 
 
 class InventoryReport:
-    """仅收集协议空间范围内的扫描、获得和上游状态原文。"""
+    """仅收集协议空间范围内的获得和上游状态，忽略全量库存。"""
 
     def __init__(
         self, task_names: set[str], status_messages: set[str] | None = None
@@ -34,7 +34,7 @@ class InventoryReport:
         self.section = ""
 
     def select(self, line: str) -> str | None:
-        """供 log_box 前置过滤使用；保留扫描与获得的不同含义。"""
+        """供 log_box 前置过滤使用；只把奖励记录作为材料增量。"""
 
         text = unescape(re.sub(r"<[^>]*>", "", line))
         text = re.sub(r"^\[[^\]]+\]\s*", "", text).strip()
@@ -52,13 +52,13 @@ class InventoryReport:
         scan_title = next((title for title in _SCAN_TITLES if title in text), "")
         gain_title = next((title for title in _GAIN_TITLES if title in text), "")
         if scan_title:
-            self.section = "扫描库存"
-            text = text.split(scan_title, 1)[1].strip()
+            self.section = ""
+            return None
         elif gain_title:
             self.section = "本次获得"
             text = text.split(gain_title, 1)[1].strip()
         elif text in self.status_messages or re.search(
-            r"(?:(?:当前 |目前 |Current |現在 |현재 ).+[:：]\s*\d+|目标.*(?:不足|满足|达标|切换)|理智.*不足|扫描.*失败)",
+            r"(?:目标.*(?:不足|满足|达标|切换)|理智.*不足|扫描.*失败)",
             text,
         ):
             self.section = ""

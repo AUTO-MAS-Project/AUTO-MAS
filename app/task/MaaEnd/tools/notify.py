@@ -149,9 +149,9 @@ def build_statistics_payload(
 
 
 def build_inventory_payload(*, title: str, message: dict) -> NotifyPayload:
-    """原样展示上游材料报告，不从数量推断任务达标。"""
+    """展示本轮材料获得记录和上游状态，不附带全量库存。"""
     lines = message["inventory_report"] or [
-        "本轮未收到养成材料报告，库存与达标状态未知。"
+        "本轮未收到养成材料获得记录；不代表实际获得数量为 0。"
     ]
     text = "\n".join(
         [
@@ -159,7 +159,6 @@ def build_inventory_payload(*, title: str, message: dict) -> NotifyPayload:
             f"开始时间：{message['start_time']}",
             f"结束时间：{message['end_time']}",
             *lines,
-            "扫描库存为扫描时的数量，本次获得为奖励数量；以 MaaEnd 明确报告的达标状态为准。",
         ]
     )
     return NotifyPayload(title=title, text=text, html=f"<pre>{escape(text)}</pre>")

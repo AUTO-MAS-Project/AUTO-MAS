@@ -3091,7 +3091,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             try:
                 await self.task_info.notifications.send_user(
                     payload=build_inventory_payload(
-                        title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的养成材料状态",
+                        title=f"{datetime.now():%m-%d} | {self.cur_user_item.name} 的本轮材料收获",
                         message=statistics,
                     ),
                     user_config=self.cur_user_config,

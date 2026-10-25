@@ -796,7 +796,7 @@ export default {
     maaEndImsParticipation: '本轮计划',
     maaEndImsIncluded: '参与补库',
     maaEndImsExcluded: '不参与',
-    maaEndImsNotify: '养成材料状态',
+    maaEndImsNotify: '本轮材料收获',
     maaEndImsNotifyHint:
       '任务结束后向当前用户的通知渠道推送本轮扫描库存、获得数量和上游状态。与统计通知、任务节点详情独立；未收到材料报告时显示状态未知。',
     maaEndConfigureInventory: '配置库存目标',
