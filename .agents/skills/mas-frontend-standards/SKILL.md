@@ -1,6 +1,6 @@
 ---
 name: mas-frontend-standards
-description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electron renderer, routing, API composables, state, styles, forms, validation, or frontend verification tasks.
+description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electron renderer, routing, API composables, Vue Query, queued immediate saves, state, styles, forms, validation, or frontend verification tasks.
 ---
 
 # MAS Frontend Standards
@@ -41,7 +41,8 @@ Before editing frontend code:
 | Reusable page flow | `src/views/<module>/useXxxLogic.ts` or composable | Template expressions |
 | Pure utility | `src/utils` | Copied inside components |
 | Domain type | `src/types` or generated `src/api/models` | Repeated local component types |
-| Shared reactive application state | `src/stores` with Pinia | Page-level `localStorage` access |
+| Shared reactive client-owned state | `src/stores` with Pinia | Page-level `localStorage` access |
+| Shared backend query cache | Existing Vue Query composables and `src/services/queryClient.ts` | Duplicated page caches or Pinia mirrors |
 | Global style token | `src/style.css` or future `src/styles` | Repeated page-local variables |
 | Global browser UI style such as scrollbars | `src/styles`, imported once by the renderer entry | Repeated component-level browser pseudo-elements |
 | Electron capability | `electron` and preload types | Direct renderer Node access |
@@ -86,6 +87,12 @@ Extract a meaningful UI region or workflow with clear ownership and a narrow int
 10. Generated services throw `ApiError` on non-2xx responses. Read the backend's message from `error.body` after narrowing it (`instanceof ApiError`, object check, `typeof message === 'string'`), then rethrow as `Error`. Wanting `AxiosError.response.data` is not a reason to skip the generated client. `useMaaFWUpdateApi.ts` and `useHSRPluginApi.ts` are the reference.
 11. Pass generated enums (e.g. `MaaFWProjectUpdateIn.action.CHECK`) instead of string literals cast to the request type.
 
+## Server State And Immediate Saves
+
+Reuse the installed `@tanstack/vue-query` for shared backend reads and script-edit save scheduling where its semantics fit. Keep form drafts local and client-owned shared state in Pinia; adopting a request library does not move business flow out of its page.
+
+When changing query caching, invalidation, repeated request-state code, or immediate-save queues, read [request state and immediate saves](references/request-state-and-saves.md). It covers the shared script-save entrypoint, page-owned callbacks, ordering, failure recovery, and mutation GC. Do not apply script-field coalescing to backup/restore operations or user-edit flows with different save semantics.
+
 ## Backend Config Payloads
 
 Config integration follows [the configuration framework reference](../mas-data-model/references/config-framework.md). Backend config fields are the single contract source; use generated `ConfigInput`/`ConfigPayload` projections through the actual generated client types.
@@ -101,7 +108,7 @@ Config integration follows [the configuration framework reference](../mas-data-m
 1. Route paths use lowercase kebab-case; route names use PascalCase.
 2. Route components are lazy-loaded and business routes include `meta.title`.
 3. Prefer `navigateTo` or `navigateToByName`; avoid scattered hardcoded paths.
-4. Prefer Pinia for reactive application data shared across components or pages, coordinated state with multiple readers or writers, and state that should survive component unmounts or route changes during the current session.
+4. Prefer Pinia for client-owned reactive application data shared across components or pages, coordinated state with multiple readers or writers, and state that should survive component unmounts or route changes during the current session. Reusable backend query results follow the Vue Query guidance above.
 5. Do not store Pinia-suitable state directly in `localStorage`, and do not keep Pinia and `localStorage` as competing sources of truth.
 6. Keep truly component-local, short-lived state in the owning component. Do not create a store for a single isolated control or form draft with no cross-component lifecycle.
 7. Use `localStorage` only for small, non-sensitive browser-local preferences that must survive application restarts and do not belong to Pinia, backend data, or Electron configuration. Namespace keys, validate parsed values, and provide safe defaults for missing or invalid data.
