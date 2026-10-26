@@ -18,23 +18,19 @@
 
 from fastapi import APIRouter
 
-from . import (
-    baah,
-    backup,
-    bettergi,
-    hsr,
-    maa,
-    maaend,
-    maafw,
-    management,
-    oknte,
-    okww,
-    sharing,
-    users,
-    webhooks,
-    whimbox,
-    zzzod,
-)
+from app.task.BAAH.api import router as baah_router
+from app.task.BetterGI.api import router as bettergi_router
+from app.task.HSR.api import router as hsr_router
+from app.task.MAA.api import router as maa_router
+from app.task.MaaEnd.api import router as maaend_router
+from app.task.MaaFW.api import router as maafw_router
+from app.task.MSS.api import router as mss_router
+from app.task.OkNte.api import router as oknte_router
+from app.task.Okww.api import router as okww_router
+from app.task.Whimbox.api import router as whimbox_router
+from app.task.ZzzOd.api import router as zzzod_router
+
+from . import backup, management, sharing, users, webhooks
 from .users import UserUpdateIn as UserUpdateIn
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -43,14 +39,15 @@ router.include_router(management.router)
 router.include_router(users.router)
 router.include_router(webhooks.router)
 router.include_router(sharing.router)
-router.include_router(okww.router)
-router.include_router(maaend.router)
-router.include_router(maa.router)
-router.include_router(maafw.router)
-router.include_router(hsr.router)
-router.include_router(bettergi.router)
-router.include_router(baah.router)
-router.include_router(zzzod.router)
-router.include_router(whimbox.router)
-router.include_router(oknte.router)
+router.include_router(okww_router)
+router.include_router(maaend_router)
+router.include_router(maa_router)
+router.include_router(maafw_router)
+router.include_router(mss_router)
+router.include_router(hsr_router)
+router.include_router(bettergi_router)
+router.include_router(baah_router)
+router.include_router(zzzod_router)
+router.include_router(whimbox_router)
+router.include_router(oknte_router)
 router.include_router(backup.router)
