@@ -1,5 +1,5 @@
 <template>
-  <div class="log-panel">
+  <div class="scheduler-panel log-panel">
     <div class="scheduler-panel-header">
       <h3>{{ t('scheduler.log.title') }}</h3>
       <div class="log-controls">
@@ -226,28 +226,12 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.log-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
+<style scoped src="./schedulerPanel.css"></style>
 
+<style scoped>
 .scheduler-panel-header {
-  display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
 }
 
 .scheduler-panel-header h3 {
