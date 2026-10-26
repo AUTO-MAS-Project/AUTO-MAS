@@ -39,7 +39,7 @@
       :user-id="userId"
       :user-name="formData.userName"
       :saving="isSaving"
-      @handle-cancel="handleCancel"
+      @cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
