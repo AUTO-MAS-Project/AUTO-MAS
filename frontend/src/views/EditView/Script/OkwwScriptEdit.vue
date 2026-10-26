@@ -111,7 +111,7 @@
                 <template #label>
                   <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
                     <span class="form-label">
-                      运行前强制切换账号
+                      {{ t('edit.forceSwitchAccountBeforeRun') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -123,8 +123,8 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
                 <span class="control-hint">
                   {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
@@ -466,7 +466,9 @@
     </template>
     <template v-else>
       <div class="update-log-area">
-        <pre class="update-log-content">{{ updateModal.log || '正在连接更新任务...' }}</pre>
+        <pre class="update-log-content">
+          {{ updateModal.log || t('edit.wutheringWavesUpdateConnecting') }}
+        </pre>
       </div>
     </template>
   </a-modal>

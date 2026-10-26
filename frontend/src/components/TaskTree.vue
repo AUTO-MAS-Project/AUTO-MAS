@@ -17,7 +17,7 @@
               <CaretRightOutlined v-else class="expand-icon" />
               <span class="script-name">{{ script.name }}</span>
               <span v-if="script.user_list && script.user_list.length > 0" class="user-count">
-                ({{ script.user_list.length }}个用户)
+                {{ t('comp.scriptUserCount', { n: script.user_list.length }) }}
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
@@ -32,7 +32,7 @@
             <div class="user-content">
               <span class="user-name">{{ t('scheduler.overview.userNotLoaded') }}</span>
               <a-tag :color="getStatusColor('等待')" size="small" class="status-tag">
-                {{ statusLabel('等待') }}
+                {{ t('status.waiting') }}
               </a-tag>
             </div>
           </div>

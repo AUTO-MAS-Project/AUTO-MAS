@@ -38,7 +38,9 @@
       <!-- 底部操作按钮 -->
       <div class="notice-footer">
         <div class="notice-pagination">
-          <span class="pagination-text"> 共 {{ notices.length }} 个公告 </span>
+          <span class="pagination-text">{{
+            t('comp.announcementCount', { n: notices.length })
+          }}</span>
         </div>
 
         <div class="notice-actions">

@@ -101,8 +101,10 @@
 
         <div class="selection-info">
           <div class="current-selection">
-            当前选择: 起始位置 {{ selection.startPos + 1 }} - 结束位置 {{ selection.endPos + 1 }}
-            <span v-if="selectedText">(内容: "{{ selectedText }}")</span>
+            {{
+              t('comp.currentSelection', { p0: selection.startPos + 1, p1: selection.endPos + 1 })
+            }}
+            <span v-if="selectedText">{{ t('comp.selectedContent', { text: selectedText }) }}</span>
           </div>
           <a-button type="primary" :disabled="!selection.valid" @click="applySelection">
             {{ t('comp.appSelection') }}
