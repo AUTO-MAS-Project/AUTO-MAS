@@ -25,18 +25,20 @@
     <!-- 本脚本的其他用户：单选卡片，选中的那份队列覆盖当前用户的 -->
     <template v-if="sourceKind === 'users'">
       <a-spin :spinning="userLoading" :class="{ 'queue-import-spin': userLoading }">
-        <div v-if="userCandidates.length > 0" class="queue-import-users" role="radiogroup">
-          <div
+        <a-radio-group
+          v-if="userCandidates.length > 0"
+          v-model:value="pickedUserId"
+          :name="userGroupName"
+          class="queue-import-users"
+          role="radiogroup"
+          :aria-label="t('edit.queueImportFromUsers')"
+        >
+          <a-radio
             v-for="candidate in userCandidates"
             :key="candidate.userId"
-            role="radio"
-            tabindex="0"
-            :aria-checked="pickedUserId === candidate.userId"
+            :value="candidate.userId"
             class="queue-import-user"
             :class="{ 'queue-import-user-selected': pickedUserId === candidate.userId }"
-            @click="pickedUserId = candidate.userId"
-            @keydown.enter.prevent="pickedUserId = candidate.userId"
-            @keydown.space.prevent="pickedUserId = candidate.userId"
           >
             <div class="queue-import-user-head">
               <span class="queue-import-user-name">{{ candidate.name }}</span>
@@ -51,8 +53,8 @@
               </span>
             </div>
             <MaaFWQueueChips :chips="candidate.chips" />
-          </div>
-        </div>
+          </a-radio>
+        </a-radio-group>
         <a-empty
           v-else-if="!userLoading"
           class="shell-queue-import-empty"
@@ -93,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
+import { computed, h, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, notification } from 'ant-design-vue'
@@ -136,6 +138,7 @@ const emit = defineEmits<{
 type SourceKind = 'users' | 'shell'
 
 const { t } = useI18n()
+const userGroupName = useId()
 const route = useRoute()
 const scriptId = route.params.scriptId as string
 const userId = route.params.userId as string
@@ -345,8 +348,9 @@ const apply = async () => {
 
 .queue-import-user {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
+  margin-inline-end: 0;
   padding: 12px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
@@ -355,6 +359,11 @@ const apply = async () => {
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
+}
+
+.queue-import-users .queue-import-user :deep(.ant-radio + span) {
+  flex: 1;
+  min-width: 0;
 }
 
 .queue-import-user:hover {
@@ -368,6 +377,7 @@ const apply = async () => {
 }
 
 .queue-import-user-head {
+  margin-bottom: 8px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
