@@ -101,7 +101,7 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
 )
-from .tools.log_bundle import build_attempt_bundle, prepare_bundle_round
+from .tools.log_bundle import export_failure_logs
 from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
 from .tools.notify import build_inventory_payload, collect_recent_error_images
 from .update_takeover import (
@@ -448,8 +448,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 已归档次数比对判断是否还有未归档的现场，重复调用只会等同一个打包作业。
         self._mxu_launch_count = 0
         self._archived_launch_count = 0
-        self._bundle_round_dir: Path | None = None
-        self._bundle_attempt_no = 0
         self._bundle_job: asyncio.Task | None = None
         # 打包失败过就不再强制 MXU 清日志：宁可下一轮日志混一点，也要留下现场再试一次。
         self._bundle_failed = False
@@ -2995,46 +2993,29 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         stage: str | None,
         launches: int,
     ) -> bool:
-        """打包作业本体：一次运行一个目录，运行里每次失败尝试各占一个子目录。
+        """打包作业本体：一次现场一份日志包，规则同 MXU 的日志导出。
 
         Returns:
             bool: 现场是否已经安全落盘。
         """
 
         try:
-            round_dir = self._bundle_round_dir
-            if round_dir is None:
-                round_dir = await asyncio.to_thread(
-                    prepare_bundle_round,
-                    target_dir,
-                    root_path,
-                    user_name=self.cur_user_item.name,
-                )
-                self._bundle_round_dir = round_dir
-            self._bundle_attempt_no += 1
-            attempt = await asyncio.to_thread(
-                build_attempt_bundle,
-                round_dir,
-                root_path,
-                attempt_no=self._bundle_attempt_no,
-                label=label,
-                stage=stage,
-            )
+            export = await asyncio.to_thread(export_failure_logs, target_dir, root_path)
         except Exception as error:
             self._bundle_failed = True
             logger.opt(exception=True).warning(f"保存 MaaEnd 失败日志包失败: {error}")
             return False
         # 有没有内容都记下已归档：同一份现场反复重试没有意义。
         self._archived_launch_count = launches
-        if attempt is None:
+        if export is None:
             logger.warning(f"MaaEnd {label}失败日志包没有可打包的内容")
             return True
         incomplete = (
-            f"，{attempt.failed_files} 个文件未能写入" if attempt.failed_files else ""
+            f"，{export.failed_files} 个文件未能写入" if export.failed_files else ""
         )
         message = (
-            f"MaaEnd {label}失败日志包已保存: {attempt.directory}"
-            f"（{len(attempt.volumes)} 卷{incomplete}）"
+            f"MaaEnd {label}失败日志包已保存: {export.directory}"
+            f"（{len(export.volumes)} 卷{incomplete}）"
         )
         logger.success(message)
         await push_dispatch_log(self.script_info, message)

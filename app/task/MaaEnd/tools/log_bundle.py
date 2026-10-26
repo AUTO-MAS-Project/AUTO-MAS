@@ -19,23 +19,33 @@
 
 """按 MXU 的导出规则把 MaaEnd 运行日志打包成分卷 ZIP。
 
-规则对齐 MXU ``src-tauri/src/commands/file_ops.rs`` 的 ``export_logs``：收集
-``debug/`` 根目录的 .log 与 .dmp、``config/`` 全量、``debug/`` 各子目录里的
-.log/.json/.dmp，以及 ``on_error/``、``vision/`` 的截图；单卷上限 24.5 MB，
-超出切成 ``-partNN.zip``。打包对象是上游安装现场的日志，MAS 自身的运行日志
-走历史库，不在本模块范围内。
+逐条对应 MXU ``src-tauri/src/commands/file_ops.rs`` 的 ``export_logs_blocking``：
 
-产物按「一次任务运行」分组：一次运行一个目录，运行里每次失败尝试各占一个子
-目录，所以保存目录里的保留上限按运行次数计，不会因为一次运行的多次重试就把
-之前的证据挤掉。目录里的 ``bundle.json`` 既是给人看的清单，也是清理旧包时
-「这个目录是我建的」的唯一凭据。
+- 收集：``debug/`` 根目录的 .log/.dmp（按文件名排序）→ ``config/`` 全量递归（前缀
+  ``config/``）→ ``debug/`` 每个子目录递归里的 .log/.json/.dmp（前缀是子目录名）→
+  ``debug/on_error`` 与 ``debug/vision`` 的图片（只扫一层、按修改时间新→旧排在尾部）。
+  没有可导出内容时视为空。
+- 命名：目录 ``<项目>-logs-<版本>-<时间戳>``（版本为空时省掉），分卷
+  ``<目录名>-partNN.zip``，时间戳格式 ``%Y%m%d-%H%M%S``，分卷号零填充宽度按条目数
+  定（≥100 用 3 位，否则 2 位）。
+- 分卷：单卷上限 24.5 MB，两阶段容量判断（先按扩展名估算压缩后大小，估算触线才用
+  DEFLATE 实测一次），每卷至少写一个文件。
+- 保留：只在导出根目录下按目录名末尾的时间戳留最近 ``MAX_EXPORTS_TO_KEEP`` 份，本次
+  产物始终保留，解不出时间戳的目录既不删也不占名额。除分卷外不写任何附加文件。
+
+MAS 侧与 MXU 不同、且是有意为之的几处：
+
+- 导出根目录来自用户在脚本配置里选的目录（MXU 固定在 ``<数据目录>/debug_exports``）。
+- 分卷先写 ``.tmp`` 再改名，异常中断不会把半截 ZIP 当成正式包留在目录里。
+- 归档名与项目名会做一次清洗（去掉 ``..``、盘符、非法字符），MXU 直接拼接。
+- 一个文件都没收集到返回 ``None``（MXU 报错）；一个文件都没写成功按失败抛出，交给
+  调用方保留现场重试。
 
 同一套收集规则在前端还有一份实现：``frontend/electron/services/maaEndIssueReportService.ts``
 （界面导出「MaaEnd 问题包」时用）。改收集范围、扩展名或单卷上限时要两边一起改，
 否则自动保存的日志包和手动导出的问题包内容会不一致。
 """
 
-import json
 import os
 import re
 import shutil
@@ -56,13 +66,9 @@ logger = get_logger("MaaEnd 日志打包")
 MAX_VOLUME_BYTES = 24_500_000
 """单卷上限，与 MXU 的 MAX_VOLUME_BYTES 一致。"""
 
-MAX_BUNDLES_TO_KEEP = 10
-"""同一目录下最多保留几次运行的日志包，口径与 MXU 的 MAX_EXPORTS_TO_KEEP 一致。"""
+MAX_EXPORTS_TO_KEEP = 10
+"""导出根目录下保留的份数，与 MXU 的 MAX_EXPORTS_TO_KEEP 一致（本次产物始终保留）。"""
 
-_MANIFEST_NAME = "bundle.json"
-"""运行目录里的清单文件名，同时也是清理旧包时的自建标记。"""
-_MANIFEST_TOOL = "auto-mas"
-_MANIFEST_KIND = "maaend-failure-bundle"
 
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
 _ROOT_LOG_SUFFIXES = {".log", ".dmp"}
@@ -74,7 +80,11 @@ _TEXT_SUFFIXES = {".log", ".json", ".txt", ".toml", ".yaml", ".yml", ".xml", ".c
 _ZIP_CENTRAL_FIXED_BYTES = 46
 """ZIP 中央目录每条记录的固定字段大小，不含文件名。"""
 _ZIP_EOCD_BYTES = 22
-"""ZIP 结尾记录的大小。"""
+"""ZIP 结尾记录（EOCD）的大小。"""
+_ZIP_LOCAL_HEADER_OVERHEAD = 64
+"""local header 固定开销 + DEFLATE 帧头 + 余量，与 MXU 的 ZIP_LOCAL_HEADER_OVERHEAD 一致。"""
+_TIMESTAMP_LEN = 15
+"""导出目录名末尾时间戳 ``YYYYMMDD-HHMMSS`` 的长度。"""
 
 _UNSAFE_NAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 _ARCHIVE_SEPARATORS = re.compile(r"[\\/]+")
@@ -82,8 +92,8 @@ _DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
 
 
 @dataclass
-class BundleAttempt:
-    """一次失败尝试的打包结果。"""
+class LogExport:
+    """一次导出的结果，对应导出根目录下的一个日志包目录。"""
 
     directory: Path
     volumes: list[Path] = field(default_factory=list)
@@ -262,118 +272,38 @@ def _deflate_size(path: Path) -> int:
     return total + len(compressor.flush())
 
 
-def _read_manifest(directory: Path) -> dict[str, object] | None:
-    """读取运行目录清单；不是本模块建的目录返回 ``None``。"""
-
-    try:
-        value = json.loads((directory / _MANIFEST_NAME).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(value, dict):
-        return None
-    if value.get("tool") != _MANIFEST_TOOL or value.get("kind") != _MANIFEST_KIND:
-        return None
-    return value
-
-
-def _write_manifest(directory: Path, data: dict[str, object]) -> None:
-    """原子写入运行目录清单。"""
-
-    path = directory / _MANIFEST_NAME
-    temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    os.replace(temporary, path)
-
-
-def prepare_bundle_round(
-    target_dir: Path,
-    root_path: Path,
-    *,
-    user_name: str = "",
-    now: datetime | None = None,
-) -> Path:
-    """为一次任务运行准备日志包目录，并写入清单。
-
-    目录名沿用 MXU 的 ``<项目>-logs-<版本>-<时间戳>`` 形式；同一秒内撞名或多个
-    安装共用同一个保存目录时依次加 ``-2``、``-3``，绝不复用已有目录。
-
-    Args:
-        target_dir (Path): 用户配置的保存目录，不存在时创建。
-        root_path (Path): MaaEnd 安装目录，用于读取项目名与版本。
-        user_name (str): 本次运行的用户名，只记进清单，不参与目录命名。
-        now (datetime | None): 用于生成时间戳的时间，默认当前时间。
-
-    Returns:
-        Path: 本次运行的日志包目录。
-
-    Raises:
-        OSError: 保存目录不可写，或无法创建唯一的日志包目录。
-    """
+def _export_dir_name(root_path: Path, *, now: datetime | None = None) -> str:
+    """这次导出的目录名，口径与 MXU 的 ``dir_name`` 一致。"""
 
     project_name, project_version = read_project_info(root_path)
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-    base_name = (
+    return (
         f"{project_name}-logs-{project_version}-{stamp}"
         if project_version
         else f"{project_name}-logs-{stamp}"
     )
-    target_dir.mkdir(parents=True, exist_ok=True)
-    for index in range(1, 100):
-        candidate = target_dir / (base_name if index == 1 else f"{base_name}-{index}")
-        try:
-            candidate.mkdir()
-        except FileExistsError:
-            continue
-        try:
-            _write_manifest(
-                candidate,
-                {
-                    "tool": _MANIFEST_TOOL,
-                    "kind": _MANIFEST_KIND,
-                    "created": datetime.now()
-                    .astimezone()
-                    .isoformat(timespec="seconds"),
-                    "project": project_name,
-                    "version": project_version,
-                    "user": user_name,
-                    "attempts": [],
-                },
-            )
-        except OSError:
-            shutil.rmtree(candidate, ignore_errors=True)
-            raise
-        return candidate
-    raise OSError(f"无法在 {target_dir} 创建唯一的日志包目录")
 
 
-def _create_attempt_dir(round_dir: Path, attempt_no: int) -> Path:
-    """在运行目录里创建这次尝试的子目录。"""
+def _create_export_dir(exports_root: Path, dir_name: str) -> Path:
+    """建导出目录，语义等同 MXU 的 ``create_dir_all``：目录已存在就直接沿用。"""
 
-    base_name = f"attempt-{attempt_no:02d}"
-    for index in range(1, 100):
-        candidate = round_dir / (base_name if index == 1 else f"{base_name}-{index}")
-        try:
-            candidate.mkdir()
-        except FileExistsError:
-            continue
-        return candidate
-    raise OSError(f"无法在 {round_dir} 创建唯一的尝试目录")
+    out_dir = exports_root / dir_name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
 
 
 def _write_volumes(
-    attempt_dir: Path,
-    base_name: str,
+    out_dir: Path,
+    dir_name: str,
     members: list[tuple[Path, str]],
     *,
     width: int,
 ) -> tuple[list[Path], int]:
     """把条目按 MXU 的分卷规则写成 ZIP，返回卷路径与读取失败的文件数。
 
-    卷先写成 ``.tmp`` 再改名，取消或崩溃不会留下被当成正式包的半截 ZIP。
-    换卷判断沿用 MXU 的两阶段口径：先用体积估算，只有估算触线的那一份才算实际
-    压缩大小确认，所以绝大多数文件只压缩一次。
+    换卷判断沿用 MXU 的两阶段口径：先用体积估算快速通过大多数文件，估算触线时才用
+    DEFLATE 实测一次拿精确值；每卷至少写一个文件。卷先写 ``.tmp`` 再改名，异常中断
+    不会留下被当成正式包的半截 ZIP。
     """
 
     volumes: list[Path] = []
@@ -389,7 +319,7 @@ def _write_volumes(
     def open_volume() -> None:
         nonlocal index, written, central, handle, archive, volume_path, volume_tmp
         index += 1
-        volume_path = attempt_dir / f"{base_name}-part{index:0{width}d}.zip"
+        volume_path = out_dir / f"{dir_name}-part{index:0{width}d}.zip"
         volume_tmp = volume_path.with_name(volume_path.name + ".tmp")
         volume_tmp.unlink(missing_ok=True)
         handle = volume_tmp.open("wb")
@@ -424,14 +354,17 @@ def _write_volumes(
             member_bytes = len(member.encode("utf-8")) + _ZIP_CENTRAL_FIXED_BYTES
             remaining = MAX_VOLUME_BYTES - (written + central)
             estimated = size // 4 if source.suffix.lower() in _TEXT_SUFFIXES else size
-            if written and estimated + 64 + member_bytes > remaining:
+            if (
+                written
+                and estimated + _ZIP_LOCAL_HEADER_OVERHEAD + member_bytes > remaining
+            ):
                 try:
                     measured = _deflate_size(source)
                 except OSError as error:
                     logger.warning(f"无法读取日志文件 {source}: {error}")
                     failed_files += 1
                     continue
-                if measured + 64 + member_bytes > remaining:
+                if measured + _ZIP_LOCAL_HEADER_OVERHEAD + member_bytes > remaining:
                     close_volume()
                     open_volume()
             try:
@@ -454,7 +387,6 @@ def _write_volumes(
         if written:
             close_volume()
     finally:
-        # 失败路径也把 .tmp 清掉：半截包不能被当成正式包留在目录里。
         if archive is not None:
             with suppress(Exception):
                 archive.close()
@@ -466,107 +398,78 @@ def _write_volumes(
     return volumes, failed_files
 
 
-def _record_attempt(
-    round_dir: Path,
-    *,
-    attempt_no: int,
-    label: str,
-    stage: str | None,
-    attempt: BundleAttempt,
-    now: datetime | None,
-) -> None:
-    """把这次尝试的结果追加到运行目录清单；写不进去不影响日志包本身。"""
+def _parse_export_timestamp(dir_name: str) -> str | None:
+    """从导出目录名末尾解出 ``YYYYMMDD-HHMMSS``。
 
-    manifest = _read_manifest(round_dir)
-    if manifest is None:
-        manifest = {"tool": _MANIFEST_TOOL, "kind": _MANIFEST_KIND}
-    attempts = manifest.get("attempts")
-    if not isinstance(attempts, list):
-        attempts = []
-        manifest["attempts"] = attempts
-    attempts.append(
-        {
-            "attempt": attempt_no,
-            "label": label,
-            "stage": stage,
-            "saved_at": (now or datetime.now())
-            .astimezone()
-            .isoformat(timespec="seconds"),
-            "volumes": len(attempt.volumes),
-            "files": attempt.files,
-            "failed_files": attempt.failed_files,
-            "bytes": attempt.bytes,
-        }
-    )
-    try:
-        _write_manifest(round_dir, manifest)
-    except OSError as error:
-        logger.warning(f"更新日志包清单失败 {round_dir}: {error}")
+    与 MXU 的 ``parse_export_timestamp`` 同口径：在字节层面取末尾 15 个字符，避免目录
+    名含非 ASCII 时切到码点中间；形状不符返回 ``None``，清理时既不删也不占名额。
+    """
+
+    encoded = dir_name.encode("utf-8", "surrogatepass")
+    if len(encoded) < _TIMESTAMP_LEN:
+        return None
+    tail = encoded[-_TIMESTAMP_LEN:]
+    if not (tail[:8].isdigit() and tail[8:9] == b"-" and tail[9:].isdigit()):
+        return None
+    return tail.decode("ascii", "ignore")
 
 
-def _prune_old_bundles(target_dir: Path, *, current: Path, keep: int) -> None:
-    """只保留最近 ``keep`` 次运行的日志包目录。
+def prune_old_exports(exports_root: Path, *, current_export: Path) -> None:
+    """只保留最近 ``MAX_EXPORTS_TO_KEEP`` 份导出，本次产物始终保留。
 
-    只删带本模块清单且清单判定通过的目录：用户自己在保存目录里放的同名文件夹
-    一律不碰，删错了没法恢复。
+    口径与 MXU 的 ``prune_old_exports`` 一致：枚举导出根目录下的子目录，按目录名末尾的
+    时间戳从新到旧排序（不看 mtime：Windows 上目录时间不稳定，备份同步也会改写），
+    删掉超出部分；解不出时间戳的目录既不删也不占名额。清理失败只告警。
     """
 
     candidates: list[tuple[str, Path]] = []
     try:
-        entries = list(target_dir.iterdir())
+        for path in exports_root.iterdir():
+            if path == current_export or not path.is_dir():
+                continue
+            stamp = _parse_export_timestamp(path.name)
+            if stamp is None:
+                continue
+            candidates.append((stamp, path))
     except OSError as error:
-        logger.warning(f"枚举日志包目录失败 {target_dir}: {error}")
+        logger.warning(f"枚举导出目录失败 {exports_root}: {error}，跳过旧导出清理")
         return
-    for path in entries:
-        if path == current or not path.is_dir() or path.is_symlink():
-            continue
-        manifest = _read_manifest(path)
-        if manifest is None:
-            continue
-        candidates.append((str(manifest.get("created") or ""), path))
-    if len(candidates) < keep:
+    keep_others = MAX_EXPORTS_TO_KEEP - 1
+    if len(candidates) <= keep_others:
         return
-    candidates.sort(key=lambda item: item[0])
-    for _, path in candidates[: len(candidates) - keep + 1]:
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    for _, path in candidates[keep_others:]:
         try:
             shutil.rmtree(path)
         except OSError as error:
-            logger.warning(f"清理旧日志包失败 {path}: {error}")
+            logger.warning(f"清理旧导出失败 {path}: {error}")
         else:
-            logger.info(f"已清理旧 MaaEnd 日志包: {path.name}")
+            logger.info(f"已清理旧导出: {path}")
 
 
-def build_attempt_bundle(
-    round_dir: Path,
+def export_failure_logs(
+    exports_root: Path,
     root_path: Path,
     *,
-    attempt_no: int,
-    label: str = "",
-    stage: str | None = None,
     now: datetime | None = None,
-    keep: int = MAX_BUNDLES_TO_KEEP,
-) -> BundleAttempt | None:
-    """把当前失败现场的 MaaEnd 运行日志打包到运行目录下的尝试子目录。
+) -> LogExport | None:
+    """把当前失败现场导出一份 MXU 口径的日志包目录。
 
     Args:
-        round_dir (Path): 由 :func:`prepare_bundle_round` 创建的运行目录。
-        root_path (Path): MaaEnd 安装目录，读取其 ``debug/`` 与 ``config/``。
-        attempt_no (int): 本次运行里的第几次失败尝试，从 1 开始。
-        label (str): 写进清单的尝试标识，如 ``原配置阶段第 2 次尝试``。
-        stage (str | None): 写进清单的阶段名。
-        now (datetime | None): 用于记录时间的时间，默认当前时间。
-        keep (int): 同一保存目录保留的运行次数上限。
+        exports_root (Path): 保存日志包的根目录，不存在时创建。
+        root_path (Path): MaaEnd 安装目录，读取 ``interface.json``、``debug/``、``config/``。
+        now (datetime | None): 用于目录名与时间戳的时间，默认当前时间。
 
     Returns:
-        BundleAttempt | None: 打包结果；没有可打包内容时返回 ``None``。
+        LogExport | None: 导出结果；没有可导出的日志时返回 ``None``。
 
     Raises:
-        OSError: 保存目录或运行目录不可写，或一个日志文件都没写成功。
+        OSError: 日志目录不存在、导出目录建不出来，或一个日志文件都没写成功。
     """
 
     entries = collect_mxu_entries(root_path)
     if not entries:
-        logger.warning(f"没有可打包的日志文件: {root_path}")
+        logger.warning(f"没有可导出的日志文件: {root_path}")
         return None
     failed_files = 0
     members: list[tuple[Path, str]] = []
@@ -578,35 +481,29 @@ def build_attempt_bundle(
             continue
         members.append((source, member))
     if not members:
+        logger.warning(f"没有可归档的文件: {root_path}")
         return None
 
-    attempt_dir = _create_attempt_dir(round_dir, attempt_no)
-    width = 3 if len(members) >= 100 else 2
-    volumes, write_failures = _write_volumes(
-        attempt_dir, round_dir.name, members, width=width
-    )
+    dir_name = _export_dir_name(root_path, now=now)
+    out_dir = _create_export_dir(exports_root, dir_name)
+    # 卷数硬上界是条目数（每个文件独占一卷的退化情形），据此选零填充宽度。
+    width = 3 if len(entries) >= 100 else 2
+    volumes, write_failures = _write_volumes(out_dir, dir_name, members, width=width)
     failed_files += write_failures
     if not volumes:
-        shutil.rmtree(attempt_dir, ignore_errors=True)
-        # 一个文件都没写成功属于打包失败，不能当成「没有内容」吞掉：调用方要留着
-        # 现场、并在收尾再试一次。
+        shutil.rmtree(out_dir, ignore_errors=True)
+        # 一个文件都没写成功说明现场没存下来：报错让调用方保留现场、收尾再试。
         raise OSError(f"没有日志文件写入成功: {root_path}")
 
-    attempt = BundleAttempt(
-        directory=attempt_dir,
+    export = LogExport(
+        directory=out_dir,
         volumes=volumes,
         files=len(members) - write_failures,
         failed_files=failed_files,
         bytes=sum(volume.stat().st_size for volume in volumes),
     )
-    _record_attempt(
-        round_dir,
-        attempt_no=attempt_no,
-        label=label,
-        stage=stage,
-        attempt=attempt,
-        now=now,
+    prune_old_exports(exports_root, current_export=out_dir)
+    logger.success(
+        f"MaaEnd 日志导出完成: {out_dir}（{len(volumes)} 卷，{export.files} 个文件）"
     )
-    _prune_old_bundles(round_dir.parent, current=round_dir, keep=keep)
-    logger.success(f"MaaEnd 运行日志打包完成: {attempt_dir}（{len(volumes)} 卷）")
-    return attempt
+    return export

@@ -1191,7 +1191,7 @@ export default {
     runConfiguration: '运行配置',
     errorLogBundle: '失败时保存日志包',
     errorLogBundleHint:
-      '开启后任务失败会自动保存运行日志包：同一次运行里每次失败的日志分开存放，最多保留最近 10 次运行。MaaEnd 的「启动时清理日志」会被临时打开，任务结束后恢复，避免上一轮日志混进来',
+      '开启后每次失败都会单独保存一份运行日志包到指定目录，最多保留最近 10 份。MaaEnd 的「启动时清理日志」会被临时打开，任务结束后恢复，避免上一轮日志混进来',
     errorLogBundleDir: '日志包保存目录',
     errorLogBundleDirPlaceholder: '未选择目录时不会保存',
     errorLogBundleNoPicker: '当前环境不支持选择目录',
