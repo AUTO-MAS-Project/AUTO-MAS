@@ -934,7 +934,7 @@ def restore_recycle_slot(
 
     ``target_slot`` 留空表示恢复回原槽号；给出其他槽号即落到指定槽（现唯一
     调用方传的是目标用户的绑定槽——只物化内容不建立绑定的恢复没有出口，
-    见 ``AppConfig.restore_zzzod_recycle``）。恢复是覆盖性操作，目标槽的选定
+    见 ``ZzzOdRecovery.restore_recycle``）。恢复是覆盖性操作，目标槽的选定
     与归属由调用方经 ``ensure_user_slot`` 解析；目标槽当前内容先按同一套归档
     进回收池——误恢复可找回。
 

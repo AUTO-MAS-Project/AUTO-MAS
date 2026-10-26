@@ -16,52 +16,24 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ZZZ-OD 编辑业务入口：任务目录与原生配置保存回读。"""
+"""ZZZ-OD 宿主能力装配与编辑入口。"""
 
-from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-
-class ZzzOdConfigGateway(Protocol):
-    """专项编辑需要的配置能力，由调用方注入。"""
-
-    def get_zzzod_root(self, script_id: str) -> Path: ...
-
-    async def get_zzzod_native_config(
-        self, script_id: str, instance_idx: int
-    ) -> dict[str, Any]: ...
-
-    async def save_zzzod_native_config(
-        self,
-        script_id: str,
-        instance_idx: int,
-        account: dict | None = None,
-        tasks: list[dict] | None = None,
-        instance_run: str | None = None,
-        launch_args: dict | None = None,
-        after_done: str | None = None,
-    ) -> dict: ...
+from .config_context import ZzzOdConfigGateway, ZzzOdContext
+from .service import ZzzOdService, read_task_catalog
 
 
-def read_task_catalog(root: Path) -> list[dict[str, Any]]:
-    """读取任务目录并补齐专项支持的配置与跳转能力。"""
-    from .tools import get_task_app_fields, get_task_app_jump, list_app_catalog
-
-    return [
-        {
-            **item,
-            "configurable": get_task_app_fields(str(item["app_id"])) is not None,
-            "jump": get_task_app_jump(str(item["app_id"])),
-        }
-        for item in list_app_catalog(root)
-    ]
+def get_service(gateway: ZzzOdConfigGateway) -> ZzzOdService:
+    """只注入配置集合与落盘能力，不把专项操作委托回宿主。"""
+    return ZzzOdService(ZzzOdContext(gateway.ScriptConfig, flush=gateway.flush))
 
 
 def get_task_catalog(
     gateway: ZzzOdConfigGateway, script_id: str
 ) -> list[dict[str, Any]]:
     """先走安装目录哨兵校验，避免空路径退回当前目录，再读取任务目录。"""
-    return read_task_catalog(gateway.get_zzzod_root(script_id))
+    return read_task_catalog(get_service(gateway).get_root(script_id))
 
 
 async def save_native_config(
@@ -76,7 +48,8 @@ async def save_native_config(
     after_done: str | None = None,
 ) -> dict[str, Any]:
     """保存成功后在同一 Task 回读；读取失败不回退已写入的原生文件。"""
-    await gateway.save_zzzod_native_config(
+    service = get_service(gateway)
+    await service.save_native_config(
         script_id,
         instance_idx,
         account=account,
@@ -85,4 +58,4 @@ async def save_native_config(
         launch_args=launch_args,
         after_done=after_done,
     )
-    return await gateway.get_zzzod_native_config(script_id, instance_idx)
+    return await service.get_native_config(script_id, instance_idx)
