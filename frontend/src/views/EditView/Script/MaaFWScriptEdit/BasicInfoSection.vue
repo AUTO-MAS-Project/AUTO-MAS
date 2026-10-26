@@ -376,6 +376,8 @@ watch(
 )
 </script>
 
+<style scoped src="./maafwSection.css"></style>
+
 <style scoped>
 .import-progress {
   display: flex;
@@ -443,23 +445,6 @@ watch(
 
 .follow-source-missing {
   color: var(--ant-color-warning);
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-}
-
-.modern-input {
-  border-radius: 8px;
 }
 
 .path-input-group {

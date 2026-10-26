@@ -399,24 +399,9 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 )
 </script>
 
+<style scoped src="./maafwSection.css"></style>
+
 <style scoped>
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-}
-
-.modern-input {
-  border-radius: 8px;
-}
-
 .launch-option {
   display: flex;
   flex-direction: column;
