@@ -689,64 +689,34 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDay')"
-                    :hint="t('edit.skipRunOnceThis')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.skipRunOnceThis')"
+                enhanced
+                @save="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit')"
-                    :hint="t('edit.ifRunStillUnfinished')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit')"
+                :hint="t('edit.ifRunStillUnfinished')"
+                enhanced
+                @save="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runTimeoutMinutes')"
-                    :hint="t('edit.treatRunAsTimed')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.treatRunAsTimed')"
+                enhanced
+                @save="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -756,6 +726,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
 import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'

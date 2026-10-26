@@ -77,61 +77,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDay')"
-                    :hint="t('edit.k0MeansNoLimit')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="whimboxConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', whimboxConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="whimboxConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', whimboxConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit2')"
-                    :hint="t('edit.whimboxRetryLimitHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="whimboxConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="whimboxConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.whimboxRetryLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runTimeoutMinutes')"
-                    :hint="t('edit.whimboxRunTimeoutHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="whimboxConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', whimboxConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="whimboxConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.whimboxRunTimeoutHint')"
+                @save="handleChange('Run', 'RunTimeLimit', whimboxConfig.Run.RunTimeLimit)"
+              />
             </a-col>
             <a-col :span="6">
               <a-form-item>
@@ -161,6 +131,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'

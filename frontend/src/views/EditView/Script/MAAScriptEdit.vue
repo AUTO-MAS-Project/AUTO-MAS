@@ -125,24 +125,14 @@
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDayThis')"
-                    :hint="t('edit.skipRunOnceThis')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="maaConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDayThis')"
+                :hint="t('edit.skipRunOnceThis')"
+                enhanced
+                @save="handleChange('Run', 'ProxyTimesLimit', maaConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
           </a-row>
           <a-row :gutter="24">
@@ -193,24 +183,14 @@
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit')"
-                    :hint="t('edit.ifRunStillUnfinished')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="maaConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="maaConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit')"
+                :hint="t('edit.ifRunStillUnfinished')"
+                enhanced
+                @save="handleChange('Run', 'RunTimesLimit', maaConfig.Run.RunTimesLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -298,6 +278,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
 import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'

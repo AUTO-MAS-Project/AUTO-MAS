@@ -175,61 +175,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDay')"
-                    :hint="t('edit.k0MeansNoLimit')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit2')"
-                    :hint="t('edit.bettergiRetryLimitHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.bettergiRetryLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runTimeoutMinutes')"
-                    :hint="t('edit.bettergiRunTimeoutHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.bettergiRunTimeoutHint')"
+                @save="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -239,6 +209,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'

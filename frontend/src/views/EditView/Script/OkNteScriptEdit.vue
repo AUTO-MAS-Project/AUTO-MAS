@@ -249,61 +249,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDay')"
-                    :hint="t('edit.k0MeansNoLimit')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="oknteConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', oknteConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="oknteConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', oknteConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit2')"
-                    :hint="t('edit.giveUpAfterThis')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="oknteConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', oknteConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="oknteConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.giveUpAfterThis')"
+                @save="handleChange('Run', 'RunTimesLimit', oknteConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runTimeoutMinutes')"
-                    :hint="t('edit.logThatStaysUnchanged')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="oknteConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', oknteConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="oknteConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.logThatStaysUnchanged')"
+                @save="handleChange('Run', 'RunTimeLimit', oknteConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -313,6 +283,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'

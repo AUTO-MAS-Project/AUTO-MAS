@@ -387,23 +387,13 @@
           </div>
           <a-row :gutter="16">
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDayThis')"
-                    :hint="t('edit.k0MeansNoLimit')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="hsrConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleRunConfigChange('ProxyTimesLimit', $event)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="hsrConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDayThis')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @change="handleRunConfigChange('ProxyTimesLimit', $event)"
+              />
             </a-col>
             <a-col :span="12">
               <a-form-item :label="t('edit.maximumAttemptsFailedTask')">
@@ -650,6 +640,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'

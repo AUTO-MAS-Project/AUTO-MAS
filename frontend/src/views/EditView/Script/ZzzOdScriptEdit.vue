@@ -241,61 +241,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runsPerDay')"
-                    :hint="t('edit.k0MeansNoLimit')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="zzzodConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', zzzodConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="zzzodConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', zzzodConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.retryLimit2')"
-                    :hint="t('edit.zzzodRetryLimitHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="zzzodConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', zzzodConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="zzzodConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.zzzodRetryLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', zzzodConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.runTimeoutMinutes')"
-                    :hint="t('edit.zzzodRunTimeoutHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="zzzodConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', zzzodConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="zzzodConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.zzzodRunTimeoutHint')"
+                @save="handleChange('Run', 'RunTimeLimit', zzzodConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -308,6 +278,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
