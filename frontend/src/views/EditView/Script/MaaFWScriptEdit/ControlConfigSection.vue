@@ -1,10 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.controlModeGameResource') }}</h3>
-    </div>
-
+  <MaaFWFormSection :title="t('edit.controlModeGameResource')">
     <a-row :gutter="24" class="controller-resource-row">
       <a-col :span="12">
         <a-form-item>
@@ -329,7 +325,7 @@
         </a-row>
       </div>
     </Transition>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -342,6 +338,7 @@ import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
 import { collectHotkeyOptions } from './hotkeyOptions'
 
@@ -402,52 +399,9 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 )
 </script>
 
+<style scoped src="./maafwSection.css"></style>
+
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-}
-
-.modern-input {
-  border-radius: 8px;
-}
-
 .launch-option {
   display: flex;
   flex-direction: column;
@@ -462,32 +416,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 .launch-option-hint {
   font-size: 12px;
   opacity: 0.65;
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
 }
 
 .controller-resource-row,

@@ -1788,22 +1788,11 @@ const addProjects = (rows: unknown[]) =>
   padding: 32px;
 }
 
-.form-section {
-  margin-bottom: 32px;
-}
-
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
 

@@ -42,26 +42,14 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.zzzodRootPathPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.zzzodRootPathPlaceholder')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :disabled="isSaving"
+                  @pick="selectRootPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -335,6 +323,7 @@
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -558,14 +547,6 @@ onMounted(loadScript)
 
 .section-header h3 {
   gap: 8px;
-}
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
 }
 
 .path-input-group {

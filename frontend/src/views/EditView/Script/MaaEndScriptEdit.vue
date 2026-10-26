@@ -101,21 +101,13 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingMaaend')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectMaaEndPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.pickDirectoryHoldingMaaend')"
+                  :pick-label="t('edit.pickDirectory')"
+                  @pick="selectMaaEndPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -197,21 +189,13 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="maaEndConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('edit.pickGameExecutable')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -542,6 +526,7 @@
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -562,12 +547,7 @@ import {
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
 import { useMaaEndLauncher } from './useMaaEndLauncher'
@@ -1175,14 +1155,6 @@ onBeforeUnmount(() => {
   animation: fadeInUp 0.6s ease-out;
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
 .endfield-update-check {
   display: inline-block;
@@ -1204,11 +1176,6 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--ant-color-text);
-}
-
-.path-input-group {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 
 .maaend-config-mask {

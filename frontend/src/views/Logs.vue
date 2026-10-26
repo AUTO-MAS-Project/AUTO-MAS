@@ -247,7 +247,7 @@ onUnmounted(() => {
 <template>
   <div class="logs-container">
     <div class="logs-header">
-      <h1 class="page-title">{{ t('logs.pageTitle') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('logs.pageTitle') }}</h1>
       <div class="header-actions">
         <a-space :size="12" wrap>
           <a-radio-group
@@ -283,7 +283,9 @@ onUnmounted(() => {
     <div class="logs-content">
       <a-spin :spinning="loading" tip="加载日志中...">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
-          <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
+          <div v-if="!loading && !logs" class="log-empty">
+            <a-empty :image="false" :description="emptyHint" />
+          </div>
           <vue-monaco-editor
             v-else
             :value="logs"
@@ -320,15 +322,6 @@ onUnmounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .header-actions {

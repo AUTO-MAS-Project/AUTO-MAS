@@ -43,21 +43,13 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickFolderHoldingSrc')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectSRCPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.pickFolderHoldingSrc')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectSRCPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -334,6 +326,7 @@ import { createSrcScriptDraft } from './srcScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -344,7 +337,7 @@ import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 

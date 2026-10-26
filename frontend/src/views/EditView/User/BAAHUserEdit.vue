@@ -1,36 +1,12 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/baah`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <UserEditHeader
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="baah"
+    :user-id="userId"
+    @cancel="handleCancel"
+  />
 
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
@@ -378,18 +354,13 @@
 <script setup lang="ts">
 import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  CalendarOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { CalendarOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -409,15 +380,7 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  openUserConfigFolder,
-  loading: folderLoading,
-  error: userApiError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -428,10 +391,6 @@ const isSaving = ref(false) // 标记是否正在保存
 // 路由参数
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId) return
-  await openUserConfigFolder(scriptId, userId)
-}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)
@@ -810,27 +769,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
-.breadcrumb-link {
-  color: var(--ant-color-text-secondary);
-  text-decoration: none;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -859,17 +797,6 @@ onUnmounted(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
@@ -897,24 +824,6 @@ onUnmounted(() => {
 
 .baah-preview-box {
   width: 100%;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -979,12 +888,6 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .user-edit-content {
     max-width: 100%;
   }

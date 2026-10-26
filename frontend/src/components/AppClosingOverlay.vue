@@ -3,7 +3,7 @@
     <div v-if="visible" class="app-closing-overlay">
       <div class="closing-content">
         <div class="closing-spinner">
-          <LoadingOutlined />
+          <a-spin size="large" />
         </div>
         <div class="closing-text">{{ t('comp.closingBackend') }}</div>
         <div class="closing-subtitle">{{ t('comp.pleaseWaitAppClosing') }}</div>
@@ -14,7 +14,6 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { LoadingOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 
@@ -51,10 +50,7 @@ defineProps<{
 }
 
 .closing-spinner {
-  font-size: 32px;
   margin-bottom: 16px;
-  color: var(--ant-color-primary);
-  animation: spin 1s linear infinite;
 }
 
 .closing-text {
@@ -77,15 +73,6 @@ defineProps<{
   to {
     opacity: 1;
     transform: scale(1);
-  }
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
   }
 }
 </style>

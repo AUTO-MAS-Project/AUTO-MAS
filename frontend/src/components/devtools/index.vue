@@ -1,46 +1,45 @@
 <template>
-  <div
-    v-if="isDev"
-    class="debug-panel"
-    :class="{ collapsed: isCollapsed, dragging: isDragging }"
-    :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
-  >
-    <div class="debug-header">
-      <span class="debug-title drag-handle" @mousedown="startDrag">
-        调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
-      </span>
-      <div class="header-actions">
-        <button class="toggle-btn" @click="toggleCollapse" @mousedown.stop>
-          {{ isCollapsed ? '展开' : '收起' }}
-        </button>
+  <!-- 调试面板固定为深色，标准控件与原有调试内容保持一致。 -->
+  <a-config-provider v-if="isDev" :theme="{ algorithm: theme.darkAlgorithm }">
+    <div
+      class="debug-panel"
+      :class="{ collapsed: isCollapsed, dragging: isDragging }"
+      :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
+    >
+      <div class="debug-header">
+        <span class="debug-title drag-handle" @mousedown="startDrag">
+          调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
+        </span>
+        <div class="header-actions">
+          <a-button size="small" type="text" @click="toggleCollapse" @mousedown.stop>
+            {{ isCollapsed ? '展开' : '收起' }}
+          </a-button>
+        </div>
       </div>
-    </div>
 
-    <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
-      <!-- 页面切换选项卡 -->
-      <div class="debug-tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          class="tab-btn"
-          :class="{ active: activeTab === tab.key }"
-          @click="setActiveTab(tab.key)"
+      <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
+        <a-tabs
+          v-model:active-key="activeTab"
+          size="small"
+          :tab-bar-gutter="12"
+          :destroy-inactive-tab-pane="true"
+          class="debug-tabs"
         >
-          {{ tab.icon }} {{ tab.title }}
-        </button>
-      </div>
-
-      <!-- 页面内容 -->
-      <div class="debug-pages">
-        <component :is="currentComponent" />
+          <a-tab-pane v-for="tab in tabs" :key="tab.key" :tab="`${tab.icon} ${tab.title}`">
+            <div class="debug-pages">
+              <component :is="tab.component" />
+            </div>
+          </a-tab-pane>
+        </a-tabs>
       </div>
     </div>
-  </div>
+  </a-config-provider>
 </template>
 
 <script setup lang="ts">
 import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { theme } from 'ant-design-vue'
 import { useEventListener, useWindowSize } from '@vueuse/core'
 import RouteInfoPage from './RouteInfoPage.vue'
 import EnvironmentPage from './EnvironmentPage.vue'
@@ -75,17 +74,6 @@ const dragState = ref({
   startPanelX: 0,
   startPanelY: 0,
 })
-
-// 当前组件
-const currentComponent = computed(() => {
-  const tab = tabs.find(t => t.key === activeTab.value)
-  return tab?.component || RouteInfoPage
-})
-
-// 设置活动选项卡
-const setActiveTab = (tabKey: string) => {
-  activeTab.value = tabKey
-}
 
 // 使用 VueUse 的 useWindowSize 监听窗口大小
 const { width: windowWidth, height: windowHeight } = useWindowSize()
@@ -247,58 +235,15 @@ onMounted(() => {
   gap: 4px;
 }
 
-.toggle-btn {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  color: #fff;
-  padding: 4px 8px;
-  font-size: 10px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.5);
-}
-
 .debug-content {
   padding: 0;
   max-height: 60vh;
   overflow: hidden;
 }
 
-.debug-tabs {
-  display: flex;
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 1px solid #333;
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 8px 4px;
-  background: transparent;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s ease;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.tab-btn:last-child {
-  border-right: none;
-}
-
-.tab-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
-.tab-btn.active {
-  background: #4caf50;
-  color: #fff;
+.debug-tabs :deep(.ant-tabs-nav) {
+  margin-bottom: 0;
+  padding: 0 12px;
 }
 
 .debug-pages {

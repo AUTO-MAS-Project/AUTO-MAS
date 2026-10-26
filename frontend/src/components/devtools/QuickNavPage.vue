@@ -4,13 +4,14 @@
     <div class="debug-section">
       <h4>🎯 手动导航</h4>
       <div class="manual-nav">
-        <input
-          v-model="manualPath"
+        <a-input
+          v-model:value="manualPath"
           placeholder="输入路径 (例: /home, /scripts)"
           class="path-input"
-          @keyup.enter="navigateToManualPath"
+          size="small"
+          @pressEnter="navigateToManualPath"
         />
-        <button class="nav-go-btn" @click="navigateToManualPath">跳转</button>
+        <a-button size="small" type="primary" @click="navigateToManualPath">跳转</a-button>
       </div>
     </div>
 
@@ -18,15 +19,16 @@
     <div class="debug-section">
       <h4>🚀 快捷导航</h4>
       <div class="quick-nav">
-        <button
+        <a-button
+          size="small"
           v-for="navRoute in commonRoutes"
           :key="navRoute.path"
-          class="nav-btn"
-          :class="{ active: currentRoute.path === navRoute.path }"
+          :type="currentRoute.path === navRoute.path ? 'primary' : 'default'"
+          :aria-current="currentRoute.path === navRoute.path ? 'page' : undefined"
           @click="navigateTo(navRoute.path)"
         >
           {{ navRoute.title }}
-        </button>
+        </a-button>
       </div>
     </div>
 
@@ -34,10 +36,10 @@
     <div class="debug-section">
       <h4>🛠️ 开发工具</h4>
       <div class="tool-actions">
-        <button class="action-btn" @click="clearStorage">清除存储</button>
-        <button class="action-btn" @click="reloadPage">重新加载</button>
-        <button class="action-btn" @click="toggleConsole">切换控制台</button>
-        <button class="action-btn" @click="openDevtool">打开开发者工具</button>
+        <a-button size="small" danger @click="clearStorage">清除存储</a-button>
+        <a-button size="small" @click="reloadPage">重新加载</a-button>
+        <a-button size="small" @click="toggleConsole">切换控制台</a-button>
+        <a-button size="small" @click="openDevtool">打开开发者工具</a-button>
       </div>
     </div>
 
@@ -213,46 +215,10 @@ const toggleConsole = () => {
   gap: 4px;
 }
 
-.nav-btn {
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s ease;
-}
-
-.nav-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.nav-btn.active {
-  background: #4caf50;
-  border-color: #4caf50;
-}
-
 .tool-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-}
-
-.action-btn {
-  padding: 4px 8px;
-  background: rgba(255, 152, 0, 0.2);
-  border: 1px solid rgba(255, 152, 0, 0.3);
-  border-radius: 4px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-  background: rgba(255, 152, 0, 0.3);
-  border-color: rgba(255, 152, 0, 0.5);
 }
 
 .shortcut-list {
@@ -288,39 +254,6 @@ const toggleConsole = () => {
 
 .path-input {
   flex: 1;
-  padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  color: #fff;
-  font-size: 10px;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.path-input:focus {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: #4caf50;
-}
-
-.path-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.nav-go-btn {
-  padding: 4px 12px;
-  background: #2196f3;
-  border: 1px solid #1976d2;
-  border-radius: 4px;
-  color: #fff;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.nav-go-btn:hover {
-  background: #1976d2;
-  border-color: #1565c0;
+  min-width: 0;
 }
 </style>

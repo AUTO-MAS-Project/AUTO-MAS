@@ -1,8 +1,5 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.shellImportTitle') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('edit.shellImportTitle')" compact>
     <p class="shell-import-hint">
       {{ t('edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
     </p>
@@ -66,7 +63,7 @@
     >
       {{ t('edit.mfwHotkeyImportToScript') }}
     </a-checkbox>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -75,6 +72,7 @@ import { useI18n } from 'vue-i18n'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { describeShellSources } from './shellInstanceImport'
 import { hasShellInstanceHotkeys } from './hotkeyImport'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import type {
   MaaFWScriptShellImportSectionEmits,
   MaaFWScriptShellImportSectionProps,
@@ -126,34 +124,6 @@ const describeMeta = (item: MaaFWShellInstanceItem) =>
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
 .shell-import-hint {
   margin: 0 0 12px;
   color: var(--ant-color-text-secondary);
