@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""HSR 端点背后的业务：``app/api/scripts.py`` 里的 ``/hsr/*`` 端点只做
+"""HSR 端点背后的业务：本目录 ``api.py`` 里的 ``/hsr/*`` 端点只做
 取参数 → 调这里的一个函数 → ``XxxOut(**reply.out_fields())``。
 
 依赖方向只能是 ``app.api`` → 这里，不得反向导入 ``app.api``。各函数里对

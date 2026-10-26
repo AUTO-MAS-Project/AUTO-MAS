@@ -1646,7 +1646,25 @@ class MSSPlanKey(BaseModel):
     FightTimes: int = Field(default=1, ge=1, le=99, description="自定义快速作战次数")
 
 
+# 脚本管理多个路由共用的请求契约。
+
+
+class ScriptDeleteIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+
+
+class UserInBase(BaseModel):
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class UserDeleteIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
 __all__ = [
+    "ScriptDeleteIn",
+    "UserInBase",
+    "UserDeleteIn",
     "HistoryCounterValue",
     "HistoryCounterStatistic",
     "HistorySnapshotStatistic",

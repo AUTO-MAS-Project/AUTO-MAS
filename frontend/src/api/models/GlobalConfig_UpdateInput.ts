@@ -25,7 +25,7 @@ export type GlobalConfig_UpdateInput = {
      */
     FluxdownServerMode?: (boolean | null);
     /**
-     * FluxDown 是否接管所有自动化脚本的更新（预留，当前只影响 MAS + MAA）
+     * FluxDown 接管所有自动化脚本更新（预留项，后端尚未实现，前端已禁用展示）
      */
     FluxdownTakeoverAll?: (boolean | null);
     /**
