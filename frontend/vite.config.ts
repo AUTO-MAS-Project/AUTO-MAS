@@ -1,5 +1,6 @@
 import { configDefaults, defineConfig } from 'vite-plus'
 import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
 import path from 'path'
 
@@ -62,7 +63,12 @@ export default defineConfig(({ command }) => {
   return {
     lint: lintConfig,
     fmt: formatConfig,
-    plugins: [vue(), ...(sentryUploadPlugin ? [sentryUploadPlugin] : [])],
+    // DevTools 只注入主渲染入口，桌宠等辅助窗口不挂调试 UI；插件自身仅在 serve 时生效。
+    plugins: [
+      vue(),
+      vueDevTools({ appendTo: '/src/main.ts' }),
+      ...(sentryUploadPlugin ? [sentryUploadPlugin] : []),
+    ],
     base: './',
     resolve: {
       extensions: ['.js', '.ts', '.vue', '.json'],
