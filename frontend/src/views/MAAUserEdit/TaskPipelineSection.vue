@@ -67,7 +67,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
+                <FieldLabelWithHint
                   :text="t('edit.maaAnnihilationStartDay')"
                   :hint="t('edit.maaAnnihilationStartDayHint')"
                 />
@@ -141,7 +141,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
+                <FieldLabelWithHint
                   :text="t('edit.maaInfrastMode')"
                   :hint="t('edit.maaInfrastModeHint')"
                 />
@@ -159,7 +159,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint
+                <FieldLabelWithHint
                   :text="t('edit.maaCustomInfrastFile')"
                   :hint="t('edit.maaCustomInfrastFileHint')"
                 />
@@ -185,7 +185,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item class="detail-item">
               <template #label>
-                <LabelWithHint :text="t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
+                <FieldLabelWithHint :text="t('edit.maaCustomInfrastPlan')" :hint="infrastHint" />
               </template>
               <a-select
                 :value="String(infrastPlanSelect)"
@@ -238,8 +238,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import PipelineRow from './PipelineRow.vue'
-import LabelWithHint from './LabelWithHint.vue'
 import StaminaPipelineSection from './StaminaPipelineSection.vue'
 import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 
