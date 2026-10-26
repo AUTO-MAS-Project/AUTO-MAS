@@ -42,7 +42,7 @@ logger = get_logger("BetterGI 调度器")
 class BetterGIManager(ScriptManagerBase):
     """BetterGI 控制器（better-genshin-impact 线）"""
 
-    # 执行层已判为「部分失败」但允许继续的用户，保持原有已完成报告口径。
+    # 子任务失败不覆盖上游整条流程的完成结果，详情与警告在节点中展示。
     completed_user_statuses = frozenset({"完成", "部分失败"})
 
     def __init__(self, script_info: ScriptItem):
