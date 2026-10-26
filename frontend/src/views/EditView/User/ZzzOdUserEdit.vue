@@ -527,232 +527,44 @@
                   <template v-if="formData.Info.Base === 'native'">
                     <a-spin :spinning="nativeLoading">
                       <template v-if="nativeInstanceIdx !== null">
-                        <a-row :gutter="24">
-                          <a-col :span="12">
-                            <a-form-item>
-                              <template #label>
-                                <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
-                              </template>
-                              <a-select
-                                v-model:value="nativeLaunchArgs.screen_size"
-                                :options="screenSizeOptions"
-                                size="large"
-                                class="modern-select"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @change="
-                                  saveNativeLaunchArgsField(
-                                    'screen_size',
-                                    nativeLaunchArgs.screen_size
-                                  )
-                                "
-                              />
-                            </a-form-item>
-                          </a-col>
-                          <a-col :span="12">
-                            <a-form-item>
-                              <template #label>
-                                <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
-                              </template>
-                              <a-select
-                                v-model:value="nativeLaunchArgs.full_screen"
-                                :options="fullScreenOptions"
-                                size="large"
-                                class="modern-select"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @change="
-                                  saveNativeLaunchArgsField(
-                                    'full_screen',
-                                    nativeLaunchArgs.full_screen
-                                  )
-                                "
-                              />
-                            </a-form-item>
-                          </a-col>
-                        </a-row>
-                        <a-row :gutter="24">
-                          <a-col :span="12">
-                            <a-form-item>
-                              <template #label>
-                                <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
-                              </template>
-                              <a-switch
-                                v-model:checked="nativeLaunchArgs.popup_window"
-                                size="large"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @change="
-                                  (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
-                                "
-                              />
-                            </a-form-item>
-                          </a-col>
-                          <a-col :span="12">
-                            <a-form-item>
-                              <template #label>
-                                <FieldLabelWithHint
-                                  :text="t('edit.zzzodDx12')"
-                                  :hint="t('edit.zzzodDx12Hint')"
-                                  variant="form"
-                                />
-                              </template>
-                              <a-switch
-                                v-model:checked="nativeLaunchArgs.dx12"
-                                size="large"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @change="(v: any) => saveNativeLaunchArgsField('dx12', v === true)"
-                              />
-                            </a-form-item>
-                          </a-col>
-                        </a-row>
-                        <a-row :gutter="24">
-                          <a-col :span="12">
-                            <a-form-item>
-                              <template #label>
-                                <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
-                              </template>
-                              <a-select
-                                v-model:value="nativeLaunchArgs.monitor"
-                                :options="monitorOptions"
-                                size="large"
-                                class="modern-select"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @change="
-                                  saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)
-                                "
-                              />
-                            </a-form-item>
-                          </a-col>
-                        </a-row>
-                        <a-row :gutter="24">
-                          <a-col :span="24">
-                            <a-form-item>
-                              <template #label>
-                                <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
-                              </template>
-                              <a-input
-                                v-model:value="nativeLaunchArgs.launch_argument_advance"
-                                :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
-                                size="large"
-                                class="modern-input"
-                                :disabled="!nativeLaunchArgs.launch_argument"
-                                @blur="
-                                  saveNativeLaunchArgsField(
-                                    'launch_argument_advance',
-                                    nativeLaunchArgs.launch_argument_advance
-                                  )
-                                "
-                              />
-                            </a-form-item>
-                          </a-col>
-                        </a-row>
+                        <ZzzodLaunchArgumentFields
+                          v-model:screen-size="nativeLaunchArgs.screen_size"
+                          v-model:full-screen="nativeLaunchArgs.full_screen"
+                          v-model:popup-window="nativeLaunchArgs.popup_window"
+                          v-model:dx12="nativeLaunchArgs.dx12"
+                          v-model:monitor="nativeLaunchArgs.monitor"
+                          v-model:advanced-arguments="nativeLaunchArgs.launch_argument_advance"
+                          :disabled="!nativeLaunchArgs.launch_argument"
+                          @save-screen-size="saveNativeLaunchArgsField('screen_size', $event)"
+                          @save-full-screen="saveNativeLaunchArgsField('full_screen', $event)"
+                          @save-popup-window="saveNativeLaunchArgsField('popup_window', $event)"
+                          @save-dx12="saveNativeLaunchArgsField('dx12', $event)"
+                          @save-monitor="saveNativeLaunchArgsField('monitor', $event)"
+                          @save-advanced-arguments="
+                            saveNativeLaunchArgsField('launch_argument_advance', $event)
+                          "
+                        />
                       </template>
                       <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
                     </a-spin>
                   </template>
                   <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
                   <template v-else>
-                    <a-row :gutter="24">
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span class="form-label">{{ t('edit.zzzodScreenSize') }}</span>
-                          </template>
-                          <a-select
-                            v-model:value="formData.Game.ScreenSize"
-                            :options="screenSizeOptions"
-                            size="large"
-                            class="modern-select"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @change="saveField('Game.ScreenSize', formData.Game.ScreenSize)"
-                          />
-                        </a-form-item>
-                      </a-col>
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span class="form-label">{{ t('edit.zzzodFullScreen') }}</span>
-                          </template>
-                          <a-select
-                            v-model:value="formData.Game.FullScreen"
-                            :options="fullScreenOptions"
-                            size="large"
-                            class="modern-select"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @change="saveField('Game.FullScreen', formData.Game.FullScreen)"
-                          />
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-                    <a-row :gutter="24">
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span class="form-label">{{ t('edit.zzzodPopupWindow') }}</span>
-                          </template>
-                          <a-switch
-                            v-model:checked="formData.Game.PopupWindow"
-                            size="large"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @change="(v: any) => saveField('Game.PopupWindow', v === true)"
-                          />
-                        </a-form-item>
-                      </a-col>
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <FieldLabelWithHint
-                              :text="t('edit.zzzodDx12')"
-                              :hint="t('edit.zzzodDx12Hint')"
-                              variant="form"
-                            />
-                          </template>
-                          <a-switch
-                            v-model:checked="formData.Game.Dx12"
-                            size="large"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @change="(v: any) => saveField('Game.Dx12', v === true)"
-                          />
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-                    <a-row :gutter="24">
-                      <a-col :span="12">
-                        <a-form-item>
-                          <template #label>
-                            <span class="form-label">{{ t('edit.zzzodMonitor') }}</span>
-                          </template>
-                          <a-select
-                            v-model:value="formData.Game.Monitor"
-                            :options="monitorOptions"
-                            size="large"
-                            class="modern-select"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @change="saveField('Game.Monitor', formData.Game.Monitor)"
-                          />
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
-                    <a-row :gutter="24">
-                      <a-col :span="24">
-                        <a-form-item>
-                          <template #label>
-                            <span class="form-label">{{ t('edit.zzzodAdvanceArgs') }}</span>
-                          </template>
-                          <a-input
-                            v-model:value="formData.Game.LaunchArgumentAdvance"
-                            :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
-                            size="large"
-                            class="modern-input"
-                            :disabled="!formData.Game.LaunchArgument"
-                            @blur="
-                              saveField(
-                                'Game.LaunchArgumentAdvance',
-                                formData.Game.LaunchArgumentAdvance
-                              )
-                            "
-                          />
-                        </a-form-item>
-                      </a-col>
-                    </a-row>
+                    <ZzzodLaunchArgumentFields
+                      v-model:screen-size="formData.Game.ScreenSize"
+                      v-model:full-screen="formData.Game.FullScreen"
+                      v-model:popup-window="formData.Game.PopupWindow"
+                      v-model:dx12="formData.Game.Dx12"
+                      v-model:monitor="formData.Game.Monitor"
+                      v-model:advanced-arguments="formData.Game.LaunchArgumentAdvance"
+                      :disabled="!formData.Game.LaunchArgument"
+                      @save-screen-size="saveField('Game.ScreenSize', $event)"
+                      @save-full-screen="saveField('Game.FullScreen', $event)"
+                      @save-popup-window="saveField('Game.PopupWindow', $event)"
+                      @save-dx12="saveField('Game.Dx12', $event)"
+                      @save-monitor="saveField('Game.Monitor', $event)"
+                      @save-advanced-arguments="saveField('Game.LaunchArgumentAdvance', $event)"
+                    />
                   </template>
                 </a-collapse-panel>
               </a-collapse>
@@ -832,6 +644,7 @@
 </template>
 
 <script setup lang="ts">
+import ZzzodLaunchArgumentFields from './ZzzOdUserEdit/ZzzodLaunchArgumentFields.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
 import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
@@ -1077,21 +890,6 @@ const gameLanguageLabels: Record<string, string> = Object.fromEntries(
 )
 
 // ══ 一条龙启动参数（value 为 zzz-od game.yml 原生取值；全屏/显示器落盘为字符串）══
-const screenSizeOptions = [
-  { label: '1920x1080', value: '1920x1080' },
-  { label: '2560x1440', value: '2560x1440' },
-  { label: '3840x2160', value: '3840x2160' },
-]
-const fullScreenOptions = [
-  { label: t('edit.zzzodFullScreenWindowed'), value: '0' },
-  { label: t('edit.zzzodFullScreenFullscreen'), value: '1' },
-]
-const monitorOptions = [
-  { label: '1', value: '1' },
-  { label: '2', value: '2' },
-  { label: '3', value: '3' },
-  { label: '4', value: '4' },
-]
 
 // DX12 是独立开关字段（Game.Dx12 / nativeLaunchArgs.dx12）：与分辨率等参数同级，
 // 注入/写回时由后端把 -use-d3d12 合并进一条龙的高级参数，不在前端操作文本框
