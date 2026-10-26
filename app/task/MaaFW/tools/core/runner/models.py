@@ -120,6 +120,15 @@ class MaaFWFailureScreenshot(BaseModel):
     path: str
 
 
+class MaaFWResourceFailure(BaseModel):
+    """资源包没能加载：``load_failed`` 是 MaaFramework 拒收了这个资源包（节点重名、JSON 写错
+    之类，原因只在原生 ERR 行里），``missing`` 是资源目录本身不在。``path`` 是计划里解析出
+    的资源包目录。两种都是每次尝试都一样，宿主据此不重启游戏 / 模拟器重试。"""
+
+    kind: Literal["load_failed", "missing"]
+    path: str
+
+
 class MaaFWRunResult(BaseModel):
     success: bool
     projectName: str
@@ -139,6 +148,9 @@ class MaaFWRunResult(BaseModel):
     # 任务。与 timedOut 同理单独成字段，宿主据此分流，不靠文案判断。
     signal: MaaFWRunSignal | None = None
     signalNode: str | None = None
+    # 初始化时资源包没能加载（见 MaaFWResourceFailure）。与 timedOut / signal 同理单独成字段，
+    # 宿主据此不重试、去原生 ERR 行里找原因，不靠匹配「加载资源失败」的文案。
+    resourceFailure: MaaFWResourceFailure | None = None
 
 
 class MaaFWRunnerJobPayload(BaseModel):

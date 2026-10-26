@@ -85,6 +85,9 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
 )
+from app.task.MaaFW.tools.embedded.update_credentials import (
+    resolve_update_proxy_url,
+)
 
 EMBEDDED_SCRIPT_BUSY = "脚本正在运行，请等运行结束后再导入项目"
 EMBEDDED_COPY_BUSY = "该 MFW 项目正在更新或准备环境，请稍后重试"
@@ -136,9 +139,12 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         # 目录时它还是上一次的结果）
         follow = follow_source_switch_on(script_config)
         channel = import_channel(script_id, script_config)
+        # 导入时与官方发行包核对资源文件走脚本的更新代理（与项目更新同一份解析）
+        proxy_url = resolve_update_proxy_url(script_config)
     except (KeyError, ValueError, TypeError):
         follow = False
         channel = "stable"
+        proxy_url = None
     try:
         script_name = str(maafw_script_config(script_id).Info.Name or script_id[:8])
     except (KeyError, ValueError, TypeError):
@@ -170,6 +176,7 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
             progress=_embedded_import_progress(publish),
             channel=channel,
             follow_source=follow,
+            proxy_url=proxy_url,
         )
         publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:

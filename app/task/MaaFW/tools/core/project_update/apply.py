@@ -352,24 +352,32 @@ def _package_resource_directories(
             continue
         raw = entry.get("path")
         for candidate in raw if isinstance(raw, list) else [raw]:
-            if not isinstance(candidate, str):
-                continue
-            text = candidate.strip().replace("\\", "/").replace("{PROJECT_DIR}", "")
-            while text.startswith("./"):
-                text = text[2:]
-            text = text.strip("/")
-            if not text:
-                continue
-            # 中间带 ``.`` / ``..`` 却没逃出项目的写法（``resource/../resource_pack/base``）
-            # 投影层归一后放行，这里也归一；逃出项目或绝对路径的跳过这一条声明。
-            text = posixpath.normpath(text)
-            try:
-                directories.add(safe_relative_path(text))
-            except (ValueError, UpdateApplyError):
-                # ``safe_relative_path`` 抛的是 ValueError：只跳过这一条声明，不让整次
-                # 更新失败。
-                continue
+            directory = _declared_directory(candidate)
+            if directory is not None:
+                directories.add(directory)
     return directories
+
+
+def _declared_directory(candidate: Any) -> str | None:
+    """interface 里声明的一个资源目录 → 项目相对 posix 路径；写法不合规返回 None。"""
+
+    if not isinstance(candidate, str):
+        return None
+    text = candidate.strip().replace("\\", "/").replace("{PROJECT_DIR}", "")
+    while text.startswith("./"):
+        text = text[2:]
+    text = text.strip("/")
+    if not text:
+        return None
+    # 中间带 ``.`` / ``..`` 却没逃出项目的写法（``resource/../resource_pack/base``）
+    # 投影层归一后放行，这里也归一；逃出项目或绝对路径的跳过这一条声明。
+    text = posixpath.normpath(text)
+    try:
+        return safe_relative_path(text)
+    except (ValueError, UpdateApplyError):
+        # ``safe_relative_path`` 抛的是 ValueError：只跳过这一条声明，不让整次
+        # 更新失败。
+        return None
 
 
 def _import_origin_orphans(

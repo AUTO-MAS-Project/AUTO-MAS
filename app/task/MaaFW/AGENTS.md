@@ -60,10 +60,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
   改写 / 摘掉 `followSource`（见下面「跟随来源目录」）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
-  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有三个：latest
   自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
   新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
-  能加载的」，见 `payloads._replaces_older_projection_latest`）。「只前进」另有一个例外：手动更新
+  能加载的」，见 `payloads._replaces_older_projection_latest`；新登记的已与官方发行包核对过
+  （清单 `releaseCheck.result=clean`）而 latest 没有，规则版本不比它低，见
+  `payloads._replaces_unverified_latest`，`_same_version_rank` 同口径）。「只前进」另有一个例外：手动更新
   把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
   `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
   开发者模式的脚本例外：它的组是
@@ -212,6 +214,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
   `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
   项目里铺运行时。
+- **旧版本残留与发行包核对**（`project_update/release_check.py`）：导入目录是旧版本被新包覆盖过的，
+  新版已删掉的 pipeline 会跟着进载荷，节点重名让 MaaFramework 整包拒收（MAA_Punish v3.12.7 的
+  `auto_battle.jsonc`）。导入（普通渠道，`embedded_project._verify_import_release`，硬时限、核对不了照旧
+  导入）与运行时资源包加载失败（`runner_task._recover_resource_failure` → `view_release_check`，每次运行
+  一次）各核对一次：依据是缓存的同版本完整包 → GitHub 资产中央目录（Range），残留口径同
+  `apply._import_origin_orphans`，另算控制器的 `attach_resource_path`。导入时残留不进载荷、进报告
+  `excludedReasons`（原因 `not-in-release`）；运行时建「旧载荷减残留」的同版本载荷、顶替 latest、切视图，
+  然后不重启游戏 / 模拟器立刻再跑一次（不占重试次数）。结果记在清单 `releaseCheck`。资源包加载失败
+  （`MaaFWRunResult.resourceFailure`）一律不重试，消息按原生 ERR 行说出原因（`resource_failure.py`，
+  优先读本次 `.maafw.log`：stdout 那份按控制台代码页转过，中文可能成了 `?`）。
 - **按内容共用文件**（`project_update/blob_store.py`）：共用谓词只有一个，
   `projection.is_shared_path(rel, size, private_paths)`——≥ 64 KB、首段不是 `config/ debug/ logs/
   temp/ cache/ .pycache/ .mas-update*`、后缀不是 `.lock .sha256 .pth .log .tmp`、不在 `*.dist-info`
