@@ -3243,6 +3243,7 @@ export default {
       bluearchive: 'ブルーアーカイブのイベント情報',
       stellasora: 'ステラソラのイベント情報',
       infinitynikki: 'インフィニティニキのイベント情報',
+      azurlane: 'アズールレーンのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -3257,6 +3258,7 @@ export default {
       bluearchive: 'ブルーアーカイブ',
       stellasora: 'ステラソラ',
       infinitynikki: 'インフィニティニキ',
+      azurlane: 'アズールレーン',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -3279,7 +3281,11 @@ export default {
       reverse1999: '開催中のリバース：1999 のイベントはありません',
       stellasora: '開催中のステラソラのイベントはありません',
       infinitynikki: '開催中のインフィニティニキのイベントはありません',
+      azurlane: '開催中のアズールレーンのイベントはありません',
       noData: 'データなし',
+    },
+    azurlane: {
+      sourceName: 'アズールレーン Wiki',
     },
     stella: {
       sourceName: '公式サイト',

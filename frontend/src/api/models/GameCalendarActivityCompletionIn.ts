@@ -44,6 +44,7 @@ export namespace GameCalendarActivityCompletionIn {
         ARKNIGHTS = 'arknights',
         STELLASORA = 'stellasora',
         INFINITYNIKKI = 'infinitynikki',
+        AZURLANE = 'azurlane',
     }
     /**
      * 碧蓝档案服务器，其它游戏忽略此字段
