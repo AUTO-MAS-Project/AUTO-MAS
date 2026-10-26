@@ -64,7 +64,6 @@ export default {
     storageValue: '原始值',
     type: '类型',
     text: '文本',
-    size: '大小',
     newEntry: '新增条目',
     searchStorage: '搜索键名或值',
     storageCount: '{count} 项 · 约 {size}（UTF-16）',
