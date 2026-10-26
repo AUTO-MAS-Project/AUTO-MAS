@@ -60,6 +60,7 @@ const configPreview = computed(() => {
     :title="title"
     width="900px"
     :footer="null"
+    :body-style="{ height: '60vh', minHeight: 0, overflow: 'hidden' }"
     :destroy-on-close="true"
     @update:open="(v: boolean) => emit('update:open', v)"
   >
@@ -186,8 +187,8 @@ const configPreview = computed(() => {
 .debug-body {
   display: flex;
   gap: 16px;
-  height: 60vh;
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
 }
 
 .debug-input-pane,

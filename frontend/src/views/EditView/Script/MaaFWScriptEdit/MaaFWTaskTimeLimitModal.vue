@@ -12,7 +12,7 @@
         <a-switch v-model:checked="loopGuardDraft" />
       </div>
       <div class="task-limit-modal-sub">{{ t('edit.taskTimeLimitModalSub') }}</div>
-      <!-- 列表定高、内部滚动：任务多的项目也不会把弹窗撑出屏幕 -->
+      <!-- 任务列表随弹窗正文滚动，小窗口也能逐项设置。 -->
       <div class="task-limit-modal-list">
         <div
           v-for="task in tasks"
@@ -144,15 +144,6 @@ const handleSave = () => {
 .task-limit-modal-sub {
   padding: 0 0 8px;
   color: var(--ant-color-text-secondary);
-}
-
-.task-limit-modal-list {
-  height: 440px;
-  max-height: calc(100vh - 340px);
-  margin-right: -12px;
-  padding-right: 12px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .task-limit-row {
