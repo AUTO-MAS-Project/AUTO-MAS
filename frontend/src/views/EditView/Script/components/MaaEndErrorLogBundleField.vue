@@ -26,9 +26,6 @@
           </a-button>
         </a-space-compact>
       </div>
-      <div v-if="run.IfSaveLogBundle && !run.LogBundlePath" class="bundle-warning">
-        {{ t('edit.errorLogBundleDirPlaceholder') }}
-      </div>
     </a-form-item>
   </div>
 </template>
@@ -58,15 +55,10 @@ const pickBundleDir = async () => {
   emit('save', 'LogBundlePath', picked)
 }
 
-/**
- * 开关状态只由用户决定，不拿「选没选目录」当前提：浏览器预览里目录选择器恒返回空、
- * 用户在弹窗里点取消也很正常，把这些当成拒绝打开会让开关看起来像坏了。打开时顺手
- * 弹一次选择器，选不选得上都不回滚开关，缺目录的后果由下面的红字提示说明。
- */
+/** 留空使用后端默认目录，开启时无需先选择文件夹。 */
 const handleSwitchChange = (checked: boolean) => {
   run.value.IfSaveLogBundle = checked
   emit('save', 'IfSaveLogBundle', checked)
-  if (checked && !run.value.LogBundlePath) void pickBundleDir()
 }
 </script>
 
@@ -105,11 +97,5 @@ const handleSwitchChange = (checked: boolean) => {
 
 .bundle-path-input {
   min-width: 0;
-}
-
-.bundle-warning {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--ant-color-error);
 }
 </style>

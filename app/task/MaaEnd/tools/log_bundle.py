@@ -411,9 +411,9 @@ def _resolve_log_bundles(
         project, _ = read_project_info(root_path)
         candidates: list[Path] = []
         for config in configs:
-            saved_root = config.Run.LogBundlePath
-            if not config.Run.IfSaveLogBundle or saved_root is None:
+            if not config.Run.IfSaveLogBundle:
                 continue
+            saved_root = config.Run.LogBundlePath or Path.cwd() / "debug/maaend"
             if not saved_root.is_dir():
                 continue
             candidates.extend(

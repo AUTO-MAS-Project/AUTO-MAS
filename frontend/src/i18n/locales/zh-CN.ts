@@ -1193,7 +1193,7 @@ export default {
     errorLogBundleHint:
       '开启后每次失败都会单独保存一份运行日志包到指定目录，最多保留最近 10 份。MaaEnd 的「启动时清理日志」会被临时打开，任务结束后恢复，避免上一轮日志混进来',
     errorLogBundleDir: '日志包保存目录',
-    errorLogBundleDirPlaceholder: '未选择目录时不会保存',
+    errorLogBundleDirPlaceholder: '默认保存至 MAS 目录下的 debug/maaend',
     errorLogBundleNoPicker: '当前环境不支持选择目录',
     pickFolder: '选择文件夹',
     saveConfiguration: '保存配置',

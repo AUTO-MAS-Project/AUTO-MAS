@@ -2939,9 +2939,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         if not self.script_config.Run.IfSaveLogBundle:
             return True
-        target_dir = self.script_config.Run.LogBundlePath
+        target_dir = self.script_config.Run.LogBundlePath or Path.cwd() / "debug/maaend"
         root_path = self.maaend_root_path
-        if target_dir is None or root_path is None:
+        if root_path is None:
             return True
         if self._bundle_job is None:
             if self._archived_launch_count >= self._mxu_launch_count:

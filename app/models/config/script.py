@@ -1165,7 +1165,7 @@ class MaaEndConfig(DomainEntry):
 
         LogBundlePath: FolderPath = Field(
             default_factory=lambda: None,
-            description="任务失败时保存日志包的目录，留空表示不保存",
+            description="任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend",
         )
 
         ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(

@@ -1191,7 +1191,7 @@ export default {
     errorLogBundleHint:
       'Once enabled, every failure saves its own run log bundle into the chosen folder, and only the latest 10 are kept. The MaaEnd "Clear logs on startup" option is turned on temporarily and restored when the task ends, so logs from the previous run do not mix in',
     errorLogBundleDir: 'Log bundle folder',
-    errorLogBundleDirPlaceholder: 'Nothing is saved until a folder is chosen',
+    errorLogBundleDirPlaceholder: 'Default: debug/maaend in the MAS directory',
     errorLogBundleNoPicker: 'Choosing a folder is not supported in this environment',
     pickFolder: 'Pick a folder',
     saveConfiguration: 'Save configuration',

@@ -16,7 +16,7 @@ export type MaaEndConfig_RunInput = {
      */
     IfSaveLogBundle?: (boolean | null);
     /**
-     * 任务失败时保存日志包的目录，留空表示不保存
+     * 任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend
      */
     LogBundlePath?: (string | null);
     /**

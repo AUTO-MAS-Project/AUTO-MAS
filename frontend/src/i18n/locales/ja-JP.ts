@@ -1150,7 +1150,7 @@ export default {
     errorLogBundleHint:
       '有効にすると、失敗のたびに実行ログ一式が保存され、直近 10 回分まで保持されます。MaaEnd の「起動時にログを削除」は一時的に有効になり、タスク終了後に元へ戻るため、前回のログが混ざりません',
     errorLogBundleDir: 'ログの保存先フォルダー',
-    errorLogBundleDirPlaceholder: 'フォルダー未選択の場合は保存しません',
+    errorLogBundleDirPlaceholder: '既定：MAS フォルダー内の debug/maaend',
     errorLogBundleNoPicker: 'この環境ではフォルダーを選択できません',
     pickFolder: 'フォルダーを選択',
     saveConfiguration: '設定を保存',
