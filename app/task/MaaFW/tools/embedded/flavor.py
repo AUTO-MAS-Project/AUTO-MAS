@@ -142,7 +142,7 @@
 
 魔改 AVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
 ``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
-``app.utils.emulator2.service.mod_avd_binding_error`` 按脚本类型（``MaaFWConfig`` / MAA）判。
+``app.core.emulator2.mod_avd_binding_error`` 按脚本类型（``MaaFWConfig`` / MAA）判。
 """
 
 from __future__ import annotations

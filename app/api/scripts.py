@@ -37,6 +37,7 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
+from app.core import emulator2 as emulator2_service
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
@@ -88,7 +89,6 @@ from app.task.MaaFW.api_service import update as maafw_update_api
 from app.task.MSS.api_service import defense_status as mss_defense_status
 from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
-from app.utils.emulator2 import service as emulator2_service
 from app.utils.io import ConfigCorruptedError
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
