@@ -247,7 +247,7 @@ onUnmounted(() => {
 <template>
   <div class="logs-container">
     <div class="logs-header">
-      <h1 class="page-title">{{ t('logs.pageTitle') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('logs.pageTitle') }}</h1>
       <div class="header-actions">
         <a-space :size="12" wrap>
           <a-radio-group
@@ -322,15 +322,6 @@ onUnmounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .header-actions {

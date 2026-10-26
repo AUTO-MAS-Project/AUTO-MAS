@@ -2,7 +2,7 @@
   <div class="history-page">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title">{{ t('history.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('history.title') }}</h1>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -181,16 +181,6 @@ const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .main-content {

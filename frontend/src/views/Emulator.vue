@@ -906,7 +906,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 <template>
   <div class="emulator-page">
     <div class="page-header">
-      <h1>{{ t('emulator.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('emulator.title') }}</h1>
       <DocLink :url="MAS_DOC_URLS.emulator" />
     </div>
 
@@ -1366,18 +1366,8 @@ const handleBossKeyInputChange = (uuid: string) => {
   padding: 0;
 }
 
-.page-header h1 {
+.page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .page-content {
