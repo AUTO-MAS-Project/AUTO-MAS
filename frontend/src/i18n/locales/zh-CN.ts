@@ -479,7 +479,6 @@ export default {
     maaDone: '已完成',
     maaNotDone: '未完成',
     maaCultivate: '干员养成',
-    maaCultivateSettings: '养成设置',
     maaCultivateShowModules: '显示模组目标',
     maaCultivateSelectOperator: '选择 {name}',
     maaCultivateSelectAll: '全选干员',
@@ -492,9 +491,7 @@ export default {
     maaCultivateSkill2: '二技能',
     maaCultivateSkill3: '三技能',
     maaCultivateSkillName: '{name}（{skill}）',
-    maaCultivateHint: '为选定干员刷取养成材料，达成后自动移除计划',
     maaCultivatePickOperators: '选择干员',
-    maaCultivatePickOperatorsHint: '从一图流全量表选择要培养的干员',
     maaCultivateImportClipboard: '从剪贴板导入',
     maaCultivateImporting: '导入中',
     maaCultivateImportSubmit: '导入',
@@ -542,14 +539,10 @@ export default {
     maaCultivateEmpty: '尚未添加养成目标',
     maaCultivateRecognitionHint:
       '练度与库存以 MAA 运行时识别为准；绑定森空岛后可设技能等级/专精/模组目标，未绑定时已有目标只读；无可设目标的干员自动从选择器隐藏',
-    maaCultivateSkipHint:
-      '触发活动或资源全开放跳过条件时，本轮暂停养成刷取、材料预留和实际培养；其他任务继续执行。',
     maaCultivatePreparationUnavailable:
       '养成数据暂时不可用，本轮养成已暂停；库存保持与理智任务继续执行',
     maaCultivateTargetsDeferred:
       '缺少所需练度数据的养成目标本轮暂缓并保留，其他有效目标继续执行；可同步森空岛练度后重试。',
-    maaCultivateTakeoverHint:
-      '库存目标表示培养完成后仍要保留的数量。库存保持与养成分别沿用原有开关和适用条件。',
     maaDataSourceYituliu: '数据来源：一图流',
     maaCultivatePreviewTitle: '预计需要材料',
     maaCultivatePreviewComputing: '计算中',
@@ -566,8 +559,6 @@ export default {
     maaCultivateEstimateJoin: '与',
     maaCultivateEstimateSuffix: '，以上为按精0/空库存的保守估算；请在 MAA 中完成识别后重新查看',
     maaCultivateSklandTitle: '绑定森空岛',
-    maaCultivateSklandHint:
-      '绑定后技能等级/专精/模组目标的练度与达成检测自动完成；使用签到设置中已登录的森空岛账号',
     maaCultivateSklandRole: '选择游戏角色',
     maaCultivateSklandBoundRole: '已绑定角色',
     maaCultivateSklandUnboundHint: '未绑定森空岛时仅支持精英化目标',
@@ -824,8 +815,6 @@ export default {
     sanityTask: '理智任务',
     maaEndEnableSanity: '启用理智任务',
     maaEndSanityStrategy: '执行策略',
-    maaEndMasSanityStrategy: 'MAS 指定任务',
-    maaEndNativeSanityStrategy: '使用 MaaEnd 原生策略',
     maaEndEditAccount: '编辑账号',
     maaEndAddAccount: '添加账号',
     maaEndAutoSaveHint: '修改后自动保存',
@@ -843,10 +832,6 @@ export default {
     maaEndPlannedStrategy: '指定任务 / 计划表',
     maaEndOriginalStrategy: '沿用原生配置',
     maaEndImsStrategyHint: '本轮按下方 IMS 库存计划执行协议空间，固定关卡和周计划不应用。',
-    maaEndImsActiveHint:
-      '本轮库存目标将覆写当前来源的 MaaEnd 库存配置，运行结束后恢复原配置。目标属于当前账号。',
-    maaEndImsInactiveHint:
-      '计划已保留，当前执行策略或理智开关未启用此计划。选择“使用此库存计划”后生效。',
     maaEndImsUnavailable:
       '无法读取库存配置，或当前 MaaEnd 版本尚不支持目标库存。请检查脚本路径并更新 MaaEnd。',
     maaEndImsReload: '重新读取',
@@ -856,7 +841,6 @@ export default {
     maaEndImsRemoveUnknown: '移除不支持的目标',
     maaEndImsResetHint: '当前目标格式无法读取。清空后需要重新填写，其他任务配置不受影响。',
     maaEndImsPlannedCount: '维护 {n} 项养成材料目标',
-    maaEndImsUsePlan: '使用此库存计划',
     maaEndImsEmpty: '尚未设置目标，请在下表填写。0 表示不参与。',
     maaEndImsClaimMode: '领取方式',
     maaEndImsMedication: '使用应急理智加强剂',
@@ -875,7 +859,6 @@ export default {
       '保留 MaaEnd 中已启用的协议空间、基质刷取及全部选项，可使用目标库存。固定任务和周计划选择会保留，本轮不应用；理智开关关闭时整组不执行。',
     maaEndInventorySourceHint:
       '配置沿用当前来源：脚本共享、用户独立或直控。不同账号需要不同目标时，请选择用户独立配置。在 MaaEnd 中启用所需任务并设置库存目标。',
-    maaEndDirectInventoryConfigHint: '请在 MaaEnd 原生窗口中启用所需任务并设置库存目标。',
     maaEndCollectInventoryHint:
       'MAS 只安排今天的候选路线，MaaEnd 按原生库存条件决定是否采集。今天未安排的路线即使库存不足也不会执行；需要每轮补库时，请选集中采集并勾选全部所需路线。',
     maaEndSanitySection: '理智任务（基质刷取/协议空间）',
@@ -1195,7 +1178,6 @@ export default {
     configActionsTargetIndependent: '本账号的独立基础配置',
     configActionsImpactShared: '该托管下所有账号共用同一份',
     configActionsImpactIndependent: '其他账号不受影响',
-    maaEndGroupEnabled: '已启用 {n} / {m} 项任务',
     maaEndTaskGroups: '任务分组',
     maaEndEnableGroup: '整组启用',
     couldNotCreateUser: '创建账号失败',

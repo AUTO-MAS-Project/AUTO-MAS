@@ -495,7 +495,6 @@ export default {
     maaDone: 'done',
     maaNotDone: 'not done',
     maaCultivate: 'Operator cultivation',
-    maaCultivateSettings: 'Cultivation settings',
     maaCultivateShowModules: 'Show module targets',
     maaCultivateSelectOperator: 'Select {name}',
     maaCultivateSelectAll: 'Select all operators',
@@ -509,10 +508,7 @@ export default {
     maaCultivateSkill2: 'Skill 2',
     maaCultivateSkill3: 'Skill 3',
     maaCultivateSkillName: '{name} ({skill})',
-    maaCultivateHint:
-      'Farms cultivation materials for selected operators and removes the plan once goals are met',
     maaCultivatePickOperators: 'Select operators',
-    maaCultivatePickOperatorsHint: 'Pick operators to train from the full Yituliu table',
     maaCultivateImportClipboard: 'Import from clipboard',
     maaCultivateImporting: 'Importing',
     maaCultivateImportSubmit: 'Import',
@@ -569,14 +565,10 @@ export default {
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
       'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set skill rank, mastery, and module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically.',
-    maaCultivateSkipHint:
-      'When an event or all-resources-open skip condition applies, cultivation farming, material reserves and raising are paused for this run. Other tasks continue.',
     maaCultivatePreparationUnavailable:
       'Cultivation data is temporarily unavailable. Cultivation is paused for this run; stock keeping and sanity tasks continue.',
     maaCultivateTargetsDeferred:
       'Cultivation goals missing the required progression data are deferred for this run and remain saved. Other valid goals continue. Sync progression from Skland, then retry.',
-    maaCultivateTakeoverHint:
-      'Stock targets are the amounts to retain after cultivation. Stock keeping and cultivation keep their independent switches and conditions.',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
@@ -595,8 +587,6 @@ export default {
     maaCultivateEstimateSuffix:
       '; the above is a conservative estimate assuming Elite 0 and empty inventory. Finish recognition in MAA and check again',
     maaCultivateSklandTitle: 'Bind Skland',
-    maaCultivateSklandHint:
-      'After binding, skill rank, mastery, and module progression and achievement checks run automatically; uses the Skland account already signed in under game sign-in settings',
     maaCultivateSklandRole: 'Select game role',
     maaCultivateSklandBoundRole: 'Bound role',
     maaCultivateSklandUnboundHint: 'Only Elite goals are available before binding Skland',
@@ -3116,8 +3106,58 @@ export default {
     maaEndRouteClear: 'Clear',
     maaEndRouteSelectedCount: 'Selected {n}/{m}',
     maaEndEnableSanity: 'Enable sanity tasks',
+    maaEndSanityStrategy: 'Execution strategy',
+    maaEndEditAccount: 'Edit account',
+    maaEndAddAccount: 'Add an account',
+    maaEndAutoSaveHint: 'Changes are saved automatically',
+    maaEndSaving: 'Saving…',
+    maaEndImsSearch: 'Search materials',
+    maaEndImsTargetHint:
+      'Targets must be integers from 0–3000000000 without leading zeros; 0 excludes the material from the plan',
+    maaEndImsNoMatches: 'No matching materials',
+    maaEndImsPlannedOnly: 'Show only materials with a target set',
+    maaEndImsExperience: 'EXP',
+    maaEndImsPromotion: 'Promotion',
+    maaEndImsSkill: 'Skill',
+    maaEndImsCurrency: 'Currency',
+    maaEndImsOther: 'Other',
+    maaEndImsTitle: 'Stock targets',
+    maaEndPlannedStrategy: 'Specified tasks / plan',
+    maaEndOriginalStrategy: 'Use native config',
+    maaEndImsStrategyHint:
+      'This run uses the IMS stock plan below for protocol space; fixed stages and weekly plans are not applied.',
+    maaEndImsUnavailable:
+      'Could not read the stock configuration, or this MaaEnd version does not support target stock yet. Check the script path and update MaaEnd.',
+    maaEndImsReload: 'Reload',
+    maaEndImsInvalidTargets:
+      'Targets must be integers from 0–3000000000 without leading zeros, and cannot include materials this version does not support.',
+    maaEndImsResetInvalid: 'Clear invalid targets',
+    maaEndImsRemoveUnknown: 'Remove unsupported targets',
+    maaEndImsResetHint:
+      'The current target format cannot be read. Clearing it means filling in the targets again; other task settings are unaffected.',
+    maaEndImsPlannedCount: 'Maintaining {n} cultivation material targets',
+    maaEndImsEmpty: 'No targets set yet. Fill them in below. 0 means not included.',
+    maaEndImsClaimMode: 'Claim mode',
+    maaEndImsMedication: 'Use emergency sanity booster',
+    maaEndImsMedicationUse: 'Use',
+    maaEndImsMedicationSkip: 'Do not use',
+    maaEndImsMaterial: 'Cultivation materials',
+    maaEndImsTarget: 'Target stock / EXP equivalent',
+    maaEndImsParticipation: 'In this run',
+    maaEndImsIncluded: 'Included in restock',
+    maaEndImsExcluded: 'Not included',
+    maaEndImsNotify: 'Material gains this run',
+    maaEndImsNotifyHint:
+      "After the task ends, push this run's scanned stock, gained amounts and upstream status to the current user's notification channels. Separate from statistics notifications and task node details; the status shows as unknown when no material report is received.",
+    maaEndConfigureInventory: 'Configure stock targets',
+    maaEndNativeSanityHint:
+      'Keeps the protocol space, matrix farming and every option already enabled in MaaEnd, and can use target stock. Fixed task and weekly plan selections are kept but not applied this run; the whole group is skipped while sanity tasks are switched off.',
+    maaEndInventorySourceHint:
+      'The configuration follows the current source: Shared, Independent or Direct control. When different accounts need different targets, choose the independent user configuration. Enable the required tasks in MaaEnd and set stock targets.',
+    maaEndCollectInventoryHint:
+      "MAS only schedules today's candidate routes, and MaaEnd decides whether to collect based on the native stock conditions. Routes not scheduled for today do not run even when stock is short; to replenish stock every run, choose Concentrated collection and select every route you need.",
     maaEndSanitySection: 'Sanity tasks (matrix farming / protocol space)',
-    maaEndGroupEnabled: '{n} / {m} tasks enabled',
+    maaEndTaskGroups: 'Task groups',
     maaEndEnableGroup: 'Enable whole group',
     taskTransitionMethod: 'Task transition method',
     taskTransitionHint:

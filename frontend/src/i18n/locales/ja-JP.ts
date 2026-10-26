@@ -501,7 +501,6 @@ export default {
     maaDone: '完了',
     maaNotDone: '未完了',
     maaCultivate: 'オペレーター育成',
-    maaCultivateSettings: '育成設定',
     maaCultivateShowModules: 'モジュール目標を表示',
     maaCultivateSelectOperator: '{name}を選択',
     maaCultivateSelectAll: '全オペレーターを選択',
@@ -514,10 +513,7 @@ export default {
     maaCultivateSkill2: 'スキル2',
     maaCultivateSkill3: 'スキル3',
     maaCultivateSkillName: '{name}（{skill}）',
-    maaCultivateHint:
-      '選択したオペレーターの育成素材を周回し、目標達成後に自動で計画から削除します',
     maaCultivatePickOperators: 'オペレーターを選択',
-    maaCultivatePickOperatorsHint: '一図流の全テーブルから育成するオペレーターを選択します',
     maaCultivateImportClipboard: 'クリップボードからインポート',
     maaCultivateImporting: 'インポート中',
     maaCultivateImportSubmit: 'インポート',
@@ -573,14 +569,10 @@ export default {
     maaCultivateEmpty: '育成目標が未設定です',
     maaCultivateRecognitionHint:
       '練度と在庫はMAAの実行時認識に依拠します。森空島をバインドするとスキルレベル/特化/モジュール目標を設定でき、未バインドの既存目標は読み取り専用です。目標を設定できないオペレーターはセレクターから自動的に非表示になります。',
-    maaCultivateSkipHint:
-      'イベント中または全資源開放期間のスキップ条件を満たす場合、今回は育成周回、素材確保、実際の育成を一時停止し、ほかのタスクを継続します。',
     maaCultivatePreparationUnavailable:
       '育成データを一時的に取得できないため、今回は育成を一時停止します。在庫維持と理性タスクは継続します。',
     maaCultivateTargetsDeferred:
       '必要な練度データがない育成目標は今回は保留し、目標はそのまま保持します。ほかの有効な目標は引き続き実行します。森空島の練度を同期してから再試行してください。',
-    maaCultivateTakeoverHint:
-      '在庫目標は育成完了後に残す数量です。在庫維持と育成は元の独立したスイッチと適用条件を維持します。',
     maaDataSourceYituliu: 'データソース：一図流',
     maaCultivatePreviewTitle: '必要素材の予定',
     maaCultivatePreviewComputing: '計算中',
@@ -600,8 +592,6 @@ export default {
     maaCultivateEstimateSuffix:
       '。以上は昇進 0 / 在庫 0 の控えめの見積もりです。MAAで認識を完了してから再度ご確認ください',
     maaCultivateSklandTitle: '森空島をバインド',
-    maaCultivateSklandHint:
-      'バインド後、スキルレベル/特化/モジュール目標の練度と達成判定は自動で行われます。サインイン設定でログイン済みの森空島アカウントを使用します',
     maaCultivateSklandRole: 'ゲームロールを選択',
     maaCultivateSklandBoundRole: 'バインド済みロール',
     maaCultivateSklandUnboundHint: '森空島未バインドでは昇進目標のみ設定できます',
@@ -2538,6 +2528,57 @@ export default {
     maaEndRouteClear: 'クリア',
     maaEndRouteSelectedCount: '選択中 {n}/{m}',
     maaEndEnableSanity: '理性タスクを有効化',
+    maaEndSanityStrategy: '実行戦略',
+    maaEndEditAccount: 'アカウントを編集',
+    maaEndAddAccount: 'アカウントを追加',
+    maaEndAutoSaveHint: '変更後は自動保存されます',
+    maaEndSaving: '保存中…',
+    maaEndImsSearch: '素材を検索',
+    maaEndImsTargetHint:
+      '目標は 0～3000000000 の整数で、先頭に 0 を付けないでください。0 は計画に参加しないことを示します。',
+    maaEndImsNoMatches: '該当する素材はありません',
+    maaEndImsPlannedOnly: '目標を設定済みのもののみ表示',
+    maaEndImsExperience: '経験値',
+    maaEndImsPromotion: '突破',
+    maaEndImsSkill: 'スキル',
+    maaEndImsCurrency: '通貨',
+    maaEndImsOther: 'その他',
+    maaEndImsTitle: '在庫目標',
+    maaEndPlannedStrategy: '指定タスク / 計画表',
+    maaEndOriginalStrategy: 'ネイティブ設定をそのまま使用',
+    maaEndImsStrategyHint:
+      '今回の実行では下の IMS 在庫計画に従ってプロトコル空間を実行します。固定ステージと週間計画は適用されません。',
+    maaEndImsUnavailable:
+      '在庫設定を読み取れないか、現在の MaaEnd バージョンが目標在庫に未対応です。スクリプトのパスを確認し、MaaEnd を更新してください。',
+    maaEndImsReload: '再読み込み',
+    maaEndImsInvalidTargets:
+      '目標は 0～3000000000 の整数で先頭に 0 を付けず、現在のバージョンが対応していない素材も指定できません。',
+    maaEndImsResetInvalid: '無効な目標をクリア',
+    maaEndImsRemoveUnknown: '未対応の目標を削除',
+    maaEndImsResetHint:
+      '現在の目標の形式を読み取れません。クリア後は入力し直す必要があります。ほかのタスク設定には影響しません。',
+    maaEndImsPlannedCount: '{n} 件の育成素材目標を維持',
+    maaEndImsEmpty:
+      '目標はまだ設定されていません。下の表に入力してください。0 は参加しないことを示します。',
+    maaEndImsClaimMode: '受け取り方法',
+    maaEndImsMedication: '緊急理性強化剤を使用',
+    maaEndImsMedicationUse: '使用する',
+    maaEndImsMedicationSkip: '使用しない',
+    maaEndImsMaterial: '育成素材',
+    maaEndImsTarget: '目標在庫／換算経験値',
+    maaEndImsParticipation: '今回の実行計画',
+    maaEndImsIncluded: '在庫補充に参加',
+    maaEndImsExcluded: '参加しない',
+    maaEndImsNotify: '今回の実行の素材収穫',
+    maaEndImsNotifyHint:
+      'タスク終了後、今回の実行でスキャンした在庫・獲得数・アップストリームの状態を、現在のユーザーの通知チャンネルに送信します。統計情報の通知やタスクノードの詳細とは独立しており、素材レポートを受信していない場合は状態不明と表示されます。',
+    maaEndConfigureInventory: '在庫目標を設定',
+    maaEndNativeSanityHint:
+      'MaaEnd で有効化済みのプロトコル空間・基質周回とすべてのオプションを保持し、目標在庫を使用できます。固定タスクと週間計画の選択は保持されますが、今回の実行では適用されません。理性タスクのスイッチがオフのときはグループ全体が実行されません。',
+    maaEndInventorySourceHint:
+      '設定は現在のソース（スクリプト共有・ユーザー独立・ネイティブ）をそのまま使用します。アカウントごとに異なる目標が必要な場合は、ユーザー独立の設定を選んでください。MaaEnd で必要なタスクを有効化し、在庫目標を設定してください。',
+    maaEndCollectInventoryHint:
+      'MAS は今日の候補ルートのみを手配し、採集するかどうかは MaaEnd がネイティブの在庫条件で判断します。今日手配されていないルートは、在庫が不足していても実行されません。毎回の実行で在庫を補充する場合は、集中採集を選び、必要なルートをすべてチェックしてください。',
     maaEndSanitySection: '理性タスク（基質周回 / プロトコル空間）',
     share: {
       loginRequired: '先に設定共有サイトへのログインが必要です',
@@ -2559,7 +2600,7 @@ export default {
       privacyNotice:
         'スクリプトのルートディレクトリやスクリプトパスなどの既知のパスは、アップロード前に自動でプレースホルダーに置き換えられます。ユーザーデータはアップロードされません。送信後は設定共有サイトの審査待ちフローに入り、審査を通過すると他のユーザーがダウンロードして利用できます。',
     },
-    maaEndGroupEnabled: '{n} / {m} 件のタスクが有効',
+    maaEndTaskGroups: 'タスクグループ',
     maaEndEnableGroup: 'グループ全体を有効化',
     maaendConfigRestoreScriptDesc:
       'MaaEnd ネイティブ設定のバックアップです。復元すると MaaEnd 本体に直接適用されます。この編集ページを開く、MaaEnd を実行する、または設定画面を開く前に重複を排除して自動作成され、最新10件を保持します',
