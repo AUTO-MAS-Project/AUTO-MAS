@@ -41,6 +41,11 @@ import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCopilotAnalyzeIn } from '../models/MaaCopilotAnalyzeIn';
+import type { MaaCopilotAnalyzeOut } from '../models/MaaCopilotAnalyzeOut';
+import type { MaaCopilotAuthorsIn } from '../models/MaaCopilotAuthorsIn';
+import type { MaaCopilotSourceIn } from '../models/MaaCopilotSourceIn';
+import type { MaaCopilotSourceOut } from '../models/MaaCopilotSourceOut';
 import type { MaaCultivateImportIn } from '../models/MaaCultivateImportIn';
 import type { MaaCultivateImportOut } from '../models/MaaCultivateImportOut';
 import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
@@ -751,6 +756,63 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 加载或同步作业站公开数据
+     * @param requestBody
+     * @returns MaaCopilotSourceOut Successful Response
+     * @throws ApiError
+     */
+    public static loadMaaCopilotSourceApiScriptsMaaCopilotSourcePost(
+        requestBody: MaaCopilotSourceIn,
+    ): CancelablePromise<MaaCopilotSourceOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/source',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索作业站作者
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static searchMaaCopilotAuthorsApiScriptsMaaCopilotAuthorsPost(
+        requestBody: MaaCopilotAuthorsIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/authors',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 比较作业练度并建议培养目标（不落库）
+     * @param requestBody
+     * @returns MaaCopilotAnalyzeOut Successful Response
+     * @throws ApiError
+     */
+    public static analyzeMaaCopilotTrainingApiScriptsMaaCopilotAnalyzePost(
+        requestBody: MaaCopilotAnalyzeIn,
+    ): CancelablePromise<MaaCopilotAnalyzeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/copilot/analyze',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
