@@ -50,6 +50,7 @@ export default {
     probe: 'Probe once',
     probeHint: 'Check readiness and response time on demand, without polling.',
     probeFailed: 'Health check failed. The backend is unreachable.',
+    probeTimedOut: 'Health check timed out. Check the backend and try again.',
     readiness: 'Readiness',
     ready: 'Ready',
     notReady: 'Not ready',
@@ -81,6 +82,8 @@ export default {
     storageWriteFailed: 'Storage operation failed. Check permissions and available quota.',
     deleteTitle: 'Delete this entry?',
     deleteHint: 'The key “{key}” will be deleted. This cannot be undone.',
+    deleteUnsavedHint:
+      'The key “{key}” and its unsaved edits will be discarded. This cannot be undone.',
     clearTitle: 'Clear this storage area?',
     clearHint:
       'Delete all {count} entries in {scope}, including entries hidden by the filter. The other storage area is unaffected.',

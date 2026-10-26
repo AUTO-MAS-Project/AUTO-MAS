@@ -137,16 +137,18 @@ const saveEntry = async () => {
 }
 
 const removeEntry = async () => {
-  if (selectedKey.value === null || saving.value) return
-  if (
-    !(await confirmDevtoolsAction(
-      t('devtools.deleteTitle'),
-      t('devtools.deleteHint', { key: selectedKey.value })
-    ))
-  )
-    return
+  const key = selectedKey.value
+  if (key === null || saving.value) return
   try {
-    currentStorage().removeItem(selectedKey.value)
+    const storage = currentStorage()
+    if (
+      !(await confirmDevtoolsAction(
+        t('devtools.deleteTitle'),
+        t(dirty.value ? 'devtools.deleteUnsavedHint' : 'devtools.deleteHint', { key })
+      ))
+    )
+      return
+    storage.removeItem(key)
     selectedKey.value = null
     editorValue.value = ''
     originalValue.value = ''
@@ -158,18 +160,19 @@ const removeEntry = async () => {
 
 const clearStorage = async () => {
   if (!(await canLeave())) return
-  if (
-    !(await confirmDevtoolsAction(
-      t('devtools.clearTitle'),
-      t('devtools.clearHint', {
-        scope: scope.value === 'local' ? 'localStorage' : 'sessionStorage',
-        count: entries.value.length,
-      })
-    ))
-  )
-    return
   try {
-    currentStorage().clear()
+    const storage = currentStorage()
+    if (
+      !(await confirmDevtoolsAction(
+        t('devtools.clearTitle'),
+        t('devtools.clearHint', {
+          scope: scope.value === 'local' ? 'localStorage' : 'sessionStorage',
+          count: entries.value.length,
+        })
+      ))
+    )
+      return
+    storage.clear()
     selectedKey.value = null
     creating.value = false
     loadEntries()
