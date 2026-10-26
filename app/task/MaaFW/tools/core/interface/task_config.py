@@ -722,20 +722,23 @@ def excluded_task_ids_for_weekday(
     snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
     iso_weekday: int,
 ) -> list[str]:
-    """快照队列里设了运行日、且运行日不含 ``iso_weekday`` 的实例 id（队列顺序，去重）。
+    """快照队列里勾选了、设了运行日、且运行日不含 ``iso_weekday`` 的实例 id（队列顺序，去重）。
 
     按实例判，不按任务名：同一任务重复入队的几份各看各的。前置任务（pretask）不受运行日
-    影响，即使快照里有也不算。今天是星期几由调用方按本机时间给。
+    影响，即使快照里有也不算。没勾选（红灯）的实例本来就不跑，不算「今天不在运行日」，
+    免得特调把它当成运行日跳过的实例处理。今天是星期几由调用方按本机时间给。
     """
 
     raw_snapshot = _normalize_raw_snapshot(snapshot)
     schedules = raw_snapshot["taskSchedules"]
     if not schedules:
         return []
+    checked = raw_snapshot["taskChecked"]
     return [
         task_id
         for task_id in dict.fromkeys(raw_snapshot["taskOrder"])
         if not is_pretask_task_name(task_id)
+        and checked.get(task_id) is True
         and task_id in schedules
         and iso_weekday not in schedules[task_id]["weekdays"]
     ]
