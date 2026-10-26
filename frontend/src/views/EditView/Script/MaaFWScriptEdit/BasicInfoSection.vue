@@ -447,36 +447,16 @@ watch(
   color: var(--ant-color-warning);
 }
 
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
 .path-input {
-  flex: 1;
   /* flex 子项默认 min-width:auto，窄屏下会被内容撑住不肯让位，
      把两个按钮挤出圆角容器；显式归零才能正常收缩。 */
   min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
 }
 
 .path-button {
   /* 两个按钮共用一套样式：各自带左分隔线，与输入框拼成一条完整控件。 */
   flex: 0 0 auto;
   white-space: nowrap;
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
 }
 
 /* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */

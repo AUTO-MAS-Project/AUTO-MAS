@@ -71,42 +71,9 @@ const handleSave = (values: TaskTimeLimitOverrides, loopGuard: boolean) => {
 }
 </script>
 
+<style scoped src="./maafwSection.css"></style>
+
 <style scoped>
-/* 与键位映射那组同一套样式（scoped 样式不跨组件，照抄一份） */
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
 /* interface 没读到时按钮禁用：不能还是主色（antd 的 colorBgContainerDisabled 就是 fill-tertiary） */
 .path-button:disabled,
 .path-button.ant-btn-disabled {

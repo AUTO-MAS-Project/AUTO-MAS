@@ -418,32 +418,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
   opacity: 0.65;
 }
 
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-}
-
 .controller-resource-row,
 .control-detail-row {
   margin-top: 16px;
