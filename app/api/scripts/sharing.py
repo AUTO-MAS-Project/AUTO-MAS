@@ -17,7 +17,6 @@
 
 """配置中心导入与分享路由与端点专用模型。"""
 
-
 from typing import (
     List,
     Optional,
