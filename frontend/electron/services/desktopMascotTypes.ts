@@ -35,7 +35,8 @@ export interface DesktopMascotRuntime {
   getData(sender: WebContents): DesktopMascotData | null
   setIdleMessage(message: DesktopMascotIdleMessage): void
   setActivity(working: boolean, animate: boolean): void
-  showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped'): void
+  showNotice(text: string, reaction?: 'success' | 'failure' | 'stopped', key?: string): void
+  finishReaction(sender: WebContents, id: unknown): void
   handlePointer(sender: WebContents, action: unknown, session: unknown): void
   startDrag(sender: WebContents, offset: unknown): boolean
   setDecodedImage(sender: WebContents, imageUrl: string, pngDataUrl: string): void
@@ -55,6 +56,7 @@ export type DesktopMascotHostInputs = Pick<
   | 'handlePointer'
   | 'startDrag'
   | 'setDecodedImage'
+  | 'finishReaction'
 >
 
 export interface DesktopMascotCapabilities {

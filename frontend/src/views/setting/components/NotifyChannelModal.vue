@@ -52,6 +52,10 @@ const enabled = computed(() => {
 })
 const isClaw = computed(() => (props.channel?.customBlock ?? '').startsWith('claw:'))
 const clawConnected = computed(() => !!props.clawBinding?.status?.connected)
+const switchChecked = computed(() => enabled.value && (!isClaw.value || clawConnected.value))
+const stateText = computed(() =>
+  t(switchChecked.value ? 'setting.notify.stateEnabled' : 'setting.notify.stateDisabled')
+)
 // 未绑定时开关不可点（沿用 ClawBinding 原逻辑：未连接 / 查询中 / 解绑中都禁用）
 const switchDisabled = computed(() => {
   if (isClaw.value && props.clawBinding) {
@@ -132,12 +136,12 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
       <div class="modal-body">
         <div v-if="enableName" class="modal-state">
           <div class="state-main">
-            <span class="switch-label">{{ t('setting.notify.stateEnabled') }}</span>
+            <span class="switch-label">{{ stateText }}</span>
             <a-switch
-              :checked="enabled && (!isClaw || clawConnected)"
+              :checked="switchChecked"
               :loading="saving"
               :disabled="switchDisabled"
-              :aria-label="t('setting.notify.stateEnabled')"
+              :aria-label="stateText"
               @change="setEnabled"
             />
           </div>

@@ -63,13 +63,16 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.models.schema import WSTaskNoticeData
+from app.models.notification_ports import LocalNotice
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_user_statistics_payload
 from app.task.proxy_helpers import (
     CONFIG_BASE_INDEPENDENT,
     CONFIG_BASE_NATIVE,
@@ -111,7 +114,6 @@ from .tools import (
     list_app_catalog,
     list_instances,
     mas_backup_root,
-    push_notification,
     read_game_account,
     read_native_after_done,
     recycle_orphan_slots,
@@ -935,6 +937,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         self._multi_uids: set[str] = set()
         self._multi_succeeded: set[int] = set()
         self._multi_ran = False
+        self._multi_run_status = ""
+        self._history_users: dict[str, UserItem] = {}
         self._shutdown_after_success: bool = False
         self.run_book = False
         # app_id → 中文名（用于结果与推送日志展示）
@@ -1482,8 +1486,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     or self.cur_user_item.user_id in self._multi_uids
                 ):
                     self.cur_user_item.status = "运行"
-                self.log_start_time = datetime.now()
-                self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+                self.log_start_time = datetime.now().astimezone()
+                self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
                 self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
                 self._failed_app_ids = []
                 self.script_info.log = ""
@@ -1505,11 +1509,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                             kill_game=self._mas_should_close_game()
                         )
                         try:
-                            await Notify.push_plyer(
-                                "ZZZ-OD 自动代理出现异常！",
-                                f"用户 {self.cur_user_item.name} 游戏启动失败",
-                                f"{self.cur_user_item.name}的自动代理出现异常",
-                                3,
+                            await self.task_info.local_notifier.send_notice(
+                                LocalNotice(
+                                    title="ZZZ-OD 自动代理出现异常！",
+                                    message=f"用户 {self.cur_user_item.name} 游戏启动失败",
+                                    ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                                    duration_seconds=3,
+                                )
                             )
                         except Exception:
                             pass
@@ -1605,18 +1611,25 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     await self.kill_managed_process(exe_path=stale_launcher_path)
                     continue
 
+                failure_reason = (
+                    self._multi_run_status
+                    if self._multi_ran
+                    else self.cur_user_log.status
+                )
                 logger.warning(
                     f"用户 {self.cur_user_item.name} - ZZZ-OD 代理异常: "
-                    f"{self.cur_user_log.status}"
+                    f"{failure_reason}"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                self.script_info.log = f"{failure_reason}\n正在中止相关程序"
                 await self.kill_managed_process(kill_game=self._mas_should_close_game())
                 try:
-                    await Notify.push_plyer(
-                        "ZZZ-OD 自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
+                    await self.task_info.local_notifier.send_notice(
+                        LocalNotice(
+                            title="ZZZ-OD 自动代理出现异常！",
+                            message=f"用户 {self.cur_user_item.name} 的自动代理出现一次异常",
+                            ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                            duration_seconds=3,
+                        )
                     )
                 except Exception:
                     pass
@@ -1786,9 +1799,9 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         check_log 已标记的运行级终态（超时等）优先于运行记录 diff——收尾
         阶段卡死超时即使各槽已写出成功记录也不能判成功。致命日志次之：
-        整轮异常时未完成的用户一律标记异常。全部用户完成时
-        cur_user_log.status 置 ``Success!`` 以复用主流程的成功分支；任一用户
-        未完成则进入重试（zzz-od 按运行记录跳过已完成任务）。
+        整轮异常时未完成的用户一律标记异常。整轮结果独立控制重试，
+        用户日志保留各自结论；任一用户未完成则进入
+        重试（zzz-od 按运行记录跳过已完成任务）。
         """
 
         # check_log 已把超时/异常态写入 cur_user_log.status：本轮按运行失败
@@ -1803,6 +1816,7 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
         all_ok = True
 
         for slot, (user_item, cfg) in self._slot_users.items():
+            self._history_users[user_item.user_id] = user_item
             before = self._slot_records_before.get(slot, {})
             after = _judge_after(
                 self.script_root_path, slot, self._slot_record_files.get(slot, {})
@@ -1826,10 +1840,11 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             # 每个参与用户写一行终态 log_record：result 行不再显示「未开始
             # 运行」而节点有内容的矛盾。get-or-create：cur_user 的条目由
             # main_task 创建且 check_log 正在向其写 content，不能替换对象
-            record = user_item.log_record.get(self.log_start_time)
-            if record is None:
-                record = LogRecord()
-                user_item.log_record[self.log_start_time] = record
+            record = (
+                self.cur_user_log if user_item is self.cur_user_item else LogRecord()
+            )
+            if record is not self.cur_user_log:
+                user_item.add_log_record(self.log_start_time, record)
             if ok:
                 record_status = "Success!"
             elif runtime_failed:
@@ -1844,6 +1859,8 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f": {failed_names}" if failed_names else ""
                 )
             record.status = record_status
+            if record is not self.cur_user_log:
+                record.content = list(self.cur_user_log.content)
             # 节点详情由 log_box 统一采集（final_task 收尾时按账号路由）；
             # 每轮同步最终状态，成功计数在整个补跑期间每个用户只增加一次。
             await self._persist_multi_user_result(
@@ -1853,15 +1870,15 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 self._multi_succeeded.add(slot)
 
         if runtime_failed:
-            self.cur_user_log.status = runtime_status
+            self._multi_run_status = runtime_status
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif fatal is not None:
-            self.cur_user_log.status = fatal
+            self._multi_run_status = fatal
             if self.cur_user_item.user_id in self._multi_uids:
                 self.cur_user_item.status = "异常"
         elif all_ok:
-            self.cur_user_log.status = "Success!"
+            self._multi_run_status = "Success!"
             self.script_info.log = "检测到 ZZZ-OD 已完成任务"
         else:
             failed_users = "、".join(
@@ -1869,7 +1886,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for user_item, _ in self._slot_users.values()
                 if user_item.status != "完成"
             )
-            self.cur_user_log.status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self._multi_run_status = f"ZZZ-OD 部分用户执行失败: {failed_users}"
+            self.script_info.log = self._multi_run_status
+
+        if self.cur_user_item.user_id not in self._multi_uids:
+            # 非参与用户只承担本次启动与进度展示，其日志不作为用户历史保存。
+            self.cur_user_log.status = self._multi_run_status
 
         self.run_book = all_ok
         self._multi_ran = True
@@ -2017,6 +2039,22 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        if self._multi_ran:
+            for user in self._history_users.values():
+                self.task_info.begin_user_history_capture(
+                    self.script_info,
+                    user,
+                    failed=user.status == "异常" and not self.stopped_manually,
+                )
+        else:
+            self.task_info.begin_user_history_capture(
+                self.script_info,
+                self.cur_user_item,
+                failed=bool(self.cur_user_item.log_record)
+                and not self.run_book
+                and not self.stopped_manually,
+            )
+
         # 结束时先清理进程与监控（正常结束/失败/超时/手动中止都走这里——
         # wait_for_finalizer_on_cancel 保证手动停止也会完整收尾）
         if self.log_monitor is not None:
@@ -2037,18 +2075,24 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
-        statistic_paths: list[Path] = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
 
-            if log_item.status == "ZZZ-OD 正常运行中":
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "ZZZ-OD 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
                 # 未判定（进程异常退出/被中止）才标未捕获；已有终态判定时
@@ -2056,12 +2100,117 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 if log_item.status in ("未开始监看日志", "ZZZ-OD 正常运行中"):
                     log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            statistic_paths.append(log_path.with_suffix(".json"))
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        if statistic_paths:
+        if not self._multi_ran or self.cur_user_item.user_id in self._history_users:
+            if history_records:
+                try:
+                    attachments = await self.task_info.collect_user_history_attachments(
+                        self.script_info, self.cur_user_item
+                    )
+                    history_records[-1].attachments.extend(attachments)
+                except Exception:
+                    logger.opt(exception=True).warning(
+                        "收集用户历史附件失败，继续保存日志与执行结果"
+                    )
+                try:
+                    for record in history_records:
+                        try:
+                            await history_store.record(record)
+                        except Exception as error:
+                            logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                            try:
+                                await Publisher.send(
+                                    id=self.task_info.task_id,
+                                    type=protocol.TASK_NOTICE,
+                                    data=WSTaskNoticeData(
+                                        level="warning",
+                                        message=f"历史记录保存失败：{error}",
+                                    ),
+                                )
+                            except Exception:
+                                logger.opt(exception=True).warning(
+                                    "发送历史保存失败提示时出现异常"
+                                )
+                finally:
+                    await self.task_info.discard_user_history_capture(
+                        self.script_info, self.cur_user_item
+                    )
+        # 一次上游运行可同时执行多个实例，各用户沿用自己已确认的每轮结论。
+        for user in self._history_users.values():
+            if user is self.cur_user_item:
+                continue
+            records = [
+                HistoryWrite(
+                    time=started_at.astimezone(UTC4),
+                    username=user.name,
+                    script_name=self.script_info.name,
+                    status="success" if item.status == "Success!" else "error",
+                    message=item.status,
+                    logs="".join(item.content),
+                )
+                for started_at, item in user.iter_history_logs()
+            ]
+            if records:
+                try:
+                    attachments = await self.task_info.collect_user_history_attachments(
+                        self.script_info, user
+                    )
+                    records[-1].attachments.extend(attachments)
+                except Exception:
+                    logger.opt(exception=True).warning(
+                        "收集用户历史附件失败，继续保存日志与执行结果"
+                    )
+                try:
+                    for record in records:
+                        try:
+                            await history_store.record(record)
+                        except Exception as error:
+                            logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                            try:
+                                await Publisher.send(
+                                    id=self.task_info.task_id,
+                                    type=protocol.TASK_NOTICE,
+                                    data=WSTaskNoticeData(
+                                        level="warning",
+                                        message=f"历史记录保存失败：{error}",
+                                    ),
+                                )
+                            except Exception:
+                                logger.opt(exception=True).warning(
+                                    "发送历史保存失败提示时出现异常"
+                                )
+                finally:
+                    await self.task_info.discard_user_history_capture(
+                        self.script_info, user
+                    )
+
+        if history_records:
             try:
-                statistics = await Config.merge_statistic_info(statistic_paths)
+                statistics = {
+                    key: value.value
+                    for key, value in aggregate_data(
+                        [
+                            HistoryAggregationItem(time=record.time, data=record.data)
+                            for record in history_records
+                        ]
+                    ).data.items()
+                }
                 statistics["user_info"] = self.cur_user_item.name
                 start_time = getattr(self, "user_start_time", datetime.now())
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -2072,12 +2221,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     user_result = "代理任务全部完成"
                 statistics["user_result"] = user_result
                 success_symbol = "√" if self.run_book else "X"
-                await push_notification(
-                    "统计信息",
-                    f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
-                    f"{self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
-                    statistics,
-                    self.cur_user_config,
+                await self.task_info.notifications.push_statistics_report(
+                    payload=build_user_statistics_payload(
+                        title=f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的 ZZZ-OD 自动代理统计报告",
+                        message=statistics,
+                    ),
+                    user_config=self.cur_user_config,
+                    task_info=self.task_info,
                 )
             except Exception as e:
                 # 失败不再静默：既记 ERROR 日志，也推到调度台实时日志
@@ -2086,7 +2236,6 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                     f"推送 ZZZ-OD 用户统计通知时出现异常: {e}"
                 )
 
-        await self._persist_user_run_result()
         # 多实例触发者可能被正常跳过，整轮是否成功以实际参与用户的结果为准。
         if self._shutdown_after_success and self.run_book:
             shutdown_error = ""
@@ -2148,11 +2297,13 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 and self.cur_user_log.status
                 and self.cur_user_log.status != "Success!"
             ):
-                await Notify.push_plyer(
-                    "ZZZ-OD 运行异常",
-                    f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
-                    "异常",
-                    3,
+                await self.task_info.local_notifier.send_notice(
+                    LocalNotice(
+                        title="ZZZ-OD 运行异常",
+                        message=f"用户 {self.cur_user_item.name}：{self.cur_user_log.status}",
+                        ticker="异常",
+                        duration_seconds=3,
+                    )
                 )
         except Exception:
             pass

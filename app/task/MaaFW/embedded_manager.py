@@ -48,8 +48,9 @@ from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaFWConfig, MaaFWUserConfig
 from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
-from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import ScriptItem, UserItem
 from app.task.MaaFW.tools.backup_archive import (
     archive_mas_runtime_backup,
     archive_native_backup,
@@ -71,7 +72,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
     switch_or_confirm_in_progress,
 )
-from app.task.MaaFW.tools.embedded.history_paths import maafw_history_log_path
 from app.task.MaaFW.tools.embedded.project_path import (
     is_project_updating,
     release_project_path,
@@ -94,10 +94,10 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
-from app.task.MaaFW.tools.notify import push_notification
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
-    load_screenshot_images,
+    prepare_screenshot_images,
     screenshot_entries,
 )
 from app.utils import get_logger
@@ -356,7 +356,7 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     return None
 
 
-class MaaFWEmbeddedManager(TaskExecuteBase):
+class MaaFWEmbeddedManager(NotificationTaskBase):
     """MaaFW 内置运行（第二层）管理器。
 
     只负责把脚本配置、用户配置和模拟器实例装配好，运行编排全部交给
@@ -393,7 +393,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._inner_finalized = True
         self._report_finalized = False
         # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
-        self._failure_screenshots: list[tuple[str, Path]] = []
+        self._failure_screenshots: list[tuple[str, bytes]] = []
         # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
         self._missing_task_notices: list[str] = []
         self._missing_task_user_ids: set[str] = set()
@@ -1694,6 +1694,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self._inner_finalized = False
             try:
                 await self.inner_task.main_task()
+            except asyncio.CancelledError:
+                self.stopped_manually = True
+                raise
             # 只截 Exception：CancelledError 属 BaseException，必须继续外抛，
             # 否则基类的取消路径与下面的收尾保证一起失效。
             except Exception as exc:  # noqa: BLE001
@@ -1715,38 +1718,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if not logs or user_item is None or getattr(user_item, "log_record", None):
             return
         self.project_update_logs = logs + self.project_update_logs
-
-    async def _save_after_run_update_logs(self) -> None:
-        """运行后更新的日志（过程、失败原因、CDK 预警）追加进本轮最后一位留下日志的用户，
-        重写它那次的 history：与运行前更新并入用户日志同一口径，事后在历史记录里查得到。
-
-        那时各用户都已收尾、history 已写过，只能追加到最后一次尝试那份上重写。没有哪位
-        用户留下日志（全被跳过）时这批记录只在后端日志里。"""
-
-        logs = self._take_project_update_logs()
-        if not logs:
-            return
-        user_item = next(
-            (user for user in reversed(self.script_info.user_list) if user.log_record),
-            None,
-        )
-        if user_item is None:
-            return
-        started_at = max(user_item.log_record)
-        log_item = user_item.log_record[started_at]
-        log_item.content.extend(logs)
-        try:
-            await Config.save_general_log(
-                maafw_history_log_path(
-                    user_item.name, started_at, self.script_info.name
-                ),
-                log_item.content,
-                log_item.status,
-            )
-        except Exception as exc:  # noqa: BLE001 - 没写进 history 不影响收尾
-            logger.opt(exception=True).warning(
-                f"MFW 运行后更新日志写入用户 {user_item.name} 的 history 失败：{exc}"
-            )
 
     async def _record_project_run(self) -> None:
         """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
@@ -1782,18 +1753,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if self.inner_task is None or self._inner_finalized:
             return
         self._inner_finalized = True
+        self.inner_task.stopped_manually = self.stopped_manually
         try:
-            await self.inner_task.final_task()
+            await self.inner_task._run_final_task()
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
-        with suppress(Exception):
-            self._failure_screenshots.extend(self.inner_task.report_screenshots())
-        with suppress(Exception):
-            notice = self.inner_task.missing_task_notice()
-            if notice:
-                user_item = self.inner_task.cur_user_item
-                self._missing_task_notices.append(f"{user_item.name}: {notice}")
-                self._missing_task_user_ids.add(user_item.user_id)
+        finally:
+            # 基座会在收尾完成后重新抛出取消；已冻结的用户报告仍须归入脚本报告。
+            with suppress(Exception):
+                self._failure_screenshots.extend(self.inner_task.report_screenshots())
+            with suppress(Exception):
+                notice = self.inner_task.missing_task_notice()
+                if notice:
+                    user_item = self.inner_task.cur_user_item
+                    self._missing_task_notices.append(f"{user_item.name}: {notice}")
+                    self._missing_task_user_ids.add(user_item.user_id)
 
     async def _commit_user_data(self) -> None:
         """保存已提交的运行状态，并在异常或取消时也释放 X 锁。"""
@@ -1898,7 +1872,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
                 await self._ensure_project_environment("AfterRun")
             # 中途停止也照样落盘：「正在中止更新」那几行同样要查得到
-            await self._save_after_run_update_logs()
+            for line in self._take_project_update_logs():
+                logger.info(line.rstrip())
         elif self._post_run_env_confirm:
             # 收尾组同步切了版本（兄弟脚本在本轮期间更新了）：报告已经发出，再确认环境。
             await self._ensure_project_environment("AfterRun")
@@ -1927,7 +1902,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
@@ -1954,19 +1929,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if summary_title:
             result["summary_title"] = summary_title
         try:
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
                 image_id_prefix="maafw",
             )
             result["screenshots"] = screenshot_entries(images)
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
                 images=[image for _, image in images],
-                # 本轮有信号通知时系统弹窗由它弹（写明维护 / 需更新），这里不再弹第二次
                 include_system=not self.signal_tracker.records(),
             )
         except Exception as exc:  # noqa: BLE001
@@ -2023,6 +1995,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 self.signal_tracker,
                 script_name=self.script_info.name or "空白",
                 user_config_for=user_config_for,
+                notifications=self.task_info.notifications,
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")

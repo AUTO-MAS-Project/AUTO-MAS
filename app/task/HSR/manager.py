@@ -31,14 +31,17 @@ from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import HSRConfig, HSRUserConfig
+from app.models.notification_report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH, UTC4
+from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import atomic_write, replace_dir
 from app.utils.platform import is_admin
 
 from .AutoProxy import HSRAutoProxyTask, _server_day_clock, resolve_daily_native_modes
+from .history import save_hsr_user_history
 from .task_mapping import (
     HSR_TASK_MODULES,
     engine_label,
@@ -46,7 +49,6 @@ from .task_mapping import (
     resolve_script_assignment,
     script_supports,
 )
-from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
     check_cloud_prerequisites,
@@ -124,7 +126,41 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
     logger.info(f"{label} 已恢复：{source}")
 
 
-class HSRManager(TaskExecuteBase):
+class _DirectUserFinalizer(TaskExecuteBase):
+    """原生运行复用任务基座的取消保护，收尾结束后才允许下一用户。"""
+
+    def __init__(self, *, manager, user_item, user_config):
+        super().__init__()
+        self.manager = manager
+        self.user_item = user_item
+        self.user_config = user_config
+
+    async def main_task(self):
+        raise RuntimeError("原生用户收尾不支持独立运行")
+
+    async def final_task(self):
+        try:
+            await run_script_after_task(self.user_config)
+        except Exception as error:
+            self.user_item.status = "异常"
+            if self.user_item.log_record:
+                log_item = self.user_item.log_record[max(self.user_item.log_record)]
+                log_item.status = f"HSR 任务后脚本失败: {error}"
+                log_item.content.append(f"\nHSR 任务后脚本失败: {error}\n")
+            raise
+        finally:
+            await save_hsr_user_history(
+                task_info=self.manager.task_info,
+                script_info=self.manager.script_info,
+                user_item=self.user_item,
+                cancelled=self.manager.stopped_manually,
+            )
+
+    async def on_crash(self, error):
+        logger.opt(exception=True).warning(f"HSR 原生用户收尾失败: {error}")
+
+
+class HSRManager(NotificationTaskBase):
     """HSR 调度器，管理星穹铁道 M7A/SRA 双脚本任务。"""
 
     wait_for_finalizer_on_cancel = True
@@ -156,6 +192,7 @@ class HSRManager(TaskExecuteBase):
         self._external_path_lock: HSRExternalPathLockLease | None = None
         # 旧 dev 没有插件 registry；由调度器独占本轮原生来源会话并在停止时取消。
         self._direct_sessions: dict[str, Any] = {}
+        self._direct_user_log: LogRecord | None = None
 
     def _release_external_path_lock(self) -> None:
         lease = self._external_path_lock
@@ -368,6 +405,8 @@ class HSRManager(TaskExecuteBase):
             if line:
                 formatted = f"[{now_text}] {line}"
                 self._log_lines.append(formatted)
+                if self._direct_user_log is not None:
+                    self._direct_user_log.content.append(f"{formatted}\n")
         if len(self._log_lines) > max_lines:
             dropped_lines = len(self._log_lines) - max_lines
             del self._log_lines[:-max_lines]
@@ -987,8 +1026,9 @@ class HSRManager(TaskExecuteBase):
                             # 结果与通知是按 log_record 读的，只设 status 会被读成
                             # 「未开始运行」；补一条带原因的日志记录，界面才说得清
                             # 这个用户为什么没跑。
-                            user_item.log_record[datetime.now()] = LogRecord(
-                                status="今日代理次数已达上限，跳过"
+                            user_item.add_log_record(
+                                datetime.now().astimezone(),
+                                LogRecord(status="今日代理次数已达上限，跳过"),
                             )
                             self._append_log(
                                 f"用户「{user_item.name}」今日代理次数已达上限, 跳过"
@@ -1013,7 +1053,7 @@ class HSRManager(TaskExecuteBase):
                         user_log = user_item.log_record[latest_time]
                     else:
                         user_log = LogRecord()
-                        user_item.log_record[datetime.now()] = user_log
+                        user_item.add_log_record(datetime.now().astimezone(), user_log)
                     user_log.status = f"HSR 执行异常: {e}"
                     user_log.content.append(str(e))
                     user_errors.append(f"用户「{user_item.name}」执行异常：{e}")
@@ -1077,127 +1117,146 @@ class HSRManager(TaskExecuteBase):
             raise RuntimeError("HSR 脚本配置尚未加载")
         control = resolve_user_control(user_config, script_config=self.script_config)
         user_name = str(user_config.Info.Name or user_item.name)
-        started_at = datetime.now()
+        started_at = datetime.now().astimezone()
         log_item = LogRecord(status="HSR 脚本原生来源运行中")
-        user_item.log_record[started_at] = log_item
+        user_item.add_log_record(started_at, log_item)
         user_item.status = "运行"
-        log_start = len(self._log_lines)
+        self._direct_user_log = log_item
 
-        if "M7A" in control.engines:
-            # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
-            # 必须在任务前脚本之前：原生来源多账号共用一份 config.yaml，按账号改它的
-            # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
-            self._reset_m7a_config_for_direct(user_name)
-
-        # 执行任务前脚本（每用户仅一次）
-        await run_script_before_task(user_config)
-
-        switcher = HSRAccountSwitcher(
-            script_config=self.script_config,
-            runtime=self._runtime,
-            append_log=self._append_log,
-            script_id=self.script_info.script_id,
-            user_id=user_item.user_id,
-        )
-        self._runtime.game_launch_checked = False
-        cloud = is_cloud_platform(self.script_config)
-        if cloud:
-            # 原生来源 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
-            # browser_debug_port（原生来源不写用户配置）。
-            await switcher.ensure_cloud_browser(
-                fixed_port=self._m7a_direct_debug_port(self.script_config)
-            )
-        else:
-            await switcher.ensure_game_started_by_mas()
-        if cloud:
-            self._append_log(
-                f"用户「{user_name}」进入脚本原生来源；MAS 托管该用户的云浏览器，"
-                f"三月七按原生配置连接并执行：{engine_list(control.engines)}"
-            )
-        elif is_game_management_enabled(self.script_config):
-            self._append_log(
-                f"用户「{user_name}」进入脚本原生来源；MAS 负责先启动游戏并跟踪脚本进程，"
-                f"原生配置原样执行：{engine_list(control.engines)}"
-            )
-        else:
-            self._append_log(
-                f"用户「{user_name}」进入脚本原生来源；MAS 不管理游戏，"
-                f"仅运行原生配置并跟踪脚本进程：{engine_list(control.engines)}"
-            )
-        timeout_seconds = control.timeout_seconds
-        if cloud:
-            # 云·星穹铁道整轮只排一次队，原生来源加一份排队预算。
-            queue_minutes = cloud_max_queue_minutes(self.script_config)
-            timeout_seconds += queue_minutes * 60
-            self._append_log(
-                f"原生来源按整份原生配置一次跑完，单个脚本运行上限 "
-                f"{control.timeout_minutes + queue_minutes} 分钟"
-                f"（日常 {control.daily_limit_minutes} + 周常 "
-                f"{control.weekly_limit_minutes} + 云排队 {queue_minutes}），"
-                "超时将终止脚本进程"
-            )
-        else:
-            self._append_log(
-                f"原生来源按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
-                f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
-                "超时将终止脚本进程"
-            )
-        if "M7A" in control.engines:
-            self._log_ignored_m7a_after_finish()
-
-        summaries: list[str] = []
         try:
-            for engine in control.engines:
-                # 复用旧脚本切号的等待/切换语义。
-                await switcher.wait_before_external_script(engine, user_name)
-                provider = native_provider(engine)
-                session = await provider.open_direct_session(
-                    script_config=self.script_config,
-                    log=self._append_log,
-                )
-                self._direct_sessions[engine] = session
-                try:
-                    m7a_before_run = (
-                        self._read_m7a_config_bytes() if engine == "M7A" else None
-                    )
-                    result = await session.run(timeout_seconds)
-                    if engine == "M7A":
-                        # 成败都刷新：跑失败时三月七已经写回的状态同样是真实状态。
-                        self._refresh_m7a_backup_after_direct(user_name, m7a_before_run)
-                    if not result.success:
-                        raise RuntimeError(
-                            result.error
-                            or f"{engine_label(engine, left=False)}原生来源执行失败"
-                        )
-                    summary = (
-                        result.summary
-                        or f"{engine_label(engine, left=False)}原生来源执行完成"
-                    )
-                    summaries.append(summary)
-                    self._append_log(f"用户「{user_name}」{summary}")
-                except asyncio.CancelledError:
-                    await session.cancel()
-                    raise
-                finally:
-                    try:
-                        await session.close()
-                    finally:
-                        if self._direct_sessions.get(engine) is session:
-                            self._direct_sessions.pop(engine, None)
-        except Exception:
-            user_item.status = "异常"
-            log_item.status = "HSR 脚本原生来源异常"
-            log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
-            # 执行任务后脚本（每用户仅一次）
-            await run_script_after_task(user_config)
-            raise
+            if "M7A" in control.engines:
+                # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
+                # 必须在任务前脚本之前：原生来源多账号共用一份 config.yaml，按账号改它的
+                # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
+                self._reset_m7a_config_for_direct(user_name)
 
-        user_item.status = "完成"
-        log_item.status = "HSR 脚本原生来源完成"
-        log_item.content.extend(f"{line}\n" for line in self._log_lines[log_start:])
-        # 执行任务后脚本（每用户仅一次）
-        await run_script_after_task(user_config)
-        return len(control.engines)
+            # 执行任务前脚本（每用户仅一次）
+            await run_script_before_task(user_config)
+
+            switcher = HSRAccountSwitcher(
+                script_config=self.script_config,
+                runtime=self._runtime,
+                append_log=self._append_log,
+                script_id=self.script_info.script_id,
+                user_id=user_item.user_id,
+            )
+            self._runtime.game_launch_checked = False
+            cloud = is_cloud_platform(self.script_config)
+            if cloud:
+                # 原生来源 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
+                # browser_debug_port（原生来源不写用户配置）。
+                await switcher.ensure_cloud_browser(
+                    fixed_port=self._m7a_direct_debug_port(self.script_config)
+                )
+            else:
+                await switcher.ensure_game_started_by_mas()
+            if cloud:
+                self._append_log(
+                    f"用户「{user_name}」进入脚本原生来源；MAS 托管该用户的云浏览器，"
+                    f"三月七按原生配置连接并执行：{engine_list(control.engines)}"
+                )
+            elif is_game_management_enabled(self.script_config):
+                self._append_log(
+                    f"用户「{user_name}」进入脚本原生来源；MAS 负责先启动游戏并跟踪脚本进程，"
+                    f"原生配置原样执行：{engine_list(control.engines)}"
+                )
+            else:
+                self._append_log(
+                    f"用户「{user_name}」进入脚本原生来源；MAS 不管理游戏，"
+                    f"仅运行原生配置并跟踪脚本进程：{engine_list(control.engines)}"
+                )
+            timeout_seconds = control.timeout_seconds
+            if cloud:
+                # 云·星穹铁道整轮只排一次队，原生来源加一份排队预算。
+                queue_minutes = cloud_max_queue_minutes(self.script_config)
+                timeout_seconds += queue_minutes * 60
+                self._append_log(
+                    f"原生来源按整份原生配置一次跑完，单个脚本运行上限 "
+                    f"{control.timeout_minutes + queue_minutes} 分钟"
+                    f"（日常 {control.daily_limit_minutes} + 周常 "
+                    f"{control.weekly_limit_minutes} + 云排队 {queue_minutes}），"
+                    "超时将终止脚本进程"
+                )
+            else:
+                self._append_log(
+                    f"原生来源按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
+                    f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
+                    "超时将终止脚本进程"
+                )
+            if "M7A" in control.engines:
+                self._log_ignored_m7a_after_finish()
+
+            summaries: list[str] = []
+            try:
+                for engine in control.engines:
+                    # 复用旧脚本切号的等待/切换语义。
+                    await switcher.wait_before_external_script(engine, user_name)
+                    provider = native_provider(engine)
+                    session = await provider.open_direct_session(
+                        script_config=self.script_config,
+                        log=self._append_log,
+                    )
+                    self._direct_sessions[engine] = session
+                    try:
+                        m7a_before_run = (
+                            self._read_m7a_config_bytes() if engine == "M7A" else None
+                        )
+                        result = await session.run(timeout_seconds)
+                        if engine == "M7A":
+                            # 成败都刷新：跑失败时三月七已经写回的状态同样是真实状态。
+                            self._refresh_m7a_backup_after_direct(
+                                user_name, m7a_before_run
+                            )
+                        if not result.success:
+                            raise RuntimeError(
+                                result.error
+                                or f"{engine_label(engine, left=False)}原生来源执行失败"
+                            )
+                        summary = (
+                            result.summary
+                            or f"{engine_label(engine, left=False)}原生来源执行完成"
+                        )
+                        summaries.append(summary)
+                        self._append_log(f"用户「{user_name}」{summary}")
+                    except asyncio.CancelledError:
+                        await session.cancel()
+                        raise
+                    finally:
+                        try:
+                            await session.close()
+                        finally:
+                            if self._direct_sessions.get(engine) is session:
+                                self._direct_sessions.pop(engine, None)
+            except Exception:
+                user_item.status = "异常"
+                log_item.status = "HSR 脚本原生来源异常"
+                raise
+
+            user_item.status = "完成"
+            log_item.status = "HSR 脚本原生来源完成"
+            return len(control.engines)
+        except asyncio.CancelledError:
+            self.stopped_manually = True
+            user_item.status = "异常"
+            log_item.status = "任务被用户手动中止"
+            raise
+        except Exception as error:
+            user_item.status = "异常"
+            log_item.status = f"HSR 脚本原生来源异常: {error}"
+            raise
+        finally:
+            self.task_info.begin_user_history_capture(
+                self.script_info,
+                user_item,
+                failed=user_item.status == "异常" and not self.stopped_manually,
+            )
+            finalizer = _DirectUserFinalizer(
+                manager=self, user_item=user_item, user_config=user_config
+            )
+            try:
+                await finalizer._run_final_task()
+            finally:
+                self._direct_user_log = None
 
     def _reset_m7a_config_for_direct(self, user_name: str) -> None:
         """原生来源前把三月七 config.yaml 还原成本轮开始前的原样。
@@ -1350,32 +1409,6 @@ class HSRManager(TaskExecuteBase):
             "关机/睡眠请用 MAS 的队列完成后操作"
         )
 
-    async def _persist_user_logs(self) -> None:
-        """将 HSR 用户日志写入历史记录。"""
-
-        for user_item in self.script_info.user_list:
-            # 被跳过的用户这一轮没有真正跑过，不写历史：否则每次跳过都会在历史
-            # 页多出一条没有内容的失败记录。其它专项同样不为跳过的用户写历史。
-            if user_item.status == "跳过":
-                continue
-            for start_time, log_item in user_item.log_record.items():
-                if log_item.status == "HSR 正常运行中":
-                    log_item.status = (
-                        "任务被用户手动中止" if self.crashed else "HSR 任务结束"
-                    )
-                if not log_item.content:
-                    log_item.content = ["未捕获到任何 HSR 日志内容\n"]
-                    if log_item.status in ("未开始监看日志", "HSR 正常运行中"):
-                        log_item.status = "未捕获到日志"
-
-                dt = start_time.astimezone(UTC4)
-                log_path = Config.build_history_log_path(
-                    script_name=self.script_info.name,
-                    user_name=user_item.name,
-                    log_time=dt,
-                )
-                await Config.save_hsr_log(log_path, log_item.content, log_item.status)
-
     async def _restore_external_configs(self) -> str:
         """恢复 SRA / M7A 外部配置，返回错误文本或空串。"""
 
@@ -1424,7 +1457,7 @@ class HSRManager(TaskExecuteBase):
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{task_mode}任务报告"
         )
-        result = {
+        result: TaskResultData = {
             "title": f"{task_mode}任务报告",
             "script_name": self.script_info.name or "空白",
             "start_time": self.begin_time,
@@ -1435,11 +1468,9 @@ class HSRManager(TaskExecuteBase):
         }
 
         try:
-            await push_notification(
-                mode="代理结果",
+            await self.task_info.notifications.push_proxy_result(
                 title=title,
-                message=result,
-                user_config=None,
+                report=TaskResultReport.from_message(result),
                 task_info=self.task_info,
             )
         except Exception as e:  # noqa: BLE001
@@ -1530,7 +1561,6 @@ class HSRManager(TaskExecuteBase):
                     self._append_log(msg)
                     final_errors.append(msg)
                 await self._apply_cloud_login_writebacks()
-                await self._persist_user_logs()
                 await self._push_result_notification()
                 return "；".join(final_errors) or self.check_result
 
@@ -1552,7 +1582,6 @@ class HSRManager(TaskExecuteBase):
             else:
                 self.script_info.status = "完成"
             self._append_log("HSR 任务完成")
-            await self._persist_user_logs()
             await self._push_result_notification()
         finally:
             await self._unlock_script_config()

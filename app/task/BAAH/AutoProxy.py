@@ -37,14 +37,17 @@ from typing import Any
 
 from app.config import ConfigCollection
 from app.core import Config
+from app.core.history import history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import WSTaskNoticeData
+from app.models.notification_ports import LocalNotice
+from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
-from app.services import Notify, System
+from app.services import System
 from app.task.base import ScriptAutoProxyBase
+from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
@@ -60,7 +63,6 @@ from .tools import (
     apply_managed_config,
     baah_resolve,
     latest_log_file,
-    push_notification,
     read_json,
     resolve_config_name,
     resolve_log_time_range,
@@ -323,7 +325,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
         ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
@@ -388,11 +390,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             logger.info(
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
             )
-            self.log_start_time = datetime.now()
+            self.log_start_time = datetime.now().astimezone()
             self.log_start_at = time.monotonic()
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
-            )
+            self.cur_user_log = LogRecord()
+            self.cur_user_item.add_log_record(self.log_start_time, self.cur_user_log)
 
             await self.run_once()
 
@@ -887,11 +888,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await self.kill_managed_process()
 
-        await Notify.push_plyer(
-            "用户自动代理出现异常！",
-            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
-            f"{self.cur_user_item.name}的自动代理出现异常",
-            3,
+        await self.task_info.local_notifier.send_notice(
+            LocalNotice(
+                title="用户自动代理出现异常！",
+                message=f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+                ticker=f"{self.cur_user_item.name}的自动代理出现异常",
+                duration_seconds=3,
+            )
         )
 
     async def final_task(self):
@@ -901,28 +904,20 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.cur_user_item.status = "异常"
             return
 
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.stopped_manually,
+        )
+
         if self.log_monitor is not None:
             await self.log_monitor.stop()
 
         await self.kill_managed_process()
 
         await self._restore_managed_config()
-
-        for t, log_item in self.cur_user_item.log_record.items():
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=t.astimezone(UTC4),
-            )
-
-            if log_item.status == "BAAH 正常运行中":
-                log_item.status = "任务被用户手动中止"
-
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
-
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
 
         if self.run_book:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
@@ -939,6 +934,78 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 self.cur_user_config.Data.ProxyTimes + 1
             )
             await self.cur_user_config.commit()
+
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "BAAH 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
+                log_item.status = "任务被用户手动中止"
+
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                if not was_cancelled:
+                    log_item.status = "未捕获到日志"
+
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
+
+        if history_records:
+            try:
+                attachments = await self.task_info.collect_user_history_attachments(
+                    self.script_info, self.cur_user_item
+                )
+                history_records[-1].attachments.extend(attachments)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "收集用户历史附件失败，继续保存日志与执行结果"
+                )
+            try:
+                for record in history_records:
+                    try:
+                        await history_store.record(record)
+                    except Exception as error:
+                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                        try:
+                            await Publisher.send(
+                                id=self.task_info.task_id,
+                                type=protocol.TASK_NOTICE,
+                                data=WSTaskNoticeData(
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
+                                ),
+                            )
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
+            finally:
+                await self.task_info.discard_user_history_capture(
+                    self.script_info, self.cur_user_item
+                )
 
         await self._push_statistic()
 
@@ -964,7 +1031,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         )
 
         try:
-            await push_notification("统计信息", title, statistics, self.cur_user_config)
+            await self.task_info.notifications.push_statistics_report(
+                payload=build_script_statistics_payload(
+                    title=title, message=statistics, result_label="BAAH 执行结果"
+                ),
+                user_config=self.cur_user_config,
+                task_info=self.task_info,
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"推送统计信息时出现异常: {e}")
 

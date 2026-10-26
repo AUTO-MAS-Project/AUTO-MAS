@@ -28,7 +28,11 @@ import json
 import secrets
 from typing import Any
 
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import (
+    DeliveryErrorKind,
+    NotificationDeliveryError,
+    WebSocketDependencies,
+)
 from app.notification_channels.common import split_text
 
 SERVER_URL = "wss://5gvas01.cmicmaap.com/gtw-ai/openclaw/ws/msg"
@@ -39,8 +43,17 @@ CLOSE_TIMEOUT_SECONDS = 5
 TEXT_CHUNK_LIMIT = 2000
 
 
-class CMCCNewMsgError(RuntimeError):
+class CMCCNewMsgError(NotificationDeliveryError):
     """中国移动新消息认证或协议错误。"""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: DeliveryErrorKind = "rejected",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message, kind=kind, retryable=retryable)
 
 
 def _safe_reason(reason: Any, api_key: str) -> str:
@@ -57,9 +70,13 @@ async def _receive_message(connection: Any) -> dict[str, Any]:
     try:
         message = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as exc:
-        raise CMCCNewMsgError("中国移动新消息服务返回了无效响应") from exc
+        raise CMCCNewMsgError(
+            "中国移动新消息服务返回了无效响应", kind="transport", retryable=True
+        ) from exc
     if not isinstance(message, dict):
-        raise CMCCNewMsgError("中国移动新消息服务返回了无效响应")
+        raise CMCCNewMsgError(
+            "中国移动新消息服务返回了无效响应", kind="transport", retryable=True
+        )
     return message
 
 
@@ -80,7 +97,9 @@ async def _authenticate(connection: Any, api_key: str) -> None:
                     reason = _safe_reason(message.get("message"), api_key)
                     raise CMCCNewMsgError(f"中国移动新消息认证失败: {reason}")
     except TimeoutError as exc:
-        raise CMCCNewMsgError("中国移动新消息认证超时") from exc
+        raise CMCCNewMsgError(
+            "中国移动新消息认证超时", kind="transport", retryable=True
+        ) from exc
 
 
 async def _submit_message(
@@ -138,14 +157,16 @@ async def _submit_message(
         raise
     except Exception as exc:
         raise CMCCNewMsgError(
-            f"连接中国移动新消息服务失败: {type(exc).__name__}"
+            f"连接中国移动新消息服务失败: {type(exc).__name__}",
+            kind="transport",
+            retryable=True,
         ) from exc
 
     return tuple(message_ids)
 
 
 class Sender:
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: WebSocketDependencies) -> None:
         self.dependencies = dependencies
 
     async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:

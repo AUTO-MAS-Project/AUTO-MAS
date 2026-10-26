@@ -68,6 +68,9 @@ export const WS_EMULATOR_NOTICE = 'emulator.notice'
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 
+// 魔改 AVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+export const WS_AVD_UPDATE_PROGRESS = 'emulator2.avd-update.progress'
+
 // 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
 export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
@@ -247,6 +250,24 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
+/**
+ * 魔改 AVD 更新进度 (id=EmulatorManager, type=emulator2.avd-update.progress)
+ *
+ * status 为 success / failed / idle 时这一次操作结束，界面据此重新取一次状态快照。
+ */
+export interface WSAvdUpdateProgressData {
+  root: string
+  /** downloading / extracting / verifying / staged / installing / installed / failed */
+  stage: string
+  /** running / success / failed / idle */
+  status: string
+  message: string
+  percent?: number | null
+  downloadedBytes?: number | null
+  totalBytes?: number | null
+  speedBytesPerSec?: number | null
+}
+
 /** 一块显示器的工作区（去掉任务栏），物理像素、桌面坐标 */
 export interface WSDisplayMonitorRectData {
   left: number
@@ -300,6 +321,7 @@ interface WSMessageDataMap {
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
+  [WS_AVD_UPDATE_PROGRESS]: WSAvdUpdateProgressData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
   [WS_SYSTEM_NOTICE]: WSSystemNoticeData

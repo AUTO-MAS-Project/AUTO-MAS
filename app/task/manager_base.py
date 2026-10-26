@@ -13,12 +13,14 @@ from typing import Literal, overload
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.models.config import UserConfigType
+from app.models.notification_report import TaskResultData
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, TaskItem, UserItem
 from app.task.maintenance import (
     get_maintenance_message,
     get_user_maintenance,
 )
+from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import push_maintenance_notice
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -42,7 +44,7 @@ class UserRunSummary:
         return len(self.failed) + len(self.waiting)
 
 
-class ScriptManagerBase(TaskExecuteBase):
+class ScriptManagerBase(NotificationTaskBase):
     # 收尾仍持有配置 X 锁，取消后也须等待完成再让调度器切换任务。
     wait_for_finalizer_on_cancel = True
 
@@ -133,7 +135,7 @@ class ScriptManagerBase(TaskExecuteBase):
         self,
         *,
         result_text: str | None = None,
-    ) -> dict:
+    ) -> TaskResultData:
         """按专项的用户状态口径组织已有报告字段。"""
         summary = self.collect_user_results()
         mode = TASK_MODE_ZH.get(self.task_info.mode, self.task_info.mode)
@@ -151,7 +153,9 @@ class ScriptManagerBase(TaskExecuteBase):
         self, user: UserItem, *, status: Literal["跳过", "异常"], reason: str
     ) -> None:
         user.status = status
-        user.log_record[datetime.now()] = LogRecord(status=reason, content=[reason])
+        user.add_log_record(
+            datetime.now().astimezone(), LogRecord(status=reason, content=[reason])
+        )
         line = f"{self.script_info.name} - {user.name}: {reason}"
         self.script_info.log = (
             f"{self.script_info.log}\n{line}" if self.script_info.log else line

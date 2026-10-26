@@ -59,6 +59,7 @@ from app.config.types import (
 )
 from app.utils.constants import (
     MAA_STAGE_KEY,
+    MAAEND_INVENTORY_TARGET_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
@@ -705,6 +706,10 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: "官服", description="资源名称"
         )
 
+        SanityStrategy: Literal["MAS", "Native", "Inventory"] = Field(
+            default="MAS", description="理智任务策略：指定任务、原生策略或库存目标"
+        )
+
         SanityMode: Annotated[
             UUID | str,
             ref(
@@ -739,6 +744,10 @@ class MaaEndUserConfig(DomainEntry):
             default_factory=lambda: False, description="是否发送邮件"
         )
 
+        IfSendInventory: bool = Field(
+            default=False, description="是否推送本轮养成材料状态"
+        )
+
         IfSendStatistic: bool = Field(
             default_factory=lambda: False, description="是否发送统计信息"
         )
@@ -761,6 +770,14 @@ class MaaEndUserConfig(DomainEntry):
     Notify: NotifyFields = Field(default_factory=NotifyFields)
 
     class TaskFields(ConfigGroup):
+        SupplyPlanLimits: JsonDictString = Field(
+            default_factory=lambda: json.dumps(MAAEND_INVENTORY_TARGET_DEFAULTS),
+            description="上游库存目标输入值，原字段名与字符串值透传",
+        )
+        ProtocolSpaceObtainModeClaim: str = Field(
+            default="ObtainScaling2", description="库存任务领取方式，由 MaaEnd 声明"
+        )
+
         AutoCollectCommonRoutes: Any = Field(
             description="自动采集通用资源路线", default_factory=lambda: None
         )
@@ -951,7 +968,14 @@ class MaaEndUserConfig(DomainEntry):
             tags.append(_tag_notes(self))
             return json.dumps(tags, ensure_ascii=False)
 
-        if self.Task.IfSanity:
+        if self.Task.IfSanity and self.Info.SanityStrategy in ("Native", "Inventory"):
+            label = (
+                "库存目标"
+                if self.Info.SanityStrategy == "Inventory"
+                else "MaaEnd 原生策略"
+            )
+            tags.append({"text": f"理智任务：{label}", "color": "blue"})
+        elif self.Task.IfSanity:
             task_key, _ = self.get_effective_sanity_task_key()
             sanity_task_type = task_key["SanityTaskType"]
             tags.append(

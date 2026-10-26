@@ -300,9 +300,9 @@ class GlobalConfig(DomainEntry):
             description="连接已运行的 OBS，在自动代理最终失败时保存回放。",
         )
 
-        MaxReplayCount: Annotated[int, Field(ge=1, le=20)] = Field(
-            default_factory=lambda: 3,
-            description="MAS 副本的保留数量，不清理 OBS 原文件。",
+        VideoStorageLimitMiB: Annotated[int, Field(ge=1, le=1048576)] = Field(
+            default_factory=lambda: 1024,
+            description="历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。",
         )
 
         Password: Annotated[str, encrypted(), ui(visibility=UiVisibility.MASKED)] = (

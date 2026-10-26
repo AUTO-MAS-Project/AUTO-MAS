@@ -26,17 +26,37 @@
 见 `applaunch`。
 """
 
-from .applaunch import (
-    AppLaunchMixin,
-    AppLaunchResult,
-    ensure_app_running,
-    is_package_foreground,
-    is_package_missing,
-)
-from .detect import DetectResult, probe_install_path
-from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths, load_paths
-from .ldplayer14 import LDPlayer14Manager
-from .slots import PathRecord, SlotRecord, SlotTable, make_path_id
+from importlib import import_module
+
+# 更新引擎只用 avd 下的文件 / 网络工具；导入它不应顺带装配所有设备管理器与配置模型。
+_LAZY_EXPORTS = {
+    "AppLaunchMixin": (".applaunch", "AppLaunchMixin"),
+    "AppLaunchResult": (".applaunch", "AppLaunchResult"),
+    "DetectResult": (".detect", "DetectResult"),
+    "DeviceUnavailableError": (".facade", "DeviceUnavailableError"),
+    "Emulator2Manager": (".facade", "Emulator2Manager"),
+    "LDPlayer14Manager": (".ldplayer14", "LDPlayer14Manager"),
+    "PathRecord": (".slots", "PathRecord"),
+    "SlotRecord": (".slots", "SlotRecord"),
+    "SlotTable": (".slots", "SlotTable"),
+    "dump_paths": (".facade", "dump_paths"),
+    "ensure_app_running": (".applaunch", "ensure_app_running"),
+    "is_package_foreground": (".applaunch", "is_package_foreground"),
+    "is_package_missing": (".applaunch", "is_package_missing"),
+    "load_paths": (".facade", "load_paths"),
+    "make_path_id": (".slots", "make_path_id"),
+    "probe_install_path": (".detect", "probe_install_path"),
+}
+
+
+def __getattr__(name: str):
+    if name not in _LAZY_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module, attribute = _LAZY_EXPORTS[name]
+    value = getattr(import_module(module, __name__), attribute)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "AppLaunchMixin",

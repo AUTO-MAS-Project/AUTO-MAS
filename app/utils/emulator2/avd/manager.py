@@ -28,7 +28,8 @@
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
 （每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音且不带声卡、固定 720p、
 实例内存、空闲页上报、Vulkan 描述符批量更新、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、
-客体日志落盘、客体 Vulkan 驱动补丁。
+客体日志落盘、客体 Vulkan 驱动补丁。启动器里没有的一项：数据盘请求密集时不让 vCPU 停机
+（``res/avd/guest/mas-idlepoll.sh``）。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
 关机默认让安卓自己正常关机、等 qemu 自己退出，不成再退回 ``sync`` + 控制台 ``kill``：控制台
@@ -61,11 +62,12 @@ from ..applaunch import (
 )
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
-from . import host, precheck
+from . import host, precheck, update_stage, updater
 from .components import (
     component_installed,
     emulator_exe,
     launcher_apk,
+    manager_key_exe,
     missing_components_message,
     root_from_manager_exe,
     root_key,
@@ -263,6 +265,8 @@ def build_launch_args(
     ``balloon`` 一律不读：显示固定 720p、不带声卡、不开 GuestAngle、气球固定开。
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
+    - 开机动画只在无头时关（``-no-boot-anim``）：带窗口开机时窗口里有东西看，不再黑屏到出桌面
+      （用户 10-21 提）；
     - ``-audio none``：宿主不出声（用户 09-27 定）；
     - ``-feature -VirtioSndCard``：客体里不带声卡（用户 10-04 定）。本镜像的客体声卡是 virtio-snd，
       不认 ``config.ini`` 的 ``hw.audioOutput`` / ``hw.audioInput``（10-04 实测两项写 no 照样有声卡），
@@ -285,7 +289,6 @@ def build_launch_args(
         "-avd",
         avd,
         "-no-snapshot",
-        "-no-boot-anim",
         "-gpu",
         "host",
         "-ports",
@@ -299,7 +302,7 @@ def build_launch_args(
         str(int(memory_mb)),
     ]
     if headless:
-        args.append("-no-window")
+        args += ["-no-window", "-no-boot-anim"]
     args += ["-feature", "-QuickbootFileBacked"]
     args += ["-feature", "-VirtioSndCard"]
     args += ["-feature", "VulkanBatchedDescriptorSetUpdate"]
@@ -332,12 +335,13 @@ _OPENING: dict[str, asyncio.Event] = {}
 _OPENING_WAIT_EXTRA_SECONDS = 300.0
 
 
-async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event | None:
+async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event:
     """排到这台实例的 open：前面有 open 没做完就一个个等，轮到时登记自己的标记并返回它。
 
     一次置位会唤醒所有等待者，所以要循环：醒来后标记已被另一个等待者抢先登记，就接着等它。
     跳出循环和登记之间没有 ``await``，不会有两个同时登记。总共最多等 ``timeout`` 秒，
-    超时记日志、不登记（返回 ``None``），照常继续。
+    超时记日志、照样登记自己（顶替前一次的标记）再继续：「开机中」这张表是更新器判断能不能开始更新的
+    依据，不能有开机却不在表里的时候。前一次做完时只删仍是它自己的标记，不会删掉这一次的。
     """
     deadline = time.monotonic() + timeout
     started = time.monotonic()
@@ -355,7 +359,8 @@ async def _claim_opening(key: str, label: str, timeout: float) -> asyncio.Event 
             logger.warning(
                 f"{label} 等另一次启动超过 {timeout:.0f} 秒仍没做完，不再等，照常继续"
             )
-            return None
+            waited = False
+            break
     if waited:
         logger.info(
             f"{label} 另一次启动已做完（等了 {time.monotonic() - started:.0f} 秒）"
@@ -639,10 +644,26 @@ class _AvdCore(DeviceBase):
             return DeviceStatus.ONLINE
         return DeviceStatus.STARTING
 
-    def _device_info(self, idx: str, title: str, status: DeviceStatus) -> DeviceInfo:
+    def _device_info(
+        self,
+        idx: str,
+        title: str,
+        status: DeviceStatus,
+        process: psutil.Process | None = None,
+    ) -> DeviceInfo:
         # 给脚本的是 adb 端口的 TCP 地址：脚本用自己的 adb connect 过去，与雷电 / MuMu 一致。
         # 不给 emulator-<端口> 这个序列号——它只在我们的私有 server（20050）上存在。
-        return DeviceInfo(title, status, f"127.0.0.1:{adb_port(idx)}")
+        started_at = None
+        if process is not None:
+            with suppress(psutil.Error):
+                started_at = process.create_time()
+        return DeviceInfo(
+            title,
+            status,
+            f"127.0.0.1:{adb_port(idx)}",
+            process_id=process.pid if process is not None else None,
+            process_started_at=started_at,
+        )
 
     async def getStatus(self, idx: str) -> DeviceStatus:
         if str(idx) not in self._instances():
@@ -760,7 +781,7 @@ class _AvdCore(DeviceBase):
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """开机并做开机后设置。同一台实例上的 open 排队：前一次还没做完（开机后最后一步会重启 zygote），
         后一次先等它，免得后一次先返回在线、调用方拉起游戏，随后被前一次的 zygote 重启结束。
-        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、照常往下走。"""
+        等太久（:data:`_OPENING_WAIT_EXTRA_SECONDS` 加最长启动等待）就记日志、顶替前一次登记自己，照常往下走。"""
         idx = str(idx)
         instance = self._instance(idx)
         key = _instance_key(self.root, idx)
@@ -772,10 +793,9 @@ class _AvdCore(DeviceBase):
             await _wait_closing(key, f"魔改 AVD 实例 {idx}")
             return await self._open(idx, instance, key, max_wait)
         finally:
-            if mine is not None:
-                mine.set()
-                if _OPENING.get(key) is mine:
-                    del _OPENING[key]
+            mine.set()
+            if _OPENING.get(key) is mine:
+                del _OPENING[key]
 
     async def _open(
         self, idx: str, instance: AvdInstance, key: str, max_wait: float
@@ -800,7 +820,11 @@ class _AvdCore(DeviceBase):
 
         await self._after_boot(idx, instance, fresh_boot=launched)
         _start_watchdog(self.root, idx, process.pid)
-        return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
+        # 带上 qemu 进程号：开机后模拟器若被显卡驱动重置等原因带走（10-22 生产实例 0 就这样，
+        # NVIDIA 驱动内核异常后结束了 qemu），MaaFW 等 adb 时能马上看出来，不再空等几分钟
+        return self._device_info(
+            idx, instance.title, DeviceStatus.ONLINE, process=process
+        )
 
     async def _wait_boot(
         self, idx: str, instance: AvdInstance, launched: bool, max_wait: float
@@ -853,6 +877,9 @@ class _AvdCore(DeviceBase):
         return " | ".join(tail)
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
+        # 从点「更新」到更新结束都不许开机：sdk\emulator 会被换掉；用到它的脚本也就不会在更新中途启动
+        if updater.update_in_progress(self.root):
+            raise RuntimeError("魔改 AVD 正在更新，更新完再开机")
         self._check_components()
         # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
         memory_mb = memory_for(instance_meta(self.root, idx))
@@ -987,9 +1014,25 @@ class _AvdCore(DeviceBase):
         # 7) 崩溃 / 无响应弹窗没人点，挡在游戏前面；关掉（持久）
         await self._shell(idx, "settings put global hide_error_dialogs 1")
 
+        # 7b) 关掉 NetworkWatchlistService（持久）：距上次开机满一天时，它为日报给每个 APK 整个算一遍
+        #     SHA-256（明日方舟安装包一个就 1.8 GB，合计约 4 GB 读进页缓存），实例内存在宿主上整块常驻。
+        #     开关在 system_server 启动时读：从下次开机起生效，第 11 步重启 zygote 后也不会再起来
+        code, output = await self._shell(
+            idx, "settings put global network_watchlist_enabled 0"
+        )
+        if code != 0:
+            logger.warning(
+                f"实例 {idx} 关闭 NetworkWatchlistService 失败（下次开机仍会把安装包整个读一遍）: "
+                f"{output.strip()[-200:] or f'退出码 {code}'}"
+            )
+
         # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
         await self._setup_network(idx)
+
+        # 8b) 数据盘请求密集时（游戏下载每 8 KB fsync 一次）不让 vCPU 停机，省掉每次请求等 Hyper-V
+        #     唤醒 vCPU 的时间；平时不动（依据见脚本头注释）
+        await self._setup_idlepoll(idx)
 
         # 9) 客体日志：缓冲调到 16 MB（持久），开机后持续落盘到 <根>\logs，问题包要用
         await self._start_logcat(idx, instance)
@@ -1304,6 +1347,26 @@ class _AvdCore(DeviceBase):
             )
         else:
             logger.warning(f"实例 {idx} fastpath 没起来: {status[-300:]}")
+
+    async def _setup_idlepoll(self, idx: str) -> None:
+        remote = f"{GUEST_TMP_DIR}/mas-idlepoll.sh"
+        if not await self._push(idx, guest_script("mas-idlepoll.sh"), remote):
+            return
+        _, started = await self._shell(idx, f"su 0 sh {remote} daemon")
+        _, status = await self._shell(idx, f"su 0 sh {remote} status")
+        lines = {
+            key: value.strip()
+            for key, _, value in (line.partition(":") for line in status.splitlines())
+        }
+        if lines.get("watchers"):
+            logger.info(
+                f"实例 {idx} 密集读写加速: 守护已起（pid {lines['watchers']}，"
+                f"数据盘 {lines.get('disk') or '?'}）"
+            )
+        else:
+            logger.warning(
+                f"实例 {idx} 密集读写加速没起来: {(started.strip() + ' / ' + status)[-300:]}"
+            )
 
     async def _start_logcat(self, idx: str, instance: AvdInstance) -> None:
         await self._shell(
@@ -1957,6 +2020,27 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         return targets
 
 
+def opening_instances(root: Path) -> list[str]:
+    """这个根目录下正在开机（``open`` 还没做完，含开机前检查到拉起 emulator.exe 之间那几秒）的实例。"""
+    prefix = f"{root_key(root)}|"
+    return sorted(
+        key[len(prefix) :] for key in list(_OPENING) if key.startswith(prefix)
+    )
+
+
+def running_instances(root: Path) -> list[str]:
+    """这个根目录下开着的实例（原生索引）。
+
+    实例按 AVD 名 + 控制台端口认，各根目录的名字和端口是同一套；只算 qemu 可执行文件就在
+    这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
+    """
+    ours = {item["pid"] for item in update_stage.processes_using(root)}
+    running = AvdManager(
+        manager_key_exe(root), max_wait_time=60, force_kill_on_close=False
+    )._scan_processes()
+    return sorted(idx for idx, process in running.items() if process.pid in ours)
+
+
 async def build_manager(
     manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
 ) -> AvdManager:
@@ -1971,6 +2055,8 @@ __all__ = [
     "AvdManager",
     "FreezeWatchdog",
     "build_manager",
+    "opening_instances",
+    "running_instances",
     "emulator_exe",
     "shm_exists",
 ]

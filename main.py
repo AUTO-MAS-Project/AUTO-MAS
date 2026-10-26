@@ -26,6 +26,7 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -301,11 +302,38 @@ def main():
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
+        from app.core.history import history_store
+        from app.utils.constants import UTC4
+
+        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+        await history_store.initialize(
+            video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB * 1024 * 1024
+        )
+        await history_store.prune(
+            today=datetime.now(tz=UTC4).date(),
+            retention_days=Config.setting.Function.HistoryRetentionTime,
+        )
+
+        from app.services.obs_replay import ObsReplay
+
+        await ObsReplay.cleanup_temporary()
 
         from app.api.ws_command import execute_ws_command
-        from app.core.notify_channels import initialize_notification_channels
+        from app.config import config_manager
+        from app.core.game_calendar import GameCalendar
+        from app.core.notify_channels import create_notification_service
+        from app.runtime_tasks import RuntimeTasks
 
-        initialize_notification_channels(command_executor=execute_ws_command)
+        notifications = create_notification_service(
+            config=Config,
+            transactions=config_manager,
+            runtime=RuntimeTasks,
+            command_executor=execute_ws_command,
+        )
+        app.state.notifications = notifications
+        TaskManager.bind_notifications(notifications)
+        MainTimer.bind_notifications(notifications)
+        GameCalendar.bind_notifications(notifications)
 
         background_task: asyncio.Task | None = None
 
@@ -357,6 +385,12 @@ def main():
 
                 await DesktopGuard.start()
 
+            async def init_avd_update() -> None:
+                from app.core import avd_update
+
+                # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
+                await avd_update.startup()
+
             async def init_stage_info() -> None:
                 from app.task.MAA.tools.stage_service import maa_stage_service
 
@@ -393,11 +427,11 @@ def main():
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
+                # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
+                await run_optional_step("魔改 AVD 更新恢复", init_avd_update)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
-                from app.services.notification import Notify
-
-                await run_optional_step("通知渠道", Notify.start)
+                await run_optional_step("通知渠道", notifications.start)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -471,9 +505,13 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            await MainTimer.stop()
-
-            await TaskManager.stop_task("ALL")
+            stop_timer = asyncio.create_task(MainTimer.stop())
+            stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
+            try:
+                # 正常用户收尾仍可归档；只有存储操作阻塞才提前触达关闭期限。
+                await history_store.close(after=stop_tasks)
+            finally:
+                await asyncio.gather(stop_timer, stop_tasks)
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
             from app.core.desktop_guard import DesktopGuard
@@ -486,13 +524,9 @@ def main():
             from app.services.obs_replay import ObsReplay
 
             await ObsReplay.stop()
+            # 已托管通知随运行时任务一起回收，完成后再关闭渲染器和渠道。
             await RuntimeTasks.shutdown()
-            from app.core.task_report import shutdown_community_notifications
-
-            await shutdown_community_notifications()
-            from app.services.notification import Notify
-
-            await Notify.stop()
+            await notifications.close()
             from app.config import config_manager
 
             await config_manager.flush()

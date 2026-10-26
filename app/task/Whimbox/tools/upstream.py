@@ -221,13 +221,19 @@ class WheelAssetsConfigSurface:
 
         try:
             template = json.loads(
-                (self.assets_dir / TEMPLATE_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / TEMPLATE_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
             setting_options = json.loads(
-                (self.assets_dir / SETTING_OPTIONS_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / SETTING_OPTIONS_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
             material = json.loads(
-                (self.assets_dir / MATERIAL_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / MATERIAL_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"读取奇想盒配置三件套失败: {e}")
@@ -350,7 +356,9 @@ class WheelAssetsConfigSurface:
 
         try:
             data = json.loads(
-                (self.assets_dir / TEMPLATE_FILE).read_text(encoding="utf-8")
+                (self.assets_dir / TEMPLATE_FILE)
+                .read_text(encoding="utf-8")
+                .removeprefix("\ufeff")
             )
         except (OSError, json.JSONDecodeError) as e:
             logger.warning(f"读取奇想盒配置模板失败: {e}")

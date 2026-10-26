@@ -47,7 +47,10 @@ if TYPE_CHECKING:
     from websockets.asyncio.client import ClientConnection
 
 from app.models.notification import NotificationImage
-from app.models.notification_channel import ChannelDependencies
+from app.models.notification_channel import (
+    NotificationDeliveryError,
+    QQSessionDependencies,
+)
 from app.notification_channels.common import RemoteHTTPError, split_text
 from app.utils import get_logger
 from app.utils.platform import secret as platform_secret
@@ -250,7 +253,7 @@ def _decrypt_client_secret(encrypted: str, key: bytes) -> str:
 class Sender:
     """单账号 QQ 官方机器人通知管理器。"""
 
-    def __init__(self, dependencies: ChannelDependencies) -> None:
+    def __init__(self, dependencies: QQSessionDependencies) -> None:
         self.dependencies = dependencies
         self._sessions: dict[str, _QrSession] = {}
         self._session_lock = asyncio.Lock()
@@ -1104,11 +1107,34 @@ class Sender:
                 if attempt == 0 and code in (401, 401001, 11200, 11201):
                     self._invalidate_access_token()
                     continue
-                raise RuntimeError(
-                    f"{operation}失败（错误码 {code}）：{_business_message(response)}"
+                raise NotificationDeliveryError(
+                    f"{operation}失败（错误码 {code}）：{_business_message(response)}",
+                    kind="configuration"
+                    if code in (401, 401001, 11200, 11201)
+                    else "rate_limited"
+                    if code in (429, 40034100)
+                    else "transport"
+                    if code in (500, 502, 503, 504)
+                    else "rejected",
+                    # 只将已知需重新绑定或调整正文的拒绝判为永久；未知业务码沿用重试。
+                    retryable=code
+                    not in (
+                        401,
+                        401001,
+                        11200,
+                        11201,
+                        304003,
+                        40034028,
+                        40054010,
+                        40054004,
+                    ),
                 )
             return response
-        raise RuntimeError(f"{operation}失败：访问令牌重试后仍无效")
+        raise NotificationDeliveryError(
+            f"{operation}失败：访问令牌重试后仍无效",
+            kind="configuration",
+            retryable=False,
+        )
 
     async def _ensure_access_token(self, app_id: str, client_secret: str) -> str:
         """按需换取并缓存官方 access_token。"""
@@ -1126,12 +1152,18 @@ class Sender:
         )
         code = _business_code(response)
         if code not in (None, 0):
-            raise RuntimeError(
-                f"QQ access_token 获取失败：{_business_message(response)}"
+            raise NotificationDeliveryError(
+                f"QQ access_token 获取失败：{_business_message(response)}",
+                kind="configuration"
+                if code in (401, 401001, 11200, 11201)
+                else "rejected",
+                retryable=code not in (401, 401001, 11200, 11201),
             )
         access_token = str(response.get("access_token") or "").strip()
         if not access_token:
-            raise RuntimeError("QQ access_token 响应缺少访问令牌")
+            raise NotificationDeliveryError(
+                "QQ access_token 响应缺少访问令牌", kind="transport", retryable=True
+            )
         expires_in = _as_int(response.get("expires_in")) or 7200
         self._access_token = access_token
         self._access_token_expires_at = monotonic() + max(60, expires_in)
@@ -1140,18 +1172,6 @@ class Sender:
     def _invalidate_access_token(self) -> None:
         self._access_token = ""
         self._access_token_expires_at = 0.0
-
-    async def _save_credentials(
-        self, *, app_id: str, client_secret: str, user_openid: str
-    ) -> None:
-        """保存扫码返回的凭据，非 Windows 只保留本次运行所需数据。"""
-
-        async with self._send_lock, self._credential_lock:
-            await self._save_credentials_locked(
-                app_id=app_id,
-                client_secret=client_secret,
-                user_openid=user_openid,
-            )
 
     async def _save_credentials_locked(
         self, *, app_id: str, client_secret: str, user_openid: str
@@ -1230,6 +1250,7 @@ class Sender:
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
             details: list[str] = []
+            code = None
             try:
                 error_payload = exc.response.json()
             except ValueError:
@@ -1244,16 +1265,28 @@ class Sender:
                 if code == 40054004:
                     details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
             suffix = f"，{'，'.join(details)}" if details else ""
+            message = f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）"
+            if code == 40034100:
+                # 群限流沿用已有冷却，不能被 HTTP 4xx 的默认永久拒绝覆盖。
+                raise NotificationDeliveryError(
+                    message, kind="rate_limited", retryable=True
+                ) from exc
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
+                message,
             ) from exc
         except httpx.HTTPError as exc:
-            raise RuntimeError("QQ 官方机器人网络请求失败") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人网络请求失败", kind="transport", retryable=True
+            ) from exc
         except ValueError as exc:
-            raise RuntimeError("QQ 官方机器人响应不是合法 JSON") from exc
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应不是合法 JSON", kind="transport", retryable=True
+            ) from exc
         if not isinstance(payload, dict):
-            raise RuntimeError("QQ 官方机器人响应格式无效")
+            raise NotificationDeliveryError(
+                "QQ 官方机器人响应格式无效", kind="transport", retryable=True
+            )
         return payload
 
 
@@ -1269,4 +1302,6 @@ def _is_url_reject_error(error: str) -> bool:
 def _is_token_error(error: RuntimeError) -> bool:
     """判断 HTTP 错误是否可能表示访问令牌失效。"""
 
+    if isinstance(error, NotificationDeliveryError) and error.kind == "rate_limited":
+        return False
     return "状态码 401" in str(error) or "状态码 403" in str(error)

@@ -20,14 +20,17 @@ from time import time_ns
 
 from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager
+from app.core.maa_capture import capture_adb, capture_win32
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services.endfield_launcher import resolve_launcher_exe
 from app.task.emulator_core import close_emulator
 from app.task.manager_base import ScriptManagerBase
+from app.task.notify_core import screenshot_entries
 from app.task.proxy_helpers import push_dispatch_log
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
@@ -49,7 +52,7 @@ from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import collect_recent_error_images, push_notification
+from .tools.notify import collect_recent_error_images
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -449,6 +452,8 @@ class MaaEndManager(ScriptManagerBase):
                 # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
                 kwargs["view_only"] = self.task_info.view_only
             elif self.task_info.mode == "AutoProxy":
+                kwargs["capture_adb"] = capture_adb
+                kwargs["capture_win32"] = capture_win32
                 kwargs["on_error_screenshot"] = self.error_screenshot_paths.append
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             try:
@@ -508,16 +513,18 @@ class MaaEndManager(ScriptManagerBase):
                     else ()
                 )
                 result = self.build_proxy_report(result_text=user_result_text)
+                if error_images:
+                    result["screenshots"] = screenshot_entries(
+                        [(image.alt, image) for image in error_images]
+                    )
 
                 try:
                     if self.all_users_maintenance_skipped:
                         await self.notify_maintenance()
                     else:
-                        await push_notification(
-                            mode="代理结果",
+                        await self.task_info.notifications.push_proxy_result(
                             title=title,
-                            message=result,
-                            user_config=None,
+                            report=TaskResultReport.from_message(result),
                             task_info=self.task_info,
                             images=error_images,
                         )

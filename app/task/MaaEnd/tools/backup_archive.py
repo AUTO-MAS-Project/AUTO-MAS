@@ -121,6 +121,7 @@ _OVERLAY_INFO_KEYS = (
     "Base",
     "Id",
     "IfQuickConfig",
+    "SanityStrategy",
     "SanityMode",
 )
 """MAS 页面基础字段（UserData.Info）：来源仅预览，账号/快速配置/理智模式参与回填"""
@@ -134,6 +135,8 @@ _OVERLAY_SANITY_KEYS = (
     "AutoEssenceSpecifiedLocation",
     "AutoEssenceMenu",
     "AutoEssenceTargetWeapons",
+    "SupplyPlanLimits",
+    "ProtocolSpaceObtainModeClaim",
 )
 """理智任务选项字段（UserData.Task，快速配置开启时运行时写入任务选项）"""
 
@@ -205,6 +208,7 @@ _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_
 _OVERLAY_FIELD_LABELS = {
     "Base": "配置文件来源",
     "Id": "账号",
+    "SanityStrategy": "理智任务执行策略",
     "SanityMode": "理智任务配置模式",
     "IfSeizeDeliveryJobs": "抢委托送货",
     "SeizeDeliveryJobsReward": "送货最低接取价格（万）",
@@ -738,7 +742,9 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
         if "/" in rel or rel != NATIVE_CONFIG_FILE:
             continue
         try:
-            data = json.loads((backup_dir / rel).read_text(encoding="utf-8"))
+            data = json.loads(
+                (backup_dir / rel).read_text(encoding="utf-8").removeprefix("\ufeff")
+            )
         except Exception:
             continue
         if not isinstance(data, dict):
@@ -769,6 +775,26 @@ def _overlay_value(key: str, value) -> str:
     }.get(key)
     if enum is not None:
         text = enum.get(str(value), str(value))
+    elif key == "SanityStrategy":
+        text = {"Native": "MaaEnd 原生策略", "Inventory": "IMS 库存计划"}.get(
+            str(value), "MAS 指定任务"
+        )
+    elif key == "ProtocolSpaceObtainModeClaim":
+        text = {"ObtainScaling1": "单倍领取", "ObtainScaling2": "优先双倍领取"}.get(
+            str(value), str(value)
+        )
+    elif key == "SupplyPlanLimits":
+        try:
+            limits = json.loads(value)
+            if not isinstance(limits, dict):
+                raise ValueError("库存目标不是对象")
+            count = sum(
+                isinstance(item, str) and item.isdecimal() and int(item) > 0
+                for item in limits.values()
+            )
+            text = f"维护 {count} 项材料目标" if count else "未设置目标"
+        except (TypeError, ValueError):
+            text = "库存目标格式无法读取"
     elif key == "SanityMode":
         # 计划表 UID 无意义，restore_service 会尽力补计划名称
         text = "固定" if str(value) == "Fixed" else "计划表"
@@ -913,14 +939,46 @@ def build_overlay_summary(
             {"key": "账号", "value": _overlay_value("Id", overlay["Id"])}
         )
     if quick_config_on:
+        if "SanityStrategy" in overlay:
+            config_rows.append(
+                {
+                    "key": "理智任务执行策略",
+                    "value": _overlay_value(
+                        "SanityStrategy", overlay["SanityStrategy"]
+                    ),
+                }
+            )
         if "SanityMode" in overlay:
             config_rows.append(
                 {
-                    "key": "理智任务配置模式",
+                    "key": (
+                        "理智任务配置模式（未应用）"
+                        if overlay.get("SanityStrategy") in ("Native", "Inventory")
+                        else "理智任务配置模式"
+                    ),
                     "value": _overlay_value("SanityMode", overlay["SanityMode"]),
                 }
             )
-        config_rows.extend(_sanity_rows(overlay))
+        if overlay.get("SanityStrategy", "MAS") == "MAS":
+            config_rows.extend(_sanity_rows(overlay))
+        elif overlay.get("SanityStrategy") == "Inventory":
+            config_rows.append(
+                {
+                    "key": "库存目标",
+                    "value": _overlay_value(
+                        "SupplyPlanLimits", overlay.get("SupplyPlanLimits", "{}")
+                    ),
+                }
+            )
+            config_rows.append(
+                {
+                    "key": "库存领取方式",
+                    "value": _overlay_value(
+                        "ProtocolSpaceObtainModeClaim",
+                        overlay.get("ProtocolSpaceObtainModeClaim", "ObtainScaling2"),
+                    ),
+                }
+            )
         if "SeizeDeliveryJobsReward" in overlay:
             config_rows.append(
                 {

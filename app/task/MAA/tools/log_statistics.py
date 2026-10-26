@@ -19,17 +19,15 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MAA 运行日志的统计与落盘。
+"""MAA 运行日志的统计解析。
 
 MAA 日志的格式（理智、公招、关卡掉落行）与统计产物都是 MAA 领域知识，
 从 app/core/config.py 迁入本模块，由 MAA 专项自己维护。
 """
 
-import json
 import re
 from collections import defaultdict
 from collections.abc import Iterable
-from pathlib import Path
 
 from app.utils import get_logger
 
@@ -203,30 +201,12 @@ def _parse_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     return all_stage_drops
 
 
-async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
-    """
-    保存MAA日志并生成对应统计数据
-
-    Args:
-        log_path (Path): 日志文件保存路径
-        logs (list): 日志列表
-        maa_result (str): MAA任务结果
-    Returns:
-        bool: 是否存在高资
-    """
-
-    logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
-
-    # 先保留原始日志，统计解析失败时仍可据此排查。
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text("".join(logs), encoding="utf-8")
+def parse_maa_statistics(logs: list[str]) -> tuple[dict, bool]:
+    """解析本轮统计与六星提示，不改变执行结论或访问历史文件。"""
 
     data = {
         "recruit_statistics": defaultdict(int),
         "drop_statistics": defaultdict(dict),
-        "sanity": 0,
-        "sanity_full_at": "",
-        "maa_result": maa_result,
     }
 
     if_six_star = False
@@ -281,11 +261,4 @@ async def save_maa_log(log_path: Path, logs: list, maa_result: str) -> bool:
     # 和库存保持任务。
     data["drop_statistics"] = _parse_drop_statistics(logs)
 
-    # 保存统计数据
-    log_path.with_suffix(".json").write_text(
-        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-    )
-
-    logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
-
-    return if_six_star
+    return data, if_six_star

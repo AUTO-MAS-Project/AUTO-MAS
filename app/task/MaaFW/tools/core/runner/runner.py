@@ -380,6 +380,47 @@ def _should_adb_connect(address: str, attempt: int) -> bool:
     return _is_network_adb_address(address) and (attempt == 0 or (attempt + 1) % 5 == 0)
 
 
+def _process_exited(pid: int, started_at: float | None = None) -> bool:
+    """``pid`` 对应的进程已经退出时返回 True；查不清（无权限等）一律当作还活着，退回原来的等法。
+
+    给了 ``started_at``（进程启动时刻，Unix 秒）时还比对启动时刻：进程号已被系统复用给别的进程，
+    同样算原来的进程已退出。"""
+    if os.name == "nt":
+        synchronize, query_limited = 0x00100000, 0x1000
+        wait_object_0, error_invalid_parameter = 0, 87
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+        kernel32.GetProcessTimes.argtypes = (ctypes.c_void_p,) + (
+            ctypes.POINTER(ctypes.c_uint64),
+        ) * 4
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        handle = kernel32.OpenProcess(synchronize | query_limited, False, int(pid))
+        if not handle:
+            # 进程号不存在时 OpenProcess 报 ERROR_INVALID_PARAMETER
+            return ctypes.get_last_error() == error_invalid_parameter
+        try:
+            if kernel32.WaitForSingleObject(handle, 0) == wait_object_0:
+                return True
+            if started_at is None:
+                return False
+            times = [ctypes.c_uint64() for _ in range(4)]
+            if not kernel32.GetProcessTimes(handle, *(ctypes.byref(t) for t in times)):
+                return False
+            # FILETIME：自 1601-01-01 起的 100 纳秒数
+            created = times[0].value / 10_000_000 - 11_644_473_600
+            return abs(created - float(started_at)) > 1.0
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def _is_network_adb_address(address: str) -> bool:
     host, separator, port = address.rpartition(":")
     return bool(separator and host and port.isdigit())
@@ -2256,7 +2297,20 @@ class MaaFWRunner:
         if isinstance(configured_timeout, int) and configured_timeout > 0:
             retry_count = max(1, int(configured_timeout / ADB_READY_RETRY_INTERVAL))
 
+        emulator_pid = getattr(device_config, "emulatorPid", None)
+        emulator_started_at = getattr(device_config, "emulatorStartedAt", None)
         for attempt in range(retry_count):
+            # 模拟器进程已经没了（例如被显卡驱动重置带走），再等也连不上：立即失败，交给外层重试重开
+            if (
+                isinstance(emulator_pid, int)
+                and emulator_pid > 0
+                and _process_exited(emulator_pid, emulator_started_at)
+            ):
+                raise RuntimeError(
+                    f"模拟器进程（pid {emulator_pid}）已退出，不再等待 ADB: "
+                    f"{device_config.address}"
+                    + (f"; 最后状态: {last_detail}" if last_detail else "")
+                )
             connect_detail = ""
             if _should_adb_connect(device_config.address, attempt):
                 connected, connect_detail = self._connect_adb_network_device(

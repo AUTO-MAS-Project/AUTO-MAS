@@ -54,9 +54,9 @@ export function useDesktopMascotTaskActions(
       startLoading: startState === 'loading',
     })
   }
-  const showNotice = (text: string, reaction?: 'failure') => {
+  const showNotice = (text: string, key?: string) => {
     if (disposed) return
-    void api.showDesktopMascotNotice(text, reaction).catch(error => {
+    void api.showDesktopMascotNotice(text, undefined, key).catch(error => {
       reportWarning('显示桌宠任务提醒失败:', error)
     })
   }
@@ -108,8 +108,11 @@ export function useDesktopMascotTaskActions(
     )
       return unavailable
     pending.value = true
+    // 中止已有运行实例的进度和结果共用 key；开始请求尚未取得运行实例 ID。
+    const noticeKey = action === 'stop' ? taskId : undefined
     showNotice(
-      t(`setting.basic.${action === 'start' ? 'mascotStartingTask' : 'mascotStoppingTask'}`)
+      t(`setting.basic.${action === 'start' ? 'mascotStartingTask' : 'mascotStoppingTask'}`),
+      noticeKey
     )
     try {
       if (action === 'start') {
@@ -131,7 +134,8 @@ export function useDesktopMascotTaskActions(
         (error instanceof Error ? error.message : String(error)) ||
         t(`scheduler.toast.${action === 'start' ? 'startTaskFailed' : 'stopTaskFailed'}`)
       showError(text)
-      showNotice(text, 'failure')
+      // 请求被拒绝不代表任务失败；终态反应只由共享任务事件触发。
+      showNotice(text, noticeKey)
       return { success: false, message: text }
     } finally {
       pending.value = false

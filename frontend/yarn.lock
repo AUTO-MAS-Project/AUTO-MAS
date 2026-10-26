@@ -4625,6 +4625,7 @@ __metadata:
     electron-log: "npm:^5.4.3"
     form-data: "npm:^4.0.4"
     jscpd: "npm:5.4.1"
+    json5: "npm:2.2.3"
     knip: "npm:6.41.0"
     markdown-it: "npm:^14.1.1"
     markdownlint-cli2: "npm:^0.18.1"
@@ -5501,7 +5502,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"json5@npm:^2.2.3":
+"json5@npm:2.2.3, json5@npm:^2.2.3":
   version: 2.2.3
   resolution: "json5@npm:2.2.3"
   bin:

@@ -11,23 +11,16 @@ worker 在 ``MaaFWRunResult.signal`` 里回报信号（见 ``core/runner/run_sig
 
 from __future__ import annotations
 
-import asyncio
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
-from app.core.notify import (
-    DispatchResult,
-    NotifyTarget,
-    dispatch,
-    global_target,
-    user_statistic_targets,
-)
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
-from app.task.notify_core import load_screenshot_images
+from app.models.notification_channel import DispatchResult, NotifyTarget
+from app.models.notification_ports import TaskNotifications
+from app.task.notify_core import prepare_screenshot_images
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 信号通知")
@@ -38,8 +31,7 @@ SERVER_MAINTENANCE = "server_maintenance"
 CLIENT_UPDATE_REQUIRED = "client_update_required"
 
 # 用户日志状态、统计信息与「任务详情」里用的一句话。
-# 历史页按停服维护那两句（这里的和 MAINTENANCE_SKIP_MESSAGE）把记录判为「跳过」，
-# 见 app/core/config.py 的 merge_statistic_info；改这两句要一起改那边。
+# 执行器按显式信号提供历史状态；这些文案仅用于展示。
 SIGNAL_USER_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中，本次跳过",
     CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端，请手动更新后再运行",
@@ -60,9 +52,9 @@ class MaaFWSignalRecord:
     # (用户 id, 用户名)，按撞上 / 被连带跳过的先后
     users: list[tuple[str, str]] = field(default_factory=list)
     # 证据截图，只留第一张（后面的用户是同一画面），给全局渠道的合并通知用
-    screenshots: list[Path] = field(default_factory=list)
+    screenshots: list[Path | bytes] = field(default_factory=list)
     # 用户 id → 这位用户自己拍的证据截图，给个人渠道用（被连带跳过的用户没有）
-    user_screenshots: dict[str, Path] = field(default_factory=dict)
+    user_screenshots: dict[str, Path | bytes] = field(default_factory=dict)
 
     def add_user(self, user_id: str, user_name: str) -> None:
         if all(existing != user_id for existing, _ in self.users):
@@ -105,6 +97,26 @@ class MaaFWSignalTracker:
             record.user_screenshots.setdefault(user_id, screenshot)
         return record
 
+    async def freeze_user_screenshots(self, user_id: str) -> None:
+        """用户归档前复制证据内容，保持个人渠道的原有隔离。"""
+        for record in self._records.values():
+            source = record.user_screenshots.get(user_id)
+            if not isinstance(source, Path):
+                continue
+            try:
+                data = await asyncio.to_thread(source.read_bytes)
+            except OSError as error:
+                logger.warning(f"冻结信号截图失败：{source}: {error}")
+                record.user_screenshots.pop(user_id, None)
+                record.screenshots = [
+                    value for value in record.screenshots if value != source
+                ]
+                continue
+            record.user_screenshots[user_id] = data
+            record.screenshots = [
+                data if value == source else value for value in record.screenshots
+            ]
+
     def maintenance(self, resource_name: str) -> MaaFWSignalRecord | None:
         """该资源本轮已确认在维护时返回那条记录。"""
 
@@ -124,7 +136,7 @@ class MaaFWSignalTracker:
         }
 
 
-def signal_global_targets() -> list[NotifyTarget]:
+def signal_global_targets(notifications: TaskNotifications) -> list[NotifyTarget]:
     """信号通知的全局目标：与任务报告同一套开关，不绕过。
 
     全局渠道看「发送任务结果时机」：不推送就不发（维护 / 需更新都属于本次没跑成，
@@ -134,9 +146,7 @@ def signal_global_targets() -> list[NotifyTarget]:
     ``push_signal_notices``。
     """
 
-    if Config.setting.Notify.SendTaskResultTime != "不推送":
-        return [global_target(include_system=True, system_timeout_seconds=10)]
-    return []
+    return notifications.failure_targets()
 
 
 def build_signal_payload(
@@ -182,6 +192,7 @@ def build_signal_payload(
 async def push_signal_notices(
     tracker: MaaFWSignalTracker,
     *,
+    notifications: TaskNotifications,
     script_name: str,
     user_config_for: Callable[[str], Any | None],
 ) -> list[DispatchResult]:
@@ -197,9 +208,9 @@ async def push_signal_notices(
             (user_id, user_name, targets)
             for user_id, user_name in record.users
             if (config := user_config_for(user_id)) is not None
-            and (targets := user_statistic_targets(config))
+            and (targets := notifications.user_statistic_targets(config))
         ]
-        global_targets = signal_global_targets()
+        global_targets = signal_global_targets(notifications)
         if not global_targets and not user_targets:
             logger.info(
                 f"信号通知的全局与用户渠道都未开启，不发送：{record.signal} "
@@ -207,8 +218,7 @@ async def push_signal_notices(
             )
             continue
         if global_targets:
-            images = await asyncio.to_thread(
-                load_screenshot_images,
+            images = await prepare_screenshot_images(
                 [("证据截图", path) for path in record.screenshots],
                 image_id_prefix="maafw",
             )
@@ -216,12 +226,13 @@ async def push_signal_notices(
                 record, script_name=script_name, images=images
             )
             logger.info(f"推送 MaaFW 信号通知：{payload.title}")
-            results.append(await dispatch(payload, global_targets))
+            results.append(
+                await notifications.dispatch_task_notification(payload, global_targets)
+            )
         for user_id, user_name, targets in user_targets:
             own_shot = record.user_screenshots.get(user_id)
             images = (
-                await asyncio.to_thread(
-                    load_screenshot_images,
+                await prepare_screenshot_images(
                     [("证据截图", own_shot)],
                     image_id_prefix="maafw",
                 )
@@ -235,7 +246,9 @@ async def push_signal_notices(
                 users=[(user_id, user_name)],
             )
             logger.info(f"推送 MaaFW 信号通知（用户 {user_name}）：{payload.title}")
-            results.append(await dispatch(payload, targets))
+            results.append(
+                await notifications.dispatch_task_notification(payload, targets)
+            )
     return results
 
 
