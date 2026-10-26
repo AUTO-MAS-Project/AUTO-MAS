@@ -169,8 +169,13 @@ def build_maafw_run_plan(
     script_hotkeys: dict[str, dict[str, str]] | None = None,
     secret_inputs: Any = None,
     no_default_fallback_inputs: Any = None,
+    excluded_task_reasons: dict[str, str] | None = None,
 ) -> MaaFWRunPlan:
     """``script_hotkeys``：脚本级键位 ``{option 名: {字段名: 组合键}}``（``Game.Hotkeys``）。
+
+    ``excluded_task_reasons``：``{实例 id: 跳过原因}``，宿主判定这次不跑的实例（如今天不在运行日）。
+    与红灯一样在建覆盖之前排除、不校验它们的选项，按原因记进 ``skippedTasks``；勾选的普通任务
+    全被它排除时返回没有任务的计划（宿主按「计划为空」跳过），不报「没有可执行任务」。
 
     ``secret_inputs``：值是从密文解出来的 input 字段 ``[[option 名, 字段名], …]``，下发失败的
     提示按密码字段处理、不带原值；不给时取 ``task_snapshot`` 里宿主写的
@@ -218,6 +223,16 @@ def build_maafw_run_plan(
         task_id for task_id in selected_task_ids if not is_pretask_task_name(task_id)
     ]
     task_map = {task.name: task for task in interface.task}
+    excluded_ids = [
+        task_id
+        for task_id in selected_common_task_ids
+        if task_id in (excluded_task_reasons or {})
+    ]
+    selected_common_task_ids = [
+        task_id
+        for task_id in selected_common_task_ids
+        if task_id not in (excluded_task_reasons or {})
+    ]
     controller_names = {controller.name}
     if secret_inputs is None and isinstance(task_snapshot, dict):
         secret_inputs = task_snapshot.get(SECRET_INPUTS_SNAPSHOT_KEY)
@@ -252,7 +267,13 @@ def build_maafw_run_plan(
         )
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
-    skipped_tasks: list[MaaFWSkippedTaskPlan] = []
+    skipped_tasks: list[MaaFWSkippedTaskPlan] = _build_excluded_skipped_tasks(
+        excluded_ids,
+        excluded_task_reasons or {},
+        task_snapshot,
+        task_map,
+        i18n_mapping,
+    )
     input_warnings: list[str] = []
     hotkey_warnings: list[str] = []
     # 脚本级键位只对 Win32 生效；按 option 名缓存校验后的字段，告警每个 option 只出一次。
@@ -368,7 +389,6 @@ def build_maafw_run_plan(
                 name=task.name,
                 label=_resolve_i18n_label(task.label, task.name, i18n_mapping),
                 entry=task.entry,
-                instanceId=task_id,
                 options=options,
                 pipelineOverride=pipeline_override,
                 logOptions=_build_task_log_options(interface, options),
@@ -379,7 +399,8 @@ def build_maafw_run_plan(
             )
         )
 
-    if not runnable_tasks:
+    # 勾选的普通任务全被宿主排除（今天都不在运行日）：交回空计划，由宿主按「计划为空」跳过
+    if not runnable_tasks and not (excluded_ids and not selected_common_task_ids):
         raise MaaFWRunPlanError(NO_RUNNABLE_TASKS_MESSAGE)
 
     builder_warnings = [*pipeline_builder.warnings, *input_warnings, *hotkey_warnings]
@@ -499,6 +520,37 @@ def _build_queue_skipped_tasks(
                 label=label,
                 entry=entry,
                 reason=QUEUE_SKIPPED_TASK_REASON,
+            )
+        )
+    return skipped
+
+
+def _build_excluded_skipped_tasks(
+    excluded_ids: list[str],
+    reasons: dict[str, str],
+    task_snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    task_map: dict[str, MaaFWTask],
+    i18n_mapping: dict[str, Any],
+) -> list[MaaFWSkippedTaskPlan]:
+    """宿主排除的实例（``excluded_task_reasons``）记成跳过项，按队列顺序，不碰它们的选项。
+
+    显示名用户给这一份改过就用它（同一任务的几份分得清），否则是任务的 label。
+    """
+
+    labels = _normalize_raw_snapshot(task_snapshot)["taskLabels"]
+    skipped: list[MaaFWSkippedTaskPlan] = []
+    for task_id in excluded_ids:
+        task_name = resolve_task_instance_name(task_id, task_map)
+        task = task_map.get(task_name)
+        if task is None:
+            continue
+        skipped.append(
+            MaaFWSkippedTaskPlan(
+                name=task.name,
+                label=labels.get(task_id)
+                or _resolve_i18n_label(task.label, task.name, i18n_mapping),
+                entry=task.entry,
+                reason=reasons[task_id],
             )
         )
     return skipped

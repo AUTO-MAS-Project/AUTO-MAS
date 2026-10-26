@@ -66,7 +66,6 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
-    MaaFWTaskRunPlan,
 )
 from app.task.MaaFW.tools.core.runner.pipeline_override import (
     SECRET_INPUTS_SNAPSHOT_KEY,
@@ -101,6 +100,7 @@ from app.utils.paths import SOURCE_ROOT
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
     no_default_fallback_inputs,
+    off_day_scope,
     resolve_flavor,
     resolve_game_update_hook,
     unselectable_entries,
@@ -1123,8 +1123,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     logger.opt(exception=True).warning("MaaFW 失效选项值检查失败")
             # 运行日按本机今天的星期判（与队列「执行日期」同口径），只在开跑建计划时判这一次：
             # 结果固化在 base_run_plan 里，重试从它重建、不再重判，跨零点重试也不翻
+            # 今天不跑的实例与红灯一样在建计划之前排除，不校验它们的选项（坏配置不挡整轮）
             iso_weekday = datetime.now().isoweekday()
             off_day_ids = excluded_task_ids_for_weekday(task_snapshot, iso_weekday)
+            off_day_reason = (
+                f"今天{_WEEKDAY_NAMES[iso_weekday - 1]}{_OFF_DAY_REASON_SUFFIX}"
+            )
             if flavor is None:
                 plan = MaaFWRunnerService().build_plan(
                     self.project_path,
@@ -1134,9 +1138,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
                     script_hotkeys=script_hotkeys,
-                )
-                plan = _skip_off_day_tasks(
-                    plan, set(off_day_ids), task_snapshot, iso_weekday
+                    excluded_task_reasons=dict.fromkeys(off_day_ids, off_day_reason),
                 )
                 return _with_skipped_tasks(
                     _with_warnings(plan, stale_warnings), missing_skips
@@ -1157,22 +1159,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             # 今天不在运行日的实例不交给装饰钩子：钩子看到的是今天真要跑的队列（剔空了 M9A
             # 就不补启动 / 关闭游戏）。钩子自己按固定规则补回的同一实例（受管任务）照常跑，
-            # 不受运行日影响；其余的仍交给核心建计划，再按实例记成跳过，全跳过时计划为空。
+            # 不受运行日影响；其余的仍按原位置交给核心，由核心在建计划前排除、记成跳过
+            # （不校验选项），全被排除时计划为空。引擎判出的集合经 off_day_scope 交给钩子，
+            # 钩子另读快照自动补任务时用它，不必自己再判一次星期。
             off_day_set = set(off_day_ids) & set(task_ids)
-            decorated_ids, decorated_options = flavor.decorate_selection(
-                interface_model,
-                [task_id for task_id in task_ids if task_id not in off_day_set],
-                {
-                    key: value
-                    for key, value in task_options.items()
-                    if key not in off_day_set
-                },
-                script_config=self.script_config,
-                user_config=self.cur_user_config,
-                resource_name=resource_name,
-                # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
-                send_log=send_log if send_log is not None else logger.info,
-            )
+            with off_day_scope(off_day_ids):
+                decorated_ids, decorated_options = flavor.decorate_selection(
+                    interface_model,
+                    [task_id for task_id in task_ids if task_id not in off_day_set],
+                    {
+                        key: value
+                        for key, value in task_options.items()
+                        if key not in off_day_set
+                    },
+                    script_config=self.script_config,
+                    user_config=self.cur_user_config,
+                    resource_name=resource_name,
+                    # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
+                    send_log=send_log if send_log is not None else logger.info,
+                )
             off_day_set -= set(decorated_ids)
             off_day_extra = [task_id for task_id in task_ids if task_id in off_day_set]
             task_ids = [*decorated_ids, *off_day_extra]
@@ -1200,9 +1205,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 secret_inputs=(task_snapshot or {}).get(SECRET_INPUTS_SNAPSHOT_KEY),
                 # 特调声明不回落 default 的字符串字段（M9A 的自定义兑换码）
                 no_default_fallback_inputs=no_default_fallback_inputs(flavor),
+                excluded_task_reasons=dict.fromkeys(off_day_extra, off_day_reason),
             )
             plan = _mark_nonfatal_tasks(_mark_abort_round_tasks(plan, flavor), flavor)
-            plan = _skip_off_day_tasks(plan, off_day_set, task_snapshot, iso_weekday)
             return _with_skipped_tasks(
                 _with_warnings(plan, stale_warnings), missing_skips
             )
@@ -4248,14 +4253,18 @@ def _period_all_done_message(plan: MaaFWRunPlan) -> str:
         label = _PERIOD_DONE_LABELS.get(task.reason or "")
         if label and label not in periods:
             periods.append(label)
-    off_day = any(
-        (task.reason or "").endswith(_OFF_DAY_REASON_SUFFIX)
-        for task in plan.skippedTasks
-    )
     ordered = [label for label in ("今日", "本周", "本月") if label in periods]
-    if off_day and not ordered:
+    # 运行日的说法只在跳过原因全是「不在运行日」（或再加周期已完成）时用；混了红灯、失效任务
+    # 等别的原因时，照改动前这种情况原本的提示说
+    reasons = [task.reason or "" for task in plan.skippedTasks]
+    off_day = any(reason.endswith(_OFF_DAY_REASON_SUFFIX) for reason in reasons)
+    only_off_day_or_period = all(
+        reason.endswith(_OFF_DAY_REASON_SUFFIX) or reason in _PERIOD_DONE_LABELS
+        for reason in reasons
+    )
+    if off_day and only_off_day_or_period and not ordered:
         return "MaaFW 队列里的任务今天都不在运行日，跳过本次运行"
-    if off_day:
+    if off_day and only_off_day_or_period:
         return (
             f"MaaFW 队列里的任务今天不在运行日或已在{' / '.join(ordered)}完成，"
             "跳过本次运行"
@@ -4269,49 +4278,6 @@ def _period_all_done_message(plan: MaaFWRunPlan) -> str:
 _WEEKDAY_NAMES = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 #: 运行日跳过原因的后半句：「今天周一，不在运行日」。
 _OFF_DAY_REASON_SUFFIX = "，不在运行日"
-
-
-def _skip_off_day_tasks(
-    plan: MaaFWRunPlan,
-    off_day_ids: set[str],
-    task_snapshot: Mapping[str, Any] | None,
-    iso_weekday: int,
-) -> MaaFWRunPlan:
-    """把今天不在运行日的实例（``off_day_ids``，按实例 id）剔出计划，记进 ``skippedTasks``。
-
-    原因写「今天周X，不在运行日」，显示名用户给这一份改过就用它（同一任务的几份分得清），
-    否则是任务的 label。剔空了就是普通的空计划，``check`` 按「计划为空」跳过这次运行。
-    """
-
-    if not off_day_ids:
-        return plan
-    raw_labels = (task_snapshot or {}).get("taskLabels")
-    labels = raw_labels if isinstance(raw_labels, dict) else {}
-    reason = f"今天{_WEEKDAY_NAMES[iso_weekday - 1]}{_OFF_DAY_REASON_SUFFIX}"
-    tasks: list[MaaFWTaskRunPlan] = []
-    skipped: list[MaaFWSkippedTaskPlan] = []
-    for task in plan.tasks:
-        if task.instanceId not in off_day_ids:
-            tasks.append(task)
-            continue
-        custom_label = labels.get(task.instanceId)
-        skipped.append(
-            MaaFWSkippedTaskPlan(
-                name=task.name,
-                label=(
-                    custom_label.strip()
-                    if isinstance(custom_label, str) and custom_label.strip()
-                    else task.label
-                ),
-                entry=task.entry,
-                reason=reason,
-            )
-        )
-    if not skipped:
-        return plan
-    return plan.model_copy(
-        update={"tasks": tasks, "skippedTasks": [*plan.skippedTasks, *skipped]}
-    )
 
 
 def _drop_unselectable_tasks(

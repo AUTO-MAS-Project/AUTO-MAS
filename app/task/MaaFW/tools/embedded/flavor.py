@@ -149,7 +149,9 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -186,8 +188,34 @@ class MaaFWFlavor(Protocol):
         """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。
 
         列表里已去掉今天不在运行日的实例（``taskSchedules``）；钩子按自己的规则补回的同一实例
-        照常运行。钩子另读用户快照自动补任务时，要像尊重红灯一样尊重运行日。
+        照常运行。钩子另读用户快照自动补任务时，要像尊重红灯一样尊重运行日：引擎判出的这些
+        实例 id 在调用期间由 ``off_day_task_ids()`` 给出，不要自己再判一次星期。
         """
+
+
+_OFF_DAY_TASK_IDS: ContextVar[frozenset[str]] = ContextVar(
+    "maafw_off_day_task_ids", default=frozenset()
+)
+
+
+def off_day_task_ids() -> frozenset[str]:
+    """引擎这次建计划判出的「今天不在运行日」的实例 id。
+
+    只在引擎调 ``decorate_selection`` 期间有值（``off_day_scope``），其余时候是空集。
+    """
+
+    return _OFF_DAY_TASK_IDS.get()
+
+
+@contextmanager
+def off_day_scope(task_ids: Iterable[str]) -> Iterator[None]:
+    """引擎调装饰钩子时用：把判出的今天不跑的实例 id 交给钩子，钩子签名不变。"""
+
+    token = _OFF_DAY_TASK_IDS.set(frozenset(task_ids))
+    try:
+        yield
+    finally:
+        _OFF_DAY_TASK_IDS.reset(token)
 
 
 def _load_flavor(spec: str) -> Any | None:
@@ -469,6 +497,8 @@ __all__ = [
     "MaaFWFlavor",
     "SnapshotSanitizer",
     "no_default_fallback_inputs",
+    "off_day_scope",
+    "off_day_task_ids",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",

@@ -181,6 +181,7 @@ class MaaFWRunnerService:
         script_hotkeys: dict[str, dict[str, str]] | None = None,
         secret_inputs: Any = None,
         no_default_fallback_inputs: Any = None,
+        excluded_task_reasons: dict[str, str] | None = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -196,6 +197,7 @@ class MaaFWRunnerService:
             script_hotkeys=script_hotkeys,
             secret_inputs=secret_inputs,
             no_default_fallback_inputs=no_default_fallback_inputs,
+            excluded_task_reasons=excluded_task_reasons,
         )
 
     def create_job_payload(
