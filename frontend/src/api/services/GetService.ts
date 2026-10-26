@@ -440,25 +440,6 @@ export class GetService {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
-     * @param requestBody
-     * @returns ShareInspectOut Successful Response
-     * @throws ApiError
-     */
-    public static inspectScriptShareApiScriptsShareInspectPost(
-        requestBody: ScriptShareInspectIn,
-    ): CancelablePromise<ShareInspectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/share/inspect',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 查询用户
      * @param requestBody
      * @returns UserGetOut Successful Response
@@ -516,18 +497,17 @@ export class GetService {
         });
     }
     /**
-     * 查询脚本生效的 Mirror 酱 CDK 状态
-     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
+     * 分享前检查脚本配置中的隐私风险
      * @param requestBody
-     * @returns ScriptMirrorCdkOut Successful Response
+     * @returns ShareInspectOut Successful Response
      * @throws ApiError
      */
-    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
-        requestBody: ScriptMirrorCdkIn,
-    ): CancelablePromise<ScriptMirrorCdkOut> {
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/mirror-cdk',
+            url: '/api/scripts/share/inspect',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -832,6 +812,26 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/copilot/analyze',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询脚本生效的 Mirror 酱 CDK 状态
+     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
+     * @param requestBody
+     * @returns ScriptMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
+        requestBody: ScriptMirrorCdkIn,
+    ): CancelablePromise<ScriptMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

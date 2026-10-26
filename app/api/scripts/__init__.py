@@ -22,21 +22,27 @@ from . import (
     baah,
     backup,
     bettergi,
-    common,
     hsr,
     maa,
     maaend,
     maafw,
+    management,
     oknte,
     okww,
+    sharing,
+    users,
+    webhooks,
     whimbox,
     zzzod,
 )
-from .common import UserUpdateIn as UserUpdateIn
+from .users import UserUpdateIn as UserUpdateIn
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
-router.include_router(common.router)
+router.include_router(management.router)
+router.include_router(users.router)
+router.include_router(webhooks.router)
+router.include_router(sharing.router)
 router.include_router(okww.router)
 router.include_router(maaend.router)
 router.include_router(maa.router)

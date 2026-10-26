@@ -316,6 +316,23 @@ class UserInfrastPlanComboxOut(OutBase):
     data: List[UserInfrastPlanComboxItem] = Field(..., description="班次选项")
 
 
+class ScriptMirrorCdkIn(BaseModel):
+    type: Literal["MAA"] = Field(..., description="脚本类型，决定凭据回退规则")
+    cdk: str = Field(
+        default="", repr=False, description="待校验的 CDK；留空回退全局 CDK"
+    )
+
+
+class ScriptMirrorCdkData(BaseModel):
+    status: str
+    expiredTime: int | None = Field(default=None, description="到期时间（unix 秒）")
+    usingGlobalCdk: bool = Field(..., description="是否按专用 CDK 留空规则使用全局 CDK")
+
+
+class ScriptMirrorCdkOut(OutBase):
+    data: ScriptMirrorCdkData
+
+
 router = APIRouter()
 logger = get_logger("脚本管理 API")
 
@@ -711,3 +728,23 @@ async def analyze_maa_copilot_training(
         return MaaCopilotAnalyzeOut(
             code=500, status="error", message="作业分析失败，请检查账号绑定和网络后重试"
         )
+
+
+@router.post(
+    "/mirror-cdk",
+    tags=["Get"],
+    summary="查询脚本生效的 Mirror 酱 CDK 状态",
+    response_model=ScriptMirrorCdkOut,
+)
+async def query_script_mirror_cdk(payload: ScriptMirrorCdkIn) -> ScriptMirrorCdkOut:
+    """校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。"""
+    from app.task.MAA import api_service as maa_api
+
+    result, using_global = await maa_api.query_mirror_cdk(payload.cdk)
+    return ScriptMirrorCdkOut(
+        data=ScriptMirrorCdkData(
+            status=result.status,
+            expiredTime=result.expired_time,
+            usingGlobalCdk=using_global,
+        )
+    )

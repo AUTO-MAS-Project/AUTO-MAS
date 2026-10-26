@@ -133,6 +133,31 @@ def _route_combat_to_plan(
     return settings, new_plan
 
 
+async def _commit_combat_settings(
+    script_config: RuntimeBetterGIConfig,
+    user_id: str,
+    *,
+    group: str,
+    settings: dict,
+    source: str,
+) -> dict:
+    """三类设置共用 Plan 映射与提交，完成后再由所属入口写原生副本。"""
+    native_settings, new_plan = _route_combat_to_plan(
+        script_config,
+        user_id,
+        group=group,
+        settings=settings,
+        source=source,
+    )
+    if new_plan is not None:
+        user_config = _bettergi_user_config(script_config, user_id)
+        await user_config.update(
+            type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
+            check_visibility=False,
+        )
+    return native_settings
+
+
 def _combat_target_group(source: str, group: str) -> str:
     """确定右栏设置归属的战斗组（支持同一战斗组的多个独立实例）。
 
@@ -302,15 +327,9 @@ async def save_one_dragon_settings(
     # RIGHTBAR_TO_PLAN 按组名（自动秘境/自动地脉花…）查映射，传配置名会导致
     # Plan 路由静默失效，周表/每日行等白名单外键（StrategyName/leyLineDailyEnabled/
     # team/country/LeyLineDefault* 等）全部丢弃。
-    native_leftover, new_plan = _route_combat_to_plan(
-        script_config, user_id, group_name, settings, "dragon"
+    native_leftover = await _commit_combat_settings(
+        script_config, user_id, group=group_name, settings=settings, source="dragon"
     )
-    if new_plan is not None:
-        user_config = _bettergi_user_config(script_config, user_id)
-        await user_config.update(
-            type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
-            check_visibility=False,
-        )
     if native_leftover:
         one_dragon.write_user_one_dragon_settings(
             root, script_id, user_id, config_name, native_leftover
@@ -383,15 +402,13 @@ async def save_global_domain_settings(
     if user_id:
         _bettergi_user_id(script_config, user_id)
         # 战斗4项（自动秘境）可映射字段同步到 Plan，全量设置仍写入副本
-        native_leftover, new_plan = _route_combat_to_plan(
-            script_config, user_id, group_name, settings, "globalDomain"
+        native_leftover = await _commit_combat_settings(
+            script_config,
+            user_id,
+            group=group_name,
+            settings=settings,
+            source="globalDomain",
         )
-        if new_plan is not None:
-            user_config = _bettergi_user_config(script_config, user_id)
-            await user_config.update(
-                type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
-                check_visibility=False,
-            )
         if native_leftover:
             one_dragon.write_user_global_domain_settings(
                 script_id, user_id, native_leftover
@@ -434,15 +451,13 @@ async def save_global_stygian_settings(
     if user_id:
         _bettergi_user_id(script_config, user_id)
         # 战斗4项（自动幽境危战）设置同步到 Plan，全量设置仍写入副本
-        native_leftover, new_plan = _route_combat_to_plan(
-            script_config, user_id, group_name, settings, "globalStygian"
+        native_leftover = await _commit_combat_settings(
+            script_config,
+            user_id,
+            group=group_name,
+            settings=settings,
+            source="globalStygian",
         )
-        if new_plan is not None:
-            user_config = _bettergi_user_config(script_config, user_id)
-            await user_config.update(
-                type(user_config).model_validate({"OneDragon": {"Plan": new_plan}}),
-                check_visibility=False,
-            )
         if native_leftover:
             one_dragon.write_user_global_stygian_settings(
                 script_id, user_id, native_leftover

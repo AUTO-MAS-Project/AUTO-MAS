@@ -52,25 +52,6 @@ export class ActionService {
         });
     }
     /**
-     * 分享脚本配置到配置中心
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static uploadScriptToWebApiScriptsUploadWebPost(
-        requestBody: ScriptUploadIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/Upload/web',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 从脚本目录导入配置文件
      * @param requestBody
      * @returns OutBase Successful Response
@@ -82,6 +63,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享脚本配置到配置中心
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uploadScriptToWebApiScriptsUploadWebPost(
+        requestBody: ScriptUploadIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/Upload/web',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
