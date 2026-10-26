@@ -506,6 +506,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
         # 失败摘要，直接记下来即可。
         self._attempt_reports: list[dict[str, Any]] = []
+        # 当前这次尝试给用户看的称呼（「第 2 次尝试」「清理残留后的重新运行」），与日志开头
+        # 那行同口径：通知的任务详情和失败截图标签用它，不用 _record_attempt 的内部序号——
+        # 清理后的重跑不计入尝试次数，内部序号会比日志多 1。
+        self._attempt_title: str | None = None
         self._history_temp = tempfile.TemporaryDirectory(prefix="mas-maafw-run-")
         self._history_attachments: dict[int, list[HistoryAttachmentInput]] = {}
         self._history_statuses: dict[int, HistoryStatus] = {}
@@ -800,6 +804,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 header, current_label = rerun_note
                 self._append_log(f"用户 {self.cur_user_item.name} - {header}")
                 rerun_note = None
+                self._attempt_title = current_label
             else:
                 ordinal = index + 1 - self._extra_attempts
                 self._append_log(
@@ -807,6 +812,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"{ordinal}/{self.script_config.Run.RunTimesLimit}"
                 )
                 current_label = f"第 {ordinal} 次"
+                self._attempt_title = f"{current_label}尝试"
             if index > 0 and previous_failure:
                 self._append_log(
                     f"上一次（{previous_label}）：{previous_failure}"
@@ -3439,6 +3445,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._attempt_reports.append(
             {
                 "attempt": attempt,
+                "title": self._attempt_title or f"第 {attempt} 次尝试",
                 "time": datetime.now().strftime("%H:%M:%S"),
                 "completed": list(completed_labels),
                 "failure": failure,
@@ -3458,7 +3465,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         shots: list[tuple[str, Path]] = []
         for report in self._attempt_reports:
             for label, path in report.get("screenshots", ()):
-                shots.append((f"第 {report['attempt']} 次尝试 · {label}", path))
+                shots.append((f"{report['title']} · {label}", path))
         return shots
 
     def report_screenshots(self) -> list[tuple[str, bytes]]:
@@ -3518,9 +3525,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         blocks = []
         for report in self._attempt_reports:
             blocks.append(
-                f"第 {report['attempt']} 次尝试（{report['time']}）"
-                + "\n"
-                + block(report)
+                f"{report['title']}（{report['time']}）" + "\n" + block(report)
             )
         return ("\n\n").join(blocks)
 

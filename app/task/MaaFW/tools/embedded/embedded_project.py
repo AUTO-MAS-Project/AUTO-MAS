@@ -1503,7 +1503,7 @@ def _verify_import_release(
     if verdict.status != "clean":
         logger.info(
             mask_home_path(
-                f"[MFW 内嵌] 导入时没能与 {version or '当前版本'} 的官方发行包核对资源文件"
+                f"[MFW 内嵌] 导入时没能与{f' {version} 的' if version else ''}官方发行包核对资源文件"
                 f"（{verdict.reason}），照常导入，运行时资源加载失败会再核对"
             )
         )
