@@ -28,7 +28,7 @@ import { TaskCreateIn } from './api'
 
 const logger = window.electronAPI.getLogger('App组件')
 
-// 调试面板及其子页只进开发构建：编译期常量让生产包直接摇掉这近两千行
+// 开发工作台及其依赖只进开发构建，生产包不包含存储编辑与调试工具。
 const DebugPanel =
   import.meta.env.DEV &&
   (window as Window & { __AUTO_MAS_E2E__?: boolean }).__AUTO_MAS_E2E__ !== true
