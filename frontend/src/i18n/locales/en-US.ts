@@ -1187,6 +1187,12 @@ export default {
     back: 'Back',
     couldNotLoadScript: 'Could not load the managed script',
     runConfiguration: 'Run configuration',
+    errorLogBundle: 'Save log bundle on failure',
+    errorLogBundleHint:
+      'Once enabled, a failed task saves its run log bundle automatically: within one run, each failed attempt is stored in its own folder, and only the latest 10 runs are kept. The MaaEnd "Clear logs on startup" option is turned on temporarily and restored when the task ends, so logs from the previous run do not mix in',
+    errorLogBundleDir: 'Log bundle folder',
+    errorLogBundleDirPlaceholder: 'Nothing is saved until a folder is chosen',
+    errorLogBundleNoPicker: 'Choosing a folder is not supported in this environment',
     pickFolder: 'Pick a folder',
     saveConfiguration: 'Save configuration',
     couldNotLoadEmulator: 'Could not load the emulator options',

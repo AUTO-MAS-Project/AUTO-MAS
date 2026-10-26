@@ -20,6 +20,8 @@ import {
 const logger = getLogger('MaaEnd问题包')
 
 // 对齐 MXU src-tauri/src/commands/file_ops.rs 的 export_logs。
+// 后端 app/task/MaaEnd/tools/log_bundle.py 是同一套收集规则的另一份实现（任务失败
+// 自动打包时用，按一次运行分目录），改收集范围、扩展名或单卷上限要两边一起改。
 const MAX_VOLUME_BYTES = 24_500_000
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
 const DEBUG_EXTENSIONS = new Set(['.log', '.json', '.dmp'])

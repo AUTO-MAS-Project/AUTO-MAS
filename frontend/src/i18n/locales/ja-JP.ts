@@ -1146,6 +1146,12 @@ export default {
     back: '戻る',
     couldNotLoadScript: 'マネージドスクリプトを読み込めませんでした',
     runConfiguration: '実行設定',
+    errorLogBundle: '失敗時にログを保存',
+    errorLogBundleHint:
+      '有効にすると、タスク失敗時に実行ログ一式が自動保存されます。同じ実行の中では失敗した回ごとに別のフォルダーへ保存され、直近 10 回分の実行まで保持されます。MaaEnd の「起動時にログを削除」は一時的に有効になり、タスク終了後に元へ戻るため、前回のログが混ざりません',
+    errorLogBundleDir: 'ログの保存先フォルダー',
+    errorLogBundleDirPlaceholder: 'フォルダー未選択の場合は保存しません',
+    errorLogBundleNoPicker: 'この環境ではフォルダーを選択できません',
     pickFolder: 'フォルダーを選択',
     saveConfiguration: '設定を保存',
     couldNotLoadEmulator: 'エミュレーターの一覧を読み込めませんでした',

@@ -12,6 +12,14 @@ export type MaaEndConfig_Run = {
      */
     HardTimeLimit?: (number | null);
     /**
+     * 任务失败时是否按 MaaEnd 的导出规则打包运行日志
+     */
+    IfSaveLogBundle?: (boolean | null);
+    /**
+     * 任务失败时保存日志包的目录，留空表示不保存
+     */
+    LogBundlePath?: (string | null);
+    /**
      * 每日代理次数限制
      */
     ProxyTimesLimit?: (number | null);

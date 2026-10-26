@@ -540,6 +540,7 @@
 
 <script setup lang="ts">
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
+import { createMaaEndScriptDraft } from './maaEndScriptDraft'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
@@ -616,38 +617,7 @@ const formData = reactive({
   },
 })
 
-const maaEndConfig = reactive<MaaEndScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    RunTimeLimit: 30,
-    ProxyTimesLimit: 0,
-    RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAAEND',
-    TaskTransitionMethod: 'NoAction',
-  },
-  Game: {
-    ControllerType: '',
-    LaunchMode: 'Launcher',
-    Path: '',
-    LauncherPath: '',
-    Arguments: '',
-    WaitTime: 60,
-    EmulatorId: '',
-    EmulatorIndex: '',
-    SetResolution: false,
-    CloseOnFinish: true,
-    RestoreResolution: 'Off',
-    RestoreDisplayType: 'Window',
-    RestoreResolutionWidth: 1920,
-    RestoreResolutionHeight: 1080,
-    IfAutoUpdate: false,
-    UpdateTimeLimit: 240,
-  },
-})
+const maaEndConfig = reactive<MaaEndScriptConfig>(createMaaEndScriptDraft())
 
 const originalResolution = ref<string | null>(null)
 const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
