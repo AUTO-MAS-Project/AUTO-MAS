@@ -1,4 +1,4 @@
-﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -2481,6 +2481,17 @@ export default {
     bettergiViewingDesc2: '查看期间将临时打开配置；查看完成后请点击「关闭查看」结束。',
     bettergiViewClose: '关闭查看',
     bettergiViewOpened: '已打开 BetterGI 查看',
+    // Win32 控制器的截图 / 鼠标 / 键盘方式（脚本级，Device 组）
+    maafwWin32Control: 'Win32 控制方式',
+    maafwWin32ControlHint:
+      '对应项目 interface.json 里 controller 的 win32.screencap / mouse / keyboard。这里是脚本级覆盖，填了就以它为准，留「跟随项目」则用项目自己写的',
+    maafwWin32Screencap: '捕获方式',
+    maafwWin32Mouse: '鼠标输入',
+    maafwWin32Keyboard: '键盘输入',
+    maafwWin32FollowProject: '跟随项目',
+    maafwWin32ControlScope:
+      '这三项属于脚本级设置，本脚本的所有用户共用；「跟随项目」表示不覆盖，用项目 interface.json 里配的那一份',
+    maafwWin32SaveFailed: '控制方式没保存成功，请重试',
     bettergiViewStartFailed: '打开 BetterGI 查看失败',
     // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:

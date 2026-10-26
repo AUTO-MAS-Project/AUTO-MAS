@@ -2849,6 +2849,17 @@ export default {
       '閲覧中は設定が一時的に開かれます。閲覧が終わったら「閲覧を閉じる」をクリックして終了してください。',
     bettergiViewClose: '閲覧を閉じる',
     bettergiViewOpened: 'BetterGI の閲覧を開きました',
+    // Win32 コントローラーのキャプチャ / マウス / キーボード方式（スクリプト単位、Device グループ）
+    maafwWin32Control: 'Win32 操作方式',
+    maafwWin32ControlHint:
+      'プロジェクトの interface.json にある controller の win32.screencap / mouse / keyboard に対応します。ここはスクリプト単位の上書きで、指定した値が優先されます。「プロジェクトに従う」ならプロジェクト側の値を使います',
+    maafwWin32Screencap: 'キャプチャ方式',
+    maafwWin32Mouse: 'マウス入力',
+    maafwWin32Keyboard: 'キーボード入力',
+    maafwWin32FollowProject: 'プロジェクトに従う',
+    maafwWin32ControlScope:
+      'この 3 つはスクリプト単位の設定で、このスクリプトの全ユーザーが共有します。「プロジェクトに従う」は上書きしないという意味で、プロジェクトの interface.json の値が使われます',
+    maafwWin32SaveFailed: '操作方式を保存できませんでした。もう一度お試しください',
     bettergiViewStartFailed: 'BetterGI の閲覧を開けませんでした',
     maafwConfigRestoreUserDesc:
       'MAS 設定のバックアップ（タスクスナップショットやデバイス上書きなどのページ項目）です。復元すると MAS 設定に直接適用されます。この編集ページを閉じる際に重複を排除して自動作成され、最新10件を保持します',

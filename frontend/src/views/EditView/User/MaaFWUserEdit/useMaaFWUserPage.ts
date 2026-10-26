@@ -444,6 +444,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     scriptName,
     scriptType,
     flavor,
+    scriptConfig,
     scriptRoute,
     previewData,
     interfaceLoading,

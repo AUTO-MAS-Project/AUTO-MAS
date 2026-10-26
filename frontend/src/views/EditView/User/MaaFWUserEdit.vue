@@ -122,6 +122,14 @@
             @save="handleFieldSave"
           />
 
+          <Win32ControlSection
+            :script-id="scriptId"
+            :script-config="scriptConfig"
+            :is-win32="isWin32Controller"
+            :disabled="loading || configLocked"
+            @saved="handleScriptConfigSaved"
+          />
+
           <ExtraScriptSection
             v-model:form-data="formData"
             :loading="loading"
@@ -180,10 +188,11 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue/es/form'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import Win32ControlSection from './MaaFWUserEdit/Win32ControlSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
@@ -209,6 +218,7 @@ const {
   configLocked,
   scriptName,
   flavor,
+  scriptConfig,
   scriptRoute,
   previewData,
   interfaceLoading,
@@ -269,6 +279,20 @@ const {
   leaving,
   handleCancel,
 } = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
+
+/** Win32 三项存完：把新值并进页面这份脚本配置副本，下一页不用重新拉 */
+const handleScriptConfigSaved = (patch: Record<string, Record<string, number>>) => {
+  const device = scriptConfig.value?.Device
+  if (device) Object.assign(device, patch.Device ?? {})
+}
+
+/** 当前控制器是不是 Win32：按脚本选中的控制器名去 interface 的控制器表里查它的 type */
+const isWin32Controller = computed(() => {
+  const name = scriptConfig.value?.Info?.Controller
+  if (!name) return false
+  const controller = previewData.value?.controllers?.find(item => item.name === name)
+  return controller?.type === 'Win32'
+})
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)

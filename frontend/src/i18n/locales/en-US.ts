@@ -1,4 +1,4 @@
-﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -2569,6 +2569,17 @@ export default {
       'The config is temporarily opened during viewing; click "Close viewer" when finished.',
     bettergiViewClose: 'Close viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
+    // Win32 controller screencap / mouse / keyboard (script level, Device group)
+    maafwWin32Control: 'Win32 control methods',
+    maafwWin32ControlHint:
+      'Matches controller.win32.screencap / mouse / keyboard in the project\'s interface.json. These are script-level overrides: what you pick here wins, and "Follow project" keeps the project\'s own value',
+    maafwWin32Screencap: 'Screencap method',
+    maafwWin32Mouse: 'Mouse input',
+    maafwWin32Keyboard: 'Keyboard input',
+    maafwWin32FollowProject: 'Follow project',
+    maafwWin32ControlScope:
+      'These three are script-level settings shared by every user of this script; "Follow project" means no override, so the value from the project\'s interface.json is used',
+    maafwWin32SaveFailed: 'The control method was not saved, please try again',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
     // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/）
     maafwConfigRestoreUserDesc:
