@@ -8,15 +8,16 @@
       />
     </template>
     <a-select
-      v-model:value="value"
+      :value="value ? 'enabled' : 'disabled'"
       :disabled="disabled"
       :placeholder="placeholder"
       size="large"
       style="width: 100%"
-      @change="emit('save', $event)"
-      ><a-select-option :value="true">{{ t('edit.yes') }}</a-select-option
-      ><a-select-option :value="false">{{ t('edit.no') }}</a-select-option></a-select
+      @change="handleChange"
     >
+      <a-select-option value="enabled">{{ t('edit.yes') }}</a-select-option>
+      <a-select-option value="disabled">{{ t('edit.no') }}</a-select-option>
+    </a-select>
   </a-form-item>
 </template>
 <script setup lang="ts">
@@ -27,4 +28,11 @@ const value = defineModel<boolean>({ required: true })
 const emit = defineEmits<{ save: [value: boolean] }>()
 
 const { t } = useI18n()
+
+// Select 的值只支持字符串/数字，对外仍保留布尔状态契约。
+const handleChange = (selected: string) => {
+  const enabled = selected === 'enabled'
+  value.value = enabled
+  emit('save', enabled)
+}
 </script>

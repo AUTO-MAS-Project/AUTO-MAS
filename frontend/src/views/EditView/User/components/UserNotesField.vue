@@ -11,7 +11,6 @@
       v-model:value="value"
       :disabled="disabled"
       :placeholder="placeholder"
-      size="large"
       :class="{ 'modern-input': enhanced }"
       :rows="rows"
       @blur="emit('save', value)"
