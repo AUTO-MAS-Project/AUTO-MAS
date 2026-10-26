@@ -15,7 +15,8 @@ export default {
     collapseSettings: '設定を閉じる',
     noData: '作戦データは未取得です',
     executionSettings: '実行設定',
-    snapshotSchedule: '取得元：MAA 作戦サイト · 毎日北京時間 05:17 更新 · 反映に遅れあり',
+    snapshotSchedule:
+      '取得元：AUTO-MAS が生成した MAA 作戦サイトのスナップショット · 反映に遅延あり',
     sourceDetails: '詳細',
     limitSummary:
       '予測には手動のレベル上げとモジュール操作が含まれ、クリアを保証しません。未所持はインポート対象外です。',
@@ -64,7 +65,7 @@ export default {
     cached: 'ローカルに {count} 件をキャッシュ済み',
     dataSource: 'データ取得元',
     generatedAt: 'データ生成日時',
-    downloadedAt: 'ローカル取得・同期日時',
+    downloadedAt: 'ローカルダウンロード日時',
     origins: {
       'data-center': 'MAS 配布サイトのスナップショット',
       github: 'GitHub 予備スナップショット',
@@ -72,7 +73,7 @@ export default {
       unknown: '旧キャッシュ（取得元の記録なし）',
     },
     snapshotHint:
-      '全件スナップショットは MAA 作戦サイトの公開データを使い、毎日北京時間 05:17 に更新します。実行待ちや同期失敗で更新が遅れ、新規・変更された作戦が未収録の場合があります。ローカルデータは 24 時間再利用するため、生成日時をご確認ください。',
+      '全件スナップショットは AUTO-MAS が MAA 作戦サイトの公開データから生成しており、反映に遅延があります。新規・変更された作戦が未収録の場合があります。データ生成日時とローカルダウンロード日時をご確認ください。',
     syncing: '同期中 {loaded} / {total} 件。このページを離れても継続します',
     coverage: '目標カバー率',
     modules: 'モジュール条件を比較',

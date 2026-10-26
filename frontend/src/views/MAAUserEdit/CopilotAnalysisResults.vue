@@ -109,16 +109,18 @@
               <span v-else>—</span>
             </template>
             <template v-else-if="column.key === 'goals'">
-              {{ goalText(record) }}
+              <div class="goal-lines">
+                <div v-for="(line, index) in goalLines(record)" :key="index">{{ line }}</div>
+              </div>
             </template>
           </template>
         </a-table>
       </a-tab-pane>
       <a-tab-pane key="jobs" :tab="t('maaCopilot.jobs')">
-        <a-space wrap class="result-actions">
+        <div class="result-actions">
           <a-input v-model:value="jobFilter" :placeholder="t('maaCopilot.searchJob')" allow-clear />
           <a-select v-model:value="jobState" :options="jobStateOptions" class="status-select" />
-        </a-space>
+        </div>
         <a-table
           :columns="jobColumns"
           :data-source="filteredJobs"
@@ -184,9 +186,12 @@ const selected = ref<Key[]>([])
 const formatTime = (value?: number) =>
   value ? dayjs.unix(value).format('YYYY-MM-DD HH:mm:ss') : '—'
 const capturedTime = computed(() => formatTime(props.result?.capturedAt))
+// 只有手动补等级提示、没有具体培养目标的干员不能导入。
+const canImportOperator = (operator: MaaCopilotOperator) =>
+  operator.owned && Boolean(operator.goals?.length)
 const selectedPlans = computed(() =>
   (props.result?.operators ?? []).filter(
-    op => op.owned && op.goals?.length && selected.value.includes(op.operatorId)
+    op => canImportOperator(op) && selected.value.includes(op.operatorId)
   )
 )
 const filteredOperators = computed(() =>
@@ -228,29 +233,37 @@ const rowSelection = computed(() => ({
     selected.value = keys
   },
   getCheckboxProps: (record: MaaCopilotOperator) => ({
-    disabled: !record.owned || !record.goals?.length || props.disabled || props.importing,
+    disabled: !canImportOperator(record) || props.disabled || props.importing,
   }),
 }))
-const goalText = (operator: MaaCopilotOperator) =>
-  [
+const goalLines = (operator: MaaCopilotOperator) => {
+  const lines = [
     ...(operator.goals ?? []).map(goal => {
       const entry = props.catalog.find(item => item.value === operator.operatorId)
       const options =
         goal.kind === 'mastery' ? entry?.skills : goal.kind === 'module' ? entry?.modules : []
-      const name = options?.find(item => item.value === goal.target_id)?.label
+      const target = options?.find(item => item.value === goal.target_id)
+      const skillIndex = target?.skillIndex
+      const skillLabel =
+        goal.kind === 'mastery' && (skillIndex === 1 || skillIndex === 2 || skillIndex === 3)
+          ? t(`edit.maaCultivateSkill${skillIndex}`)
+          : null
+      const name =
+        target && skillLabel
+          ? t('edit.maaCultivateSkillName', { name: target.label, skill: skillLabel })
+          : target?.label
       return `${name ? `${name} · ` : ''}${t(`maaCopilot.kinds.${goal.kind}`)} ${goal.to_level}`
     }),
     ...(operator.manualLevel ? [t('maaCopilot.manualLevel')] : []),
-  ].join(' · ') || '—'
+  ]
+  return lines.length ? lines : ['—']
+}
 
 watch(
   () => props.result,
-  result => {
-    selected.value = (result.operators ?? [])
-      .filter(op => op.owned && op.goals?.length)
-      .map(op => op.operatorId)
-  },
-  { immediate: true }
+  () => {
+    selected.value = []
+  }
 )
 </script>
 
@@ -270,6 +283,11 @@ watch(
 }
 .result-actions .ant-input-affix-wrapper {
   max-width: 280px;
+}
+.goal-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .status-select {
   min-width: 150px;

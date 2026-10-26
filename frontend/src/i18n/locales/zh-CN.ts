@@ -15,7 +15,7 @@ export default {
     collapseSettings: '收起分析设置',
     noData: '尚未加载作业',
     executionSettings: '执行设置',
-    snapshotSchedule: '来源：MAA 作业站 · 每日 05:17（北京时间）更新 · 快照存在延迟',
+    snapshotSchedule: '来源：AUTO-MAS 生成的 MAA 作业站快照 · 存在延迟',
     sourceDetails: '详细说明',
     limitSummary: '预计覆盖包含手动升级与模组操作，练度达标不保证通关；未拥有的干员不会导入。',
     analysisNotes: '培养建议说明',
@@ -61,8 +61,8 @@ export default {
     refreshHint: '跳过快照，直接从作业站重新拉取当前范围的作业；全站抓取可能需要数分钟。',
     cached: '{count} 份作业已就绪',
     dataSource: '数据来源',
-    generatedAt: '数据生成',
-    downloadedAt: '本机下载',
+    generatedAt: '数据生成时间',
+    downloadedAt: '本机下载时间',
     origins: {
       'data-center': 'MAS 下载站快照',
       github: 'GitHub 备用快照',
@@ -70,7 +70,7 @@ export default {
       unknown: '旧缓存（来源未记录）',
     },
     snapshotHint:
-      '全站快照的原始数据来自 MAA 作业站，由 MAS 每日北京时间 05:17 更新，可能因任务排队或同步失败而延迟。新作业和修改可能尚未收录；本地缓存会复用 24 小时，请以数据生成时间为准。',
+      '全站快照由 AUTO-MAS 根据 MAA 作业站公开数据生成，可能存在延迟；新作业和修改可能尚未收录。可参考数据生成时间和本机下载时间判断数据时效。',
     syncing: '正在同步 {loaded} / {total} 份，离开页面后仍会继续',
     coverage: '期望覆盖',
     modules: '比较模组要求',

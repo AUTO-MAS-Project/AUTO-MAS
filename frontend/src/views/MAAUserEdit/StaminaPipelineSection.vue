@@ -57,18 +57,9 @@
       @change="emitSave('Task.IfDepotMaintain', $event)"
     >
       <template #actions>
-        <a-tooltip :title="t('edit.maaDepotSettings')">
-          <a-button
-            type="text"
-            shape="circle"
-            :aria-label="t('edit.maaDepotSettings')"
-            aria-haspopup="dialog"
-            :disabled="loading"
-            @click="depotSettingsOpen = true"
-          >
-            <template #icon><SettingOutlined /></template>
-          </a-button>
-        </a-tooltip>
+        <a-button :disabled="loading" aria-haspopup="dialog" @click="depotSettingsOpen = true">
+          {{ t('edit.maaDepotSettings') }}
+        </a-button>
       </template>
     </PipelineRow>
     <a-modal
@@ -120,7 +111,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { SettingOutlined } from '@ant-design/icons-vue'
 import PipelineRow from './PipelineRow.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import { useRoute, useRouter } from 'vue-router'
