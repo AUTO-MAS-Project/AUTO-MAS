@@ -5,16 +5,13 @@
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip
-          :title="
+        <FieldLabelWithHint
+          variant="form"
+          :text="t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask')"
+          :hint="
             t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
           "
-        >
-          <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask') }}
-            <QuestionCircleOutlined class="help-icon" />
-          </span>
-        </a-tooltip>
+        />
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
@@ -39,14 +36,11 @@
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip
-          :title="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
-        >
-          <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask') }}
-            <QuestionCircleOutlined class="help-icon" />
-          </span>
-        </a-tooltip>
+        <FieldLabelWithHint
+          variant="form"
+          :text="t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask')"
+          :hint="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
+        />
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
@@ -75,7 +69,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 
 const { t } = useI18n()
@@ -151,25 +145,5 @@ const selectScriptAfterTask = async () => {
 .section-header {
   margin-bottom: 24px;
   padding-bottom: 12px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 </style>
