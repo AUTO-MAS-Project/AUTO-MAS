@@ -58,12 +58,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.nameUsedTellUsers')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.username')"
+                      :hint="t('edit.nameUsedTellUsers')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.userName"
@@ -76,12 +75,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.enabled')"
+                      :hint="t('edit.whetherThisUserEnabled')"
+                      variant="form"
+                    />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Status"
@@ -121,12 +119,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.account') }}
-                      <a-tooltip :title="t('edit.usedSwitchAccountsLeave')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.account')"
+                      :hint="t('edit.usedSwitchAccountsLeave')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
@@ -139,12 +136,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.gameResource') }}
-                      <a-tooltip :title="t('edit.pickGameResourceThis')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.gameResource')"
+                      :hint="t('edit.pickGameResourceThis')"
+                      variant="form"
+                    />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
@@ -158,12 +154,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.daysLeft')"
+                      :hint="t('edit.daysLeftAccount1')"
+                      variant="form"
+                    />
                   </template>
                   <a-input-number
                     v-model:value="formData.Info.RemainedDay"
@@ -179,12 +174,11 @@
 
             <a-form-item>
               <template #label>
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
+                <FieldLabelWithHint
+                  :text="t('edit.note')"
+                  :hint="t('edit.addNoteAboutThis')"
+                  variant="form"
+                />
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
@@ -255,12 +249,11 @@
               <a-col :span="24">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.currentLaunchArguments') }}
-                      <a-tooltip :title="t('edit.argumentsGeneratedFromTask')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.currentLaunchArguments')"
+                      :hint="t('edit.argumentsGeneratedFromTask')"
+                      variant="form"
+                    />
                   </template>
                   <a-input :value="currentStartupArguments" size="large" readonly />
                 </a-form-item>
@@ -388,6 +381,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'

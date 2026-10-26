@@ -33,12 +33,11 @@
             <a-col :span="24">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.giveHsrScriptName')">
-                    <span class="form-label">
-                      {{ t('edit.scriptName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.giveHsrScriptName')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.infoName"
@@ -72,12 +71,11 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrGamePlatformTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrGamePlatform') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrGamePlatform')"
+                    :hint="t('edit.hsrGamePlatformTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-segmented
                   :value="hsrConfig.Game.Platform"
@@ -91,12 +89,11 @@
             <a-col v-if="!isCloud" :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.turnThisOffWhen')">
-                    <span class="form-label">
-                      {{ t('edit.masManagesGame') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.masManagesGame')"
+                    :hint="t('edit.turnThisOffWhen')"
+                    variant="form"
+                  />
                 </template>
                 <a-switch
                   :checked="Boolean(hsrConfig.Game.Enabled)"
@@ -109,12 +106,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.march7thAssistantInstallDirectory')">
-                    <span class="form-label">
-                      {{ t('edit.march7thPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.march7thPath')"
+                    :hint="t('edit.march7thAssistantInstallDirectory')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -146,12 +142,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starrailassistantInstallDirectoryContain')">
-                    <span class="form-label">
-                      {{ t('edit.sraPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.sraPath')"
+                    :hint="t('edit.starrailassistantInstallDirectoryContain')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -207,12 +202,11 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudMaxQueueTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrCloudMaxQueue') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrCloudMaxQueue')"
+                    :hint="t('edit.hsrCloudMaxQueueTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Cloud.MaxQueueMinutes"
@@ -229,12 +223,11 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrCloudLoginWaitTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrCloudLoginWait') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrCloudLoginWait')"
+                    :hint="t('edit.hsrCloudLoginWaitTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Cloud.LoginTimeoutMinutes"
@@ -255,12 +248,11 @@
             <a-col :span="12" :offset="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.sraProfileTooltip')">
-                    <span class="form-label">
-                      {{ t('edit.sraProfile') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.sraProfile')"
+                    :hint="t('edit.sraProfileTooltip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   :value="hsrConfig.Info.SRAProfile || ''"
@@ -294,12 +286,11 @@
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.starRailGameRoot')">
-                    <span class="form-label">
-                      {{ t('edit.gamePath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.gamePath')"
+                    :hint="t('edit.starRailGameRoot')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -321,12 +312,11 @@
             <a-col :xs="24" :lg="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.howLongMasWaits')">
-                    <span class="form-label">
-                      {{ t('edit.maximumGameLaunchWait') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.maximumGameLaunchWait')"
+                    :hint="t('edit.howLongMasWaits')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Game.WaitTime"
@@ -349,12 +339,11 @@
             <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.writtenCurrentUserS')">
-                    <span class="form-label">
-                      {{ t('edit.run1920x1080WindowedMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.run1920x1080WindowedMode')"
+                    :hint="t('edit.writtenCurrentUserS')"
+                    variant="form"
+                  />
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -371,12 +360,11 @@
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.runsOncePerUser')">
-                    <span class="form-label">
-                      {{ t('edit.redeemCodesRunOnly') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.redeemCodesRunOnly')"
+                    :hint="t('edit.runsOncePerUser')"
+                    variant="form"
+                  />
                 </template>
                 <div class="game-toggle-option">
                   <a-switch
@@ -401,12 +389,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDayThis') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runsPerDayThis')"
+                    :hint="t('edit.k0MeansNoLimit')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="hsrConfig.Run.ProxyTimesLimit"
@@ -483,12 +470,11 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateModeTip')">
-                    <span class="form-label">
-                      {{ t('edit.autoUpdateMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.autoUpdateMode')"
+                    :hint="t('edit.hsrUpdateModeTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.AutoUpdateMode"
@@ -502,12 +488,11 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateChannelTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateChannel') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrUpdateChannel')"
+                    :hint="t('edit.hsrUpdateChannelTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.Channel"
@@ -524,12 +509,11 @@
             <a-col v-if="hsrConfig.Info.M7APath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateM7ASourceTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateM7ASource') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrUpdateM7ASource')"
+                    :hint="t('edit.hsrUpdateM7ASourceTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.M7ASource"
@@ -543,12 +527,11 @@
             <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateSRASourceTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateSRASource') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrUpdateSRASource')"
+                    :hint="t('edit.hsrUpdateSRASourceTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="hsrConfig.Update.SRASource"
@@ -564,12 +547,11 @@
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.hsrUpdateCdkTip')">
-                    <span class="form-label">
-                      {{ t('edit.hsrUpdateCdk') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.hsrUpdateCdk')"
+                    :hint="t('edit.hsrUpdateCdkTip')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-password
                   v-model:value="hsrConfig.Update.MirrorChyanCDK"
@@ -602,12 +584,11 @@
 
           <a-form-item>
             <template #label>
-              <a-tooltip :title="t('edit.hsrUpdateManualTip')">
-                <span class="form-label">
-                  {{ t('edit.hsrUpdateManual') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.hsrUpdateManual')"
+                :hint="t('edit.hsrUpdateManualTip')"
+                variant="form"
+              />
             </template>
             <a-typography-text v-if="!updateEngines.length" type="secondary">
               {{ t('edit.hsrUpdateNeedPath') }}
@@ -669,12 +650,13 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -1466,17 +1448,6 @@ onMounted(async () => {
   font-weight: 600;
   color: var(--ant-color-text);
   font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 
 .path-input-group {

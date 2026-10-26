@@ -4,12 +4,11 @@
       <a-col :xs="24" :sm="10">
         <a-form-item name="IfAutoCollect">
           <template #label>
-            <span class="form-label">
-              {{ t('edit.maaEndAutoCollectEnabled') }}
-              <a-tooltip :title="t('edit.maaEndAutoCollectEnabledHint')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.maaEndAutoCollectEnabled')"
+              :hint="t('edit.maaEndAutoCollectEnabledHint')"
+              variant="form"
+            />
           </template>
           <a-switch :checked="enabled" :disabled="loading" @change="handleEnabledChange" />
         </a-form-item>
@@ -17,12 +16,11 @@
       <a-col v-if="enabled" :xs="24" :sm="14">
         <a-form-item name="AutoCollectMode">
           <template #label>
-            <span class="form-label">
-              {{ t('edit.maaEndAutoCollectMode') }}
-              <a-tooltip :title="modeHint">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.maaEndAutoCollectMode')"
+              :hint="modeHint"
+              variant="form"
+            />
           </template>
           <a-select
             :value="mode"
@@ -98,9 +96,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaEndAutoCollectGroup } from '@/api'
 import type { MaaEndTaskConfig } from '@/types/script'
 import {
@@ -167,18 +165,6 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
 </script>
 
 <style scoped>
-.form-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-}
-
 .route-panel-list {
   display: flex;
   flex-direction: column;

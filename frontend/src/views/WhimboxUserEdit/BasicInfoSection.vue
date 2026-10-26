@@ -7,12 +7,11 @@
       <a-col :span="12">
         <a-form-item name="userName" required>
           <template #label>
-            <a-tooltip :title="t('edit.displayNameUsedIdentify')">
-              <span class="form-label">
-                {{ t('edit.username') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.username')"
+              :hint="t('edit.displayNameUsedIdentify')"
+              variant="form"
+            />
           </template>
           <a-input
             v-model:value="formData.userName"
@@ -27,12 +26,11 @@
       <a-col :span="6">
         <a-form-item name="status">
           <template #label>
-            <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-              <span class="form-label">
-                {{ t('edit.enabled') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.enabled')"
+              :hint="t('edit.whetherThisUserEnabled')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Info.Status"
@@ -49,12 +47,11 @@
       <a-col :span="6">
         <a-form-item name="remainedDay">
           <template #label>
-            <a-tooltip :title="t('edit.daysLeftAccount1')">
-              <span class="form-label">
-                {{ t('edit.daysLeft') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.daysLeft')"
+              :hint="t('edit.daysLeftAccount1')"
+              variant="form"
+            />
           </template>
           <a-input-number
             v-model:value="formData.Info.RemainedDay"
@@ -74,12 +71,11 @@
       <a-col :span="16">
         <a-form-item name="notes">
           <template #label>
-            <a-tooltip :title="t('edit.addNoteAboutThis')">
-              <span class="form-label">
-                {{ t('edit.note') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.note')"
+              :hint="t('edit.addNoteAboutThis')"
+              variant="form"
+            />
           </template>
           <a-textarea
             v-model:value="formData.Info.Notes"
@@ -94,12 +90,11 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.whimboxUserTagHint')">
-              <span class="form-label">
-                {{ t('edit.whimboxUserTag') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.whimboxUserTag')"
+              :hint="t('edit.whimboxUserTagHint')"
+              variant="form"
+            />
           </template>
           <div class="user-tag-list">
             <a-tag
@@ -135,9 +130,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import { WHIMBOX_CONFIG_MODES, type WhimboxConfigMode } from './modes.ts'
@@ -209,26 +204,6 @@ const whimboxConfigModeOptions = WHIMBOX_CONFIG_MODES.map(value => ({
 
 .section-header {
   margin-bottom: 6px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 
 .modern-input {

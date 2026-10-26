@@ -110,12 +110,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.username') }}
-                        <a-tooltip :title="t('edit.zzzodUserNameHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.username')"
+                        :hint="t('edit.zzzodUserNameHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.userName"
@@ -129,12 +128,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.enabled') }}
-                        <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.enabled')"
+                        :hint="t('edit.whetherThisUserEnabled')"
+                        variant="form"
+                      />
                     </template>
                     <a-select
                       v-model:value="formData.Info.Status"
@@ -168,12 +166,11 @@
                 <a-col v-if="formData.Info.Base === 'native'" :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodDirectInstanceRun') }}
-                        <a-tooltip :title="t('edit.zzzodDirectInstanceRunHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.zzzodDirectInstanceRun')"
+                        :hint="t('edit.zzzodDirectInstanceRunHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-select
                       v-model:value="nativeInstanceRun"
@@ -188,12 +185,11 @@
                 <a-col v-else :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodQuickImport') }}
-                        <a-tooltip :title="t('edit.zzzodImportConfigHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.zzzodQuickImport')"
+                        :hint="t('edit.zzzodImportConfigHint')"
+                        variant="form"
+                      />
                     </template>
                     <div class="import-group">
                       <a-select
@@ -277,12 +273,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodDirectInstance') }}
-                          <a-tooltip :title="t('edit.zzzodDirectInstanceHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodDirectInstance')"
+                          :hint="t('edit.zzzodDirectInstanceHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-select
                         :value="nativeInstanceIdx"
@@ -321,12 +316,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodGameRegion') }}
-                          <a-tooltip :title="t('edit.zzzodGameRegionHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodGameRegion')"
+                          :hint="t('edit.zzzodGameRegionHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-select
                         v-model:value="formData.Game.GameRegion"
@@ -340,12 +334,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodGameLanguage') }}
-                          <a-tooltip :title="t('edit.zzzodGameLanguageHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodGameLanguage')"
+                          :hint="t('edit.zzzodGameLanguageHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-select
                         v-model:value="formData.Game.GameLanguage"
@@ -362,12 +355,11 @@
                   <a-col :span="24">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodGamePath') }}
-                          <a-tooltip :title="t('edit.zzzodGamePathHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodGamePath')"
+                          :hint="t('edit.zzzodGamePathHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-input-group compact class="path-input-group">
                         <a-input
@@ -392,12 +384,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodAccount') }}
-                          <a-tooltip :title="t('edit.zzzodAccountHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodAccount')"
+                          :hint="t('edit.zzzodAccountHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-input
                         v-model:value="formData.Game.Account"
@@ -411,12 +402,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.password') }}
-                          <a-tooltip :title="t('edit.zzzodPasswordHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.password')"
+                          :hint="t('edit.zzzodPasswordHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-input-password
                         v-model:value="formData.Game.Password"
@@ -433,12 +423,11 @@
                   <a-col :span="12">
                     <a-form-item>
                       <template #label>
-                        <span class="form-label">
-                          {{ t('edit.zzzodBilibiliAccount') }}
-                          <a-tooltip :title="t('edit.zzzodBilibiliAccountHint')">
-                            <QuestionCircleOutlined class="help-icon" />
-                          </a-tooltip>
-                        </span>
+                        <FieldLabelWithHint
+                          :text="t('edit.zzzodBilibiliAccount')"
+                          :hint="t('edit.zzzodBilibiliAccountHint')"
+                          variant="form"
+                        />
                       </template>
                       <a-input
                         v-model:value="formData.Game.BilibiliAccountName"
@@ -458,12 +447,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.daysLeft') }}
-                        <a-tooltip :title="t('edit.daysLeftAccount1')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.daysLeft')"
+                        :hint="t('edit.daysLeftAccount1')"
+                        variant="form"
+                      />
                     </template>
                     <a-input-number
                       v-model:value="formData.Info.RemainedDay"
@@ -478,12 +466,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.note') }}
-                        <a-tooltip :title="t('edit.addNoteAboutThis')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.note')"
+                        :hint="t('edit.addNoteAboutThis')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.Info.Notes"
@@ -522,12 +509,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.zzzodAfterDone') }}
-                        <a-tooltip :title="t('edit.zzzodAfterDoneHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.zzzodAfterDone')"
+                        :hint="t('edit.zzzodAfterDoneHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-select
                       v-model:value="afterDoneValue"
@@ -644,12 +630,11 @@
                           <a-col :span="12">
                             <a-form-item>
                               <template #label>
-                                <span class="form-label">
-                                  {{ t('edit.zzzodDx12') }}
-                                  <a-tooltip :title="t('edit.zzzodDx12Hint')">
-                                    <QuestionCircleOutlined class="help-icon" />
-                                  </a-tooltip>
-                                </span>
+                                <FieldLabelWithHint
+                                  :text="t('edit.zzzodDx12')"
+                                  :hint="t('edit.zzzodDx12Hint')"
+                                  variant="form"
+                                />
                               </template>
                               <a-switch
                                 v-model:checked="nativeLaunchArgs.dx12"
@@ -756,12 +741,11 @@
                       <a-col :span="12">
                         <a-form-item>
                           <template #label>
-                            <span class="form-label">
-                              {{ t('edit.zzzodDx12') }}
-                              <a-tooltip :title="t('edit.zzzodDx12Hint')">
-                                <QuestionCircleOutlined class="help-icon" />
-                              </a-tooltip>
-                            </span>
+                            <FieldLabelWithHint
+                              :text="t('edit.zzzodDx12')"
+                              :hint="t('edit.zzzodDx12Hint')"
+                              variant="form"
+                            />
                           </template>
                           <a-switch
                             v-model:checked="formData.Game.Dx12"
@@ -890,6 +874,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useZzzodTaskConfig } from './ZzzOdUserEdit/useZzzodTaskConfig'
 import ZzzodTaskBoard from './ZzzOdUserEdit/ZzzodTaskBoard.vue'
 

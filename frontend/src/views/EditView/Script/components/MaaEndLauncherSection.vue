@@ -3,12 +3,11 @@
     <a-col :xs="24" :md="12">
       <a-form-item :help="launchHint">
         <template #label>
-          <span class="form-label">
-            {{ t('edit.launchType') }}
-            <a-tooltip :title="t('edit.maaEndLaunchTypeHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.launchType')"
+            :hint="t('edit.maaEndLaunchTypeHint')"
+            variant="form"
+          />
         </template>
         <a-select
           :value="launchMode"
@@ -98,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FolderOpenOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'

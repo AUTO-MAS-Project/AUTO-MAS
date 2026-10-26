@@ -16,12 +16,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.zzzodScriptNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.zzzodScriptNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -35,12 +34,11 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.zzzodRootPath') }}
-                    <a-tooltip :title="t('edit.zzzodRootPathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.zzzodRootPath')"
+                    :hint="t('edit.zzzodRootPathHint')"
+                    variant="form"
+                  />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
@@ -63,12 +61,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.enableGameConfiguration') }}
-                    <a-tooltip :title="t('edit.masTakesOverStarting')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.enableGameConfiguration')"
+                    :hint="t('edit.masTakesOverStarting')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="zzzodConfig.Game.Enabled"
@@ -84,12 +81,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchGameBeforeTask') }}
-                    <a-tooltip :title="t('edit.zzzodLaunchBeforeTaskHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchGameBeforeTask')"
+                    :hint="t('edit.zzzodLaunchBeforeTaskHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="zzzodConfig.Game.LaunchBeforeTask"
@@ -110,12 +106,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.zzzodGamePath') }}
-                    <a-tooltip :title="t('edit.zzzodGamePathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.zzzodGamePath')"
+                    :hint="t('edit.zzzodGamePathHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -143,12 +138,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.zzzodGameArgumentsHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.zzzodGameArgumentsHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="zzzodConfig.Game.Arguments"
@@ -163,12 +157,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.startupWait')"
+                    :hint="t('edit.howLongWaitAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="zzzodConfig.Game.WaitTime"
@@ -186,12 +179,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.zzzodCloseGameOnFinish') }}
-                    <a-tooltip :title="t('edit.zzzodCloseGameOnFinishHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.zzzodCloseGameOnFinish')"
+                    :hint="t('edit.zzzodCloseGameOnFinishHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="zzzodConfig.Game.CloseOnFinish"
@@ -207,12 +199,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.zzzodAccountSwitch') }}
-                    <a-tooltip :title="t('edit.zzzodAccountSwitchHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.zzzodAccountSwitch')"
+                    :hint="t('edit.zzzodAccountSwitchHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="zzzodConfig.Game.AccountSwitch"
@@ -252,12 +243,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runsPerDay')"
+                    :hint="t('edit.k0MeansNoLimit')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="zzzodConfig.Run.ProxyTimesLimit"
@@ -272,12 +262,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.zzzodRetryLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.retryLimit2')"
+                    :hint="t('edit.zzzodRetryLimitHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="zzzodConfig.Run.RunTimesLimit"
@@ -292,12 +281,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.zzzodRunTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runTimeoutMinutes')"
+                    :hint="t('edit.zzzodRunTimeoutHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="zzzodConfig.Run.RunTimeLimit"
@@ -320,6 +308,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -329,7 +318,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 

@@ -76,12 +76,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsMaaendScriptInstances')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.tellsMaaendScriptInstances')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -94,12 +93,11 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.maaendPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingMaaend2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.maaendPath')"
+                    :hint="t('edit.pickDirectoryHoldingMaaend2')"
+                    variant="form"
+                  />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
@@ -122,12 +120,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.pickHowGameControlled')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.controller')"
+                    :hint="t('edit.pickHowGameControlled')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.ControllerType"
@@ -142,12 +139,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.closeGameAfterTask2') }}
-                    <a-tooltip :title="t('edit.whetherGameClosesAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.closeGameAfterTask2')"
+                    :hint="t('edit.whetherGameClosesAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.CloseOnFinish"
@@ -182,12 +178,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gamePath') }}
-                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.gamePath')"
+                    :hint="t('edit.pickEndfieldExePath')"
+                    variant="form"
+                  />
                 </template>
                 <PathPickerField
                   v-model="maaEndConfig.Game.Path"
@@ -231,12 +226,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.waitTime') }}
-                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.waitTime')"
+                    :hint="t('edit.pcControllersOnlySeconds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.WaitTime"
@@ -340,12 +334,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.pickEmulatorUse')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulator')"
+                    :hint="t('edit.pickEmulatorUse')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.EmulatorId"
@@ -438,12 +431,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameUpdateTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.endfieldUpdateTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.gameUpdateTimeoutMinutes')"
+                    :hint="t('edit.endfieldUpdateTimeoutHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.UpdateTimeLimit"
@@ -523,6 +515,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'

@@ -26,12 +26,11 @@
             <a-col :span="8">
               <a-form-item name="userName" required>
                 <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.username')"
+                    :hint="t('edit.displayNameUsedIdentify')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.userName"
@@ -46,12 +45,11 @@
             <a-col :span="4">
               <a-form-item name="status">
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.enabled')"
+                    :hint="t('edit.whetherThisUserEnabled')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.Status"
@@ -68,12 +66,11 @@
             <a-col :span="4">
               <a-form-item name="remainedDay">
                 <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.daysLeft')"
+                    :hint="t('edit.daysLeftAccount1')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="formData.Info.RemainedDay"
@@ -90,12 +87,11 @@
             <a-col :span="8">
               <a-form-item name="configName">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahConfigNameHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahConfigName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahConfigName')"
+                    :hint="t('edit.baahConfigNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.ConfigName"
@@ -123,12 +119,11 @@
             <a-col :span="8">
               <a-form-item name="stageMode">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahStageModeHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahStageMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahStageMode')"
+                    :hint="t('edit.baahStageModeHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.StageMode"
@@ -153,12 +148,11 @@
             <a-col :span="6">
               <a-form-item name="ifEventFirst">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahIfEventFirstHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahIfEventFirst') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahIfEventFirst')"
+                    :hint="t('edit.baahIfEventFirstHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.IfEventFirst"
@@ -176,12 +170,11 @@
             <a-col :span="8">
               <a-form-item name="activityLineType">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahActivityLineType') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahActivityLineType')"
+                    :hint="t('edit.baahActivityLineTypeHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="formData.Info.ActivityLineType"
@@ -208,12 +201,11 @@
             <a-col :span="16">
               <a-form-item name="notes">
                 <template #label>
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <span class="form-label">
-                      {{ t('edit.note') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.note')"
+                    :hint="t('edit.addNoteAboutThis')"
+                    variant="form"
+                  />
                 </template>
                 <a-textarea
                   v-model:value="formData.Info.Notes"
@@ -228,12 +220,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.baahUserTagHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahUserTag') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahUserTag')"
+                    :hint="t('edit.baahUserTagHint')"
+                    variant="form"
+                  />
                 </template>
                 <div class="user-tag-list">
                   <a-tag
@@ -271,12 +262,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahLastProxyDate') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahLastProxyDate')"
+                    :hint="t('edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
@@ -288,12 +278,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahProxyTimes') }}
-                    <a-tooltip :title="t('edit.baahDataReadOnlyHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahProxyTimes')"
+                    :hint="t('edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
               </a-form-item>
@@ -352,6 +341,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
@@ -360,7 +350,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { CalendarOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -824,26 +814,6 @@ onUnmounted(() => {
 
 .baah-preview-box {
   width: 100%;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 
 .modern-input {

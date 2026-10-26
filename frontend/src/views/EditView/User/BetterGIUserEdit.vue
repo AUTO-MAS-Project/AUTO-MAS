@@ -126,12 +126,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <a-tooltip :title="t('edit.bettergiUserNameHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.username')"
+                      :hint="t('edit.bettergiUserNameHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.userName"
@@ -145,12 +144,11 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.enabled')"
+                      :hint="t('edit.whetherThisUserEnabled')"
+                      variant="form"
+                    />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Status"
@@ -166,12 +164,11 @@
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <a-tooltip :title="t('edit.daysLeftAccount1')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.daysLeft')"
+                      :hint="t('edit.daysLeftAccount1')"
+                      variant="form"
+                    />
                   </template>
                   <a-input-number
                     v-model:value="formData.Info.RemainedDay"
@@ -190,12 +187,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.bettergiAccount') }}
-                      <a-tooltip :title="t('edit.bettergiAccountHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.bettergiAccount')"
+                      :hint="t('edit.bettergiAccountHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
@@ -209,12 +205,11 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.password') }}
-                      <a-tooltip :title="t('edit.bettergiPasswordHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.password')"
+                      :hint="t('edit.bettergiPasswordHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
@@ -241,12 +236,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiAccountUid') }}
-                        <a-tooltip :title="t('edit.bettergiUidHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.bettergiAccountUid')"
+                        :hint="t('edit.bettergiUidHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.Switch.Uid"
@@ -302,12 +296,11 @@
 
             <a-form-item>
               <template #label>
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <a-tooltip :title="t('edit.addNoteAboutThis')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
+                <FieldLabelWithHint
+                  :text="t('edit.note')"
+                  :hint="t('edit.addNoteAboutThis')"
+                  variant="form"
+                />
               </template>
               <a-textarea
                 v-model:value="formData.Info.Notes"
@@ -421,12 +414,11 @@
               <a-col :span="12">
                 <a-form-item v-if="masConfigEnabled">
                   <template #label>
-                    <span class="form-label">
-                      {{ t('edit.bettergiDailyRewardParty') }}
-                      <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.bettergiDailyRewardParty')"
+                      :hint="t('edit.bettergiKeepExistingHint')"
+                      variant="form"
+                    />
                   </template>
                   <a-input
                     v-model:value="formData.OneDragon.DailyRewardPartyName"
@@ -468,12 +460,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiBattleParty') }}
-                        <a-tooltip :title="t('edit.bettergiKeepExistingHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.bettergiBattleParty')"
+                        :hint="t('edit.bettergiKeepExistingHint')"
+                        variant="form"
+                      />
                     </template>
                     <a-input
                       v-model:value="formData.OneDragon.PartyName"
@@ -487,12 +478,11 @@
                 <a-col :span="12">
                   <a-form-item>
                     <template #label>
-                      <span class="form-label">
-                        {{ t('edit.bettergiBattleStrategy') }}
-                        <a-tooltip :title="t('edit.bettergiBattleStrategyHint')">
-                          <QuestionCircleOutlined class="help-icon" />
-                        </a-tooltip>
-                      </span>
+                      <FieldLabelWithHint
+                        :text="t('edit.bettergiBattleStrategy')"
+                        :hint="t('edit.bettergiBattleStrategyHint')"
+                        variant="form"
+                      />
                     </template>
                     <!-- 通用战斗策略：点击输入框弹出备选弹窗，单选纯文本 -->
                     <a-input
@@ -836,6 +826,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useBettergiDragonQueue } from './BetterGIUserEdit/useBettergiDragonQueue'
 import BettergiDragonQueueList from './BetterGIUserEdit/BettergiDragonQueueList.vue'
 

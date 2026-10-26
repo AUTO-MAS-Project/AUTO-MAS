@@ -16,12 +16,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsOkNteScript')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.tellsOkNteScript')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -35,12 +34,11 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.okNtePath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk3')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.okNtePath')"
+                    :hint="t('edit.pickDirectoryHoldingOk3')"
+                    variant="form"
+                  />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
@@ -62,12 +60,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.masterSwitchGameManagement')">
-                    <span class="form-label">
-                      {{ t('edit.enableGameConfiguration') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.enableGameConfiguration')"
+                    :hint="t('edit.masterSwitchGameManagement')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="oknteConfig.Game.Enabled"
@@ -83,12 +80,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherMasLaunchesGame')">
-                    <span class="form-label">
-                      {{ t('edit.launchGameBeforeTask') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchGameBeforeTask')"
+                    :hint="t('edit.whetherMasLaunchesGame')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="oknteConfig.Game.LaunchBeforeTask"
@@ -108,12 +104,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherMasClosesGame')">
-                    <span class="form-label">
-                      {{ t('edit.closeGameAfterTask') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.closeGameAfterTask')"
+                    :hint="t('edit.whetherMasClosesGame')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="oknteConfig.Game.CloseOnFinish"
@@ -130,12 +125,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.oknteAccountSwitchHint')">
-                    <span class="form-label">
-                      {{ t('edit.forceSwitchAccountBeforeRun') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.forceSwitchAccountBeforeRun')"
+                    :hint="t('edit.oknteAccountSwitchHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="oknteConfig.Game.AccountSwitch"
@@ -204,12 +198,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.gameLaunchArgumentsNot')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="oknteConfig.Game.Arguments"
@@ -224,12 +217,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.startupWait')"
+                    :hint="t('edit.howLongWaitAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="oknteConfig.Game.WaitTime"
@@ -259,12 +251,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runsPerDay')"
+                    :hint="t('edit.k0MeansNoLimit')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="oknteConfig.Run.ProxyTimesLimit"
@@ -279,12 +270,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.giveUpAfterThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.retryLimit2')"
+                    :hint="t('edit.giveUpAfterThis')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="oknteConfig.Run.RunTimesLimit"
@@ -299,12 +289,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runTimeoutMinutes')"
+                    :hint="t('edit.logThatStaysUnchanged')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="oknteConfig.Run.RunTimeLimit"
@@ -324,6 +313,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -333,7 +323,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import {
   type OkNteConfig,
   type OkNteConfig_Game,

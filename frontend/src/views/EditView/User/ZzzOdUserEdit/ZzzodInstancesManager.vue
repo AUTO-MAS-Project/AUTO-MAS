@@ -1,14 +1,10 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, ref, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { type ZzzOdInstanceOut } from '@/api'
 const props = defineProps<{
   scriptId: string
@@ -217,12 +213,11 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
 <template>
   <div class="instance-manage">
     <div class="instance-manage-header">
-      <span class="form-label">
-        {{ t('edit.zzzodInstancesManage') }}
-        <a-tooltip :title="t('edit.zzzodInstancesManageHint')">
-          <QuestionCircleOutlined class="help-icon" />
-        </a-tooltip>
-      </span>
+      <FieldLabelWithHint
+        :text="t('edit.zzzodInstancesManage')"
+        :hint="t('edit.zzzodInstancesManageHint')"
+        variant="form"
+      />
       <a-button type="primary" size="small" :loading="instanceOpLoading" @click="openAddInstance">
         <template #icon><PlusOutlined /></template>
         {{ t('edit.zzzodAddInstance') }}
@@ -314,12 +309,11 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
     <a-form layout="vertical" class="config-form">
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.zzzodInstanceName')"
+            :hint="t('edit.zzzodInstanceNameHint')"
+            variant="form"
+          />
         </template>
         <a-input
           v-model:value="instanceName"
@@ -342,12 +336,11 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
     <a-form layout="vertical" class="config-form">
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.zzzodInstanceName') }}
-            <a-tooltip :title="t('edit.zzzodInstanceNameHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.zzzodInstanceName')"
+            :hint="t('edit.zzzodInstanceNameHint')"
+            variant="form"
+          />
         </template>
         <a-input
           v-model:value="instanceName"

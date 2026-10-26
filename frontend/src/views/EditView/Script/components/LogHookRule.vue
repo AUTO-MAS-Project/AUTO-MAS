@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 
 import { validateRegexPattern } from '../logRegex'
@@ -91,12 +91,11 @@ const typeOptions = [
             :help="matchError || undefined"
           >
             <template #label>
-              <a-tooltip :title="t('edit.requiredEmptyValueDisables3')">
-                <span class="form-label">
-                  {{ t('edit.matchPattern') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.matchPattern')"
+                :hint="t('edit.requiredEmptyValueDisables3')"
+                variant="form"
+              />
             </template>
             <a-input
               v-model:value="local.match"
@@ -109,12 +108,11 @@ const typeOptions = [
         <a-col v-if="local.type === 'replace'" :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.replacementTextMatchBack')">
-                <span class="form-label">
-                  {{ t('edit.replace') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.replace')"
+                :hint="t('edit.replacementTextMatchBack')"
+                variant="form"
+              />
             </template>
             <a-input
               v-model:value="local.replace"
@@ -145,17 +143,6 @@ const typeOptions = [
 
 .hook-rule-form :deep(.compact-form-item) {
   margin-bottom: 0;
-}
-
-.form-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
 }
 
 .hook-rule-footer {

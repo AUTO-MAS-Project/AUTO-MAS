@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { BookOutlined, BugOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
@@ -157,12 +158,11 @@ const logTypeOptions = [
         <a-col :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.cutFromStartLine')">
-                <span class="form-label">
-                  {{ t('edit.leadingKeyword') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.leadingKeyword')"
+                :hint="t('edit.cutFromStartLine')"
+                variant="form"
+              />
             </template>
             <div class="inline-checkbox-row">
               <a-input
@@ -180,12 +180,11 @@ const logTypeOptions = [
         <a-col :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.cutFromKeywordEnd')">
-                <span class="form-label">
-                  {{ t('edit.trailingKeyword') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.trailingKeyword')"
+                :hint="t('edit.cutFromKeywordEnd')"
+                variant="form"
+              />
             </template>
             <div class="inline-checkbox-row">
               <a-input
@@ -259,12 +258,11 @@ const logTypeOptions = [
         <a-col :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.requiredEmptyValueDisables')">
-                <span class="form-label">
-                  {{ t('edit.startPattern') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.startPattern')"
+                :hint="t('edit.requiredEmptyValueDisables')"
+                variant="form"
+              />
             </template>
             <a-input
               v-model:value="local.start"
@@ -277,12 +275,11 @@ const logTypeOptions = [
         <a-col :span="12">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.lineMatchingThisPattern')">
-                <span class="form-label">
-                  {{ t('edit.endPattern') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('edit.endPattern')"
+                :hint="t('edit.lineMatchingThisPattern')"
+                variant="form"
+              />
             </template>
             <a-input
               v-model:value="local.end"

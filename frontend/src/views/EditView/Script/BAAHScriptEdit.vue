@@ -17,12 +17,11 @@
             <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.baahScriptNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.baahScriptNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -45,12 +44,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.mainProgramPath') }}
-                    <a-tooltip :title="t('edit.baahScriptPathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.mainProgramPath')"
+                    :hint="t('edit.baahScriptPathHint')"
+                    variant="form"
+                  />
                 </template>
                 <PathPickerField
                   v-model="formData.baahPath"
@@ -65,12 +63,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahManageConfig') }}
-                    <a-tooltip :title="t('edit.baahManageConfigHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahManageConfig')"
+                    :hint="t('edit.baahManageConfigHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.IfManageConfig"
@@ -86,12 +83,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahPushLogEnabled') }}
-                    <a-tooltip :title="t('edit.baahPushLogEnabledHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahPushLogEnabled')"
+                    :hint="t('edit.baahPushLogEnabledHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.PushLogEnabled"
@@ -124,12 +120,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.baahEmulatorHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulator')"
+                    :hint="t('edit.baahEmulatorHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Emulator.Id"
@@ -151,12 +146,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulatorInstance')"
+                    :hint="t('edit.pickEmulatorInstance')"
+                    variant="form"
+                  />
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
                 <a-input
@@ -208,12 +202,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.baahRunTimesLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.retryLimit2')"
+                    :hint="t('edit.baahRunTimesLimitHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="baahConfig.Run.RunTimesLimit"
@@ -228,12 +221,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.baahRunTimeLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runTimeoutMinutes')"
+                    :hint="t('edit.baahRunTimeLimitHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="baahConfig.Run.RunTimeLimit"
@@ -253,6 +245,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -261,7 +254,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'

@@ -11,12 +11,7 @@
       />
       <a-form-item v-for="field in timeoutFields" :key="field.key">
         <template #label>
-          <span class="form-label">
-            {{ t(field.label) }}
-            <a-tooltip :title="t(field.hint)">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint :text="t(field.label)" :hint="t(field.hint)" variant="form" />
         </template>
         <a-input-number
           v-model:value="run[field.key]"
@@ -29,12 +24,11 @@
       </a-form-item>
       <a-form-item :help="t('edit.accountSwitch16x9Only')">
         <template #label>
-          <span class="form-label">
-            {{ t('edit.accountSwitchingMethod') }}
-            <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.accountSwitchingMethod')"
+            :hint="t('edit.chooseWhetherMasSwitches')"
+            variant="form"
+          />
         </template>
         <a-select
           v-model:value="run.AccountSwitchMethod"
@@ -45,12 +39,11 @@
       </a-form-item>
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.taskTransitionMethod') }}
-            <a-tooltip :title="t('edit.taskTransitionHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.taskTransitionMethod')"
+            :hint="t('edit.taskTransitionHint')"
+            variant="form"
+          />
         </template>
         <a-select
           v-model:value="run.TaskTransitionMethod"
@@ -61,12 +54,11 @@
       </a-form-item>
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.runsPerDay') }}
-            <a-tooltip :title="t('edit.skipRunOnceThis')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.runsPerDay')"
+            :hint="t('edit.skipRunOnceThis')"
+            variant="form"
+          />
         </template>
         <a-input-number
           v-model:value="run.ProxyTimesLimit"
@@ -82,9 +74,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaEndScriptConfig } from '@/types/script'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 
@@ -132,16 +124,6 @@ const transitionOptions = computed(() => [
 }
 .number-input {
   width: 100%;
-}
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
 }
 @container (max-width: 900px) {
   .run-config-grid {

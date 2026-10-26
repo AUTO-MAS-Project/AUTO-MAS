@@ -16,12 +16,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsOkWwScript')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.tellsOkWwScript')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -35,12 +34,11 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.okWwPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.okWwPath')"
+                    :hint="t('edit.pickDirectoryHoldingOk4')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
@@ -88,12 +86,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.masTakesOverStarting')">
-                    <span class="form-label">
-                      {{ t('edit.enableGameConfiguration') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.enableGameConfiguration')"
+                    :hint="t('edit.masTakesOverStarting')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.Enabled"
@@ -109,12 +106,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
-                    <span class="form-label">
-                      {{ t('edit.forceSwitchAccountBeforeRun') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.forceSwitchAccountBeforeRun')"
+                    :hint="t('edit.okwwAccountSwitchHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.AccountSwitch"
@@ -137,12 +133,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
-                    <span class="form-label">
-                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.updateAutomaticallyBeforeLaunching')"
+                    :hint="t('edit.beforeLaunchingGameRun')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.IfAutoUpdate"
@@ -168,12 +163,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
-                    <span class="form-label">
-                      {{ t('edit.wholeFileSyncLimit') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.wholeFileSyncLimit')"
+                    :hint="t('edit.largeVersionGapNeeds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
@@ -217,12 +211,11 @@
               <a-form-item>
                 <template #label>
                   <div class="launch-type-label">
-                    <span class="form-label">
-                      {{ t('edit.launchType') }}
-                      <a-tooltip :title="t('edit.launchTypeHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.launchType')"
+                      :hint="t('edit.launchTypeHint')"
+                      variant="form"
+                    />
                     <a-radio-group
                       :value="okwwConfig.Game.Type"
                       class="launch-type-toggle"
@@ -327,12 +320,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.gameLaunchArgumentsNot2')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
@@ -347,12 +339,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.startupWait')"
+                    :hint="t('edit.howLongWaitAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.WaitTime"
@@ -380,12 +371,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runsPerDay')"
+                    :hint="t('edit.k0MeansNoLimit')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Run.ProxyTimesLimit"
@@ -400,12 +390,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.giveUpAfterThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.retryLimit2')"
+                    :hint="t('edit.giveUpAfterThis')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Run.RunTimesLimit"
@@ -420,12 +409,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.runTimeoutMinutes')"
+                    :hint="t('edit.logThatStaysUnchanged')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Run.RunTimeLimit"
@@ -497,6 +485,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
