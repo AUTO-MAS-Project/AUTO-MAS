@@ -815,6 +815,8 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
                     else source_channel
                 ),
                 follow_source=follow_source_switch_on(script_config),
+                # 导入时与官方发行包核对资源文件走脚本的更新代理（同 _embed_from_source）
+                proxy_url=resolve_update_proxy_url(script_config),
             )
             cloned = True
     except EmbeddedProjectError as exc:

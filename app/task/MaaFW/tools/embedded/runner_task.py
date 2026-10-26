@@ -234,6 +234,16 @@ _UNRETRYABLE_ENVIRONMENT_MARKERS = (
 _RESOURCE_FAILURE_STOP_MESSAGE = (
     "资源包加载失败，重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）"
 )
+# 资源包加载失败后换了载荷、立刻再跑的那一次：（开头那行，之后「上一次（…）」里的称呼）。
+# 不计入尝试次数，所以不编号。
+_RERUN_AFTER_CLEANUP = (
+    "已清理残留，立即重新运行（不计入尝试次数）",
+    "清理残留后的重新运行",
+)
+_RERUN_AFTER_SWITCH = (
+    "已换上同项目其他脚本在用的版本，立即重新运行（不计入尝试次数）",
+    "换版本后的重新运行",
+)
 # 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
 _RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
@@ -769,6 +779,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 上一次失败后 MAS 自己起的游戏 / 模拟器是否已关掉（关的时候报错也算：两个关闭
         # 函数不论成败都清掉 opened_*，下一轮会重新拉起），这时运行前设置要重跑
         client_reset = False
+        # 资源包加载失败后换了载荷、立刻再跑的那一次不计入尝试次数：日志里不给它编号，之后的
+        # 序号扣掉它，分母一律是用户配的 RunTimesLimit（用户配 3 次就是「x/3」）。
+        # ``index + 1`` 仍是内部序号（_record_attempt、_reset_client_for_retry 用）。
+        rerun_note: tuple[str, str] | None = None
+        previous_label = ""
         index = -1
         while True:
             # 不用 range：资源包加载失败后清理过载荷时额外再跑一次（_extra_attempts），上限会变。
@@ -781,14 +796,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if index > 0:
                 self._start_attempt_log()
 
-            self._append_log(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {index + 1}/{self._attempt_limit()}"
-            )
+            if rerun_note is not None:
+                header, current_label = rerun_note
+                self._append_log(f"用户 {self.cur_user_item.name} - {header}")
+                rerun_note = None
+            else:
+                ordinal = index + 1 - self._extra_attempts
+                self._append_log(
+                    f"用户 {self.cur_user_item.name} - 尝试次数: "
+                    f"{ordinal}/{self.script_config.Run.RunTimesLimit}"
+                )
+                current_label = f"第 {ordinal} 次"
             if index > 0 and previous_failure:
                 self._append_log(
-                    f"上一次（第 {index} 次）：{previous_failure}"
+                    f"上一次（{previous_label}）：{previous_failure}"
                     + ("，已重启游戏/模拟器" if previous_restarted else "")
                 )
+            previous_label = current_label
 
             try:
                 if index > 0:
@@ -928,9 +952,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if result.resourceFailure is not None:
                     # 不重启游戏 / 模拟器：资源加载失败不改变游戏状态，换载荷也不碰它们。
                     # 只有刚把载荷里的旧版本残留清掉、视图换过时立刻再跑一次（不占重试次数）。
-                    if await self._recover_resource_failure(
+                    rerun_note = await self._recover_resource_failure(
                         result.resourceFailure.kind
-                    ):
+                    )
+                    if rerun_note is not None:
                         self._extra_attempts += 1
                         previous_failure = message
                         previous_restarted = False
@@ -3021,9 +3046,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         return int(self.script_config.Run.RunTimesLimit or 0) + self._extra_attempts
 
-    async def _recover_resource_failure(self, kind: str) -> bool:
-        """资源包加载失败之后：返回 True 表示刚清掉了载荷里的旧版本残留、视图已换，该立刻再跑
-        一次；其余情况写一行停止原因、返回 False（不重试）。
+    async def _recover_resource_failure(self, kind: str) -> tuple[str, str] | None:
+        """资源包加载失败之后：视图刚换了载荷（清掉了旧版本残留，或经组同步换上了同组兄弟已
+        清理过的那份）就返回下一次的（开头那行, 称呼），该立刻再跑一次；其余情况写一行停止
+        原因、返回 None（不重试）。
 
         只有 MaaFramework 拒收资源包（``load_failed``）才核对：资源目录不在（``missing``）不是
         多了文件。每次运行只核对一次；开发者模式（跟随来源目录）以来源为准、不更新，不核对。
@@ -3031,7 +3057,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if kind != "load_failed" or self._release_check_done:
             self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
-            return False
+            return None
         self._release_check_done = True
         from .embedded_project import follow_source_enabled, shell_hint_from_report
 
@@ -3041,7 +3067,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 + _RESOURCE_FAILURE_STOP_MESSAGE,
                 warning=True,
             )
-            return False
+            return None
 
         import httpx
 
@@ -3079,17 +3105,24 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except asyncio.CancelledError:
             stop.set()
             raise
-        self._append_log(describe_outcome(outcome), warning=outcome.status != "cleaned")
-        if outcome.status in {"cleaned", "repointed"} and outcome.switched:
-            self._append_log("已换上清理后的版本，立即重新运行（不重启游戏/模拟器）")
-            return True
-        if outcome.status in {"cleaned", "repointed"}:
+        self._append_log(describe_outcome(outcome), warning=not outcome.switched)
+        cleaned = outcome.status in {"cleaned", "repointed"}
+        if outcome.switched:
+            # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本脚本经组同步换过来时，
+            # 核对的是换来的那份（status 是 verified / clean），旧视图里的残留照样没了。
+            self._append_log(
+                "已换上清理后的版本，立即重新运行（不重启游戏/模拟器）"
+                if cleaned
+                else "立即用换上的版本重新运行（不重启游戏/模拟器）"
+            )
+            return _RERUN_AFTER_CLEANUP if cleaned else _RERUN_AFTER_SWITCH
+        if cleaned:
             self._append_log(
                 "清理后的版本已准备好，但本脚本这次没能切换过去，下次运行前自动切换",
                 warning=True,
             )
         self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
-        return False
+        return None
 
     async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
         """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。

@@ -36,7 +36,8 @@ import threading
 import time
 import uuid
 import zipfile
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -110,6 +111,8 @@ RETRY_AFTER_SECONDS = 30 * 60
 RUN_CHECK_DEADLINE_SECONDS = 45.0
 # 导入时用户在界面上等着：硬时限短一些，超了照旧导入、留给运行时再查。
 IMPORT_CHECK_DEADLINE_SECONDS = 15.0
+# 导入时：线程里的时限到了之后，再等它收尾这么久（取消、关事件循环）。
+_JOIN_GRACE_SECONDS = 5.0
 # 单次请求：连接 5 s、读 8 s（GitHub API 由 ``_github_asset`` 自己的超时管）。
 HTTP_TIMEOUT = httpx.Timeout(8.0, connect=5.0)
 # 清单与报告里记下的残留路径最多几条。
@@ -127,6 +130,35 @@ class ReleaseListing:
     files: frozenset[str]
     resource_dirs: frozenset[str]
     transferred: int = 0
+
+
+class TreeGate:
+    """导入核对的后台线程读被核对的树（staging）只能从这道门过。
+
+    导入时核对放在守护线程里、硬时限：到点后调用方不再等，随即把 staging 改名成载荷目录。
+    线程里读树的那段（列大小、算投影白名单）夹在两段网络读取之间，什么时候走到说不准；
+    :meth:`close` 等正在读的那段读完再关门，之后线程再要读就抛 :class:`HealSkip`，所以
+    ``verify_tree`` 一返回，线程就再也碰不到 staging。
+
+    不用快照：算白名单要读的不只是大小（顶层条目、interface、按内容认外壳……随投影规则版本
+    变），照着抄一份元数据迟早漏；整棵复制或硬链接一份又要为每次导入多做一遍全树 I/O。读树
+    那段是纯本地操作，关门时最多等它几秒。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._closed = False
+
+    @contextmanager
+    def reading(self) -> Iterator[None]:
+        with self._lock:
+            if self._closed:
+                raise HealSkip("核对已放弃（超时），不再读取项目文件")
+            yield
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
 
 
 # --------------------------------------------------------------------------
@@ -159,10 +191,13 @@ def _listing_from_archive(
     version: str,
     project_root: Path | None,
     workdir: Path,
+    tree_gate: TreeGate | None = None,
 ) -> ReleaseListing:
     """按中央目录算发行包的文件表：与区间差量（``range_delta.open_range_delta``）同一套做法——
     在 ``workdir`` 下建空文件骨架（interface 及其 import 写真内容），叠在 ``project_root``（被
-    核对的那棵树）上用 ``package_projection_rules`` 算白名单，与整包落地时同一张表。"""
+    核对的那棵树）上用 ``package_projection_rules`` 算白名单，与整包落地时同一张表。
+
+    ``tree_gate``：读 ``project_root`` 的那段从这道门过（导入时，见 :class:`TreeGate`）。"""
 
     interface_rel, infos = package_entries(archive)
     try:
@@ -199,15 +234,19 @@ def _listing_from_archive(
         write_archive_skeleton(
             archive, interface_rel, infos, skeleton, directories=directories
         )
-        sizes = _local_sizes(project_root)
-        sizes.update({rel: info.file_size for rel, info in infos.items()})
-        try:
-            rules = package_projection_rules(
-                skeleton, project_root or skeleton, sizes=sizes
-            )
-        except ProjectionError as exc:
-            raise HealSkip(f"算不出发行包的投影白名单：{exc}", permanent=True) from exc
-        kept, _dropped = filter_package_entries(rules, candidates)
+        # 往下到算完白名单都在读被核对的树（纯本地）；骨架里要的条目上面已经从包里取齐了。
+        with tree_gate.reading() if tree_gate is not None else nullcontext():
+            sizes = _local_sizes(project_root)
+            sizes.update({rel: info.file_size for rel, info in infos.items()})
+            try:
+                rules = package_projection_rules(
+                    skeleton, project_root or skeleton, sizes=sizes
+                )
+            except ProjectionError as exc:
+                raise HealSkip(
+                    f"算不出发行包的投影白名单：{exc}", permanent=True
+                ) from exc
+            kept, _dropped = filter_package_entries(rules, candidates)
         plan = PackagePlan(
             package_type="full",
             package_root=skeleton,
@@ -293,12 +332,13 @@ async def fetch_release_listing(
     shell_hint: str = "",
     cache_root: Path | None = None,
     deadline: float | None = None,
+    tree_gate: TreeGate | None = None,
 ) -> ReleaseListing:
     """按 缓存的同版本完整包 → GitHub 发行包中央目录 的顺序取文件表；拿不到抛 :class:`HealSkip`。
 
     ``project_root``：被核对的那棵树（载荷目录或导入的 staging），白名单叠在它上面算（顶层条目
     的去留看大小，与整包落地时叠在旧载荷上同一口径）。``deadline``：``time.monotonic()`` 的截止
-    时刻，远端读取过了它就不再发请求。
+    时刻，远端读取过了它就不再发请求。``tree_gate``：见 :class:`TreeGate`。
     """
 
     if not str(version or "").strip():
@@ -308,6 +348,7 @@ async def fetch_release_listing(
         "version": version,
         "project_root": project_root,
         "workdir": workdir,
+        "tree_gate": tree_gate,
     }
     for cached in await asyncio.to_thread(
         _cached_packages, Path(cache_root or DEFAULT_CACHE_ROOT), version
@@ -505,11 +546,15 @@ def verify_tree(
 ) -> ReleaseVerdict:
     """导入时核对投影树 ``tree``（``files`` 是它的文件，项目根相对路径）：**同步、硬时限、从不
     抛异常**。核对放在一个守护线程里跑（它自己的事件循环），``timeout`` 到了不再等，结果记成
-    「超时」；那个线程最多再发一个请求就会因截止时刻停下，不碰 ``tree``（只读）。"""
+    「超时」；那个线程最多再发一个请求就会因截止时刻停下。
+
+    返回之后线程**绝不再碰** ``tree``：调用方紧接着就把它改名成载荷目录。线程读树都经
+    :class:`TreeGate`，放弃等待之前先关门（正在读的那段读完才关得上）。"""
 
     started = time.monotonic()
     box: dict[str, Any] = {}
     deadline = started + timeout
+    gate = TreeGate()
 
     async def run() -> ReleaseListing:
         return await asyncio.wait_for(
@@ -523,6 +568,7 @@ def verify_tree(
                 shell_hint=shell_hint,
                 cache_root=cache_root,
                 deadline=deadline,
+                tree_gate=gate,
             ),
             timeout=timeout,
         )
@@ -536,12 +582,18 @@ def verify_tree(
     worker = threading.Thread(target=target, name="maafw-release-check", daemon=True)
     worker.start()
     # 线程里的 wait_for 先到点；这里多等几秒收尾，再不回来就不等了。
-    worker.join(timeout + 5.0)
-    elapsed = time.monotonic() - started
+    worker.join(timeout + _JOIN_GRACE_SECONDS)
     if worker.is_alive():
+        # 不等了：先关门（线程正在读树就等它读完这一段），之后它碰不到 tree。
+        gate.close()
         return ReleaseVerdict(
-            RESULT_UNAVAILABLE, version, [], reason="核对超时", elapsed=elapsed
+            RESULT_UNAVAILABLE,
+            version,
+            [],
+            reason="核对超时",
+            elapsed=time.monotonic() - started,
         )
+    elapsed = time.monotonic() - started
     error = box.get("error")
     if error is not None:
         if not isinstance(error, HealSkip):
@@ -654,6 +706,10 @@ class CleanOutcome:
     ``clean``（核对过，没有残留）/ ``cleaned``（清掉残留并登记了新载荷）/ ``repointed``（别的
     渠道已清理过，本渠道的 latest 指过去）/ ``unavailable``（核对不了）/ ``failed``（建新载荷
     失败）。``switched`` 由宿主在切完视图后填。
+
+    ``update_cleans`` 也由宿主填：视图最后挂的载荷是导入来的（清单 ``source.kind`` 不是
+    ``update``）。只有这种载荷下次更新一律要全量包、会按 ``apply._import_origin_orphans``
+    清掉资源目录里的残留；更新得来的走差量包时只按删除表删，「下次更新会清掉」对它不成立。
     """
 
     def __init__(
@@ -679,6 +735,7 @@ class CleanOutcome:
         self.transferred = transferred
         self.elapsed = elapsed
         self.switched = False
+        self.update_cleans = False
 
     def __repr__(self) -> str:  # pragma: no cover - 调试用
         return (
@@ -930,6 +987,7 @@ __all__ = [
     "CleanOutcome",
     "ReleaseListing",
     "ReleaseVerdict",
+    "TreeGate",
     "check_and_clean",
     "check_due",
     "check_record",

@@ -127,13 +127,23 @@ def read_native_error_lines(path: Path) -> list[str]:
 
 def _parse_fields(message: str) -> dict[str, str]:
     """``key already exists [key=K]`` → ``{"key": "K"}``。值里允许出现 ``]``，以「``]`` 后面紧跟
-    空白 + ``[`` 或行尾」为界（节点名里带方括号的项目不少）。"""
+    空白 + ``[`` 或行尾」为界（节点名里带方括号的项目不少）。
+
+    行里最后一个字段取到行尾最后一个 ``]``：节点名里带「``] [``」（``[key=a] [b]``）时，按上面
+    的界会截成 ``a``；后面没有别的字段了，剩下的方括号只能是值的一部分。不是最后一个时照旧——
+    后面还有字段，分不清哪个 ``] [`` 是分界。"""
 
     fields: dict[str, str] = {}
-    for match in re.finditer(
-        r"\[(?P<name>[A-Za-z_]+)=(?P<value>.*?)\](?=\s*\[|\s*$)", message
-    ):
-        fields.setdefault(match["name"], match["value"])
+    matches = list(
+        re.finditer(r"\[(?P<name>[A-Za-z_]+)=(?P<value>.*?)\](?=\s*\[|\s*$)", message)
+    )
+    for position, match in enumerate(matches):
+        value = match["value"]
+        if position == len(matches) - 1:
+            closing = message.rstrip().rfind("]")
+            if closing >= match.end("value"):
+                value = message[match.start("value") : closing]
+        fields.setdefault(match["name"], value)
     return fields
 
 
