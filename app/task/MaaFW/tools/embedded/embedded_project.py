@@ -85,6 +85,12 @@ from app.task.MaaFW.tools.core.project_update.projection import (
     is_shared_path,
     read_json_object,
 )
+from app.task.MaaFW.tools.core.project_update.release_check import (
+    RECORD_ITEMS,
+    STAGE_IMPORT,
+    ReleaseVerdict,
+    verify_tree,
+)
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     EMBEDDED_PAYLOADS_DIR_NAME,
@@ -1427,6 +1433,143 @@ def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
     return seed
 
 
+# 导入报告 ``excludedReasons`` 里「不属于这一版官方发行包」的原因代码（与投影的原因代码同一张表）。
+NOT_IN_RELEASE_REASON = "not-in-release"
+# 报告与日志里最多列几个没导入的残留路径。
+_RELEASE_REPORT_ITEMS = 5
+
+
+def _shell_hint_from_families(families: Any) -> str:
+    """外壳家族 → 选 GitHub 发行包资产时的外壳提示（多个时按这个优先级取一个）。"""
+
+    if not isinstance(families, list):
+        return ""
+    present = {str(item).strip() for item in families}
+    for family in ("MXU", "MFAAvalonia", "MFW", "CFA", "MaaPiCli"):
+        if family in present:
+            return family
+    return ""
+
+
+def _script_proxy_url(script_config: Any) -> str | None:
+    """导入时核对发行包用的代理：与项目更新同一份解析（脚本级优先、留空跟随全局）。地址可能带
+    ``user:pw@``，不进日志；读不了就直连。"""
+
+    try:
+        from app.task.MaaFW.tools.embedded.update_credentials import (
+            resolve_update_proxy_url,
+        )
+
+        return resolve_update_proxy_url(script_config)
+    except Exception:  # noqa: BLE001 - 代理只影响核对，不挡导入
+        return None
+
+
+def _verify_import_release(
+    staging: Path,
+    *,
+    lineage: str,
+    version: str,
+    interface: Mapping[str, Any],
+    plan: ProjectionPlan,
+    proxy_url: str | None,
+    cache_root: Path | None,
+    base: Path | None,
+) -> ReleaseVerdict:
+    """导入时把投影出的 staging 与「来源 interface 版本」的官方发行包核对（来源目录本身不能当
+    依据：残留就在它里面），资源目录里不属于这一版的文件从 staging 摘掉、不进载荷。
+
+    尽力而为、硬时限（``release_check.IMPORT_CHECK_DEADLINE_SECONDS``，用户在界面上等着）：
+    核对不了照旧导入。staging 里的文件是新建的（或共用库的硬链接），摘掉只删目录项。
+    """
+
+    files: list[str] = []
+    for current, _dirs, names in os.walk(staging):
+        relative = Path(current).relative_to(staging)
+        files.extend((relative / name).as_posix() for name in names)
+    verdict = verify_tree(
+        staging,
+        files,
+        lineage=lineage,
+        version=version,
+        interface=interface,
+        workdir=_staging_root(base),
+        proxy_url=proxy_url,
+        shell_hint=_shell_hint_from_families(plan.report().get("shellFamilies")),
+        cache_root=cache_root,
+    )
+    for rel in verdict.removed:
+        payloads.remove_tree(staging / rel)
+    if verdict.status != "clean":
+        logger.info(
+            mask_home_path(
+                f"[MFW 内嵌] 导入时没能与{f' {version} 的' if version else ''}官方发行包核对资源文件"
+                f"（{verdict.reason}），照常导入，运行时资源加载失败会再核对"
+            )
+        )
+    elif verdict.removed:
+        logger.warning(
+            f"[MFW 内嵌] 导入时与 {version} 的官方发行包核对（{verdict.via}）：资源目录里有 "
+            f"{len(verdict.removed)} 个文件不属于这一版，不进副本: "
+            + ", ".join(verdict.removed[:RECORD_ITEMS])
+            + (" ..." if len(verdict.removed) > RECORD_ITEMS else "")
+        )
+    else:
+        logger.info(
+            f"[MFW 内嵌] 导入时与 {version} 的官方发行包核对（{verdict.via}，"
+            f"{verdict.elapsed:.1f} 秒）：资源目录里没有多余的文件"
+        )
+    return verdict
+
+
+def _report_release_verdict(
+    report: dict[str, Any], verdict: ReleaseVerdict, plan: ProjectionPlan
+) -> None:
+    """核对结果进导入报告：没导入的残留按原因 ``not-in-release`` 并进 ``excludedReasons`` /
+    ``excludedCount``（路径与投影排除的一样是来源相对路径），``warnings`` 里一句话；核对不了也
+    在 ``warnings`` 里说一句。另记一个内部键 ``releaseCheck``（API 模型不带它）。"""
+
+    from app.task.MaaFW.tools.core.project_update.projection import MAX_REPORT_ITEMS
+
+    report["releaseCheck"] = {
+        "result": verdict.status,
+        "version": verdict.version,
+        "via": verdict.via,
+        "removedCount": len(verdict.removed),
+        "removed": verdict.removed[:RECORD_ITEMS],
+        "reason": verdict.reason,
+    }
+    warnings = list(report.get("warnings") or [])
+    if verdict.status != "clean":
+        warnings.append(
+            f"没能与官方发行包核对资源文件（{verdict.reason}），已照常导入；"
+            "运行时资源加载失败会再核对"
+        )
+    elif verdict.removed:
+        shown = "、".join(verdict.removed[:_RELEASE_REPORT_ITEMS])
+        if len(verdict.removed) > _RELEASE_REPORT_ITEMS:
+            shown += " 等"
+        warnings.append(
+            f"资源目录里有 {len(verdict.removed)} 个文件不属于 {verdict.version} 的官方发行包"
+            f"（多半是旧版本留下的），没有导入：{shown}"
+        )
+        ours = {
+            (plan.rules.base_relative / rel).as_posix(): NOT_IN_RELEASE_REASON
+            for rel in verdict.removed
+        }
+        existing = dict(report.get("excludedReasons") or {})
+        merged = {
+            **ours,
+            **{key: value for key, value in existing.items() if key not in ours},
+        }
+        report["excludedCount"] = int(report.get("excludedCount") or 0) + len(ours)
+        report["excludedReasons"] = dict(list(merged.items())[:MAX_REPORT_ITEMS])
+        report["excludedTruncated"] = bool(report.get("excludedTruncated")) or (
+            len(merged) > MAX_REPORT_ITEMS
+        )
+    report["warnings"] = warnings
+
+
 def import_embedded_project(
     script_id: str,
     source_path: str | Path,
@@ -1436,8 +1579,16 @@ def import_embedded_project(
     channel: str = DEFAULT_CHANNEL,
     follow_source: bool = False,
     plan: ProjectionPlan | None = None,
+    proxy_url: str | None = None,
+    verify_release: bool = True,
+    release_cache_root: Path | None = None,
 ) -> dict[str, Any]:
     """来源目录 → 载荷（登记进脚本所在渠道的组）→ 视图切到组的 latest。
+
+    ``verify_release``（普通渠道才做；开发者模式与源码形态以来源目录为准，不做）：登记前把
+    投影出的资源文件与「来源 interface 版本」的官方发行包核对一次（:func:`_verify_import_release`，
+    尽力、硬时限，``proxy_url`` 是脚本的更新代理）。资源目录里不属于这一版的文件（旧版本残留）
+    不进载荷，导入报告里列出来；核对不了照旧导入，清单记「未核对」，留给运行时再查。
 
     返回值直接写进 ``Embedded.*``：``report`` / ``sourceVersion`` / ``importedAt`` /
     ``copyPath``（``sourceVersion`` 是用户选的那个目录的版本，不是切换后的组版本）。
@@ -1525,6 +1676,20 @@ def import_embedded_project(
         if not copy_is_healthy(staging):
             raise EmbeddedProjectError("投影结果里没有 interface.json，拒绝换入")
         source_version = read_interface_version(staging)
+        release_verdict = (
+            _verify_import_release(
+                staging,
+                lineage=lineage,
+                version=source_version,
+                interface=interface,
+                plan=plan,
+                proxy_url=proxy_url,
+                cache_root=release_cache_root,
+                base=base,
+            )
+            if verify_release and not follow_source
+            else None
+        )
         info = payloads.lineage_info_from_interface(interface)
         info["configClass"] = _config_class_name(staging)
         registered = payloads.register(
@@ -1547,6 +1712,11 @@ def import_embedded_project(
             },
             projection_revision=PROJECTION_REVISION,
             always_advance=follow_source,
+            release_check=(
+                release_verdict.record(STAGE_IMPORT)
+                if release_verdict is not None
+                else None
+            ),
         )
         payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:
@@ -1635,6 +1805,8 @@ def import_embedded_project(
         report["warnings"] = list(
             dict.fromkeys([*report["warnings"], *interface_load_warnings(loaded)])
         )
+    if release_verdict is not None:
+        _report_release_verdict(report, release_verdict, plan)
     report["sourcePath"] = str(source)
     report["copyPath"] = str(final_dir)
     # 与其它副本共用的文件（同内容只在磁盘上存一份）。
@@ -2669,7 +2841,13 @@ def _leave_follow_source(
             send_log,
             f"开发者模式已关闭：本机还没有「{channel}」渠道的版本，按来源目录正常导入一次",
         )
-        return import_embedded_project(script_id, source, base=base, channel=channel)
+        return import_embedded_project(
+            script_id,
+            source,
+            base=base,
+            channel=channel,
+            proxy_url=_script_proxy_url(script_config),
+        )
     _set_follow_source_record(view, None)
     _say(
         send_log,
@@ -2809,6 +2987,7 @@ def ensure_embedded_copy(
         base=base,
         channel=_script_channel(script_config),
         follow_source=follow_source_switch_on(script_config),
+        proxy_url=_script_proxy_url(script_config),
     )
 
 
@@ -3223,14 +3402,7 @@ def shell_hint_from_report(script_config: Any) -> str:
             return ""
     if not isinstance(report, dict):
         return ""
-    families = report.get("shellFamilies")
-    if not isinstance(families, list):
-        return ""
-    present = {str(item).strip() for item in families}
-    for family in ("MXU", "MFAAvalonia", "MFW", "CFA", "MaaPiCli"):
-        if family in present:
-            return family
-    return ""
+    return _shell_hint_from_families(report.get("shellFamilies"))
 
 
 __all__ = [

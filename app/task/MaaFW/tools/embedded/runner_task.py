@@ -120,7 +120,14 @@ from .project_logs import copy_project_log_delta, snapshot_project_logs
 from .project_path import (
     is_project_updating,
     release_project_path,
+    release_project_path_sync,
     try_reserve_project_path,
+)
+from .resource_failure import (
+    MAX_NATIVE_ERROR_LINES,
+    describe_resource_failure,
+    native_error_excerpt,
+    read_native_error_lines,
 )
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
@@ -226,6 +233,23 @@ _UNRETRYABLE_ENVIRONMENT_MARKERS = (
     # 拦下，这里兜住 worker 侧才发现的情况（异常与任务失败两条路都认）。
     *ARCHITECTURE_MISMATCH_MARKERS,
 )
+# 资源包加载失败（节点重名、JSON 写错、资源目录不在）：资源文件一次尝试到下一次不会自己变，
+# 重试只会原样再失败、还要白白重启游戏 / 模拟器。与上面的环境级失败分开说：不是运行环境的事。
+_RESOURCE_FAILURE_STOP_MESSAGE = (
+    "资源包加载失败，重试也不会有别的结果，已停止本轮（不再重启游戏/模拟器）"
+)
+# 资源包加载失败后换了载荷、立刻再跑的那一次：（开头那行，之后「上一次（…）」里的称呼）。
+# 不计入尝试次数，所以不编号。
+_RERUN_AFTER_CLEANUP = (
+    "已清理残留，立即重新运行（不计入尝试次数）",
+    "清理残留后的重新运行",
+)
+_RERUN_AFTER_SWITCH = (
+    "已换上同项目其他脚本在用的版本，立即重新运行（不计入尝试次数）",
+    "换版本后的重新运行",
+)
+# 用户点停止后，等核对 / 清理线程收尾的上限：到点就不等了，预约交给它完成后再放。
+_RELEASE_CHECK_CANCEL_GRACE_SECONDS = 30.0
 # worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
 # 只兜 worker 没能停下来的情况（原生层卡死、agent 自定义动作不返回）。
 _RUN_DEADLINE_GRACE_SECONDS = 90.0
@@ -486,6 +510,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
         # 失败摘要，直接记下来即可。
         self._attempt_reports: list[dict[str, Any]] = []
+        # 当前这次尝试给用户看的称呼（「第 2 次尝试」「清理残留后的重新运行」），与日志开头
+        # 那行同口径：通知的任务详情和失败截图标签用它，不用 _record_attempt 的内部序号——
+        # 清理后的重跑不计入尝试次数，内部序号会比日志多 1。
+        self._attempt_title: str | None = None
         self._history_temp = tempfile.TemporaryDirectory(prefix="mas-maafw-run-")
         self._history_attachments: dict[int, list[HistoryAttachmentInput]] = {}
         self._history_statuses: dict[int, HistoryStatus] = {}
@@ -539,6 +567,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._completed_this_run: list[str] = []
         # 已完成过、但在队列里有多份同名的任务名：重试时不剔、全部重跑，开头写一行说明
         self._retry_rerun_duplicates: list[str] = []
+        # 本次尝试收到的原生 ERR 行（worker stdout / stderr，``[json=`` 起已丢）与本次运行的
+        # 原生日志副本里的 ERR 行：资源包加载失败时据此说出具体原因，后者优先（见 resource_failure）。
+        self._stdout_native_errors: list[str] = []
+        self._attempt_native_errors: list[str] = []
+        # 资源包加载失败后的发行包核对每个用户每次运行只做一次；清理过就额外再跑一次（不占重试
+        # 次数），``_extra_attempts`` 记多出来的几次。
+        self._release_check_done = False
+        self._extra_attempts = 0
+        self._release_check_task: asyncio.Task[Any] | None = None
 
     async def check(self) -> str:
         proxy_times = (
@@ -750,8 +787,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 上一次失败后 MAS 自己起的游戏 / 模拟器是否已关掉（关的时候报错也算：两个关闭
         # 函数不论成败都清掉 opened_*，下一轮会重新拉起），这时运行前设置要重跑
         client_reset = False
-        for index in range(self.script_config.Run.RunTimesLimit):
-            if self.run_complete:
+        # 资源包加载失败后换了载荷、立刻再跑的那一次不计入尝试次数：日志里不给它编号，之后的
+        # 序号扣掉它，分母一律是用户配的 RunTimesLimit（用户配 3 次就是「x/3」）。
+        # ``index + 1`` 仍是内部序号（_record_attempt、_reset_client_for_retry 用）。
+        rerun_note: tuple[str, str] | None = None
+        previous_label = ""
+        index = -1
+        while True:
+            # 不用 range：资源包加载失败后清理过载荷时额外再跑一次（_extra_attempts），上限会变。
+            index += 1
+            if index >= self._attempt_limit() or self.run_complete:
                 break
 
             # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
@@ -759,14 +804,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if index > 0:
                 self._start_attempt_log()
 
-            self._append_log(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {index + 1}/{self.script_config.Run.RunTimesLimit}"
-            )
+            if rerun_note is not None:
+                header, current_label = rerun_note
+                self._append_log(f"用户 {self.cur_user_item.name} - {header}")
+                rerun_note = None
+                self._attempt_title = current_label
+            else:
+                ordinal = index + 1 - self._extra_attempts
+                self._append_log(
+                    f"用户 {self.cur_user_item.name} - 尝试次数: "
+                    f"{ordinal}/{self.script_config.Run.RunTimesLimit}"
+                )
+                current_label = f"第 {ordinal} 次"
+                self._attempt_title = f"{current_label}尝试"
             if index > 0 and previous_failure:
                 self._append_log(
-                    f"上一次（第 {index} 次）：{previous_failure}"
+                    f"上一次（{previous_label}）：{previous_failure}"
                     + ("，已重启游戏/模拟器" if previous_restarted else "")
                 )
+            previous_label = current_label
 
             try:
                 if index > 0:
@@ -854,7 +910,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log("MaaFW 任务完成: " + ", ".join(completed_task_labels))
                 self._record_attempt(index + 1, completed_task_labels, None)
             else:
-                if result.timedOut:
+                if result.resourceFailure is not None:
+                    # 资源包没能加载：原因只在原生 ERR 行里，换成一句人话（取不到才保留
+                    # 「详见 .maafw.log」）。
+                    message = await asyncio.to_thread(
+                        describe_resource_failure,
+                        result.resourceFailure.kind,
+                        result.resourceFailure.path,
+                        self._attempt_native_errors,
+                        project_root=self.project_path,
+                        secrets=self._secret_log_variants(),
+                    )
+                elif result.timedOut:
                     message = self._timed_out_user_summary(result)
                 else:
                     message = _failed_task_user_summary(result, self.run_plan)
@@ -892,6 +959,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         for shot in result.failureScreenshots
                     ],
                 )
+                if result.resourceFailure is not None:
+                    # 不重启游戏 / 模拟器：资源加载失败不改变游戏状态，换载荷也不碰它们。
+                    # 只有刚把载荷里的旧版本残留清掉、视图换过时立刻再跑一次（不占重试次数）。
+                    rerun_note = await self._recover_resource_failure(
+                        result.resourceFailure.kind
+                    )
+                    if rerun_note is not None:
+                        self._extra_attempts += 1
+                        previous_failure = message
+                        previous_restarted = False
+                        client_reset = False
+                        continue
+                    break
                 if _is_unretryable_failure(result.errorMessage or ""):
                     # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
                     # 不再为它起停模拟器 / 游戏重试。
@@ -1923,6 +2003,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 密码字段（PI v2.10.0）的原文会随 override 进原生日志与 worker 输出：复制、转发、
         # 摘录失败原因前都换成占位（协议要求不得把原文写进日志）。
         secrets = self._secret_log_variants()
+        self._stdout_native_errors = []
+        self._attempt_native_errors = []
         prepare_cancel_event = threading.Event()
         # 与运行前更新 / 预检同一份解析：脚本级 Update.ProxyAddress 优先，留空跟随
         # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
@@ -2094,6 +2176,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if event is None:
                     line = redact_secret_text(line, secrets)
                     write_framework_log("worker-stdout", line)
+                    self._note_native_error(line)
                     if _should_forward_framework_log(line):
                         self._append_log(_framework_ui_message(line))
                     continue
@@ -2136,6 +2219,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     continue
                 line = redact_secret_text(line, secrets)
                 write_framework_log("worker-stderr", line)
+                self._note_native_error(line)
                 stderr_lines.append(line)
                 del stderr_lines[:-20]
 
@@ -2187,6 +2271,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             else:
                 if copied:
                     self._append_log(f"MaaFW 原生日志已保存: {native_log_path}")
+            # 资源包加载失败时找原因用：原生日志副本是 UTF-8、已打码，优先用它；worker stdout
+            # 里同一行按控制台代码页转过，非 ASCII 的节点名 / 路径可能已成了「?」。
+            native_errors = (
+                await asyncio.to_thread(read_native_error_lines, native_log_path)
+                if native_log_path.is_file()
+                else []
+            )
+            self._attempt_native_errors = native_errors or list(
+                self._stdout_native_errors
+            )
             # 项目自己写的日志本次新增的部分：与 .maafw.log 同目录同前缀，按脚本全部用户的密码打码。
             project_log_path = history_dir / f"{history_stamp}.project.log"
             try:
@@ -2253,6 +2347,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 ": MaaFW worker 未返回任务结果，完整输出已保存到本次运行的 .worker.log"
             )
         raise RuntimeError(message)
+
+    def _note_native_error(self, line: str) -> None:
+        """worker 转来的一行是原生 ERR 行就留下（``[json=`` 起丢掉、有条数上限）；续行不要。"""
+
+        excerpt = native_error_excerpt(line)
+        if excerpt is None:
+            return
+        self._stdout_native_errors.append(excerpt)
+        del self._stdout_native_errors[:-MAX_NATIVE_ERROR_LINES]
 
     def _run_password_values(self) -> list[str]:
         """本次运行要打码的密码值：计划里 password 字段的值 + 该用户快照里全部密文解开的值
@@ -2980,6 +3083,98 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("游戏窗口前置失败，将继续启动 MaaFW 任务")
 
+    def _attempt_limit(self) -> int:
+        """本用户这次运行最多跑几次：``Run.RunTimesLimit``，加上清理残留后额外的重跑。"""
+
+        return int(self.script_config.Run.RunTimesLimit or 0) + self._extra_attempts
+
+    async def _recover_resource_failure(self, kind: str) -> tuple[str, str] | None:
+        """资源包加载失败之后：视图刚换了载荷（清掉了旧版本残留，或经组同步换上了同组兄弟已
+        清理过的那份）就返回下一次的（开头那行, 称呼），该立刻再跑一次；其余情况写一行停止
+        原因、返回 None（不重试）。
+
+        只有 MaaFramework 拒收资源包（``load_failed``）才核对：资源目录不在（``missing``）不是
+        多了文件。每次运行只核对一次；开发者模式（跟随来源目录）以来源为准、不更新，不核对。
+        """
+
+        if kind != "load_failed" or self._release_check_done:
+            self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
+            return None
+        self._release_check_done = True
+        from .embedded_project import follow_source_enabled, shell_hint_from_report
+
+        if follow_source_enabled(self.script_config):
+            self._append_log(
+                "开发者模式（跟随来源目录）以来源目录为准，不与官方发行包核对；"
+                + _RESOURCE_FAILURE_STOP_MESSAGE,
+                warning=True,
+            )
+            return None
+
+        import httpx
+
+        from .update_credentials import resolve_update_credentials
+        from .view_release_check import (
+            check_view_release,
+            describe_outcome,
+            release_group_members,
+        )
+
+        script_id = str(self.script_info.script_id)
+        proxy_url = resolve_update_proxy_url(self.script_config)
+        try:
+            proxy = httpx.Proxy(proxy_url) if proxy_url else None
+        except Exception:  # noqa: BLE001 - 代理填错按直连，地址不进日志
+            proxy = None
+        stop = threading.Event()
+        task = asyncio.create_task(
+            check_view_release(
+                script_id,
+                channel=resolve_update_credentials(self.script_config).channel,
+                members=lambda: release_group_members(script_id),
+                send_log=self._append_log,
+                proxy=proxy,
+                shell_hint=shell_hint_from_report(self.script_config),
+                script_name=str(self.script_info.name or ""),
+                cancel_event=stop,
+            )
+        )
+        # 核对 / 清理 / 切视图都在工作线程里改载荷与视图：用户这时点停止，得等它收尾再放预约
+        # （_release_project_path 会等这个任务），否则编辑页的导入、手动更新能同时动同一棵视图。
+        self._release_check_task = task
+        try:
+            outcome = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            stop.set()
+            raise
+        self._append_log(describe_outcome(outcome), warning=not outcome.switched)
+        cleaned = outcome.status in {"cleaned", "repointed"}
+        if outcome.switched and outcome.version_changed:
+            # 等锁那几秒里组被推到了新版本、视图跟着换了：本次的 interface 与运行计划是按旧
+            # 版本建的，不能拿来跑新版本。停下，下次运行前按新版本重做检查。
+            self._append_log(
+                f"本脚本已换到 {outcome.version or '新版本'}，这一轮不再重新运行，"
+                "下次运行会按新版本重新准备",
+                warning=True,
+            )
+            return None
+        if outcome.switched:
+            # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本脚本经组同步换过来时，
+            # 核对的是换来的那份（status 是 verified / clean），旧视图里的残留照样没了。
+            self._append_log(
+                "已换上清理后的版本，立即重新运行（不重启游戏/模拟器）"
+                if cleaned
+                else "立即用换上的版本重新运行（不重启游戏/模拟器）"
+            )
+            return _RERUN_AFTER_CLEANUP if cleaned else _RERUN_AFTER_SWITCH
+        if cleaned:
+            self._append_log(
+                "清理后的版本已准备好，但本脚本这次没能切换过去，下次运行前自动切换",
+                warning=True,
+            )
+        self._append_log(_RESOURCE_FAILURE_STOP_MESSAGE, warning=True)
+        return None
+
     async def _reset_client_for_retry(self, attempt: int) -> tuple[bool, bool]:
         """重试前关掉 MAS 自己起的客户端，返回（是否全部关成, 是否已不在）。
 
@@ -3003,7 +3198,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         该关的有一个没关成就是 False，下一轮日志开头不写「已重启」。
         """
 
-        if attempt >= self.script_config.Run.RunTimesLimit:
+        if attempt >= self._attempt_limit():
             return False
         if not self.opened_game and not self.opened_emulator:
             return False
@@ -3151,6 +3346,27 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _release_project_path(self) -> None:
         if self.project_lock_key is None:
             return
+        pending = self._release_check_task
+        if pending is not None and not pending.done():
+            # 资源加载失败后的核对 / 清理还在工作线程里改视图（用户停止时）：等它收尾，等不到就
+            # 把释放交给它的完成回调，预约不能先放。
+            with suppress(BaseException):
+                await asyncio.wait_for(
+                    asyncio.shield(pending),
+                    timeout=_RELEASE_CHECK_CANCEL_GRACE_SECONDS,
+                )
+            if not pending.done():
+                key = self.project_lock_key
+                self.project_lock_key = None
+
+                def _release_later(task: asyncio.Task[Any]) -> None:
+                    # 顺手取走异常，免得报「never retrieved」（同 manager 的 _release_after_work）
+                    if not task.cancelled():
+                        task.exception()
+                    release_project_path_sync(key)
+
+                pending.add_done_callback(_release_later)
+                return
         await release_project_path(self.project_lock_key)
         self.project_lock_key = None
 
@@ -3274,6 +3490,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._attempt_reports.append(
             {
                 "attempt": attempt,
+                "title": self._attempt_title or f"第 {attempt} 次尝试",
                 "time": datetime.now().strftime("%H:%M:%S"),
                 "completed": list(completed_labels),
                 "failure": failure,
@@ -3293,7 +3510,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         shots: list[tuple[str, Path]] = []
         for report in self._attempt_reports:
             for label, path in report.get("screenshots", ()):
-                shots.append((f"第 {report['attempt']} 次尝试 · {label}", path))
+                shots.append((f"{report['title']} · {label}", path))
         return shots
 
     def report_screenshots(self) -> list[tuple[str, bytes]]:
@@ -3353,9 +3570,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         blocks = []
         for report in self._attempt_reports:
             blocks.append(
-                f"第 {report['attempt']} 次尝试（{report['time']}）"
-                + "\n"
-                + block(report)
+                f"{report['title']}（{report['time']}）" + "\n" + block(report)
             )
         return ("\n\n").join(blocks)
 

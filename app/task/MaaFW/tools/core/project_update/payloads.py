@@ -84,6 +84,11 @@ PAYLOAD_STRIP_ROOT_DIRS = frozenset({"debug", "logs", "temp", ".pycache"})
 PROJECTION_REVISION_FIELD = "projectionRevision"
 PROJECTION_CHECK_FIELD = "projectionCheck"
 PROJECTION_CHECK_CLEAN = "clean"
+# 载荷与同版本官方发行包核对的结果（``release_check`` 写；导入时与资源加载失败时各查一次）：
+# ``result=clean`` 是「核对过、资源目录里没有不属于这一版的文件」——导入时清掉了的、运行时
+# 清理后重建的新载荷也记 clean；被清理的旧载荷记 ``stale`` 并指向清理后的那份（``cleanedTo``）。
+RELEASE_CHECK_FIELD = "releaseCheck"
+RELEASE_CHECK_CLEAN = "clean"
 # 脚本私有渠道（开发者模式「跟随来源目录」）：``dev:<视图名>``，组里只有那一个脚本。登记时
 # 由调用方显式 ``always_advance``；同版本重定 latest 时不参与、也不参选普通渠道。
 PRIVATE_CHANNEL_PREFIX = "dev:"
@@ -460,6 +465,36 @@ def projection_revision_of(manifest: Mapping[str, Any] | None) -> int:
         else 0
     )
     return max(explicit, checked)
+
+
+def release_verified(manifest: Mapping[str, Any] | None) -> bool:
+    """这份载荷已与同版本的官方发行包核对过、资源目录里没有多余的文件（``releaseCheck``）。
+
+    记录里的版本与清单版本不同的不算（记录只对它核对的那一版有效）。
+    """
+
+    manifest = manifest or {}
+    record = manifest.get(RELEASE_CHECK_FIELD)
+    if not isinstance(record, Mapping):
+        return False
+    if str(record.get("result") or "") != RELEASE_CHECK_CLEAN:
+        return False
+    recorded = str(record.get("version") or "").strip().lstrip("vV")
+    return recorded == str(manifest.get("version") or "").strip().lstrip("vV")
+
+
+def release_settled(manifest: Mapping[str, Any] | None) -> bool:
+    """这份载荷的文件集合可以当成官方发行包的：核对过（:func:`release_verified`），或本来就是
+    更新得来的（``source.kind=update``，含区间差量 ``mode=range``——整包 / 差量 / 区间都按发行包
+    精确投影，没有导入目录带进来的东西）。
+
+    同版本例外三与 :func:`_same_version_rank` 都按它判 latest：更新得来的原版不能被一份「核对
+    过」的导入顶掉——核对只比多余的文件、不比内容，本地改过的导入照样核对得过。
+    """
+
+    if release_verified(manifest):
+        return True
+    return str(((manifest or {}).get("source") or {}).get("kind") or "") == "update"
 
 
 def inherited_projection_revision(
@@ -1002,6 +1037,7 @@ def register(
     always_advance: bool = False,
     version_checked: bool = False,
     misnumbered_rollback: bool = False,
+    release_check: Mapping[str, Any] | None = None,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -1015,6 +1051,12 @@ def register(
       （见 :func:`_replaces_unloadable_latest`），换成这份。
     - 同版本例外二：这份按更新的投影规则建（``projection_revision`` 比 latest 的有效规则
       版本高，见 :func:`_replaces_older_projection_latest`），换成这份。
+    - 同版本例外三：这份已与官方发行包核对过、latest 是导入来的又没核对过（见
+      :func:`_replaces_unverified_latest`；更新得来的 latest 视同核对过），换成这份——资源
+      目录里留着旧版本文件的 latest 靠它被同版本的重新导入或运行时清理顶掉。
+
+    ``release_check``：这份载荷与官方发行包的核对记录，写进清单的 ``releaseCheck``（同 id
+    已存在时，这份核对过而既有的没有才补上）。
 
     ``projection_revision``：这份载荷按哪版投影规则算完整，记进清单；0 不记（旧规则）。
 
@@ -1070,6 +1112,8 @@ def register(
     }
     if projection_revision:
         manifest[PROJECTION_REVISION_FIELD] = int(projection_revision)
+    if release_check:
+        manifest[RELEASE_CHECK_FIELD] = dict(release_check)
 
     target = payload_dir(root, lineage, payload_id)
     manifest_file = manifest_path(root, lineage, payload_id)
@@ -1102,6 +1146,16 @@ def register(
             ):
                 # 同一份内容按新规则又建出了一遍：它本来就是完整的，记上。
                 merged[PROJECTION_REVISION_FIELD] = int(projection_revision)
+                changed = True
+            if (
+                release_check
+                and release_verified(
+                    {"version": version, RELEASE_CHECK_FIELD: release_check}
+                )
+                and not release_verified(existing)
+            ):
+                # 同一份内容这次核对过发行包：记上（下面的同版本例外三据此判断）。
+                merged[RELEASE_CHECK_FIELD] = dict(release_check)
                 changed = True
             if changed:
                 merged["files"] = merged_files
@@ -1145,6 +1199,9 @@ def register(
                     if version_checked
                     else _version_strictly_newer(version, current_version)
                 )
+                latest_manifest = _read_json(
+                    manifest_path(root, lineage, str(current_latest["id"]))
+                )
                 advanced = (
                     newer
                     or (
@@ -1158,9 +1215,15 @@ def register(
                         same_version=same_version,
                     )
                     or _replaces_older_projection_latest(
-                        _read_json(
-                            manifest_path(root, lineage, str(current_latest["id"]))
-                        ),
+                        latest_manifest,
+                        manifest,
+                        latest_dir=latest_dir,
+                        candidate_dir=target,
+                        same_id=same_id,
+                        same_version=same_version,
+                    )
+                    or _replaces_unverified_latest(
+                        latest_manifest,
                         manifest,
                         latest_dir=latest_dir,
                         candidate_dir=target,
@@ -1272,16 +1335,58 @@ def _replaces_older_projection_latest(
     )
 
 
+def _replaces_unverified_latest(
+    latest_manifest: Mapping[str, Any] | None,
+    candidate_manifest: Mapping[str, Any],
+    *,
+    latest_dir: Path,
+    candidate_dir: Path,
+    same_id: bool,
+    same_version: bool,
+) -> bool:
+    """同版本重新登记时，核对过官方发行包的这份该不该顶替没核对过的 latest。
+
+    导入目录里留着旧版本文件（被新包覆盖过的解压目录）时，登记出的载荷资源目录里多了
+    新版本已删掉的 pipeline，节点重名让 MaaFramework 整包拒收；同版本重新导入以前顶不掉
+    它，只能等项目出下一版。核对过（:func:`release_verified`：清掉了残留，或核对后本来就没有）
+    而 latest 是导入来的、又没核对过（:func:`release_settled` 为假）才换：更新得来的 latest
+    就是发行包的精确投影，视同核对过——核对不比内容，本地改过的导入不能顶掉原版。
+    与 :func:`_same_version_rank` 同一口径：规则版本不能比 latest 低（否则迁移时会按规则版本
+    又换回去），也不能是「本机加载不了换掉能加载的」。
+    """
+
+    if same_id or not same_version or latest_manifest is None:
+        return False
+    if not release_verified(candidate_manifest) or release_settled(latest_manifest):
+        return False
+    if projection_revision_of(candidate_manifest) < projection_revision_of(
+        latest_manifest
+    ):
+        return False
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_runtime_loadable_on_host,
+    )
+
+    return not (
+        project_runtime_loadable_on_host(candidate_dir) is False
+        and project_runtime_loadable_on_host(latest_dir) is not False
+    )
+
+
 def _same_version_rank(
     candidate: str, manifests: Mapping[str, Mapping[str, Any]]
-) -> tuple[int, int, int, int, int]:
+) -> tuple[int, int, int, int, int, int]:
     """同版本多份载荷里挑谁当 latest 的排序键（越大越好；最后按 id 字典序兜底）。
 
     1. 按更新的投影规则建的优先（:func:`projection_revision_of`，与登记时的同版本例外
        同一口径，免得迁移又把补齐过的换回旧的）；
-    2. ``source.kind=update``（有更新器清单背书）优先；
-    3. 文件集合是其它几份的超集的优先（超过几份就记几分）；
-    4. 文件数多、总字节大的优先。
+    2. 文件集合可以当成发行包的优先（:func:`release_settled`：核对过，或更新得来的；与登记
+       时的同版本例外三同一口径：清掉残留的那份文件更少、又是被清理那份的子集，排在下面
+       几条之前才不会被换回去）；
+    3. ``source.kind=update``（有更新器清单背书）优先——核对过的导入与更新得来的原版并列
+       第 2 条时由这一条定，原版不会被可能本地改过的导入换掉；
+    4. 文件集合是其它几份的超集的优先（超过几份就记几分）；
+    5. 文件数多、总字节大的优先。
     与登记顺序无关——迁移时登记顺序就是脚本列表顺序，用户拖一下就会变。
     """
 
@@ -1299,6 +1404,7 @@ def _same_version_rank(
     total = sum(int(entry.get("size") or 0) for entry in files.values())
     return (
         projection_revision_of(manifest),
+        int(release_settled(manifest)),
         is_update,
         supersets,
         len(files),
@@ -1469,6 +1575,8 @@ __all__ = [
     "PROJECTION_CHECK_CLEAN",
     "PROJECTION_CHECK_FIELD",
     "PROJECTION_REVISION_FIELD",
+    "RELEASE_CHECK_CLEAN",
+    "RELEASE_CHECK_FIELD",
     "FinalizeResult",
     "PackageBuild",
     "PayloadError",
@@ -1509,6 +1617,8 @@ __all__ = [
     "read_manifest",
     "read_project_interface",
     "register",
+    "release_settled",
+    "release_verified",
     "remove_tree",
     "version_newer",
     "write_json_atomic",
