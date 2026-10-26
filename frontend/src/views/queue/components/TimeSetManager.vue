@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="t('queue.time.cardTitle')" class="time-set-card">
+  <a-card :title="t('queue.time.cardTitle')" class="queue-manager-card time-set-card">
     <template #extra>
       <a-space>
         <a-button
@@ -402,46 +402,14 @@ const onDragEnd = async (evt: any) => {
 }
 </script>
 
+<style scoped src="./queueManager.css"></style>
+
 <style scoped>
-.time-set-card {
-  margin-bottom: 24px;
-}
-
-.time-set-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-/* 操作按钮布局 */
-:deep(.ant-btn) {
-  min-width: auto;
-  height: 32px;
-  padding: 0 8px;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-:deep(.ant-space) {
-  gap: 6px !important;
-}
-
-:deep(.ant-space-item) {
-  margin-right: 6px !important;
-}
-
-/* 按钮图标样式调整 */
-:deep(.ant-btn .anticon) {
-  font-size: 14px;
-}
-
-/* 操作按钮布局 */
-:deep(.ant-btn) {
-  min-width: auto;
-  height: 32px;
+.time-set-card :deep(.ant-btn) {
   padding: 0 12px;
 }
 
-:deep(.ant-space-item) {
+.time-set-card :deep(.ant-space-item) {
   margin-right: 8px !important;
 }
 

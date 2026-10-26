@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="t('queue.item.cardTitle')" class="queue-item-card">
+  <a-card :title="t('queue.item.cardTitle')" class="queue-manager-card queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
@@ -527,36 +527,15 @@ onMounted(() => {
 })
 </script>
 
+<style scoped src="./queueManager.css"></style>
+
 <style scoped>
-.queue-item-card {
-  margin-bottom: 24px;
-}
-
-.queue-item-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-/* 操作按钮布局 */
-:deep(.ant-btn) {
-  min-width: auto;
-  height: 32px;
+.queue-item-card :deep(.ant-btn) {
   padding: 0 8px;
-  font-size: 14px;
-  line-height: 1.5;
 }
 
-:deep(.ant-space) {
-  gap: 6px !important;
-}
-
-:deep(.ant-space-item) {
+.queue-item-card :deep(.ant-space-item) {
   margin-right: 6px !important;
-}
-
-/* 按钮图标样式调整 */
-:deep(.ant-btn .anticon) {
-  font-size: 14px;
 }
 
 /* 队列项列表样式 */
