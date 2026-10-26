@@ -219,7 +219,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `auto_battle.jsonc`）。导入（普通渠道，`embedded_project._verify_import_release`，硬时限、核对不了照旧
   导入）与运行时资源包加载失败（`runner_task._recover_resource_failure` → `view_release_check`，每次运行
   一次）各核对一次：依据是缓存的同版本完整包 → GitHub 资产中央目录（Range），残留口径同
-  `apply._import_origin_orphans`，另算控制器的 `attach_resource_path`。导入时残留不进载荷、进报告
+  `apply._import_origin_orphans`（资源目录含控制器的 `attach_resource_path`）。导入时残留不进载荷、进报告
   `excludedReasons`（原因 `not-in-release`）；运行时建「旧载荷减残留」的同版本载荷、顶替 latest、切视图，
   然后不重启游戏 / 模拟器立刻再跑一次（不占重试次数）。结果记在清单 `releaseCheck`。资源包加载失败
   （`MaaFWRunResult.resourceFailure`）一律不重试，消息按原生 ERR 行说出原因（`resource_failure.py`，
@@ -577,7 +577,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
   不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
   同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
-  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰），
+  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：资源目录是 `resource[].path` 加控制器的
+  `attach_resource_path`——MAA_Punish 的 `resource/pgr_win32` 只挂在后者上，漏算时上游删掉的 pipeline
+  永远清不掉；用户内容目录与运行时目录不碰），
   再加上 `origin=import`、在被新包淘汰的外壳原生库位置上、不在包内的
   （`projection.abandoned_native_runtime_files`）：位置只有顶层 `maafw/`、`runtimes/<rid>/native`、
   `runtimes/<rid>` 与包根上的 MaaFramework 原生库，新包在某处带主库、旧的另一处也有主库而新包那处没有，

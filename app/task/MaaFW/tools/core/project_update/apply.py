@@ -342,15 +342,37 @@ def _package_resource_directories(
         return set()
     if not isinstance(data, Mapping):
         return set()
-    entries = data.get("resource")
-    if not isinstance(entries, list):
-        return set()
 
     directories: set[str] = set()
-    for entry in entries:
+    entries = data.get("resource")
+    for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, Mapping):
             continue
         raw = entry.get("path")
+        for candidate in raw if isinstance(raw, list) else [raw]:
+            directory = _declared_directory(candidate)
+            if directory is not None:
+                directories.add(directory)
+    return directories | _attached_resource_directories(data)
+
+
+def _attached_resource_directories(interface: Mapping[str, Any]) -> set[str]:
+    """控制器的 ``attach_resource_path``（PI v2）：MaaFramework 同样当资源包加载的目录。
+
+    只看 ``resource[].path`` 会漏掉它：MAA_Punish v3.12.7 的 ``resource/pgr_win32`` 正是挂在
+    Win32 控制器的 ``attach_resource_path`` 上（2026-10-26 对真包核实），上游删掉的
+    ``pgr_win32/pipeline/auto_battle.jsonc`` 在全量更新里一直清不掉，节点重名让整包拒收。
+    写法与投影（``projection`` 的 ``attach_resource_path`` / ``attachResourcePath``）同一口径。
+    """
+
+    directories: set[str] = set()
+    controllers = interface.get("controller")
+    for controller in controllers if isinstance(controllers, list) else []:
+        if not isinstance(controller, Mapping):
+            continue
+        raw = controller.get("attach_resource_path")
+        if raw is None:
+            raw = controller.get("attachResourcePath")
         for candidate in raw if isinstance(raw, list) else [raw]:
             directory = _declared_directory(candidate)
             if directory is not None:

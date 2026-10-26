@@ -14,7 +14,7 @@
 2. **残留的口径**与全量更新清 ``origin=import`` 残留同一条（``apply._import_origin_orphans``）：
    发行包按投影白名单留下的文件（``package_projection_rules`` + ``filter_package_entries``，与整包
    落地同一张表）、新 interface 声明且包里确实铺了文件的资源目录（``resource[].path`` 之外还算
-   控制器的 ``attach_resource_path``——这一条全量更新目前不算，见 :func:`_attached_resource_directories`）、
+   控制器的 ``attach_resource_path``，见 ``apply._attached_resource_directories``）、
    跳过 ``.auto_mas*`` 与字节码；
    调用方再与 ``origin=import`` 取交集。路径大小写不敏感地比（漏判比误删好：误删的是项目自己的
    资源文件，又没有新包补上）。
@@ -47,7 +47,6 @@ import httpx
 
 from .apply import (
     PackagePlan,
-    _declared_directory,
     _is_bytecode_artifact,
     _package_resource_directories,
 )
@@ -152,30 +151,6 @@ def _local_sizes(directory: Path | None) -> dict[str, int]:
     return local_sizes(directory) if directory is not None else {}
 
 
-def _attached_resource_directories(interface: Mapping[str, Any]) -> set[str]:
-    """控制器的 ``attach_resource_path``（PI v2）：MaaFramework 同样当资源包加载的目录。
-
-    ``apply._package_resource_directories`` 只看 ``resource[].path``；MAA_Punish v3.12.7 的
-    ``resource/pgr_win32`` 正是挂在 Win32 控制器的 ``attach_resource_path`` 上（2026-10-26 对真包
-    核实），节点重名就出在这里，不算进来就核对了个寂寞。写法与投影（``projection`` 的
-    ``attach_resource_path`` / ``attachResourcePath``）同一口径。
-    """
-
-    directories: set[str] = set()
-    controllers = interface.get("controller")
-    for controller in controllers if isinstance(controllers, list) else []:
-        if not isinstance(controller, Mapping):
-            continue
-        raw = controller.get("attach_resource_path")
-        if raw is None:
-            raw = controller.get("attachResourcePath")
-        for candidate in raw if isinstance(raw, list) else [raw]:
-            directory = _declared_directory(candidate)
-            if directory is not None:
-                directories.add(directory)
-    return directories
-
-
 def _listing_from_archive(
     archive: zipfile.ZipFile,
     via: str,
@@ -241,7 +216,6 @@ def _listing_from_archive(
             deleted=(),
         )
         declared = _package_resource_directories(plan, notes.append)
-        declared |= _attached_resource_directories(data)
     finally:
         try:
             remove_tree(skeleton)
