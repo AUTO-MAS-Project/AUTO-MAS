@@ -440,6 +440,102 @@ export class GetService {
         });
     }
     /**
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询用户
+     * @param requestBody
+     * @returns UserGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserApiScriptsUserGetPost(
+        requestBody: UserGetIn,
+    ): CancelablePromise<UserGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取用户配置目录
+     * @param requestBody
+     * @returns UserConfigDirOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserConfigDirApiScriptsUserConfigDirPost(
+        requestBody: UserConfigDirIn,
+    ): CancelablePromise<UserConfigDirOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/config-dir',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 webhook 配置
+     * @param requestBody
+     * @returns WebhookGetOut_Webhook_ Successful Response
+     * @throws ApiError
+     */
+    public static getWebhookApiScriptsWebhookGetPost(
+        requestBody: WebhookGetIn,
+    ): CancelablePromise<WebhookGetOut_Webhook_> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询脚本生效的 Mirror 酱 CDK 状态
+     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
+     * @param requestBody
+     * @returns ScriptMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
+        requestBody: ScriptMirrorCdkIn,
+    ): CancelablePromise<ScriptMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 解码鸣潮启动器，返回客户端 exe 路径
      * 解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
      *
@@ -486,25 +582,6 @@ export class GetService {
         });
     }
     /**
-     * 分享前检查脚本配置中的隐私风险
-     * @param requestBody
-     * @returns ShareInspectOut Successful Response
-     * @throws ApiError
-     */
-    public static inspectScriptShareApiScriptsShareInspectPost(
-        requestBody: ScriptShareInspectIn,
-    ): CancelablePromise<ShareInspectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/share/inspect',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取 MaaEnd 动态选项
      * @param requestBody
      * @returns MaaEndOptionsOut Successful Response
@@ -516,44 +593,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maaend/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询用户
-     * @param requestBody
-     * @returns UserGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getUserApiScriptsUserGetPost(
-        requestBody: UserGetIn,
-    ): CancelablePromise<UserGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取用户配置目录
-     * @param requestBody
-     * @returns UserConfigDirOut Successful Response
-     * @throws ApiError
-     */
-    public static getUserConfigDirApiScriptsUserConfigDirPost(
-        requestBody: UserConfigDirIn,
-    ): CancelablePromise<UserConfigDirOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/config-dir',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -736,45 +775,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/cultivate/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 webhook 配置
-     * @param requestBody
-     * @returns WebhookGetOut_Webhook_ Successful Response
-     * @throws ApiError
-     */
-    public static getWebhookApiScriptsWebhookGetPost(
-        requestBody: WebhookGetIn,
-    ): CancelablePromise<WebhookGetOut_Webhook_> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/webhook/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询脚本生效的 Mirror 酱 CDK 状态
-     * 校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。
-     * @param requestBody
-     * @returns ScriptMirrorCdkOut Successful Response
-     * @throws ApiError
-     */
-    public static queryScriptMirrorCdkApiScriptsMirrorCdkPost(
-        requestBody: ScriptMirrorCdkIn,
-    ): CancelablePromise<ScriptMirrorCdkOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/mirror-cdk',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

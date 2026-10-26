@@ -122,6 +122,25 @@ export class UpdateService {
         });
     }
     /**
+     * 更新webhook项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateWebhookApiScriptsWebhookUpdatePost(
+        requestBody: WebhookUpdateIn_WebhookInput_,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 导入基建配置文件
      * @param requestBody
      * @returns OutBase Successful Response
@@ -152,25 +171,6 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/infrastructure/plan-select',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updateWebhookApiScriptsWebhookUpdatePost(
-        requestBody: WebhookUpdateIn_WebhookInput_,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/webhook/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
