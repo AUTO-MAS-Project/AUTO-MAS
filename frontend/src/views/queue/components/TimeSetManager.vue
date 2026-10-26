@@ -45,13 +45,7 @@
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell drag-cell">
-              <span
-                class="drag-handle"
-                :title="t('queue.item.dragSort')"
-                :aria-label="t('queue.item.dragSort')"
-              >
-                <span class="drag-dots" aria-hidden="true"></span>
-              </span>
+              <DragHandle :title="t('queue.item.dragSort')" />
             </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
@@ -127,6 +121,7 @@
 
 <script setup lang="ts">
 import noDataImage from '@/assets/NoData.png'
+import DragHandle from '@/components/DragHandle.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -846,36 +841,6 @@ const onDragEnd = async (evt: any) => {
 .drag .draggable-row {
   opacity: 1 !important;
   transition: none !important;
-}
-
-.drag-handle {
-  width: 16px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: grab;
-  user-select: none;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-dots {
-  width: 10px;
-  height: 16px;
-  display: block;
-  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
-  background-size: 5px 5px;
-  opacity: 0.65;
-}
-
-.drag-handle:hover .drag-dots {
-  opacity: 0.85;
 }
 
 /* 空状态样式 */
