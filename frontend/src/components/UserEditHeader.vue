@@ -64,7 +64,7 @@
         {{ t('comp.openConfigFolder') }}
       </a-button>
 
-      <a-button size="large" class="cancel-button" @click="emit('cancel')">
+      <a-button size="large" class="cancel-button" :loading="cancelLoading" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -108,6 +108,8 @@ const props = withDefaults(
     configVisible?: boolean
     /** 当前用户 ID，编辑已有用户时提供，用于渲染「配置文件夹」按钮 */
     userId?: string
+    /** 返回按钮 loading 态，用于离开前等待保存或确认 */
+    cancelLoading?: boolean
   }>(),
   {
     currentLabel: undefined,
@@ -118,6 +120,7 @@ const props = withDefaults(
     configDisabled: false,
     configVisible: true,
     userId: undefined,
+    cancelLoading: false,
   }
 )
 
@@ -176,9 +179,16 @@ const handleOpenFolder = async () => {
   color: var(--ant-color-text);
 }
 
-.cancel-button:hover {
+.cancel-button:hover,
+:slotted(.cancel-button:hover) {
   border-color: var(--ant-color-primary);
   color: var(--ant-color-primary);
+}
+
+:slotted(.cancel-button) {
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
 }
 
 .configuring-button {

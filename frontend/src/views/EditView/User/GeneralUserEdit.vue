@@ -1,62 +1,18 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser') }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button
-        v-if="!showGeneralConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="generalConfigLoading"
-        :disabled="configLocked"
-        @click="handleGeneralConfig()"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.generalConfiguration') }}
-      </a-button>
-      <a-button
-        v-if="showGeneralConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.configuring') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <UserEditHeader
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="general"
+    :current-label="isEdit ? t('comp.editUser') : t('comp.addUser')"
+    :user-id="userId"
+    :config-label="t('edit.generalConfiguration')"
+    :config-loading="generalConfigLoading"
+    :config-active="showGeneralConfigMask"
+    :config-disabled="configLocked"
+    @config="handleGeneralConfig()"
+    @cancel="handleCancel"
+  />
 
   <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
   <teleport to="body">
@@ -243,15 +199,14 @@
 <script setup lang="ts">
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
-  ArrowLeftOutlined,
   EyeOutlined,
-  FolderOpenOutlined,
   HistoryOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -281,15 +236,7 @@ const logger = window.electronAPI.getLogger('通用用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  openUserConfigFolder,
-  loading: folderLoading,
-  error: userApiError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -302,10 +249,6 @@ const { enqueue } = useSaveQueue()
 // 路由参数
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId) return
-  await openUserConfigFolder(scriptId, userId)
-}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)
@@ -910,22 +853,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -1056,12 +983,6 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .user-edit-content {
     max-width: 100%;
   }

@@ -36,7 +36,6 @@
         </a-button>
       </template>
     </GuiSessionMask>
-    <!-- 头部组件 -->
     <SRCUserEditHeader
       :script-id="scriptId"
       :script-name="scriptName"
@@ -44,11 +43,10 @@
       :user-mode="formData.Info.Base"
       :src-config-loading="srcConfigLoading"
       :show-src-config-mask="showSrcConfigMask"
-      :loading="loading"
       :config-locked="configLocked"
       :user-id="userId"
-      @handle-s-r-c-config="startConfigSession(false)"
-      @handle-cancel="handleCancel"
+      @config="startConfigSession(false)"
+      @cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
