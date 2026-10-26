@@ -21,7 +21,7 @@ import asyncio
 import os
 import re
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,19 +110,33 @@ def _read_installed_version(root_path: Path, target_version: str | None) -> str:
 
 
 @contextmanager
-def _pause_auto_run(config_path: Path) -> Iterator[None]:
-    """临时关闭自动执行；退出时只还原此字段，保留 MXU 写入的其它设置。"""
+def _prepare_session_config(config_path: Path, *, keep_logs: bool) -> Iterator[None]:
+    """为更新会话临时改好 MXU 配置，退出时只还原自己动过的字段。
+
+    自动执行必须关掉，否则更新会话会顺手把任务跑一遍。``keep_logs`` 用于失败日志包
+    没能保存的情况：新会话一启动就会清空 ``debug/``，而那里是唯一一份现场，所以这时
+    还要把「启动时清理日志」也关掉。两处写入都落在外层任务前的整目录快照里，任务
+    结束一并换回，不写回脚本或用户配置来源。
+    """
+
     config = read_dict_file(config_path, format=".json5")
     had_settings = "settings" in config
     settings = config.setdefault("settings", {})
     if not isinstance(settings, dict):
         raise MaaEndUpdateError("MXU 配置中的 settings 不是对象")
-    if settings.get("autoRunOnLaunch") is False:
+
+    original = settings.copy()
+    changed = False
+    if settings.get("autoRunOnLaunch") is not False:
+        settings["autoRunOnLaunch"] = False
+        changed = True
+    if keep_logs and settings.get("autoClearLogsOnLaunch") is not False:
+        settings["autoClearLogsOnLaunch"] = False
+        changed = True
+    if not changed:
         yield
         return
 
-    original = settings.copy()
-    settings["autoRunOnLaunch"] = False
     write_file(config_path, config)
     try:
         yield
@@ -131,7 +145,8 @@ def _pause_auto_run(config_path: Path) -> Iterator[None]:
         settings = config.setdefault("settings", {})
         if not isinstance(settings, dict):
             raise MaaEndUpdateError("MXU 配置中的 settings 不是对象")
-        # 外侧修改过自动执行设置时，不覆盖该修改。
+        # 外侧修改过自动执行设置时，不覆盖该修改；启动清理保持关闭，等下次下发
+        # 整份配置时再按当时的状态决定，免得中途哪次启动把现场清掉。
         if settings.get("autoRunOnLaunch", False) is False:
             if "autoRunOnLaunch" in original:
                 settings["autoRunOnLaunch"] = original["autoRunOnLaunch"]
@@ -224,6 +239,8 @@ async def _run_update_session(
     root_path: Path,
     target_version: str | None,
     on_status: Callable[[str], None] | None,
+    on_before_launch: Callable[[], Awaitable[bool]] | None = None,
+    on_launched: Callable[[], None] | None = None,
 ) -> str | None:
     executable = root_path / "MaaEnd.exe"
     config_path = root_path / "config" / "mxu-MaaEnd.json"
@@ -240,10 +257,18 @@ async def _run_update_session(
     if await asyncio.to_thread(_find_executable_processes, executable):
         raise MaaEndUpdateError("MaaEnd 原进程尚未退出，无法启动独立更新会话")
     log_offsets = await asyncio.to_thread(snapshot_mxu_logs, root_path)
-    with _pause_auto_run(config_path):
+    # 新会话启动会清空 debug/，调用方要赶在启动前、也赶在这次会话改配置前
+    # 取走上一轮的失败现场（归档的 config/ 才不会带上下面的临时改动）。
+    # 回调返回现场是否已经保存好：没保存好就不能让新会话清日志。
+    keep_logs = False
+    if on_before_launch is not None:
+        keep_logs = not await on_before_launch()
+    with _prepare_session_config(config_path, keep_logs=keep_logs):
         try:
             launched_at = time.time()
             await process_manager.open_process(executable, cwd=root_path)
+            if on_launched is not None:
+                on_launched()
             first_process = process_manager.process
             if first_process is None:
                 raise MaaEndUpdateError("MaaEnd 更新进程未启动")
@@ -322,11 +347,18 @@ async def update_maaend_after_stage(
     *,
     process: asyncio.subprocess.Process | None = None,
     on_status: Callable[[str], None] | None = None,
+    on_before_session: Callable[[], Awaitable[bool]] | None = None,
+    on_session_launched: Callable[[], None] | None = None,
 ) -> str | None:
     """首阶段结束后按本轮下载日志插入更新，返回更新后的版本。
 
     未下载完成时返回 ``None``，由调用方关闭原进程并继续任务；
     仅已下载的更新包继续沿用 MXU 原生安装和重启流程。
+
+    ``on_before_session`` 在确认原进程已退出、即将启动更新会话前调用，供
+    调用方取走上一轮运行现场（新会话启动会清空 ``debug/``），返回现场是否已经
+    保存好——没保存好时这次会话会关掉日志清理，避免把唯一一份现场删掉；
+    ``on_session_launched`` 在更新会话进程真的起来之后调用。
     """
     lines = await asyncio.to_thread(read_new_mxu_logs, root_path, log_offsets)
     if not any(
@@ -382,6 +414,8 @@ async def update_maaend_after_stage(
                 root_path=root_path,
                 target_version=progress.target_version,
                 on_status=on_status,
+                on_before_launch=on_before_session,
+                on_launched=on_session_launched,
             )
         if time.monotonic() >= deadline:
             raise MaaEndUpdateError("等待 MaaEnd 原进程完成安装超时")

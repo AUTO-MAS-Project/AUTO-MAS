@@ -181,9 +181,8 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onMounted, ref, watch } from 'vue'
-import type { ComboBoxItem, MaaEndConfig } from '@/api'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { computed, ref, watch } from 'vue'
+import { useMaaEndPlanOptions } from './useMaaEndPlanOptions'
 import {
   AUTO_ESSENCE_MENU_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -191,12 +190,12 @@ import {
   REWARD_OPTIONS,
   SANITY_TASK_TYPE_OPTIONS,
   getCurrentTaskValue,
+  getEssenceTargetWeaponOptions,
   isProtocolSpaceRewardEnabled,
   maaEndPlanKeyToSanityConfig,
   normalizeMaaEndPlanKey,
   normalizeMaaEndSanityConfig,
   type CurrentTaskValue,
-  type MaaEndEssenceTargetGroup,
   type MaaEndSanityConfig,
   type ProtocolSpaceTab,
   type RewardSetOption,
@@ -223,13 +222,15 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const { getScripts, getMaaEndOptions } = useScriptApi()
 const localTableData = ref<Record<string, MaaEndSanityConfig>>({})
-const essenceLocationOptions = ref<ComboBoxItem[]>([])
-const essenceMenuOptions = ref<ComboBoxItem[]>([])
-const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
-const essenceOptionsLoading = ref(false)
-const essenceOptionsLoaded = ref(false)
+const {
+  crisisDrillsOptions,
+  essenceLocationOptions,
+  essenceMenuOptions,
+  essenceTargetWeaponGroups,
+  essenceOptionsLoading,
+  essenceOptionsLoaded,
+} = useMaaEndPlanOptions()
 
 const sanityTaskTypeOptions = computed(() =>
   SANITY_TASK_TYPE_OPTIONS.filter(
@@ -241,57 +242,6 @@ const sanityTaskTypeOptions = computed(() =>
       Object.values(localTableData.value).some(config => config?.SanityTaskType === 'Essence')
   )
 )
-
-const loadEssenceLocationOptions = async () => {
-  essenceOptionsLoading.value = true
-  try {
-    const scripts = await getScripts(false)
-    const configuredMaaEndScripts = scripts.filter(script => {
-      if (script.type !== 'MaaEnd') return false
-      const config = script.config as MaaEndConfig
-      return Boolean(config.Info?.Path?.trim())
-    })
-    const responses = await Promise.all(
-      configuredMaaEndScripts.map(script => getMaaEndOptions(script.uid))
-    )
-    const optionsByValue = new Map<string, ComboBoxItem>()
-    const menusByValue = new Map<string, ComboBoxItem>()
-    const groupsByValue = new Map<string, MaaEndEssenceTargetGroup>()
-    responses.forEach(response => {
-      response?.essenceLocations.forEach(option => {
-        if (option.value && !optionsByValue.has(option.value)) {
-          optionsByValue.set(option.value, option)
-        }
-      })
-      response?.essenceMenus?.forEach(option => {
-        if (option.value && !menusByValue.has(option.value)) {
-          menusByValue.set(option.value, option)
-        }
-      })
-      response?.essenceTargetWeaponGroups?.forEach(group => {
-        const current = groupsByValue.get(group.value)
-        if (!current) {
-          groupsByValue.set(group.value, { ...group, options: [...group.options] })
-          return
-        }
-        const values = new Set(current.options.map(option => option.value))
-        current.options.push(
-          ...group.options.filter(option => option.value && !values.has(option.value))
-        )
-      })
-    })
-    essenceLocationOptions.value = [...optionsByValue.values()]
-    essenceMenuOptions.value = menusByValue.size
-      ? [...menusByValue.values()]
-      : [{ label: '指定地点', value: 'Location' }]
-    essenceTargetWeaponGroups.value = [...groupsByValue.values()]
-  } finally {
-    essenceOptionsLoading.value = false
-    essenceOptionsLoaded.value = true
-  }
-}
-
-onMounted(loadEssenceLocationOptions)
 
 /** 列键：ALL 加当天的天键；周计划是星期名，多天轮换是 "1"~"N" */
 const columnKeys = computed(() =>
@@ -383,18 +333,10 @@ const getCurrentTaskOptions = (key: string) => {
   const dayConfig = getDayConfig(key)
   if (dayConfig.SanityTaskType === 'Essence') {
     if (dayConfig.AutoEssenceMenu === 'Target') {
-      const options = essenceTargetWeaponGroups.value.flatMap(group =>
-        group.options.map(option => ({
-          label: `${group.label} · ${option.label}`,
-          value: option.value,
-        }))
+      return getEssenceTargetWeaponOptions(
+        essenceTargetWeaponGroups.value,
+        dayConfig.AutoEssenceTargetWeapons
       )
-      for (const value of dayConfig.AutoEssenceTargetWeapons) {
-        if (!options.some(option => option.value === value)) {
-          options.unshift({ label: value, value })
-        }
-      }
-      return options
     }
     const options = [...essenceLocationOptions.value]
     if (
@@ -405,6 +347,13 @@ const getCurrentTaskOptions = (key: string) => {
         label: dayConfig.AutoEssenceSpecifiedLocation,
         value: dayConfig.AutoEssenceSpecifiedLocation,
       })
+    }
+    return options
+  }
+  if (dayConfig.SanityTaskType === 'CrisisDrills') {
+    const options = [...crisisDrillsOptions.value]
+    if (!options.some(option => option.value === dayConfig.CrisisDrills)) {
+      options.unshift({ label: dayConfig.CrisisDrills, value: dayConfig.CrisisDrills })
     }
     return options
   }

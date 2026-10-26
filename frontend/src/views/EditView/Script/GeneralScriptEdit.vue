@@ -699,7 +699,7 @@ import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
@@ -713,12 +713,22 @@ const logger = window.electronAPI.getLogger('通用脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
+const scriptId = route.params.id as string
 const { getScript, updateScript, error: scriptApiError } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，同一字段的连续改动只保留最后一次，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, saveField: handleChange } = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshNormalizedField(category, key)
+    }
+  },
+})
 
 // 路径处理工具函数
 const pathUtils = {
@@ -992,7 +1002,6 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
   }
 }
 const pageLoading = ref(false)
-const scriptId = route.params.id as string
 const {
   emulatorDeviceLoading,
   emulatorDeviceOptions,
@@ -1210,26 +1219,6 @@ const refreshNormalizedField = async (category: string, key: string) => {
   if (normalized !== undefined) {
     ;(generalConfig as Record<string, any>)[category][key] = normalized
   }
-}
-
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    try {
-      const updateData: any = { [category]: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-          await refreshNormalizedField(category, key)
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `${category}.${key}`)
 }
 
 // 一次性批量保存入口（模拟器/游戏切换、根路径选择等）：与 handleChange 共用同一条保存队列，

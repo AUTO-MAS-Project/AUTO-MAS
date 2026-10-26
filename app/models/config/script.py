@@ -803,14 +803,10 @@ class MaaEndUserConfig(DomainEntry):
             description="基质目标武器 ID 列表", default_factory=lambda: []
         )
 
-        CrisisDrills: Literal[
-            "AdvancedProgression1",
-            "AdvancedProgression2",
-            "AdvancedProgression3",
-            "AdvancedProgression4",
-            "AdvancedProgression5",
-        ] = Field(
-            description="危境预演任务", default_factory=lambda: "AdvancedProgression1"
+        CrisisDrills: str = Field(
+            description="危境预演任务，由 MaaEnd 声明",
+            default="AdvancedProgression1",
+            min_length=1,
         )
 
         DailyOnceTasks: JsonListString = Field(
@@ -920,6 +916,7 @@ class MaaEndUserConfig(DomainEntry):
     Task: TaskFields = Field(default_factory=TaskFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
     _maaend_essence_location_labels: dict = PrivateAttr(default_factory=dict)
+    _maaend_crisis_drills_labels: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def cache_maaend_resource(self, resource: dict[str, Any]) -> None:
         """缓存 MaaEnd 动态资源的展示文本。"""
@@ -927,6 +924,10 @@ class MaaEndUserConfig(DomainEntry):
             str(item["value"]): str(item["label"])
             for item in resource.get("essenceLocations", [])
             if isinstance(item, dict) and item.get("value") is not None
+        }
+        self._maaend_crisis_drills_labels = {
+            str(item["value"]): str(item["label"])
+            for item in resource.get("crisisDrills", [])
         }
 
     def _get_maaend_location_label(self, value: str) -> str:
@@ -1001,11 +1002,13 @@ class MaaEndUserConfig(DomainEntry):
                     if sanity_task_type == "Essence"
                     else task_key[sanity_task_type]
                 )
-                detail_label = (
-                    self._get_maaend_location_label(detail_key)
-                    if sanity_task_type == "Essence"
-                    else MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]
-                )
+                if sanity_task_type == "Essence":
+                    detail_label = self._get_maaend_location_label(detail_key)
+                else:
+                    detail_label = self._maaend_crisis_drills_labels.get(
+                        detail_key,
+                        MAAEND_SANITY_TASK_DETAIL_LABELS.get(detail_key, detail_key),
+                    )
             tags.append({"text": f"详细任务：{detail_label}", "color": "blue"})
             if detail_key in MAAEND_STAGE_WITH_AB:
                 tags.append(
@@ -1158,6 +1161,16 @@ class MaaEndConfig(DomainEntry):
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
+        IfSaveLogBundle: bool = Field(
+            default_factory=lambda: False,
+            description="任务失败时是否按 MaaEnd 的导出规则打包运行日志",
+        )
+
+        LogBundlePath: FolderPath = Field(
+            default_factory=lambda: None,
+            description="任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend",
+        )
+
         ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数限制"
         )
@@ -1225,7 +1238,10 @@ class MaaEndConfig(DomainEntry):
             raise ValueError("MaaEnd 路径未配置")
         from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
 
-        return get_loaded_maaend_options(Path(root_path))
+        resource = get_loaded_maaend_options(Path(root_path))
+        for user_config in self.UserData.values():
+            user_config.cache_maaend_resource(resource)
+        return resource
 
     @classmethod
     def normalize_payload(cls, data):

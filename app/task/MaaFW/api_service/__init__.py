@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MFW 端点背后的业务：``app/api/scripts.py`` 里的 ``/maafw/*`` 端点只做
+"""MFW 端点背后的业务：专项目录 ``api.py`` 里的 ``/maafw/*`` 端点只做
 取参数 → 调这里的一个函数 → ``XxxOut(**reply.out_fields())``。
 
 - ``common``：解析 MFW 脚本、按脚本解析有效项目根、同组候选、``MaaFWApiReply``。

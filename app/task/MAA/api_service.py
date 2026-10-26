@@ -22,7 +22,7 @@
 
 """MAA 专项的 API 业务实现。
 
-app/api/scripts.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
+本目录 api.py 中的 MAA 端点只做三件事：解析请求参数、调用本模块的一个函数、
 把返回值装进响应模型；需要 MAA 领域知识的逻辑（配置来源判定、原生配置读写、排班表
 解析、物品资源解析、森空岛绑定）都在这里实现。
 
@@ -40,6 +40,7 @@ from typing import Any, Awaitable, Callable, Literal, Mapping
 from app.core import Config
 from app.models.config import MaaConfig
 from app.services.maa_copilot import CopilotRepository, CopilotScope
+from app.services.update_transport import MirrorCdkStatus
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     CONFIG_BASE_SHARED,
@@ -54,6 +55,19 @@ from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 logger = get_logger("脚本管理 API")
 
 _copilot_repository: CopilotRepository | None = None
+
+
+async def query_mirror_cdk(cdk: str) -> tuple[MirrorCdkStatus, bool]:
+    """校验编辑草稿，并返回是否使用全局凭据；查询失败沿用错误状态。"""
+    from app.task.MAA.tools.update_credentials import query_takeover_cdk
+
+    using_global = not cdk.strip()
+    try:
+        result = await query_takeover_cdk(cdk)
+    except Exception as error:
+        logger.warning(f"脚本 Mirror 酱 CDK 查询失败: {type(error).__name__}")
+        result = MirrorCdkStatus(status="error")
+    return result, using_global
 
 
 def _get_copilot_repository() -> CopilotRepository:

@@ -2,7 +2,7 @@
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：MSS（MaaStellaSora / 星塔旅人）的运行、更新、内嵌副本、
 通知、失败截图、周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有两个
-文件：`flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
+业务文件：`flavor.py`（`FLAVOR` 对象，满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor`
 协议）与 `api_service.py`（用户页要的那点只读信息）。`flavor.py` 做的事穷举如下，多一件都没有：
 
 1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
@@ -27,6 +27,7 @@
    「前面的尝试已完成」过滤。本次运行成功过的任务不再补跑，失败、超时和未执行的任务保留；
    登录不在声明内，每次尝试仍执行。同名重复任务沿用引擎的保守重跑策略，不额外推断完成的是哪份。
 
+`api.py` 承载 MSS 自己的端点模型和只读路由，由公共 API 入口组装，不放入 MaaFW 引擎。
 `api_service.py` 只有一个只读函数 `defense_status()`：把 `Data.PersonalMssDefense` 摊开给用户页看。
 「这一期」与 `flavor.py` 里那份**同一处**（`permanent_activity_window("灾变防线")`），前端不复刻一套；
 个人版总开关也跟着它一起返回，免得用户页为一个布尔去读整份全局配置。

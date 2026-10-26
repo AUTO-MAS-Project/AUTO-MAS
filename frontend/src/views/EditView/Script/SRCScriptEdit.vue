@@ -240,7 +240,7 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 
 const { t } = useI18n()
@@ -262,7 +262,16 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, saveField: handleChange } = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshNormalizedField(category, key)
+    }
+  },
+})
 
 const formData = reactive({
   name: '',
@@ -300,28 +309,6 @@ const refreshNormalizedField = async (category: string, key: string) => {
   if (normalized !== undefined) {
     ;(srcConfig as Record<string, any>)[category][key] = normalized
   }
-}
-
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    try {
-      // 构建只包含单个修改字段的更新数据（遵循最小原则）
-      const updateData: any = { [category]: { [key]: value } }
-
-      const success = await updateScript(scriptId, updateData)
-      if (success) {
-        logger.info(`配置已保存: ${category}.${key}`)
-        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-          await refreshNormalizedField(category, key)
-        }
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `${category}.${key}`)
 }
 
 onMounted(async () => {

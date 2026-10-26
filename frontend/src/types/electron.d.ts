@@ -343,7 +343,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   exportMaaEndIssueReport: () => Promise<{
     success: boolean
     message?: string
-    zipPath?: string
+    directoryPaths?: string[]
+    incompleteCount?: number
     error?: string
   }>
   exportOkwwIssueReport: () => Promise<{

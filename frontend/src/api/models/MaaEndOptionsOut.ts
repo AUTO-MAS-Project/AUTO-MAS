@@ -20,6 +20,10 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * 当前 MaaEnd 支持的危境预演任务
+     */
+    crisisDrills?: Array<ComboBoxItem>;
+    /**
      * 上游库存目标选项，旧版不支持时为空
      */
     inventory?: (MaaEndInventoryOptions | null);

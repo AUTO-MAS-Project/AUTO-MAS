@@ -1,281 +1,151 @@
-<template>
-  <!-- 调试面板固定为深色，标准控件与原有调试内容保持一致。 -->
-  <a-config-provider v-if="isDev" :theme="{ algorithm: theme.darkAlgorithm }">
-    <div
-      class="debug-panel"
-      :class="{ collapsed: isCollapsed, dragging: isDragging }"
-      :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
-    >
-      <div class="debug-header">
-        <span class="debug-title drag-handle" @mousedown="startDrag">
-          调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
-        </span>
-        <div class="header-actions">
-          <a-button size="small" type="text" @click="toggleCollapse" @mousedown.stop>
-            {{ isCollapsed ? '展开' : '收起' }}
-          </a-button>
-        </div>
-      </div>
-
-      <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
-        <a-tabs
-          v-model:active-key="activeTab"
-          size="small"
-          :tab-bar-gutter="12"
-          :destroy-inactive-tab-pane="true"
-          class="debug-tabs"
-        >
-          <a-tab-pane v-for="tab in tabs" :key="tab.key" :tab="`${tab.icon} ${tab.title}`">
-            <div class="debug-pages">
-              <component :is="tab.component" />
-            </div>
-          </a-tab-pane>
-        </a-tabs>
-      </div>
-    </div>
-  </a-config-provider>
-</template>
-
 <script setup lang="ts">
-import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
-import { onMounted, ref } from 'vue'
-import { theme } from 'ant-design-vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { useEventListener, useWindowSize } from '@vueuse/core'
-import RouteInfoPage from './RouteInfoPage.vue'
-import EnvironmentPage from './EnvironmentPage.vue'
-import QuickNavPage from './QuickNavPage.vue'
-import BackendLaunchPage from './BackendLaunchPage.vue'
+import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+import { BugOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { useWebSocket } from '@/composables/useWebSocket'
+import ConnectionPage from './ConnectionPage.vue'
+import StoragePage from './StoragePage.vue'
+import RoutesPage from './RoutesPage.vue'
+import ToolsPage from './ToolsPage.vue'
+import type { RouteVisit } from './types'
+import { cancelVueInspection } from './vueDevtools'
+import './devtools.css'
 
 defineOptions({ name: 'DevtoolsPanel' })
 
-// 调试页面配置
-const tabs = [
-  { key: 'route', title: '路由', icon: '🛣️', component: RouteInfoPage },
-  { key: 'env', title: '环境', icon: '⚙️', component: EnvironmentPage },
-  { key: 'backend', title: '后端', icon: '🚀', component: BackendLaunchPage },
-  { key: 'nav', title: '导航', icon: '🧭', component: QuickNavPage },
-]
+const { t } = useI18n()
+const router = useRouter()
+const { state } = useWebSocket()
+const { width } = useWindowSize()
+const open = ref(false)
+const activeTab = ref('connection')
+const storagePage = ref<InstanceType<typeof StoragePage> | null>(null)
+const history = ref<RouteVisit[]>([])
+const panelWidth = computed(() => Math.min(780, Math.max(280, width.value - 24)))
+const tabs = computed(() => [
+  { key: 'connection', label: t('devtools.connection') },
+  { key: 'storage', label: t('devtools.storage') },
+  { key: 'routes', label: t('devtools.routes') },
+  { key: 'tools', label: t('devtools.tools') },
+])
 
-// 面板状态
-const isCollapsed = ref(false)
-const isDragging = ref(false)
-const activeTab = ref('backend') // 默认显示后端页面
-
-// 面板位置
-const panelPosition = ref({
-  x: window.innerWidth - 360, // 默认右侧位置
-  y: 80, // 默认顶部位置
+// 历史属于面板会话，切换标签、关闭工作台都不丢失；不持久化路由参数。
+const recordVisit = (fullPath: string) => {
+  history.value.unshift({ fullPath, time: new Date().toLocaleTimeString() })
+  history.value = history.value.slice(0, 30)
+}
+recordVisit(router.currentRoute.value.fullPath)
+const stopHistory = router.afterEach((to, _from, failure) => {
+  if (!failure) recordVisit(to.fullPath)
+})
+onUnmounted(() => {
+  stopHistory()
+  cancelVueInspection()
 })
 
-// 拖拽相关状态
-const dragState = ref({
-  startX: 0,
-  startY: 0,
-  startPanelX: 0,
-  startPanelY: 0,
-})
+const canLeave = async () => (await storagePage.value?.canLeave()) ?? true
 
-// 使用 VueUse 的 useWindowSize 监听窗口大小
-const { width: windowWidth, height: windowHeight } = useWindowSize()
+const closePanel = async () => {
+  if (await canLeave()) open.value = false
+}
 
-// 拖拽开始
-const handleDragStart = (e: MouseEvent) => {
-  isDragging.value = true
-  dragState.value = {
-    startX: e.clientX,
-    startY: e.clientY,
-    startPanelX: panelPosition.value.x,
-    startPanelY: panelPosition.value.y,
+const changeTab = async (key: string | number) => {
+  if (await canLeave()) activeTab.value = String(key)
+}
+
+useEventListener(document, 'keydown', (event: KeyboardEvent) => {
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.code === 'KeyD') {
+    event.preventDefault()
+    if (event.repeat) return
+    cancelVueInspection()
+    if (open.value) void closePanel()
+    else open.value = true
   }
-
-  // 防止文本选择
-  e.preventDefault()
-}
-
-// 拖拽移动
-const handleDragMove = (e: MouseEvent) => {
-  if (!isDragging.value) return
-
-  const deltaX = e.clientX - dragState.value.startX
-  const deltaY = e.clientY - dragState.value.startY
-
-  let newX = dragState.value.startPanelX + deltaX
-  let newY = dragState.value.startPanelY + deltaY
-
-  // 边界检测，确保面板不会超出屏幕
-  const panelWidth = isCollapsed.value ? 120 : 350
-  const panelHeight = 400 // 预估高度
-
-  newX = Math.max(0, Math.min(windowWidth.value - panelWidth, newX))
-  newY = Math.max(0, Math.min(windowHeight.value - panelHeight, newY))
-
-  panelPosition.value.x = newX
-  panelPosition.value.y = newY
-}
-
-// 拖拽结束
-const handleDragEnd = () => {
-  isDragging.value = false
-}
-
-// 使用 VueUse 的 useEventListener 管理拖拽事件
-let cleanupDrag: (() => void) | null = null
-
-const startDrag = (e: MouseEvent) => {
-  handleDragStart(e)
-
-  const cleanupMove = useEventListener(document, 'mousemove', handleDragMove)
-  const cleanupUp = useEventListener(document, 'mouseup', () => {
-    handleDragEnd()
-    if (cleanupDrag) {
-      cleanupDrag()
-      cleanupDrag = null
-    }
-  })
-
-  cleanupDrag = () => {
-    cleanupMove()
-    cleanupUp()
+  if (event.code === 'Escape' && cancelVueInspection()) return
+  if (event.code === 'Escape' && open.value) {
+    const modalVisible = Array.from(document.querySelectorAll('.ant-modal-wrap')).some(
+      element => element.getClientRects().length > 0
+    )
+    if (modalVisible) return
+    event.preventDefault()
+    void closePanel()
   }
-}
-
-// 切换面板状态
-const toggleCollapse = () => {
-  isCollapsed.value = !isCollapsed.value
-
-  // 当折叠状态改变时，调整位置以适应新尺寸
-  const panelWidth = isCollapsed.value ? 120 : 350
-  const panelHeight = 400
-
-  panelPosition.value.x = Math.max(
-    0,
-    Math.min(windowWidth.value - panelWidth, panelPosition.value.x)
-  )
-  panelPosition.value.y = Math.max(
-    0,
-    Math.min(windowHeight.value - panelHeight, panelPosition.value.y)
-  )
-}
-
-// 使用 VueUse 的 useEventListener 监听键盘快捷键
-useEventListener(document, 'keydown', (e: KeyboardEvent) => {
-  // Ctrl + Shift + D 切换调试面板
-  if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-    e.preventDefault()
-    toggleCollapse()
-  }
-})
-
-onMounted(() => {
-  // 初始化时确保面板在可见区域
-  const panelWidth = isCollapsed.value ? 120 : 350
-  const panelHeight = 400
-
-  panelPosition.value.x = Math.max(
-    0,
-    Math.min(windowWidth.value - panelWidth, panelPosition.value.x)
-  )
-  panelPosition.value.y = Math.max(
-    0,
-    Math.min(windowHeight.value - panelHeight, panelPosition.value.y)
-  )
 })
 </script>
 
+<template>
+  <a-button
+    v-if="!open"
+    class="devtools-launcher"
+    :aria-label="t('devtools.open')"
+    @click="open = true"
+  >
+    <BugOutlined />
+    <span>DEV</span>
+    <span class="devtools-connection-dot" :class="{ connected: state === 'open' }" />
+  </a-button>
+  <a-drawer
+    :open="open"
+    :width="panelWidth"
+    :mask="false"
+    :closable="false"
+    :keyboard="false"
+    :destroy-on-close="true"
+    root-class-name="mas-devtools"
+    @close="closePanel"
+  >
+    <template #title>
+      <div class="devtools-heading">
+        <BugOutlined />
+        <div>
+          <strong>{{ t('devtools.title') }}</strong>
+          <span class="devtools-caption">{{ t('devtools.subtitle') }}</span>
+        </div>
+      </div>
+    </template>
+    <template #extra>
+      <a-space>
+        <kbd class="devtools-shortcut">Ctrl + Shift + D</kbd>
+        <a-button type="text" :aria-label="t('devtools.close')" @click="closePanel">
+          <CloseOutlined />
+        </a-button>
+      </a-space>
+    </template>
+    <a-tabs :active-key="activeTab" @change="changeTab">
+      <a-tab-pane v-for="tab in tabs" :key="tab.key" :tab="tab.label" />
+    </a-tabs>
+    <main v-if="open" class="devtools-page">
+      <ConnectionPage v-if="activeTab === 'connection'" />
+      <StoragePage v-else-if="activeTab === 'storage'" ref="storagePage" />
+      <RoutesPage v-else-if="activeTab === 'routes'" :history="history" />
+      <ToolsPage v-else @inspect="closePanel" />
+    </main>
+  </a-drawer>
+</template>
+
 <style scoped>
-.debug-panel {
+.devtools-launcher {
   position: fixed;
-  top: 80px;
-  right: 10px;
-  width: 350px;
-  background: rgba(0, 0, 0, 0.9);
-  border: 1px solid #333;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 12px;
-  z-index: 9999;
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-}
-
-.debug-panel.collapsed {
-  width: 120px;
-}
-
-.debug-panel.dragging {
-  cursor: grabbing;
-  transition: none;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  transform: scale(1.02);
-}
-
-.debug-header {
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 8px 8px 0 0;
-  display: flex;
-  justify-content: space-between;
+  inset: auto 20px 20px auto;
+  z-index: 990;
+  display: inline-flex;
   align-items: center;
-  user-select: none;
+  gap: 8px;
+  height: 36px;
+  box-shadow: var(--ant-box-shadow-secondary);
+  font-family: var(--font-monospace);
 }
 
-.drag-handle {
-  font-weight: bold;
-  cursor: grab;
-  flex: 1;
-  padding: 4px 0;
+.devtools-connection-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-text-tertiary);
 }
 
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.header-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.debug-content {
-  padding: 0;
-  max-height: 60vh;
-  overflow: hidden;
-}
-
-.debug-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 0;
-  padding: 0 12px;
-}
-
-.debug-pages {
-  padding: 12px;
-  max-height: calc(60vh - 40px);
-  overflow-y: auto;
-}
-
-.drag-indicator {
-  animation: bounce 0.5s infinite alternate;
-}
-
-@keyframes bounce {
-  0% {
-    transform: translateY(0);
-  }
-
-  100% {
-    transform: translateY(-2px);
-  }
-}
-
-.debug-pages::-webkit-scrollbar {
-  width: 4px;
-}
-
-.debug-pages::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.debug-pages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
+.devtools-connection-dot.connected {
+  background: var(--ant-color-success);
 }
 </style>

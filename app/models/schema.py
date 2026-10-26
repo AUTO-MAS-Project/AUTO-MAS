@@ -343,13 +343,11 @@ class MaaEndProtocolSpacePlanKey(BaseModel):
     WeaponProgression: Literal["WeaponEXP", "WeaponTune"] = Field(
         default="WeaponEXP", description="武器养成任务"
     )
-    CrisisDrills: Literal[
-        "AdvancedProgression1",
-        "AdvancedProgression2",
-        "AdvancedProgression3",
-        "AdvancedProgression4",
-        "AdvancedProgression5",
-    ] = Field(default="AdvancedProgression1", description="危境预演任务")
+    CrisisDrills: str = Field(
+        default="AdvancedProgression1",
+        description="危境预演任务，由 MaaEnd 声明",
+        min_length=1,
+    )
     RewardsSetOption: Literal["RewardsSetA", "RewardsSetB"] = Field(
         default="RewardsSetA", description="奖励组选项"
     )
@@ -1646,7 +1644,25 @@ class MSSPlanKey(BaseModel):
     FightTimes: int = Field(default=1, ge=1, le=99, description="自定义快速作战次数")
 
 
+# 脚本管理多个路由共用的请求契约。
+
+
+class ScriptDeleteIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+
+
+class UserInBase(BaseModel):
+    scriptId: str = Field(..., description="所属脚本ID")
+
+
+class UserDeleteIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
 __all__ = [
+    "ScriptDeleteIn",
+    "UserInBase",
+    "UserDeleteIn",
     "HistoryCounterValue",
     "HistoryCounterStatistic",
     "HistorySnapshotStatistic",

@@ -374,7 +374,7 @@
                 kind="daily"
                 :label="t('edit.runsPerDayThis')"
                 :hint="t('edit.k0MeansNoLimit')"
-                @change="handleRunConfigChange('ProxyTimesLimit', $event)"
+                @change="handleChange('Run', 'ProxyTimesLimit', $event)"
               />
             </a-col>
             <a-col :span="12">
@@ -385,7 +385,7 @@
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('RunTimesLimit', $event)"
+                  @change="handleChange('Run', 'RunTimesLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -397,7 +397,7 @@
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('DailyTimeLimit', $event)"
+                  @change="handleChange('Run', 'DailyTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -411,7 +411,7 @@
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @change="handleRunConfigChange('WeeklyTimeLimit', $event)"
+                  @change="handleChange('Run', 'WeeklyTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -422,7 +422,7 @@
               <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
-                  @change="handleRunConfigChange('LowPerformanceMode', $event)"
+                  @change="handleChange('Run', 'LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
                   {{ t('edit.appliesMarch7thDivergentUniverse') }}
@@ -453,7 +453,7 @@
                   :options="autoUpdateModeOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('AutoUpdateMode', $event)"
+                  @change="handleChange('Update', 'AutoUpdateMode', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -471,7 +471,7 @@
                   :options="updateChannelOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('Channel', $event)"
+                  @change="handleChange('Update', 'Channel', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -492,7 +492,7 @@
                   :options="m7aSourceOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('M7ASource', $event)"
+                  @change="handleChange('Update', 'M7ASource', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -510,7 +510,7 @@
                   :options="sraSourceOptions"
                   size="large"
                   style="width: 100%"
-                  @change="handleUpdateConfigChange('SRASource', $event)"
+                  @change="handleChange('Update', 'SRASource', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -530,9 +530,7 @@
                   :placeholder="t('edit.hsrUpdateCdkPlaceholder')"
                   size="large"
                   autocomplete="off"
-                  @blur="
-                    handleUpdateConfigChange('MirrorChyanCDK', hsrConfig.Update.MirrorChyanCDK)
-                  "
+                  @blur="handleChange('Update', 'MirrorChyanCDK', hsrConfig.Update.MirrorChyanCDK)"
                 />
                 <div
                   class="form-item-hint"
@@ -633,7 +631,7 @@ import { message, Modal } from 'ant-design-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import {
   filterHSRCapabilityWarnings,
   useHSRPluginApi,
@@ -746,14 +744,24 @@ const logger = window.electronAPI.getLogger('HSR 脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { saveField: handleChange } = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+      await Promise.all([loadCapabilities(), loadSraProfiles()])
+    }
+  },
+})
 const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
@@ -808,27 +816,6 @@ const platformOptions = computed(() => [
   { label: t('edit.hsrPlatformClient'), value: 'Client' },
   { label: t('edit.hsrPlatformCloud'), value: 'Cloud' },
 ])
-
-const handleChange = async (category: string, key: string, value: any): Promise<boolean> => {
-  if (isInitializing.value) return false
-  return enqueue(async () => {
-    try {
-      const updateData: any = { [category]: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return false
-      logger.info(`配置已保存: ${category}.${key}`)
-      if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-        await refreshScript()
-        await Promise.all([loadCapabilities(), loadSraProfiles()])
-      }
-      return true
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-      return false
-    }
-  }, `${category}.${key}`)
-}
 
 const refreshScript = async () => {
   try {
@@ -899,36 +886,6 @@ const applyScriptDetail = (scriptDetail: ScriptDetail) => {
     hsrConfig.Update.MirrorChyanCDK =
       typeof update.MirrorChyanCDK === 'string' ? update.MirrorChyanCDK : ''
   }
-}
-
-const handleRunConfigChange = async (key: string, value: any) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData: any = { Run: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return
-      logger.info(`配置已保存: Run.${key}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `Run.${key}`)
-}
-
-const handleUpdateConfigChange = async (key: keyof HSRUpdateConfig, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(async () => {
-    try {
-      const updateData: any = { Update: { [key]: value } }
-      const success = await updateScript(scriptId, updateData)
-      if (!success) return
-      logger.info(`配置已保存: Update.${key}`)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `Update.${key}`)
 }
 
 const autoUpdateModeOptions = computed(() => [

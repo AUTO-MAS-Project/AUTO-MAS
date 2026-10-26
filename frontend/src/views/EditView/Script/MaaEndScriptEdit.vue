@@ -517,6 +517,7 @@
 <script setup lang="ts">
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
+import { createMaaEndScriptDraft } from './maaEndScriptDraft'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
@@ -530,7 +531,7 @@ import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
+import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -548,6 +549,7 @@ import MaaEndLauncherSection from './components/MaaEndLauncherSection.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
+const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -565,7 +567,20 @@ const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { isSaving, enqueue } = useSaveQueue()
+const {
+  isSaving,
+  enqueue,
+  saveField: handleChange,
+} = useScriptSaveMutation({
+  scriptId,
+  isInitializing,
+  logger,
+  afterFieldSave: async (category, key) => {
+    if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+      await refreshScript()
+    }
+  },
+})
 // 该脚本的配置是否正被任务锁着：锁着时点「检查更新」只会换来后端一句「已在运行」
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useMaaEndUpdate(
@@ -589,38 +604,7 @@ const formData = reactive({
   },
 })
 
-const maaEndConfig = reactive<MaaEndScriptConfig>({
-  Info: {
-    Name: '',
-    Path: '',
-  },
-  Run: {
-    HardTimeLimit: 120,
-    RunTimeLimit: 30,
-    ProxyTimesLimit: 0,
-    RunTimesLimit: 3,
-    AccountSwitchMethod: 'MAAEND',
-    TaskTransitionMethod: 'NoAction',
-  },
-  Game: {
-    ControllerType: '',
-    LaunchMode: 'Launcher',
-    Path: '',
-    LauncherPath: '',
-    Arguments: '',
-    WaitTime: 60,
-    EmulatorId: '',
-    EmulatorIndex: '',
-    SetResolution: false,
-    CloseOnFinish: true,
-    RestoreResolution: 'Off',
-    RestoreDisplayType: 'Window',
-    RestoreResolutionWidth: 1920,
-    RestoreResolutionHeight: 1080,
-    IfAutoUpdate: false,
-    UpdateTimeLimit: 240,
-  },
-})
+const maaEndConfig = reactive<MaaEndScriptConfig>(createMaaEndScriptDraft())
 
 const originalResolution = ref<string | null>(null)
 const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
@@ -738,20 +722,6 @@ const showManualEmulatorIndexInput = computed(
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
 const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path', 'Game.Path'])
-
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value) return
-
-  await enqueue(async () => {
-    const success = await updateScript(scriptId, {
-      [category]: { [key]: value },
-    })
-    if (success && FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
-      await refreshScript()
-    }
-    return success
-  }, `${category}.${key}`)
-}
 
 const handleSetResolutionChange = async (value: unknown) => {
   if (typeof value !== 'boolean' || !canSetResolution.value || isInitializing.value) return

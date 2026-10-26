@@ -101,6 +101,7 @@ from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
 )
+from .tools.log_bundle import export_failure_logs
 from .tools.log_statistics import parse_maaend_failed_tasks, parse_maaend_statistics
 from .tools.notify import build_inventory_payload, collect_recent_error_images
 from .update_takeover import (
@@ -442,6 +443,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.on_error_screenshot = on_error_screenshot
         self._attempt_start_ns: int | None = None
         self._attempt_screenshot_paths: list[Path] = []
+        # 失败日志包：MXU 每次启动都会清空 debug/（开启日志包时由 set_maaend 强制打开），
+        # 所以取证时机只能是「一次尝试结束、MXU 已退出、下一次启动之前」。用启动次数与
+        # 已归档次数比对判断是否还有未归档的现场，重复调用只会等同一个打包作业。
+        self._mxu_launch_count = 0
+        self._archived_launch_count = 0
+        self._bundle_job: asyncio.Task | None = None
+        # 打包失败过就不再强制 MXU 清日志：宁可下一轮日志混一点，也要留下现场再试一次。
+        self._bundle_failed = False
         self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
@@ -1420,10 +1429,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             )
             await self.maaend_log_monitor.stop()
 
-    async def _update_after_first_stage(self, log_offsets: dict[Path, int]) -> None:
+    async def _update_after_first_stage(
+        self, log_offsets: dict[Path, int], *, stage_label: str
+    ) -> None:
         """按首阶段的下载记录更新，独立记录结果并保留已完成任务。"""
         root_path = self.maaend_exe_path.parent
         update_log: LogRecord | None = None
+
+        async def before_update_session() -> bool:
+            # 更新会话会重新启动 MXU：先把失败阶段的现场归档，否则「启动时清理日志」
+            # 会在归档前把 debug/ 清掉。返回 False 表示现场没保存好，新会话要关掉清理。
+            return await self._archive_failure_logs(label=f"{stage_label}阶段失败的")
+
+        def after_update_session_launch() -> None:
+            # 会话真的起来了才记一次启动：debug/ 从此归它，收尾据此判断要不要补归档。
+            self._mxu_launch_count += 1
 
         def update_status(message: str) -> None:
             nonlocal update_log
@@ -1441,6 +1461,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 log_offsets,
                 process=self.maaend_process_manager.process,
                 on_status=update_status,
+                on_before_session=before_update_session,
+                on_session_launched=after_update_session_launch,
             )
             if version is not None:
                 await asyncio.to_thread(
@@ -1635,6 +1657,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
+            # 只有进程真的起来了才算一次 MXU 启动；否则 debug/ 里还是上一轮的残留。
+            self._mxu_launch_count += 1
             await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
             if Config.setting.Function.IfSilence:
@@ -1652,7 +1676,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 # 更新接管和失败清理都可能结束游戏，先保留这次尝试的现场。
                 await self._take_failure_shot()
             if update_log_offsets is not None:
-                await self._update_after_first_stage(update_log_offsets)
+                await self._update_after_first_stage(
+                    update_log_offsets, stage_label=stage_label
+                )
 
             if self.cur_user_log.status == "Success!":
                 self.script_info.log = (
@@ -1674,6 +1700,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
                 # 中止相关程序
                 await self.kill_managed_process()
+
+                # MXU 已退出，这次尝试的现场要赶在更新接管或下一次重试启动 MXU
+                # 之前取证，因为 MXU 一启动就会清空 debug/。
+                await self._archive_failure_logs(
+                    label=f"{stage_label}阶段第 {i} 次尝试"
+                )
 
                 try:
                     await self.task_info.local_notifier.send_notice(
@@ -2571,6 +2603,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "type": "select",
                     "caseName": sanity_task_type,
                 }
+                if sanity_task_type == "CrisisDrills":
+                    MaaEndResourceLoader.get_loaded(
+                        self.maaend_root_path
+                    ).validate_crisis_drills(sanity_task_key["CrisisDrills"])
                 for option in (
                     "OperatorProgression",
                     "WeaponProgression",
@@ -2672,6 +2708,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 for key in ("cdk", "cdkEncrypted")
             ):
                 mirror_settings["cdk"] = global_cdk
+
+        # 失败日志包的取证时机取决于 MXU 是否每次启动都清空 debug/：要保存日志包时
+        # 强制打开「启动时清理日志」，一次尝试的现场就只有这一轮。打包失败过则反过来
+        # 强制关闭，宁可下一轮日志混一点，也要保住还没保存成功的现场。同样随 manager
+        # 的原生配置快照恢复，不写回脚本或用户配置来源。
+        if self.script_config.Run.IfSaveLogBundle:
+            settings["autoClearLogsOnLaunch"] = not self._bundle_failed
 
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         mark_native_config_injected(
@@ -2891,6 +2934,86 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if shot is not None:
             self._record_error_screenshot(shot)
 
+    async def _archive_failure_logs(self, *, label: str) -> bool:
+        """在 MXU 退出后、下次启动清日志前归档；重复调用等待同一作业。
+
+        返回 False 表示现场未完整保存，后续会话必须关闭启动清理。
+        取消只能停止等待，后台线程由收尾继续等待，不能提前清掉现场。
+        """
+
+        if not self.script_config.Run.IfSaveLogBundle:
+            return True
+        target_dir = self.script_config.Run.LogBundlePath or Path.cwd() / "debug/maaend"
+        root_path = self.maaend_root_path
+        if root_path is None:
+            return True
+        if self._bundle_job is None:
+            if self._archived_launch_count >= self._mxu_launch_count:
+                return True
+            self._bundle_job = asyncio.create_task(
+                self._run_bundle_job(
+                    Path(target_dir),
+                    root_path,
+                    label=label,
+                    launches=self._mxu_launch_count,
+                )
+            )
+        job = self._bundle_job
+        try:
+            return await asyncio.shield(job)
+        except Exception:
+            return False  # 作业内部已记过日志
+        finally:
+            if job.done():
+                self._bundle_job = None
+
+    async def _run_bundle_job(
+        self,
+        target_dir: Path,
+        root_path: Path,
+        *,
+        label: str,
+        launches: int,
+    ) -> bool:
+        """打包作业本体：一次现场一份日志包，规则同 MXU 的日志导出。
+
+        Returns:
+            bool: 现场是否已经安全落盘。
+        """
+
+        try:
+            export = await asyncio.to_thread(export_failure_logs, target_dir, root_path)
+        except Exception as error:
+            self._bundle_failed = True
+            logger.opt(exception=True).warning(f"保存 MaaEnd 失败日志包失败: {error}")
+            return False
+        if export is None:
+            # 这份现场确实没有可打包的内容，反复重试没有意义，记下已归档。
+            self._archived_launch_count = launches
+            logger.warning(f"MaaEnd {label}失败日志包没有可打包的内容")
+            return True
+        if export.failed_files:
+            # 部分文件读不到时拿到的只是残缺包，不能当成「现场已保存」：既不消费这次
+            # 待归档现场（收尾还能再取一次，把当时读不到的文件补进去），也让本轮后续
+            # 启动不再清日志，免得漏包文件在安装目录里的唯一一份被删掉。
+            self._bundle_failed = True
+            message = (
+                f"MaaEnd {label}失败日志包不完整: {export.directory}"
+                f"（{len(export.volumes)} 卷，{export.failed_files} 个文件未能写入，"
+                "本轮后续启动不再清理日志）"
+            )
+            logger.warning(message)
+            await push_dispatch_log(self.script_info, message)
+            return False
+        self._archived_launch_count = launches
+        message = (
+            f"MaaEnd {label}失败日志包已保存: {export.directory}"
+            f"（{len(export.volumes)} 卷）"
+        )
+        logger.success(message)
+        await push_dispatch_log(self.script_info, message)
+        return True
+
     async def final_task(self):
 
         if self.check_result != "Pass":
@@ -2923,6 +3046,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         else:
             # 开发与生产使用一致的停止清理流程，便于实机验证。
             await self.kill_managed_process(kill_game=True)
+
+        # 失败日志包：主循环的失败分支已按尝试取证，这里补总时限、异常和更新会话这几条
+        # 绕过主循环的收尾。必须排在后置脚本之前，脚本可能改动或删掉 debug/ 里的现场。
+        if not completed:
+            await self._archive_failure_logs(label="本轮")
 
         await self.run_user_scripts_after()
 
