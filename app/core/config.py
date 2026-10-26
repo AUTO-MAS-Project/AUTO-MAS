@@ -1769,8 +1769,6 @@ class AppConfig:
             get_service(self).prepare_user_update(script_id, user_id, data)
         elif isinstance(script_config, (MaaConfig, SrcConfig)):
             new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
-            # 仅 ZzzOd 需要清空任务编排残留: 原生来源不消费 AppList, 残留会让
-            # 注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）
             if (
                 new_base == BASE_NATIVE
                 and normalize_base_source(user_config.Info.Base or BASE_INDEPENDENT)

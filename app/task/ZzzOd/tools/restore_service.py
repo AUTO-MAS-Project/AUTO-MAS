@@ -65,13 +65,13 @@ def _mas_slot(ctx: RestoreContext) -> int | None:
     return slot if slot > 0 else None
 
 
-# ══════════════════ mas 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ mas 池（声明式 + 专项预览/恢复） ══════════════════
 
 
 async def _mas_files(ctx: RestoreContext) -> dict[str, "Path | str"] | None:
     """归档内容 = 绑定槽目录整份 + 信息字段快照（内存 YAML）。
 
-    与门面原快照入口同构：归档前先物化本页账号+编排进槽（不物化会漏、
+    归档前先物化本页账号+编排进槽（不物化会漏、
     恢复会把本页字段清空）；未绑定槽、安装路径未配置或槽目录缺失时返回
     ``None``（无可归档内容）。
     """
@@ -116,7 +116,7 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     )
 
 
-# ══════════════════ onedragon 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ onedragon 池（声明式 + 专项预览/恢复） ══════════════════
 
 
 async def _onedragon_files(ctx: RestoreContext) -> dict[str, Path] | None:

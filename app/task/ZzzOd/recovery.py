@@ -126,7 +126,7 @@ class ZzzOdRecovery:
                 name = str(new_user_name).strip()
                 if not name:
                     raise ValueError("新用户名称不能为空")
-                # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
+                # 通过公开集合操作创建并提交；锁定时由配置框架拒绝。
                 uid = script_config.UserData.add(ZzzOdUserConfig)
                 await script_config.UserData.commit()
                 user_cfg = script_config.UserData[uid]

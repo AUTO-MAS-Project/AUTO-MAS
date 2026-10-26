@@ -25,9 +25,9 @@ from pathlib import Path
 
 from app.config import ConfigCollection, ConfigEntry
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.task.proxy_helpers import CONFIG_BASE_INDEPENDENT
 from app.utils import get_logger
 from app.utils.config_archive import config_root_key
+from app.utils.constants import BASE_INDEPENDENT
 
 from .tools import (
     MAS_SLOT_BASE,
@@ -386,7 +386,7 @@ def collect_slot_owners(
                     "userId": str(uid),
                     "scriptName": script_name,
                     "userName": str(cfg.Info.Name or ""),
-                    "base": str(cfg.Info.Base or CONFIG_BASE_INDEPENDENT),
+                    "base": str(cfg.Info.Base or BASE_INDEPENDENT),
                 }
             )
     return owners
