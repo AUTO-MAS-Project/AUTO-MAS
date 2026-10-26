@@ -51,6 +51,7 @@ from app.task.MaaFW.tools.core.project_update.updater import MaaFWProjectUpdateE
 from app.task.MaaFW.tools.embedded.embedded_project import (
     ENV_CONFIRMED_FIELD,
     GroupMember,
+    _same_version,
     effective_channel,
     embedded_project_dir,
     mark_env_confirmed,
@@ -73,6 +74,10 @@ NEXT_UPDATE_HINT = "项目下次更新时会自动清掉不属于新版本的文
 # 等谱系锁超时（同项目另一个脚本正在更新 / 清理）：这次没查，锁很快会放，下次运行就能查。
 LOCK_BUSY_REASON = "同项目的另一个脚本正在更新，这次没有核对"
 RETRY_LATER_HINT = "稍后再运行一次即可"
+# 组 latest 已是另一个版本：运行中不跨版本切视图（interface 与运行计划是按本视图的版本建的，
+# 跨版本要走运行前检查重建），留给下次运行前的组同步。
+NEWER_IN_GROUP_REASON = "同项目的其他脚本已换到 {version}"
+NEXT_RUN_SWITCH_HINT = "下次运行前会自动换过去，这次不再核对"
 
 
 def release_group_members(script_id: str) -> list[GroupMember]:
@@ -98,8 +103,11 @@ def release_group_members(script_id: str) -> list[GroupMember]:
     return members
 
 
-def _state(script_id: str, channel: str, base: Path | None) -> tuple[str, dict, bool]:
-    """**本视图自己挂的**载荷的核对状态与记录，以及视图是不是在组 latest 上。
+def _state(
+    script_id: str, channel: str, base: Path | None
+) -> tuple[str, dict, bool, str | None]:
+    """**本视图自己挂的**载荷的核对状态与记录、视图是不是在组 latest 上，以及组 latest 是
+    另一个版本时它的版本号（同版本或在 latest 上时为 None）。
 
     不看组 latest 的状态：同组兄弟清理过残留、新载荷顶替了 latest，传播那一刻本脚本正在跑
     被跳过，它的视图还挂着被污染的旧载荷——按 latest 判会说「核对过、没有多余的文件」。
@@ -107,13 +115,18 @@ def _state(script_id: str, channel: str, base: Path | None) -> tuple[str, dict, 
 
     marker = read_view_marker(embedded_project_dir(script_id, base))
     if marker is None:
-        return "missing", {}, True
+        return "missing", {}, True, None
     lineage = str(marker["lineage"])
     payload_id = str(marker["payload"])
     entry = latest_entry(lineage, channel, base)
     on_latest = entry is None or str(entry["id"]) == payload_id
+    newer: str | None = None
+    if not on_latest and entry is not None:
+        latest_version = str(entry.get("version") or "")
+        if not _same_version(str(marker.get("version") or ""), latest_version):
+            newer = latest_version or str(entry["id"])
     state, record = payload_check_state(payloads_root(base), lineage, payload_id)
-    return state, record, on_latest
+    return state, record, on_latest, newer
 
 
 def _payload_imported(script_id: str, base: Path | None) -> bool:
@@ -178,6 +191,10 @@ def describe_outcome(outcome: CleanOutcome) -> str:
         )
     if outcome.reason == LOCK_BUSY_REASON:
         return f"{switched}{LOCK_BUSY_REASON}；{RETRY_LATER_HINT}"
+    if outcome.status == "skipped" and outcome.reason.startswith(
+        NEWER_IN_GROUP_REASON.split("{", 1)[0]
+    ):
+        return f"{outcome.reason}，{NEXT_RUN_SWITCH_HINT}"
     reason = outcome.reason or "没有可用的比对依据"
     return f"{switched}没能与官方发行包核对项目文件（{reason}）{hint}"
 
@@ -251,12 +268,19 @@ async def _check_view_release(
     cancel_event: threading.Event | None,
 ) -> CleanOutcome:
     try:
-        state, record, on_latest = await asyncio.to_thread(
+        state, record, on_latest, newer = await asyncio.to_thread(
             _state, script_id, channel, base
         )
     except Exception as exc:  # noqa: BLE001 - 判断不了就当查不了
         logger.warning(f"MFW 发行包核对判断失败（{script_id[:8]}）：{exc}")
         return CleanOutcome("unavailable", reason=str(exc))
+    if newer is not None:
+        # 组已是另一个版本：经组同步切过去就是运行中跨版本换项目，而 interface、运行计划、
+        # 运行环境确认都是按本视图的版本做的。不在这里切，下次运行前的组同步切过去、按新版本
+        # 重做运行前检查。
+        return CleanOutcome(
+            "skipped", reason=NEWER_IN_GROUP_REASON.format(version=newer)
+        )
     # 视图不在组 latest 上时一律往下走：先经组同步切到 latest（持着预约，直接切），再核对
     # latest 那份——本视图挂的载荷核对过与否，都不代表切过去之后的样子。
     if on_latest and state == "verified":
@@ -324,6 +348,11 @@ async def _check_view_release(
     if not isinstance(result, CleanOutcome):
         result = CleanOutcome("skipped", version=updated.version_after)
     result.switched = updated.updated
+    # 上面已拦下「组是另一个版本」，这里兜等锁那几秒里同组别的脚本把组推到新版本的情况：
+    # 视图已经换过去了，但不能立刻重跑（调用方据此停下，下次运行前按新版本重做检查）。
+    result.version_changed = updated.updated and not _same_version(
+        updated.version_before, updated.version_after
+    )
     if (
         result.switched
         and result.status in {"cleaned", "repointed"}

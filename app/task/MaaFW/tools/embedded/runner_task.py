@@ -3113,6 +3113,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise
         self._append_log(describe_outcome(outcome), warning=not outcome.switched)
         cleaned = outcome.status in {"cleaned", "repointed"}
+        if outcome.switched and outcome.version_changed:
+            # 等锁那几秒里组被推到了新版本、视图跟着换了：本次的 interface 与运行计划是按旧
+            # 版本建的，不能拿来跑新版本。停下，下次运行前按新版本重做检查。
+            self._append_log(
+                f"本脚本已换到 {outcome.version or '新版本'}，这一轮不再重新运行，"
+                "下次运行会按新版本重新准备",
+                warning=True,
+            )
+            return None
         if outcome.switched:
             # 视图换了载荷就重跑，不看 status：同组兄弟已清理过、本脚本经组同步换过来时，
             # 核对的是换来的那份（status 是 verified / clean），旧视图里的残留照样没了。

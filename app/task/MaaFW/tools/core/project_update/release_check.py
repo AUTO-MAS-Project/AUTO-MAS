@@ -95,6 +95,11 @@ from .state import DEFAULT_CACHE_ROOT
 
 logger = logging.getLogger("automas.maafw.project_update.release_check")
 
+
+class _LayoutSkip(HealSkip):
+    """发行包的条目名与整包解压后的落点对不上（``range_delta._check_layout`` 拦下的那几类）。"""
+
+
 RESULT_CLEAN = RELEASE_CHECK_CLEAN
 # 核对过、有残留：清单记清理后的载荷（``cleanedTo``）。
 RESULT_STALE = "stale"
@@ -199,7 +204,19 @@ def _listing_from_archive(
 
     ``tree_gate``：读 ``project_root`` 的那段从这道门过（导入时，见 :class:`TreeGate`）。"""
 
+    from .range_delta import RangeDeltaUnavailable, _check_layout
+
     interface_rel, infos = package_entries(archive)
+    try:
+        # 与区间差量同一道布局检查：整包解压会规整落点（Windows 非法字符换成 _、去段尾的点和
+        # 空格）、重名条目后者覆盖前者、只差大小写的目录落进同一处。这类包的条目名与落盘文件
+        # 对不上，照条目名比会把正式文件（``a?.png`` 落成的 ``a_.png``）当成残留删掉——按
+        # 「核对不了」处理，保留原样。
+        _check_layout(archive, interface_rel, infos)
+    except RangeDeltaUnavailable as exc:
+        raise _LayoutSkip(
+            f"发行包的文件布局没法按清单核对：{exc}", permanent=True
+        ) from exc
     try:
         data = _parse_json(read_entry(archive, infos[interface_rel], interface_rel))
         same = lineage_key(data) == lineage
@@ -360,6 +377,9 @@ async def fetch_release_listing(
 
         try:
             return await asyncio.to_thread(from_cache)
+        except _LayoutSkip:
+            # 布局是发行包自己的：GitHub 上同一个包照样过不了，不必再去读一遍。
+            raise
         except (HealSkip, OSError, zipfile.BadZipFile) as exc:
             logger.info("MaaFW 缓存包 %s 不能用来核对：%s", cached, exc)
     url, size = await _github_asset(
@@ -710,6 +730,9 @@ class CleanOutcome:
     ``update_cleans`` 也由宿主填：视图最后挂的载荷是导入来的（清单 ``source.kind`` 不是
     ``update``）。只有这种载荷下次更新一律要全量包、会按 ``apply._import_origin_orphans``
     清掉资源目录里的残留；更新得来的走差量包时只按删除表删，「下次更新会清掉」对它不成立。
+
+    ``version_changed`` 也由宿主填：视图换过去的载荷与原来的版本不同（等锁时同组别的脚本把组
+    推到了新版本）。运行中的 interface 与运行计划是按旧版本建的，这时不能立刻重跑。
     """
 
     def __init__(
@@ -736,6 +759,7 @@ class CleanOutcome:
         self.elapsed = elapsed
         self.switched = False
         self.update_cleans = False
+        self.version_changed = False
 
     def __repr__(self) -> str:  # pragma: no cover - 调试用
         return (
