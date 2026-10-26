@@ -1,6 +1,6 @@
 <template>
   <div class="direct-control-section">
-    <div class="section-header">
+    <div class="section-header section-header--compact">
       <h3>{{ t('edit.directControl') }}</h3>
     </div>
     <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
@@ -56,21 +56,6 @@ const engineDescription = (engine: HSREngine) =>
 <style scoped>
 .direct-control-section {
   margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  gap: 10px;
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 20px;
-  background: var(--ant-color-primary);
 }
 
 .engine-grid {
