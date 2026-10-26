@@ -1206,14 +1206,6 @@ onUnmounted(() => {
   color: var(--ant-color-text-tertiary);
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .label-hint strong {
   font-weight: 600;
   color: var(--ant-color-text-secondary);

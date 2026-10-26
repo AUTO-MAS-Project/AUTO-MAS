@@ -428,12 +428,4 @@ onMounted(loadScript)
 .section-header {
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
 </style>

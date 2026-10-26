@@ -666,14 +666,6 @@ onMounted(loadScript)
   animation: fadeInUp 0.6s ease-out;
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .launch-type-label {
   display: flex;
   align-items: center;

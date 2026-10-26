@@ -1155,14 +1155,6 @@ onBeforeUnmount(() => {
   animation: fadeInUp 0.6s ease-out;
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
 .endfield-update-check {
   display: inline-block;

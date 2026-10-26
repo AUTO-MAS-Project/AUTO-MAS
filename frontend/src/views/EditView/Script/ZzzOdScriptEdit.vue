@@ -549,14 +549,6 @@ onMounted(loadScript)
   gap: 8px;
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .path-input-group {
   border: 1px solid var(--ant-color-border);
 }
