@@ -242,15 +242,36 @@ async def check_view_release(
     return outcome
 
 
-def _view_changed(view: Path, before: dict | None) -> bool:
-    """核对中途出错时，视图是不是已经换了载荷（组同步在出错之前就切过去了）。"""
+def _view_change(view: Path, before: dict | None) -> tuple[bool, bool]:
+    """核对中途出错时，视图是不是已经换了载荷（组同步在出错之前就切过去了），以及换过去的是不是
+    另一个版本。版本确认不了（读不到切换后的标记、版本号缺失）一律当换了版本：宁可这次不重跑。"""
 
     after = read_view_marker(view)
-    return (
-        before is not None
-        and after is not None
-        and str(after["payload"]) != str(before["payload"])
+    if before is None:
+        return False, False
+    if after is None:
+        # 标记读不出来：说不清换没换，按换了另一个版本处理，不立刻重跑。
+        return True, True
+    if str(after["payload"]) == str(before["payload"]):
+        return False, False
+    return True, not _same_version(
+        str(before.get("version") or ""), str(after.get("version") or "")
     )
+
+
+async def _fill_view_change(
+    outcome: CleanOutcome, view: Path, before: dict | None
+) -> CleanOutcome:
+    """异常出口与正常返回同一口径填 ``switched`` / ``version_changed``（组同步可能在核心核对
+    抛错之前已经把视图换到了组 latest，甚至是等锁期间被推上去的新版本）。"""
+
+    try:
+        switched, version_changed = await asyncio.to_thread(_view_change, view, before)
+    except Exception:  # noqa: BLE001 - 读不了视图标记就当换了版本，不重跑
+        switched, version_changed = True, True
+    outcome.switched = switched
+    outcome.version_changed = version_changed
+    return outcome
 
 
 async def _check_view_release(
@@ -335,15 +356,13 @@ async def _check_view_release(
         else:
             logger.warning(f"MFW 发行包核对失败（{script_id[:8]}）：{exc}")
             failed = CleanOutcome("unavailable", reason=str(exc))
-        failed.switched = await asyncio.to_thread(_view_changed, view, before)
-        return failed
+        return await _fill_view_change(failed, view, before)
     except Exception as exc:  # noqa: BLE001 - 核对失败只是不清理
         logger.opt(exception=True).warning(
             f"MFW 发行包核对失败（{script_id[:8]}）：{exc}"
         )
         failed = CleanOutcome("unavailable", reason=f"{type(exc).__name__}: {exc}")
-        failed.switched = await asyncio.to_thread(_view_changed, view, before)
-        return failed
+        return await _fill_view_change(failed, view, before)
     result = updated.result
     if not isinstance(result, CleanOutcome):
         result = CleanOutcome("skipped", version=updated.version_after)
