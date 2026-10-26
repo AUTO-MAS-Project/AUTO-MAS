@@ -188,7 +188,7 @@ const toggleCollapsed = () => {
         </a-dropdown>
 
         <span class="patterns-count">
-          共 {{ patterns.length }} 条规则，{{ activePatternCount }} 条生效
+          {{ t('edit.ruleCountSummary', { n: patterns.length, m: activePatternCount }) }}
         </span>
       </div>
     </div>

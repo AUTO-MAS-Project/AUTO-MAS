@@ -267,7 +267,7 @@ onUnmounted(() => {
             <template #icon>
               <SyncOutlined :spin="realTimeEnabled" />
             </template>
-            {{ realTimeEnabled ? '自动更新' : '停止更新' }}
+            {{ realTimeEnabled ? t('logs.autoUpdate') : t('logs.stopUpdate') }}
           </a-button>
 
           <a-button :loading="exportingLogs" @click="packageLogs">

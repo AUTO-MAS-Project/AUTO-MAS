@@ -21,7 +21,7 @@
             class="update-hint clickable"
             @click="handleAppUpdateClick"
           >
-            检测到更新 {{ updateInfo.latest_version }} 请尽快更新
+            {{ t('comp.updateAvailableHint', { version: updateInfo.latest_version }) }}
           </span>
           <span
             v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"

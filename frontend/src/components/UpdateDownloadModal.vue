@@ -22,7 +22,11 @@
             <div class="progress-title">
               <a-spin :spinning="true" size="small" />
               <span class="download-title">
-                {{ status === 'switchingSource' ? '正在切换下载源' : '下载进度' }}
+                {{
+                  status === 'switchingSource'
+                    ? t('comp.switchingDownloadSource')
+                    : t('comp.downloadProgress')
+                }}
               </span>
             </div>
             <div
@@ -44,7 +48,9 @@
             class="progress-bar"
           />
 
-          <div v-if="sourceLabel" class="download-source">正在从 {{ sourceLabel }} 下载</div>
+          <div v-if="sourceLabel" class="download-source">
+            {{ t('comp.downloadingFrom', { source: sourceLabel }) }}
+          </div>
 
           <div class="progress-info-row">
             <div class="left-info">

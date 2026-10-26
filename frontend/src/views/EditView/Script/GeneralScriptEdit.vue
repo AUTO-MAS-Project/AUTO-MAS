@@ -269,7 +269,9 @@
                       <FileOutlined v-else />
                     </template>
                     {{
-                      generalConfig.Script.ConfigPathMode === 'Folder' ? '选择文件夹' : '选择文件'
+                      generalConfig.Script.ConfigPathMode === 'Folder'
+                        ? t('edit.pickFolder')
+                        : t('edit.pickFile')
                     }}
                   </a-button>
                 </a-input-group>
