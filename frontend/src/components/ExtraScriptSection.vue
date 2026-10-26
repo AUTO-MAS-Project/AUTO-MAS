@@ -26,27 +26,14 @@
           />
         </a-col>
         <a-col :span="20">
-          <a-input-group compact class="path-input-group">
-            <a-input
-              v-model:value="formData.Info.ScriptBeforeTask"
-              :placeholder="t('comp.pickScriptFile')"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask"
-              size="large"
-              class="path-input"
-              readonly
-            />
-            <a-button
-              size="large"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask"
-              class="path-button"
-              @click="selectScriptBeforeTask"
-            >
-              <template #icon>
-                <FileOutlined />
-              </template>
-              {{ t('comp.pickFile') }}
-            </a-button>
-          </a-input-group>
+          <PathPickerField
+            v-model="formData.Info.ScriptBeforeTask"
+            mode="file"
+            :placeholder="t('comp.pickScriptFile')"
+            :pick-label="t('comp.pickFile')"
+            :disabled="loading || !formData.Info.IfScriptBeforeTask"
+            @pick="selectScriptBeforeTask"
+          />
         </a-col>
       </a-row>
     </a-form-item>
@@ -71,27 +58,14 @@
           />
         </a-col>
         <a-col :span="20">
-          <a-input-group compact class="path-input-group">
-            <a-input
-              v-model:value="formData.Info.ScriptAfterTask"
-              :placeholder="t('comp.pickScriptFile')"
-              :disabled="loading || !formData.Info.IfScriptAfterTask"
-              size="large"
-              class="path-input"
-              readonly
-            />
-            <a-button
-              size="large"
-              :disabled="loading || !formData.Info.IfScriptAfterTask"
-              class="path-button"
-              @click="selectScriptAfterTask"
-            >
-              <template #icon>
-                <FileOutlined />
-              </template>
-              {{ t('comp.pickFile') }}
-            </a-button>
-          </a-input-group>
+          <PathPickerField
+            v-model="formData.Info.ScriptAfterTask"
+            mode="file"
+            :placeholder="t('comp.pickScriptFile')"
+            :pick-label="t('comp.pickFile')"
+            :disabled="loading || !formData.Info.IfScriptAfterTask"
+            @pick="selectScriptAfterTask"
+          />
         </a-col>
       </a-row>
     </a-form-item>
@@ -101,7 +75,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 
 const { t } = useI18n()
 
@@ -196,49 +171,5 @@ const selectScriptAfterTask = async () => {
 
 .help-icon:hover {
   color: var(--ant-color-primary);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
 }
 </style>
