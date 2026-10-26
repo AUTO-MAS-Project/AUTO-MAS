@@ -170,24 +170,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   padding: 8px;
 }
 
-/* 滚动条样式 - 浅色 */
-.date-list::-webkit-scrollbar {
-  width: 8px;
-}
-
-.date-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.date-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .date-panel {
   margin-bottom: 4px;
 }
@@ -343,16 +325,5 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-</style>
-
-<style>
-/* 深色模式滚动条 */
-.dark .date-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .date-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

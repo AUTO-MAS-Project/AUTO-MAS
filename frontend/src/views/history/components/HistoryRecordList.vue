@@ -162,24 +162,6 @@ const formatRecordTime = (date: string) => formatStoredDateTime(date)
   padding: 8px;
 }
 
-/* 滚动条样式 - 浅色 */
-.records-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.records-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .empty-records {
   display: flex;
   flex-direction: column;
@@ -280,16 +262,5 @@ const formatRecordTime = (date: string) => formatStoredDateTime(date)
   color: var(--ant-color-primary);
   font-size: 12px;
   flex-shrink: 0;
-}
-</style>
-
-<style>
-/* 深色模式滚动条 - 需要全局样式 */
-.dark .records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>
