@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""魔改 AVD 的服务层：根目录状态与开机前检查、实例选项、安装 APK、电源操作前关实例。
+"""魔改 AVD 的服务层：根目录状态与开机前检查、电源操作前关实例。
 
 添加流程：``status``（组件齐不齐、电脑检查）→ 齐了按普通路径纳管（Emulator 2.0 的 ``paths/add``）。
 组件全部随模拟器内测包提供，MAS 不下载；缺了只说缺哪一项。实例的新建 / 删除 / 启停走 Emulator 2.0
@@ -152,48 +152,3 @@ async def close_running_instances(
         return {}
     logger.info(f"关机前先正常关闭 {len(targets)} 台魔改 AVD 实例（安卓正常关机）")
     return await close_instances(targets, timeout=timeout)
-
-
-# ---- 实例选项 -------------------------------------------------------------
-
-
-async def _backend(emulator_id: str, slot: str):
-    from ..service import build_manager
-    from .manager import AvdManager
-
-    manager = await build_manager(emulator_id)
-    path, record = manager.resolve_slot(str(slot))
-    if path.type != "avd":
-        raise ValueError("该设备不是魔改 AVD")
-    backend = await manager.manager_for(path)
-    assert isinstance(backend, AvdManager)
-    return backend, record.native_index
-
-
-async def instance_options(emulator_id: str, slot: str) -> dict[str, Any]:
-    backend, native_index = await _backend(emulator_id, slot)
-    return backend.instance_options(native_index)
-
-
-async def install_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, Any]:
-    """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。
-
-    只收完整路径：相对路径会按后端的工作目录解析，装进去的未必是用户选的那个文件。"""
-    text = str(apk_path or "").strip().strip('"')
-    if not text:
-        raise ValueError("请选择要安装的 APK 文件")
-    apk = Path(text)
-    if not apk.is_absolute():
-        raise ValueError(f"请给出安装包的完整路径（{text}）")
-    if apk.suffix.lower() != ".apk":
-        raise ValueError(f"{apk.name} 不是 .apk 安装包（.xapk、拆分安装包暂不支持）")
-    if not await asyncio.to_thread(apk.is_file):
-        raise ValueError(f"找不到安装包 {apk}")
-    backend, native_index = await _backend(emulator_id, slot)
-    result = await backend.install_apk(native_index, apk)
-    return {
-        "ok": True,
-        "reason": "ok",
-        "message": f"已安装 {apk.name}",
-        "result": result,
-    }

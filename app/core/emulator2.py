@@ -18,7 +18,10 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""Emulator 2.0 的服务层：搜索、增删路径、合并设备列表、四项设置。
+"""Emulator 2.0 的应用编排：配置持久化、脚本绑定策略与删除影响分析。
+
+设备发现、设备号解析、启停和设置能力由 ``app.utils.emulator2`` 提供；
+本模块装配当前配置并保存变更，设备层无需读取各专项的脚本配置。
 
 版本探测只在**添加路径时**做一次并持久化。``get_status()`` 每次轮询都会重建管理器，
 把探测放进构造函数会变成每轮一次子进程。
@@ -27,16 +30,22 @@
 import asyncio
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
+from app.utils.emulator2.avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
+from app.utils.emulator2.detect import DetectResult, probe_install_path
+from app.utils.emulator2.facade import (
+    DeviceUnavailableError,
+    Emulator2Manager,
+    dump_paths,
+)
+from app.utils.emulator2.guard import capture, dump_baselines
+from app.utils.emulator2.settings import SettingsConflictError, validate_changes
+from app.utils.emulator2.slots import PathRecord, SlotTable, make_path_id
 
-from .avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
-from .detect import DetectResult, probe_install_path
-from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths
-from .guard import capture, dump_baselines
-from .settings import SettingsConflictError, validate_changes
-from .slots import PathRecord, SlotTable, make_path_id
+from .config import Config
 
 logger = get_logger("Emulator2 服务")
 
@@ -53,8 +62,8 @@ def readable_error(error: BaseException) -> str:
         return "配置在编辑期间被改动，请刷新后重试"
     if isinstance(error, ValueError):
         return str(error)
-    from .avd.host import AdbPortConflict
-    from .avd.precheck import PrecheckFailed
+    from app.utils.emulator2.avd.host import AdbPortConflict
+    from app.utils.emulator2.avd.precheck import PrecheckFailed
 
     # 魔改 AVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
     if isinstance(
@@ -122,14 +131,10 @@ class AffectedScript:
 
 
 def _emulator_config(emulator_id: str):
-    from app.core import Config
-
     return Config.EmulatorConfig[uuid.UUID(emulator_id)]
 
 
 async def _save(emulator_id: str, paths: list[PathRecord], slots: SlotTable) -> None:
-    from app.core import Config
-
     await Config.update_emulator(
         emulator_id,
         {"Info": {"Paths": dump_paths(paths), "Slots": slots.to_json()}},
@@ -139,8 +144,6 @@ async def _save(emulator_id: str, paths: list[PathRecord], slots: SlotTable) -> 
 async def _save_baselines(
     emulator_id: str, baselines: dict[str, dict[str, int]]
 ) -> None:
-    from app.core import Config
-
     await Config.update_emulator(
         emulator_id, {"Info": {"Baselines": dump_baselines(baselines)}}
     )
@@ -149,7 +152,7 @@ async def _save_baselines(
 async def capture_baselines(emulator_id: str) -> dict:
     """把当前所有设备的设置记成守卫基准。开启守卫时调一次。
 
-    只记用户显式设过的字段——见 :func:`.guard.capture`。
+    只记用户显式设过的字段——见 ``app.utils.emulator2.guard.capture``。
     """
     manager = await build_manager(emulator_id)
 
@@ -196,8 +199,6 @@ def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedSc
     必须同时覆盖两套字段命名——``Emulator.Id/Index``（MAA、SRC、M9A、MaaFW）与
     ``Game.EmulatorId/EmulatorIndex``（MaaEnd、通用脚本）。运行中判据用 ``is_locked``。
     """
-    from app.core import Config
-
     wanted = {str(slot) for slot in slots}
     affected: list[AffectedScript] = []
     for script_id, script in Config.ScriptConfig.items():
@@ -248,8 +249,6 @@ async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
     两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看，只在这次带了设备号
     时检查；只改了设备号时，模拟器配置取脚本当前的值。只改模拟器配置（没带设备号）不检查。
     """
-    from app.core import Config
-
     try:
         script = Config.ScriptConfig[uuid.UUID(str(script_id))]
     except Exception:  # noqa: BLE001 - 找不到脚本交给后面的保存逻辑报
@@ -320,8 +319,6 @@ async def search(emulator_id: str | None = None) -> list[SearchItem]:
 
 
 def _default_alias(install_path: str) -> str:
-    from pathlib import Path
-
     name = Path(install_path).name
     return name or install_path
 
@@ -366,7 +363,7 @@ async def add_path(
 
     if record.type == "avd":
         # MAS 不下载组件；解压出来的根目录可能还没有 mas-avd.json：补一份
-        from .avd.components import ensure_metadata
+        from app.utils.emulator2.avd.components import ensure_metadata
 
         try:
             if await asyncio.to_thread(ensure_metadata, resolved_path):
@@ -766,4 +763,48 @@ async def apply_settings_to_all(emulator_id: str, changes: dict) -> dict:
         "results": results,
         "okCount": sum(1 for item in results if item["ok"]),
         "failCount": sum(1 for item in results if not item["ok"]),
+    }
+
+
+# ---- 实例选项 -------------------------------------------------------------
+
+
+async def _avd_backend(emulator_id: str, slot: str):
+    from app.utils.emulator2.avd.manager import AvdManager
+
+    manager = await build_manager(emulator_id)
+    path, record = manager.resolve_slot(str(slot))
+    if path.type != "avd":
+        raise ValueError("该设备不是魔改 AVD")
+    backend = await manager.manager_for(path)
+    assert isinstance(backend, AvdManager)
+    return backend, record.native_index
+
+
+async def avd_instance_options(emulator_id: str, slot: str) -> dict[str, Any]:
+    backend, native_index = await _avd_backend(emulator_id, slot)
+    return backend.instance_options(native_index)
+
+
+async def install_avd_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, Any]:
+    """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。
+
+    只收完整路径：相对路径会按后端的工作目录解析，装进去的未必是用户选的那个文件。"""
+    text = str(apk_path or "").strip().strip('"')
+    if not text:
+        raise ValueError("请选择要安装的 APK 文件")
+    apk = Path(text)
+    if not apk.is_absolute():
+        raise ValueError(f"请给出安装包的完整路径（{text}）")
+    if apk.suffix.lower() != ".apk":
+        raise ValueError(f"{apk.name} 不是 .apk 安装包（.xapk、拆分安装包暂不支持）")
+    if not await asyncio.to_thread(apk.is_file):
+        raise ValueError(f"找不到安装包 {apk}")
+    backend, native_index = await _avd_backend(emulator_id, slot)
+    result = await backend.install_apk(native_index, apk)
+    return {
+        "ok": True,
+        "reason": "ok",
+        "message": f"已安装 {apk.name}",
+        "result": result,
     }
