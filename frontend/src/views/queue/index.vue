@@ -40,15 +40,12 @@
 
     <!-- 空状态 -->
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="../../assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
-        </div>
-        <div class="empty-text-content">
-          <h3 class="empty-title">{{ t('queue.emptyTitle') }}</h3>
-          <p class="empty-description">{{ t('queue.emptyDesc') }}</p>
-        </div>
-      </div>
+      <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
+        <template #description>
+          <div class="empty-title">{{ t('queue.emptyTitle') }}</div>
+          <div class="empty-description">{{ t('queue.emptyDesc') }}</div>
+        </template>
+      </a-empty>
     </div>
 
     <!-- 队列内容 -->
@@ -261,6 +258,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
@@ -886,93 +884,6 @@ onUnmounted(() => {
   margin: 20px 0;
 }
 
-.empty-content {
-  text-align: center;
-  max-width: 480px;
-  animation: fadeInUp 0.8s ease-out;
-}
-
-.empty-image-container {
-  position: relative;
-  margin-bottom: 32px;
-  display: inline-block;
-}
-
-.empty-image-container::before {
-  content: '';
-  position: absolute;
-  top: -20px;
-  left: -20px;
-  right: -20px;
-  bottom: -20px;
-  background: radial-gradient(circle, var(--ant-color-primary-bg) 0%, transparent 70%);
-  border-radius: 50%;
-  animation: pulse 3s ease-in-out infinite;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
-.empty-text-content {
-  margin-top: 16px;
-}
-
-.empty-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin: 0 0 12px 0;
-  background: linear-gradient(135deg, var(--ant-color-text), var(--ant-color-text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.empty-description {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.6;
-  margin: 0;
-  opacity: 0.8;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.8;
-    transform: scale(1.05);
-  }
-}
-
 /* 队列内容 */
 .queue-content {
   display: flex;
@@ -1195,5 +1106,14 @@ onUnmounted(() => {
 
 .queue-title-input :deep(.ant-input:focus) {
   box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+.empty-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+.empty-description {
+  color: var(--ant-color-text-secondary);
 }
 </style>

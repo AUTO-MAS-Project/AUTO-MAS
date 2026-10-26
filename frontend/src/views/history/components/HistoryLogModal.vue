@@ -176,14 +176,12 @@
             />
           </div>
           <div v-else class="empty-log">
-            <LoadingOutlined v-if="loading" style="font-size: 32px" />
-            <template v-else>
-              <FileExclamationOutlined class="empty-icon" />
-              <span class="empty-title">{{ t('history.log.emptyLog') }}</span>
+            <a-empty v-if="!loading" :description="t('history.log.emptyLog')">
+              <template #image><FileExclamationOutlined class="empty-icon" /></template>
               <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
                 logUnavailableReason ? t('history.log.unavailable') : errorMessage
               }}</span>
-            </template>
+            </a-empty>
           </div>
         </a-spin>
       </div>
@@ -199,7 +197,6 @@ import {
   FileTextOutlined,
   GiftOutlined,
   InboxOutlined,
-  LoadingOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
@@ -488,11 +485,6 @@ const displayLogContent = computed(() => {
 .empty-icon {
   font-size: 48px;
   color: var(--ant-color-text-quaternary);
-}
-
-.empty-title {
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
 }
 
 .error-message {

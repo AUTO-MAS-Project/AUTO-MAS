@@ -217,15 +217,14 @@
 
       <!-- 空状态 -->
       <div v-if="queueItems.length === 0" class="empty-state">
-        <div class="empty-content">
-          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
-        </div>
+        <a-empty :image="noDataImage" :image-style="{ height: '200px' }" :description="false" />
       </div>
     </div>
   </a-card>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -838,26 +837,6 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-}
-
-.empty-content {
-  display: flex;
-  justify-content: center;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
 }
 
 /* 响应式设计 */

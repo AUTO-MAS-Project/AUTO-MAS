@@ -31,11 +31,7 @@
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
       <div v-if="!logContent" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
-          </div>
-        </div>
+        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -52,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
@@ -333,34 +330,5 @@ onUnmounted(() => {
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

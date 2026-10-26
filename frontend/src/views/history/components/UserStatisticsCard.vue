@@ -148,13 +148,14 @@
 
       <!-- 空状态 -->
       <div v-else class="empty-stats">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
+        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
@@ -483,17 +484,6 @@ watch(
   justify-content: center;
   gap: 6px;
   padding: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.7;
-}
-
-.empty-text {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
 }
 
 .matrix-empty {

@@ -62,14 +62,18 @@
       </a-collapse>
 
       <div v-if="historyData.length === 0" class="empty-sidebar">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.empty') }}</span>
+        <a-empty
+          :image="noDataImage"
+          :image-style="{ height: '80px' }"
+          :description="t('history.empty')"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import type { HistoryBucket } from '@/api'
 import {
@@ -339,17 +343,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
 }
 </style>
 

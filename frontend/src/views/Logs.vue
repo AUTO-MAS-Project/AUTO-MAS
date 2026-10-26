@@ -283,7 +283,9 @@ onUnmounted(() => {
     <div class="logs-content">
       <a-spin :spinning="loading" tip="加载日志中...">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
-          <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
+          <div v-if="!loading && !logs" class="log-empty">
+            <a-empty :image="false" :description="emptyHint" />
+          </div>
           <vue-monaco-editor
             v-else
             :value="logs"
