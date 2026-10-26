@@ -5,58 +5,53 @@
 
       <!-- 后端状态显示 -->
       <div class="status-card" :class="{ running: isBackendRunning, stopped: !isBackendRunning }">
-        <div class="status-indicator">
-          <span class="status-dot" :class="{ active: isBackendRunning }"></span>
-          <span class="status-text">
-            {{ isBackendRunning ? '运行中' : '已停止' }}
-          </span>
-        </div>
+        <a-badge
+          :status="isBackendRunning ? 'success' : 'error'"
+          :text="isBackendRunning ? '运行中' : '已停止'"
+        />
         <div v-if="backendPid" class="pid-info">PID: {{ backendPid }}</div>
       </div>
 
       <!-- 控制按钮 -->
       <div class="action-buttons">
-        <button
+        <a-button
+          size="small"
           :disabled="isLoading || isBackendRunning"
-          class="action-btn start-btn"
+          type="primary"
+          :loading="isLoading"
           @click="startBackend"
         >
-          <span v-if="isLoading" class="loading-spinner">⏳</span>
-          <span v-else>▶️</span>
           启动后端
-        </button>
+        </a-button>
 
-        <button
+        <a-button
+          size="small"
           :disabled="isLoading || !isBackendRunning"
-          class="action-btn stop-btn"
+          danger
+          :loading="isLoading"
           @click="stopBackend"
         >
-          <span v-if="isLoading" class="loading-spinner">⏳</span>
-          <span v-else>⏹️</span>
           停止后端
-        </button>
+        </a-button>
 
-        <button :disabled="isLoading" class="action-btn refresh-btn" @click="refreshStatus">
-          <span v-if="isLoading" class="loading-spinner">⏳</span>
-          <span v-else>🔄</span>
+        <a-button size="small" :disabled="isLoading" :loading="isLoading" @click="refreshStatus">
           刷新状态
-        </button>
+        </a-button>
       </div>
 
       <!-- 操作结果显示 -->
-      <div
+      <a-alert
         v-if="lastResult"
         class="result-card"
-        :class="{ success: lastResult.success, error: !lastResult.success }"
+        :type="lastResult.success ? 'success' : 'error'"
+        :message="lastResult.success ? '操作成功' : '❌ 操作失败'"
+        show-icon
       >
-        <div class="result-title">
-          {{ lastResult.success ? '操作成功' : '❌ 操作失败' }}
-        </div>
-        <div v-if="lastResult.message" class="result-message">
-          {{ lastResult.message }}
-        </div>
-        <div v-if="lastResult.error" class="result-error">错误: {{ lastResult.error }}</div>
-      </div>
+        <template #description>
+          <div v-if="lastResult.message">{{ lastResult.message }}</div>
+          <div v-if="lastResult.error">错误: {{ lastResult.error }}</div>
+        </template>
+      </a-alert>
     </div>
 
     <!-- 进程信息 -->
@@ -78,11 +73,9 @@
         </div>
       </div>
 
-      <button :disabled="isLoading" class="action-btn info-btn" @click="getProcessInfo">
-        <span v-if="isLoading" class="loading-spinner">⏳</span>
-        <span v-else>🔍</span>
+      <a-button size="small" :disabled="isLoading" :loading="isLoading" @click="getProcessInfo">
         获取进程信息
-      </button>
+      </a-button>
     </div>
 
     <!-- 快速操作 -->
@@ -90,17 +83,19 @@
       <h3 class="section-title">⚡ 快速操作</h3>
 
       <div class="quick-actions">
-        <button :disabled="isLoading" class="action-btn restart-btn" @click="restartBackend">
-          <span v-if="isLoading" class="loading-spinner">⏳</span>
-          <span v-else>🔄</span>
+        <a-button size="small" :disabled="isLoading" :loading="isLoading" @click="restartBackend">
           重启后端
-        </button>
+        </a-button>
 
-        <button :disabled="isLoading" class="action-btn kill-btn" @click="forceKillProcesses">
-          <span v-if="isLoading" class="loading-spinner">⏳</span>
-          <span v-else>💀</span>
+        <a-button
+          size="small"
+          :disabled="isLoading"
+          danger
+          :loading="isLoading"
+          @click="forceKillProcesses"
+        >
           强制结束所有进程
-        </button>
+        </a-button>
       </div>
     </div>
 
@@ -148,15 +143,14 @@
 
       <!-- WebSocket控制按钮 -->
       <div class="ws-actions">
-        <button
+        <a-button
+          size="small"
           :disabled="isWsReconnecting"
-          class="action-btn reconnect-btn"
+          :loading="isWsReconnecting"
           @click="handleManualReconnect"
         >
-          <span v-if="isWsReconnecting" class="loading-spinner">⏳</span>
-          <span v-else>🔄</span>
           {{ isWsReconnecting ? '重连中...' : '手动重连' }}
-        </button>
+        </a-button>
       </div>
     </div>
 
@@ -165,7 +159,12 @@
       <h3 class="section-title">📝 操作日志</h3>
 
       <div class="log-container">
-        <div v-if="logs.length === 0" class="no-logs">暂无日志记录</div>
+        <a-empty
+          v-if="logs.length === 0"
+          class="no-logs"
+          :image="false"
+          description="暂无日志记录"
+        />
         <div v-else class="log-entries">
           <div v-for="(log, index) in logs" :key="index" class="log-entry" :class="log.type">
             <span class="log-time">{{ log.time }}</span>
@@ -174,7 +173,7 @@
         </div>
       </div>
 
-      <button class="action-btn clear-btn" @click="clearLogs">🗑️ 清空日志</button>
+      <a-button size="small" danger @click="clearLogs">🗑️ 清空日志</a-button>
     </div>
   </div>
 </template>
@@ -594,42 +593,6 @@ onUnmounted(() => {
   border-color: rgba(244, 67, 54, 0.3);
 }
 
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #f44336;
-  animation: pulse 2s infinite;
-}
-
-.status-dot.active {
-  background: #4caf50;
-}
-
-@keyframes pulse {
-  0% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.5;
-  }
-
-  100% {
-    opacity: 1;
-  }
-}
-
-.status-text {
-  font-weight: bold;
-}
-
 .pid-info {
   margin-top: 4px;
   font-size: 10px;
@@ -650,96 +613,7 @@ onUnmounted(() => {
   gap: 6px;
 }
 
-.action-btn {
-  padding: 6px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  cursor: pointer;
-  font-size: 10px;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.action-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.start-btn:hover:not(:disabled) {
-  background: rgba(76, 175, 80, 0.3);
-  border-color: rgba(76, 175, 80, 0.5);
-}
-
-.stop-btn:hover:not(:disabled) {
-  background: rgba(244, 67, 54, 0.3);
-  border-color: rgba(244, 67, 54, 0.5);
-}
-
-.restart-btn:hover:not(:disabled) {
-  background: rgba(255, 193, 7, 0.3);
-  border-color: rgba(255, 193, 7, 0.5);
-}
-
-.kill-btn:hover:not(:disabled) {
-  background: rgba(156, 39, 176, 0.3);
-  border-color: rgba(156, 39, 176, 0.5);
-}
-
-.loading-spinner {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* 结果卡片 */
-.result-card {
-  padding: 8px;
-  border-radius: 4px;
-  margin-bottom: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.result-card.success {
-  background: rgba(76, 175, 80, 0.1);
-  border-color: rgba(76, 175, 80, 0.3);
-}
-
-.result-card.error {
-  background: rgba(244, 67, 54, 0.1);
-  border-color: rgba(244, 67, 54, 0.3);
-}
-
-.result-title {
-  font-weight: bold;
-  margin-bottom: 4px;
-}
-
-.result-message,
-.result-error {
-  font-size: 10px;
-  line-height: 1.3;
-}
-
-.result-error {
-  color: #ff6b6b;
-}
 
 /* 进程信息 */
 .process-info {
@@ -774,6 +648,7 @@ onUnmounted(() => {
 }
 
 .no-logs {
+  margin: 0;
   padding: 8px;
   text-align: center;
   color: #888;
@@ -902,11 +777,7 @@ onUnmounted(() => {
   margin-top: 6px;
 }
 
-.reconnect-btn {
-  background: #4caf50 !important;
-}
-
-.reconnect-btn:hover:not(:disabled) {
-  background: #45a049 !important;
+.result-card {
+  margin-bottom: 8px;
 }
 </style>
