@@ -6,6 +6,7 @@
         :form-data="formData"
         :loading="loading"
         :if-quick-config="formData.Info.IfQuickConfig"
+        :crisis-drills-options="crisisDrillsOptions"
         :essence-location-options="essenceLocationOptions"
         :essence-menu-options="essenceMenuOptions"
         :essence-target-weapon-groups="essenceTargetWeaponGroups"
@@ -77,6 +78,7 @@ const props = defineProps<{
   formData: MaaEndUserForm
   loading: boolean
   inventory: MaaEndInventoryOptions | null
+  crisisDrillsOptions: ComboBoxItem[]
   essenceLocationOptions: ComboBoxItem[]
   essenceMenuOptions: ComboBoxItem[]
   essenceTargetWeaponGroups: MaaEndEssenceTargetGroup[]

@@ -87,6 +87,9 @@ class MaaEndInventoryOptions(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    crisisDrills: list[ComboBoxItem] = Field(
+        default_factory=list, description="当前 MaaEnd 支持的危境预演任务"
+    )
     inventory: MaaEndInventoryOptions | None = Field(
         default=None, description="上游库存目标选项，旧版不支持时为空"
     )
@@ -196,6 +199,7 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            crisisDrills=[ComboBoxItem(**item) for item in data["crisisDrills"]],
             launchGameControllers=data["launchGameControllers"],
             gameSettingControllers=data["gameSettingControllers"],
             projectName=data["projectName"],

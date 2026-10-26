@@ -136,6 +136,7 @@ import {
   SANITY_TASK_TYPE_OPTIONS,
   SANITY_TASK_TYPE_LABEL_MAP,
   getSanityTaskDisplayValue,
+  getEssenceTargetWeaponOptions,
   isProtocolSpaceRewardEnabled,
   normalizeMaaEndSanityConfig,
   AUTO_ESSENCE_MENU_OPTIONS,
@@ -158,6 +159,7 @@ const props = withDefaults(
     formData: any
     loading?: boolean
     ifQuickConfig?: boolean
+    crisisDrillsOptions: ComboBoxItem[]
     essenceLocationOptions: ComboBoxItem[]
     essenceMenuOptions?: ComboBoxItem[]
     essenceTargetWeaponGroups?: MaaEndEssenceTargetGroup[]
@@ -217,7 +219,11 @@ const displaySanityTaskType = computed(() =>
 )
 const displayCurrentTask = computed(() =>
   displayPlanConfig.value
-    ? getSanityTaskDisplayValue(displayPlanConfig.value, props.essenceLocationOptions)
+    ? getSanityTaskDisplayValue(
+        displayPlanConfig.value,
+        props.essenceLocationOptions,
+        props.crisisDrillsOptions
+      )
     : '未读取到计划表配置'
 )
 const displayEssenceMenu = computed(() => {
@@ -256,24 +262,12 @@ const resolvedEssenceMenuOptions = computed(() => {
   }))
 })
 
-const essenceTargetWeaponOptions = computed<ComboBoxItem[]>(() => {
-  const options = props.essenceTargetWeaponGroups.flatMap(group =>
-    group.options.map(option => ({
-      label: `${group.label} · ${option.label}`,
-      value: option.value,
-    }))
+const essenceTargetWeaponOptions = computed(() =>
+  getEssenceTargetWeaponOptions(
+    props.essenceTargetWeaponGroups,
+    formData.Task.AutoEssenceTargetWeapons ?? []
   )
-  const values = new Set(options.map(option => option.value))
-  const selected = Array.isArray(formData.Task.AutoEssenceTargetWeapons)
-    ? formData.Task.AutoEssenceTargetWeapons
-    : []
-  for (const value of selected) {
-    if (typeof value === 'string' && value && !values.has(value)) {
-      options.unshift({ label: value, value })
-    }
-  }
-  return options
-})
+)
 
 const effectiveEssenceMenu = computed<AutoEssenceMenu>(() => {
   const value = displayPlanConfig.value?.AutoEssenceMenu ?? formData.Task.AutoEssenceMenu
@@ -306,13 +300,15 @@ const currentTaskSaveKey = computed(() =>
     : `Task.${currentField.value}`
 )
 
-const currentTaskOptions = computed(() => {
+const currentTaskOptions = computed<readonly (ComboBoxItem & { rewards?: boolean })[]>(() => {
   if (normalizedSanityTaskType.value === 'Essence') {
     return isTargetEssenceMode.value
       ? essenceTargetWeaponOptions.value
       : props.essenceLocationOptions
   }
-  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
+  return normalizedSanityTaskType.value === 'CrisisDrills'
+    ? props.crisisDrillsOptions
+    : PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
 })
 
 const currentTaskValue = computed({
@@ -409,6 +405,7 @@ const ensureCurrentTaskValue = (): FieldChange | null => {
     return { key: currentTaskSaveKey.value, value: normalized }
   }
   if (options.some(option => option.value === currentTaskValue.value)) return null
+  if (normalizedSanityTaskType.value === 'CrisisDrills' && currentTaskValue.value) return null
 
   currentTaskValue.value = options[0].value
   return { key: currentTaskSaveKey.value, value: currentTaskValue.value }
@@ -458,6 +455,7 @@ watch(
     () => props.optionsLoading,
     () => formData.Info.SanityStrategy,
     () => formData.Task.SanityTaskType,
+    () => props.crisisDrillsOptions,
     () => props.essenceLocationOptions,
     () => props.essenceMenuOptions,
     () => props.essenceTargetWeaponGroups,

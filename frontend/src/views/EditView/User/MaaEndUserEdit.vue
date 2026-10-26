@@ -114,6 +114,7 @@
             :form-data="formData"
             :loading="loading"
             :inventory="inventoryOptions"
+            :crisis-drills-options="crisisDrillsOptions"
             :essence-location-options="essenceLocationOptions"
             :essence-menu-options="essenceMenuOptions"
             :essence-target-weapon-groups="essenceTargetWeaponGroups"
@@ -216,11 +217,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import type { ComboBoxItem } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaEndGuiSession } from '@/composables/useMaaEndGuiSession'
-import type { MaaEndEssenceTargetGroup } from '@/utils/maaEndProtocolSpace'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
 import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -228,9 +227,9 @@ import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DailyOnceSection from '@/views/MaaEndUserEdit/DailyOnceSection.vue'
 import ConfigSourceSection from '@/views/MaaEndUserEdit/ConfigSourceSection.vue'
 import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.vue'
-import type { MaaEndAutoCollectGroup, MaaEndInventoryOptions } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
 import { getDefaultMaaEndUserData } from '@/views/MaaEndUserEdit/userDefaults'
+import { useMaaEndUserOptions } from '@/views/MaaEndUserEdit/useMaaEndUserOptions'
 import MaaEndSanitySection from '@/views/MaaEndUserEdit/MaaEndSanitySection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -246,7 +245,7 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, error: userError } = useUserApi()
-const { getScript, getMaaEndOptions, importScriptConfigFile } = useScriptApi()
+const { getScript, importScriptConfigFile } = useScriptApi()
 const {
   maaEndConfigLoading,
   maaEndTaskId,
@@ -263,8 +262,6 @@ const isInitializing = ref(true)
 const isSaving = ref(false)
 // 保存请求不再驱动整页 loading，避免每次自动保存都让表单快速闪动。
 const loading = computed(() => isInitializing.value)
-const maaEndOptionsLoading = ref(false)
-const maaEndOptionsLoaded = ref(false)
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -273,16 +270,26 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
 const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
-const controllerProtocol = ref<string | null>(null)
-const presetSupported = ref(true)
+const {
+  maaEndOptionsLoading,
+  maaEndOptionsLoaded,
+  controllerProtocol,
+  presetSupported,
+  crisisDrillsOptions,
+  essenceLocationOptions,
+  essenceMenuOptions,
+  autoCollectGroups,
+  inventoryOptions,
+  essenceTargetWeaponGroups,
+  loadMaaEndOptions,
+} = useMaaEndUserOptions(
+  scriptId,
+  () => scriptPath.value,
+  () => controllerType.value
+)
 
 const maaEndImportLoading = ref(false)
 const resourceOptions = [{ label: '官服', value: '官服' }]
-const essenceLocationOptions = ref<ComboBoxItem[]>([])
-const essenceMenuOptions = ref<ComboBoxItem[]>([])
-const autoCollectGroups = ref<MaaEndAutoCollectGroup[]>([])
-const inventoryOptions = ref<MaaEndInventoryOptions | null>(null)
-const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
 
 interface FieldChange {
   key: string
@@ -444,26 +451,6 @@ const loadScriptInfo = async () => {
     scriptName.value = scriptDetail.name
     scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
-  }
-}
-
-const loadMaaEndOptions = async () => {
-  if (!scriptPath.value.trim()) return
-  maaEndOptionsLoading.value = true
-  try {
-    const response = await getMaaEndOptions(scriptId)
-    if (response?.code === 200) {
-      autoCollectGroups.value = response.autoCollectGroups ?? []
-      inventoryOptions.value = response.inventory ?? null
-      essenceLocationOptions.value = response.essenceLocations
-      essenceMenuOptions.value = response.essenceMenus ?? []
-      essenceTargetWeaponGroups.value = response.essenceTargetWeaponGroups ?? []
-      controllerProtocol.value = response.controllerTypes[controllerType.value ?? ''] ?? null
-      presetSupported.value = controllerProtocol.value === 'Win32'
-      maaEndOptionsLoaded.value = true
-    }
-  } finally {
-    maaEndOptionsLoading.value = false
   }
 }
 

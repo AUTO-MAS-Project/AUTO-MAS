@@ -2603,6 +2603,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     "type": "select",
                     "caseName": sanity_task_type,
                 }
+                if sanity_task_type == "CrisisDrills":
+                    MaaEndResourceLoader.get_loaded(
+                        self.maaend_root_path
+                    ).validate_crisis_drills(sanity_task_key["CrisisDrills"])
                 for option in (
                     "OperatorProgression",
                     "WeaponProgression",
