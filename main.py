@@ -46,6 +46,10 @@ from app.utils import (  # noqa: E402
     sanitize_log_message,
 )
 from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
+from app.utils.environment import (  # noqa: E402
+    get_application_environment,
+    is_development_environment,
+)
 
 logger = get_logger("主程序")
 
@@ -144,20 +148,6 @@ def restart_as_admin():
             sys.exit(result)
 
 
-def is_development_environment() -> bool:
-    """识别开发环境：前端传入的环境变量，或仓库根目录的 .env 标记文件。
-
-    .env 不纳入版本库，模板见 .env.example；更新器也不会把它复制到
-    用户安装目录，因此用户直接启动后端时仍按生产环境上报。
-    """
-
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    if raw in {"dev", "development"}:
-        return True
-
-    return (current_dir / ".env").is_file()
-
-
 def is_hosted_launch() -> bool:
     """识别由前端拉起的后端进程，此时提权由前端负责，无需自行提权。"""
 
@@ -195,7 +185,7 @@ def resolve_http_port(development_environment: bool) -> int:
     受 AUTO-MAS-Runtime 监督时只认监督器注入的 AUTO_MAS_SUPERVISED_PORT：
     监督器按实例类型自行选定端口（managed 缺省 36163、development 缺省 36164）
     并据此做健康检查与关闭请求。后端若钉死 36163，受监督的开发版就会撞上同机
-    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；.env、
+    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；
     AUTO_MAS_HTTP_PORT 与开发环境判据在受监督时一律忽略，优先级低于注入值。
 
     Args:
@@ -249,9 +239,12 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch
 def main():
+    raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
+    if raw_environment not in {"", "dev", "development", "production"}:
+        logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
+    os.environ["AUTO_MAS_ENV"] = get_application_environment()
     development_environment = is_development_environment()
-    if development_environment:
-        os.environ["AUTO_MAS_ENV"] = "development"
+    logger.info(f"应用运行环境: {get_application_environment()}")
 
     supervised = is_supervised()
     admin = is_admin()

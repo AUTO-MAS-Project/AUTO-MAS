@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import type {
   AnalyticsContext,
   AnalyticsCountBucket,
@@ -14,7 +15,7 @@ export function analyticsCountBucket(count: number): AnalyticsCountBucket {
 
 /** 在异步操作开始前取得主进程代次；开发和纯浏览器环境不采集。 */
 export function captureAnalyticsContext(): Promise<AnalyticsContext> {
-  if (import.meta.env.DEV || !window.electronAPI?.analytics) return Promise.resolve(null)
+  if (isDev || !window.electronAPI?.analytics) return Promise.resolve(null)
   try {
     return window.electronAPI.analytics.getContext().catch(() => null)
   } catch {

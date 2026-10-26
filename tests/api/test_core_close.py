@@ -15,14 +15,14 @@ class IsBackendDevModeTest(unittest.TestCase):
             os.environ,
             {"AUTO_MAS_SUPERVISED": "1", "AUTO_MAS_ENV": "development"},
         ):
-            self.assertFalse(core_api.is_backend_dev_mode())
+            self.assertFalse(core_api.should_preserve_backend())
 
     def test_dev_env_without_supervision_still_dev_mode(self) -> None:
         with patch.dict(
             os.environ,
             {"AUTO_MAS_SUPERVISED": "", "AUTO_MAS_ENV": "development"},
         ):
-            self.assertTrue(core_api.is_backend_dev_mode())
+            self.assertTrue(core_api.should_preserve_backend())
 
 
 class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
@@ -39,7 +39,7 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
             ) as teardown,
             patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
             patch.object(core_api.Config, "server", server),
-            patch.object(core_api, "is_backend_dev_mode", return_value=False),
+            patch.object(core_api, "should_preserve_backend", return_value=False),
         ):
             result = await core_api.close()
             assert core_api._shutdown_task is not None
@@ -68,7 +68,7 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
             ),
             patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
             patch.object(core_api.Config, "server", server),
-            patch.object(core_api, "is_backend_dev_mode", return_value=False),
+            patch.object(core_api, "should_preserve_backend", return_value=False),
         ):
             await core_api.close()
             assert core_api._shutdown_task is not None
@@ -111,7 +111,7 @@ class CoreCloseTest(unittest.IsolatedAsyncioTestCase):
             patch.object(core_api.System, "cancel_power_task", new_callable=AsyncMock),
             patch("app.api.core.Publisher.send", new_callable=AsyncMock) as send,
             patch.object(core_api.Config, "server", server),
-            patch.object(core_api, "is_backend_dev_mode", return_value=True),
+            patch.object(core_api, "should_preserve_backend", return_value=True),
         ):
             await core_api.close()
             assert core_api._shutdown_task is not None

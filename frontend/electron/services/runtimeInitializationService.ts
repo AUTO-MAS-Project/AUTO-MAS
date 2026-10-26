@@ -1027,7 +1027,6 @@ export class RuntimeInitializationService {
         runtimePath,
         appRoot: this.options.launchConfig.appRoot,
         dataRoot: this.options.launchConfig.dataRoot,
-        launchMode: this.options.launchConfig.mode,
       })
       const outcome = await client.run(['doctor'])
       if (!outcome.success) {
@@ -1202,7 +1201,6 @@ export class RuntimeInitializationService {
       runtimePath,
       appRoot: this.options.launchConfig.appRoot,
       dataRoot: this.options.launchConfig.dataRoot,
-      launchMode: this.options.launchConfig.mode,
       mirrors: mirror ? [mirror] : undefined,
     })
 

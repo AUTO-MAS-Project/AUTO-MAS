@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { computed, getCurrentInstance, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
@@ -169,7 +170,7 @@ const toggleConsole = () => {
   try {
     logger.info(`当前URL: ${window.location.href}`)
     logger.info(`用户代理: ${navigator.userAgent}`)
-    logger.info(`开发模式: ${process.env.NODE_ENV === 'development'}`)
+    logger.info(`开发模式: ${isDev}`)
     logger.info(`Vue版本: ${getCurrentInstance()?.appContext.app.version || 'Unknown'}`)
     logger.info(`localStorage项目数: ${Object.keys(localStorage).length}`)
     logger.info(`sessionStorage项目数: ${Object.keys(sessionStorage).length}`)

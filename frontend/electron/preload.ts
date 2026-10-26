@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
 import type { RendererAnalyticsEvent } from '../src/types/analytics'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
@@ -10,6 +11,12 @@ import type {
   DesktopMascotTaskAction,
   DesktopMascotTaskMenu,
 } from '../src/types/desktopMascot'
+
+// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+contextBridge.exposeInMainWorld(
+  'appEnvironment',
+  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+)
 
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载

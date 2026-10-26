@@ -18,7 +18,6 @@ function isAnalyticsAllowed(): boolean {
     app.isReady() &&
     !isDevelopmentEnvironment() &&
     process.env.AUTO_MAS_TELEMETRY !== 'disabled' &&
-    process.env.AUTO_MAS_ENV !== 'development' &&
     !process.env.AUTO_MAS_E2E_DATA_ROOT &&
     !process.env.AUTO_MAS_E2E_REAL
   )

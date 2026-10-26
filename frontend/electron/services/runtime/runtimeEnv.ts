@@ -2,14 +2,12 @@ import { readBackendDocument } from '../backendConfig'
 /**
  * Runtime 子进程的环境变量覆盖
  *
- * 两项，都只在需要时才设，不去覆盖 Runtime 自己的默认值：
+ * 应用环境始终显式传递，遥测另受开发环境与用户开关限制：
  * - 遥测：用户关闭匿名遥测时透传 `AUTO_MAS_TELEMETRY=disabled` 给 `auto-mas-runtime.exe`，
  *   让 Runtime 自己的上报也一并关闭；开启时不设该变量。`--offline` 是完全独立的网络开关
  *   （禁止任何联网尝试），不能拿来当遥测开关用；
- * - 开发标记：`development` 模式透传 `AUTO_MAS_ENV=development`。Runtime 把自己的环境原样交给
- *   `uv run` 再交给后端，后端 `main.py` 的 `is_development_environment()` 读到它就按开发环境
- *   关闭 Sentry 上报。受监督时端口、`/api/core/close`、工作目录忽略开发标记是契约，但遥测不该
- *   跟着变成生产；旧链路（Electron 自己 spawn python）早就这么注入，这里只是补齐新链路。
+ * - 运行环境由 Electron 打包状态决定，与 Runtime 的启动模式无关，经 Runtime 传给后端。
+ *   开发环境额外禁用 Runtime 自身遥测；受监督时端口与退出仍遵守 Runtime 契约。
  *
  * 遥测开关的权威来源是后端持久化的 `GlobalConfig.Function.IfEnableTelemetry`
  * （`<dataRoot>/config/Config.json`），与 Electron 主进程自身 Sentry 开关（见 `../sentry.ts`
@@ -18,7 +16,7 @@ import { readBackendDocument } from '../backendConfig'
  */
 
 import { getLogger } from '../logger'
-import type { RuntimeLaunchMode } from './launchConfig'
+import { getApplicationEnvironment, isDevelopmentEnvironment } from '../instanceConfig'
 
 const logger = getLogger('Runtime环境变量')
 
@@ -155,10 +153,7 @@ function readProxyAddress(config: BackendConfigShape): string | null {
  * 构建传给 `RuntimeClient` 的环境变量覆盖。
  *
  * @param dataRoot 用户数据根，`config/Config.json` 所在处。
- * @param launchMode 本次启动链路；`development` 时追加 `AUTO_MAS_ENV=development`，其它模式
- *   （含未指定）不碰该变量。
- *
- * 关闭遥测时含 `AUTO_MAS_TELEMETRY: 'disabled'`；开启时不含该键。什么都不需要设时返回空对象。
+ * 始终含 `AUTO_MAS_ENV`；开发环境或用户关闭遥测时另含 `AUTO_MAS_TELEMETRY: 'disabled'`。
  *
  * 用户配了合法代理时另含 `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`：Runtime 的 go-git
  * 与镜像下载器用的都是 `http.DefaultTransport.Clone()`，本来就认这两个变量，只是此前
@@ -173,17 +168,11 @@ function readProxyAddress(config: BackendConfigShape): string | null {
  * 对「特意配了代理」的用户这多半正是所求，但这是一次行为扩大，`NO_PROXY` 因此是必需项。
  * 彻底的做法是 Runtime 侧加 `--proxy` 只作用于自己的出站，那需要 Runtime 单独发版。
  */
-export function buildRuntimeEnv(
-  dataRoot: string,
-  launchMode?: RuntimeLaunchMode
-): NodeJS.ProcessEnv {
+export function buildRuntimeEnv(dataRoot: string): NodeJS.ProcessEnv {
   const config = readBackendConfig(dataRoot)
-  const env: NodeJS.ProcessEnv = {}
-  if (!isTelemetryEnabled(config)) {
+  const env: NodeJS.ProcessEnv = { [RUNTIME_APP_ENV]: getApplicationEnvironment() }
+  if (isDevelopmentEnvironment() || !isTelemetryEnabled(config)) {
     env[RUNTIME_TELEMETRY_ENV] = 'disabled'
-  }
-  if (launchMode === 'development') {
-    env[RUNTIME_APP_ENV] = 'development'
   }
   const proxy = readProxyAddress(config)
   if (proxy) {

@@ -59,6 +59,7 @@
 </template>
 
 <script lang="ts" setup>
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
@@ -108,11 +109,8 @@ const icon =
   () =>
     createAppearanceMenuIcon(key, Comp, menuIcons)
 
-// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
-// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
-// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
-// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
-const isDevelopment = computed(() => import.meta.env.DEV)
+// 调试入口与路由同时要求开发构建和开发环境，避免指向已裁剪的页面。
+const isDevelopment = import.meta.env.DEV && isDev
 
 const mainMenuItems = computed(() => [
   { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
@@ -132,7 +130,7 @@ const devMenuItems = computed(() => [
     label: t('comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
   },
-  ...(import.meta.env.DEV
+  ...(isDevelopment
     ? [
         {
           key: '/update-download-dev',
@@ -170,7 +168,7 @@ const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
 
 const allItems = computed(() => [
   ...mainMenuItems.value,
-  ...(isDevelopment.value ? devMenuItems.value : []),
+  ...(isDevelopment ? devMenuItems.value : []),
   ...bottomMenuItems.value,
 ])
 
@@ -200,8 +198,9 @@ const onMenuClick: MenuProps['onClick'] = info => {
   }
 
   if (
-    target === '/update-download-dev' &&
     import.meta.env.DEV &&
+    target === '/update-download-dev' &&
+    isDevelopment &&
     !router.hasRoute('UpdateDownloadDev')
   ) {
     router.addRoute({

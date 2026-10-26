@@ -31,7 +31,7 @@
 
 ## 命令与环境
 
-本仓库 Windows 开发使用 PowerShell 7。源码环境必须有 `.env`；缺失时按 AGENTS 提示从 `.env.example` 建立开发配置。不要输出凭据。
+本仓库 Windows 开发使用 PowerShell 7。源码 Electron 与独立后端默认开发环境，无需 `.env`；验证生产行为须显式传入 `AUTO_MAS_ENV=production` 并使用隔离数据根与本地接收器。不要输出凭据。
 
 在 `frontend/` 中，按本次变更执行适用检查：
 

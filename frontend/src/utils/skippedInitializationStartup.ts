@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { translate as t } from '@/i18n'
 import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
@@ -23,7 +24,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
     const api = window.electronAPI
 
     try {
-      if (!import.meta.env.DEV) {
+      if (!isDev) {
         const backendStatus = await api.backendStatus?.().catch(() => null)
 
         if (!backendStatus?.isRunning) {
