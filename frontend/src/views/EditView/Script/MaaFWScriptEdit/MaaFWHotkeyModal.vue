@@ -13,7 +13,7 @@
       <div class="hotkey-modal-combo" :class="{ 'is-error': invalidCount > 0 }">
         {{ comboNote }}
       </div>
-      <!-- 列表定高、内部滚动：键位多的项目也不会把弹窗撑出屏幕 -->
+      <!-- 键位列表随弹窗正文滚动，小窗口也能逐项设置。 -->
       <div class="hotkey-modal-list">
         <template v-for="option in options" :key="option.name">
           <div class="hotkey-group-title">
@@ -366,15 +366,6 @@ const handleSave = () => {
 
 .hotkey-modal-combo.is-error {
   color: var(--ant-color-error);
-}
-
-.hotkey-modal-list {
-  height: 440px;
-  max-height: calc(100vh - 340px);
-  margin-right: -12px;
-  padding-right: 12px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .hotkey-combo-tag {

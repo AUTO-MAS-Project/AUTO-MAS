@@ -5,8 +5,8 @@
         <a-form-item name="mode">
           <template #label>
             <LabelWithHint
-              text="关卡配置模式"
-              hint="「固定」直接在此配置关卡；「计划表」按计划自动切换"
+              :text="t('edit.stageConfigMode')"
+              :hint="t('edit.stageConfigModeHint')"
             />
           </template>
           <a-select
@@ -30,7 +30,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <LabelWithHint text="吃理智药数量" />
+            <LabelWithHint :text="t('edit.medicineNumb')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -59,10 +59,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
-              text="连战次数"
-              hint="AUTO：自动识别关卡最大代理倍率，保持最大代理倍率且使用理智药后理智不溢出；数值（1~6）：按设定倍率执行代理；不切换：不调整游戏内代理倍率设定"
-            />
+            <LabelWithHint :text="t('edit.seriesNumb')" :hint="t('edit.seriesNumbHint')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -105,12 +102,12 @@
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint text="关卡选择" />
+            <LabelWithHint :text="t('edit.stageSelection')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage === '-' ? '当前/上次' : displayStage || '不选择' }}
+              {{ displayStage === '-' ? t('edit.currentOrLast') : displayStage || t('edit.none') }}
             </div>
             <a-tooltip>
               <template #title>
@@ -137,14 +134,16 @@
         <a-form-item name="mode">
           <template #label>
             <LabelWithHint
-              text="备选关卡-1"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+              :text="t('edit.alternateStage', { n: 1 })"
+              :hint="t('edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage1 === '-' ? '当前/上次' : displayStage1 || '不选择' }}
+              {{
+                displayStage1 === '-' ? t('edit.currentOrLast') : displayStage1 || t('edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
@@ -169,14 +168,16 @@
         <a-form-item name="mode">
           <template #label>
             <LabelWithHint
-              text="备选关卡-2"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+              :text="t('edit.alternateStage', { n: 2 })"
+              :hint="t('edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage2 === '-' ? '当前/上次' : displayStage2 || '不选择' }}
+              {{
+                displayStage2 === '-' ? t('edit.currentOrLast') : displayStage2 || t('edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
@@ -201,14 +202,16 @@
         <a-form-item name="mode">
           <template #label>
             <LabelWithHint
-              text="备选关卡-3"
-              hint="所有备选关卡均选择「当前/上次」时视为不使用备选关卡"
+              :text="t('edit.alternateStage', { n: 3 })"
+              :hint="t('edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage3 === '-' ? '当前/上次' : displayStage3 || '不选择' }}
+              {{
+                displayStage3 === '-' ? t('edit.currentOrLast') : displayStage3 || t('edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>

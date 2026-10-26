@@ -11,7 +11,7 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          {{ isEdit ? '编辑用户' : '添加用户' }}
+          {{ isEdit ? t('comp.editUser') : t('comp.addUser') }}
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
@@ -82,7 +82,7 @@
           <p class="mask-description">
             {{ t('edit.generalConfigurationThisUser') }}
             <br />
-            配置完成后，请点击"保存配置"按钮来结束配置会话。
+            {{ t('edit.clickSaveConfigurationWhen2') }}
           </p>
         </template>
         <div class="mask-actions">
@@ -241,6 +241,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -634,11 +635,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
     // 查看会话（viewOnly）：mas 备份传 userId（目录副本型下发），native
     // 备份传 scriptId（脚本级，原生配置即备份）
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: targetId ?? userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      viewOnly,
-    })
+    const response = await requestScriptConfigStart(targetId ?? userId, viewOnly)
 
     logger.debug(`通用配置 start 接口返回: ${response}`)
     if (response && response.taskId) {
@@ -690,7 +687,7 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
         async () => {
           if (generalSubscriptionIds.value.length > 0 && generalTaskId.value) {
             const taskId = generalTaskId.value
-            const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+            const response = await stopNativeConfig(taskId, 'timeout')
 
             if (response && response.code === 200) {
               for (const subscriptionId of generalSubscriptionIds.value) {
@@ -739,7 +736,7 @@ const handleSaveGeneralConfig = async () => {
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await stopNativeConfig(taskId, generalSessionViewOnly.value ? 'close' : 'save')
     if (response && response.code === 200) {
       for (const subscriptionId of generalSubscriptionIds.value) {
         unsubscribe(subscriptionId)
@@ -871,7 +868,7 @@ const stopGeneralSession = async () => {
   const taskId = generalTaskId.value
   if (!taskId || generalSubscriptionIds.value.length === 0) return
   try {
-    await Service.stopTaskApiDispatchStopPost({ taskId })
+    await stopNativeConfig(taskId)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   }

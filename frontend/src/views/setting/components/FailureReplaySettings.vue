@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
 import type { ObsReplayCheckResult } from '@/types/replay'
@@ -21,7 +21,9 @@ const props = defineProps<{
 const replaySettings = computed(() => props.settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
-const maxReplayCount = computed(() => replaySettings.value?.MaxReplayCount ?? 3)
+const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
+const videoStorageLimitDraft = ref<number | null>(videoStorageLimit.value)
+const capturePath = ref<string | null>(null)
 const passwordConfiguredOverride = ref<boolean | null>(null)
 const passwordConfigured = computed(
   () => passwordConfiguredOverride.value ?? replaySettings.value?.PasswordConfigured ?? false
@@ -31,8 +33,23 @@ const password = ref('')
 const savingPassword = ref(false)
 const checking = ref(false)
 const savingReplay = ref(false)
+const savingVideoStorageLimit = ref(false)
 const checkResult = ref<ObsReplayCheckResult | null>(null)
-const { checkObsReplay, saveObsReplay, listObsReplays } = useObsReplayApi()
+const { checkObsReplay, saveObsReplay } = useObsReplayApi()
+
+const canSaveVideoStorageLimit = computed(
+  () =>
+    videoStorageLimitDraft.value !== null &&
+    Number.isInteger(videoStorageLimitDraft.value) &&
+    videoStorageLimitDraft.value >= 1 &&
+    videoStorageLimitDraft.value <= 1048576 &&
+    videoStorageLimitDraft.value !== videoStorageLimit.value
+)
+
+watch(videoStorageLimit, (value, previousValue) => {
+  // 设置刷新只同步未修改的输入，保留尚未保存或保存失败的容量草稿。
+  if (videoStorageLimitDraft.value === previousValue) videoStorageLimitDraft.value = value
+})
 
 const updateReplaySetting = async (key: string, value: unknown) => {
   try {
@@ -42,6 +59,18 @@ const updateReplaySetting = async (key: string, value: unknown) => {
   } catch {
     // 设置页已经展示保存失败；保留当前输入供重试。
     return false
+  }
+}
+
+const saveVideoStorageLimit = async () => {
+  if (savingVideoStorageLimit.value || !canSaveVideoStorageLimit.value) return
+
+  savingVideoStorageLimit.value = true
+  try {
+    // 调整容量会立即回收视频，仅在用户明确保存后提交最终值。
+    await updateReplaySetting('VideoStorageLimitMiB', videoStorageLimitDraft.value)
+  } finally {
+    savingVideoStorageLimit.value = false
   }
 }
 
@@ -100,8 +129,10 @@ const runConnectionCheck = async () => {
 const runSaveReplay = async () => {
   savingReplay.value = true
   try {
+    capturePath.value = null
     const response = await saveObsReplay()
-    if (response.replay) {
+    capturePath.value = response.capture_path ?? null
+    if (response.capture_path) {
       message.success(t('setting.replay.saveDone'))
     } else {
       message.warning(t('setting.replay.saveEmpty'))
@@ -110,21 +141,6 @@ const runSaveReplay = async () => {
     message.error(error instanceof Error ? error.message : t('setting.replay.saveFailed'))
   } finally {
     savingReplay.value = false
-  }
-}
-
-const openReplayDirectory = async () => {
-  try {
-    if (!window.electronAPI?.openFile) {
-      message.error(t('history.replays.openDirectoryUnsupported'))
-      return
-    }
-    const directory = checkResult.value?.directory || (await listObsReplays()).directory
-    if (!directory) throw new Error(t('setting.replay.directoryUnavailable'))
-    const result = await window.electronAPI.openFile(directory)
-    if (!result.success) message.error(result.error || t('setting.replay.openDirectoryFailed'))
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('setting.replay.openDirectoryFailed'))
   }
 }
 </script>
@@ -186,24 +202,28 @@ const openReplayDirectory = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.maxCount') }}</span>
-            <a-tooltip :title="t('setting.replay.maxCountTip')">
+            <span class="form-label">{{ t('setting.replay.videoLimit') }}</span>
+            <a-tooltip :title="t('setting.replay.videoLimitTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-input-number
-            :value="maxReplayCount"
-            :min="1"
-            :max="20"
-            :precision="0"
-            :disabled="!replayEnabled"
-            size="large"
-            style="width: 100%"
-            @change="
-              (value: number | null) =>
-                value !== null && updateReplaySetting('MaxReplayCount', value)
-            "
-          />
+          <a-space-compact size="large" style="width: 100%">
+            <a-input-number
+              v-model:value="videoStorageLimitDraft"
+              :min="1"
+              :max="1048576"
+              :precision="0"
+              :disabled="savingVideoStorageLimit"
+              class="replay-limit-input"
+            />
+            <a-button
+              :disabled="!canSaveVideoStorageLimit"
+              :loading="savingVideoStorageLimit"
+              @click="saveVideoStorageLimit"
+            >
+              {{ t('setting.replay.saveVideoLimit') }}
+            </a-button>
+          </a-space-compact>
         </div>
       </a-col>
     </a-row>
@@ -266,15 +286,19 @@ const openReplayDirectory = async () => {
             <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
               {{ t('setting.replay.saveTest') }}
             </a-button>
-            <a-button @click="openReplayDirectory">
-              <template #icon><FolderOpenOutlined /></template>
-              {{ t('setting.replay.openDirectory') }}
-            </a-button>
           </a-space>
         </div>
       </a-col>
     </a-row>
 
+    <a-alert
+      v-if="capturePath"
+      type="info"
+      show-icon
+      class="replay-check-result"
+      :message="t('setting.replay.capturePath')"
+      :description="capturePath"
+    />
     <a-alert
       v-if="checkResult"
       :type="checkResult.connected && checkResult.replayActive ? 'success' : 'warning'"
@@ -324,6 +348,11 @@ const openReplayDirectory = async () => {
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+
+.replay-limit-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .replay-check-result {

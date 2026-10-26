@@ -340,9 +340,7 @@ const apply = async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 360px;
   margin-bottom: 12px;
-  overflow-y: auto;
 }
 
 .queue-import-user {

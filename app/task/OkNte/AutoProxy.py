@@ -27,12 +27,12 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core import Config
+from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.log_box import LogType, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.notification_ports import LocalNotice
-from app.models.schema import WSTaskNoticeData
+from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
@@ -375,7 +375,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.wait_event = asyncio.Event()
 
         self.user_start_time = datetime.now()
-        self.log_start_time = datetime.now()
+        self.log_start_time = datetime.now().astimezone()
 
         script_root_path = self.script_config.Info.RootPath
         if script_root_path is None:
@@ -895,8 +895,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
-            self.log_start_time = datetime.now()
-            self.cur_user_item.log_record[self.log_start_time] = LogRecord()
+            self.log_start_time = datetime.now().astimezone()
+            self.cur_user_item.add_log_record(self.log_start_time, LogRecord())
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
 
             await self._log_game_config_summary()
@@ -1161,6 +1161,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.wait_event.set()
 
     async def final_task(self):
+        self.task_info.begin_user_history_capture(
+            self.script_info,
+            self.cur_user_item,
+            failed=bool(self.cur_user_item.log_record)
+            and not self.run_book
+            and not self.cur_user_item.maintenance_skipped
+            and not self.stopped_manually,
+        )
+
         # 结束时先清理进程与监控
         with suppress(Exception):
             await self.log_monitor.stop()
@@ -1190,27 +1199,96 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
 
         # 写入历史记录（对齐 General/SRC/MaaEnd 行为）
-        user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.astimezone(UTC4)
-            log_path = Config.build_history_log_path(
-                script_name=self.script_info.name,
-                user_name=self.cur_user_item.name,
-                log_time=dt,
-            )
+        await self._persist_user_run_result()
+        await self._wait_game_exit_before_next_user()
 
-            if log_item.status == "OK-NTE 正常运行中":
+        await self.run_user_scripts_after()
+
+        history_records = []
+        for t, log_item in self.cur_user_item.iter_history_logs():
+            if log_item.status == "OK-NTE 正常运行中" or (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "未开始监看日志"
+            ):
                 log_item.status = "任务被用户手动中止"
 
+            was_cancelled = (
+                self.stopped_manually
+                and log_item is self.cur_user_log
+                and log_item.status == "任务被用户手动中止"
+            )
             if len(log_item.content) == 0:
                 log_item.content = ["未捕获到任何日志内容"]
-                log_item.status = "未捕获到日志"
+                if not was_cancelled:
+                    log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
-            user_logs_list.append(log_path.with_suffix(".json"))
+            history_records.append(
+                HistoryWrite(
+                    time=t.astimezone(UTC4),
+                    username=self.cur_user_item.name,
+                    script_name=self.script_info.name,
+                    status=(
+                        "success"
+                        if log_item.status == "Success!"
+                        else "skipped"
+                        if (
+                            log_item is self.cur_user_log
+                            and self.cur_user_item.maintenance_skipped
+                        )
+                        else "cancelled"
+                        if was_cancelled
+                        else "error"
+                    ),
+                    message=log_item.status,
+                    logs="".join(log_item.content),
+                )
+            )
 
-        if user_logs_list:
-            statistics = await Config.merge_statistic_info(user_logs_list)
+        if history_records:
+            try:
+                attachments = await self.task_info.collect_user_history_attachments(
+                    self.script_info, self.cur_user_item
+                )
+                history_records[-1].attachments.extend(attachments)
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "收集用户历史附件失败，继续保存日志与执行结果"
+                )
+            try:
+                for record in history_records:
+                    try:
+                        await history_store.record(record)
+                    except Exception as error:
+                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
+                        try:
+                            await Publisher.send(
+                                id=self.task_info.task_id,
+                                type=protocol.TASK_NOTICE,
+                                data=WSTaskNoticeData(
+                                    level="warning",
+                                    message=f"历史记录保存失败：{error}",
+                                ),
+                            )
+                        except Exception:
+                            logger.opt(exception=True).warning(
+                                "发送历史保存失败提示时出现异常"
+                            )
+            finally:
+                await self.task_info.discard_user_history_capture(
+                    self.script_info, self.cur_user_item
+                )
+
+        if history_records:
+            statistics = {
+                key: value.value
+                for key, value in aggregate_data(
+                    [
+                        HistoryAggregationItem(time=record.time, data=record.data)
+                        for record in history_records
+                    ]
+                ).data.items()
+            }
             statistics["user_info"] = self.cur_user_item.name
             statistics["start_time"] = self.user_start_time.strftime(
                 "%Y-%m-%d %H:%M:%S"
@@ -1247,11 +1325,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         level="error", message=f"推送通知时出现异常: {e}"
                     ),
                 )
-
-        await self._persist_user_run_result()
-
-        # 多用户切换：等上一用户游戏完全退出（见 _wait_game_exit_before_next_user）
-        await self._wait_game_exit_before_next_user()
 
     async def _persist_user_run_result(self) -> None:
         if self.user_run_result_persisted:

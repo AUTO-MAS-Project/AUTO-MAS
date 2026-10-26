@@ -3,6 +3,7 @@
  * 重构版本 - 协调所有初始化步骤
  */
 
+import { observeInitializationStage } from './initializationAnalytics'
 import { MirrorService } from './mirrorService'
 import { PythonInstaller, PipInstaller, GitInstaller } from './environmentService'
 import { RepositoryService } from './repositoryService'
@@ -162,16 +163,18 @@ export class InitializationService {
       })
 
       const pythonInstaller = new PythonInstaller(this.appRoot, this.mirrorService)
-      const pythonResult = await pythonInstaller.install(installProgress => {
-        onProgress?.({
-          stage: 'python',
-          stageIndex: 2,
-          totalStages,
-          progress: installProgress.progress,
-          message: installProgress.message,
-          details: installProgress.details,
+      const pythonResult = await observeInitializationStage('python', 'off', () =>
+        pythonInstaller.install(installProgress => {
+          onProgress?.({
+            stage: 'python',
+            stageIndex: 2,
+            totalStages,
+            progress: installProgress.progress,
+            message: installProgress.message,
+            details: installProgress.details,
+          })
         })
-      })
+      )
 
       if (!pythonResult.success) {
         return {
@@ -194,16 +197,18 @@ export class InitializationService {
       })
 
       const pipInstaller = new PipInstaller(this.appRoot, this.mirrorService)
-      const pipResult = await pipInstaller.install(installProgress => {
-        onProgress?.({
-          stage: 'pip',
-          stageIndex: 3,
-          totalStages,
-          progress: installProgress.progress,
-          message: installProgress.message,
-          details: installProgress.details,
+      const pipResult = await observeInitializationStage('pip', 'off', () =>
+        pipInstaller.install(installProgress => {
+          onProgress?.({
+            stage: 'pip',
+            stageIndex: 3,
+            totalStages,
+            progress: installProgress.progress,
+            message: installProgress.message,
+            details: installProgress.details,
+          })
         })
-      })
+      )
 
       if (!pipResult.success) {
         return {
@@ -226,16 +231,18 @@ export class InitializationService {
       })
 
       const gitInstaller = new GitInstaller(this.appRoot, this.mirrorService)
-      const gitResult = await gitInstaller.install(installProgress => {
-        onProgress?.({
-          stage: 'git',
-          stageIndex: 4,
-          totalStages,
-          progress: installProgress.progress,
-          message: installProgress.message,
-          details: installProgress.details,
+      const gitResult = await observeInitializationStage('git', 'off', () =>
+        gitInstaller.install(installProgress => {
+          onProgress?.({
+            stage: 'git',
+            stageIndex: 4,
+            totalStages,
+            progress: installProgress.progress,
+            message: installProgress.message,
+            details: installProgress.details,
+          })
         })
-      })
+      )
 
       if (!gitResult.success) {
         return {
@@ -262,16 +269,18 @@ export class InitializationService {
         this.mirrorService,
         this.targetBranch
       )
-      const repoResult = await repositoryService.pullRepository(repoProgress => {
-        onProgress?.({
-          stage: 'repository',
-          stageIndex: 5,
-          totalStages,
-          progress: repoProgress.progress,
-          message: repoProgress.message,
-          details: repoProgress.details,
+      const repoResult = await observeInitializationStage('repository', 'off', () =>
+        repositoryService.pullRepository(repoProgress => {
+          onProgress?.({
+            stage: 'repository',
+            stageIndex: 5,
+            totalStages,
+            progress: repoProgress.progress,
+            message: repoProgress.message,
+            details: repoProgress.details,
+          })
         })
-      })
+      )
 
       if (!repoResult.success) {
         return {
@@ -294,16 +303,18 @@ export class InitializationService {
       })
 
       const dependencyService = new DependencyService(this.appRoot, this.mirrorService)
-      const depResult = await dependencyService.installDependencies(depProgress => {
-        onProgress?.({
-          stage: 'dependency',
-          stageIndex: 6,
-          totalStages,
-          progress: depProgress.progress,
-          message: depProgress.message,
-          details: depProgress.details,
+      const depResult = await observeInitializationStage('dependency', 'off', () =>
+        dependencyService.installDependencies(depProgress => {
+          onProgress?.({
+            stage: 'dependency',
+            stageIndex: 6,
+            totalStages,
+            progress: depProgress.progress,
+            message: depProgress.message,
+            details: depProgress.details,
+          })
         })
-      })
+      )
 
       if (!depResult.success) {
         return {

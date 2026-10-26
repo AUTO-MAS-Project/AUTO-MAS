@@ -1,3 +1,4 @@
+import { observePreference } from '@/utils/preferenceAnalytics'
 //   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
@@ -73,7 +74,9 @@ async function setLocale(next: AppLocale): Promise<void> {
   const previous = locale.value
   locale.value = next
 
-  savePending = savePending.catch(() => {}).then(() => saveConfig({ language: next }))
+  savePending = observePreference('language', next, () =>
+    savePending.catch(() => {}).then(() => saveConfig({ language: next }))
+  )
   try {
     await savePending
   } catch (error) {

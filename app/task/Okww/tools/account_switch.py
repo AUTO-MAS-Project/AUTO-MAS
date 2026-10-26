@@ -146,9 +146,9 @@ _LOGIN_PAGE_TEXTS = ("其他登录方式",)
 # 已登录主菜单判定文本（登录界面但无输入框：退出/公告/工具/账号/设置 + 登录状态）
 _LOGGED_IN_MENU_TEXTS = ("登录状态", "点击连接")
 
-# 掩码账号形如 123****5678
-_MASKED_ACCOUNT = re.compile(r"\d{3}\*+\d{4}")
-_MASKED_SUFFIX = re.compile(r"\d+\*+(\d{4})")
+# 掩码账号形如 123****5678，OCR 可能识别为半角、全角或混合星号。
+_MASKED_ACCOUNT = re.compile(r"\d{3}[*＊]+\d{4}")
+_MASKED_SUFFIX = re.compile(r"\d+[*＊]+(\d{4})")
 
 
 # ── 窗口定位 ────────────────────────────────────────────────────────────
@@ -799,7 +799,7 @@ def _wait_login_success(hwnd: int, *, timeout: int = 180) -> None:
 
 
 def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> None:
-    pattern = re.compile(rf"\d+\*+{re.escape(suffix)}")
+    pattern = re.compile(rf"\d+[*＊]+{re.escape(suffix)}")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         _activate_window(hwnd)

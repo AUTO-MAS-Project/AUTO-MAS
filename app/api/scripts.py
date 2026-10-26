@@ -37,6 +37,7 @@ from pydantic import (
 import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
+from app.core import emulator2 as emulator2_service
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
@@ -79,6 +80,7 @@ from app.models.schema import (
 from app.services import ConfigCenterError
 from app.services.endfield_launcher import discover_launcher_exe
 from app.services.wuthering_waves import resolve_wuthering_waves_process_path
+from app.task.MAA.tools.update_credentials import query_takeover_cdk
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
@@ -87,7 +89,6 @@ from app.task.MaaFW.api_service import update as maafw_update_api
 from app.task.MSS.api_service import defense_status as mss_defense_status
 from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
-from app.utils.emulator2 import service as emulator2_service
 from app.utils.io import ConfigCorruptedError
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
@@ -217,6 +218,96 @@ class CultivatePreviewOut(OutBase):
         description="目标干员当前练度；source=default 表示无实测数据（按 0 估算）",
     )
     hasInventory: bool = Field(..., description="是否存在仓库识别档案")
+
+
+class MaaCopilotSourceIn(BaseModel):
+    source: Literal["all", "author", "set", "copilot"] = "all"
+    query: str = Field(
+        default="", max_length=500, description="作者、作业集或单份作业的编号/分享链接"
+    )
+    action: Literal["load", "refresh", "status"] = "load"
+
+
+class MaaCopilotSourceOut(OutBase):
+    running: bool = False
+    loaded: int = 0
+    total: int = 0
+    count: int = 0
+    updatedAt: int = Field(default=0, description="作业数据或快照的生成时间，Unix 秒")
+    downloadedAt: int = Field(
+        default=0, description="本机下载或在线同步完成时间，Unix 秒"
+    )
+    dataSource: Literal["data-center", "github", "copilot", "unknown"] = "unknown"
+    available: bool = False
+    error: str = ""
+
+
+class MaaCopilotAuthorsIn(BaseModel):
+    keyword: str = Field(..., min_length=1, max_length=100)
+
+
+class MaaCopilotAnalyzeIn(BaseModel):
+    scriptId: str
+    userId: str
+    bindingKey: str = Field(
+        default="",
+        max_length=128,
+        description="分析预期的森空岛绑定，账号组与角色编号组合",
+    )
+    source: Literal["all", "author", "set", "copilot"] = "all"
+    query: str = Field(default="", max_length=500)
+    coverage: int = Field(
+        default=90, ge=1, le=100, description="期望覆盖有可解析要求的作业百分比"
+    )
+    requireModules: bool = True
+
+
+class MaaCopilotGoal(BaseModel):
+    kind: Literal["elite", "skill", "mastery", "module"]
+    target_id: str
+    to_level: int
+
+
+class MaaCopilotOperator(BaseModel):
+    operatorId: str
+    name: str
+    owned: bool
+    optional: bool = False
+    demand: int = 0
+    currentElite: int = 0
+    currentLevel: int = 0
+    targetElite: int = 0
+    targetLevel: int = 0
+    manualLevel: bool = False
+    goals: List[MaaCopilotGoal] = Field(default_factory=list)
+
+
+class MaaCopilotAssignment(BaseModel):
+    id: int
+    title: str
+    stage: str
+    author: str
+    state: Literal["ready", "training", "missing", "unknown"]
+    missingOperators: List[str] = Field(default_factory=list)
+    missingAlternatives: List[List[str]] = Field(default_factory=list)
+    gaps: List[str] = Field(default_factory=list)
+    plannedReady: bool = False
+
+
+class MaaCopilotAnalyzeOut(OutBase):
+    bindingKey: str = ""
+    total: int = 0
+    analyzable: int = 0
+    ready: int = 0
+    trainable: int = 0
+    projectedReady: int = 0
+    missing: int = 0
+    unknown: int = 0
+    stageCount: int = 0
+    capturedAt: int = 0
+    updatedAt: int = 0
+    operators: List[MaaCopilotOperator] = Field(default_factory=list)
+    assignments: List[MaaCopilotAssignment] = Field(default_factory=list)
 
 
 class MssDefenseStatusIn(BaseModel):
@@ -1075,7 +1166,16 @@ class MaaEndLauncherPathOut(OutBase):
     )
 
 
+class MaaEndInventoryOptions(BaseModel):
+    description: str = Field(..., description="上游库存目标填写说明")
+    inputs: list[ComboBoxItem] = Field(..., description="上游库存目标输入字段")
+    claimModes: list[ComboBoxItem] = Field(..., description="上游库存任务领取方式")
+
+
 class MaaEndOptionsOut(OutBase):
+    inventory: MaaEndInventoryOptions | None = Field(
+        default=None, description="上游库存目标选项，旧版不支持时为空"
+    )
     launchGameControllers: list[str] = Field(
         default_factory=list, description="支持 MaaEnd 原生启动的控制器"
     )
@@ -1401,6 +1501,23 @@ class MaaFWProjectUpdateOut(OutBase):
     data: Optional[MaaFWProjectUpdateData] = Field(
         default=None, description="MaaFW 项目更新结果"
     )
+
+
+class ScriptMirrorCdkIn(BaseModel):
+    type: Literal["MAA"] = Field(..., description="脚本类型，决定凭据回退规则")
+    cdk: str = Field(
+        default="", repr=False, description="待校验的 CDK；留空回退全局 CDK"
+    )
+
+
+class ScriptMirrorCdkData(BaseModel):
+    status: str
+    expiredTime: int | None = Field(default=None, description="到期时间（unix 秒）")
+    usingGlobalCdk: bool = Field(..., description="是否按专用 CDK 留空规则使用全局 CDK")
+
+
+class ScriptMirrorCdkOut(OutBase):
+    data: ScriptMirrorCdkData
 
 
 class MaaFWMirrorCdkIn(BaseModel):
@@ -2264,6 +2381,7 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             gameSettingControllers=data["gameSettingControllers"],
             projectName=data["projectName"],
             projectVersion=data["projectVersion"],
+            inventory=data.get("inventory"),
             autoCollectGroups=[
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])
@@ -3149,6 +3267,31 @@ async def update_maafw_project(
 
     reply = await maafw_update_api.update_project(payload.scriptId, payload.action)
     return MaaFWProjectUpdateOut(**reply.out_fields())
+
+
+@router.post(
+    "/mirror-cdk",
+    tags=["Get"],
+    summary="查询脚本生效的 Mirror 酱 CDK 状态",
+    response_model=ScriptMirrorCdkOut,
+)
+async def query_script_mirror_cdk(payload: ScriptMirrorCdkIn) -> ScriptMirrorCdkOut:
+    """校验编辑框草稿；MAA 专用 CDK 留空时按接管规则查询全局 CDK。"""
+    using_global = not payload.cdk.strip()
+    try:
+        result = await query_takeover_cdk(payload.cdk)
+    except Exception as error:
+        logger.warning(f"脚本 Mirror 酱 CDK 查询失败: {type(error).__name__}")
+        return ScriptMirrorCdkOut(
+            data=ScriptMirrorCdkData(status="error", usingGlobalCdk=using_global)
+        )
+    return ScriptMirrorCdkOut(
+        data=ScriptMirrorCdkData(
+            status=result.status,
+            expiredTime=result.expired_time,
+            usingGlobalCdk=using_global,
+        )
+    )
 
 
 @router.post(
@@ -5624,3 +5767,72 @@ async def get_maafw_asset(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return FileResponse(file_path)
+
+
+@router.post(
+    "/maa/copilot/source",
+    tags=["Get"],
+    summary="加载或同步作业站公开数据",
+    response_model=MaaCopilotSourceOut,
+)
+async def load_maa_copilot_source(request: MaaCopilotSourceIn) -> MaaCopilotSourceOut:
+    from app.task.MAA import api_service as maa_api
+
+    try:
+        return MaaCopilotSourceOut(
+            **await maa_api.get_copilot_source(
+                request.source, request.query, action=request.action
+            )
+        )
+    except ValueError as exc:
+        return MaaCopilotSourceOut(code=400, status="error", message=str(exc))
+
+
+@router.post(
+    "/maa/copilot/authors",
+    tags=["Get"],
+    summary="搜索作业站作者",
+    response_model=ComboBoxOut,
+)
+async def search_maa_copilot_authors(request: MaaCopilotAuthorsIn) -> ComboBoxOut:
+    from app.task.MAA import api_service as maa_api
+
+    try:
+        entries = await maa_api.search_copilot_authors(request.keyword)
+        return ComboBoxOut(data=[ComboBoxItem(**item) for item in entries])
+    except Exception:
+        logger.warning("作业站作者搜索失败")
+        return ComboBoxOut(
+            code=400, status="error", message="作者搜索失败，请检查网络后重试", data=[]
+        )
+
+
+@router.post(
+    "/maa/copilot/analyze",
+    tags=["Get"],
+    summary="比较作业练度并建议培养目标（不落库）",
+    response_model=MaaCopilotAnalyzeOut,
+)
+async def analyze_maa_copilot_training(
+    request: MaaCopilotAnalyzeIn,
+) -> MaaCopilotAnalyzeOut:
+    from app.task.MAA import api_service as maa_api
+
+    try:
+        result = await maa_api.analyze_copilot_training(
+            request.scriptId,
+            request.userId,
+            binding_key=request.bindingKey,
+            source=request.source,
+            query=request.query,
+            coverage=request.coverage,
+            require_modules=request.requireModules,
+        )
+        return MaaCopilotAnalyzeOut(**result)
+    except ValueError as exc:
+        return MaaCopilotAnalyzeOut(code=400, status="error", message=str(exc))
+    except Exception:
+        logger.opt(exception=True).warning("作业练度分析失败")
+        return MaaCopilotAnalyzeOut(
+            code=500, status="error", message="作业分析失败，请检查账号绑定和网络后重试"
+        )

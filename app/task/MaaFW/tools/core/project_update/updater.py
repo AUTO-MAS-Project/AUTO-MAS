@@ -109,9 +109,6 @@ MIRROR_CDK_STATUS_BY_CODE: dict[int, str] = {
 }
 CDK_STATUS_OK = "ok"
 CDK_STATUS_ABSENT = "absent"
-# 只有 query_mirrorchyan_cdk_status 用：项目没声明 mirrorchyan_rid / 查询本身失败。
-CDK_STATUS_UNSUPPORTED = "unsupported"
-CDK_STATUS_ERROR = "error"
 CDK_ABSENT_REASON = "未配置 Mirror酱 CDK"
 
 
@@ -279,22 +276,6 @@ class MaaFWMirrorChyanVersionCheck:
         if self.cdk_message:
             return self.cdk_message
         return "Mirror酱 未提供下载地址"
-
-
-@dataclass(frozen=True)
-class MaaFWMirrorCdkStatus:
-    """一次 CDK 状态查询（:func:`query_mirrorchyan_cdk_status`）的结果。
-
-    ``status``：``ok`` / ``absent``（没填）/ ``unsupported``（项目没声明
-    ``mirrorchyan_rid``）/ ``error``（网络或服务端异常）/ ``expired`` / ``invalid`` /
-    ``quota`` / ``mismatched`` / ``blocked``（7001-7005）。
-    ``expired_time`` 是 Mirror 酱回的 ``cdk_expired_time``（unix 秒），没回就是 None。
-    ``message`` 是给排障看的一句话，不含 CDK 与下载地址。
-    """
-
-    status: str
-    expired_time: int | None = None
-    message: str = ""
 
 
 class MaaFWProjectUpdateError(RuntimeError):
@@ -2141,72 +2122,6 @@ async def _query_mirrorchyan_latest(
         sha256=str(data.get("sha256") or "").strip() or None,
         cdk_status=CDK_STATUS_OK if mirror_cdk else CDK_STATUS_ABSENT,
         cdk_expired_time=_metadata_int(data, "cdk_expired_time", "cdkExpiredTime"),
-    )
-
-
-async def query_mirrorchyan_cdk_status(
-    interface_model: MaaFWInterface,
-    *,
-    mirror_cdk: str,
-    channel: str,
-    proxy: httpx.Proxy | None = None,
-    send_log: Callable[[str], None] | None = None,
-) -> MaaFWMirrorCdkStatus:
-    """查一个 CDK 现在能不能用、还剩多久到期，不占当日下载额度。
-
-    更新检查查版本一律不带 CDK（见 ``_discover_project_update_detailed``），所以 CDK 填错
-    要等到「有新版本 + 真下载」才暴露。这里单独查一次，给编辑页的 CDK 小字用：
-
-    1. 不带 CDK 查一次，拿到该渠道的最新版本；
-    2. 带 CDK、``current_version`` 写成刚拿到的最新版本再查一次。已是最新时服务端不签发下载
-       地址，也就不扣额度，但照样校验 CDK（实测错 CDK 一律 HTTP 403 + 7002）。万一回包里
-       还是带了 ``url``，这里不读、不记日志。
-
-    没声明 ``mirrorchyan_rid`` 回 ``unsupported``、没填 CDK 回 ``absent``，都不发请求；
-    网络或服务端异常回 ``error``，不抛给调用方。
-    """
-
-    send_status_log = send_log or (lambda _: None)
-    if not str(interface_model.mirrorchyan_rid or "").strip():
-        return MaaFWMirrorCdkStatus(status=CDK_STATUS_UNSUPPORTED)
-    cdk = str(mirror_cdk or "").strip()
-    if not cdk:
-        return MaaFWMirrorCdkStatus(status=CDK_STATUS_ABSENT)
-
-    def ignore_log(_: str) -> None:
-        # 两次查询自己的日志（「本次仅用 Mirror酱 查版本」之类）是更新流程的口径，这里不转发
-        return None
-
-    try:
-        latest = await _query_mirrorchyan_latest(
-            interface_model,
-            current_version=str(interface_model.version or ""),
-            mirror_cdk="",
-            channel=channel,
-            proxy=proxy,
-            send_log=ignore_log,
-        )
-        authorized = await _query_mirrorchyan_latest(
-            interface_model,
-            current_version=latest.version_name,
-            mirror_cdk=cdk,
-            channel=channel,
-            proxy=proxy,
-            send_log=ignore_log,
-        )
-    except Exception as exc:  # noqa: BLE001 - 查不到只是不显示小字，不能让编辑页报错
-        message = _sanitize_log_message(str(exc)).replace(cdk, "***")
-        send_status_log(f"MirrorChyan CDK 状态查询失败: {message}")
-        return MaaFWMirrorCdkStatus(status=CDK_STATUS_ERROR, message=message)
-
-    # 7001-7005 的回包也可能带到期时间（比如今日次数用尽时），有就一并给出；
-    # ``_query_mirrorchyan_latest`` 只在 code 0 时读它，这里按原始 data 再读一次。
-    return MaaFWMirrorCdkStatus(
-        status=authorized.cdk_status,
-        expired_time=_metadata_int(
-            authorized.data, "cdk_expired_time", "cdkExpiredTime"
-        ),
-        message=authorized.cdk_message,
     )
 
 

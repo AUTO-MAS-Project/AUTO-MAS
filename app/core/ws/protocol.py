@@ -58,6 +58,9 @@ TASK_CONFIG_DISCARDED = "task.config.discarded"
 
 # 任务创建通知（id=TaskManager）
 TASK_CREATED = "task.created"
+# 逐脚本、逐轮的执行边界（id=TaskManager），不随任务快照重放。
+TASK_SCRIPT_STARTED = "task.script.started"
+TASK_SCRIPT_FINISHED = "task.script.finished"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
@@ -89,6 +92,9 @@ EMULATOR_NOTICE = "emulator.notice"
 
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
+
+# 魔改 AVD 更新（下载 / 解包 / 核对 / 换上）的进度（id=EmulatorManager，data 里带根目录）
+AVD_UPDATE_PROGRESS = "emulator2.avd-update.progress"
 
 # 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 DISPLAY_DETACH_PROMPT = "display.detach.prompt"

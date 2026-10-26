@@ -1,3 +1,4 @@
+import { beginMainFeature } from './featureAnalytics'
 /**
  * 后端服务管理
  * 重构版本 - 只负责后端进程的启动、停止和管理
@@ -10,7 +11,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
-import { isDevelopmentEnvironment } from './environmentService'
+import { getApplicationEnvironment, isDevelopmentEnvironment } from './instanceConfig'
 import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -31,6 +32,9 @@ import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitiali
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
+import { analyticsService, refreshAnalyticsPreference } from './analyticsService'
+import { analyticsDuration } from './analyticsPolicy'
+import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 const logger = getLogger('后端服务')
 const BACKEND_UNAVAILABLE_CONFIRMATIONS = 3
 
@@ -130,7 +134,7 @@ export class BackendService {
   private restartFlight: Promise<BackendStartResult> | null = null
   private forceStopFlight: Promise<BackendStopResult> | null = null
   private forceStopRequested = false
-  private lastKnownBackendDevMode: boolean | null = null
+  private lastKnownPreserveBackend: boolean | null = null
   // Runtime 监督链路的句柄与就绪地址；旧链路下始终为 null。
   private runtimeHandle: RuntimeSuperviseHandle | null = null
   private runtimeBaseUrl: string | null = null
@@ -141,6 +145,7 @@ export class BackendService {
   private readonly runtimeRuns = new Set<Promise<RuntimeRunResult>>()
 
   private readonly startupHealthPath = '/api/core/health'
+  private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
@@ -178,13 +183,34 @@ export class BackendService {
 
   private async startBackendInternal(options?: BackendStartOptions): Promise<BackendStartResult> {
     const startedAt = performance.now()
+    refreshAnalyticsPreference()
+    const context = analyticsService.getContext()
+    this.analyticsRuntimeMode = 'unknown'
+    const record = (success: boolean) => {
+      refreshAnalyticsPreference()
+      analyticsService.recordMainEvent(context, {
+        name: 'backend_start_finished',
+        props: {
+          outcome: success ? 'success' : 'failure',
+          runtime_mode: this.analyticsRuntimeMode,
+          duration_bucket: analyticsDuration(performance.now() - startedAt),
+        },
+      })
+    }
 
     return observeMainOperation(
       'AUTO-MAS backend startup',
       'auto_mas.backend.start',
       { component: 'electron-main' },
       async () => {
-        const result = await this.startBackendProcess(options)
+        let result: BackendStartResult
+        try {
+          result = await this.startBackendProcess(options)
+        } catch (error) {
+          record(false)
+          throw error
+        }
+        record(result.success)
         const attributes = {
           component: 'electron-main',
           outcome: result.success ? 'success' : 'failure',
@@ -205,6 +231,7 @@ export class BackendService {
     // 灰度开关打开后整条生命周期都走 Runtime 监督链路，绝不与旧链路混用：两条链路的端口、
     // 关闭语义与进程归属都不同，中途回退只会留下无人负责的后端进程。
     const launchConfig = resolveRuntimeLaunchConfig(this.appRoot)
+    this.analyticsRuntimeMode = launchConfig.mode
     if (launchConfig.mode !== 'off') {
       return this.startBackendViaRuntime(launchConfig, options)
     }
@@ -320,9 +347,9 @@ export class BackendService {
    *
    * 与旧链路的三点区别：
    * 1. 不注入 `AUTO_MAS_DEV` / `AUTO_MAS_HTTP_PORT`：受监督后端的端口与身份由 Runtime 注入的
-   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV=development`
-   *    与遥测开关一样由 `createRuntimeClient` 按启动模式统一注入（见 runtimeEnv.ts），只影响
-   *    后端的遥测判定；
+   *    `AUTO_MAS_SUPERVISED` 一组变量决定，这里再注入只会互相打架。`AUTO_MAS_ENV`
+   *    与遥测开关由 `createRuntimeClient` 按应用环境统一注入（见 runtimeEnv.ts），
+   *    不改变监督器的端口与退出契约；
    * 2. 就绪以 `state:running` 事件为准，而不是解析 stdout 里的 `Uvicorn running`；
    * 3. 后端地址取事件里的 `details.baseUrl`，不按 `resolveHttpPort()` 自行拼装。
    *
@@ -363,13 +390,12 @@ export class BackendService {
         `Runtime 根目录: ${config.appRoot}${config.repo ? `, 源码目录: ${config.repo}` : ''}`
     )
 
-    // 遥测开关（AUTO_MAS_TELEMETRY）与开发标记（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
+    // 遥测开关（AUTO_MAS_TELEMETRY）与应用环境（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
     // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
     const client = createRuntimeClient({
       runtimePath,
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
-      launchMode: config.mode,
     })
 
     if (config.mode === 'development') {
@@ -743,7 +769,7 @@ export class BackendService {
 
       const meta = (await metaResponse.json()) as { devMode?: boolean }
       if (typeof meta.devMode === 'boolean') {
-        this.lastKnownBackendDevMode = meta.devMode
+        this.lastKnownPreserveBackend = meta.devMode
       }
       if (meta.devMode) {
         reuseDevBackend = true
@@ -786,25 +812,25 @@ export class BackendService {
   }
 
   /**
-   * 读取后端权威开发模式；暂时不可达时回退最近一次成功结果。
+   * 读取后端退出保留策略；暂时不可达时回退最近一次成功结果。
    */
-  async getBackendDevMode(): Promise<boolean | null> {
+  async shouldPreserveBackend(): Promise<boolean | null> {
     const apiEndpoint = this.resolveLocalApiEndpoint()
     const metaUrl = `${apiEndpoint}/api/core/ws_meta`
 
     try {
       const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
-      if (!response.ok) return this.lastKnownBackendDevMode
+      if (!response.ok) return this.lastKnownPreserveBackend
 
       const meta = (await response.json()) as { devMode?: boolean }
-      if (typeof meta.devMode !== 'boolean') return this.lastKnownBackendDevMode
+      if (typeof meta.devMode !== 'boolean') return this.lastKnownPreserveBackend
 
-      this.lastKnownBackendDevMode = meta.devMode
+      this.lastKnownPreserveBackend = meta.devMode
       return meta.devMode
     } catch (error) {
       const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
-      logger.debug(`读取后端开发模式失败，使用最近结果: ${errorMsg}`)
-      return this.lastKnownBackendDevMode
+      logger.debug(`读取后端退出策略失败，使用最近结果: ${errorMsg}`)
+      return this.lastKnownPreserveBackend
     }
   }
 
@@ -1002,8 +1028,12 @@ export class BackendService {
   /**
    * 重启后端服务
    */
-  restartBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
+  restartBackend(
+    options?: BackendStartOptions,
+    reason: 'manual' | 'recovery' = 'manual'
+  ): Promise<BackendStartResult> {
     if (this.restartFlight) return this.restartFlight
+    const telemetry = beginMainFeature('backend_restart_finished')
     const operation = this.enqueueOperation(async () => {
       if (this.forceStopRequested) {
         return { success: false, error: '强制停止已请求，取消后端重启' }
@@ -1021,6 +1051,11 @@ export class BackendService {
       return this.startBackendInternal(options)
     })
     this.restartFlight = operation
+    void operation.then(
+      result =>
+        telemetry.finish({ reason_kind: reason, outcome: result.success ? 'success' : 'failure' }),
+      () => telemetry.finish({ reason_kind: reason, outcome: 'unknown' })
+    )
     void operation.then(
       () => {
         if (this.restartFlight === operation) this.restartFlight = null
@@ -1198,7 +1233,6 @@ export class BackendService {
         runtimePath: config.runtimePath,
         appRoot: config.appRoot,
         dataRoot: config.dataRoot,
-        launchMode: config.mode,
       })
       const outcome = await this.runRuntimePreparation(client, ['workspace', 'check', '--remote'])
       if (!outcome.success) {
@@ -1418,12 +1452,8 @@ export class BackendService {
     env.AUTO_MAS_DEV = '1'
     // 与前端使用的端点对齐，避免后端按自身环境判定另选端口
     env.AUTO_MAS_HTTP_PORT = String(resolveHttpPort())
-    // 仅开发环境标记运行环境，打包版必须清除继承值以正常上报遥测
-    if (isDevelopmentEnvironment()) {
-      env.AUTO_MAS_ENV = 'development'
-    } else {
-      delete env.AUTO_MAS_ENV
-    }
+    // 所有启动链路明确传入应用环境，覆盖宿主继承值。
+    env.AUTO_MAS_ENV = getApplicationEnvironment()
     return env
   }
 

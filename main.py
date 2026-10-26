@@ -26,6 +26,7 @@ import logging
 import os
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,10 @@ from app.utils import (  # noqa: E402
     sanitize_log_message,
 )
 from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
+from app.utils.environment import (  # noqa: E402
+    get_application_environment,
+    is_development_environment,
+)
 
 logger = get_logger("主程序")
 
@@ -143,20 +148,6 @@ def restart_as_admin():
             sys.exit(result)
 
 
-def is_development_environment() -> bool:
-    """识别开发环境：前端传入的环境变量，或仓库根目录的 .env 标记文件。
-
-    .env 不纳入版本库，模板见 .env.example；更新器也不会把它复制到
-    用户安装目录，因此用户直接启动后端时仍按生产环境上报。
-    """
-
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    if raw in {"dev", "development"}:
-        return True
-
-    return (current_dir / ".env").is_file()
-
-
 def is_hosted_launch() -> bool:
     """识别由前端拉起的后端进程，此时提权由前端负责，无需自行提权。"""
 
@@ -194,7 +185,7 @@ def resolve_http_port(development_environment: bool) -> int:
     受 AUTO-MAS-Runtime 监督时只认监督器注入的 AUTO_MAS_SUPERVISED_PORT：
     监督器按实例类型自行选定端口（managed 缺省 36163、development 缺省 36164）
     并据此做健康检查与关闭请求。后端若钉死 36163，受监督的开发版就会撞上同机
-    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；.env、
+    正在运行的正式版。该变量缺失或非法时回退 36163 并记 warning；
     AUTO_MAS_HTTP_PORT 与开发环境判据在受监督时一律忽略，优先级低于注入值。
 
     Args:
@@ -248,9 +239,12 @@ def _resolve_supervised_port() -> int:
 
 @logger.catch
 def main():
+    raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
+    if raw_environment not in {"", "dev", "development", "production"}:
+        logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
+    os.environ["AUTO_MAS_ENV"] = get_application_environment()
     development_environment = is_development_environment()
-    if development_environment:
-        os.environ["AUTO_MAS_ENV"] = "development"
+    logger.info(f"应用运行环境: {get_application_environment()}")
 
     supervised = is_supervised()
     admin = is_admin()
@@ -301,6 +295,21 @@ def main():
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
         await Config.init_config()
+        from app.core.history import history_store
+        from app.utils.constants import UTC4
+
+        # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
+        await history_store.initialize(
+            video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB * 1024 * 1024
+        )
+        await history_store.prune(
+            today=datetime.now(tz=UTC4).date(),
+            retention_days=Config.setting.Function.HistoryRetentionTime,
+        )
+
+        from app.services.obs_replay import ObsReplay
+
+        await ObsReplay.cleanup_temporary()
 
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
@@ -369,6 +378,12 @@ def main():
 
                 await DesktopGuard.start()
 
+            async def init_avd_update() -> None:
+                from app.core import avd_update
+
+                # 收拾上次没做完的魔改 AVD 换上（几次改名，很快）
+                await avd_update.startup()
+
             async def init_stage_info() -> None:
                 from app.task.MAA.tools.stage_service import maa_stage_service
 
@@ -405,6 +420,8 @@ def main():
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
+                # 要在主定时器之前：定时器可能马上拉起实例，而 sdk\emulator 可能正停在换到一半
+                await run_optional_step("魔改 AVD 更新恢复", init_avd_update)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
                 await run_optional_step("通知渠道", notifications.start)
@@ -481,9 +498,13 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
 
-            await MainTimer.stop()
-
-            await TaskManager.stop_task("ALL")
+            stop_timer = asyncio.create_task(MainTimer.stop())
+            stop_tasks = asyncio.create_task(TaskManager.stop_task("ALL"))
+            try:
+                # 正常用户收尾仍可归档；只有存储操作阻塞才提前触达关闭期限。
+                await history_store.close(after=stop_tasks)
+            finally:
+                await asyncio.gather(stop_timer, stop_tasks)
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
             # 会再来收尾这块屏，所以这一步不能省。
             from app.core.desktop_guard import DesktopGuard

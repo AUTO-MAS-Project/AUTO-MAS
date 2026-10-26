@@ -149,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { savePlanDayBatch } from '../savePlanDayBatch'
 import { useI18n } from 'vue-i18n'
 import { ref, watch, computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
@@ -319,14 +320,7 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     }
   }
 
-  let allSaved = true
-  for (let i = 0; i < pending.length; i += 1) {
-    const saved = await props.handlePlanChange(pending[i].path, pending[i].config, {
-      refresh: i === pending.length - 1,
-      forceCustomStages: false,
-    })
-    allSaved = allSaved && saved
-  }
+  const allSaved = await savePlanDayBatch(props.handlePlanChange, pending, props.viewMode, false)
 
   if (allSaved) {
     savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
@@ -501,11 +495,14 @@ const disableAllStages = async (stageKey: string) => {
 const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
   const timeKeys = columnKeys.value.filter(timeKey => readPlanColumn(planConfig, timeKey))
-  for (const [i, timeKey] of timeKeys.entries()) {
-    await props.handlePlanChange(dayConfigPath(timeKey), readPlanColumn(planConfig, timeKey), {
-      refresh: i === timeKeys.length - 1,
-    })
-  }
+  await savePlanDayBatch(
+    props.handlePlanChange,
+    timeKeys.map(timeKey => ({
+      path: dayConfigPath(timeKey),
+      config: readPlanColumn(planConfig, timeKey),
+    })),
+    props.viewMode
+  )
 }
 
 // 处理关卡切换 - 直接保存修改的字段

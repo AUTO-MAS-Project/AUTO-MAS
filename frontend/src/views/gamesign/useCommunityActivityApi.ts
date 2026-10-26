@@ -1,3 +1,4 @@
+import { observeFeature } from '@/utils/featureAnalytics'
 import {
   ApiError,
   CommunityService,
@@ -51,10 +52,22 @@ const responseMessage = (error: ApiError): string => {
 export function useCommunityActivityApi() {
   const queryActivity = async (accountIds: string[] | null = null): Promise<ActivitySnapshot[]> => {
     try {
-      const payload =
-        await CommunityService.queryCommunityActivityApiToolsCommunityActivityQueryPost({
-          accountIds,
-        })
+      const payload = await observeFeature(
+        'community_activity_requested',
+        { operation_kind: 'refresh' },
+        () =>
+          CommunityService.queryCommunityActivityApiToolsCommunityActivityQueryPost({
+            accountIds,
+          }),
+        result =>
+          result.code === 409
+            ? 'blocked'
+            : result.code !== 200 || !Array.isArray(result.data)
+              ? 'failure'
+              : result.data.some(item => item.status !== 'success')
+                ? 'partial'
+                : 'success'
+      )
       if (payload.code !== undefined && payload.code !== 200) {
         throw new Error(payload.message || '日常便笺查询失败')
       }

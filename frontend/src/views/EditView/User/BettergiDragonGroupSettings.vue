@@ -1430,8 +1430,9 @@ const onConfirmBossPicker = (): void => {
   color: var(--ant-color-primary);
 }
 
-/* 放大弹窗内由弹窗体滚动，字段列表不再产生第二条滚动条。 */
-.bettergi-groups-settings-panel-embedded .bettergi-groups-settings-fields {
+/* 放大弹窗内由弹窗体滚动，字段列表与周表不再产生第二条滚动条。 */
+.bettergi-groups-settings-panel-embedded .bettergi-groups-settings-fields,
+.bettergi-groups-settings-panel-embedded .bettergi-weekly-table-wrap {
   max-height: none;
   overflow-y: visible;
 }
@@ -1498,11 +1499,6 @@ const onConfirmBossPicker = (): void => {
 .bettergi-weekly-table :deep(.ant-select-selection-placeholder),
 .bettergi-weekly-table :deep(.ant-input) {
   font-size: 13px;
-}
-
-/* 放大弹窗内周表可更高 */
-.bettergi-groups-settings-panel-embedded .bettergi-weekly-table-wrap {
-  max-height: 60vh;
 }
 
 /* 秘境单元格按钮：与下拉同宽、左对齐，便于点击唤起级联弹窗 */

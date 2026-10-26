@@ -112,7 +112,6 @@
                 }}
               </a-button>
             </a-popover>
-            <HistoryLogReplayPopover v-if="replays.length > 0" :replays="replays" />
           </div>
         </div>
 
@@ -125,18 +124,6 @@
             <a-button size="small" type="text" :disabled="!hasFile" @click="$emit('open-file')">
               <template #icon>
                 <FileOutlined />
-              </template>
-            </a-button>
-          </a-tooltip>
-          <a-tooltip :title="t('history.log.openDir')">
-            <a-button
-              size="small"
-              type="text"
-              :disabled="!hasFile"
-              @click="$emit('open-directory')"
-            >
-              <template #icon>
-                <FolderOpenOutlined />
               </template>
             </a-button>
           </a-tooltip>
@@ -160,6 +147,21 @@
         </div>
       </div>
 
+      <a-alert
+        v-if="storageErrors.length"
+        type="warning"
+        show-icon
+        class="storage-warning"
+        :message="t('history.storageWarningCount', { count: storageErrors.length })"
+      >
+        <template #description>
+          <div v-for="(issue, index) in storageErrors" :key="index">
+            {{ issue.recovered ? t('history.storageRecovered') : t('history.storageFailed') }}:
+            {{ issue.message }}
+          </div>
+        </template>
+      </a-alert>
+      <HistoryAttachments :attachments="attachments" />
       <!-- 日志内容 -->
       <div class="modal-body">
         <a-spin :spinning="loading" style="height: 100%">
@@ -178,7 +180,9 @@
             <template v-else>
               <FileExclamationOutlined class="empty-icon" />
               <span class="empty-title">{{ t('history.log.emptyLog') }}</span>
-              <span v-if="errorMessage" class="error-message">{{ errorMessage }}</span>
+              <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
+                logUnavailableReason ? t('history.log.unavailable') : errorMessage
+              }}</span>
             </template>
           </div>
         </a-spin>
@@ -193,7 +197,6 @@ import {
   FileExclamationOutlined,
   FileOutlined,
   FileTextOutlined,
-  FolderOpenOutlined,
   GiftOutlined,
   InboxOutlined,
   LoadingOutlined,
@@ -202,8 +205,8 @@ import {
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
-import type { ReplayRecord } from '@/types/replay'
-import HistoryLogReplayPopover from './HistoryLogReplayPopover.vue'
+import type { HistoryAttachment, HistoryStorageIssue } from '@/api'
+import HistoryAttachments from './HistoryAttachments.vue'
 import { statusLabelKey, statusTagColor } from '../historyStatus'
 
 const { t } = useI18n()
@@ -220,7 +223,9 @@ interface Props {
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
   pullCountStatistics: PullCountStatistics | null
-  replays: ReplayRecord[]
+  attachments: HistoryAttachment[]
+  storageErrors: HistoryStorageIssue[]
+  logUnavailableReason: string | null
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string
@@ -233,7 +238,6 @@ const props = defineProps<Props>()
 defineEmits<{
   close: []
   'open-file': []
-  'open-directory': []
   'update:fontSize': [number]
 }>()
 
@@ -255,6 +259,13 @@ const displayLogContent = computed(() => {
 </script>
 
 <style scoped>
+.storage-warning {
+  margin: 0 16px 8px;
+  max-height: 120px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+
 .log-modal-content {
   display: flex;
   flex-direction: column;

@@ -1,3 +1,4 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ApiError, Service } from '@/api'
@@ -37,8 +38,13 @@ export function useMaaEndLauncher(options: {
       return
     detecting.value = true
     try {
-      const result = await Service.getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(
-        options.getScriptId()
+      const result = await observeFeature(
+        'adapter_setup_finished',
+        { script_type: 'MaaEnd', operation_kind: 'discover_path', engine_kind: 'unknown' },
+        () =>
+          Service.getMaaendLauncherPathApiApiScriptsMaaendLauncherPathGet(options.getScriptId()),
+        result =>
+          result.code !== 200 ? apiOutcome(result) : result.launcher_path ? 'success' : 'not_found'
       )
       if (request !== generation || disposed) return
       if (result.code !== 200 || !result.launcher_path) {

@@ -4,7 +4,7 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed } from 'vue'
 import type { GlobalConfig } from '@/api'
 import FluxdownSection from '@/views/setting/FluxdownSection.vue'
-import { handleExternalLink } from '@/utils/openExternal'
+import MirrorCdkSettings from './components/MirrorCdkSettings.vue'
 import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from '@/composables/updatePause'
 import { formatConfigDate, serializeConfigTime } from '@/utils/configDateTime'
 
@@ -178,43 +178,14 @@ const handlePauseUntilChange = (value: string | null) => {
         </div>
       </a-col>
       <a-col :span="8">
-        <div class="form-item-vertical">
-          <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.cdk') }}</span>
-            <a-tooltip>
-              <template #title>
-                <div>
-                  {{ t('setting.others.cdkIntro') }}
-                  <a
-                    href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
-                    class="tooltip-link"
-                    @click="handleExternalLink"
-                    >{{ t('setting.others.cdkSite') }}</a
-                  >
-                  {{ t('setting.others.cdkGet') }}
-                </div>
-              </template>
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </div>
-          <a-input-password
-            :value="settings.Update?.MirrorChyanCDK"
-            :disabled="settings.Update?.Source !== 'MirrorChyan'"
-            :placeholder="t('setting.others.cdkPlaceholder')"
-            :visibility-toggle="true"
-            size="large"
-            @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)"
-          />
-          <div class="form-hint">
-            {{ t('setting.others.cdkHint') }}
-            <a
-              href="https://mirrorchyan.com?source=automas_settings"
-              class="form-hint-link"
-              @click="handleExternalLink"
-              >{{ t('setting.others.cdkGetLink') }}</a
-            >
-          </div>
-        </div>
+        <MirrorCdkSettings
+          :settings="settings"
+          :handle-setting-change="
+            async (category, key, value) => {
+              await handleSettingChange(category, key, value)
+            }
+          "
+        />
       </a-col>
     </a-row>
 
@@ -232,22 +203,5 @@ const handlePauseUntilChange = (value: string | null) => {
 
 .pause-status-alert {
   margin-bottom: 16px;
-}
-
-.form-hint {
-  margin-top: 6px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.form-hint-link {
-  margin-left: 4px;
-  color: var(--ant-color-primary);
-  text-decoration: underline;
-}
-
-.form-hint-link:hover {
-  color: var(--ant-color-primary-hover);
 }
 </style>

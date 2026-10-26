@@ -8,6 +8,8 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
 import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
+import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -234,6 +236,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新魔改 AVD
+     * 一键更新：查最新版本，下载（Mirror 酱或 GitHub，整包或增量）并核对，再换上。
+     * 有实例开着或正在开机时什么都不动，返回 ``instances_running``；开始后到结束这个根目录不许开机。
+     * 换上前发现还有程序开着模拟器文件时停在「已下载好」，下次直接换上。
+     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
+     * @param requestBody
+     * @returns Emulator2AvdUpdateActionOut Successful Response
+     * @throws ApiError
+     */
+    public static avdUpdateApiEmulator2AvdUpdatePost(
+        requestBody: Emulator2AvdUpdateIn,
+    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

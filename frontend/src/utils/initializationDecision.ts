@@ -1,4 +1,6 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import type { RuntimeInitMode } from '@/types/electron'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 type InitializationDecisionMode = 'skip-home' | 'full-init' | 'force-backend-update'
 
@@ -10,7 +12,27 @@ interface InitializationDecision {
   forceBackendUpdate: boolean
 }
 
+let decisionObserved = false
+
 export async function getInitializationDecision(): Promise<InitializationDecision> {
+  if (decisionObserved) return resolveInitializationDecision()
+  decisionObserved = true
+  const operation = beginAnalyticsOperation('initialization_decided')
+  const runtime = Promise.resolve()
+    .then(() => window.electronAPI.getRuntimeInitContext?.())
+    .catch(() => null)
+  const decision = await resolveInitializationDecision()
+  // 额外的模式查询仅用于统计，不延长路由守卫的等待。
+  void runtime.then(context =>
+    operation.finish({
+      decision: decision.mode,
+      runtime_mode: context?.mode ?? 'unknown',
+    })
+  )
+  return decision
+}
+
+async function resolveInitializationDecision(): Promise<InitializationDecision> {
   const api = window.electronAPI
   const logger = api.getLogger('初始化决策')
   const currentVersion = import.meta.env.VITE_APP_VERSION
@@ -37,7 +59,7 @@ export async function getInitializationDecision(): Promise<InitializationDecisio
     }
   }
 
-  if (import.meta.env.DEV) {
+  if (isDev) {
     return {
       mode: 'skip-home',
       currentVersion,

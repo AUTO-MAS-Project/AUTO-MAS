@@ -1,3 +1,4 @@
+import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 链路的后端更新
  *
@@ -277,6 +278,14 @@ export async function updateBackendViaRuntime(
   onProgress: (update: RuntimeUpdateProgress) => void,
   deps: RuntimeUpdateDependencies
 ): Promise<RuntimeUpdateOutcome> {
+  return observeBackendUpdate('start', () => runBackendUpdate(targetVersion, onProgress, deps))
+}
+
+async function runBackendUpdate(
+  targetVersion: string,
+  onProgress: (update: RuntimeUpdateProgress) => void,
+  deps: RuntimeUpdateDependencies
+): Promise<RuntimeUpdateOutcome> {
   const { launchConfig } = deps
 
   if (launchConfig.mode === 'off') {
@@ -372,6 +381,13 @@ export async function updateBackendViaRuntime(
  * 那个会话的编排器实例里。
  */
 export async function retryBackendUpdate(
+  action: RuntimeUpdateRetryAction,
+  onProgress: (update: RuntimeUpdateProgress) => void
+): Promise<RuntimeUpdateOutcome> {
+  return observeBackendUpdate('retry', () => runBackendUpdateRetry(action, onProgress))
+}
+
+async function runBackendUpdateRetry(
   action: RuntimeUpdateRetryAction,
   onProgress: (update: RuntimeUpdateProgress) => void
 ): Promise<RuntimeUpdateOutcome> {
@@ -589,5 +605,30 @@ export function resolveRetryActions(
       return ['dependencies-sync', 'dependencies-rebuild', 'repair']
     default:
       return ['repair']
+  }
+}
+
+async function observeBackendUpdate(
+  trigger_kind: 'start' | 'retry',
+  run: () => Promise<RuntimeUpdateOutcome>
+): Promise<RuntimeUpdateOutcome> {
+  const telemetry = beginMainFeature('backend_update_finished')
+  try {
+    const result = await run()
+    telemetry.finish({
+      trigger_kind,
+      phase: result.phase ?? (result.success ? 'complete' : 'unknown'),
+      outcome: result.cancelled
+        ? 'cancelled'
+        : result.success
+          ? 'success'
+          : result.code === 'RUNTIME_UPDATE_UNSUPPORTED'
+            ? 'unsupported'
+            : 'failure',
+    })
+    return result
+  } catch (error) {
+    telemetry.finish({ trigger_kind, phase: 'unknown', outcome: 'unknown' })
+    throw error
   }
 }

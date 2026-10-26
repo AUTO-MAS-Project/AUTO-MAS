@@ -22,7 +22,6 @@
 
 
 import asyncio
-import uuid
 from datetime import datetime
 from typing import (
     Annotated,
@@ -48,6 +47,7 @@ from app.api.notification_dependencies import (
 )
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, notify_channels
+from app.core.data_backup import create_data_backup
 from app.core.notify import HostNotificationService
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
@@ -55,7 +55,6 @@ from app.models.notification_ports import WebhookTester
 from app.models.schema import (
     ObsReplayCheckOut,
     OutBase,
-    ReplayRecord,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
     WebhookDeleteIn,
@@ -72,7 +71,7 @@ from app.models.schema import (
 from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
-from app.services.data_backup import create_data_backup
+from app.services.update_transport import query_mirror_cdk_status
 from app.utils import debug_pattern, get_logger
 
 GlobalConfig = ConfigPayload[_config_models.GlobalConfig]
@@ -175,7 +174,7 @@ class NotifyChannelsOut(OutBase):
 
 
 class ObsReplaySaveOut(OutBase):
-    replay: ReplayRecord | None = None
+    capture_path: str | None = None
 
 
 class WebhookTestIn(WebhookInBase):
@@ -188,6 +187,24 @@ class SettingGetOut(OutBase):
 
 class SettingUpdateIn(BaseModel):
     data: GlobalConfigInput = Field(..., description="全局设置需要更新的数据")
+
+
+class SettingMirrorCdkIn(BaseModel):
+    cdk: str = Field(..., repr=False, description="待校验的 Mirror 酱 CDK")
+
+
+class SettingMirrorCdkData(BaseModel):
+    status: str = Field(
+        ...,
+        description="CDK 状态：ok / absent / error / expired / invalid / quota / mismatched / blocked",
+    )
+    expiredTime: int | None = Field(
+        default=None, description="CDK 到期时间（unix 秒）；未返回时为空"
+    )
+
+
+class SettingMirrorCdkOut(OutBase):
+    data: SettingMirrorCdkData
 
 
 class PatternDebugIn(BaseModel):
@@ -225,6 +242,29 @@ backup_lock = asyncio.Lock()
 
 
 @router.post(
+    "/mirror-cdk",
+    tags=["Get"],
+    summary="查询全局 Mirror 酱 CDK 状态与到期时间",
+    response_model=SettingMirrorCdkOut,
+)
+async def query_setting_mirror_cdk(request: SettingMirrorCdkIn) -> SettingMirrorCdkOut:
+    try:
+        result = await query_mirror_cdk_status(
+            "AUTO_MAS",
+            cdk=request.cdk,
+            channel=Config.setting.Update.Channel,
+            proxy=Config.proxy,
+        )
+    except Exception as error:
+        # 网络异常可能包含带 CDK 的请求 URL，只记录异常类型。
+        logger.warning(f"全局 Mirror 酱 CDK 状态查询失败: {type(error).__name__}")
+        return SettingMirrorCdkOut(data=SettingMirrorCdkData(status="error"))
+    return SettingMirrorCdkOut(
+        data=SettingMirrorCdkData(status=result.status, expiredTime=result.expired_time)
+    )
+
+
+@router.post(
     "/obs/check",
     tags=["Get"],
     response_model=ObsReplayCheckOut,
@@ -256,14 +296,10 @@ async def save_obs_replay() -> ObsReplaySaveOut:
     from app.services.obs_replay import ObsReplay
 
     try:
-        record = ReplayRecord(
-            replayId=str(uuid.uuid4()),
-            scriptName="手动测试",
-            failedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            reason="试存 OBS 回放",
+        path = await ObsReplay.capture(
+            Config.obs_replay_options(), temporary_copy=False
         )
-        replay = await ObsReplay.save(Config.obs_replay_options(), record)
-        return ObsReplaySaveOut(replay=replay)
+        return ObsReplaySaveOut(capture_path=str(path))
     except Exception as error:
         return ObsReplaySaveOut(code=500, status="error", message=str(error))
 

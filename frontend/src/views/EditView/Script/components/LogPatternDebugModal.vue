@@ -60,6 +60,7 @@ const configPreview = computed(() => {
     :title="title"
     width="900px"
     :footer="null"
+    :body-style="{ height: '60vh', minHeight: 0, overflow: 'hidden' }"
     :destroy-on-close="true"
     @update:open="(v: boolean) => emit('update:open', v)"
   >
@@ -128,7 +129,7 @@ const configPreview = computed(() => {
       <div class="debug-result-pane">
         <div class="debug-result-header">
           <span class="debug-section-label">
-            结果（{{ debug.hitCount }}/{{ debug.results.length }}）
+            {{ t('edit.debugResultCount', { n: debug.hitCount, m: debug.results.length }) }}
           </span>
           <a-checkbox v-model:checked="debug.onlyHit" size="small">{{
             t('edit.matchesOnly')
@@ -154,7 +155,9 @@ const configPreview = computed(() => {
             <div class="debug-result-line">
               <span class="debug-result-line-num">{{ item.idx + 1 }}</span>
               <span v-if="!debug.isMultiline" class="debug-result-line-text">{{ item.line }}</span>
-              <span v-else class="debug-result-line-text">窗口 {{ item.idx + 1 }}</span>
+              <span v-else class="debug-result-line-text">
+                {{ t('edit.debugWindow', { n: item.idx + 1 }) }}
+              </span>
             </div>
             <div class="debug-result-out">
               <a-tag v-if="item.hit" color="green" class="debug-result-tag">{{
@@ -186,20 +189,25 @@ const configPreview = computed(() => {
 .debug-body {
   display: flex;
   gap: 16px;
-  height: 60vh;
-  min-height: 420px;
+  height: 100%;
+  min-height: 0;
 }
 
 .debug-input-pane,
 .debug-result-pane {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* 长规则预览也要给日志输入和调试按钮留出空间。 */
 .debug-config-preview {
   display: flex;
+  flex-shrink: 0;
+  max-height: 30%;
+  overflow-y: auto;
   align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
@@ -268,7 +276,11 @@ const configPreview = computed(() => {
   margin-bottom: 12px;
 }
 
+/* 错误详情独立滚动，避免挤出整个结果区。 */
 .debug-compile-error {
+  flex-shrink: 0;
+  max-height: 50%;
+  overflow-y: auto;
   margin-bottom: 12px;
 }
 

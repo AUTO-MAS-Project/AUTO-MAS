@@ -33,6 +33,7 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'arknights',
   'stellasora',
   'infinitynikki',
+  'azurlane',
 ]
 
 // 直接使用后端的游戏归属，新活动卡无需另补脚本类型映射。

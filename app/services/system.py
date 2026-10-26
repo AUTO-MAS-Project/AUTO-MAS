@@ -21,7 +21,6 @@
 
 
 import asyncio
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +31,7 @@ import psutil
 from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
 from app.utils import LazyProxy, get_logger
+from app.utils.environment import is_development_environment
 from app.utils.platform.process import platform_process
 
 from .platform.power import power
@@ -97,7 +97,7 @@ class _SystemHandler:
         """设置程序开机自启。"""
 
         # 开发环境不管理需要提权的开机自启任务计划
-        if os.getenv("AUTO_MAS_ENV") == "development":
+        if is_development_environment():
             return
         if not startup.supported:
             # 同上, 启动流程会无条件调用, 记录后跳过

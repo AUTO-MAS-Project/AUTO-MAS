@@ -22,7 +22,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 
-import { Emulator20Service, EmulatorOperateIn, Service } from '@/api'
+import { Emulator20Service, EmulatorOperateIn, Service } from '@/composables/useEmulatorApi'
 import { usePerformanceStore } from '@/stores/performance'
 import { invalidateEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions'
 import { getApiErrorMessage } from '@/utils/apiError'

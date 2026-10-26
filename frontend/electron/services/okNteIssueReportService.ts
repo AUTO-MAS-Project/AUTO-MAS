@@ -17,6 +17,7 @@ const logger = getLogger('OK-NTE问题包')
 
 interface OkNteIssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -69,6 +70,7 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
     logger.info(`OK-NTE 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `OK-NTE 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }

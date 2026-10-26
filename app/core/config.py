@@ -25,7 +25,7 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -196,6 +196,30 @@ def normalize_proxy_address(raw: str | None) -> str | None:
     return text
 
 
+def _clear_legacy_history() -> None:
+    """清理旧版历史存储的目录、升级标记和整数主键数据库。"""
+
+    for path in (Path.cwd() / "history", Path.cwd() / "data/replays"):
+        if path.exists():
+            shutil.rmtree(path)
+    (Path.cwd() / "data/history-storage.json").unlink(missing_ok=True)
+    for name in (
+        "data/history.db",
+        "data/history.db-journal",
+        "data/history.db-shm",
+        "data/history.db-wal",
+    ):
+        (Path.cwd() / name).unlink(missing_ok=True)
+
+
+class QueueNotFoundError(LookupError):
+    """查询的调度队列已不存在。"""
+
+
+class QueueItemNotFoundError(LookupError):
+    """查询的队列项已不存在。"""
+
+
 class AppConfig:
     VERSION = "v5.8.0-beta.1"
 
@@ -215,12 +239,10 @@ class AppConfig:
         self.log_path = Path.cwd() / "debug/app.log"
         self.database_path = Path.cwd() / "data/data.db"
         self.config_path = Path.cwd() / "config"
-        self.history_path = Path.cwd() / "history"
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
-        self.history_path.mkdir(parents=True, exist_ok=True)
 
         # 所有集合先登记，随后按引用依赖激活；迁移完成前不登记持久化根。
         self.setting = GlobalConfig.build()
@@ -395,8 +417,25 @@ class AppConfig:
         def on_telemetry(sender, event):
             set_telemetry_enabled(event.value)
 
+        async def on_video_limit(sender, event):
+            from app.core.history import history_store
+
+            try:
+                report = await history_store.set_video_limit(
+                    limit_bytes=event.value * 1024 * 1024
+                )
+                for issue in report.errors:
+                    logger.warning(f"历史视频容量维护失败：{issue.message}")
+            except Exception as error:
+                logger.opt(exception=True).warning(f"历史视频容量维护失败：{error}")
+
         # connect 默认弱引用，配置管理器持有回调直至应用退出。
-        self._config_receivers = (on_self_start, on_allow_sleep, on_telemetry)
+        self._config_receivers = (
+            on_self_start,
+            on_allow_sleep,
+            on_telemetry,
+            on_video_limit,
+        )
         self.setting.connect(
             on_self_start, phase="runtime", group="Start", field="IfSelfStart"
         )
@@ -405,6 +444,12 @@ class AppConfig:
         )
         self.setting.connect(
             on_telemetry, phase="runtime", group="Function", field="IfEnableTelemetry"
+        )
+        self.setting.connect(
+            on_video_limit,
+            phase="runtime",
+            group="Replay",
+            field="VideoStorageLimitMiB",
         )
         from app.core.community_activity import connect_community_activity_cache
 
@@ -439,9 +484,17 @@ class AppConfig:
                 version = database.execute("SELECT v FROM version").fetchone()[0]
         else:
             version = "v1.11"
-        if version not in {"v1.7", "v1.8", "v1.9", "v1.10", "v1.11", "v2.0"}:
+        if version not in {
+            "v1.7",
+            "v1.8",
+            "v1.9",
+            "v1.10",
+            "v1.11",
+            "v2.0",
+            "v2.1",
+        }:
             raise ValueError(f"不支持的数据版本：{version}，配置文件未迁移")
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             await asyncio.to_thread(preserve_pre_upgrade, self.config_path)
             await self._upgrade_legacy_data()
             if self.setting.activation_state == NodeState.INACTIVE:
@@ -505,10 +558,16 @@ class AppConfig:
             ):
                 script._preload_task = asyncio.create_task(script.preload_resource())
         await config_manager.flush()
-        if version != "v2.0":
+        if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.0",))
+                database.commit()
+            version = "v2.0"
+        if version == "v2.0":
+            await asyncio.to_thread(_clear_legacy_history)
+            with closing(sqlite3.connect(self.database_path)) as database:
+                database.execute("UPDATE version SET v = ?", ("v2.1",))
                 database.commit()
 
     async def _upgrade_legacy_data(self) -> None:
@@ -3704,7 +3763,9 @@ class AppConfig:
         if queue_id is None:
             data = self.QueueConfig.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[uuid.UUID(queue_id)]
+            entry = self.QueueConfig.get(uuid.UUID(queue_id))
+            if entry is None:
+                raise QueueNotFoundError("队列不存在或已删除，请重新选择")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
@@ -3827,13 +3888,16 @@ class AppConfig:
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        queue = self.QueueConfig.get(queue_uid)
+        if queue is None:
+            raise QueueNotFoundError("队列不存在或已删除，请重新选择")
 
         if queue_item_id is None:
-            data = self.QueueConfig[queue_uid].QueueItem.model_dump(
-                context={"audience": "api"}
-            )
+            data = queue.QueueItem.model_dump(context={"audience": "api"})
         else:
-            entry = self.QueueConfig[queue_uid].QueueItem[uuid.UUID(queue_item_id)]
+            entry = queue.QueueItem.get(uuid.UUID(queue_item_id))
+            if entry is None:
+                raise QueueItemNotFoundError("队列项不存在或已删除，请刷新列表")
             return (
                 [{"uid": str(entry.uid), "type": type(entry).__name__}],
                 {str(entry.uid): entry.model_dump(context={"audience": "api"})},
@@ -4119,7 +4183,6 @@ class AppConfig:
         return ObsReplayOptions(
             port=self.setting.Replay.Port,
             password=self.setting.Replay.Password,
-            max_replay_count=self.setting.Replay.MaxReplayCount,
         )
 
     async def get_setting(self) -> Dict[str, Any]:
@@ -4334,37 +4397,24 @@ class AppConfig:
 
         logger.info("获取代理情况概览信息")
 
-        history_index = await self.search_history(
-            "DAILY", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
-        )
-        if datetime.now(tz=UTC4).strftime("%Y-%m-%d") not in history_index:
-            return {}
-        history_data = {
-            k: await self.merge_statistic_info(v)
-            for k, v in history_index[
-                datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-            ].items()
-        }
-        overview = {}
-        for user, data in history_data.items():
-            index_data = data.get("index", [])
-            if index_data:
-                last_proxy_date = max(
-                    datetime.strptime(_["date"], "%Y-%m-%d %H:%M:%S")
-                    for _ in index_data
-                ).strftime("%Y-%m-%d %H:%M:%S")
-            else:
-                last_proxy_date = "暂无代理数据"
-            proxy_times = len(data.get("index", []))
-            error_info = data.get("error_info", {})
-            error_times = len(error_info)
-            overview[user] = {
-                "LastProxyDate": last_proxy_date,
-                "ProxyTimes": proxy_times,
-                "ErrorTimes": error_times,
-                "ErrorInfo": error_info,
+        from app.core.history import history_store
+
+        users = await history_store.get_overview(day=datetime.now(tz=UTC4).date())
+        return {
+            username: {
+                "LastProxyDate": (
+                    entry.latest_time.isoformat()
+                    if entry.latest_time
+                    else "暂无代理数据"
+                ),
+                "ProxyTimes": entry.execute_count,
+                "ErrorTimes": entry.error_count,
+                "ErrorInfo": {
+                    str(key): value for key, value in entry.error_info.items()
+                },
             }
-        return overview
+            for username, entry in users.items()
+        }
 
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
@@ -4533,491 +4583,6 @@ class AppConfig:
             json.loads(self.setting.Data.Notice).get("notice_dict", {}),
         )
 
-    def build_history_log_path(
-        self, *, script_name: str, user_name: str, log_time: datetime
-    ) -> Path:
-        """构建带脚本名称前缀的历史日志路径。
-
-        Args:
-            script_name: 脚本名称。
-            user_name: 用户名称。
-            log_time: 日志开始时间。
-
-        Returns:
-            历史日志文件路径。
-        """
-
-        safe_script_name = re.sub(r'[<>:"/\\|?*]', "_", str(script_name or "").strip())
-        safe_script_name = safe_script_name.rstrip(" .") or "空白"
-        time_suffix = f"-{log_time.strftime('%H-%M-%S')}.log"
-        safe_script_name = safe_script_name[: 255 - len(time_suffix)]
-
-        return (
-            self.history_path
-            / log_time.strftime("%Y-%m-%d")
-            / user_name
-            / f"{safe_script_name}{time_suffix}"
-        )
-
-    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
-        """
-        解析MaaEnd失败任务名称
-
-        Args:
-            logs (list[str]): 日志列表
-
-        Returns:
-            List[str]: 失败任务名称列表
-        """
-
-        failed_tasks: List[str] = []
-        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
-
-        for log_line in logs:
-            match = re.search(r"任务失败:\s*(.+)", log_line)
-            if match is None:
-                continue
-
-            task_name = match.group(1).strip()
-            if (
-                task_name
-                and task_name not in ignored_tasks
-                and task_name not in failed_tasks
-            ):
-                failed_tasks.append(task_name)
-
-        return failed_tasks
-
-    def parse_maaend_matrix_statistics(
-        self, logs: list[str]
-    ) -> tuple[Optional[Dict[str, str]], bool]:
-        """
-        解析MaaEnd基质刷取统计
-
-        Args:
-            logs (list[str]): 日志列表
-
-        Returns:
-            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
-        """
-
-        matrix_statistics: Dict[str, str] = {}
-        pending_statistics: Dict[str, str] = {}
-        current_matrix_skill = ""
-        has_matrix_flow = False
-        locked_count = 0
-
-        for log_line in logs:
-            skill_match = re.search(r"OCR到技能：(.+)", log_line)
-            if skill_match:
-                current_matrix_skill = skill_match.group(1).strip()
-                continue
-
-            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
-            if weapon_match and current_matrix_skill:
-                pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
-                current_matrix_skill = ""
-                continue
-
-            completed_match = re.search(
-                r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
-                log_line,
-            )
-            if completed_match is None:
-                continue
-
-            has_matrix_flow = True
-            current_locked_count = int(completed_match.group(1))
-            locked_count += current_locked_count
-            if current_locked_count > 0:
-                matched_items = list(pending_statistics.items())[-current_locked_count:]
-                matrix_statistics.update(matched_items)
-
-            pending_statistics = {}
-            current_matrix_skill = ""
-
-        if not has_matrix_flow:
-            return None, False
-
-        if locked_count == 0:
-            return {}, True
-
-        return (matrix_statistics or None), True
-
-    def parse_maaend_pull_count_statistics(
-        self, logs: list[str]
-    ) -> Optional[Dict[str, int]]:
-        """解析 MaaEnd 抽数计算任务输出的统计结果。"""
-
-        content = "".join(logs)
-        field_patterns = {
-            "resource_pulls": (
-                r'"ResourcePulls"\s*:\s*(\d+)',
-                r"资源折算[：:]\s*(\d+)\s*抽",
-            ),
-            "carry_over_pulls": (
-                r'"CarryToNextPulls"\s*:\s*(\d+)',
-                r"可留到下版本的券[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_shop_pulls": (
-                r'"NextPoolShopPulls"\s*:\s*(\d+)',
-                r"下版本商店[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_signin_pulls": (
-                r'"NextPoolSigninPulls"\s*:\s*(\d+)',
-                r"下版本签到[：:]\s*(\d+)\s*抽",
-            ),
-            "current_pool_total": (
-                r'"CurrentPoolTotal"\s*:\s*(\d+)',
-                r"当前池可用[：:]\s*(\d+)\s*抽",
-            ),
-            "next_pool_total": (
-                r'"NextPoolTotal"\s*:\s*(\d+)',
-                r"下版本池子总计[：:]\s*(\d+)\s*抽",
-            ),
-        }
-
-        statistics: Dict[str, int] = {}
-        for field, patterns in field_patterns.items():
-            matches = [
-                match for pattern in patterns for match in re.finditer(pattern, content)
-            ]
-            if matches:
-                statistics[field] = int(matches[-1].group(1))
-
-        return statistics if len(statistics) == len(field_patterns) else None
-
-    async def save_maaend_log(
-        self, log_path: Path, logs: list[str], maaend_result: str, phase_label: str = ""
-    ) -> None:
-        """
-        Save MaaEnd logs and generate basic statistics data.
-
-        Args:
-            log_path (Path): Target log file path.
-            logs (list[str]): Log lines.
-            maaend_result (str): Result label for this run.
-            phase_label (str): 运行阶段标签（送货/日常/自动采集），作为历史结果前缀。
-        """
-
-        logger.info(
-            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
-        )
-
-        failed_tasks = self.parse_maaend_failed_tasks(logs)
-        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
-        pull_count_statistics = self.parse_maaend_pull_count_statistics(logs)
-
-        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
-            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
-
-        if phase_label:
-            maaend_result = f"[{phase_label}] {maaend_result}"
-
-        data: Dict[str, Any] = {"maaend_result": maaend_result}
-        if has_matrix_flow and matrix_statistics is not None:
-            data["matrix_statistics"] = matrix_statistics
-        if pull_count_statistics is not None:
-            data["pull_count_statistics"] = pull_count_statistics
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
-        """
-        保存SRC日志并生成对应统计数据
-
-        Args:
-            log_path (Path): 日志文件保存路径
-            logs (list): 日志内容列表
-            src_result (str): 待保存的日志结果信息
-        """
-
-        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
-
-        data: Dict[str, str] = {"src_result": src_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_general_log(
-        self, log_path: Path, logs: list, general_result: str
-    ) -> None:
-        """
-        保存通用日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param general_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
-        )
-
-        data: Dict[str, str] = {"general_result": general_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
-    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
-        """
-        保存 HSR 专项日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param hsr_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
-        )
-
-        data: Dict[str, str] = {"hsr_result": hsr_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(
-            f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}"
-        )
-
-    async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
-        """
-        合并指定数据统计信息文件
-
-        Args:
-            statistic_path_list (List[Path]): 数据统计信息文件列表
-
-        Returns:
-            dict: 合并后的数据统计信息
-        """
-
-        data: Dict[str, Any] = {"index": {}}
-        hsr_success_results = {
-            "HSR 任务结束",
-            "HSR 用户任务完成",
-            "HSR 失败任务补跑完成",
-            "HSR 本轮无需执行，已跳过",
-            "HSR 脚本原生来源完成",
-            # 「HSR 脚本直控完成」= 来源术语迁移前的历史存量文案, 运行时已改写为
-            # 「HSR 脚本原生来源完成」, 此处仅为兼容旧历史数据保留成功判定
-            "HSR 脚本直控完成",
-        }
-        # MaaFW 停服维护跳过的两句, 与 app/task/MaaFW/tools/embedded/signal_notice.py
-        # 的 SIGNAL_USER_MESSAGES / MAINTENANCE_SKIP_MESSAGE 一致: 维护是跳过,
-        # 既不算失败, 也不能显示成完成
-        maafw_skip_results = {
-            "游戏停服维护中，本次跳过",
-            "游戏停服维护中，本次跳过（同一资源已确认在维护）",
-        }
-
-        def is_success_result(result_key: str, result_value: Any) -> bool:
-            # 结果文本可能带运行阶段前缀（如 "[送货] Success!"），比对前先剥离
-            if not isinstance(result_value, str):
-                return False
-            value = re.sub(r"^\[[^\]]+\]\s*", "", result_value)
-            if value in ("Success!", "今日任务均已完成"):
-                # 「今日任务均已完成」= zzz-od 原生来源/按记录跳过场景的历史存量文案,
-                # 运行时已向 Success! 归一, 此处仅为兼容旧历史数据保留成功判定
-                return True
-            if result_key == "hsr_result" and result_value in hsr_success_results:
-                return True
-            return False
-
-        def is_skip_result(result_key: str, result_value: Any) -> bool:
-            # 先确认是字符串: 列表、字典等不可哈希的值做集合成员判断会抛 TypeError
-            return (
-                result_key == "general_result"
-                and isinstance(result_value, str)
-                and result_value in maafw_skip_results
-            )
-
-        for json_file in statistic_path_list:
-            try:
-                single_data = json.loads(json_file.read_text(encoding="utf-8"))
-            except Exception as e:
-                logger.warning(
-                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
-                )
-                continue
-
-            for key in single_data.keys():
-                if key not in data:
-                    data[key] = {}
-
-                # 合并公招统计
-                if key == "recruit_statistics":
-                    for star_level, count in single_data[key].items():
-                        if star_level not in data[key]:
-                            data[key][star_level] = 0
-                        data[key][star_level] += count
-
-                # 合并掉落统计
-                elif key == "drop_statistics":
-                    for stage, drops in single_data[key].items():
-                        if stage not in data[key]:
-                            data[key][stage] = {}  # 初始化关卡
-
-                        for item, count in drops.items():
-                            if item not in data[key][stage]:
-                                data[key][stage][item] = 0
-                            data[key][stage][item] += count
-
-                # 合并基质统计
-                elif key == "matrix_statistics":
-                    for skill, weapon in single_data[key].items():
-                        data[key][skill] = weapon
-
-                # 抽数是当前资源快照，合并时使用最新一条记录
-                elif key == "pull_count_statistics":
-                    data[key] = single_data[key]
-
-                # 处理理智相关字段 - 使用最后一个文件的值
-                elif key in ["sanity", "sanity_full_at"]:
-                    data[key] = single_data[key]
-
-                # 录入运行结果
-                elif key in [
-                    "maa_result",
-                    "maaend_result",
-                    "src_result",
-                    "general_result",
-                    "hsr_result",
-                ]:
-                    history_time = "-".join(json_file.stem.rsplit("-", 3)[-3:])
-                    actual_date = (
-                        datetime.strptime(
-                            f"{json_file.parent.parent.name} {history_time}",
-                            "%Y-%m-%d %H-%M-%S",
-                        )
-                        .replace(tzinfo=UTC4)
-                        .astimezone()
-                    )
-
-                    if is_success_result(key, single_data[key]):
-                        status = "DONE"
-                    elif is_skip_result(key, single_data[key]):
-                        status = "SKIP"
-                    else:
-                        status = "ERROR"
-
-                    if status == "ERROR":
-                        if "error_info" not in data:
-                            data["error_info"] = {}
-                        data["error_info"][
-                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
-                        ] = single_data[key]
-
-                    data["index"][actual_date] = {
-                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": status,
-                        "jsonFile": str(json_file),
-                        "result": single_data[key],
-                    }
-
-        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
-
-        # 确保返回的字典始终包含 index 字段，即使为空
-        result = {
-            k: v
-            for k, v in data.items()
-            if v or (k == "matrix_statistics" and isinstance(v, dict))
-        }
-        if "index" not in result:
-            result["index"] = []
-
-        return result
-
-    async def search_history(
-        self,
-        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
-        start_date: date,
-        end_date: date,
-    ) -> dict:
-        """
-        搜索指定时间范围内的历史记录
-
-        Args:
-            mode (Literal["DAILY", "WEEKLY", "MONTHLY"]): 合并模式
-            start_date (date): 开始日期
-            end_date (date): 结束日期
-        """
-
-        logger.info(
-            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
-        )
-
-        history_dict = {}
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-
-                if not (start_date <= date <= end_date):
-                    continue  # 只统计在范围内的日期
-
-                if mode == "DAILY":
-                    date_name = date.strftime("%Y-%m-%d")
-                elif mode == "WEEKLY":
-                    date_name = date.strftime("%G-W%V")
-                elif mode == "MONTHLY":
-                    date_name = date.strftime("%Y-%m")
-                else:
-                    raise ValueError("无效的合并模式")
-
-                if date_name not in history_dict:
-                    history_dict[date_name] = {}
-
-                for user_folder in date_folder.iterdir():
-                    if not user_folder.is_dir():
-                        continue  # 只处理用户文件夹
-
-                    # 键必须用完整目录名: 用户名本身可含点, stem/with_suffix 会把最后一个点当扩展名截断
-                    if user_folder.name not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.name] = list(
-                            user_folder.glob("*.json")
-                        )
-                    else:
-                        history_dict[date_name][user_folder.name] += list(
-                            user_folder.glob("*.json")
-                        )
-
-            except ValueError:
-                logger.exception(f"非日期格式的目录: {date_folder}")
-
-        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
-
-        return {
-            k: v
-            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
-        }
-
     async def clean_maafw_agent_venvs(self) -> None:
         """清掉已无脚本引用的 MFW agent 隔离 venv。
 
@@ -5135,11 +4700,15 @@ class AppConfig:
         self.startup_notices.append(
             {
                 "level": "warning" if report.needs_attention else "info",
-                "title": "M9A 脚本迁移失败"
-                if report.failure
-                else "M9A 脚本已并入 MFW 引擎"
-                if report.migrated_scripts
-                else "已按项目识别出 M9A 脚本",
+                "title": (
+                    "M9A 脚本迁移失败"
+                    if report.failure
+                    else (
+                        "M9A 脚本已并入 MFW 引擎"
+                        if report.migrated_scripts
+                        else "已按项目识别出 M9A 脚本"
+                    )
+                ),
                 "lines": lines,
             }
         )
@@ -5843,41 +5412,6 @@ class AppConfig:
                 deleted_count += 1
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
-
-    def clean_old_history(self):
-        """删除超过用户设定天数的历史记录文件（基于目录日期）。
-
-        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
-        """
-
-        # 只读一次：定时器在工作线程跑本函数，循环内逐目录重读会看到扫描
-        # 中途的设置变更（改成 0 时剩余目录会按 0 天 cutoff 全部删除）
-        retention_days = self.setting.Function.HistoryRetentionTime
-        if retention_days == 0:
-            logger.info("历史记录永久保留, 跳过历史记录清理")
-            return
-
-        logger.info("开始清理超过设定天数的历史记录")
-
-        deleted_count = 0
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=retention_days
-                ):
-                    shutil.rmtree(date_folder, ignore_errors=True)
-                    deleted_count += 1
-                    logger.debug(f"已删除超期日志目录: {date_folder}")
-            except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
-
-        logger.success(f"清理完成: {deleted_count} 个日期目录")
 
 
 Config = AppConfig()

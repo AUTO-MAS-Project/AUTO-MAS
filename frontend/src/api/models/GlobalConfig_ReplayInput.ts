@@ -8,9 +8,9 @@ export type GlobalConfig_ReplayInput = {
      */
     Enabled?: (boolean | null);
     /**
-     * MAS 副本的保留数量，不清理 OBS 原文件。
+     * 历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。
      */
-    MaxReplayCount?: (number | null);
+    VideoStorageLimitMiB?: (number | null);
     /**
      * OBS 认证密码按现有敏感配置规则加密落盘。
      */

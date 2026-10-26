@@ -1,3 +1,4 @@
+import { observeHomeActivitySource } from './homeActivityAnalytics'
 import { computed, onScopeDispose, ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -46,10 +47,11 @@ export const useHomeActivities = ({
     { start: () => void; stop: () => void; refresh: () => void }
   >()
   for (const [key, module] of modules) {
+    const source = observeHomeActivitySource(module.game, module.source)
     sources.set(key, {
-      ...module.source,
+      ...source,
       start: () => {
-        module.source.start()
+        source.start()
         for (const server of module.completionServers ?? [defaultServer]) {
           void completions.get(`${module.game}:${server}`)!.load()
         }
@@ -96,7 +98,7 @@ export const useHomeActivities = ({
     now.value = Date.now()
     refreshing.value = new Set(refreshing.value).add(key)
     try {
-      await modules.get(key)?.source.refresh()
+      await sources.get(key)?.refresh()
     } finally {
       const pending = new Set(refreshing.value)
       pending.delete(key)

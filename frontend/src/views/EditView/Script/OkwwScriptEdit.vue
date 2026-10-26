@@ -111,7 +111,7 @@
                 <template #label>
                   <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
                     <span class="form-label">
-                      运行前强制切换账号
+                      {{ t('edit.forceSwitchAccountBeforeRun') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -123,8 +123,8 @@
                   :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
                 >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
                 <span class="control-hint">
                   {{ t('edit.accountSwitch16x9ArgHint', { p0: '-Res=1920x1080' }) }}
@@ -466,7 +466,9 @@
     </template>
     <template v-else>
       <div class="update-log-area">
-        <pre class="update-log-content">{{ updateModal.log || '正在连接更新任务...' }}</pre>
+        <pre class="update-log-content">
+          {{ updateModal.log || t('edit.wutheringWavesUpdateConnecting') }}
+        </pre>
       </div>
     </template>
   </a-modal>
@@ -495,6 +497,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -508,7 +511,7 @@ import {
   QuestionCircleOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import { Service, TaskCreateIn } from '@/api'
+import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useUserApi } from '@/composables/useUserApi'
@@ -765,10 +768,7 @@ const startUpdate = async () => {
   if (!updateModal.selectedUserId) return
   updateModal.starting = true
   try {
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: updateModal.selectedUserId,
-      mode: TaskCreateIn.mode.UPDATE,
-    })
+    const response = await requestScriptUpdateStart(updateModal.selectedUserId, 'Okww')
     if (response.code !== 200 || !response.taskId) {
       throw new Error(response.message || '启动鸣潮更新失败')
     }

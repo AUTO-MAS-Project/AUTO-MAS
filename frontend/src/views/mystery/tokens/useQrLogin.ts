@@ -16,6 +16,8 @@ import { translate } from '@/i18n'
 import QRCode from 'qrcode'
 import type { CancelablePromise, OutBase, QrCheckOut, QrCreateOut } from '@/api'
 import { useTokenApi } from './useTokenApi'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 
 export type QrLoginProvider = 'miyoushe' | 'skland'
 
@@ -98,6 +100,14 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   let sessionId = 0
   let abortController: AbortController | null = null
   let closeTimer: ReturnType<typeof setTimeout> | null = null
+  let loginAnalytics: ReturnType<
+    typeof beginAnalyticsOperation<'community_login_finished'>
+  > | null = null
+  let analyticsProvider: QrLoginProvider = 'miyoushe'
+  let analyticsStage: AnalyticsEventProps['community_login_finished']['stage'] = 'create'
+  const finishAnalytics = (outcome: AnalyticsEventProps['community_login_finished']['outcome']) => {
+    loginAnalytics?.finish({ provider: analyticsProvider, stage: analyticsStage, outcome })
+  }
 
   const stopPoll = () => {
     if (pollTimer.value) {
@@ -117,7 +127,9 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   const isCurrentSession = (id: number) => id === sessionId
 
   /** 作废当前会话并返回新的 sessionId；幂等，重复调用只是继续自增 */
-  const invalidateSession = () => {
+  const invalidateSession = (reason: 'replaced' | 'cancelled' | 'unmounted' = 'replaced') => {
+    finishAnalytics(reason)
+    loginAnalytics = null
     sessionId += 1
     stopPoll()
     clearCloseTimer()
@@ -202,6 +214,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   }
 
   const markExpired = (messageText = t('gamesign.qr.expired')) => {
+    finishAnalytics('expired')
     stopPoll()
     status.value = 'expired'
     statusText.value = messageText
@@ -213,7 +226,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
    * 这是唯一允许把 visible 置回 false 的入口，绕过它会漏掉定时器清理。
    */
   const cancel = () => {
-    invalidateSession()
+    invalidateSession('cancelled')
     visible.value = false
     loading.value = false
     status.value = 'idle'
@@ -226,6 +239,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   const handleConfirmed = async (credential: string, id: number, signal: AbortSignal) => {
     if (!isCurrentSession(id)) return
     if (!credential) {
+      finishAnalytics('failure')
       status.value = 'error'
       statusText.value = t('gamesign.qr.noCookie')
       return
@@ -234,6 +248,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     // 米游社 Passport 模式：cookies 直接从响应头获取；森空岛确认后用 scanCode 保存完整凭据。
     const accountId = getAccountId()
     if (accountId) {
+      analyticsStage = 'save'
       status.value = 'exchanging'
       statusText.value = t('gamesign.qr.saving')
       try {
@@ -248,10 +263,13 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
         if (saveResponse.code !== 200 || saveResponse.status === 'error') {
           throw new Error(saveResponse.message || t('gamesign.qr.saveTokenFailed'))
         }
+        // 凭据已落库；之后的表单回填失败不能反过来记成保存失败。
+        finishAnalytics('saved')
         await onSaved(accountId, credential, () => isCurrentSession(id))
         if (!isCurrentSession(id)) return
       } catch (error) {
         if (!isCurrentSession(id) || isQrAbortError(error)) return
+        finishAnalytics('failure')
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`扫码保存 Token 失败: ${errorMsg}`)
         message.error(t('gamesign.qr.scannedButSaveFailed'))
@@ -259,6 +277,8 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
         statusText.value = t('gamesign.qr.scannedButSaveFailed')
         return
       }
+    } else {
+      finishAnalytics('confirmed_unsaved')
     }
     status.value = 'done'
     statusText.value = t('gamesign.qr.success')
@@ -278,6 +298,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
 
   /** 停轮询并转入错误态（与「二维码失效」区分：这条不提示重新生成） */
   const failPoll = (text: string) => {
+    finishAnalytics('failure')
     stopPoll()
     status.value = 'error'
     statusText.value = text
@@ -303,6 +324,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
         resolveProvider() === 'skland' ? data.scan_code || '' : data.cookies_str || ''
       await handleConfirmed(credential, id, signal)
     } else if (data.status === 'Canceled') {
+      finishAnalytics('cancelled')
       failPoll(responseMessage || t('gamesign.qr.cancelled'))
     } else if (data.status === 'Expired') {
       markExpired(responseMessage || t('gamesign.qr.expired'))
@@ -341,6 +363,9 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   /** 生成二维码并开始轮询。重复调用即「重新生成」，旧会话自动作废。 */
   const start = async () => {
     const id = invalidateSession()
+    loginAnalytics = beginAnalyticsOperation('community_login_finished')
+    analyticsProvider = resolveProvider()
+    analyticsStage = 'create'
     abortController = new AbortController()
     const { signal } = abortController
     loading.value = true
@@ -355,6 +380,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       const data = await qrFetch('/create', undefined, signal)
       if (!isCurrentSession(id)) return
       if (data.code === 500 || data.status === 'error') {
+        finishAnalytics('failure')
         status.value = 'error'
         statusText.value = data.message || t('gamesign.qr.createFailed')
         return
@@ -373,6 +399,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       qrCodeDataUrl.value = dataUrl
       ticket.value = data.ticket
       device.value = data.device
+      analyticsStage = 'scan'
       status.value = 'waiting'
       statusText.value = t(
         resolveProvider() === 'skland' ? 'gamesign.qr.sklandWaiting' : 'gamesign.qr.waiting'
@@ -382,6 +409,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       }, POLL_INTERVAL_MS)
     } catch (e) {
       if (!isCurrentSession(id) || isQrAbortError(e)) return
+      finishAnalytics('failure')
       status.value = 'error'
       statusText.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -392,7 +420,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
   // 组件外调用（单测）时没有实例可挂，直接跳过——否则 Vue 会告警
   if (getCurrentInstance()) {
     onBeforeUnmount(() => {
-      invalidateSession()
+      invalidateSession('unmounted')
     })
   }
 

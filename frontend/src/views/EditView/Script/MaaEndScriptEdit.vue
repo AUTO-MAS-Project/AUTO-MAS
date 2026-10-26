@@ -32,7 +32,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
+        {{ showMaaEndConfigMask ? t('comp.configuring') : t('comp.configureMaaend') }}
       </a-button>
     </template>
   </ScriptEditHeader>
@@ -54,14 +54,14 @@
                 target="_blank"
                 rel="noopener noreferrer"
                 @click="handleExternalLink"
-                >QQ群</a
+                >{{ t('edit.qqGroup') }}</a
               >
               {{ t('edit.reportIssueGo') }}
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
                 @click="handleExternalLink"
-                >BUG收集页</a
-              >留言
+                >{{ t('edit.bugReportPage') }}</a
+              >{{ t('edit.leaveMessage') }}
             </p>
           </div>
         </template>
@@ -500,116 +500,11 @@
           </a-row>
         </div>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptHardTimeoutField
-            v-model:value="maaEndConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', maaEndConfig.Run.HardTimeLimit)"
-          />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.accountSwitchingMethod') }}
-                    <a-tooltip :title="t('edit.chooseWhetherMasSwitches')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.AccountSwitchMethod"
-                  size="large"
-                  :options="accountSwitchMethodOptions"
-                  @change="handleAccountSwitchMethodChange"
-                />
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.skipRunOnceThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.ifRunStillUnfinished')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.treatRunAsTimed')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.taskTransitionMethod') }}
-                    <a-tooltip :title="t('edit.taskTransitionHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="maaEndConfig.Run.TaskTransitionMethod"
-                  size="large"
-                  :options="taskTransitionMethodOptions"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+        <MaaEndRunConfigSection
+          v-model:run="maaEndConfig.Run"
+          @save="(key, value) => handleChange('Run', key, value)"
+          @account-switch="handleAccountSwitchMethodChange"
+        />
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -644,7 +539,8 @@
 </template>
 
 <script setup lang="ts">
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
+import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
@@ -812,16 +708,6 @@ const defaultMaaEndController = 'Win32-Front'
 const booleanOptions = [
   { label: t('edit.yes'), value: true },
   { label: t('edit.no'), value: false },
-]
-
-const taskTransitionMethodOptions = [
-  { label: t('edit.restartMaaendOnly'), value: 'NoAction' },
-  { label: t('edit.restartEndfield'), value: 'ExitGame' },
-]
-
-const accountSwitchMethodOptions = [
-  { label: t('edit.accountSwitchMethodMas'), value: 'MAS' },
-  { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
 ]
 
 const { emulatorLoading, emulatorOptions, loadEmulatorOptions } = useEmulatorOptions()
@@ -1179,10 +1065,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: scriptId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
+    const response = await requestScriptConfigStart(scriptId)
 
     if (!response?.taskId) {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
@@ -1225,7 +1108,7 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
+    const response = await stopNativeConfig(maaEndTaskId.value, 'save')
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

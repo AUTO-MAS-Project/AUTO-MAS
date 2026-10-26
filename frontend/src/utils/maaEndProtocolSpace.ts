@@ -114,6 +114,7 @@ export type ProtocolSpaceTaskValue =
   (typeof PROTOCOL_SPACE_TASK_OPTIONS_MAP)[ProtocolSpaceTab][number]['value']
 export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation | string[]
 
+// 分组只用于界面展示；任务名保持与后端快速配置字段一致。
 export const MAAEND_TASK_GROUPS = [
   {
     key: 'Sanity',
@@ -122,45 +123,29 @@ export const MAAEND_TASK_GROUPS = [
   },
   {
     key: 'Infrastructure',
-    label: '🏗️ 基建任务',
+    label: '🏗️ 基建与交易',
     tasks: [
       { name: 'DijiangRewards', label: '🎁 基建任务' },
       { name: 'DeliveryJobs', label: '🚚 转交委托' },
-      { name: 'SellProduct', label: '🛒 售卖产品' },
+      { name: 'SellProduct', label: '🛒 据点交易' },
       { name: 'AutoStockpile', label: '📦 自动囤货' },
       { name: 'AutoStockStaple', label: '🏪 购买稳定物资' },
-    ],
-  },
-  {
-    key: 'Credit',
-    label: '💳 信用收支',
-    tasks: [
+      { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'VisitFriends', label: '🤝 拜访好友' },
       { name: 'CreditShoppingN2', label: '🛍️ 信用点购物' },
     ],
   },
   {
-    key: 'Frontend',
-    label: '🌾 前台任务',
+    key: 'Daily',
+    label: '🌾 日常与统计',
     tasks: [
       { name: 'AutoEcoFarm', label: '🌾 生态农场' },
-      { name: 'AutoSell', label: '💰 售卖弹性物资' },
       { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
       { name: 'TrialOfSwordmancy', label: '🗡️ 选剑演武' },
-    ],
-  },
-  {
-    key: 'Rewards',
-    label: '🎖️ 奖励领取',
-    tasks: [
       { name: 'DailyRewards', label: '📅 日常奖励领取' },
       { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
+      { name: 'PullCountCalculator', label: '🧮 抽数计算' },
     ],
-  },
-  {
-    key: 'Statistics',
-    label: '📊 数据统计',
-    tasks: [{ name: 'PullCountCalculator', label: '🧮 抽数计算' }],
   },
 ] as const
 

@@ -11,6 +11,14 @@
 
     <!-- 已选择用户时显示详情 -->
     <div v-else class="detail-content">
+      <a-alert
+        v-if="aggregateErrors.length"
+        type="warning"
+        show-icon
+        class="aggregate-warning"
+        :message="t('history.aggregateWarning')"
+        :description="aggregateErrors.map(error => `${error.key}: ${error.message}`).join('; ')"
+      />
       <!-- 统计信息卡片 -->
       <UserStatisticsCard
         :recruit-statistics="recruitStatistics"
@@ -23,7 +31,6 @@
       <HistoryRecordList
         :records="records"
         :selected-index="selectedRecordIndex"
-        :error-info="errorInfo"
         @select="(index, record) => $emit('select-record', index, record)"
       />
     </div>
@@ -36,21 +43,15 @@ import { UserSwitchOutlined } from '@ant-design/icons-vue'
 import HistoryRecordList from './HistoryRecordList.vue'
 import UserStatisticsCard from './UserStatisticsCard.vue'
 import type { PullCountStatistics } from '@/types/history'
+import type { HistoryIndexItem, HistoryAggregateError } from '@/api'
 
 const { t } = useI18n()
 
-interface RecordItem {
-  date: string
-  jsonFile: string
-  status: string
-  result?: string | null
-}
-
 interface Props {
   hasUserSelected: boolean
-  records: RecordItem[]
+  aggregateErrors: HistoryAggregateError[]
+  records: HistoryIndexItem[]
   selectedRecordIndex: number
-  errorInfo: Record<string, string> | null
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
   matrixStatistics: Record<string, string> | null
@@ -60,11 +61,16 @@ interface Props {
 defineProps<Props>()
 
 defineEmits<{
-  'select-record': [number, RecordItem]
+  'select-record': [number, HistoryIndexItem]
 }>()
 </script>
 
 <style scoped>
+.aggregate-warning {
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
 .detail-panel {
   flex: 1;
   display: flex;

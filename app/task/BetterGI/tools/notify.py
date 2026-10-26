@@ -20,9 +20,11 @@ from datetime import datetime
 
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import user_statistics_text
+from app.tools.push_log import render_aggregate_push_log
 from app.utils.notification_template import deferred_notification_template
 
 from .drop_statistics import format_drop_statistics
+from .push_log import steps_to_push_log
 
 _STEP_TIME_FMT = "%H:%M:%S"
 
@@ -53,7 +55,12 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
     for s in steps:
         tag = f"{s['index']}/{s['total']}"
         span = f"{s['start']} → {s['end']}（{_step_duration(s)}）"
-        if s["ok"] and not s["issue_count"]:
+        if s["ok"] and s.get("skipped"):
+            reason = f" · {s['skip_text']}" if s.get("skip_text") else ""
+            lines.append(f"⏭ {tag} {s['task']} 已跳过{reason} {span}")
+        elif s["ok"] and s.get("warning_text"):
+            lines.append(f"⚠ {tag} {s['task']} 需关注 · {s['warning_text']} {span}")
+        elif s["ok"] and not s["issue_count"]:
             lines.append(f"✓ {tag} {s['task']} 成功 {span}")
         elif s["ok"]:
             lines.append(
@@ -67,10 +74,23 @@ def _render_one_dragon_steps(steps: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _render_one_dragon_notices(steps: list[dict]) -> str:
+    """与 ZZZ-OD 共用按状态归并的汇总渲染，任务名与具体原因一起合并。"""
+    notices = [
+        step
+        for step in steps
+        if not step["ok"] or step.get("warning_text") or step.get("skipped")
+    ]
+    return "\n".join(render_aggregate_push_log(steps_to_push_log(notices)))
+
+
 def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
     """构造专项统计正文，投递由注入的通知服务负责。"""
 
-    # 简略版（聊天机器人类渠道的兜底）：仅 4 字段汇总，旧版格式
+    notices = _render_one_dragon_notices(message.get("one_dragon_steps") or [])
+    if notices:
+        message = {**message, "user_result": f"{message['user_result']}\n{notices}"}
+    # 简略渠道也必须带具体问题，不能只剩失败/警告数量。
     message_text = user_statistics_text(message)
     steps_text = (
         "\n\n" + _render_one_dragon_steps(steps)
