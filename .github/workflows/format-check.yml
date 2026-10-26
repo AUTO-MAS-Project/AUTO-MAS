@@ -67,6 +67,12 @@ jobs:
         working-directory: frontend
         run: yarn format:check
 
+      # 词表门禁：缺译、占位符差异、源码在用但没有的 key、死词条、模板硬编码中文，
+      # 全部按 0 判定；口径见 frontend/scripts/i18n-audit.mjs。
+      - name: 检查词表完整性
+        working-directory: frontend
+        run: yarn audit:i18n --check
+
       # E2E 浏览器流程不在 CI 跑；这里只守基础设施契约（数据根隔离、配置种子白名单、
       # 启动参数），一秒内跑完，且不需要装依赖或启动服务。
       - name: 检查 E2E 基础设施契约

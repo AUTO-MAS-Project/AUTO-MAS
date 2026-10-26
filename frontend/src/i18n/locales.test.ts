@@ -20,13 +20,37 @@ const TRANSLATIONS = [
   ['ja-JP', flatten(jaJP)],
 ] as const
 
+const placeholders = (value: string): string[] => (value.match(/\{[A-Za-z_]\w*\}/g) ?? []).sort()
+
 describe('词表', () => {
-  it('各语言词表的 key 都在中文词表里（中文是源语言）', () => {
+  // 中文が源言語。ほかの言語は中文とまったく同じキー集合を持つこと。
+  // 欠けたキーは t() が key をそのまま描画するので、ここで落とす。
+  it('各语言词表的 key 集合与中文完全一致（中文是源语言）', () => {
     const zhKeys = new Set(zhEntries.map(([k]) => k))
     for (const [locale, entries] of TRANSLATIONS) {
-      const extra = entries.map(([k]) => k).filter(k => !zhKeys.has(k))
-      expect([locale, extra]).toEqual([locale, []])
+      const keys = new Set(entries.map(([k]) => k))
+      const extra = [...keys].filter(k => !zhKeys.has(k))
+      const missing = zhEntries.map(([k]) => k).filter(k => !keys.has(k))
+      expect([locale, extra, missing]).toEqual([locale, [], []])
     }
+  })
+
+  // 占位符少一个，t() 就少显示一段用户数据，页面上不报错只是缺内容。
+  it('同一条 key 在各语言里的占位符一致', () => {
+    const zhMap = new Map(zhEntries)
+    const offenders: string[] = []
+    for (const [locale, entries] of TRANSLATIONS) {
+      for (const [key, value] of entries) {
+        const source = zhMap.get(key)
+        if (source === undefined) continue
+        const expected = placeholders(source).join()
+        const actual = placeholders(value).join()
+        if (expected !== actual) {
+          offenders.push(`${locale} ${key}: [${actual}] != [${expected}]`)
+        }
+      }
+    }
+    expect(offenders).toEqual([])
   })
 
   // 复数消息，| 是有意的分隔符；其余词条里的 | 都必须转义

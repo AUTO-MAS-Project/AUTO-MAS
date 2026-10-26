@@ -11,7 +11,7 @@
           </router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          {{ isEdit ? '编辑用户' : '添加用户' }}
+          {{ isEdit ? t('comp.editUser') : t('comp.addUser') }}
         </a-breadcrumb-item>
       </a-breadcrumb>
     </div>
@@ -82,7 +82,7 @@
           <p class="mask-description">
             {{ t('edit.generalConfigurationThisUser') }}
             <br />
-            配置完成后，请点击"保存配置"按钮来结束配置会话。
+            {{ t('edit.clickSaveConfigurationWhen2') }}
           </p>
         </template>
         <div class="mask-actions">

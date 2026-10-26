@@ -22,7 +22,7 @@
           <div class="webhook-name">
             <span class="name-text">{{ webhook.name }}</span>
             <a-tag v-if="!compact" :color="webhook.enabled ? 'green' : 'red'" size="small">
-              {{ webhook.enabled ? '启用' : '禁用' }}
+              {{ webhook.enabled ? t('comp.enabled') : t('comp.disabled') }}
             </a-tag>
           </div>
           <div class="webhook-url" :title="webhook.url">{{ webhook.url }}</div>
@@ -31,8 +31,8 @@
           <a-switch
             v-model:checked="webhook.enabled"
             size="small"
-            :checked-children="compact ? undefined : '启用'"
-            :un-checked-children="compact ? undefined : '禁用'"
+            :checked-children="compact ? undefined : t('comp.enabled')"
+            :un-checked-children="compact ? undefined : t('comp.disabled')"
             class="webhook-switch"
             @change="toggleWebhookEnabled(webhook)"
           />

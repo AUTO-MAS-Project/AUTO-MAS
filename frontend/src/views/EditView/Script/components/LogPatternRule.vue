@@ -275,9 +275,7 @@ const logTypeOptions = [
           <a-col :span="24">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip
-                  title='使用 $() 包裹正则提取内容，支持 +（同行拼接）、;（换行拼接）、""（字面量）和函数链；留空则返回整行'
-                >
+                <a-tooltip :title="t('edit.expressionSyntaxHint')">
                   <span class="form-label">
                     {{ t('edit.extractionPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
@@ -341,9 +339,7 @@ const logTypeOptions = [
           <a-col :span="20">
             <a-form-item class="compact-form-item">
               <template #label>
-                <a-tooltip
-                  title='使用 $() 语法从窗口内容中提取字段；留空返回窗口原文。详见"表达式"说明文档'
-                >
+                <a-tooltip :title="t('edit.windowExtractionHint')">
                   <span class="form-label">
                     {{ t('edit.extractionPattern') }}
                     <QuestionCircleOutlined class="help-icon" />
@@ -392,7 +388,7 @@ const logTypeOptions = [
       </div>
       <div class="footer-right">
         <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
-          {{ local.logType || '普通' }}
+          {{ local.logType || t('edit.normal') }}
         </a-tag>
         <span class="footer-hint">{{ getLogTypeHint(local.logType) }}</span>
       </div>

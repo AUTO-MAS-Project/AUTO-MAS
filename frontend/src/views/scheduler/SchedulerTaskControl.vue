@@ -4,7 +4,7 @@
       <div class="control-row">
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行'"
+            v-if="!isRunning"
             v-model:value="localSelectedTaskId"
             :placeholder="t('scheduler.control.taskPlaceholder')"
             style="width: 200px"
@@ -15,7 +15,7 @@
             @change="onTaskChange"
             @dropdown-visible-change="onDropdownVisibleChange"
           />
-          <div v-if="status === '运行'" class="running-info">
+          <div v-if="isRunning" class="running-info">
             <span class="info-item">
               <span class="label">{{ t('scheduler.control.taskLabel') }}</span>
               <span class="value">{{ runningTaskLabel }}</span>
@@ -135,7 +135,7 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行' && showResumeScriptSelect"
+            v-if="!isRunning && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
             :placeholder="t('scheduler.control.resumePlaceholder')"
             style="width: 260px"
@@ -148,17 +148,17 @@
             @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
-            :type="status === '运行' ? 'default' : 'primary'"
-            :danger="status === '运行'"
+            :type="isRunning ? 'default' : 'primary'"
+            :danger="isRunning"
             :disabled="startDisabled"
             size="large"
             @click="onAction"
           >
             <template #icon>
-              <StopOutlined v-if="status === '运行'" />
+              <StopOutlined v-if="isRunning" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '运行' ? t('scheduler.control.stop') : t('scheduler.control.start') }}
+            {{ isRunning ? t('scheduler.control.stop') : t('scheduler.control.start') }}
           </a-button>
         </a-space>
       </div>
@@ -287,7 +287,9 @@ const emit = defineEmits<Emits>()
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
-const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
+// 运行态判断收进脚本：模板不再直接比中文字面量（i18n 审计只扫模板），行为不变
+const isRunning = computed(() => props.status === '运行')
+const cyclePreview = computed(() => (isRunning.value ? (props.cycleNextList ?? []) : []))
 
 // 仅普通队列支持指定续跑起点，循环队列按既有排期运行。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
