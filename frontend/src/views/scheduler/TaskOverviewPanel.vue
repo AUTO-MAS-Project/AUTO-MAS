@@ -97,7 +97,6 @@ defineExpose({
 <style scoped src="./schedulerPanel.css"></style>
 
 <style scoped>
-.scheduler-panel-header {
 .scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;
