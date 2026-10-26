@@ -40,39 +40,30 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringOkww"
-                    :disabled="isSaving"
-                    @click="discoverRootPath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isDiscoveringOkww || isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.pickDirectoryHoldingOk2')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :pick-disabled="isDiscoveringOkww || isSaving"
+                  @pick="selectRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringOkww"
+                      :disabled="isSaving"
+                      @click="discoverRootPath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
           </a-row>
@@ -233,40 +224,31 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="okwwConfig.Game.Path"
-                    :placeholder="t('edit.pickLauncherDirectory')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                    :disabled="!okwwConfig.Game.Enabled"
-                  />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringGame"
-                    :disabled="!okwwConfig.Game.Enabled || isSaving"
-                    @click="discoverGamePath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
-                    @click="selectGameRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="okwwConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('edit.pickLauncherDirectory')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  :pick-disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
+                  @pick="selectGameRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringGame"
+                      :disabled="!okwwConfig.Game.Enabled || isSaving"
+                      @click="discoverGamePath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
                 <a-alert
                   v-if="gamePathValidation.status !== 'unknown'"
                   :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
@@ -284,36 +266,27 @@
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
-                  <a-input-group compact class="path-input-group">
-                    <a-input
-                      :value="okwwConfig.Game.ClientPath || derivedClientPath"
-                      :placeholder="t('edit.clientPathPending')"
-                      size="large"
-                      class="path-input"
-                      readonly
-                      :disabled="!okwwConfig.Game.Enabled"
-                    />
-                    <a-button
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="selectClientPath"
-                    >
-                      <template #icon>
-                        <FolderOpenOutlined />
-                      </template>
-                      {{ t('edit.selectFile') }}
-                    </a-button>
-                    <a-button
-                      v-if="okwwConfig.Game.ClientPath"
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="resetClientPath"
-                    >
-                      {{ t('edit.resetAutoLocate') }}
-                    </a-button>
-                  </a-input-group>
+                  <PathPickerField
+                    :model-value="okwwConfig.Game.ClientPath || derivedClientPath"
+                    mode="file"
+                    :placeholder="t('edit.clientPathPending')"
+                    :pick-label="t('edit.selectFile')"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    :pick-disabled="!okwwConfig.Game.Enabled || isSaving"
+                    @pick="selectClientPath"
+                  >
+                    <template #after-pick>
+                      <a-button
+                        v-if="okwwConfig.Game.ClientPath"
+                        size="large"
+                        class="path-button"
+                        :disabled="!okwwConfig.Game.Enabled || isSaving"
+                        @click="resetClientPath"
+                      >
+                        {{ t('edit.resetAutoLocate') }}
+                      </a-button>
+                    </template>
+                  </PathPickerField>
                 </div>
               </a-form-item>
             </a-col>
@@ -455,6 +428,7 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptUpdateStart } from '@/composables/useTaskApi'
@@ -465,12 +439,7 @@ import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  FolderOpenOutlined,
-  ImportOutlined,
-  QuestionCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { ImportOutlined, QuestionCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
@@ -1169,14 +1138,6 @@ onUnmounted(() => {
 .label-hint strong {
   font-weight: 600;
   color: var(--ant-color-text-secondary);
-}
-
-.path-input-group {
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  min-width: 0;
 }
 
 .auto-import-button {

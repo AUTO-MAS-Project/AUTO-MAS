@@ -49,21 +49,13 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.rootPath"
-                    :placeholder="t('edit.pickScriptRootDirectory2')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectRootPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.rootPath"
+                  mode="folder"
+                  :placeholder="t('edit.pickScriptRootDirectory2')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectRootPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -84,21 +76,13 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.scriptPath"
-                    :placeholder="t('edit.pickScriptSMain')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectScriptPath">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.scriptPath"
+                  mode="file"
+                  :placeholder="t('edit.pickScriptSMain')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectScriptPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -174,31 +158,26 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Script.TrackProcessExe"
-                    :placeholder="t('edit.pickProcessExecutablePath')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectTrackProcessExe">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-clear-icon-btn"
-                    :aria-label="t('edit.clearPath')"
-                    @click="clearTrackProcessExe"
-                  >
-                    <template #icon>
-                      <DeleteOutlined />
-                    </template>
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="generalConfig.Script.TrackProcessExe"
+                  mode="file"
+                  :placeholder="t('edit.pickProcessExecutablePath')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectTrackProcessExe"
+                >
+                  <template #after-pick>
+                    <a-button
+                      size="large"
+                      class="path-clear-icon-btn"
+                      :aria-label="t('edit.clearPath')"
+                      @click="clearTrackProcessExe"
+                    >
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -243,30 +222,21 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.configPath"
-                    :placeholder="
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pickConfigurationFolder')
-                        : t('edit.pickConfigurationFile')
-                    "
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectConfigPath">
-                    <template #icon>
-                      <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
-                      <FileOutlined v-else />
-                    </template>
-                    {{
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pickFolder')
-                        : t('edit.pickFile')
-                    }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.configPath"
+                  :mode="generalConfig.Script.ConfigPathMode === 'Folder' ? 'folder' : 'file'"
+                  :placeholder="
+                    generalConfig.Script.ConfigPathMode === 'Folder'
+                      ? t('edit.pickConfigurationFolder')
+                      : t('edit.pickConfigurationFile')
+                  "
+                  :pick-label="
+                    generalConfig.Script.ConfigPathMode === 'Folder'
+                      ? t('edit.pickFolder')
+                      : t('edit.pickFile')
+                  "
+                  @pick="selectConfigPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -320,21 +290,13 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.logPath"
-                    :placeholder="t('edit.pickLogFile')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectLogPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.logPath"
+                  mode="file"
+                  :placeholder="t('edit.pickLogFile')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectLogPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -537,21 +499,13 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable2')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="generalConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('edit.pickGameExecutable2')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <!-- 模拟器相关字段 -->
@@ -726,6 +680,7 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
 import EmulatorSelectField from './components/EmulatorSelectField.vue'
@@ -746,12 +701,7 @@ import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import {
-  DeleteOutlined,
-  FileOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'

@@ -9,17 +9,19 @@
       aria-readonly="true"
       :disabled="disabled"
     />
-    <a-button size="large" :disabled="disabled" @click="emit('pick')">
+    <slot name="before-pick" />
+    <a-button size="large" :disabled="disabled || pickDisabled" @click="emit('pick')">
       <template #icon>
         <FolderOpenOutlined v-if="mode === 'folder'" />
         <FileOutlined v-else />
       </template>
       {{ pickLabel }}
     </a-button>
+    <slot name="after-pick" />
   </a-space-compact>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends string | null | undefined">
 import { FileOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 
 defineProps<{
@@ -27,13 +29,14 @@ defineProps<{
   placeholder: string
   pickLabel: string
   disabled?: boolean
+  pickDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
   pick: []
 }>()
 
-const value = defineModel<string | null>({ required: true })
+const value = defineModel<T>({ required: true })
 </script>
 
 <style scoped>

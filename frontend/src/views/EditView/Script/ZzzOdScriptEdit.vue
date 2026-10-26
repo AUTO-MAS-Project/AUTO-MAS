@@ -112,27 +112,15 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="zzzodConfig.Game.Path"
-                    :placeholder="t('edit.zzzodGamePathPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                    :disabled="!zzzodConfig.Game.Enabled"
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="!zzzodConfig.Game.Enabled || isSaving"
-                    @click="selectGamePath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="zzzodConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                  :pick-label="t('edit.pickFile')"
+                  :disabled="!zzzodConfig.Game.Enabled"
+                  :pick-disabled="!zzzodConfig.Game.Enabled || isSaving"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -289,7 +277,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
@@ -507,17 +494,5 @@ onMounted(loadScript)
 
 .section-header h3 {
   gap: 8px;
-}
-
-.path-input-group {
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  min-width: 0;
-}
-
-.path-button {
-  flex-shrink: 0;
 }
 </style>

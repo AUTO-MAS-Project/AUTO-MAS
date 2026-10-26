@@ -339,21 +339,13 @@
                           variant="form"
                         />
                       </template>
-                      <a-input-group compact class="path-input-group">
-                        <a-input
-                          v-model:value="formData.Game.GamePath"
-                          :placeholder="t('edit.zzzodGamePathPlaceholder')"
-                          size="large"
-                          class="path-input"
-                          readonly
-                        />
-                        <a-button size="large" class="path-button" @click="selectGamePath">
-                          <template #icon>
-                            <FolderOpenOutlined />
-                          </template>
-                          {{ t('edit.pickFile') }}
-                        </a-button>
-                      </a-input-group>
+                      <PathPickerField
+                        v-model="formData.Game.GamePath"
+                        mode="file"
+                        :placeholder="t('edit.zzzodGamePathPlaceholder')"
+                        :pick-label="t('edit.pickFile')"
+                        @pick="selectGamePath"
+                      />
                     </a-form-item>
                   </a-col>
                 </a-row>
@@ -840,6 +832,7 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
 import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
 import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'

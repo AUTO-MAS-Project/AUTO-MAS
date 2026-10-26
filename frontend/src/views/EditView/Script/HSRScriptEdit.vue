@@ -112,30 +112,25 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Info.M7APath"
-                    :placeholder="t('edit.pickMarch7thFolderContains')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectPath('M7APath')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                  <a-button
-                    v-if="hsrConfig.Info.M7APath"
-                    :title="t('edit.clearMarch7thPath')"
-                    size="large"
-                    class="path-clear-button"
-                    @click="clearPath('M7APath')"
-                  >
-                    ×
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="hsrConfig.Info.M7APath"
+                  mode="folder"
+                  :placeholder="t('edit.pickMarch7thFolderContains')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectPath('M7APath')"
+                >
+                  <template #after-pick>
+                    <a-button
+                      v-if="hsrConfig.Info.M7APath"
+                      :title="t('edit.clearMarch7thPath')"
+                      size="large"
+                      class="path-clear-button"
+                      @click="clearPath('M7APath')"
+                    >
+                      ×
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
 
@@ -148,30 +143,25 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Info.SRAPath"
-                    :placeholder="t('edit.pickSraFolderContains')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectPath('SRAPath')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                  <a-button
-                    v-if="hsrConfig.Info.SRAPath"
-                    :title="t('edit.clearSraPath')"
-                    size="large"
-                    class="path-clear-button"
-                    @click="clearPath('SRAPath')"
-                  >
-                    ×
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="hsrConfig.Info.SRAPath"
+                  mode="folder"
+                  :placeholder="t('edit.pickSraFolderContains')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectPath('SRAPath')"
+                >
+                  <template #after-pick>
+                    <a-button
+                      v-if="hsrConfig.Info.SRAPath"
+                      :title="t('edit.clearSraPath')"
+                      size="large"
+                      class="path-clear-button"
+                      @click="clearPath('SRAPath')"
+                    >
+                      ×
+                    </a-button>
+                  </template>
+                </PathPickerField>
                 <!-- 云平台保留 SRA 路径（外部脚本更新照常），但任务不经 SRA -->
                 <a-typography-text v-if="isCloud" type="secondary" class="field-hint">
                   {{ t('edit.hsrCloudNoSra') }}
@@ -292,21 +282,13 @@
                     variant="form"
                   />
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="hsrConfig.Game.Path"
-                    :placeholder="t('edit.pickStarRailInstall')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectPath('Game.Path')">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="hsrConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('edit.pickStarRailInstall')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectPath('Game.Path')"
+                />
               </a-form-item>
             </a-col>
             <a-col :xs="24" :lg="8">
@@ -640,6 +622,7 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -647,7 +630,6 @@ import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import type { HSRConfig_Update } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -1441,23 +1423,6 @@ onMounted(async () => {
   font-size: 14px;
 }
 
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
 .path-input-group :deep(.path-input.ant-input) {
   flex: 1;
   border: none;
@@ -1467,23 +1432,6 @@ onMounted(async () => {
 
 .path-input-group :deep(.path-input.ant-input:focus) {
   box-shadow: none;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
-  transform: none;
 }
 
 .path-clear-button {

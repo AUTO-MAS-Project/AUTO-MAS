@@ -168,27 +168,15 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="oknteConfig.Game.Path"
-                    :placeholder="t('edit.pickGameLauncherDirectory')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                    :disabled="!oknteConfig.Game.Enabled"
-                  />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="!oknteConfig.Game.Enabled"
-                    @click="selectGameRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="oknteConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('edit.pickGameLauncherDirectory')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :disabled="!oknteConfig.Game.Enabled"
+                  :pick-disabled="!oknteConfig.Game.Enabled"
+                  @pick="selectGameRootPath"
+                />
                 <span class="control-hint">{{ t('edit.okntePickDirHint') }}</span>
                 <span v-if="showLaunchModeHint" class="control-hint">
                   {{ t('edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
@@ -294,7 +282,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
-import { FolderOpenOutlined } from '@ant-design/icons-vue'
 import {
   type OkNteConfig,
   type OkNteConfig_Game,
@@ -640,11 +627,6 @@ onMounted(loadScript)
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
-.path-input-group {
   border-radius: 8px;
   border: 2px solid var(--ant-color-border);
 }

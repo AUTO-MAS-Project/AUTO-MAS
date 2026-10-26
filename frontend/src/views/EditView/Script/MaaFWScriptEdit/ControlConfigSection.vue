@@ -228,21 +228,13 @@
               <template #label>
                 <span class="form-label">{{ t('edit.gameExecutable') }}</span>
               </template>
-              <a-input-group compact class="path-input-group">
-                <a-input
-                  v-model:value="maafwConfig.Game.LaunchPath"
-                  :placeholder="t('edit.pickGameExeThat')"
-                  size="large"
-                  class="path-input"
-                  readonly
-                />
-                <a-button size="large" class="path-button" @click="emit('select-launch-path')">
-                  <template #icon>
-                    <FolderOpenOutlined />
-                  </template>
-                  {{ t('edit.pickExe') }}
-                </a-button>
-              </a-input-group>
+              <PathPickerField
+                v-model="maafwConfig.Game.LaunchPath"
+                mode="file"
+                :placeholder="t('edit.pickGameExeThat')"
+                :pick-label="t('edit.pickExe')"
+                @pick="emit('select-launch-path')"
+              />
             </a-form-item>
           </a-col>
           <!-- 由脚本自身控制游戏时第二行整行隐藏，键位映射挪到启动方式右边 -->
@@ -329,9 +321,10 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
