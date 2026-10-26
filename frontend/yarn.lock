@@ -4235,7 +4235,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"electron@npm:^43.8.2":
+"electron@npm:43.8.2":
   version: 43.8.2
   resolution: "electron@npm:43.8.2"
   dependencies:
@@ -4619,7 +4619,7 @@ __metadata:
     concurrently: "npm:^9.2.0"
     cross-env: "npm:^10.0.0"
     dayjs: "npm:^1.11.13"
-    electron: "npm:^43.8.2"
+    electron: "npm:43.8.2"
     electron-builder: "npm:26.8.1"
     electron-builder-squirrel-windows: "npm:26.15.3"
     electron-log: "npm:^5.4.3"

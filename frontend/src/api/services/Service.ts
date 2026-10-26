@@ -44,6 +44,7 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
 import type { GameCalendarActivityCompletionIn } from '../models/GameCalendarActivityCompletionIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
@@ -4476,17 +4477,20 @@ export class Service {
     /**
      * 下载更新
      * @param version
+     * @param downloader
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static downloadUpdateApiUpdateDownloadPost(
         version?: (string | null),
+        downloader?: (string | null),
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
             query: {
                 'version': version,
+                'downloader': downloader,
             },
             errors: {
                 422: `Validation Error`,
@@ -4524,6 +4528,18 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 全盘检测 FluxDown 并择优推荐
+     * CLI 便携版优先，其次同盘、就近、新目录；无 CLI 只有全量版时提示污染风险。
+     * @returns FluxdownDetectOut Successful Response
+     * @throws ApiError
+     */
+    public static detectFluxdownApiUpdateFluxdownDetectGet(): CancelablePromise<FluxdownDetectOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/update/fluxdown/detect',
         });
     }
     /**

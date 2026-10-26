@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
+  saveTextFile: (
+    defaultName: string,
+    content: string,
+    filters?: unknown[],
+    dialogOptions?: { dialogTitle?: string; buttonLabel?: string }
+  ) => ipcRenderer.invoke('save-text-file', defaultName, content, filters, dialogOptions),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
   discoverOkwwPath: () => ipcRenderer.invoke('okww-path-discovery:discover-okww'),
   discoverWutheringWavesPath: () =>

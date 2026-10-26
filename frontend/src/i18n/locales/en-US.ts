@@ -1,4 +1,4 @@
-//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿//   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /**
@@ -462,6 +462,7 @@ export default {
     resetEverything: 'Reset everything',
     resetThisColor: 'Reset this color',
     retryDownload: 'Retry the download',
+    retryWithBuiltin: 'Download with built-in (httpx) instead',
     preview: 'Preview',
     estimatedTimeLeft: 'Estimated time left',
     colors: 'Colors',
@@ -5383,6 +5384,45 @@ export default {
       cdkChecking: 'Validating CDK…',
       cdkCheckFailed: 'Unable to validate CDK right now. Please retry.',
       cdkGetLink: 'Get a MirrorChyan CDK',
+      downloader: 'Downloader',
+      downloaderBuiltin: 'Builtin (httpx)',
+      downloaderFluxdown: 'FluxDown CLI (multi-thread)',
+      downloaderTip:
+        'Choose the update downloader; interrupted FluxDown downloads resume from completed segments on retry, and after repeated failures you can switch to the builtin downloader. MirrorChyan always uses the builtin downloader. Put the portable build in res/fluxdown-cli/ or set FluxdownPath',
+      fluxdownSegments: 'Thread segments',
+      fluxdownSegmentsTip:
+        'Higher values mean more parallel requests, if the server supports Range',
+      fluxdownTakeover: 'Take over all script updates',
+      fluxdownTakeoverTip:
+        'Take over all script update downloads (not implemented yet; the switch is disabled and reserved for future use)',
+      fluxdownServerMode: 'FluxDown resume service',
+      fluxdownServerModeTip:
+        'When enabled a resident FluxDown service handles downloads so interrupted downloads resume from completed segments; disable to always re-download from scratch. Does not affect your own FluxDown install',
+      fluxdownPath: 'FluxDown path',
+      fluxdownPathTip:
+        'Folder containing the FluxDown CLI; leave empty to search the bundled build and PATH automatically',
+      fluxdownPathPlaceholder: 'Leave empty to auto-find res/fluxdown-cli/',
+      fluxdownBrowse: 'Browse',
+      fluxdownDetect: 'Auto detect',
+      fluxdownDetectFound: 'FluxDown detected: {path}',
+      fluxdownDetectNotFound: 'No usable FluxDown found on this device',
+      fluxdownDetectFailed: 'FluxDown auto-detection failed',
+      fluxdownOnlyFullWarning:
+        'This FluxDown is the only one on this device; using it will record the downloaded updates in its own queue.',
+      lastUpdateHistoryTip: 'Recent downloads made via FluxDown (last 50 kept)',
+      lastUpdateHistory: 'Download history',
+      viewHistory: 'View history',
+      noHistory: 'No download history yet',
+      historyExport: 'Export log',
+      historyExportDialogTitle: 'Export download log',
+      historyExportSaveLabel: 'Save',
+      historyExportSuccess: 'Download log exported',
+      historyExportFailed: 'Failed to export the download log',
+      historyStatusSuccess: 'Success',
+      historyStatusFailed: 'Failed',
+      historyStatusChecksumFail: 'Checksum failed',
+      historyStatusInterrupted: 'Interrupted',
+      historyStatusFluxdownFallback: 'Fell back to built-in downloader',
       linkSection: 'Project links',
       site: 'Website',
       siteDesc: 'Latest releases and a feature tour',

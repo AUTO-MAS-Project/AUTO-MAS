@@ -490,17 +490,20 @@ export class ActionService {
     /**
      * 下载更新
      * @param version
+     * @param downloader
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static downloadUpdateApiUpdateDownloadPost(
         version?: (string | null),
+        downloader?: (string | null),
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
             query: {
                 'version': version,
+                'downloader': downloader,
             },
             errors: {
                 422: `Validation Error`,

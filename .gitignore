@@ -84,3 +84,6 @@ res/docs/ok-series-common-script-report.md
 
 # 强制加入的测试源产生的字节码不纳入版本库
 tests/**/__pycache__/
+
+# FluxDown 便携运行时（二进制与数据由资源商店/本地生成,不入库）
+res/fluxdown-cli/
