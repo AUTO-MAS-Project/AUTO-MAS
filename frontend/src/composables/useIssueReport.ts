@@ -14,6 +14,7 @@ interface IssueReportResult {
   success: boolean
   message?: string
   zipPath?: string
+  directoryPaths?: string[]
   error?: string
   incompleteCount?: number
 }
@@ -50,7 +51,10 @@ export function useIssueReport<Args extends unknown[] = []>(
           result.message || t('misc.issueReportSuccess', { label: options.label })
         if (result.incompleteCount) message.warning(successMessage)
         else message.success(successMessage)
-        logger.info(`导出 ${options.label} 问题包成功: ${result.zipPath || '路径未知'}`)
+        logger.info(
+          `导出 ${options.label} 问题包成功: ${result.zipPath || result.directoryPaths?.join('、') || '路径未知'}`
+        )
+        if (result.directoryPaths) return
         if (result.zipPath) {
           await window.electronAPI?.showItemInFolder?.(result.zipPath)
         }

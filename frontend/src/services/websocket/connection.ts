@@ -616,7 +616,7 @@ export function connectionState(): Ref<WSConnectionState> {
   return state
 }
 
-/** 后端是否处于开发模式（经 ws_meta 协商） */
+/** 前端退出时是否应保留后端；与应用环境、Runtime 托管模式分别判断。 */
 export function shouldPreserveBackend(): boolean {
   return backendDevMode
 }

@@ -81,6 +81,8 @@ export interface MaaEndScriptConfig {
     RunTimesLimit: number
     AccountSwitchMethod: 'MAS' | 'MAAEND'
     TaskTransitionMethod: 'NoAction' | 'ExitGame'
+    IfSaveLogBundle: boolean
+    LogBundlePath: string | null
   }
   Game: {
     ControllerType: string | null

@@ -513,7 +513,10 @@ def main():
             # 任务 final_task 可能在收尾时重新安排电源操作，停止后再次兜底取消。
             with suppress(RuntimeError):
                 await System.cancel_power_task()
-            await Updater.cancel_download(notify=False)
+            # 取消时若无法确认 FluxDown 任务已停止会抛 FluxdownCancelUnconfirmed，
+            # 关停流程不因此中断后续清理
+            with suppress(RuntimeError):
+                await Updater.cancel_download(notify=False)
             from app.services.obs_replay import ObsReplay
 
             await ObsReplay.stop()

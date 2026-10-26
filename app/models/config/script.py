@@ -1158,6 +1158,16 @@ class MaaEndConfig(DomainEntry):
             description="单账号运行总时限（分钟），包含等待和全部重试",
         )
 
+        IfSaveLogBundle: bool = Field(
+            default_factory=lambda: False,
+            description="任务失败时是否按 MaaEnd 的导出规则打包运行日志",
+        )
+
+        LogBundlePath: FolderPath = Field(
+            default_factory=lambda: None,
+            description="任务失败时保存日志包的目录，留空使用 MAS 目录下的 debug/maaend",
+        )
+
         ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
             default_factory=lambda: 0, description="每日代理次数限制"
         )

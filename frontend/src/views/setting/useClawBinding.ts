@@ -28,7 +28,7 @@ export type ClawChannel = keyof typeof CHANNELS
 
 export function useClawBinding(
   channel: ClawChannel,
-  onBoundChange: (enabled: boolean) => Promise<void>
+  onBoundChange: (enabled: boolean) => Promise<unknown>
 ) {
   const api = CHANNELS[channel]
   const { t } = useI18n()

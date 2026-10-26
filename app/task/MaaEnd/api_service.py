@@ -14,14 +14,20 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""MaaEnd 安装路径识别入口。"""
+"""MaaEnd 编辑业务入口：安装路径识别与日志包查询、保存。"""
 
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from app.config import ConfigEntry
 from app.core import Config
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.services.endfield_launcher import discover_launcher_exe
+
+if TYPE_CHECKING:
+    from .tools.log_bundle import LogBundleSelection
 
 
 def resolve_launcher_path(script_id: str) -> Path:
@@ -39,3 +45,15 @@ def resolve_launcher_path(script_id: str) -> Path:
             "请手动选择终末地启动器的可执行文件（.exe）"
         )
     return launcher_path
+
+
+async def resolve_log_bundle(
+    scripts: Iterable[ConfigEntry], *, output_directory: Path | None = None
+) -> "LogBundleSelection":
+    """筛选 MaaEnd 安装配置，再查询已有归档或保存当前日志。"""
+    from .tools.log_bundle import resolve_log_bundles
+
+    maaend_scripts = [
+        script for script in scripts if isinstance(script, RuntimeMaaEndConfig)
+    ]
+    return await resolve_log_bundles(maaend_scripts, output_directory)

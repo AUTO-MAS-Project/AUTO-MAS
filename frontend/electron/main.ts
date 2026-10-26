@@ -67,7 +67,7 @@ import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
-import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { openMaaEndLogBundles } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
@@ -1653,11 +1653,25 @@ registerIssueReportExporter(
   'MAA-logs',
   createMaaIssueReport
 )
-registerIssueReportExporter(
-  'maaend:exportIssueReport',
-  '导出 MaaEnd 问题包',
-  'MaaEnd-logs',
-  createMaaEndIssueReport
+ipcMain.handle('maaend:exportIssueReport', async () =>
+  observeDiagnosticExport('maaend:exportIssueReport', async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+      return await openMaaEndLogBundles(getLocalApiEndpoint(), {
+        selectDirectory: async () => {
+          const result = await dialog.showOpenDialog(mainWindow!, {
+            title: '选择 MaaEnd 日志保存目录',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+          return result.canceled ? null : (result.filePaths[0] ?? null)
+        },
+        openDirectory: directory => shell.openPath(directory),
+      })
+    } catch (error) {
+      logger.error('打开或保存 MaaEnd 日志失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
@@ -2024,6 +2038,35 @@ ipcMain.handle('select-file', async (event, filters = []) => {
   })
   return result.canceled ? [] : result.filePaths
 })
+
+// 保存文本内容到用户选择的位置（用于导出下载日志等小体积文本）
+ipcMain.handle(
+  'save-text-file',
+  async (
+    _event,
+    defaultName: string,
+    content: string,
+    filters = [],
+    dialogOptions: { dialogTitle?: string; buttonLabel?: string } = {}
+  ) => {
+    if (!mainWindow) return { success: false, error: '窗口未就绪' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: dialogOptions.dialogTitle ?? '导出日志',
+      defaultPath: defaultName,
+      filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
+      ...(dialogOptions.buttonLabel ? { buttonLabel: dialogOptions.buttonLabel } : {}),
+    })
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+    try {
+      await fs.promises.writeFile(result.filePath, content, 'utf-8')
+      return { success: true, filePath: result.filePath }
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+)
 
 // 在系统默认浏览器中打开URL
 ipcMain.handle('open-url', async (_event, url: string) => {

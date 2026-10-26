@@ -77,6 +77,10 @@
           @blur="emit('save', 'ProxyTimesLimit', run.ProxyTimesLimit)"
         />
       </a-form-item>
+      <MaaEndErrorLogBundleField
+        v-model:run="run"
+        @save="(key, value) => emit('save', key, value)"
+      />
     </div>
   </section>
 </template>
@@ -87,6 +91,7 @@ import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaEndScriptConfig } from '@/types/script'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
+import MaaEndErrorLogBundleField from './MaaEndErrorLogBundleField.vue'
 
 type RunConfig = MaaEndScriptConfig['Run']
 const run = defineModel<RunConfig>('run', { required: true })

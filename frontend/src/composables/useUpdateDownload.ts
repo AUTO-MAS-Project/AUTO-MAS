@@ -223,9 +223,16 @@ const receiveFailed = (reason: string, outcome: 'failed' | 'observation_unknown'
   invalidateSnapshot()
   logger.error(`下载失败: ${reason}`)
   stopRuntimeMonitoring()
+  // 后台下载（窗口已收起）中断时没有入口展示原因，立即重新打开下载窗口
+  const reopenModal =
+    !modalVisible.value &&
+    (status.value === 'downloading' ||
+      status.value === 'cancelling' ||
+      status.value === 'switchingSource')
   status.value = 'failed'
   failureReason.value = reason
   speed.value = 0
+  if (reopenModal) modalVisible.value = true
 }
 
 const applyDownloadSnapshot = (snapshot: UpdateDownloadSnapshot): void => {
@@ -302,8 +309,8 @@ export function disposeUpdateDownloadSubscriptions(): void {
   stopRuntimeMonitoring()
 }
 
-const start = async (version: string, data: ChangelogData) => {
-  logger.info(`开始下载: ${version}`)
+const start = async (version: string, data: ChangelogData, downloader?: 'builtin' | 'fluxdown') => {
+  logger.info(`开始下载: ${version}${downloader ? ` (指定下载器: ${downloader})` : ''}`)
   const operationGeneration = invalidateSnapshot()
   resetState()
   const attempt = beginDownloadAnalytics(version)
@@ -317,7 +324,10 @@ const start = async (version: string, data: ChangelogData) => {
   startRuntimeMonitoring()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
+    const response = await Service.downloadUpdateApiUpdateDownloadPost(
+      version || undefined,
+      downloader
+    )
     if (downloadAnalytics === attempt) attempt.started(source.value)
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code !== 200) {
@@ -333,6 +343,14 @@ const start = async (version: string, data: ChangelogData) => {
     receiveFailed(errorMessage, 'observation_unknown')
   }
 }
+// 取消失败时后端不一定还在下载（可能已广播失败/完成，或压根没有活动任务），
+// 不再臆测回「下载中」，而是以 HTTP 快照为准；快照也读不到时才退回下载中。
+const settleCancelFailure = async (): Promise<void> => {
+  invalidateSnapshot()
+  await refreshUpdateDownloadSnapshot()
+  if (status.value === 'cancelling') status.value = 'downloading'
+}
+
 const cancel = async () => {
   if (status.value !== 'downloading') return
 
@@ -346,16 +364,14 @@ const cancel = async () => {
       receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
-      invalidateSnapshot()
-      status.value = 'downloading'
+      await settleCancelFailure()
     }
   } catch (error) {
     if (!isCurrentOperation(operationGeneration)) return
     const errorMessage = getActionErrorMessage(error, '取消下载失败')
     logger.error(`取消下载失败: ${errorMessage}`)
     message.error(errorMessage)
-    invalidateSnapshot()
-    status.value = 'downloading'
+    await settleCancelFailure()
   }
 }
 
@@ -409,6 +425,11 @@ const switchDownloadSource = async (trigger_kind: 'manual' | 'low_speed') => {
 
 const retry = async () => {
   await start(latestVersion.value, updateData.value)
+}
+
+/** 多次失败后在失败弹窗里给用户的显式选择：改用内置 httpx 重新下载 */
+const retryWithBuiltin = async () => {
+  await start(latestVersion.value, updateData.value, 'builtin')
 }
 
 const install = async () => {
@@ -470,6 +491,7 @@ export function useUpdateDownload() {
     open,
     switchToCnb,
     retry,
+    retryWithBuiltin,
     install,
     installLater,
     reset,

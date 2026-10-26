@@ -87,6 +87,9 @@
           <template #extra>
             <div class="failed-actions">
               <a-button type="primary" @click="retry">{{ t('comp.retryDownload') }}</a-button>
+              <a-button v-if="showBuiltinRetry" @click="retryWithBuiltin">
+                {{ t('comp.retryWithBuiltin') }}
+              </a-button>
               <a-button @click="reset">{{ t('comp.close') }}</a-button>
             </div>
           </template>
@@ -115,6 +118,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { Modal } from 'ant-design-vue'
+import { computed } from 'vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 
 const { t } = useI18n()
@@ -135,10 +139,14 @@ const {
   cancel,
   background,
   retry,
+  retryWithBuiltin,
   reset,
   install,
   installLater,
 } = useUpdateDownload()
+
+// 后端在多次中断后会在失败原因里附上改用内置 (httpx) 的建议,此时给出显式选择按钮
+const showBuiltinRetry = computed(() => (failureReason.value ?? '').includes('httpx'))
 
 const confirmCancel = () => {
   Modal.confirm({

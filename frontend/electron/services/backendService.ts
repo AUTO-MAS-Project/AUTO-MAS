@@ -11,7 +11,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 
 import { killAllRelatedProcesses } from '../utils/processManager'
 import { MirrorService } from './mirrorService'
-import { getApplicationEnvironment } from './instanceConfig'
+import { getApplicationEnvironment, isDevelopmentEnvironment } from './instanceConfig'
 import { resolveHttpPort } from './instanceConfig'
 import {
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
@@ -259,15 +259,21 @@ export class BackendService {
         throw new Error('强制停止已请求，取消启动后端')
       }
 
-      const pythonExe =
+      let pythonExe =
         options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000
 
-      // 检查文件是否存在
+      // 检查文件是否存在。开发环境（源码仓库）没有内嵌 Python，
+      // 回退系统解释器直跑 main.py，否则「重启后端」在开发态永远失败。
       if (!fs.existsSync(pythonExe)) {
-        throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
+        if (isDevelopmentEnvironment()) {
+          pythonExe = process.platform === 'win32' ? 'python' : 'python3'
+          logger.warn(`内嵌 Python 不存在,开发环境回退系统解释器: ${pythonExe}`)
+        } else {
+          throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
+        }
       }
       if (!fs.existsSync(mainPy)) {
         throw new Error(`后端主文件不存在: ${mainPy}`)

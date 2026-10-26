@@ -16,6 +16,7 @@
 #   Contact: DLmaster_361@163.com
 """脚本管理：MaaEnd 路由与端点专用模型。"""
 
+from pathlib import Path
 from typing import (
     List,
     Literal,
@@ -35,6 +36,22 @@ from app.models.schema import (
     ScriptDeleteIn,
 )
 from app.utils import get_logger
+
+
+class MaaEndLogBundleIn(BaseModel):
+    outputDirectory: Path | None = Field(
+        default=None, description="手动保存目录；未提供时只查询现有归档"
+    )
+
+
+class MaaEndLogBundleOut(OutBase):
+    directories: list[str] = Field(
+        default_factory=list, description="各安装最新日志包所在目录"
+    )
+    needsDirectory: bool = Field(
+        default=False, description="是否需要选择目录保存当前日志"
+    )
+    incompleteCount: int = Field(default=0, description="未能保存的文件数")
 
 
 class MaaEndEssenceTargetGroup(BaseModel):
@@ -143,6 +160,29 @@ async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
             message=str(e),
             launcher_path="",
         )
+
+
+@router.post(
+    "/maaend/log-bundle",
+    tags=["Action"],
+    summary="打开已有 MaaEnd 日志包或保存当前日志",
+    response_model=MaaEndLogBundleOut,
+)
+async def resolve_maaend_log_bundle(options: MaaEndLogBundleIn) -> MaaEndLogBundleOut:
+    from app.task.MaaEnd import api_service as domain_api
+
+    scripts = Config.ScriptConfig.values()
+    try:
+        result = await domain_api.resolve_log_bundle(
+            scripts, output_directory=options.outputDirectory
+        )
+        return MaaEndLogBundleOut(
+            directories=result.directories,
+            needsDirectory=result.needs_directory,
+            incompleteCount=result.incomplete_count,
+        )
+    except (OSError, ValueError) as error:
+        return MaaEndLogBundleOut(code=500, status="error", message=str(error))
 
 
 @router.post(

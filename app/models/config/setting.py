@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from app.config import (
     ConfigCollection,
@@ -54,6 +54,24 @@ from .shared import (
     local_timezone,
     logger,
 )
+
+
+class FluxdownRecord(BaseModel):
+    """FluxDown 下载历史中的一条记录。"""
+
+    url: str | None = Field(default=None, description="下载地址")
+    destination: str | None = Field(default=None, description="落盘路径")
+    size: int | None = Field(default=None, description="文件字节数")
+    duration_ms: int | None = Field(default=None, description="下载耗时（毫秒）")
+    segments: int | None = Field(default=None, description="分段数")
+    proxy: str | None = Field(default=None, description="使用的代理")
+    checksum: str | None = Field(default=None, description="校验信息")
+    status: str | None = Field(
+        default=None,
+        description="状态：success、failed、checksum_fail、fluxdown_fallback",
+    )
+    error: str | None = Field(default=None, description="失败原因")
+    timestamp: str | None = Field(default=None, description="发生时间")
 
 
 class GlobalConfig(DomainEntry):
@@ -357,6 +375,30 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: "stable", description="更新频道"
         )
 
+        Downloader: Literal["builtin", "fluxdown"] = Field(
+            default_factory=lambda: "builtin",
+            description="下载器: builtin 用内置 httpx, fluxdown 调 FluxDown CLI 多线程",
+        )
+
+        FluxdownPath: str = Field(
+            default_factory=lambda: "",
+            description="FluxDown CLI 所在目录（包含 portable 标记文件）；空则自动查找",
+        )
+
+        FluxdownSegments: Annotated[int, Field(ge=1, le=32)] = Field(
+            default_factory=lambda: 8, description="FluxDown 多线程分段数 (1-32)"
+        )
+
+        FluxdownServerMode: bool = Field(
+            default_factory=lambda: True,
+            description="FluxDown 断点续传服务（server 模式）：常驻 agent+daemon，跨进程续传",
+        )
+
+        FluxdownTakeoverAll: bool = Field(
+            default_factory=lambda: False,
+            description="FluxDown 接管所有自动化脚本更新（预留项，后端尚未实现，前端已禁用展示）",
+        )
+
         GitHubMirror: Literal["Auto", "Off"] = Field(
             default_factory=lambda: "Auto",
             description="GitHub 加速镜像 **只影响 MFW 项目包从 GitHub Release 下载这一条路**（脚本的 `Update.Source` 选 GitHub 时）：国内直连 GitHub 常年 100 多 KB/s， 359MB 的全量包要四十分钟。`Auto` 依次试镜像、全部失败再回直连； `Off` 只直连。MAS 自身的更新与初始化 clone 走前端 mirrorService， 不读这一项；Mirror 酱是另一个源，也不受它影响。",
@@ -364,6 +406,10 @@ class GlobalConfig(DomainEntry):
 
         IfAutoUpdate: bool = Field(
             default_factory=lambda: False, description="是否自动更新"
+        )
+
+        LastUpdateHistory: list[FluxdownRecord] = Field(
+            default_factory=list, description="最近的下载历史记录（最多保留 50 条）"
         )
 
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(

@@ -11,7 +11,11 @@ const { t } = useI18n()
 
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: (category: keyof GlobalConfig, key: string, value: unknown) => Promise<void>
+  handleSettingChange: (
+    category: keyof GlobalConfig,
+    key: string,
+    value: unknown
+  ) => Promise<boolean>
 }>()
 
 const replaySettings = computed(() => props.settings.Replay ?? null)

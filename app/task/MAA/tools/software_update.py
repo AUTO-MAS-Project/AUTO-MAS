@@ -79,7 +79,8 @@ import psutil
 
 from app.core import Config
 from app.models.config import MaaConfig
-from app.services.update_transport import download_file, request_mirror_resource
+from app.services.update_fluxdown import download_file
+from app.services.update_transport import request_mirror_resource
 from app.utils import get_logger
 from app.utils.io import read_dict_file, write_file
 
@@ -106,7 +107,7 @@ _WORK_DIR = Path.cwd() / "data" / "maa_update" / "software"
 _STATE_FILE = _WORK_DIR / "state.json"
 
 _QUERY_TIMEOUT = 10  # 秒
-_DOWNLOAD_TIMEOUT = 30 * 60  # 秒，完整包远大于资源包，放宽总时限
+_DOWNLOAD_TIMEOUT = 30 * 60  # 秒，单次网络操作上限（无下载总时限，完整包余量放宽）
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔
 _RETRY_INTERVAL = 60 * 60  # 秒，失败退避
 _PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的上限
@@ -454,10 +455,17 @@ async def _ensure_cache(latest: _Latest, channel: str, arch: str, cdk: str) -> N
         write_file(_STATE_FILE, state)
     part = cache_dir / "package.zip.part"
     try:
-        async with asyncio.timeout(_DOWNLOAD_TIMEOUT):
-            await download_file(
-                latest.url, part, timeout=_DOWNLOAD_TIMEOUT, proxy=Config.proxy
-            )
+        # Mirror 酱临时授权 URL 显式声明来源并锁定内置下载器，不依赖全局
+        # Source/Downloader：FluxDown 不接短期授权链接（凭证泄漏风险）
+        # 不设外层总时限：timeout 只限单次网络操作，慢速但持续的下载不该被掐断
+        await download_file(
+            latest.url,
+            part,
+            timeout=_DOWNLOAD_TIMEOUT,
+            proxy=Config.proxy,
+            source="MirrorChyan",
+            downloader="builtin",
+        )
         await _run_write_thread(
             _store_verified_cache, cache_dir, part, latest, channel, arch
         )
