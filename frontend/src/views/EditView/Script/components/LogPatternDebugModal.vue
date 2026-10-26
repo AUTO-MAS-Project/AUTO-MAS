@@ -195,12 +195,17 @@ const configPreview = computed(() => {
 .debug-result-pane {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* 长规则预览也要给日志输入和调试按钮留出空间。 */
 .debug-config-preview {
   display: flex;
+  flex-shrink: 0;
+  max-height: 30%;
+  overflow-y: auto;
   align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
@@ -269,7 +274,11 @@ const configPreview = computed(() => {
   margin-bottom: 12px;
 }
 
+/* 错误详情独立滚动，避免挤出整个结果区。 */
 .debug-compile-error {
+  flex-shrink: 0;
+  max-height: 50%;
+  overflow-y: auto;
   margin-bottom: 12px;
 }
 
