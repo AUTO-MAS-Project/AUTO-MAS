@@ -1,7 +1,8 @@
 import { toValue, type MaybeRefOrGetter } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api'
+import { ApiError, Service } from '@/api'
+import { beginAnalyticsOperation, getAnalyticsScriptType } from '@/utils/analytics'
 
 interface ConfigBackupApiOptions {
   scriptId: MaybeRefOrGetter<string>
@@ -16,13 +17,45 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
   // 新建用户后 ID 会变化，不能在创建 composable 时捕获空 ID。
   const context = () => ({ scriptId: toValue(scriptId), userId: toValue(userId) })
 
-  const restore = async (target: string, time: string, force?: boolean) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      ...context(),
-      target,
-      time,
-      ...(force === undefined ? {} : { force }),
-    })
+  const restore = async (target: string, time: string, force?: boolean) => {
+    const operation = beginAnalyticsOperation('config_restore_finished')
+    const ids = context()
+    const dimensions = {
+      script_type: getAnalyticsScriptType(ids.scriptId),
+      target_kind:
+        target === 'mas'
+          ? ('mas' as const)
+          : target === 'native' || target === 'onedragon'
+            ? ('native' as const)
+            : ('unknown' as const),
+      forced: force ? ('yes' as const) : ('no' as const),
+    }
+    try {
+      const response = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+        ...ids,
+        target,
+        time,
+        ...(force === undefined ? {} : { force }),
+      })
+      operation.finish({
+        ...dimensions,
+        outcome:
+          response.code === 200
+            ? 'success'
+            : response.code === 409
+              ? 'confirmation_required'
+              : 'failure',
+      })
+      return response
+    } catch (error) {
+      operation.finish({
+        ...dimensions,
+        outcome:
+          error instanceof ApiError && error.status === 409 ? 'confirmation_required' : 'failure',
+      })
+      throw error
+    }
+  }
 
   const restoreApi = {
     list: async (target: string) => {

@@ -1,11 +1,12 @@
 ---
 name: mas-skills
-description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), E2E flows, plan schedules, or game community sign-in.
+description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, schema naming, module boundaries, function design, API contracts, data modeling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
 ---
 
 # MAS Skills
 
 ## Objective
+
 Provide one routing entrypoint for MAS engineering standards and keep implementation decisions consistent with current project maintainer review preferences.
 
 ## Repository Authority
@@ -19,6 +20,7 @@ AUTO-MAS splits responsibilities across repositories:
 When these areas overlap, use this skill for engineering decisions and use the docs site for contribution-process decisions.
 
 ## Project Rule Areas
+
 Apply these project rules directly when they overlap with a task:
 
 1. Cherry-picks to an already released `release/{version}` branch must be small **pure-backend** fixes that touch no frontend code, because released apps hot-update only backend code from that branch while the frontend ships inside the installer. Cherry-picking a commit that carries frontend logic is a violation: close the related PR and revert the related commit. Judge by the files the commit actually touches, not by the `type` / `scope` in its message. Never help prepare or push such a cherry-pick.
@@ -31,7 +33,10 @@ Apply these project rules directly when they overlap with a task:
 
 8. Start every branch from the latest upstream `dev` (`git fetch` first; in a fork, branch off upstream `dev`), never from a stale local `dev`: a branch built on an old baseline silently overwrites other people's merged work when it is synced, with no conflict and green type checks. Branch rules: <https://doc.auto-mas.top/developer/development-specifications.html>.
 
+9. Adding or changing a user-visible workflow requires [mas-telemetry](../mas-telemetry/SKILL.md), even when the user does not mention analytics. Reuse an existing observation boundary or implement missing anonymous telemetry in the same change. Check actual result ownership, finite fields, privacy, deduplication and off/on behavior; do not report skipped work or request acceptance as completion. For prose/style/internal changes with no new observable behavior, explain existing coverage or why no event is appropriate instead of adding noise.
+
 ## Sub-Skills
+
 Use these skills as needed:
 
 1. `mas-frontend-standards`: Vue 3, TypeScript, Vite, Electron renderer, routing, API composables, state, styles, forms, validation, and frontend verification.
@@ -47,8 +52,10 @@ Use these skills as needed:
 11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
 12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
 13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
+14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
 
 ## Global Constraints
+
 Apply these constraints before selecting or combining sub-skills.
 
 1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested. Required extraction under the frontend [Component Size Policy](../mas-frontend-standards/SKILL.md#component-size-policy) is part of the affected task, not unrelated cleanup.
@@ -60,7 +67,11 @@ Apply these constraints before selecting or combining sub-skills.
 7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments and fold them back into the selected sub-skills.
 8. Before completing a user-visible feature or fix, add exactly one changelog fragment under `changelog.d/` (`<PR number or branch>.<feat|change|fix|breaking|remove|security|dev>.md`; first line `project: <key>` from the project table in `changelog.d/README.md` — 14 adapters plus home / scheduler / emulator / notify / tools / settings / update / runtime, no catch-all, pick the nearest per the README; only `dev` fragments may omit it; then one user-facing sentence of at most 50 characters without project prefix, PR number or signature; `python scripts/changelog.py add <type> <project> "<sentence>"` creates it, with `-` as the project for `dev`). Before writing a fix or change fragment, decide which release introduced the feature you touch: a feature absent from the previous stable release's notes was introduced in the current X.Y.0 cycle (for 5.5.0: Runtime initialization, virtual display, Emulator 2.0, MFW, BetterGI, BAAH, ZZZ-OD, config restore, operator cultivation). Every later fix, maintenance or supplementary change to such a feature (bug fixes, turning something into a prompt, extra hints, default tweaks, layout changes, i18n wiring, cleanup) is beta-only: if the feature's entry is still in the top `## [未发布]` section or its fragment is still in `changelog.d/`, add no fragment and label the PR `skip-changelog` (describe any wording change in the PR for a maintainer to apply); if it shipped in an earlier beta of the cycle, add the header line `beta-only: true` so the entry is dropped from the stable roll-up. Sub-features added to it later are beta-only as well: in the stable notes a new adapter is exactly one line (`【bgi】新增 bgi 专项`) and a new feature is its single introduction entry; fixes and changes to features that shipped in the previous stable are normal. Project keys use the short names `bgi` (BetterGI) and `end` (MaaEnd). A PR with several human authors lists them all in the header line `author: a, b` (the script never reads Co-authored-by). Maintainers may add `highlight: true` to route an entry into 「本次亮点」 as part of the implementation; do not merely remind the developer. Condense all changes of the PR into that one sentence. Never edit `CHANGELOG.md`, `res/version.json` or any version number: they are written only by the release PR. Do not create a commit unless the user explicitly asks for one.
 
+9. Treat telemetry coverage as part of feature completion: load `mas-telemetry` for observable workflow changes and state whether the change reuses, extends or intentionally omits collection. Existing wrappers must not be double-instrumented. An event declaration or coverage-table entry is not proof that its real caller is observed.
+
 ## Routing Rules
+
+For every new or changed user-visible operation, page, lifecycle path or script-adapter flow, load `mas-telemetry` in addition to the domain skills below. Do not wait for an explicit telemetry request. Pure prose/style/generated-only edits and read-only tasks do not authorize new collection or implementation.
 Choose sub-skills by task intent.
 
 1. Task mentions field names, shared terms, schema key consistency:
@@ -91,10 +102,11 @@ Use `mas-plan-schedule`.
 Use `mas-game-sign`.
 14. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
 Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
-14. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
+15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
 Use `mas-ci-checks`.
 
 ## Combined Execution Order
+
 When multiple concerns appear, apply this order:
 
 1. `mas-frontend-standards`, when the task touches frontend code or docs.
@@ -105,15 +117,17 @@ When multiple concerns appear, apply this order:
 6. `mas-schema-naming`
 7. `mas-function-design`
 8. `mas-api-contract`
-9. `mas-e2e`, when the task requires an E2E flow or evidence.
-10. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
-11. `mas-plan-schedule`
-12. `mas-game-sign`
-13. `mas-ci-checks`, when the work ends by making a PR pass CI.
+9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
+10. `mas-plan-schedule`
+11. `mas-game-sign`
+12. `mas-telemetry`, for new or changed observable workflows; establish the real result owner before observing it.
+13. `mas-e2e`, when the task requires an E2E flow or evidence.
+14. `mas-ci-checks`, when the work ends by making a PR pass CI.
 
 Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, plan schedule rules apply when the task touches scheduler registration, and game sign rules apply last among the implementation skills because they constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
 
 ## Output Requirements
+
 When using this hub:
 
 1. State which sub-skills are selected.
@@ -123,8 +137,10 @@ When using this hub:
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
 6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
 7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
+8. For observable workflow changes, state the actual telemetry boundary and whether it was reused, extended or intentionally omitted; report verification without claiming unexecuted production or real-device coverage.
 
 ## Review Checklist
+
 1. Selected sub-skills match the user request scope.
 2. Frontend tasks loaded the correct frontend skill pair; added or modified Vue components have measured baseline/final line counts and satisfy the linked component size policy.
 3. No layer-boundary violations are introduced.
@@ -134,5 +150,6 @@ When using this hub:
 7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
 8. Every user-visible feature or fix includes exactly one changelog fragment under `changelog.d/`, and leaves `CHANGELOG.md`, `res/version.json` and the version numbers untouched.
 9. Any cherry-pick to a released branch was verified to touch backend files only.
-10. Every external CI action and container image is pinned to a full commit SHA or digest, with an updater-readable version comment where applicable; no mutable reference remains.
-11. CI failures were diagnosed from the run log first, and reproduced locally with the `uv.lock`-pinned toolchain rather than a system-installed one.
+10. Observable workflows loaded `mas-telemetry`, preserve privacy and off/on isolation, and have one result owner without duplicate observation.
+11. Every external CI action and container image is pinned to a full commit SHA or digest, with an updater-readable version comment where applicable; no mutable reference remains.
+12. CI failures were diagnosed from the run log first, and reproduced locally with the `uv.lock`-pinned toolchain rather than a system-installed one.

@@ -263,6 +263,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
+import { queueApi } from '@/composables/useQueueApi'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -346,7 +347,7 @@ const loading = ref(true)
 const fetchQueues = async () => {
   loading.value = true
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const response = await queueApi.getQueues({})
     if (!isMounted) return
     if (response.code === 200) {
       // 处理队列数据
@@ -397,7 +398,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
 
   queueConfigLoading.value = true
   try {
-    const data = queuesData ?? (await Service.getQueuesApiQueueGetPost({})).data
+    const data = queuesData ?? (await queueApi.getQueues({})).data
     if (!isMounted || queueId !== activeQueueId.value) return
     currentQueueData.value = data
 
@@ -513,7 +514,7 @@ const refreshQueueItems = async () => {
 
   try {
     // 使用专门的队列项API获取数据
-    const response = await Service.getItemApiQueueItemGetPost({
+    const response = await queueApi.getItems({
       queueId: activeQueueId.value,
     })
 
@@ -630,7 +631,7 @@ const handleAfterAccomplishDelayBlur = async () => {
 // 添加队列
 const handleAddQueue = async () => {
   try {
-    const response = await Service.addQueueApiQueueAddPost()
+    const response = await queueApi.createQueue()
 
     if (response.code === 200 && response.queueId) {
       // 播放添加队列成功音频
@@ -669,7 +670,7 @@ const handleAddQueue = async () => {
 // 删除队列
 const handleRemoveQueue = async (queueId: string) => {
   try {
-    const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
+    const response = await queueApi.deleteQueue({ queueId })
 
     if (response.code === 200) {
       // 播放删除队列成功音频
@@ -725,7 +726,7 @@ const refreshQueueConfig = async (queueId = activeQueueId.value) => {
   if (!queueId) return
 
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const response = await queueApi.getQueues({})
     if (!isMounted || queueId !== activeQueueId.value) return
     if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
       currentQueueData.value = response.data
@@ -776,10 +777,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
       Info: { [key]: value },
     }
 
-    const response = await Service.updateQueueApiQueueUpdatePost({
-      queueId,
-      data: queueData,
-    })
+    const response = await queueApi.updateQueue({ queueId, data: queueData })
 
     if (response.code !== 200) {
       message.error(response.message || t('queue.toast.saveFailed'))

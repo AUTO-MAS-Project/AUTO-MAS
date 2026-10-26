@@ -539,6 +539,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
@@ -1064,10 +1065,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: scriptId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
+    const response = await requestScriptConfigStart(scriptId)
 
     if (!response?.taskId) {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')
@@ -1110,7 +1108,7 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndTaskId.value })
+    const response = await stopNativeConfig(maaEndTaskId.value, 'save')
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

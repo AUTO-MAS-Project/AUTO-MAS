@@ -10,7 +10,7 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import type { Ref } from 'vue'
-import { useHomeActivitySource } from './useHomeActivitySource'
+import { combineActivityLoads, useHomeActivitySource } from './useHomeActivitySource'
 import type { HomeActivitySource } from './useHomeActivitySource'
 
 /** 请求超时；重试节奏与快照调度交给公共骨架 */
@@ -297,6 +297,7 @@ export const useBlueArchiveActivitySource = () => {
     // 这个服是否已有请求在飞：交给骨架的 isBusy 钩子，同一份数据不会被并发拉两次
     let busy = false
     const source = useHomeActivitySource<GameKeeActivity[]>({
+      isAvailable: () => overviewByServer[key].value.Available,
       // 日志与失败文案里用这个服自己的名字
       label: () => serverLabel(key),
       timeoutMs: FETCH_TIMEOUT_MS,
@@ -412,6 +413,7 @@ export const useBlueArchiveActivitySource = () => {
   })
 
   return {
+    whenLoaded: combineActivityLoads(SERVER_KEYS.map(key => sources[key])),
     servers: computed<BlueArchiveServerOverview[]>(() =>
       SERVER_KEYS.map(key => ({
         key,

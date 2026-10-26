@@ -5,6 +5,7 @@
 
 import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron'
 import * as path from 'path'
+import { observeInitializationStage } from '../services/initializationAnalytics'
 import { getAppRoot } from '../services/environmentService'
 import { InitializationService, BackendService } from '../services'
 import { getLogger } from '../services/logger'
@@ -261,9 +262,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const { PythonInstaller } = await import('../services/environmentService.js')
     const installer = new PythonInstaller(appRoot, mirrorService)
 
-    const result = await installer.install(progress => {
-      sendToSender(event, 'python-progress', progress)
-    }, selectedMirror)
+    const result = await observeInitializationStage('python', 'off', () =>
+      installer.install(progress => {
+        sendToSender(event, 'python-progress', progress)
+      }, selectedMirror)
+    )
 
     if (!result.success) {
       logger.error(`Python安装失败: ${result.error}`)
@@ -295,9 +298,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const { PipInstaller } = await import('../services/environmentService.js')
     const installer = new PipInstaller(appRoot, mirrorService)
 
-    const result = await installer.install(progress => {
-      sendToSender(event, 'pip-progress', progress)
-    }, selectedMirror)
+    const result = await observeInitializationStage('pip', 'off', () =>
+      installer.install(progress => {
+        sendToSender(event, 'pip-progress', progress)
+      }, selectedMirror)
+    )
 
     if (!result.success) {
       logger.error(`Pip安装失败: ${result.error}`)
@@ -329,9 +334,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     const { GitInstaller } = await import('../services/environmentService.js')
     const installer = new GitInstaller(appRoot, mirrorService)
 
-    const result = await installer.install(progress => {
-      sendToSender(event, 'git-progress', progress)
-    }, selectedMirror)
+    const result = await observeInitializationStage('git', 'off', () =>
+      installer.install(progress => {
+        sendToSender(event, 'git-progress', progress)
+      }, selectedMirror)
+    )
 
     if (!result.success) {
       logger.error(`Git安装失败: ${result.error}`)
@@ -366,9 +373,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const { RepositoryService } = await import('../services/repositoryService.js')
       const repoService = new RepositoryService(appRoot, mirrorService, targetBranch)
 
-      const result = await repoService.pullRepository(progress => {
-        sendToSender(event, 'repository-progress', progress)
-      }, selectedMirror)
+      const result = await observeInitializationStage('repository', 'off', () =>
+        repoService.pullRepository(progress => {
+          sendToSender(event, 'repository-progress', progress)
+        }, selectedMirror)
+      )
 
       if (!result.success) {
         logger.error(`源码拉取失败: ${result.error}`)
@@ -403,9 +412,11 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       const { DependencyService } = await import('../services/dependencyService.js')
       const depService = new DependencyService(appRoot, mirrorService)
 
-      const result = await depService.installDependencies(progress => {
-        sendToSender(event, 'dependency-progress', progress)
-      }, selectedMirror)
+      const result = await observeInitializationStage('dependency', 'off', () =>
+        depService.installDependencies(progress => {
+          sendToSender(event, 'dependency-progress', progress)
+        }, selectedMirror)
+      )
 
       if (!result.success) {
         logger.error(`依赖安装失败: ${result.error}`)
@@ -541,7 +552,7 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     return result
   })
 
-  ipcMain.handle('backend-restart', async event => {
+  ipcMain.handle('backend-restart', async (event, reason?: unknown) => {
     logger.info('重启后端服务')
 
     const backend = getBackendService()
@@ -551,7 +562,10 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
       sendToSender(event, 'backend-status', status)
     })
 
-    const result = await backend.restartBackend()
+    const result = await backend.restartBackend(
+      undefined,
+      reason === 'recovery' ? 'recovery' : 'manual'
+    )
 
     if (!result.success) {
       logger.error(`后端重启失败: ${result.error}`)

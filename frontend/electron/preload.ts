@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { RendererAnalyticsEvent } from '../src/types/analytics'
 import type { AppearanceCategory } from '../src/types/mascotPack'
 import type {
   DesktopMascotColors,
@@ -16,6 +17,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // 暴露安全的 API 给渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  analytics: {
+    getContext: () => ipcRenderer.invoke('analytics:context'),
+    trackEvent: (context: number, event: RendererAnalyticsEvent) =>
+      ipcRenderer.send('analytics:event', context, event),
+  },
   isMacOS: process.platform === 'darwin',
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
@@ -89,6 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appObserveBackendClose: () => ipcRenderer.send('app-backend-close-observed'),
   appWaitForQuitConfirmation: () => ipcRenderer.invoke('app-wait-for-quit-confirmation'),
   appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
   appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
@@ -207,6 +214,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程开窗；弹窗页面自己取数据、自己关
   showVirtualDisplayPrompt: (payload: unknown) => ipcRenderer.invoke('vdd-prompt:show', payload),
+  observeVirtualDisplayPrompt: () => ipcRenderer.send('vdd-prompt:observe', 'keep'),
+  detachVirtualDisplayFromPrompt: () => ipcRenderer.invoke('vdd-prompt:detach'),
   closeVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:close'),
   getVirtualDisplayPrompt: () => ipcRenderer.invoke('vdd-prompt:get'),
   onVirtualDisplayPromptData: (callback: (payload: unknown) => void) => {
@@ -324,7 +333,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
   backendStart: () => ipcRenderer.invoke('backend-start'),
-  backendRestart: () => ipcRenderer.invoke('backend-restart'),
+  backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 

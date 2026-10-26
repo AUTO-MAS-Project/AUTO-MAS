@@ -1,8 +1,12 @@
+import {
+  requestTaskStart,
+  stopNativeConfig,
+  type NativeConfigStopAction,
+} from '@/composables/useTaskApi'
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { showConfigDiscardWarning } from '@/utils/configSessionDiscard'
@@ -84,7 +88,11 @@ export function useNativeGuiSession(options: {
     }
   }
 
-  const stopSession = (keepOnFailure = false, keepSubscriptions = false): Promise<boolean> => {
+  const stopSession = (
+    keepOnFailure = false,
+    keepSubscriptions = false,
+    action: NativeConfigStopAction = 'close'
+  ): Promise<boolean> => {
     if (stoppingPromise) {
       keepFailedSession ||= keepOnFailure
       return stoppingPromise
@@ -98,7 +106,7 @@ export function useNativeGuiSession(options: {
     stopping.value = true
     stoppingPromise = Promise.resolve().then(async () => {
       try {
-        const response = await Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId })
+        const response = await stopNativeConfig(currentTaskId, action)
         if (response.code !== 200) {
           throw new Error(response.message || t(keys.stopFailed))
         }
@@ -121,11 +129,14 @@ export function useNativeGuiSession(options: {
     try {
       configLoading.value = true
       discardedReason = null
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: startTaskId,
-        mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-        viewOnly,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId: startTaskId,
+          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+          viewOnly,
+        },
+        { source: 'script_config' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t(keys.startFailed))
       }
@@ -151,13 +162,16 @@ export function useNativeGuiSession(options: {
       message.success(viewOnly ? t(keys.viewOpened) : t(keys.opened))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
-        configTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)
+        configTimeout = window.setTimeout(
+          () => void stopSession(false, false, 'timeout'),
+          SESSION_TIMEOUT_MS
+        )
         return true
       }
       warningTimeout = window.setTimeout(() => {
         message.warning(t(keys.timeoutWarn))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
-      configTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
+      configTimeout = window.setTimeout(() => void saveSession('timeout'), SESSION_TIMEOUT_MS)
       return true
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
@@ -169,9 +183,9 @@ export function useNativeGuiSession(options: {
     }
   }
 
-  const saveSession = async () => {
+  const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!taskId.value) return
-    if (!(await stopSession(true, true))) {
+    if (!(await stopSession(true, true, action))) {
       message.error(t(keys.saveFailed))
       return
     }

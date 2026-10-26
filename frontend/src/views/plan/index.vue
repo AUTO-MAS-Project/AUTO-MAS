@@ -79,6 +79,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
@@ -284,26 +285,9 @@ const handleRemovePlan = async (planId: string) => {
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (
-  planId: string,
-  changes: Record<string, any>,
-  onError?: PlanChangeOptions['onError']
-): Promise<boolean> => {
-  if (!planId) {
-    return false
-  }
-
-  try {
-    logger.debug(`保存字段 (${planId}): ${JSON.stringify(changes)}`)
-    await updatePlan(planId, changes)
-    return true
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存计划字段失败: ${errorMsg}`)
-    onError?.(errorMsg)
-    return false
-  }
-}
+const savePlanField = usePlanFieldSave(updatePlan, () =>
+  viewMode.value === 'simple' ? 'simple' : 'complex'
+)
 
 const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => {
   const response = await getPlans(planId)
@@ -338,7 +322,7 @@ const handlePlanChange = async (
     typeof reloadOrOptions === 'boolean'
       ? reloadOrOptions
       : (options?.refresh ?? currentPlanDescriptor.value?.reloadAfterSave ?? true)
-  const success = await savePlanField(planId, changes, options?.onError)
+  const success = await savePlanField(planId, changes, options)
 
   if (!success) {
     return false

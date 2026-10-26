@@ -943,7 +943,10 @@ export function useSchedulerLogic() {
           : undefined
       )
 
-      const response = await taskApi.startTask(requestBody)
+      const response = await taskApi.startTask(requestBody, {
+        source: 'scheduler',
+        target_kind: isScriptTask(tab) ? 'script' : 'queue',
+      })
       tab.status = '运行'
       tab.taskId = response.taskId
 
@@ -1007,7 +1010,7 @@ export function useSchedulerLogic() {
 
     const taskId = tab.taskId
     try {
-      await taskApi.stopTask(taskId)
+      await taskApi.stopTask(taskId, { source: 'scheduler' })
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()

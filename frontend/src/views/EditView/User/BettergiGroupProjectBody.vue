@@ -251,7 +251,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { BetterGiService } from '@/api'
+import { BetterGISetupService as BetterGiService } from '@/composables/useAdapterSetupApi'
 import type { BetterGIScriptGroupSaveIn, BetterGIScriptGroupDetailOut } from '@/api'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 

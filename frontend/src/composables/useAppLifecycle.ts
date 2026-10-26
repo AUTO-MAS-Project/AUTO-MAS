@@ -7,6 +7,8 @@ import { translate as t } from '@/i18n'
 import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
@@ -84,6 +86,17 @@ export type BackendStatus = 'unknown' | 'starting' | 'running' | 'stopped' | 'er
 // ==================== 模块级状态 ====================
 
 let initialized = false
+let incidentAnalytics: ReturnType<
+  typeof beginAnalyticsOperation<'connection_incident_finished'>
+> | null = null
+let incidentReason: AnalyticsEventProps['connection_incident_finished']['reason_kind'] = 'other'
+let recoveryKind: AnalyticsEventProps['connection_incident_finished']['recovery_kind'] = 'reconnect'
+const finishIncidentAnalytics = (
+  outcome: AnalyticsEventProps['connection_incident_finished']['outcome']
+) => {
+  incidentAnalytics?.finish({ outcome, recovery_kind: recoveryKind, reason_kind: incidentReason })
+  incidentAnalytics = null
+}
 let lifecycleDisposers: Array<() => void> = []
 let residentSubscriptionIds: string[] = []
 
@@ -283,6 +296,7 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 }
 
 const handleConnected = async (): Promise<void> => {
+  finishIncidentAnalytics('recovered')
   // 重新连上（系统恢复后重连、手动重连）说明后端实际可用：撤掉恢复失败终态和它的弹窗。
   // 自动重启计数不在这里清零，按时间窗累计
   dismissRestartFailure()
@@ -527,6 +541,7 @@ const runCloseFlow = async (): Promise<void> => {
 }
 
 const runBackendRequestedClose = async (restart = false): Promise<void> => {
+  window.electronAPI?.appObserveBackendClose?.()
   backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
@@ -624,6 +639,7 @@ export function closeApp(): Promise<void> {
 const showRestartFailureModal = (): void => {
   // 达到恢复失败上限：仅提示一次，提供重启应用兜底
   if (restartFailureShown) return
+  finishIncidentAnalytics('recovery_stopped')
   restartFailureShown = true
   backendStatus.value = 'error'
   stopReconnect()
@@ -684,6 +700,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
   }
 
   const run = async (): Promise<void> => {
+    recoveryKind = 'backend_restart'
     backendRestartTimestamps.push(Date.now())
     backendStatus.value = 'starting'
     logger.warn(
@@ -693,7 +710,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
     try {
       let result: { success: boolean; error?: string; logs?: string } | undefined
       if (window.electronAPI?.backendRestart) {
-        result = await window.electronAPI.backendRestart()
+        result = await window.electronAPI.backendRestart('recovery')
       } else {
         await window.electronAPI?.stopBackend?.()
         if (isClosing()) return
@@ -752,6 +769,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
  * @param reason 记入日志的触发原因
  */
 export function beginIntentionalBackendRestart(reason: string): void {
+  incidentAnalytics = null
   if (intentionalRestartTimer !== undefined) window.clearTimeout(intentionalRestartTimer)
   intentionalRestartActive = true
   intentionalRestartTimer = window.setTimeout(() => {
@@ -785,6 +803,18 @@ export function endIntentionalBackendRestart(reason: string): void {
 
 const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   if (disconnectIncidentShown) return
+  incidentAnalytics = beginAnalyticsOperation('connection_incident_finished')
+  recoveryKind = 'reconnect'
+  incidentReason =
+    event.code === 1000
+      ? 'normal'
+      : event.code === 1006
+        ? 'abnormal'
+        : event.code === 1008
+          ? 'policy'
+          : [1001, 1011, 1012, 1013].includes(event.code)
+            ? 'server'
+            : 'other'
   disconnectIncidentShown = true
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
   notification.warning({
@@ -815,6 +845,7 @@ const escalateDisconnectIncident = (): void => {
 }
 
 const dismissDisconnectIncident = (): void => {
+  incidentAnalytics = null
   disconnectIncidentShown = false
   notification.close(DISCONNECT_NOTICE_KEY)
   notification.close(SUPERSEDED_NOTICE_KEY)
@@ -908,28 +939,42 @@ const handleSystemResume = (): Promise<void> => {
   if (resumeRecoveryPromise) return resumeRecoveryPromise
   resumeRecoveryPromise = (async () => {
     if (isClosing() || isIntentionalRestart()) return
-    logger.info('检测到系统恢复，检查后端和主 WebSocket')
-
-    const running = await queryBackendRunning()
-    let httpReachable = false
+    const telemetry = beginAnalyticsOperation('system_resume_recovery_finished')
+    let recovery_kind: 'reconnect' | 'backend_restart' = 'reconnect'
     try {
-      await Service.getWsMetaApiCoreWsMetaGet()
-      httpReachable = true
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.warn(`系统恢复后 ws_meta 检查失败: ${errorMsg}`)
-    }
-    if (isClosing()) return
+      logger.info('检测到系统恢复，检查后端和主 WebSocket')
 
-    if (running === false || !httpReachable) {
-      // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
-      await restartBackendFlow()
-      return
-    }
+      const running = await queryBackendRunning()
+      let httpReachable = false
+      try {
+        await Service.getWsMetaApiCoreWsMetaGet()
+        httpReachable = true
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`系统恢复后 ws_meta 检查失败: ${errorMsg}`)
+      }
+      if (isClosing()) return
 
-    // 后端确实可达：终态下也照常重连，连上后由 handleConnected 撤掉终态与失败弹窗，
-    // 不能让「仍无法连接」的弹窗留在已经恢复的应用上
-    await reconnectNow('系统从睡眠恢复')
+      if (running === false || !httpReachable) {
+        // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
+        recovery_kind = 'backend_restart'
+        await restartBackendFlow()
+        return
+      }
+
+      // 后端确实可达：终态下也照常重连，连上后由 handleConnected 撤掉终态与失败弹窗，
+      // 不能让「仍无法连接」的弹窗留在已经恢复的应用上
+      await reconnectNow('系统从睡眠恢复')
+    } finally {
+      telemetry.finish({
+        recovery_kind,
+        outcome: isClosing()
+          ? 'cancelled'
+          : connectionState().value === 'open'
+            ? 'success'
+            : 'unknown',
+      })
+    }
   })().finally(() => {
     resumeRecoveryPromise = null
   })
@@ -1033,6 +1078,7 @@ export async function connectWithRetry(
 /** 手动重连（devtools/恢复入口） */
 export async function manualReconnect(): Promise<boolean> {
   if (isClosing()) return false
+  recoveryKind = 'manual'
   stopReconnect()
   // 连同失败弹窗一起撤掉，否则再次进入终态时旧弹窗失去句柄、叠在新弹窗下
   dismissRestartFailure()

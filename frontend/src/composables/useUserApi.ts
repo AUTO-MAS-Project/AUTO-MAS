@@ -1,3 +1,5 @@
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
+import { beginUserChanges, rememberUserAnalytics } from '@/utils/userAnalytics'
 import { getApiErrorCode, getApiErrorMessage } from '@/utils/apiError'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -15,6 +17,12 @@ import type {
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import {
+  analyticsConfigSection,
+  analyticsCountBucket,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
 
 const logger = window.electronAPI.getLogger('用户API')
 
@@ -32,7 +40,10 @@ export function useUserApi() {
     scriptId: string,
     options: AddUserOptions = {}
   ): Promise<UserCreateOut | null> => {
+    const operation = beginAnalyticsOperation('user_create_finished')
+    const script_type = getAnalyticsScriptType(scriptId)
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      operation.finish({ script_type, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
       addUserErrorCode.value = null
@@ -58,12 +69,14 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      operation.finish({ script_type, outcome: response.userId ? 'success' : 'failure' })
       // 播放添加用户成功音频
       const { playSound } = useAudioPlayer()
       await playSound('add_user')
 
       return response
     } catch (err) {
+      operation.finish({ script_type, outcome: 'failure' })
       addUserErrorCode.value ??= getApiErrorCode(err)
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userAddFailed'))
       error.value = errorMsg
@@ -82,7 +95,21 @@ export function useUserApi() {
     userId: string,
     userData: UserUpdateIn['data']
   ): Promise<boolean> => {
+    const finishChanges = beginUserChanges(
+      scriptId,
+      userId,
+      getAnalyticsScriptType(scriptId),
+      userData.Info
+    )
+    const operation = beginAnalyticsOperation('config_write_finished')
+    const dimensions = {
+      owner_kind: 'user' as const,
+      section_kind: analyticsConfigSection(userData),
+      script_type: getAnalyticsScriptType(scriptId),
+    }
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      finishChanges('blocked')
+      operation.finish({ ...dimensions, outcome: 'blocked' })
       const errorMsg = t('edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
@@ -109,8 +136,12 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      finishChanges('success')
+      operation.finish({ ...dimensions, outcome: 'success' })
       return true
     } catch (err) {
+      finishChanges('failure')
+      operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)
@@ -138,6 +169,8 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      for (const [id, user] of Object.entries(response.data))
+        rememberUserAnalytics(scriptId, id, user.Info)
       return response
     } catch (err) {
       const errorMsg = getApiErrorMessage(err, t('apiErrors.userListFailed'))
@@ -167,7 +200,12 @@ export function useUserApi() {
         userId,
       }
 
-      const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        { action: 'delete', script_type: getAnalyticsScriptType(scriptId), count_bucket: '1' },
+        () => Service.deleteUserApiScriptsUserDeletePost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || t('apiErrors.userDeleteFailed')
@@ -207,7 +245,16 @@ export function useUserApi() {
         indexList: userIds,
       }
 
-      const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
+      const response = await observeFeature(
+        'user_manage_finished',
+        {
+          action: 'reorder',
+          script_type: getAnalyticsScriptType(scriptId),
+          count_bucket: analyticsCountBucket(userIds.length),
+        },
+        () => Service.reorderUserApiScriptsUserOrderPost(requestData),
+        apiOutcome
+      )
 
       if (response.code !== 200) {
         const errorMsg = response.message || t('apiErrors.userOrderFailed')

@@ -320,7 +320,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
-import { OknteService } from '@/api/services/OknteService'
+import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()

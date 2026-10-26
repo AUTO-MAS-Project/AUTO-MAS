@@ -3,11 +3,10 @@
 // 这个页面跑在主进程另开的小窗口里，落在接回的那块屏右下角——虚拟屏此刻是主显示器，
 // 主窗口和任务栏都在看不见的那块上，画在主窗口里用户根本看不到。
 // 它不建自己的 WebSocket（主连接只能有一条，第二条会把主窗口顶下线），数据由主进程
-// 转来；拆不拆直接调后端 HTTP 接口，弹窗收不收由后端消息经主窗口通知主进程。
+// 转来；拆除经主进程调用后端 HTTP，弹窗收不收由后端消息经主窗口通知主进程。
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { DesktopOutlined } from '@ant-design/icons-vue'
-import { ActionService } from '@/api'
 import type { VirtualDisplayPromptPayload } from '@/types/electron'
 
 defineOptions({ name: 'VirtualDisplayPrompt' })
@@ -51,6 +50,7 @@ const close = async () => {
 }
 
 const handleKeep = () => {
+  window.electronAPI.observeVirtualDisplayPrompt?.()
   logger.info('用户选择保留虚拟显示器，任务结束后由守卫自动拆除')
   void close()
 }
@@ -61,7 +61,8 @@ const handleDetach = async () => {
   errorText.value = ''
   logger.info('用户选择立即拆除虚拟显示器')
   try {
-    const result = await ActionService.detachVirtualDisplayApiSettingVirtualDisplayDetachPost()
+    const result = await window.electronAPI.detachVirtualDisplayFromPrompt()
+    if (!result) return
     if (result.code !== 200) {
       errorText.value = t('setting.display.prompt.detachFailed', { reason: result.message })
       return

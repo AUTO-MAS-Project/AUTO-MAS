@@ -1,8 +1,9 @@
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import { formatBytes } from '@/utils/byteFormat'
-import { Service, type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
+import { type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
 
 /**
  * 实例槽管理（脚本设置页的实例槽 / 回收池两张表与恢复流程）。
