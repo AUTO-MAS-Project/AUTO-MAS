@@ -52,6 +52,9 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
+from app.task.MaaFW.tools.core.interface.task_config import (
+    excluded_task_ids_for_weekday,
+)
 
 TYPE_KEY = "MSS"
 ACTIVITY_ENTRY = "活动快速战斗_入口"
@@ -284,6 +287,12 @@ class MSSFlavor:
                     for task_id in order
                     if isinstance(task_id, str) and checked.get(task_id) is False
                 }
+        ## 今天不在运行日的实例同理：引擎已把它们从 ids 里拿掉，这里不能再自动补回来、
+        ## 也不能给没跑的防线记账（星期按本机时间，与引擎建计划同一口径）
+        if isinstance(raw_snapshot, dict):
+            skipped_ids |= set(
+                excluded_task_ids_for_weekday(raw_snapshot, datetime.now().isoweekday())
+            )
 
         activity = task_name_for_entry(interface_model, ACTIVITY_ENTRY)
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)

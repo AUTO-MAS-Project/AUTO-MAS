@@ -368,6 +368,7 @@ def build_maafw_run_plan(
                 name=task.name,
                 label=_resolve_i18n_label(task.label, task.name, i18n_mapping),
                 entry=task.entry,
+                instanceId=task_id,
                 options=options,
                 pipelineOverride=pipeline_override,
                 logOptions=_build_task_log_options(interface, options),

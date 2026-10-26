@@ -35,6 +35,9 @@ class MaaFWTaskRunPlan(BaseModel):
     name: str
     label: str | None = None
     entry: str
+    # 这个任务来自队列里的哪一份实例（首份是裸任务名，副本是 ``<任务名>__MAS_DUP__<后缀>``）；
+    # 宿主据此按实例过滤（运行日）。不是从实例建出来的计划留 None。
+    instanceId: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
     pipelineOverride: dict[str, Any] = Field(default_factory=dict)
     logOptions: dict[str, Any] = Field(default_factory=dict)

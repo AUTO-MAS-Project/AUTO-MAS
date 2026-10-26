@@ -2005,6 +2005,8 @@ export default {
     queueTaskDelete: '删除任务',
     queueTaskRenameTitle: '修改显示名',
     queueTaskDisplayName: '显示名',
+    queueTaskWeekdays: '运行日',
+    queueTaskWeekdaysKeepOne: '至少保留一天',
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '，',
     adbStrategyPerDevice: '运行时判定',

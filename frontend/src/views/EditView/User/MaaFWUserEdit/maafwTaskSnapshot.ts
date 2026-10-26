@@ -1,5 +1,10 @@
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
-import type { MaaFWInterfacePreviewData, MaaFWTaskInfo, MaaFWTaskSnapshot } from '@/types/script'
+import type {
+  MaaFWInterfacePreviewData,
+  MaaFWTaskInfo,
+  MaaFWTaskSchedule,
+  MaaFWTaskSnapshot,
+} from '@/types/script'
 import { migrateMaaFWGlobalOptions, withoutMaaFWGlobalOnlyOptions } from './maafwGlobalOptions'
 
 /** 实例显示名的最大长度（重命名输入框的上限） */
@@ -39,6 +44,68 @@ export const pickMaaFWTaskLabels = (
 /** 没有显示名时不写 `taskLabels` 这个键：没改过名的用户快照与以前逐字节相同 */
 export const taskLabelsField = (labels: Record<string, string>) =>
   Object.keys(labels).length > 0 ? { taskLabels: labels } : {}
+
+/** 一周七天的 ISO 星期（1=周一 … 7=周日），运行日的勾选顺序 */
+export const MAAFW_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const
+
+/**
+ * 一份实例的运行日：升序去重的 ISO 星期；不限制时返回 null。与后端 `normalize_task_weekdays`
+ * 同一口径：七天全选是不限制；不是数组、空数组、有一项不是 1~7 的整数都当不限制，
+ * 绝不让一份坏值变成「永远不跑」。
+ */
+export const normalizeMaaFWWeekdays = (raw: unknown): number[] | null => {
+  if (!Array.isArray(raw) || raw.length === 0) return null
+  const valid = new Set<number>(MAAFW_WEEKDAYS)
+  if (!raw.every(day => typeof day === 'number' && valid.has(day))) return null
+  const weekdays = [...new Set(raw as number[])].sort((left, right) => left - right)
+  return weekdays.length === MAAFW_WEEKDAYS.length ? null : weekdays
+}
+
+/** 快照里的实例运行日：只留 `taskIds` 里的实例、归一后确有限制的；实例不在队列里了也不留 */
+export const pickMaaFWTaskSchedules = (
+  raw: unknown,
+  taskIds: Iterable<string>
+): Record<string, MaaFWTaskSchedule> => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  const taskIdSet = new Set(taskIds)
+  const schedules: Record<string, MaaFWTaskSchedule> = {}
+  for (const [taskId, schedule] of Object.entries(raw as Record<string, unknown>)) {
+    if (!taskIdSet.has(taskId) || !schedule || typeof schedule !== 'object') continue
+    const weekdays = normalizeMaaFWWeekdays((schedule as { weekdays?: unknown }).weekdays)
+    if (weekdays) schedules[taskId] = { weekdays }
+  }
+  return schedules
+}
+
+/** 没有运行日时不写 `taskSchedules` 这个键：没设过运行日的用户快照与以前逐字节相同 */
+export const taskSchedulesField = (schedules: Record<string, MaaFWTaskSchedule>) =>
+  Object.keys(schedules).length > 0 ? { taskSchedules: schedules } : {}
+
+/** 一份实例当前勾着的运行日：没设过（不限制）就是七天全勾 */
+export const maafwTaskWeekdays = (
+  schedules: Record<string, MaaFWTaskSchedule> | undefined,
+  taskId: string
+): number[] => normalizeMaaFWWeekdays(schedules?.[taskId]?.weekdays) ?? [...MAAFW_WEEKDAYS]
+
+/**
+ * 改一份实例的运行日，返回新的运行日表（不改入参）。七天全勾就删掉这一条（不限制）；
+ * 一天都没勾是界面挡住的情况，这里不当成任何设置，原样返回。
+ */
+export const withMaaFWTaskWeekdays = (
+  schedules: Record<string, MaaFWTaskSchedule> | undefined,
+  taskId: string,
+  weekdays: readonly number[]
+): Record<string, MaaFWTaskSchedule> => {
+  const next = { ...(schedules || {}) }
+  if (weekdays.length === 0) return next
+  const normalized = normalizeMaaFWWeekdays([...weekdays])
+  if (normalized) {
+    next[taskId] = { weekdays: normalized }
+  } else {
+    delete next[taskId]
+  }
+  return next
+}
 
 type QueueEntryNameSource =
   | { missing: true; name: string; customLabel?: string }
@@ -84,7 +151,7 @@ export const withMaaFWTaskLabel = (
 }
 
 /**
- * 在 `taskId` 正下方插一份同任务的新实例：勾选、选项（深拷贝）与显示名一起复制。
+ * 在 `taskId` 正下方插一份同任务的新实例：勾选、选项（深拷贝）、显示名与运行日一起复制。
  * 新实例 id 走重复实例体系（`<任务名>__MAS_DUP__<随机后缀>`）。原实例不在队列里时返回 null。
  */
 export const duplicateMaaFWQueuedTask = (
@@ -102,10 +169,11 @@ export const duplicateMaaFWQueuedTask = (
     taskOptions[newTaskId] = JSON.parse(JSON.stringify(snapshot.taskOptions[taskId]))
   }
   const label = snapshot.taskLabels?.[taskId]
+  const schedule = snapshot.taskSchedules?.[taskId]
   return {
     taskId: newTaskId,
     snapshot: {
-      // 其余键（用户的全局选项 globalOptions、其他实例的显示名）原样带着
+      // 其余键（用户的全局选项 globalOptions、其他实例的显示名与运行日）原样带着
       ...snapshot,
       taskOrder,
       taskChecked: {
@@ -114,6 +182,14 @@ export const duplicateMaaFWQueuedTask = (
       },
       taskOptions,
       ...(label ? { taskLabels: { ...snapshot.taskLabels, [newTaskId]: label } } : {}),
+      ...(schedule
+        ? {
+            taskSchedules: {
+              ...snapshot.taskSchedules,
+              [newTaskId]: { weekdays: [...schedule.weekdays] },
+            },
+          }
+        : {}),
     },
   }
 }
@@ -167,5 +243,6 @@ export const normalizeTaskSnapshot = (
     ...(keepUnchecked ? { keepUnchecked: true as const } : {}),
     ...(Object.keys(globalOptions).length > 0 ? { globalOptions } : {}),
     ...taskLabelsField(pickMaaFWTaskLabels(parsed.taskLabels, queuedTaskIds)),
+    ...taskSchedulesField(pickMaaFWTaskSchedules(parsed.taskSchedules, queuedTaskIds)),
   }
 }

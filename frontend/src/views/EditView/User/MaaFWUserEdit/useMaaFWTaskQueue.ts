@@ -21,6 +21,7 @@ import type {
   MaaFWQueuedTaskItem,
   MaaFWTaskInfo,
   MaaFWTaskOptionValue,
+  MaaFWTaskSchedule,
   MaaFWTaskSnapshot,
 } from '@/types/script'
 import {
@@ -28,7 +29,9 @@ import {
   maafwQueueEntryBaseName,
   normalizeTaskSnapshot,
   pickMaaFWTaskLabels,
+  pickMaaFWTaskSchedules,
   withMaaFWTaskLabel,
+  withMaaFWTaskWeekdays,
 } from './maafwTaskSnapshot'
 import type { MaaFWUserFormState } from './useMaaFWUserForm'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
@@ -221,6 +224,7 @@ export function useMaaFWTaskQueue({
       )
     )
     setTaskLabels(pickMaaFWTaskLabels(taskSnapshot.value.taskLabels, queuedTaskIdSet))
+    setTaskSchedules(pickMaaFWTaskSchedules(taskSnapshot.value.taskSchedules, queuedTaskIdSet))
     formData.Task.SelectedPreset = ''
     await savePresetAndSnapshot()
   }
@@ -240,11 +244,20 @@ export function useMaaFWTaskQueue({
     }
   }
 
+  /** 运行日表同理：没有一份实例设过运行日时连键一起去掉 */
+  const setTaskSchedules = (schedules: Record<string, MaaFWTaskSchedule>) => {
+    if (Object.keys(schedules).length > 0) {
+      taskSnapshot.value.taskSchedules = schedules
+    } else {
+      delete taskSnapshot.value.taskSchedules
+    }
+  }
+
   const applyPresetTemplate = async (presetName: string) => {
     const template = presetTemplates.value.find(item => item.preset.name === presetName)
     if (!template) return
 
-    // 项目预设不带显示名；保留下来的前置任务留着自己的
+    // 项目预设不带显示名与运行日；保留下来的前置任务留着自己的显示名
     const nextSnapshot = buildPresetAppliedSnapshot(
       template.entries,
       template.taskOptions,
@@ -259,6 +272,7 @@ export function useMaaFWTaskQueue({
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
     setTaskLabels(nextSnapshot.taskLabels || {})
+    setTaskSchedules({})
     // 预设里写了的全局选项值并进用户的全局表；没写的保持用户自己的设置
     if (Object.keys(template.globalOptions).length > 0) {
       taskSnapshot.value.globalOptions = {
@@ -278,7 +292,10 @@ export function useMaaFWTaskQueue({
    * `SelectedPreset` 必须写空：快照为空时运行器会按它的名字去找项目 preset。
    */
   const replaceQueueWith = async (
-    source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions' | 'taskLabels' | 'taskChecked'>
+    source: Pick<
+      MaaFWQueueSource,
+      'entries' | 'taskOptions' | 'taskLabels' | 'taskChecked' | 'taskSchedules'
+    >
   ): Promise<number | null> => {
     const importedCount = countMaaFWQueueReplacementImports(source, taskSnapshot.value, isPretaskId)
     const nextSnapshot = buildMaaFWQueueReplacement(
@@ -291,6 +308,7 @@ export function useMaaFWTaskQueue({
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
     setTaskLabels(nextSnapshot.taskLabels || {})
+    setTaskSchedules(nextSnapshot.taskSchedules || {})
     selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
     formData.Task.SelectedPreset = ''
     showPresetModal.value = false
@@ -332,6 +350,7 @@ export function useMaaFWTaskQueue({
     taskSnapshot.value.taskChecked = result.snapshot.taskChecked
     taskSnapshot.value.taskOptions = result.snapshot.taskOptions
     setTaskLabels(result.snapshot.taskLabels || {})
+    setTaskSchedules(result.snapshot.taskSchedules || {})
     selectedTaskId.value = result.taskId
     await persistQueuedSnapshot()
   }
@@ -351,6 +370,20 @@ export function useMaaFWTaskQueue({
     )
     if ((taskSnapshot.value.taskLabels?.[taskId] || '') === (nextLabels[taskId] || '')) return
     setTaskLabels(nextLabels)
+    await persistQueuedSnapshot()
+  }
+
+  /**
+   * 改一份实例的运行日（ISO 星期）：七天全勾就是不限制、不写这一条；一天都不勾由界面挡住，
+   * 这里收到空列表不做任何事。
+   */
+  const updateTaskWeekdays = async (taskId: string, weekdays: number[]) => {
+    if (!getTaskInfoById(taskId) || !taskSnapshot.value.taskOrder.includes(taskId)) return
+    if (weekdays.length === 0) return
+    const next = withMaaFWTaskWeekdays(taskSnapshot.value.taskSchedules, taskId, weekdays)
+    const before = taskSnapshot.value.taskSchedules?.[taskId]?.weekdays.join(',') || ''
+    if (before === (next[taskId]?.weekdays.join(',') || '')) return
+    setTaskSchedules(next)
     await persistQueuedSnapshot()
   }
 
@@ -433,6 +466,7 @@ export function useMaaFWTaskQueue({
     deleteTask,
     duplicateTask,
     renameTask,
+    updateTaskWeekdays,
     ensureTaskOptionMap,
     handleTaskOptionUpdate,
     handleGlobalOptionUpdate,

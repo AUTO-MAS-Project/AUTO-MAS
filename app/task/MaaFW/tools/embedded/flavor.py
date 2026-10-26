@@ -183,7 +183,11 @@ class MaaFWFlavor(Protocol):
         resource_name: str | None,
         send_log: Callable[[str], None] | None,
     ) -> tuple[list[str], dict[str, Any]]:
-        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。"""
+        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。
+
+        列表里已去掉今天不在运行日的实例（``taskSchedules``）；钩子按自己的规则补回的同一实例
+        照常运行。钩子另读用户快照自动补任务时，要像尊重红灯一样尊重运行日。
+        """
 
 
 def _load_flavor(spec: str) -> Any | None:

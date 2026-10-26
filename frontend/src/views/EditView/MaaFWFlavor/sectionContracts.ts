@@ -291,6 +291,8 @@ export interface MaaFWUserTaskQueueSectionProps {
   taskSnapshot: MaaFWTaskSnapshot
   effectiveControllerName: string
   effectiveResourceName: string
+  /** 特调的受管任务（按 entry）：右栏不给它们显示「运行日」，运行时也不受运行日影响 */
+  managedTaskEntries?: ReadonlySet<string>
 }
 
 export interface MaaFWUserTaskQueueSectionEmits {
@@ -318,6 +320,8 @@ export interface MaaFWUserTaskQueueSectionEmits {
   duplicateTask: [taskId: string]
   /** 队列行右键「重命名」：改这一份实例的显示名（清空或改回原名即恢复默认） */
   renameTask: [taskId: string, name: string]
+  /** 右栏「运行日」：这一份实例只在这几天运行（ISO 星期，1=周一；七天全勾即不限制，至少一天） */
+  taskWeekdaysUpdate: [taskId: string, weekdays: number[]]
 }
 
 /** 用户页分节键 → props 契约 */

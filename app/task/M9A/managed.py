@@ -157,19 +157,21 @@ def settle_snapshot(
         settled["taskOrder"] = kept_order
         settled["taskChecked"] = new_checked
         settled["taskOptions"] = new_options
-        # 实例显示名跟着实例走：移出队列的受管任务连名字一起清掉，其余原样保留；
-        # 清完一条不剩就不写这个键（与前端一致，没有显示名的快照不带空表）
-        raw_labels = snapshot.get("taskLabels")
-        if isinstance(raw_labels, dict):
-            kept_labels = {
+        # 实例显示名与运行日跟着实例走：移出队列的受管任务连同它们一起清掉，其余原样保留；
+        # 清完一条不剩就不写这个键（与前端一致，没有显示名 / 运行日的快照不带空表）
+        for key_name in ("taskLabels", "taskSchedules"):
+            raw_entries = snapshot.get(key_name)
+            if not isinstance(raw_entries, dict):
+                continue
+            kept_entries = {
                 key: value
-                for key, value in raw_labels.items()
+                for key, value in raw_entries.items()
                 if str(key) not in removed_set
             }
-            if kept_labels:
-                settled["taskLabels"] = kept_labels
+            if kept_entries:
+                settled[key_name] = kept_entries
             else:
-                settled.pop("taskLabels", None)
+                settled.pop(key_name, None)
     return Settlement(
         snapshot=settled,
         changed=changed,

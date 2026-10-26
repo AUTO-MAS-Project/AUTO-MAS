@@ -1,10 +1,15 @@
 // 用户页任务队列的自定义模板：存在脚本级 `Task.Templates`（JSON 文本），同一脚本的用户共用。
-// 每项 `{ name, snapshot }`，快照形状同用户的 Task.TaskSnapshot（含实例显示名），但不含虚影、受管任务与密码字段；
+// 每项 `{ name, snapshot }`，快照形状同用户的 Task.TaskSnapshot（含实例显示名与运行日），但不含虚影、受管任务与密码字段；
 // 名称在脚本内唯一（去首尾空格后比较）。这里全是纯函数：解析、校验名称、生成要存的快照与增删改。
 
-import type { MaaFWTaskOptionValue, MaaFWTaskSnapshot } from '@/types/script'
+import type { MaaFWTaskOptionValue, MaaFWTaskSchedule, MaaFWTaskSnapshot } from '@/types/script'
 import { stripMaaFWPasswordValues, type MaaFWPasswordFields } from './maafwQueueSource'
-import { pickMaaFWTaskLabels, taskLabelsField } from './MaaFWUserEdit/maafwTaskSnapshot'
+import {
+  pickMaaFWTaskLabels,
+  pickMaaFWTaskSchedules,
+  taskLabelsField,
+  taskSchedulesField,
+} from './MaaFWUserEdit/maafwTaskSnapshot'
 
 export type MaaFWQueueTemplate = {
   name: string
@@ -30,6 +35,7 @@ const parseSnapshot = (raw: unknown): MaaFWTaskSnapshot => {
       : {},
     ...(value.keepUnchecked === true ? { keepUnchecked: true as const } : {}),
     ...taskLabelsField(pickMaaFWTaskLabels(value.taskLabels, taskOrder)),
+    ...taskSchedulesField(pickMaaFWTaskSchedules(value.taskSchedules, taskOrder)),
   }
 }
 
@@ -73,14 +79,15 @@ export const checkMaaFWQueueTemplateName = (
 
 /**
  * 把当前队列存成模板快照：只收调用方给的项（已去掉虚影与受管任务），选项拷一份并去掉密码字段的值，
- * 这些项的实例显示名一并带上。
+ * 这些项的实例显示名与运行日一并带上。
  */
 export const buildMaaFWQueueTemplateSnapshot = (
   entries: readonly { id: string }[],
   taskOptions: Record<string, Record<string, MaaFWTaskOptionValue>>,
   passwordFields: MaaFWPasswordFields,
   taskLabels?: Record<string, string>,
-  taskChecked: Record<string, boolean> = {}
+  taskChecked: Record<string, boolean> = {},
+  taskSchedules?: Record<string, MaaFWTaskSchedule>
 ): MaaFWTaskSnapshot => {
   const taskOrder = entries
     .map(entry => entry.id)
@@ -96,6 +103,7 @@ export const buildMaaFWQueueTemplateSnapshot = (
     keepUnchecked: true,
     taskOptions: JSON.parse(JSON.stringify(stripMaaFWPasswordValues(picked, passwordFields))),
     ...taskLabelsField(pickMaaFWTaskLabels(taskLabels, taskOrder)),
+    ...taskSchedulesField(pickMaaFWTaskSchedules(taskSchedules, taskOrder)),
   }
 }
 
