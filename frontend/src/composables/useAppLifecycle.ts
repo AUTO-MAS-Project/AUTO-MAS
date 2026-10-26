@@ -26,7 +26,7 @@ import {
 import {
   connect,
   connectionState,
-  isBackendDevMode,
+  shouldPreserveBackend,
   onConnected,
   onDisconnected,
   onReconnectCycleFailed,
@@ -394,7 +394,7 @@ const killBackend = async (): Promise<void> => {
   taskkillDone = true
   // 开发模式后端由开发者独立管理（如 yarn dev:fullstack 单独启动），
   // 收到 ready 后仍会保持运行，绝不能被前端强杀
-  if (isBackendDevMode()) {
+  if (shouldPreserveBackend()) {
     logger.info('开发模式：跳过 taskkill，保留开发者管理的后端进程')
     return
   }
@@ -504,7 +504,7 @@ const runCloseFlow = async (): Promise<void> => {
 
   const ready = await readyPromise
   let backendExitConfirmed = false
-  if (isBackendDevMode()) {
+  if (shouldPreserveBackend()) {
     // 开发模式：后端由开发者独立管理，收到清理信号即视为关闭成功，
     // 不等待进程退出、不 taskkill，直接关闭前端
     logger.info('开发模式：后端保持运行，前端直接退出')
@@ -620,7 +620,7 @@ export function closeApp(): Promise<void> {
       await window.electronAPI?.appQuit?.()
       return
     }
-    const devMode = isBackendDevMode()
+    const devMode = shouldPreserveBackend()
     if (!devMode) await killBackend()
     const backendExitConfirmed = devMode || (await waitForBackendExit(PROCESS_EXIT_TIMEOUT))
     shutdownConnection('关闭流程异常')
@@ -689,7 +689,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
     logger.info('后端有意重启进行中，跳过自动恢复')
     return Promise.resolve()
   }
-  if (isBackendDevMode() && !allowDevMode) {
+  if (shouldPreserveBackend() && !allowDevMode) {
     logger.warn('开发模式后端由开发者管理，跳过自动重启并继续重连')
     scheduleReconnect(DEV_MODE_RETRY_DELAY)
     return Promise.resolve()
@@ -821,7 +821,7 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
     key: DISCONNECT_NOTICE_KEY,
     message: t('misc.lostConnectionBackend'),
     description: t(
-      isBackendDevMode()
+      shouldPreserveBackend()
         ? 'misc.devBackendReconnecting'
         : 'misc.checkingBackendRecoveringAutomatically'
     ),
@@ -832,7 +832,7 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
 
 const escalateDisconnectIncident = (): void => {
   // 只升级由断开事件开启的事故；开发模式与已升级过的事故不重复弹
-  if (!disconnectIncidentShown || closeDisconnectModal || isBackendDevMode()) return
+  if (!disconnectIncidentShown || closeDisconnectModal || shouldPreserveBackend()) return
   notification.close(DISCONNECT_NOTICE_KEY)
   const modal = Modal.warning({
     title: t('misc.lostConnectionBackend'),
@@ -931,7 +931,7 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
   } else {
     // 后端进程存活或状态未知：延迟后继续下一轮重连
     logger.warn('后端进程仍在运行或状态未知，稍后继续重连')
-    scheduleReconnect(isBackendDevMode() ? DEV_MODE_RETRY_DELAY : NEXT_CYCLE_DELAY)
+    scheduleReconnect(shouldPreserveBackend() ? DEV_MODE_RETRY_DELAY : NEXT_CYCLE_DELAY)
   }
 }
 

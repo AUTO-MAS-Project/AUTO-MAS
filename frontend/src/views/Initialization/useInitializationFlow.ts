@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
@@ -140,7 +141,6 @@ export function useInitializationFlow() {
     analyticsAttempt = null
   }
 
-  const isDev = import.meta.env.DEV
   const version = import.meta.env.VITE_APP_VERSION
   const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
 

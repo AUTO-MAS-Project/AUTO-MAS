@@ -40,7 +40,7 @@ from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import OutBase
 from app.services import System
-from app.utils import get_logger, is_backend_dev_mode, is_supervised
+from app.utils import get_logger, is_supervised, should_preserve_backend
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -49,7 +49,7 @@ logger = get_logger("DEV")
 class WebSocketMetaOut(BaseModel):
     """前端协商主 WebSocket 链接时使用的元信息。"""
 
-    devMode: bool = Field(description="后端当前是否处于开发模式")
+    devMode: bool = Field(description="退出前端时是否保留非托管的开发后端")
     wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
 
 
@@ -121,7 +121,7 @@ async def get_ws_meta() -> WebSocketMetaOut:
     """返回前端建立主 WebSocket 连接需要的元信息。"""
 
     return WebSocketMetaOut(
-        devMode=is_backend_dev_mode(),
+        devMode=should_preserve_backend(),
         wsPath="/api/core/ws",
     )
 
@@ -148,7 +148,7 @@ async def _shutdown_backend() -> None:
 
     # 开发模式：后端保持存活以复用（定时器等服务不拆除），
     # 只做轻量任务清理后即通知前端可退出
-    if is_backend_dev_mode():
+    if should_preserve_backend():
         try:
             await TaskManager.stop_task("ALL")
             with suppress(RuntimeError):

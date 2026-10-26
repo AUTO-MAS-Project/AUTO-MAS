@@ -8,6 +8,7 @@ import {
 import * as path from 'path'
 import { fileURLToPath } from 'url'
 import { analyticsService, refreshAnalyticsPreference } from '../services/analyticsService'
+import { getDevelopmentServerUrl } from '../services/instanceConfig'
 
 let mainWindow: () => BrowserWindow | null = () => null
 
@@ -26,8 +27,9 @@ export function isApplicationWindowSender(
   if (event.senderFrame !== window.webContents.mainFrame) return false
   try {
     const url = new URL(event.senderFrame.url)
-    if (options.allowDevelopment && process.env.VITE_DEV_SERVER_URL) {
-      const development = new URL(process.env.VITE_DEV_SERVER_URL)
+    const devServer = getDevelopmentServerUrl()
+    if (options.allowDevelopment && devServer) {
+      const development = new URL(devServer)
       return url.origin === development.origin && url.pathname === development.pathname
     }
     return (

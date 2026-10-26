@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
 import type { DesktopMascotMenuAPI, DesktopMascotMenuData } from '../src/types/desktopMascot'
+
+// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+contextBridge.exposeInMainWorld(
+  'appEnvironment',
+  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+)
 
 const api: DesktopMascotMenuAPI = {
   getData: () => ipcRenderer.invoke('desktop-mascot-menu:get'),

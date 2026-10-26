@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment } from '../instanceConfig'
 /**
  * Runtime 后端监督链路的灰度开关与可执行文件定位
  *
@@ -137,7 +138,7 @@ function readPersistedLaunchMode(appRoot: string): string | undefined {
 
 /** 构建默认值只由打包状态决定，Runtime 缺失由启动流程报错，不能切换到旧链路。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
-  return app?.isPackaged ? 'managed' : 'off'
+  return isDevelopmentEnvironment() ? 'off' : 'managed'
 }
 
 /**
