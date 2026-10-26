@@ -30,7 +30,7 @@
   定（≥100 用 3 位，否则 2 位）。
 - 分卷：单卷上限 24.5 MB，两阶段容量判断（先按扩展名估算压缩后大小，估算触线才用
   DEFLATE 实测一次），每卷至少写一个文件。
-- 保留：只在导出根目录下按目录名末尾的时间戳留最近 ``MAX_EXPORTS_TO_KEEP`` 份，本次
+- 保留：只在导出根目录下按目录名末尾的时间戳留最近 10 份，本次
   产物始终保留，解不出时间戳的目录既不删也不占名额。除分卷外不写任何附加文件。
 
 MAS 侧与 MXU 不同、且是有意为之的几处：
@@ -46,16 +46,14 @@ MAS 侧与 MXU 不同、且是有意为之的几处：
 
 import asyncio
 import hashlib
-import os
 import re
 import shutil
 import zipfile
 import zlib
-from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, BinaryIO
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.models.config import MaaEndConfig
@@ -65,29 +63,6 @@ import json5
 from app.utils import get_logger
 
 logger = get_logger("MaaEnd 日志打包")
-
-MAX_VOLUME_BYTES = 24_500_000
-"""单卷上限，与 MXU 的 MAX_VOLUME_BYTES 一致。"""
-
-MAX_EXPORTS_TO_KEEP = 10
-"""导出根目录下保留的份数，与 MXU 的 MAX_EXPORTS_TO_KEEP 一致（本次产物始终保留）。"""
-
-
-_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg"}
-_ROOT_LOG_SUFFIXES = {".log", ".dmp"}
-_DEBUG_SUFFIXES = {".log", ".json", ".dmp"}
-"""debug 子目录里的归档后缀。"""
-_TEXT_SUFFIXES = {".log", ".json", ".txt", ".toml", ".yaml", ".yml", ".xml", ".csv"}
-"""按四分之一体积估算的文本后缀，与 MXU 的两阶段容量判断保持一致。"""
-
-_ZIP_CENTRAL_FIXED_BYTES = 46
-"""ZIP 中央目录每条记录的固定字段大小，不含文件名。"""
-_ZIP_EOCD_BYTES = 22
-"""ZIP 结尾记录（EOCD）的大小。"""
-_ZIP_LOCAL_HEADER_OVERHEAD = 64
-"""local header 固定开销 + DEFLATE 帧头 + 余量，与 MXU 的 ZIP_LOCAL_HEADER_OVERHEAD 一致。"""
-_TIMESTAMP_LEN = 15
-"""导出目录名末尾时间戳 ``YYYYMMDD-HHMMSS`` 的长度。"""
 
 _UNSAFE_NAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 _ARCHIVE_SEPARATORS = re.compile(r"[\\/]+")
@@ -139,110 +114,67 @@ def safe_file_name(text: object) -> str:
     return _UNSAFE_NAME_CHARS.sub("_", text).strip(". ")[:100]
 
 
-def _sorted_files(directory: Path, suffixes: set[str]) -> list[tuple[Path, str]]:
-    """列出目录下指定后缀的文件，按文件名排序。"""
+def _collect_files(
+    directory: Path,
+    prefix: str,
+    *,
+    suffixes: set[str] | None = None,
+    recursive: bool = False,
+) -> list[tuple[Path, str]]:
+    """收集指定目录；可选目录缺失时跳过，读取失败直接向调用方报错。"""
 
     try:
-        entries = sorted(
-            (
-                path
-                for path in directory.iterdir()
-                if path.is_file()
-                and path.suffix.lower() in suffixes
-                and not path.is_symlink()
-            ),
-            key=lambda path: path.name,
-        )
-    except OSError as error:
-        logger.warning(f"读取日志目录失败 {directory}: {error}")
+        children = sorted(directory.iterdir())
+    except FileNotFoundError:
         return []
-    return [(path, path.name) for path in entries]
-
-
-def _collect_tree(directory: Path, prefix: str) -> list[tuple[Path, str]]:
-    """递归收集目录下全部文件，归档名按 posix 风格拼接。"""
-
-    if not directory.is_dir():
-        return []
-    entries: list[tuple[Path, str]] = []
-    for path in directory.rglob("*"):
-        if not path.is_file() or path.is_symlink():
+    entries = []
+    for path in children:
+        if path.is_symlink():
             continue
-        relative = path.relative_to(directory).as_posix()
-        entries.append((path, f"{prefix}/{relative}"))
+        member = f"{prefix}/{path.name}" if prefix else path.name
+        if recursive and path.is_dir():
+            entries.extend(
+                _collect_files(path, member, suffixes=suffixes, recursive=True)
+            )
+        elif path.is_file() and (suffixes is None or path.suffix.lower() in suffixes):
+            entries.append((path, member))
     return sorted(entries, key=lambda entry: entry[1])
-
-
-def _collect_debug_subdirs(debug_dir: Path) -> list[tuple[Path, str]]:
-    """收集 ``debug/`` 各子目录里的 .log/.json/.dmp 文件。"""
-
-    entries: list[tuple[Path, str]] = []
-    try:
-        subdirs = sorted(
-            (path for path in debug_dir.iterdir() if path.is_dir()),
-            key=lambda p: p.name,
-        )
-    except OSError as error:
-        logger.warning(f"读取日志子目录失败 {debug_dir}: {error}")
-        return []
-    for subdir in subdirs:
-        for path in subdir.rglob("*"):
-            if not path.is_file() or path.is_symlink():
-                continue
-            if path.suffix.lower() not in _DEBUG_SUFFIXES:
-                continue
-            relative = path.relative_to(subdir).as_posix()
-            entries.append((path, f"{subdir.name}/{relative}"))
-    return sorted(entries, key=lambda entry: entry[1])
-
-
-def _collect_images(directory: Path, prefix: str) -> list[tuple[Path, str]]:
-    """收集报错与识别截图，按修改时间从新到旧，保证最近的图先入卷。"""
-
-    try:
-        candidates = [
-            path
-            for path in directory.iterdir()
-            if path.is_file()
-            and path.suffix.lower() in _IMAGE_SUFFIXES
-            and not path.is_symlink()
-        ]
-    except OSError:
-        return []
-    candidates.sort(key=lambda path: _mtime(path), reverse=True)
-    return [(path, f"{prefix}/{path.name}") for path in candidates]
-
-
-def _mtime(path: Path) -> float:
-    try:
-        return path.stat().st_mtime
-    except OSError:
-        return 0.0
 
 
 def collect_mxu_entries(root_path: Path) -> list[tuple[Path, str]]:
-    """按 MXU 的收集顺序列出待归档的日志条目。
-
-    Args:
-        root_path (Path): MaaEnd 安装目录。
-
-    Returns:
-        list[tuple[Path, str]]: ``(源文件, 归档内路径)`` 列表。
-
-    Raises:
-        FileNotFoundError: 安装目录下没有 ``debug/``。
-    """
+    """按 MXU 顺序收集：根日志、配置、子目录日志、由新到旧的截图。"""
 
     debug_dir = root_path / "debug"
-    if not debug_dir.is_dir():
-        raise FileNotFoundError(f"日志目录不存在: {debug_dir}")
-    return [
-        *_sorted_files(debug_dir, _ROOT_LOG_SUFFIXES),
-        *_collect_tree(root_path / "config", "config"),
-        *_collect_debug_subdirs(debug_dir),
-        *_collect_images(debug_dir / "on_error", "on_error"),
-        *_collect_images(debug_dir / "vision", "vision"),
+    subdirs = sorted(
+        path for path in debug_dir.iterdir() if path.is_dir() and not path.is_symlink()
+    )
+    entries = [
+        *_collect_files(debug_dir, "", suffixes={".log", ".dmp"}),
+        *_collect_files(root_path / "config", "config", recursive=True),
     ]
+    entries.extend(
+        sorted(
+            (
+                entry
+                for subdir in subdirs
+                for entry in _collect_files(
+                    subdir,
+                    subdir.name,
+                    suffixes={".log", ".json", ".dmp"},
+                    recursive=True,
+                )
+            ),
+            key=lambda entry: entry[1],
+        )
+    )
+    for name in ("on_error", "vision"):
+        images = _collect_files(
+            debug_dir / name, name, suffixes={".png", ".jpg", ".jpeg"}
+        )
+        entries.extend(
+            sorted(images, key=lambda entry: entry[0].stat().st_mtime, reverse=True)
+        )
+    return entries
 
 
 def _archive_member(name: str) -> str:
@@ -275,26 +207,6 @@ def _deflate_size(path: Path) -> int:
     return total + len(compressor.flush())
 
 
-def _export_dir_name(root_path: Path, *, now: datetime | None = None) -> str:
-    """这次导出的目录名，口径与 MXU 的 ``dir_name`` 一致。"""
-
-    project_name, project_version = read_project_info(root_path)
-    stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-    return (
-        f"{project_name}-logs-{project_version}-{stamp}"
-        if project_version
-        else f"{project_name}-logs-{stamp}"
-    )
-
-
-def _create_export_dir(exports_root: Path, dir_name: str) -> Path:
-    """建导出目录，语义等同 MXU 的 ``create_dir_all``：目录已存在就直接沿用。"""
-
-    out_dir = exports_root / dir_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    return out_dir
-
-
 def _write_volumes(
     out_dir: Path,
     dir_name: str,
@@ -302,146 +214,100 @@ def _write_volumes(
     *,
     width: int,
 ) -> tuple[list[Path], int]:
-    """把条目按 MXU 的分卷规则写成 ZIP，返回卷路径与读取失败的文件数。
+    """按 MXU 两阶段容量判断换卷；单个超大文件独占一卷，不截断。
 
-    换卷判断沿用 MXU 的两阶段口径：先用体积估算快速通过大多数文件，估算触线时才用
-    DEFLATE 实测一次拿精确值；每卷至少写一个文件。卷先写 ``.tmp`` 再改名，异常中断
-    不会留下被当成正式包的半截 ZIP。
+    卷先写 .tmp 再改名。文件读写失败计入不完整结果；导出文件的创建和收尾失败
+    直接抛出，由调用方保留现场。上下文管理器负责关闭压缩流和文件。
     """
 
+    max_volume_bytes = 24_500_000  # 与 MXU 的单卷上限一致。
+    central_fixed_bytes = 46  # ZIP 中央目录每条记录，不含文件名。
+    eocd_bytes = 22  # ZIP 结尾记录。
+    local_header_overhead = 64  # local header + DEFLATE 帧头及余量，与 MXU 一致。
+    # 文本先按四分之一体积估算，触线后再实测压缩大小。
+    text_suffixes = {".log", ".json", ".txt", ".toml", ".yaml", ".yml", ".xml", ".csv"}
     volumes: list[Path] = []
     failed_files = 0
     index = 0
-    written = 0
-    central = _ZIP_EOCD_BYTES
-    handle: BinaryIO | None = None
-    archive: zipfile.ZipFile | None = None
-    volume_path: Path | None = None
-    volume_tmp: Path | None = None
-
-    def open_volume() -> None:
-        nonlocal index, written, central, handle, archive, volume_path, volume_tmp
-        index += 1
-        volume_path = out_dir / f"{dir_name}-part{index:0{width}d}.zip"
-        volume_tmp = volume_path.with_name(volume_path.name + ".tmp")
-        volume_tmp.unlink(missing_ok=True)
-        handle = volume_tmp.open("wb")
-        archive = zipfile.ZipFile(handle, "w", zipfile.ZIP_DEFLATED, allowZip64=True)
-        written = 0
-        central = _ZIP_EOCD_BYTES
-
-    def close_volume() -> None:
-        nonlocal handle, archive
-        if archive is None or handle is None or volume_path is None:
-            return
-        if volume_tmp is None:
-            return
-        archive.close()
-        handle.close()
-        os.replace(volume_tmp, volume_path)
-        volumes.append(volume_path)
-        archive = None
-        handle = None
-
-    try:
-        open_volume()
-        for source, member in members:
-            if archive is None or handle is None:
-                open_volume()
-            try:
-                size = source.stat().st_size
-            except OSError as error:
-                logger.warning(f"无法读取日志文件 {source}: {error}")
-                failed_files += 1
-                continue
-            member_bytes = len(member.encode("utf-8")) + _ZIP_CENTRAL_FIXED_BYTES
-            remaining = MAX_VOLUME_BYTES - (written + central)
-            estimated = size // 4 if source.suffix.lower() in _TEXT_SUFFIXES else size
-            if (
-                written
-                and estimated + _ZIP_LOCAL_HEADER_OVERHEAD + member_bytes > remaining
+    while index < len(members):
+        volume = out_dir / f"{dir_name}-part{len(volumes) + 1:0{width}d}.zip"
+        temporary = volume.with_name(volume.name + ".tmp")
+        try:
+            with (
+                temporary.open("wb") as handle,
+                zipfile.ZipFile(
+                    handle,
+                    "w",
+                    zipfile.ZIP_DEFLATED,
+                    allowZip64=True,
+                    strict_timestamps=False,
+                ) as archive,
             ):
-                try:
-                    measured = _deflate_size(source)
-                except OSError as error:
-                    logger.warning(f"无法读取日志文件 {source}: {error}")
-                    failed_files += 1
-                    continue
-                if measured + _ZIP_LOCAL_HEADER_OVERHEAD + member_bytes > remaining:
-                    close_volume()
-                    open_volume()
-            try:
-                source_handle = source.open("rb")
-            except OSError as error:
-                logger.warning(f"无法打开日志文件 {source}: {error}")
-                failed_files += 1
-                continue
-            try:
-                with archive.open(member, "w") as target:
-                    shutil.copyfileobj(source_handle, target, 1 << 20)
-            except OSError as error:
-                # 已经写进去一部分，这一卷照留，但由调用方按「不完整」报告。
-                logger.warning(f"写入日志文件失败 {source}: {error}")
-                failed_files += 1
-            finally:
-                source_handle.close()
-            written = handle.tell()
-            central += member_bytes
-        if written:
-            close_volume()
-    finally:
-        if archive is not None:
-            with suppress(Exception):
-                archive.close()
-        if handle is not None:
-            with suppress(Exception):
-                handle.close()
-        if volume_tmp is not None:
-            volume_tmp.unlink(missing_ok=True)
+                written = 0
+                central = eocd_bytes
+                while index < len(members):
+                    source, member = members[index]
+                    member_bytes = len(member.encode("utf-8")) + central_fixed_bytes
+                    before = len(archive.filelist)
+                    try:
+                        size = source.stat().st_size
+                        estimated = (
+                            size // 4
+                            if source.suffix.lower() in text_suffixes
+                            else size
+                        )
+                        remaining = max_volume_bytes - (written + central)
+                        overhead = local_header_overhead + member_bytes
+                        if (
+                            written
+                            and estimated + overhead > remaining
+                            and _deflate_size(source) + overhead > remaining
+                        ):
+                            break
+                        archive.write(source, member)
+                    except OSError as error:
+                        logger.warning(f"写入日志文件失败 {source}: {error}")
+                        failed_files += 1
+                    index += 1
+                    written = handle.tell()
+                    if len(archive.filelist) > before:
+                        central += member_bytes
+            if written:
+                temporary.replace(volume)
+                volumes.append(volume)
+        finally:
+            temporary.unlink(missing_ok=True)
     return volumes, failed_files
 
 
 def _parse_export_timestamp(dir_name: str) -> str | None:
-    """从导出目录名末尾解出 ``YYYYMMDD-HHMMSS``。
+    """取名称末尾的 ASCII 时间戳；无时间戳的目录不参与保留策略。"""
 
-    与 MXU 的 ``parse_export_timestamp`` 同口径：在字节层面取末尾 15 个字符，避免目录
-    名含非 ASCII 时切到码点中间；形状不符返回 ``None``，清理时既不删也不占名额。
-    """
-
-    encoded = dir_name.encode("utf-8", "surrogatepass")
-    if len(encoded) < _TIMESTAMP_LEN:
-        return None
-    tail = encoded[-_TIMESTAMP_LEN:]
-    if not (tail[:8].isdigit() and tail[8:9] == b"-" and tail[9:].isdigit()):
-        return None
-    return tail.decode("ascii", "ignore")
+    match = re.search(r"[0-9]{8}-[0-9]{6}\Z", dir_name)
+    return match.group() if match else None
 
 
 def prune_old_exports(exports_root: Path, *, current_export: Path) -> None:
-    """只保留最近 ``MAX_EXPORTS_TO_KEEP`` 份导出，本次产物始终保留。
+    """按名称时间戳保留最近 10 份，本次产物始终保留；清理失败仅告警。"""
 
-    口径与 MXU 的 ``prune_old_exports`` 一致：枚举导出根目录下的子目录，按目录名末尾的
-    时间戳从新到旧排序（不看 mtime：Windows 上目录时间不稳定，备份同步也会改写），
-    删掉超出部分；解不出时间戳的目录既不删也不占名额。清理失败只告警。
-    """
-
-    candidates: list[tuple[str, Path]] = []
+    max_exports_to_keep = 10
+    timestamp_length = 15  # YYYYMMDD-HHMMSS。
     try:
-        for path in exports_root.iterdir():
-            if path == current_export or not path.is_dir():
-                continue
-            stamp = _parse_export_timestamp(path.name)
-            if stamp is None:
-                continue
-            candidates.append((stamp, path))
+        candidates = sorted(
+            (
+                path
+                for path in exports_root.iterdir()
+                if path != current_export
+                and path.is_dir()
+                and _parse_export_timestamp(path.name) is not None
+            ),
+            key=lambda path: path.name[-timestamp_length:],
+            reverse=True,
+        )
     except OSError as error:
         logger.warning(f"枚举导出目录失败 {exports_root}: {error}，跳过旧导出清理")
         return
-    keep_others = MAX_EXPORTS_TO_KEEP - 1
-    if len(candidates) <= keep_others:
-        return
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    for _, path in candidates[keep_others:]:
+    for path in candidates[max_exports_to_keep - 1 :]:
         try:
             shutil.rmtree(path)
         except OSError as error:
@@ -488,8 +354,15 @@ def export_failure_logs(
         logger.warning(f"没有可归档的文件: {root_path}")
         return None
 
-    dir_name = _export_dir_name(root_path, now=now)
-    out_dir = _create_export_dir(exports_root, dir_name)
+    project_name, project_version = read_project_info(root_path)
+    stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    dir_name = (
+        f"{project_name}-logs-{project_version}-{stamp}"
+        if project_version
+        else f"{project_name}-logs-{stamp}"
+    )
+    out_dir = exports_root / dir_name
+    out_dir.mkdir(parents=True, exist_ok=True)
     # 卷数硬上界是条目数（每个文件独占一卷的退化情形），据此选零填充宽度。
     width = 3 if len(entries) >= 100 else 2
     volumes, write_failures = _write_volumes(out_dir, dir_name, members, width=width)

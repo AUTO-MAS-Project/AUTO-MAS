@@ -2709,9 +2709,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         # 强制打开「启动时清理日志」，一次尝试的现场就只有这一轮。打包失败过则反过来
         # 强制关闭，宁可下一轮日志混一点，也要保住还没保存成功的现场。同样随 manager
         # 的原生配置快照恢复，不写回脚本或用户配置来源。
-        forced_auto_clear = self._forced_auto_clear()
-        if forced_auto_clear is not None:
-            settings["autoClearLogsOnLaunch"] = forced_auto_clear
+        if self.script_config.Run.IfSaveLogBundle:
+            settings["autoClearLogsOnLaunch"] = not self._bundle_failed
 
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
         mark_native_config_injected(
@@ -2932,21 +2931,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self._record_error_screenshot(shot)
 
     async def _archive_failure_logs(self, *, label: str) -> bool:
-        """把当前失败现场的 MaaEnd 运行日志打包到用户配置的保存目录。
+        """在 MXU 退出后、下次启动清日志前归档；重复调用等待同一作业。
 
-        MXU 每次启动都会清空 ``debug/``（开启日志包时由 :meth:`set_maaend` 强制
-        打开），所以调用点只有两类：一次尝试结束、MXU 确认退出之后，以及更新会话
-        启动之前。是否还有未归档的现场由启动次数与归档次数比对得出，重复调用只会
-        等同一个打包作业，不会把同一份现场打两遍。
-
-        打包失败只记一条日志，不影响重试、收尾与通知。
-
-        Args:
-            label (str): 用户可见提示里的尝试标识，如 ``原配置阶段第 2 次尝试``。
-
-        Returns:
-            bool: 这次现场是否已经安全落盘。``True`` 表示不需要保存或已经完整保存；
-            ``False`` 表示本该保存却没全存下来，调用方不能让下一个会清日志的会话启动。
+        返回 False 表示现场未完整保存，后续会话必须关闭启动清理。
+        取消只能停止等待，后台线程由收尾继续等待，不能提前清掉现场。
         """
 
         if not self.script_config.Run.IfSaveLogBundle:
@@ -2969,9 +2957,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         job = self._bundle_job
         try:
             return await asyncio.shield(job)
-        except asyncio.CancelledError:
-            # 取消停不掉已经在跑的线程；作业留在句柄上，收尾会等它跑完。
-            raise
         except Exception:
             return False  # 作业内部已记过日志
         finally:
@@ -3024,20 +3009,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         logger.success(message)
         await push_dispatch_log(self.script_info, message)
         return True
-
-    def _forced_auto_clear(self) -> bool | None:
-        """日志包功能要求下发给 MXU 的「启动时清理日志」取值。
-
-        要保存日志包就强制打开，让每次尝试的现场只有这一轮；打包失败过就反过来强制
-        关闭，避免下一次启动把没保存成功的现场清掉。
-
-        Returns:
-            bool | None: 要写入的值；``None`` 表示不改动上游配置。
-        """
-
-        if not self.script_config.Run.IfSaveLogBundle:
-            return None
-        return not self._bundle_failed
 
     async def final_task(self):
 

@@ -1,5 +1,4 @@
 <template>
-  <!-- display: contents 让这两个表单项继续作为父级网格的直接格子：开关占一格，目录占一整行 -->
   <div class="error-log-bundle-fields">
     <a-form-item class="bundle-item">
       <template #label>
@@ -10,25 +9,24 @@
           </a-tooltip>
         </span>
       </template>
-      <a-switch :checked="run.IfSaveLogBundle" @change="handleSwitchChange" />
-    </a-form-item>
-    <a-form-item v-if="run.IfSaveLogBundle" class="bundle-item bundle-dir-item">
-      <template #label>
-        <span class="form-label">{{ t('edit.errorLogBundleDir') }}</span>
-      </template>
-      <a-space-compact block size="large">
-        <a-input
-          :value="run.LogBundlePath ?? ''"
-          :placeholder="t('edit.errorLogBundleDirPlaceholder')"
-          size="large"
-          readonly
-          class="bundle-path-input"
-        />
-        <a-button size="large" @click="pickBundleDir">
-          {{ t('edit.pickFolder') }}
-        </a-button>
-      </a-space-compact>
-      <div v-if="!run.LogBundlePath" class="bundle-warning">
+      <div class="bundle-controls">
+        <a-switch :checked="run.IfSaveLogBundle" @change="handleSwitchChange" />
+        <a-space-compact block size="large" class="bundle-directory">
+          <a-input
+            :value="run.LogBundlePath ?? ''"
+            :placeholder="t('edit.errorLogBundleDirPlaceholder')"
+            :aria-label="t('edit.errorLogBundleDir')"
+            :disabled="!run.IfSaveLogBundle"
+            size="large"
+            readonly
+            class="bundle-path-input"
+          />
+          <a-button size="large" :disabled="!run.IfSaveLogBundle" @click="pickBundleDir">
+            {{ t('edit.pickFolder') }}
+          </a-button>
+        </a-space-compact>
+      </div>
+      <div v-if="run.IfSaveLogBundle && !run.LogBundlePath" class="bundle-warning">
         {{ t('edit.errorLogBundleDirPlaceholder') }}
       </div>
     </a-form-item>
@@ -74,15 +72,23 @@ const handleSwitchChange = (checked: boolean) => {
 
 <style scoped>
 .error-log-bundle-fields {
-  display: contents;
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
 .bundle-item {
   min-width: 0;
 }
 
-.bundle-dir-item {
-  grid-column: 1 / -1;
+.bundle-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.bundle-directory {
+  flex: 1;
+  min-width: 0;
 }
 
 .form-label {
