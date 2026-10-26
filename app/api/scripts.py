@@ -1140,6 +1140,22 @@ class ZzzOdImportOut(OutBase):
     )
 
 
+class MaaEndLogBundleIn(BaseModel):
+    outputDirectory: Path | None = Field(
+        default=None, description="手动保存目录；未提供时只查询现有归档"
+    )
+
+
+class MaaEndLogBundleOut(OutBase):
+    directories: list[str] = Field(
+        default_factory=list, description="各安装最新日志包所在目录"
+    )
+    needsDirectory: bool = Field(
+        default=False, description="是否需要选择目录保存当前日志"
+    )
+    incompleteCount: int = Field(default=0, description="未能保存的文件数")
+
+
 class MaaEndEssenceTargetGroup(BaseModel):
     value: str = Field(..., description="武器类型标识")
     label: str = Field(..., description="武器类型展示名")
@@ -2364,6 +2380,31 @@ async def import_script_config_file(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase(message="脚本配置文件已导入")
+
+
+@router.post(
+    "/maaend/log-bundle",
+    tags=["Action"],
+    summary="打开已有 MaaEnd 日志包或保存当前日志",
+    response_model=MaaEndLogBundleOut,
+)
+async def resolve_maaend_log_bundle(options: MaaEndLogBundleIn) -> MaaEndLogBundleOut:
+    from app.task.MaaEnd.tools.log_bundle import resolve_log_bundles
+
+    scripts = [
+        script
+        for script in Config.ScriptConfig.values()
+        if isinstance(script, RuntimeMaaEndConfig)
+    ]
+    try:
+        result = await resolve_log_bundles(scripts, options.outputDirectory)
+        return MaaEndLogBundleOut(
+            directories=result.directories,
+            needsDirectory=result.needs_directory,
+            incompleteCount=result.incomplete_count,
+        )
+    except (OSError, ValueError) as error:
+        return MaaEndLogBundleOut(code=500, status="error", message=str(error))
 
 
 @router.post(

@@ -4134,6 +4134,7 @@ export default {
     },
   },
   misc: {
+    maaendLogFoldersOpened: 'MaaEnd log folders opened',
     dateTime: '{y}-{mo}-{d} {h}:{mi}:{s}',
     dateGroup: '{y}-{mo}-{d}',
     monthGroup: '{y}-{mo}',

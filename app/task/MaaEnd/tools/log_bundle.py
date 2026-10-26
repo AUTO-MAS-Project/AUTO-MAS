@@ -41,11 +41,11 @@ MAS 侧与 MXU 不同、且是有意为之的几处：
 - 一个文件都没收集到返回 ``None``（MXU 报错）；一个文件都没写成功按失败抛出，交给
   调用方保留现场重试。
 
-同一套收集规则在前端还有一份实现：``frontend/electron/services/maaEndIssueReportService.ts``
-（界面导出「MaaEnd 问题包」时用）。改收集范围、扩展名或单卷上限时要两边一起改，
-否则自动保存的日志包和手动导出的问题包内容会不一致。
+手动导出与自动保存共用本模块，前端仅选择目录并打开保存结果。
 """
 
+import asyncio
+import hashlib
 import os
 import re
 import shutil
@@ -55,7 +55,10 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import BinaryIO
+from typing import TYPE_CHECKING, BinaryIO
+
+if TYPE_CHECKING:
+    from app.models.config import MaaEndConfig
 
 import json5
 
@@ -452,6 +455,7 @@ def export_failure_logs(
     root_path: Path,
     *,
     now: datetime | None = None,
+    retain: bool = True,
 ) -> LogExport | None:
     """把当前失败现场导出一份 MXU 口径的日志包目录。
 
@@ -502,8 +506,76 @@ def export_failure_logs(
         failed_files=failed_files,
         bytes=sum(volume.stat().st_size for volume in volumes),
     )
-    prune_old_exports(exports_root, current_export=out_dir)
+    if retain:
+        prune_old_exports(exports_root, current_export=out_dir)
     logger.success(
         f"MaaEnd 日志导出完成: {out_dir}（{len(volumes)} 卷，{export.files} 个文件）"
     )
     return export
+
+
+@dataclass
+class LogBundleSelection:
+    directories: list[str] = field(default_factory=list)
+    needs_directory: bool = False
+    incomplete_count: int = 0
+
+
+def _resolve_log_bundles(
+    scripts: list["MaaEndConfig"], output_directory: Path | None = None
+) -> LogBundleSelection:
+    """每个安装优先取最新自动归档，否则保存当前现场；不修改自动保存配置。"""
+
+    installations: dict[Path, list["MaaEndConfig"]] = {}
+    for script in scripts:
+        if script.Info.Path is not None:
+            installations.setdefault(script.Info.Path.resolve(), []).append(script)
+    if not installations:
+        raise ValueError("请先配置 MaaEnd 安装路径")
+
+    result = LogBundleSelection()
+    for root_path, configs in installations.items():
+        project, _ = read_project_info(root_path)
+        candidates: list[Path] = []
+        for config in configs:
+            saved_root = config.Run.LogBundlePath
+            if not config.Run.IfSaveLogBundle or saved_root is None:
+                continue
+            if not saved_root.is_dir():
+                continue
+            candidates.extend(
+                directory
+                for directory in saved_root.iterdir()
+                if directory.is_dir()
+                and directory.name.startswith(f"{project}-logs-")
+                and _parse_export_timestamp(directory.name) is not None
+                and any(directory.glob(f"{directory.name}-part*.zip"))
+            )
+        if candidates:
+            latest = max(
+                candidates,
+                key=lambda directory: _parse_export_timestamp(directory.name),
+            )
+            result.directories.append(str(latest))
+        elif output_directory is None:
+            result.needs_directory = True
+        else:
+            # 各安装分开保存，避免相同项目版本在同一秒导出时互相覆盖。
+            install_key = hashlib.sha256(str(root_path).encode()).hexdigest()[:12]
+            export = export_failure_logs(
+                output_directory / install_key, root_path, retain=False
+            )
+            if export is None:
+                raise ValueError(f"没有可导出的 MaaEnd 日志: {root_path}")
+            result.directories.append(str(export.directory))
+            result.incomplete_count += export.failed_files
+    result.directories = list(dict.fromkeys(result.directories))
+    return result
+
+
+async def resolve_log_bundles(
+    scripts: list["MaaEndConfig"], output_directory: Path | None = None
+) -> LogBundleSelection:
+    """在线程中查询或保存日志包，避免文件扫描和压缩阻塞事件循环。"""
+
+    return await asyncio.to_thread(_resolve_log_bundles, scripts, output_directory)

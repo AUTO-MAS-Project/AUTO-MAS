@@ -448,6 +448,8 @@ export type { MaaEndConfigInput } from './models/MaaEndConfigInput';
 export type { MaaEndEssenceTargetGroup } from './models/MaaEndEssenceTargetGroup';
 export type { MaaEndInventoryOptions } from './models/MaaEndInventoryOptions';
 export type { MaaEndLauncherPathOut } from './models/MaaEndLauncherPathOut';
+export type { MaaEndLogBundleIn } from './models/MaaEndLogBundleIn';
+export type { MaaEndLogBundleOut } from './models/MaaEndLogBundleOut';
 export type { MaaEndOptionsOut } from './models/MaaEndOptionsOut';
 export type { MaaEndPlanConfig } from './models/MaaEndPlanConfig';
 export type { MaaEndPlanConfig_ALL } from './models/MaaEndPlanConfig_ALL';

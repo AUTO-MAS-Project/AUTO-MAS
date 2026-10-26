@@ -1,259 +1,45 @@
-import * as fs from 'fs'
-import * as path from 'path'
-import { deflateRawSync } from 'zlib'
-import AdmZip = require('adm-zip')
-import JSON5 from 'json5'
-
-import { getLogger } from './logger'
-import {
-  CollectorState,
-  addDebugDirectory,
-  addDirectory,
-  addSkippedEntry,
-  addReportManifest,
-  addRecentFailedMaaEndHistoryLogs,
-  discoverInstallations,
-  isRecord,
-  resolveDataRoots,
-} from './issueReportCore'
-
-const logger = getLogger('MaaEnd问题包')
-
-// 对齐 MXU src-tauri/src/commands/file_ops.rs 的 export_logs。
-// 后端 app/task/MaaEnd/tools/log_bundle.py 是同一套收集规则的另一份实现（任务失败
-// 自动打包时用，按一次运行分目录），改收集范围、扩展名或单卷上限要两边一起改。
-const MAX_VOLUME_BYTES = 24_500_000
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
-const DEBUG_EXTENSIONS = new Set(['.log', '.json', '.dmp'])
-const TEXT_EXTENSIONS = new Set(['.log', '.json', '.txt', '.toml', '.yaml', '.yml', '.xml', '.csv'])
-
-interface MxuExportEntry {
-  sourcePath: string
-  archiveName: string
+// Electron 独立编译，不能依赖 renderer 生成客户端的运行时模块。
+interface LogBundleResponse {
+  code: number
+  message: string
+  directories: string[]
+  needsDirectory: boolean
+  incompleteCount: number
 }
 
-function sortEntries(entries: MxuExportEntry[]): MxuExportEntry[] {
-  return entries.sort((a, b) =>
-    a.archiveName < b.archiveName ? -1 : a.archiveName > b.archiveName ? 1 : 0
-  )
+interface LogBundleActions {
+  selectDirectory: () => Promise<string | null>
+  openDirectory: (directory: string) => Promise<string>
 }
 
-function collectFiles(dir: string, prefix: string): MxuExportEntry[] {
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return []
-  const files: MxuExportEntry[] = []
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const sourcePath = path.join(dir, entry.name)
-    const archiveName = path.posix.join(prefix, entry.name)
-    if (entry.isDirectory()) files.push(...collectFiles(sourcePath, archiveName))
-    else if (entry.isFile()) files.push({ sourcePath, archiveName })
-  }
-  return sortEntries(files)
-}
-
-function collectImages(debugDir: string, subdir: string): MxuExportEntry[] {
-  const dir = path.join(debugDir, subdir)
-  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return []
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter(entry => entry.isFile() && IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
-    .map(entry => ({
-      sourcePath: path.join(dir, entry.name),
-      archiveName: `${subdir}/${entry.name}`,
-    }))
-    .sort((a, b) => fs.statSync(b.sourcePath).mtimeMs - fs.statSync(a.sourcePath).mtimeMs)
-}
-
-function collectMxuEntries(rootPath: string): MxuExportEntry[] {
-  const debugDir = path.join(rootPath, 'debug')
-  if (!fs.existsSync(debugDir)) throw new Error(`日志目录不存在: ${debugDir}`)
-  const debugEntries = fs.readdirSync(debugDir, { withFileTypes: true })
-  const rootLogs = sortEntries(
-    debugEntries
-      .filter(
-        entry => entry.isFile() && ['.log', '.dmp'].includes(path.extname(entry.name).toLowerCase())
-      )
-      .map(entry => ({ sourcePath: path.join(debugDir, entry.name), archiveName: entry.name }))
-  )
-  const subdirLogs = sortEntries(
-    debugEntries
-      .filter(entry => entry.isDirectory())
-      .flatMap(entry => collectFiles(path.join(debugDir, entry.name), entry.name))
-      .filter(entry => DEBUG_EXTENSIONS.has(path.extname(entry.sourcePath).toLowerCase()))
-  )
-  return [
-    ...rootLogs,
-    ...collectFiles(path.join(rootPath, 'config'), 'config'),
-    ...subdirLogs,
-    ...collectImages(debugDir, 'on_error'),
-    ...collectImages(debugDir, 'vision'),
-  ]
-}
-
-interface MxuProject {
-  projectName: string
-  projectVersion: string
-}
-
-function loadMxuProject(rootPath: string, state: CollectorState, label: string): MxuProject {
-  let value: unknown
-  try {
-    value = JSON5.parse(fs.readFileSync(path.join(rootPath, 'interface.json'), 'utf8'))
-  } catch {
-    // 项目信息不可读时保留既有降级，继续导出其它日志。
-  }
-  if (!isRecord(value) || typeof value.name !== 'string') {
-    addSkippedEntry(
-      state,
-      `maaend/${label}/project-info`,
-      0,
-      '项目名称或版本不可读，使用备用包名继续导出'
-    )
-    return { projectName: 'mxu', projectVersion: '' }
-  }
-  // 名称仅作为压缩包文件名使用，公开 interface.json 与后端读取口径一致。
-  const safe = (text: string) =>
-    text
-      .replace(/[\\/:*?"<>|]/g, '_')
-      .replace(/^[. ]+|[. ]+$/g, '')
-      .slice(0, 100)
-  return {
-    projectName: safe(value.name) || 'mxu',
-    projectVersion: typeof value.version === 'string' ? safe(value.version) : '',
-  }
-}
-
-function mxuExportName(project: MxuProject, now: Date): string {
-  const { projectName: name, projectVersion: version } = project
-  const pad = (value: number) => String(value).padStart(2, '0')
-  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
-  return version ? `${name}-logs-${version}-${stamp}` : `${name}-logs-${stamp}`
-}
-
-function addMxuVolumes(
-  state: CollectorState,
-  rootPath: string,
-  label: string,
-  project: MxuProject,
-  now: Date
-): void {
-  const entries = collectMxuEntries(rootPath)
-  if (!entries.length) throw new Error(`没有可导出的日志文件: ${rootPath}`)
-  const name = mxuExportName(project, now)
-  const width = entries.length >= 100 ? 3 : 2
-  let volume = new AdmZip(undefined, { noSort: true })
-  let writtenBytes = 0
-  let centralDirectoryBytes = 22 // ZIP EOCD
-  let volumeIndex = 1
-  let fileCount = 0
-
-  const flush = () => {
-    const content = volume.toBuffer()
-    const archivePath = `maaend/${label}/${name}/${name}-part${String(volumeIndex).padStart(width, '0')}.zip`
-    // 用户要求 MaaEnd 部分完整沿用 MXU：原样分卷，不套 MAS 的脱敏、截断和总量上限。
-    state.zip.addFile(archivePath, content)
-    state.entries.push({
-      path: archivePath,
-      sourceSize: content.length,
-      storedSize: content.length,
-      status: 'included',
+/** 自动保存已有结果时直接打开；其余安装通过同一后端导出器保存。 */
+export async function openMaaEndLogBundles(apiEndpoint: string, actions: LogBundleActions) {
+  const resolve = async (outputDirectory?: string): Promise<LogBundleResponse> => {
+    const response = await fetch(`${apiEndpoint}/api/scripts/maaend/log-bundle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ outputDirectory }),
     })
-    volumeIndex += 1
-    volume = new AdmZip(undefined, { noSort: true })
-    writtenBytes = 0
-    centralDirectoryBytes = 22
-    fileCount = 0
+    if (!response.ok) throw new Error(`MaaEnd 日志请求失败: ${response.status}`)
+    const result: LogBundleResponse = await response.json()
+    if (result.code !== 200) throw new Error(result.message)
+    return result
   }
 
-  for (const entry of entries) {
-    let content: Buffer
-    try {
-      content = fs.readFileSync(entry.sourcePath)
-    } catch (error) {
-      logger.warn(`无法打开文件 ${entry.sourcePath}: ${String(error)}`)
-      continue
-    }
-    // 与 MXU 一样按压缩后大小切卷；单个超大文件独占一卷，不能截断或丢弃。
-    const compressedBytes = deflateRawSync(content).length
-    const nameBytes = Buffer.byteLength(entry.archiveName)
-    const directoryBytes = 46 + nameBytes
-    const currentBytes = writtenBytes + centralDirectoryBytes
-    const estimatedBytes = TEXT_EXTENSIONS.has(path.extname(entry.sourcePath).toLowerCase())
-      ? Math.floor(content.length / 4)
-      : content.length
-    // 沿用 MXU 的两阶段容量判断：估算触线后再用 DEFLATE 实际大小判定。
-    if (
-      fileCount &&
-      currentBytes + estimatedBytes + 64 + directoryBytes > MAX_VOLUME_BYTES &&
-      currentBytes + compressedBytes + 64 + directoryBytes > MAX_VOLUME_BYTES
-    )
-      flush()
-    volume.addFile(entry.archiveName, content)
-    // MXU CountingWriter 也计入 CRC/大小字段回写的 12 字节。
-    writtenBytes += compressedBytes + 30 + nameBytes + 12
-    centralDirectoryBytes += directoryBytes
-    fileCount += 1
+  let result = await resolve()
+  const reusedArchive = (result.directories?.length ?? 0) > 0
+  if (result.needsDirectory) {
+    const directory = await actions.selectDirectory()
+    if (!directory) return { success: false, error: '用户取消' }
+    result = await resolve(directory)
   }
-  if (fileCount) flush()
-}
-
-interface MaaEndIssueReportResult {
-  success: boolean
-  incompleteCount?: number
-  message?: string
-  zipPath?: string
-  error?: string
-}
-
-export async function createMaaEndIssueReport(
-  appRoot: string,
-  zipPath: string
-): Promise<MaaEndIssueReportResult> {
-  const zip = new AdmZip()
-  const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
-  const dataRoots = resolveDataRoots(appRoot)
-  const installations = discoverInstallations(dataRoots, {
-    configType: 'MaaEndConfig',
-    pathField: 'Path',
-    labelPrefix: 'maaend',
-  })
-  addRecentFailedMaaEndHistoryLogs(state, dataRoots)
-
-  dataRoots.forEach((dataRoot, index) => {
-    addDebugDirectory(
-      state,
-      path.join(dataRoot, 'debug'),
-      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
-      'maaend'
-    )
-  })
-
-  const runtimeDebugDir = path.join(path.dirname(process.execPath), 'debug')
-  const knownDebugDirs = new Set(dataRoots.map(dataRoot => path.resolve(dataRoot, 'debug')))
-  if (!knownDebugDirs.has(path.resolve(runtimeDebugDir))) {
-    addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
+  for (const directory of result.directories ?? []) {
+    const error = await actions.openDirectory(directory)
+    if (error) throw new Error(error)
   }
-
-  try {
-    const now = new Date()
-    for (const installation of installations) {
-      const project = loadMxuProject(installation.rootPath, state, installation.label)
-      addMxuVolumes(state, installation.rootPath, installation.label, project, now)
-    }
-    addReportManifest(state, 'manifest.json', { report: 'MaaEnd', exportedAt: now.toISOString() })
-    fs.mkdirSync(path.dirname(zipPath), { recursive: true })
-    zip.writeZip(zipPath)
-    logger.info(`MaaEnd 问题包已导出: ${zipPath}`)
-    return {
-      success: true,
-      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
-      message: `MaaEnd 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
-      zipPath,
-    }
-  } catch (error) {
-    logger.error(`MaaEnd 问题包导出失败: ${String(error)}`)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    }
+  return {
+    success: true,
+    directoryPaths: result.directories,
+    incompleteCount: result.incompleteCount || (reusedArchive ? undefined : 0),
   }
 }

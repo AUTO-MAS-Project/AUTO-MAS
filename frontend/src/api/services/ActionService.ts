@@ -20,6 +20,8 @@ import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
 import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
 import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { MaaEndLogBundleIn } from '../models/MaaEndLogBundleIn';
+import type { MaaEndLogBundleOut } from '../models/MaaEndLogBundleOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -82,6 +84,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 打开已有 MaaEnd 日志包或保存当前日志
+     * @param requestBody
+     * @returns MaaEndLogBundleOut Successful Response
+     * @throws ApiError
+     */
+    public static resolveMaaendLogBundleApiScriptsMaaendLogBundlePost(
+        requestBody: MaaEndLogBundleIn,
+    ): CancelablePromise<MaaEndLogBundleOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maaend/log-bundle',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

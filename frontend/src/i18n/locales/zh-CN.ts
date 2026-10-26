@@ -3910,6 +3910,7 @@ export default {
     },
   },
   misc: {
+    maaendLogFoldersOpened: 'MaaEnd 日志保存目录已打开',
     dateTime: '{y}年{mo}月{d}日 {h}:{mi}:{s}',
     dateGroup: '{y}年{mo}月{d}日',
     monthGroup: '{y}年{mo}月',

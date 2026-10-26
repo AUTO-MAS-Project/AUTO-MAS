@@ -4138,6 +4138,7 @@ export default {
     },
   },
   misc: {
+    maaendLogFoldersOpened: 'MaaEnd のログ保存フォルダーを開きました',
     dateTime: '{y}年{mo}月{d}日 {h}:{mi}:{s}',
     dateGroup: '{y}年{mo}月{d}日',
     monthGroup: '{y}年{mo}月',

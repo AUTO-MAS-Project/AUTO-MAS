@@ -67,7 +67,7 @@ import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDirectory } from './services/issueReportCore'
 import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
-import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import { openMaaEndLogBundles } from './services/maaEndIssueReportService'
 import { createMaaIssueReport } from './services/maaIssueReportService'
 import {
   createM9AIssueReport,
@@ -1653,11 +1653,25 @@ registerIssueReportExporter(
   'MAA-logs',
   createMaaIssueReport
 )
-registerIssueReportExporter(
-  'maaend:exportIssueReport',
-  '导出 MaaEnd 问题包',
-  'MaaEnd-logs',
-  createMaaEndIssueReport
+ipcMain.handle('maaend:exportIssueReport', async () =>
+  observeDiagnosticExport('maaend:exportIssueReport', async () => {
+    try {
+      if (!mainWindow) return { success: false, error: '窗口未初始化' }
+      return await openMaaEndLogBundles(getLocalApiEndpoint(), {
+        selectDirectory: async () => {
+          const result = await dialog.showOpenDialog(mainWindow!, {
+            title: '选择 MaaEnd 日志保存目录',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+          return result.canceled ? null : (result.filePaths[0] ?? null)
+        },
+        openDirectory: directory => shell.openPath(directory),
+      })
+    } catch (error) {
+      logger.error('打开或保存 MaaEnd 日志失败:', error)
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
