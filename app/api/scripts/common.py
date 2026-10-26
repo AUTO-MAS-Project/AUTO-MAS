@@ -861,7 +861,7 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
     try:
         from app.core import script_settings
 
-        await script_settings.update_user(user.scriptId, user.userId, data)
+        await script_settings.update_user(user.scriptId, user.userId, data=data)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
         return OutBase(

@@ -37,5 +37,5 @@ async def update_user(script_id: str, user_id: str, data: dict[str, Any]) -> Non
     if isinstance(od, dict) and "Queue" in od:
         from app.task.BetterGI import api_service as bettergi_api
 
-        bettergi_api.prepare_user_update(script_id, user_id, data)
-    await Config.update_user(script_id, user_id, data)
+        bettergi_api.prepare_user_update(script_id, user_id, data=data)
+    await Config.update_user(script_id, user_id, data=data)

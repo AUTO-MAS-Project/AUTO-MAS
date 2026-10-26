@@ -168,7 +168,7 @@ def list_custom_groups(
 
     if use_mas_config:
         if not user_id:
-            raise ValueError("用户独立配置下必须提供 user_id")
+            raise ValueError("用户独立配置下必须提供 userId")
         _bettergi_user_id(script_config, user_id)
         items = one_dragon.list_user_custom_groups(
             root, script_id, user_id, one_dragon.launch_slot_name()
