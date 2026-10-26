@@ -1244,6 +1244,7 @@ export default {
     script: '共有設定',
     automatic: '自動選択',
     ruleTitle: 'ルール名',
+    dragRule: 'ドラッグして並び替え',
     pickScriptRootDirectory: '先にスクリプトのルートフォルダーを選んでください',
     enterSendkey: 'SendKey を入力してください',
     enterNote: 'メモを入力してください',

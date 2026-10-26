@@ -1286,6 +1286,7 @@ export default {
     script: 'Shared configuration',
     automatic: 'Automatic',
     ruleTitle: 'Rule title',
+    dragRule: 'Drag to reorder',
     pickScriptRootDirectory: 'Pick the script root directory first',
     enterSendkey: 'Enter the SendKey',
     enterNote: 'Enter a note',

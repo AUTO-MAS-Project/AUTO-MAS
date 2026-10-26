@@ -1283,6 +1283,7 @@ export default {
     script: '共享配置',
     automatic: '自动选择',
     ruleTitle: '规则标题',
+    dragRule: '拖拽排序',
     pickScriptRootDirectory: '请先选择脚本根目录',
     enterSendkey: '请输入 SENDKEY',
     enterNote: '请输入备注',
