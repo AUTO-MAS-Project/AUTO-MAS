@@ -150,15 +150,27 @@ def settle_snapshot(
 
     new_checked = {key: value for key, value in checked.items() if keep_key(key)}
     new_options = {key: value for key, value in options.items() if keep_key(key)}
-    changed = bool(removed) or new_checked != checked or new_options != options
+    raw_schedules = snapshot.get("taskSchedules")
+    schedules = raw_schedules if isinstance(raw_schedules, dict) else {}
+    # 运行日只认整理后队列里的实例，每次都剪：实例 id 以后可能被重新入队（首份就是裸任务名），
+    # 不在队列里的旧限制不能跟着回来
+    new_schedules = {
+        key: value for key, value in schedules.items() if str(key) in kept_set
+    }
+    changed = (
+        bool(removed)
+        or new_checked != checked
+        or new_options != options
+        or new_schedules != schedules
+    )
 
     settled = dict(snapshot)
     if changed:
         settled["taskOrder"] = kept_order
         settled["taskChecked"] = new_checked
         settled["taskOptions"] = new_options
-        # 实例显示名跟着实例走：移出队列的受管任务连名字一起清掉，其余原样保留；
-        # 清完一条不剩就不写这个键（与前端一致，没有显示名的快照不带空表）
+        # 实例显示名跟着实例走：移出队列的受管任务连同它一起清掉，其余原样保留；
+        # 清完一条不剩就不写这个键（与前端一致，没有显示名 / 运行日的快照不带空表）
         raw_labels = snapshot.get("taskLabels")
         if isinstance(raw_labels, dict):
             kept_labels = {
@@ -170,6 +182,10 @@ def settle_snapshot(
                 settled["taskLabels"] = kept_labels
             else:
                 settled.pop("taskLabels", None)
+        if new_schedules:
+            settled["taskSchedules"] = new_schedules
+        else:
+            settled.pop("taskSchedules", None)
     return Settlement(
         snapshot=settled,
         changed=changed,

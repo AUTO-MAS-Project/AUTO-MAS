@@ -2074,6 +2074,7 @@ export default {
     queueTaskDelete: 'Delete task',
     queueTaskRenameTitle: 'Edit display name',
     queueTaskDisplayName: 'Display name',
+    queueTaskWeekdays: 'Run on',
     missingTaskValueSeparator: ', ',
     missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',

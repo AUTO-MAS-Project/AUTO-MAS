@@ -459,6 +459,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     taskByName: context.taskByName,
     effectiveControllerName: context.effectiveControllerName,
     effectiveResourceName,
+    managedTaskEntries,
     interfaceDependentDisabled: context.interfaceDependentDisabled,
     handleFieldSave,
     ...queue,

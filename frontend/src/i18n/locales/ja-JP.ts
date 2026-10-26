@@ -1967,6 +1967,7 @@ export default {
     queueTaskDelete: 'タスクを削除',
     queueTaskRenameTitle: '表示名を変更',
     queueTaskDisplayName: '表示名',
+    queueTaskWeekdays: '実行する曜日',
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
