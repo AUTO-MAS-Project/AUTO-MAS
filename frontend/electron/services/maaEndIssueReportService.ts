@@ -196,6 +196,7 @@ function addMxuVolumes(
 
 interface MaaEndIssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -242,6 +243,7 @@ export async function createMaaEndIssueReport(
     logger.info(`MaaEnd 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `MaaEnd 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }

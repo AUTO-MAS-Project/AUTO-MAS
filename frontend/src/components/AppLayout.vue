@@ -59,6 +59,7 @@
 </template>
 
 <script lang="ts" setup>
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import {
   BugOutlined,
@@ -73,7 +74,7 @@ import {
   SkinOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -91,17 +92,25 @@ const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 
+// 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
+// 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
+// 仅查询参数变化（如页签切换）不重置。取容器沿用 .content-area 查询惯例。
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      document.querySelector<HTMLElement>('.content-area')?.scrollTo({ top: 0 })
+    })
+)
+
 // 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =
   (key: AppearanceMenuIconKey, Comp: Component, menuIcons = activeAppearance.value?.menuIconUrls) =>
   () =>
     createAppearanceMenuIcon(key, Comp, menuIcons)
 
-// 判断是否为开发环境。必须与 router/index.ts 里注册调试路由的条件保持一致，
-// 否则菜单项会指向未注册的路由。之前这里还额外判断了 hostname === 'localhost'，
-// 生产环境走 loadFile（file:// 协议，hostname 为空）不会命中，但用 vite preview
-// 预览生产构建时会命中，导致菜单显示了实际不存在的路由。
-const isDevelopment = computed(() => import.meta.env.DEV)
+// 调试入口与路由同时要求开发构建和开发环境，避免指向已裁剪的页面。
+const isDevelopment = import.meta.env.DEV && isDev
 
 const mainMenuItems = computed(() => [
   { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
@@ -121,7 +130,7 @@ const devMenuItems = computed(() => [
     label: t('comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
   },
-  ...(import.meta.env.DEV
+  ...(isDevelopment
     ? [
         {
           key: '/update-download-dev',
@@ -159,7 +168,7 @@ const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
 
 const allItems = computed(() => [
   ...mainMenuItems.value,
-  ...(isDevelopment.value ? devMenuItems.value : []),
+  ...(isDevelopment ? devMenuItems.value : []),
   ...bottomMenuItems.value,
 ])
 
@@ -189,8 +198,9 @@ const onMenuClick: MenuProps['onClick'] = info => {
   }
 
   if (
-    target === '/update-download-dev' &&
     import.meta.env.DEV &&
+    target === '/update-download-dev' &&
+    isDevelopment &&
     !router.hasRoute('UpdateDownloadDev')
   ) {
     router.addRoute({

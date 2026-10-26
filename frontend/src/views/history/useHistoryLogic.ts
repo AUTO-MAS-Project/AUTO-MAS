@@ -1,3 +1,5 @@
+import { analyticsCountBucket } from '@/utils/analytics'
+import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import {
   type HistoryBucket,
   type HistoryDetail,
@@ -117,11 +119,27 @@ export function useHistoryLogic() {
 
     try {
       searchLoading.value = true
-      const response = await Service.searchHistoryApiHistorySearchPost({
-        mode: searchForm.mode,
-        start_date: searchForm.startDate,
-        end_date: searchForm.endDate,
-      })
+      const response = await observeFeature(
+        'history_query_finished',
+        { filter_kind: currentPreset.value === 'week' ? 'default' : 'filtered', count_bucket: '0' },
+        () =>
+          Service.searchHistoryApiHistorySearchPost({
+            mode: searchForm.mode,
+            start_date: searchForm.startDate,
+            end_date: searchForm.endDate,
+          }),
+        result => ({
+          outcome: apiOutcome(result),
+          count_bucket: analyticsCountBucket(
+            Object.values(result.data ?? {}).reduce(
+              (sum, users) =>
+                sum +
+                Object.values(users).reduce((count, user) => count + (user.index?.length ?? 0), 0),
+              0
+            )
+          ),
+        })
+      )
 
       if (!isMounted) return
 

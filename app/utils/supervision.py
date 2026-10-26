@@ -22,6 +22,8 @@
 
 import os
 
+from .environment import is_development_environment
+
 
 def is_supervised() -> bool:
     """识别当前进程是否处于外部监督器（AUTO-MAS-Runtime）托管之下。
@@ -39,11 +41,11 @@ def is_supervised() -> bool:
     return os.getenv("AUTO_MAS_SUPERVISED") == "1"
 
 
-def is_backend_dev_mode() -> bool:
-    """判断后端是否处于开发模式（后端由开发者独立管理，前端不得强杀）。
+def should_preserve_backend() -> bool:
+    """判断退出前端时是否保留非托管的开发后端。
 
     dev 分支的 AUTO_MAS_DEV 标记“由前端拉起”（跳过自行提权），生产环境同样为 1，
-    不能作为开发模式依据；以 main.py 启动时归一化的 AUTO_MAS_ENV 为准。
+    不能作为开发环境依据；运行环境统一由 environment 模块判断。
 
     受 AUTO-MAS-Runtime 监督时优先级高于 AUTO_MAS_DEV 与 AUTO_MAS_ENV，恒为
     False：监督器依赖 /api/core/close 真正退出进程，若判定为开发模式，
@@ -54,5 +56,4 @@ def is_backend_dev_mode() -> bool:
     if is_supervised():
         return False
 
-    raw = str(os.getenv("AUTO_MAS_ENV", "")).strip().lower()
-    return raw in {"dev", "development"}
+    return is_development_environment()

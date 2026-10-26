@@ -151,6 +151,13 @@ watch(
     :title="t('edit.extractionPatternReference')"
     width="1000px"
     :footer="null"
+    :body-style="{
+      height: '65vh',
+      minHeight: 0,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }"
     :destroy-on-close="false"
     wrap-class-name="log-pattern-docs-modal"
   >
@@ -194,19 +201,16 @@ watch(
   gap: 6px;
 }
 
-.log-pattern-docs-modal :deep(.ant-modal-body) {
-  padding: 0 16px 16px;
-}
-
 .docs-tabs {
+  flex-shrink: 0;
   margin-bottom: 8px;
 }
 
 .docs-body {
   display: flex;
   gap: 16px;
-  height: 65vh;
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
 }
 
 .docs-toc {

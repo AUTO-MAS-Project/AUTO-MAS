@@ -235,6 +235,7 @@ import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/api'
+import { queueApi } from '@/composables/useQueueApi'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('队列项管理')
@@ -324,11 +325,7 @@ const formatNextRun = (nextRunAt: string) =>
 // 决定要不要把本地值当作“已确认”的基线（例如 savedIntervalMinutes）。
 const saveSchedule = async (record: any, data: Record<string, any>): Promise<boolean> => {
   try {
-    const response = await Service.updateItemApiQueueItemUpdatePost({
-      queueId: props.queueId,
-      queueItemId: record.id,
-      data: { Schedule: data },
-    })
+    const response = await queueApi.updateSchedule(props.queueId, record.id, data)
 
     if (response.code !== 200) {
       message.error(
@@ -424,7 +421,7 @@ const updateQueueItemScript = async (record: any) => {
   try {
     loading.value = true
 
-    const response = await Service.updateItemApiQueueItemUpdatePost({
+    const response = await queueApi.updateItem({
       queueId: props.queueId,
       queueItemId: record.id,
       data: {
@@ -458,7 +455,7 @@ const addQueueItem = async () => {
     loading.value = true
 
     // 直接创建队列项，默认ScriptId为null（未选择）
-    const createResponse = await Service.addItemApiQueueItemAddPost({
+    const createResponse = await queueApi.addItem({
       queueId: props.queueId,
     })
 
@@ -483,7 +480,7 @@ const addQueueItem = async () => {
 // 删除队列项
 const deleteQueueItem = async (itemId: string) => {
   try {
-    const response = await Service.deleteItemApiQueueItemDeletePost({
+    const response = await queueApi.deleteItem({
       queueId: props.queueId,
       queueItemId: itemId,
     })
@@ -521,7 +518,7 @@ const onDragEnd = async (evt: any) => {
     const sortedIds = queueItems.value.map(item => item.id)
 
     // 调用排序API
-    const response = await Service.reorderItemApiQueueItemOrderPost({
+    const response = await queueApi.reorderItems({
       queueId: props.queueId,
       indexList: sortedIds,
     })

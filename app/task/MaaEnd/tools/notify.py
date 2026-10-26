@@ -22,6 +22,7 @@
 
 import mimetypes
 from collections.abc import Sequence
+from html import escape
 from pathlib import Path
 
 from app.models.notification import NotificationImage, NotifyPayload
@@ -145,3 +146,19 @@ def build_statistics_payload(
         html=deferred_notification_template("MaaEnd_statistics.html", message),
         images=tuple(images),
     )
+
+
+def build_inventory_payload(*, title: str, message: dict) -> NotifyPayload:
+    """展示本轮材料获得记录和上游状态，不附带全量库存。"""
+    lines = message["inventory_report"] or [
+        "本轮未收到养成材料获得记录；不代表实际获得数量为 0。"
+    ]
+    text = "\n".join(
+        [
+            f"账号：{message['user_info']}",
+            f"开始时间：{message['start_time']}",
+            f"结束时间：{message['end_time']}",
+            *lines,
+        ]
+    )
+    return NotifyPayload(title=title, text=text, html=f"<pre>{escape(text)}</pre>")

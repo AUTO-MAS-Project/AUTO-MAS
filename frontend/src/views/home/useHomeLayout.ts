@@ -1,3 +1,5 @@
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import type { AnalyticsEventProps } from '@/types/analytics'
 import { useI18n } from 'vue-i18n'
 import { computed, onScopeDispose, ref } from 'vue'
 import { getConfig, saveConfig } from '@/utils/config'
@@ -97,7 +99,11 @@ export const useHomeLayout = () => {
     getLayoutLogger().warn(`${message}: ${errorMessage}`)
   }
 
-  const queueLayoutSave = (layout: HomeLayoutConfig) => {
+  const queueLayoutSave = (
+    layout: HomeLayoutConfig,
+    action?: AnalyticsEventProps['home_layout_changed']['action']
+  ) => {
+    const telemetry = action ? beginAnalyticsOperation('home_layout_changed') : null
     const snapshot: HomeLayoutConfig = {
       moduleOrder: [...layout.moduleOrder],
       hiddenModules: [...layout.hiddenModules],
@@ -108,6 +114,10 @@ export const useHomeLayout = () => {
       hiddenActivityNotes: [...(layout.hiddenActivityNotes ?? [])],
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
+    void saveTask.then(
+      () => telemetry?.finish({ action: action!, layout_preset: 'custom', outcome: 'success' }),
+      () => telemetry?.finish({ action: action!, layout_preset: 'custom', outcome: 'unknown' })
+    )
     saveQueue = saveTask.catch(error => {
       logWarning('保存首页布局配置失败', error)
     })
@@ -199,7 +209,7 @@ export const useHomeLayout = () => {
       ),
     })
     applyLayout(nextLayout)
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'reorder')
   }
 
   const reorderActivityModules = (order: HomeModuleKey[]) => {
@@ -211,7 +221,7 @@ export const useHomeLayout = () => {
       ),
     })
     applyLayout(nextLayout)
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'reorder')
   }
 
   const setHomeModuleShown = (key: HomeModuleKey, visible: boolean) => {
@@ -224,23 +234,23 @@ export const useHomeLayout = () => {
     } else if (!hiddenHomeModules.value.includes(key)) {
       hiddenHomeModules.value = [...hiddenHomeModules.value, key]
     }
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'visibility')
   }
 
   const setScrollHintHidden = (hidden: boolean) => {
     scrollHintHidden.value = hidden
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'save')
   }
 
   const setCarouselAutoplay = (autoplay: boolean) => {
     carouselAutoplay.value = autoplay
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'save')
   }
 
   /** 首页便笺总开关；由游戏社区设置页的「首页显示日常便笺」控制 */
   const setActivityNotesVisible = (visible: boolean) => {
     activityNotesVisible.value = visible
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'visibility')
   }
 
   /** 首页便笺的每游戏单独开关：关掉后轮播切到该游戏也不再显示便笺 */
@@ -248,7 +258,7 @@ export const useHomeLayout = () => {
     hiddenActivityNotes.value = shown
       ? hiddenActivityNotes.value.filter(hiddenKey => hiddenKey !== key)
       : [...hiddenActivityNotes.value.filter(hiddenKey => hiddenKey !== key), key]
-    return queueLayoutSave(currentLayout())
+    return queueLayoutSave(currentLayout(), 'visibility')
   }
 
   const isActivityNoteVisible = (key: HomeModuleKey | null) =>

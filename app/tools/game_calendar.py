@@ -9,6 +9,7 @@ from datetime import datetime
 
 import httpx
 
+from app.tools.azurlane_activity import fetch_azurlane_activities
 from app.tools.sra_activity import fetch_sra_activities
 from app.utils.constants import UTC8
 
@@ -25,7 +26,11 @@ CALENDAR_GAMES = {
     "arknights": ("ak", "明日方舟"),
     "stellasora": ("xtlr", "星塔旅人"),
     "infinitynikki": ("infinitynikki", "无限暖暖"),
+    ## 碧蓝航线不走 SRA，取数标识只用来区分完成标记；活动本身由本模块直接查 WIKI
+    "azurlane": ("azurlane", "碧蓝航线"),
 }
+## 这个标识落到 fetch_calendar_activities 里走 WIKI，而不是 SRA
+AZURLANE_SOURCE = "azurlane"
 BLUEARCHIVE_SERVERS = {
     "cn": ("ba-cn", "国服"),
     "jp": ("ba-jp", "日服"),
@@ -47,6 +52,12 @@ def _timestamp_iso(value: object) -> str:
 
 async def fetch_calendar_activities(source: str) -> list[Mapping[str, object]] | None:
     """查询完整活动列表；取数失败由定时器隔离，下次检查再重试。"""
+
+    if source == AZURLANE_SOURCE:
+        # 碧蓝航线没有 SRA 档，活动只从碧蓝海事局 WIKI 取
+        data = await fetch_azurlane_activities()
+        items = data.get("activities") if data is not None else None
+        return items if isinstance(items, list) else None
 
     if source:
         # 明日方舟、终末地、星塔旅人复用首页的 SRA 备用源，无需打开首页。

@@ -8,8 +8,8 @@
   "scripts": {
     "dev": "concurrently \"vp dev\" \"yarn watch:main\" \"yarn electron-dev\"",
     "dev:fullstack": "concurrently \"yarn backend\" \"vp dev\" \"yarn watch:main\" \"yarn electron-dev:wait\"",
-    "backend": "cross-env PYTHONIOENCODING=utf-8 AUTO_MAS_HTTP_PORT=36164 python ../main.py",
-    "electron-dev:wait": "wait-on http://127.0.0.1:5173 http://127.0.0.1:36164/openapi.json && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "backend": "cross-env PYTHONIOENCODING=utf-8 AUTO_MAS_HTTP_PORT=36164 uv run --project .. --locked python ../main.py",
+    "electron-dev:wait": "wait-on http://127.0.0.1:5173 tcp:127.0.0.1:36164 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build:main": "tsc -p tsconfig.electron.json",
@@ -98,6 +98,7 @@
     "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
     "json5": "2.2.3",
+    "pinyin-pro": "^3.29.5",
     "yaml": "2.8.1"
   },
   "devDependencies": {

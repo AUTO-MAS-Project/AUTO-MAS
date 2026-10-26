@@ -10,9 +10,16 @@ import { BackendService } from './backendService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
-// resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
-// 设置 RUNTIME_MODE_ENV 走环境变量这一级，isPackaged 固定 false 即可，不需要逐用例切换。
-vi.mock('electron', () => ({ app: { isPackaged: false, getVersion: () => '5.5.0-beta.3' } }))
+// 同时验证开发 Electron 与打包 Electron 的环境会显式传到 Runtime，且覆盖继承值。
+const appState = vi.hoisted(() => ({ isPackaged: false }))
+vi.mock('electron', () => ({
+  app: {
+    get isPackaged() {
+      return appState.isPackaged
+    },
+    getVersion: () => '5.5.0-beta.3',
+  },
+}))
 vi.mock('../utils/processManager', () => ({
   killAllRelatedProcesses: vi.fn(async () => undefined),
 }))
@@ -38,7 +45,10 @@ vi.mock('./sentry', () => ({
   recordMainDuration: vi.fn(),
 }))
 vi.mock('./environmentService', () => ({ isDevelopmentEnvironment: () => true }))
-vi.mock('./instanceConfig', () => ({ resolveHttpPort: vi.fn(() => 36164) }))
+vi.mock('./instanceConfig', async importOriginal => ({
+  ...(await importOriginal<typeof import('./instanceConfig')>()),
+  resolveHttpPort: vi.fn(() => 36164),
+}))
 
 const { killAllRelatedProcesses } = await import('../utils/processManager')
 const { resolveHttpPort } = await import('./instanceConfig')
@@ -215,13 +225,14 @@ async function passManagedPreparation(): Promise<FakeChild> {
 const fetchMock = vi.fn()
 
 beforeEach(() => {
+  appState.isPackaged = false
   appRoot = mkdtempSync(join(tmpdir(), 'auto-mas-backend-'))
   runtimeRoot = join(dirname(appRoot), `${basename(appRoot)}-runtime`)
   spawnMock.mockReset()
   killAllMock.mockClear()
   resolveHttpPortMock.mockClear()
   fetchMock.mockReset()
-  // 宿主环境若带着这个变量，会经 process.env 原样继承，干扰对「不设」的断言。
+  // 各用例显式构造宿主环境，验证应用环境不会被继承值覆盖。
   delete process.env.AUTO_MAS_ENV
   // 旧链路启动前会探测是否已有后端：默认不可达。
   // health 默认带 version 且与前端 mock 版本（5.5.0-beta.3 归一化后）一致。
@@ -485,6 +496,8 @@ describe('development 模式', () => {
 
 describe('managed 模式', () => {
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
+    appState.isPackaged = true
+    process.env.AUTO_MAS_ENV = 'development'
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
     const service = createService()
@@ -503,7 +516,7 @@ describe('managed 模式', () => {
     expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
     expect(spawnedArgs(2).slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
     expect(spawnedArgs(2)).not.toContain('--repo')
-    expect(spawnedEnv(2).AUTO_MAS_ENV).toBeUndefined()
+    expect(spawnedEnv(2).AUTO_MAS_ENV).toBe('production')
     expect(existsSync(runtimeRoot)).toBe(false)
 
     child.stdout.feed(stoppedResultLine)

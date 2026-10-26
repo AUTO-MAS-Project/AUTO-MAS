@@ -1,3 +1,4 @@
+import { observeFeature } from '@/utils/featureAnalytics'
 import { ref } from 'vue'
 import { ActionService, ApiError, GetService } from '@/api'
 import { translate } from '@/i18n'
@@ -41,7 +42,17 @@ export function useObsReplayApi() {
     run(
       async () =>
         responseMessage(
-          await GetService.checkObsReplayApiSettingObsCheckPost(),
+          await observeFeature(
+            'replay_tool_finished',
+            { action: 'connect' },
+            () => GetService.checkObsReplayApiSettingObsCheckPost(),
+            result =>
+              result.code !== 200
+                ? 'failure'
+                : result.connected && result.replayActive
+                  ? 'success'
+                  : 'failure'
+          ),
           translate('setting.replay.checkFailed')
         ),
       translate('setting.replay.checkFailed')
@@ -51,7 +62,13 @@ export function useObsReplayApi() {
     run(
       async () =>
         responseMessage(
-          await ActionService.saveObsReplayApiSettingObsSavePost(),
+          await observeFeature(
+            'replay_tool_finished',
+            { action: 'save' },
+            () => ActionService.saveObsReplayApiSettingObsSavePost(),
+            result =>
+              result.code !== 200 ? 'failure' : result.capture_path ? 'success' : 'skipped'
+          ),
           translate('setting.replay.saveFailed')
         ),
       translate('setting.replay.saveFailed')

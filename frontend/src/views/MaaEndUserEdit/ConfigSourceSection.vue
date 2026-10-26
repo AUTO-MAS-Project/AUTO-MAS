@@ -88,3 +88,15 @@ const maaEndConfigModeOptions: Array<{
   },
 ]
 </script>
+
+<style scoped>
+@media (max-width: 900px) {
+  .config-source-section :deep(.config-mode-options) {
+    display: flex;
+    flex-direction: column;
+  }
+  .config-source-section :deep(.config-mode-option) {
+    min-height: auto;
+  }
+}
+</style>

@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import type { DesktopMascotTaskHostAPI } from '@/types/desktopMascot'
 import type { ElectronAPI } from '@/types/electron'
 import { getDefaultHttpEndpoint, getDefaultWebSocketEndpoint } from '@/utils/backendEndpoint'
@@ -109,7 +110,7 @@ const browserDevElectronAPI = {
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),
 } as unknown as ElectronAPI
 
-if (import.meta.env.DEV && !window.electronAPI) {
+if (isDev && !window.electronAPI) {
   ;(window as BrowserDevWindow).__AUTO_MAS_BROWSER_DEV_MODE__ = true
   window.electronAPI = browserDevElectronAPI
 }

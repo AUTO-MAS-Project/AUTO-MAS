@@ -20,6 +20,7 @@ const OKWW_REL_LOG_FILE = 'data/apps/ok-ww/working/logs/ok-script.log'
 
 interface OkwwIssueReportResult {
   success: boolean
+  incompleteCount?: number
   message?: string
   zipPath?: string
   error?: string
@@ -59,6 +60,7 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
     logger.info(`OK-WW 问题包已导出: ${zipPath}`)
     return {
       success: true,
+      incompleteCount: state.entries.filter(entry => entry.status !== 'included').length,
       message: `OK-WW 问题包导出成功，已收集 ${state.entries.filter(entry => entry.status !== 'skipped').length} 个文件`,
       zipPath,
     }

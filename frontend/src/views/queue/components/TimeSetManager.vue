@@ -134,7 +134,7 @@ import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import draggable from 'vuedraggable'
-import { Service } from '@/api'
+import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
 const { t } = useI18n()

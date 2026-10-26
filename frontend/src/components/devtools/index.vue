@@ -39,6 +39,7 @@
 </template>
 
 <script setup lang="ts">
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { computed, onMounted, ref } from 'vue'
 import { useEventListener, useWindowSize } from '@vueuse/core'
 import RouteInfoPage from './RouteInfoPage.vue'
@@ -55,13 +56,6 @@ const tabs = [
   { key: 'backend', title: '后端', icon: '🚀', component: BackendLaunchPage },
   { key: 'nav', title: '导航', icon: '🧭', component: QuickNavPage },
 ]
-
-// 开发环境检测
-const isDev = ref(
-  process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
-    window.location.hostname === 'localhost'
-)
 
 // 面板状态
 const isCollapsed = ref(false)

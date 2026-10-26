@@ -1,9 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
+
 import type {
   DesktopMascotAPI,
   DesktopMascotData,
   DesktopMascotUpdate,
 } from '../src/types/desktopMascot'
+
+// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+contextBridge.exposeInMainWorld(
+  'appEnvironment',
+  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+)
 
 // 桌宠只读取已经校验的图片，不加载主窗口的后端、配置和文件操作入口。
 const api: DesktopMascotAPI = {

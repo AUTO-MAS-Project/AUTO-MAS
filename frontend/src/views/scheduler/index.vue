@@ -144,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
@@ -286,8 +287,7 @@ onMounted(() => {
   logger.info('调度中心组件首次挂载')
   void initialize() // 初始化TaskManager订阅（内部会先加载任务选项）
 
-  // 开发环境下导入调试工具
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV && isDev) {
     import('@/utils/scheduler-debug').then(() => {
       logger.info('调度中心调试工具已加载，使用 debugScheduler() 进行调试')
     })

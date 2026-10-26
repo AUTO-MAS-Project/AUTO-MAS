@@ -915,6 +915,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons-vue'
 import { Service, type ZzzOdInstanceOut, type ZzzOdUserConfig } from '@/api'
+import { importZzzodInstance } from '@/composables/useAdapterSetupApi'
 import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/utils/configRestoreMode'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -1354,14 +1355,11 @@ const importFromInstance = async () => {
   importLoading.value = true
   try {
     await flushPendingSaves()
-    const resp = await Service.importZzzodConfigApiApiScriptsZzzodImportPost({
+    await importZzzodInstance({
       scriptId,
       userId: userId.value,
       instanceIdx: sourceIdx,
     })
-    if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodImportFailed'))
-    }
     importSourceIdx.value = null
     // 后端已写入账号字段、任务编排与实例级配置（含预备编队），
     // 重新拉取让表单与后端一致，预备编队组件一并强制刷新

@@ -156,6 +156,7 @@
 </template>
 
 <script setup lang="ts">
+import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -585,11 +586,7 @@ const startConfigSession = async (viewOnly: boolean) => {
     }
 
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-      viewOnly,
-    })
+    const response = await requestScriptConfigStart(userId, viewOnly)
 
     if (response && response.taskId) {
       const wsId = response.taskId
@@ -639,7 +636,7 @@ const startConfigSession = async (viewOnly: boolean) => {
           if (taskId) {
             void (async () => {
               try {
-                await Service.stopTaskApiDispatchStopPost({ taskId })
+                await stopNativeConfig(taskId, 'timeout')
               } catch (e) {
                 logger.error(e instanceof Error ? e.message : String(e))
               }
@@ -682,7 +679,7 @@ const handleSaveSRCConfig = async () => {
     }
 
     stoppingSrcConfig.value = true
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
+    const response = await stopNativeConfig(taskId, viewOnly ? 'close' : 'save')
     if (response && response.code === 200) {
       closeSessionUi()
       if (!viewOnly) {
@@ -736,7 +733,7 @@ onUnmounted(() => {
     const taskId = srcTaskId.value
     if (taskId) {
       try {
-        await Service.stopTaskApiDispatchStopPost({ taskId })
+        await stopNativeConfig(taskId)
       } catch (e) {
         logger.error(e instanceof Error ? e.message : String(e))
       }

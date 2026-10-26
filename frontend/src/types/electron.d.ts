@@ -1,4 +1,5 @@
 import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
   DesktopMascotHostAPI,
@@ -222,6 +223,10 @@ export interface VirtualDisplayPromptPayload {
 }
 
 export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHostAPI {
+  analytics?: {
+    getContext: () => Promise<AnalyticsContext>
+    trackEvent: (context: number, event: RendererAnalyticsEvent) => void
+  }
   isMacOS: boolean
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
@@ -250,6 +255,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  appObserveBackendClose?: () => void
   /** 等待用户确认期间暂停退出兜底，保留关闭请求锁。 */
   appWaitForQuitConfirmation?: () => Promise<boolean>
   /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
@@ -412,6 +418,8 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   showVirtualDisplayPrompt?: (
     payload: VirtualDisplayPromptPayload
   ) => Promise<{ success: boolean; error?: string }>
+  observeVirtualDisplayPrompt?: () => void
+  detachVirtualDisplayFromPrompt: () => Promise<import('@/api').VirtualDisplayDetachOut | null>
   closeVirtualDisplayPrompt?: () => Promise<void>
   /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
   getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
@@ -523,7 +531,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
 
   // 后端服务管理
   backendStart: () => Promise<InstallStageResult>
-  backendRestart: () => Promise<InstallStageResult>
+  backendRestart: (reason?: 'manual' | 'recovery') => Promise<InstallStageResult>
   backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean

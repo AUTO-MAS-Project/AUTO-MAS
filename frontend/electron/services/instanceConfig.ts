@@ -9,6 +9,7 @@
 
 import * as path from 'path'
 import { app } from 'electron'
+import type { ApplicationEnvironment } from '../../src/types/environment'
 
 // ==================== 常量 ====================
 
@@ -22,13 +23,21 @@ const DEV_STOP_ALL_TASKS_SHORTCUT = 'Control+Shift+Alt+N'
 
 // ==================== 工具函数 ====================
 
-// 判断是否处于开发环境
-export function isDevelopmentEnvironment(): boolean {
-  if (process.env.NODE_ENV === 'development' || Boolean(process.env.VITE_DEV_SERVER_URL)) {
-    return true
-  }
+// 应用环境只由打包状态决定，不受宿主 NODE_ENV 或开发服务器地址影响。
+export function getApplicationEnvironment(): ApplicationEnvironment {
+  return app?.isPackaged ? 'production' : 'development'
+}
 
-  return Boolean(app) && !app.isPackaged
+export function isDevelopmentEnvironment(): boolean {
+  return getApplicationEnvironment() === 'development'
+}
+
+export function getRendererEnvironmentArguments(): string[] {
+  return [`--auto-mas-environment=${getApplicationEnvironment()}`]
+}
+
+export function getDevelopmentServerUrl(): string | undefined {
+  return isDevelopmentEnvironment() ? process.env.VITE_DEV_SERVER_URL : undefined
 }
 
 // 解析端口号，非法值返回 undefined 交由调用方回退

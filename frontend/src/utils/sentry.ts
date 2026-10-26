@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import * as Sentry from '@sentry/electron/renderer'
 import * as VueSentry from '@sentry/vue'
 import type { App } from 'vue'
@@ -12,7 +13,7 @@ type VueSentryOptions = NonNullable<Parameters<typeof VueSentry.init>[0]>
 const startSentry = () => {
   if (!sentryContext) return
   // 开发环境不上报
-  if (import.meta.env.DEV) return
+  if (isDev) return
 
   Sentry.init<VueSentryOptions>(
     {

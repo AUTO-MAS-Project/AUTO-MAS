@@ -45,14 +45,12 @@
 </template>
 
 <script setup lang="ts">
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { onMounted, ref, version } from 'vue'
 import { useIntervalFn, useWindowSize } from '@vueuse/core'
 
 // Vue版本
 const vueVersion = ref(version)
-
-// 开发环境检测
-const isDev = ref(process.env.NODE_ENV === 'development' || import.meta.env?.DEV === true)
 
 // 当前时间
 const currentTime = ref('')

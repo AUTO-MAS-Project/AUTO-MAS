@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, ref, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
@@ -8,7 +9,7 @@ import {
   DeleteOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import { Service, type ZzzOdInstanceOut } from '@/api'
+import { type ZzzOdInstanceOut } from '@/api'
 const props = defineProps<{
   scriptId: string
   locked: boolean

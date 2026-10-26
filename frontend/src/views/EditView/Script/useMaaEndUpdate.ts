@@ -1,3 +1,4 @@
+import { requestTaskStart } from '@/composables/useTaskApi'
 import { onScopeDispose, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal, message } from 'ant-design-vue'
@@ -227,10 +228,13 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (!scriptId) return
     updateModal.starting = true
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
-        taskId: scriptId,
-        mode: TaskCreateIn.mode.UPDATE,
-      })
+      const response = await requestTaskStart(
+        {
+          taskId: scriptId,
+          mode: TaskCreateIn.mode.UPDATE,
+        },
+        { source: 'script_update' }
+      )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.endfieldUpdateStartFailed'))
       }

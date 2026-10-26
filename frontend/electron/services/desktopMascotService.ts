@@ -1,3 +1,4 @@
+import { getDevelopmentServerUrl, getRendererEnvironmentArguments } from './instanceConfig'
 import { app, BrowserWindow, nativeImage, screen } from 'electron'
 import type { NativeImage, Point, Size, WebContents } from 'electron'
 import * as path from 'path'
@@ -484,6 +485,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
         skipTaskbar: true,
         show: false,
         webPreferences: {
+          additionalArguments: getRendererEnvironmentArguments(),
           nodeIntegration: false,
           contextIsolation: true,
           preload: path.join(__dirname, '..', 'desktopMascotPreload.js'),
@@ -514,7 +516,7 @@ export class DesktopMascotService implements DesktopMascotRuntime {
       screen.on('display-removed', this.handleDisplayChanged)
       screen.on('display-added', this.handleDisplayChanged)
       screen.on('display-metrics-changed', this.handleDisplayChanged)
-      const devServer = process.env.VITE_DEV_SERVER_URL
+      const devServer = getDevelopmentServerUrl()
       const loading = devServer
         ? win.loadURL(`${devServer.replace(/\/$/, '')}/mascot.html`)
         : win.loadFile(path.join(app.getAppPath(), 'dist', 'mascot.html'))

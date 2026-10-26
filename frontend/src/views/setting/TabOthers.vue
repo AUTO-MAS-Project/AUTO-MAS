@@ -368,13 +368,7 @@ const copyAllInfo = async () => {
   height: auto;
 }
 
-.changelog-modal :deep(.ant-modal-body) {
-  padding: 16px 24px;
-}
-
 .changelog-modal-body {
-  max-height: 60vh;
-  overflow-y: auto;
   padding-right: 8px;
 }
 

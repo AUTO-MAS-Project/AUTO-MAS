@@ -1,6 +1,7 @@
 """MaaEnd 用户可见日志中的统计解析。"""
 
 import re
+from html import unescape
 from typing import Optional
 
 
@@ -54,20 +55,37 @@ def parse_maaend_matrix_statistics(
     locked_count = 0
 
     for log_line in logs:
-        skill_match = re.search(r"OCR到技能：(.+)", log_line)
+        text = unescape(re.sub(r"<[^>]*>", "", log_line)).strip()
+        if re.search(r"任务(?:开始|完成|失败)[:：]", text):
+            pending_statistics = {}
+            current_matrix_skill = ""
+            continue
+
+        skill_match = re.search(r"OCR到技能[:：]\s*(.+)", text)
         if skill_match:
             current_matrix_skill = skill_match.group(1).strip()
             continue
 
-        weapon_match = re.search(r"匹配到武器：(.+)", log_line)
-        if weapon_match and current_matrix_skill:
-            pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
+        weapon_match = re.search(r"匹配到武器[:：]\s*(.+)", text)
+        rule_match = re.search(r"扩展规则命中并锁定[:：]\s*(.+)", text)
+        if current_matrix_skill and (weapon_match or rule_match):
+            if weapon_match:
+                pending_statistics[current_matrix_skill] = weapon_match.group(1).strip()
+            elif rule_match:
+                pending_statistics[current_matrix_skill] = (
+                    f"扩展规则：{rule_match.group(1).strip()}"
+                )
+            current_matrix_skill = ""
+            continue
+
+        if "未匹配到目标技能组合" in text or "扩展规则命中（不操作）" in text:
             current_matrix_skill = ""
             continue
 
         completed_match = re.search(
-            r"筛选完成！共历遍物品：\d+[，,]\s*确认锁定物品：(\d+)",
-            log_line,
+            r"筛选完成[！!]\s*(?:共[历遍]+物品[:：]\s*\d+[，,]\s*)?"
+            r"确认锁定物品[:：]\s*(\d+)",
+            text,
         )
         if completed_match is None:
             continue
@@ -76,8 +94,8 @@ def parse_maaend_matrix_statistics(
         current_locked_count = int(completed_match.group(1))
         locked_count += current_locked_count
         if current_locked_count > 0:
-            matched_items = list(pending_statistics.items())[-current_locked_count:]
-            matrix_statistics.update(matched_items)
+            # 武器匹配与扩展规则均由上游明确报告，不按总数反推某几条被锁定。
+            matrix_statistics.update(pending_statistics)
 
         pending_statistics = {}
         current_matrix_skill = ""

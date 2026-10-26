@@ -3,10 +3,26 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { HistoryAttachment } from '@/api'
 import { OpenAPI } from '@/api'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 defineProps<{ attachments: HistoryAttachment[] }>()
 const { t } = useI18n()
 const failed = ref(new Set<string>())
+const playback = new WeakMap<
+  EventTarget,
+  ReturnType<typeof beginAnalyticsOperation<'replay_tool_finished'>>
+>()
+// 播放意图与实际开始分开；元数据加载、缓冲恢复不重复计为新回放。
+const startReplay = (event: Event) => {
+  if (event.currentTarget) {
+    playback.set(event.currentTarget, beginAnalyticsOperation('replay_tool_finished'))
+  }
+}
+const finishReplay = (event: Event, outcome: 'success' | 'failure') => {
+  if (!event.currentTarget) return
+  playback.get(event.currentTarget)?.finish({ action: 'play', outcome })
+  playback.delete(event.currentTarget)
+}
 // 媒体元素直接访问 ID 资源以支持 Range；路径解析与访问边界由后端负责。
 const attachmentUrl = (id: string) => `${OpenAPI.BASE}/api/history/attachments/${id}`
 const unavailableReason = (reason?: string | null) => {
@@ -18,7 +34,8 @@ const unavailableReason = (reason?: string | null) => {
   }
   return t(keys[reason ?? ''] ?? 'history.attachments.unavailable')
 }
-const markFailed = (id: string) => {
+const markFailed = (id: string, event?: Event) => {
+  if (event) finishReplay(event, 'failure')
   failed.value = new Set([...failed.value, id])
 }
 </script>
@@ -53,7 +70,9 @@ const markFailed = (id: string) => {
           :src="attachmentUrl(attachment.id)"
           controls
           preload="metadata"
-          @error="markFailed(attachment.id)"
+          @play="startReplay"
+          @playing="finishReplay($event, 'success')"
+          @error="markFailed(attachment.id, $event)"
         />
         <a-image
           v-else-if="attachment.kind === 'image'"
