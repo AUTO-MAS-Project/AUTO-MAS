@@ -175,6 +175,8 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   </a-modal>
 </template>
 
+<style scoped src="./notifyChannel.css"></style>
+
 <style scoped>
 .modal-inner {
   display: flex;
@@ -209,15 +211,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   font-size: 16px;
   font-weight: 600;
   color: var(--ant-color-text);
-}
-
-.tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
 }
 
 .doc-link {
