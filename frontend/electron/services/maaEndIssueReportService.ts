@@ -2,6 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { deflateRawSync } from 'zlib'
 import AdmZip = require('adm-zip')
+import JSON5 from 'json5'
 
 import { getLogger } from './logger'
 import {
@@ -10,7 +11,6 @@ import {
   addDirectory,
   addSkippedEntry,
   addReportManifest,
-  readJson,
   addRecentFailedMaaEndHistoryLogs,
   discoverInstallations,
   isRecord,
@@ -93,7 +93,12 @@ interface MxuProject {
 }
 
 function loadMxuProject(rootPath: string, state: CollectorState, label: string): MxuProject {
-  const value = readJson(path.join(rootPath, 'interface.json'))
+  let value: unknown
+  try {
+    value = JSON5.parse(fs.readFileSync(path.join(rootPath, 'interface.json'), 'utf8'))
+  } catch {
+    // 项目信息不可读时保留既有降级，继续导出其它日志。
+  }
   if (!isRecord(value) || typeof value.name !== 'string') {
     addSkippedEntry(
       state,

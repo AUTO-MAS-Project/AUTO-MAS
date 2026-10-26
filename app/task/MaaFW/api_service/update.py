@@ -35,6 +35,7 @@ from app.models.schema import (
     MaaFWProjectUpdateData,
     WSMaaFWProjectUpdateProgressData,
 )
+from app.services.update_transport import query_mirror_cdk_status
 from app.task.MaaFW.api_service.common import (
     MaaFWApiReply,
     logger,
@@ -52,7 +53,6 @@ from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
     can_check_project_update,
     discover_maafw_project_update,
-    query_mirrorchyan_cdk_status,
     update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.project_update.updater import (
@@ -789,15 +789,32 @@ async def query_mirror_cdk(script_id: str, cdk: str) -> MaaFWApiReply:
         interface = None
     if interface is not None:
         rid = str(interface.mirrorchyan_rid or "").strip()
-        result = await query_mirrorchyan_cdk_status(
-            interface,
-            mirror_cdk=cdk,
-            channel=resolve_update_credentials(script_config).channel,
-            # 代理地址可能带 user:pw，不进日志，也不走 ``Config.proxy``
-            proxy=_maafw_httpx_proxy(resolve_update_proxy_url(script_config)),
-        )
-        status = result.status
-        expired_time = result.expired_time
+    if rid:
+        status = "absent"
+        if cdk.strip():
+            from app.task.MaaFW.tools.core.runtime_pool.architecture import (
+                supported_architecture_target,
+            )
+
+            try:
+                target = supported_architecture_target()
+                result = await query_mirror_cdk_status(
+                    rid,
+                    cdk=cdk,
+                    channel=resolve_update_credentials(script_config).channel,
+                    # 代理地址可能带 user:pw，不进日志，也不走 ``Config.proxy``
+                    proxy=_maafw_httpx_proxy(resolve_update_proxy_url(script_config)),
+                    platform_os=target.mirrorchyan_os,
+                    platform_arch=target.mirrorchyan_arch,
+                    timeout=30,
+                )
+                status = result.status
+                expired_time = result.expired_time
+            except Exception as error:  # 查询失败不影响编辑页，也不泄露请求 URL。
+                status = "error"
+                _maafw_update_logger.warning(
+                    f"MFW CDK 状态查询失败: {type(error).__name__}"
+                )
     # CDK 一个字符都不进日志
     _maafw_update_logger.info(
         f"MFW CDK 状态查询: script={script_id} rid={rid or '无'} status={status}"

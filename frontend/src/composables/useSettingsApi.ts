@@ -3,13 +3,23 @@ import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { GetService, UpdateService, type GlobalConfig } from '@/api'
+import { GetService, UpdateService, type GlobalConfig, type SettingMirrorCdkData } from '@/api'
 import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analytics'
 import { beginNotificationChannelChanges } from '@/utils/notificationAnalytics'
 
 export function useSettingsApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  const queryMirrorCdk = async (cdk: string): Promise<SettingMirrorCdkData> => {
+    try {
+      const response = await GetService.querySettingMirrorCdkApiSettingMirrorCdkPost({ cdk })
+      if (response.code === 200) return response.data
+    } catch {
+      // 状态查询失败只显示可重试的提示，不把请求中的 CDK 带入日志或消息。
+    }
+    return { status: 'error', expiredTime: null }
+  }
 
   // 获取设置
   const getSettings = async (): Promise<GlobalConfig | null> => {
@@ -87,5 +97,6 @@ export function useSettingsApi() {
     error,
     getSettings,
     updateSettings,
+    queryMirrorCdk,
   }
 }

@@ -886,39 +886,6 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                     f"上报 SRC 通知异常失败: {report_error}"
                 )
 
-        if self.run_book:
-            if (
-                self.cur_user_config.Data.ProxyTimes == 0
-                and self.cur_user_config.Info.RemainedDay != -1
-            ):
-                self.cur_user_config.Info.RemainedDay = (
-                    self.cur_user_config.Info.RemainedDay - 1
-                )
-                await self.cur_user_config.commit()
-            self.cur_user_config.Data.ProxyTimes = (
-                self.cur_user_config.Data.ProxyTimes + 1
-            )
-            await self.cur_user_config.commit()
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            try:
-                await asyncio.wait_for(
-                    self.task_info.local_notifier.send_notice(
-                        LocalNotice(
-                            title="成功完成一个自动代理任务！",
-                            message=f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                            ticker=f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                            duration_seconds=3,
-                        )
-                    ),
-                    timeout=_FINAL_NOTIFICATION_TIMEOUT_SECONDS,
-                )
-            except Exception as e:
-                logger.opt(exception=True).warning(f"推送系统通知时出现异常: {e}")
-        else:
-            logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
-
     async def _handle_process_cleanup_failure(self) -> None:
         """记录 SRC 进程清理失败，并确保任务不会被标记为完成。"""
 

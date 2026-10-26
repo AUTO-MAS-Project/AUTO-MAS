@@ -12,6 +12,8 @@ import {
   type MaaFWAgentEnvPrepareOut,
   type ScriptCreateIn,
   type ScriptReorderIn,
+  type ScriptMirrorCdkData,
+  GetService,
   HsrService,
   MaaFwService,
   Service,
@@ -61,6 +63,19 @@ const resolveScriptType = (configType: string): ScriptType => {
 export function useScriptApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  const queryMirrorCdk = async (cdk: string): Promise<ScriptMirrorCdkData> => {
+    try {
+      const response = await GetService.queryScriptMirrorCdkApiScriptsMirrorCdkPost({
+        type: 'MAA',
+        cdk,
+      })
+      if (response.code === 200) return response.data
+    } catch {
+      // 查询失败只显示状态，不把可能携带凭据的异常写入日志。
+    }
+    return { status: 'error', expiredTime: null, usingGlobalCdk: !cdk.trim() }
+  }
 
   // 添加脚本（支持从已有脚本复制创建）
   const addScript = async (type: ScriptType, scriptId?: string) => {
@@ -452,5 +467,6 @@ export function useScriptApi() {
     updateScript,
     reorderScript,
     importScriptConfigFile,
+    queryMirrorCdk,
   }
 }

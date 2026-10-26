@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <a-row :gutter="24" align="middle">
-      <a-col :span="6">
+      <a-col :xs="24" :sm="10">
         <a-form-item name="IfAutoCollect">
           <template #label>
             <span class="form-label">
@@ -14,7 +14,7 @@
           <a-switch :checked="enabled" :disabled="loading" @change="handleEnabledChange" />
         </a-form-item>
       </a-col>
-      <a-col v-if="enabled" :span="8">
+      <a-col v-if="enabled" :xs="24" :sm="14">
         <a-form-item name="AutoCollectMode">
           <template #label>
             <span class="form-label">
@@ -28,14 +28,17 @@
             :value="mode"
             :options="modeOptions"
             :disabled="loading"
-            size="large"
             @change="handleModeChange"
           />
         </a-form-item>
       </a-col>
     </a-row>
 
-    <a-spin v-if="enabled" :spinning="optionsLoading">
+    <a-form-item v-if="enabled">
+      <a-alert type="info" show-icon :message="t('edit.maaEndCollectInventoryHint')" />
+    </a-form-item>
+
+    <a-spin v-if="enabled" :spinning="optionsLoading" class="collect-options">
       <a-alert
         v-if="!optionsLoading && !groups.length"
         type="warning"
@@ -81,17 +84,19 @@
               v-for="option in panel.options"
               :key="String(option.value)"
               type="button"
+              role="switch"
               class="route-card"
-              :class="{ selected: panelValues(panel).includes(String(option.value)) }"
+              :class="{
+                'route-card-skipped': !selectedValues(panel).includes(String(option.value)),
+              }"
+              :aria-checked="selectedValues(panel).includes(String(option.value))"
               :disabled="controlsDisabled"
-              :aria-pressed="panelValues(panel).includes(String(option.value))"
               @click="toggleRoute(panel, String(option.value))"
             >
               <span class="route-card-label">{{ option.label }}</span>
-              <CheckCircleFilled
-                v-if="panelValues(panel).includes(String(option.value))"
-                class="route-card-check"
-              />
+              <span class="route-lamp-area" aria-hidden="true">
+                <span class="route-lamp" />
+              </span>
             </button>
           </div>
         </div>
@@ -103,7 +108,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { MaaEndAutoCollectGroup } from '@/api'
 import type { MaaEndTaskConfig } from '@/types/script'
 import {
@@ -149,6 +154,7 @@ const panelValues = (panel: MaaEndAutoCollectGroup) =>
     .filter(value => selectedValues(panel).includes(value))
 
 const applyValues = (panel: MaaEndAutoCollectGroup, values: string[]) => {
+  if (controlsDisabled.value) return
   // 只替换当前分类的选择；保留其他地区及暂时不可见的旧选项。
   const panelSet = new Set(panel.options.map(option => String(option.value)))
   const next = [
@@ -157,10 +163,10 @@ const applyValues = (panel: MaaEndAutoCollectGroup, values: string[]) => {
   emit('save', `Task.${panel.configKey}`, next)
 }
 const toggleRoute = (panel: MaaEndAutoCollectGroup, value: string) => {
-  const current = panelValues(panel)
+  const values = panelValues(panel)
   applyValues(
     panel,
-    current.includes(value) ? current.filter(item => item !== value) : [...current, value]
+    values.includes(value) ? values.filter(item => item !== value) : [...values, value]
   )
 }
 const handleEnabledChange = (value: boolean) => emit('save', 'Task.IfAutoCollect', value)
@@ -194,7 +200,13 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
   padding: 12px 16px 16px;
 }
 
+.collect-options {
+  display: block;
+  min-height: 160px;
+}
+
 .route-panel-header {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -220,52 +232,68 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
 
 .route-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr));
   gap: 8px;
   width: 100%;
 }
 
 .route-card {
-  position: relative;
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  min-height: 40px;
-  padding: 8px 34px 8px 12px;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px 12px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
   color: var(--ant-color-text);
-  font-size: 13px;
-  line-height: 1.4;
+  font: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .route-card:hover:not(:disabled) {
-  border-color: var(--ant-color-primary-hover);
+  background: var(--ant-color-fill-quaternary);
 }
 
-.route-card.selected {
-  border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
+.route-card:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: -2px;
 }
 
 .route-card:disabled {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .route-card-label {
   min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.route-card-check {
-  position: absolute;
-  right: 10px;
-  color: var(--ant-color-primary);
-  font-size: 15px;
+.route-card-skipped .route-card-label {
+  color: var(--ant-color-text-tertiary);
+}
+
+.route-lamp-area {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+
+.route-lamp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ant-color-success);
+}
+
+.route-card-skipped .route-lamp {
+  background: var(--ant-color-fill-secondary);
 }
 </style>

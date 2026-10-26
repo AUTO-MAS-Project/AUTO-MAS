@@ -155,6 +155,13 @@ const routes = [
     meta: { title: '添加MAA用户' },
   },
   {
+    path: '/scripts/:scriptId/users/:userId/cultivate/maa',
+    name: 'MAACultivate',
+    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
+    props: { cultivationPage: true },
+    meta: { title: 'MAA 干员养成' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/maa',
     name: 'MAAUserEdit',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),

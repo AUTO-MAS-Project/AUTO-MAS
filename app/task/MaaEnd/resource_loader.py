@@ -19,6 +19,7 @@
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 from threading import RLock
@@ -27,6 +28,7 @@ from typing import Any
 import json5
 
 from app.utils import get_logger
+from app.utils.constants import MAAEND_INVENTORY_TARGET_DEFAULTS
 from app.utils.io import atomic_write
 
 logger = get_logger("MaaEnd 资源加载器")
@@ -46,7 +48,7 @@ def _normalize_language(language: str) -> str:
 class MaaEndResourceLoader:
     """按 MaaEnd 根目录缓存解析后的动态资源。"""
 
-    _disk_cache_version = 4
+    _disk_cache_version = 6
     _loader_cache: dict[Path, "MaaEndResourceLoader"] = {}
     _cache_lock = RLock()
 
@@ -489,6 +491,7 @@ class MaaEndResourceLoader:
             )
 
         return {
+            "inventory": self._inventory_options(locale),
             "autoCollectGroups": self._auto_collect_groups(locale),
             "controllers": self._localize_options(controller_cases, locale),
             "controllerTypes": {
@@ -499,6 +502,88 @@ class MaaEndResourceLoader:
             "essenceMenus": essence_menus,
             "essenceTargetWeaponGroups": target_groups,
         }
+
+    def _inventory_options(self, locale: dict[str, str]) -> dict[str, Any] | None:
+        """枚举上游库存输入声明，不维护材料与关卡的映射。"""
+
+        options = self._task_options.get("ProtocolSpace", {})
+        mode = options.get("ProtocolSpaceMode", {})
+        if not any(
+            case.get("name") == "TargetInventory" for case in mode.get("cases", [])
+        ):
+            return None
+        limits = options.get("SupplyPlanLimits", {})
+        inputs = limits.get("inputs", [])
+        claim = options.get("ProtocolSpaceObtainModeClaim", {})
+        if limits.get("type") != "input" or not inputs or not claim.get("cases"):
+            raise ValueError("MaaEnd 库存目标声明不完整，请更新或重新安装 MaaEnd")
+        description = limits.get("description", "")
+        if description.startswith("$"):
+            description = locale[description[1:]]
+        localized = self._localize_options(inputs, locale)
+        for item in localized:
+            # 上游标签含 Markdown 图标，库存表格保留原生材料名称。
+            item["label"] = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", item["label"]).strip()
+        return {
+            "description": description,
+            "inputs": localized,
+            "claimModes": self._localize_options(claim["cases"], locale),
+        }
+
+    def write_inventory_options(
+        self,
+        task: dict[str, Any],
+        limits: str,
+        claim_mode: str,
+        *,
+        use_medication: bool,
+    ) -> None:
+        """校验并透传库存覆写值；未指定的输入使用 MAS 固定默认值。"""
+
+        inventory = self._options["inventory"]
+        if inventory is None:
+            raise ValueError("当前 MaaEnd 不支持 IMS 库存计划，请更新 MaaEnd")
+        supplied = json.loads(limits)
+        inputs = self._task_options["ProtocolSpace"]["SupplyPlanLimits"]["inputs"]
+        names = {item["name"] for item in inputs}
+        if not isinstance(supplied, dict) or set(supplied) - names:
+            raise ValueError("IMS 库存目标包含当前 MaaEnd 不支持的材料，请重新配置")
+        values = {}
+        for item in inputs:
+            value = supplied.get(
+                item["name"], MAAEND_INVENTORY_TARGET_DEFAULTS.get(item["name"], "0")
+            )
+            if not isinstance(value, str) or not re.fullmatch(item["verify"], value):
+                raise ValueError(
+                    "IMS 库存目标的格式或范围不符合当前 MaaEnd 的要求，请重新配置"
+                )
+            values[item["name"]] = value
+        if not any(int(value) > 0 for value in values.values()):
+            raise ValueError("IMS 库存计划尚未设置目标，请至少填写一项大于 0 的目标")
+        if claim_mode not in {item["value"] for item in inventory["claimModes"]}:
+            raise ValueError("IMS 领取方式已不受当前 MaaEnd 支持，请重新选择")
+        medication = "UseMedication" if use_medication else "EndTask"
+        medication_option = self._task_options["ProtocolSpace"].get(
+            "ProtocolSpaceUseSpMedication", {}
+        )
+        if medication not in {
+            case["name"] for case in medication_option.get("cases", [])
+        }:
+            raise ValueError("MaaEnd 库存任务理智药选项不完整，请更新 MaaEnd")
+        task.setdefault("optionValues", {}).update(
+            {
+                "ProtocolSpaceMode": {"type": "select", "caseName": "TargetInventory"},
+                "SupplyPlanLimits": {"type": "input", "values": values},
+                "ProtocolSpaceObtainModeClaim": {
+                    "type": "select",
+                    "caseName": claim_mode,
+                },
+                "ProtocolSpaceUseSpMedication": {
+                    "type": "select",
+                    "caseName": medication,
+                },
+            }
+        )
 
     def get_options(self) -> dict[str, Any]:
         self._load_task_resources()

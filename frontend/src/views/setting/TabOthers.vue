@@ -10,6 +10,7 @@ import { message } from 'ant-design-vue'
 import { computed, ref } from 'vue'
 import type { GlobalConfig, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
+import MirrorCdkSettings from './components/MirrorCdkSettings.vue'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from '@/composables/updatePause'
@@ -241,43 +242,7 @@ const copyAllInfo = async () => {
           </div>
         </a-col>
         <a-col :span="8">
-          <div class="form-item-vertical">
-            <div class="form-label-wrapper">
-              <span class="form-label">{{ t('setting.others.cdk') }}</span>
-              <a-tooltip>
-                <template #title>
-                  <div>
-                    {{ t('setting.others.cdkIntro') }}
-                    <a
-                      href="https://mirrorchyan.com/zh/get-start?source=auto-mas-setting"
-                      class="tooltip-link"
-                      @click="handleExternalLink"
-                      >{{ t('setting.others.cdkSite') }}</a
-                    >
-                    {{ t('setting.others.cdkGet') }}
-                  </div>
-                </template>
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </div>
-            <a-input-password
-              :value="settings.Update?.MirrorChyanCDK"
-              :disabled="settings.Update?.Source !== 'MirrorChyan'"
-              :placeholder="t('setting.others.cdkPlaceholder')"
-              :visibility-toggle="true"
-              size="large"
-              @blur="(e: any) => handleSettingChange('Update', 'MirrorChyanCDK', e.target.value)"
-            />
-            <div class="form-hint">
-              {{ t('setting.others.cdkHint') }}
-              <a
-                href="https://mirrorchyan.com?source=automas_settings"
-                class="form-hint-link"
-                @click="handleExternalLink"
-                >{{ t('setting.others.cdkGetLink') }}</a
-              >
-            </div>
-          </div>
+          <MirrorCdkSettings :settings="settings" :handle-setting-change="handleSettingChange" />
         </a-col>
       </a-row>
     </div>
@@ -421,23 +386,6 @@ const copyAllInfo = async () => {
 
 .pause-status-alert {
   margin-bottom: 16px;
-}
-
-.form-hint {
-  margin-top: 6px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.form-hint-link {
-  margin-left: 4px;
-  color: var(--ant-color-primary);
-  text-decoration: underline;
-}
-
-.form-hint-link:hover {
-  color: var(--ant-color-primary-hover);
 }
 
 /* Responsive grid for link cards: ensures cards expand to fill available width */

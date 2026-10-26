@@ -73,7 +73,7 @@ import {
   SkinOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, nextTick, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
@@ -90,6 +90,17 @@ const router = useRouter()
 const route = useRoute()
 const { isDark, activeAppearance } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
+
+// 内容区滚动复位：滚动容器是 .content-area（div），路由 scrollBehavior 管不到。
+// 路径变化（页面切换）时回顶，避免旧页面的滚动位置被带到新页面；
+// 仅查询参数变化（如页签切换）不重置。取容器沿用 .content-area 查询惯例。
+watch(
+  () => route.path,
+  () =>
+    void nextTick(() => {
+      document.querySelector<HTMLElement>('.content-area')?.scrollTo({ top: 0 })
+    })
+)
 
 // 菜单图标依次使用外观包的专属图标、默认图标和内置图标。
 const icon =

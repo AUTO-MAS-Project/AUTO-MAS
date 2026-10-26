@@ -150,6 +150,7 @@ class HistoryStore:
         self.database: Path = Path.cwd() / "data/history.db"
         self._lock: asyncio.Lock = asyncio.Lock()
         self._workers: dict[asyncio.Future[object], threading.Event] = {}
+        self._workers_changed: asyncio.Event = asyncio.Event()
         self._initialized: bool = False
         self._closing: bool = False
         self._video_limit: int = 0
@@ -164,6 +165,7 @@ class HistoryStore:
             future: asyncio.Future[object] = loop.create_future()
             cancel = threading.Event()
             self._workers[future] = cancel
+            self._workers_changed.set()
 
             def finish(value: object, error: BaseException | None) -> None:
                 if not future.done():
@@ -203,6 +205,7 @@ class HistoryStore:
                 raise
             finally:
                 _ = self._workers.pop(future, None)
+                self._workers_changed.set()
                 # 即使工作线程失败也继续传播取消，防止定时循环在关闭时恢复运行。
                 if interrupted is not None:
                     raise interrupted
@@ -214,8 +217,8 @@ class HistoryStore:
             raise HistoryStorageError("历史服务正在关闭，归档已停止")
         connection = sqlite3.connect(self.database, timeout=1)
         connection.row_factory = sqlite3.Row
-        # 取消可能发生在 Python 最后一次检查与 SQLite 真正提交之间。
-        # 每条指令都检查关闭信号，阻止已废弃的事务随后继续提交。
+        # 每条虚拟机指令尽早检查关闭信号；已进入底层 I/O 的提交仍可能完成，
+        # 因此关闭超时只能报告保存状态未确认。
         connection.set_progress_handler(lambda: int(cancel.is_set()), 1)
         connection.execute("PRAGMA foreign_keys=ON").close()
         connection.execute("PRAGMA synchronous=FULL").close()
@@ -289,10 +292,10 @@ class HistoryStore:
                         "SELECT target_path FROM pending_files"
                     ).fetchall(),
                 ):
-                    for path in (
-                        Path(cast(str, row["target_path"])),
-                        Path(cast(str, row["target_path"]) + ".temp"),
-                    ):
+                    target = self._pending_target(cast(str, row["target_path"]))
+                    if target is None:
+                        continue
+                    for path in (target, target.with_name(target.name + ".temp")):
                         path.unlink(missing_ok=True)
                 connection.execute("DELETE FROM pending_files").close()
                 complete_paths: set[str] = set()
@@ -364,23 +367,52 @@ class HistoryStore:
 
         await self._run(initialize_storage)
 
-    async def close(self) -> None:
-        """等待在途操作，超时后请求取消并关闭服务。"""
+    async def close(self, *, after: asyncio.Task[None] | None = None) -> None:
+        """等待用户收尾；阻塞操作按期限请求取消，超时则保留保存状态未确认。"""
 
-        self._closing = True
-        pending = set(self._workers)
-        if pending:
-            _, pending = await asyncio.wait(pending, timeout=self.CLOSE_TIMEOUT / 2)
-        for future in pending:
-            self._workers[future].set()
-        if pending:
-            _, pending = await asyncio.wait(pending, timeout=self.CLOSE_TIMEOUT / 2)
-        for future in pending:
-            if not future.done():
-                future.set_exception(
-                    HistoryStorageError("历史服务关闭期限已到，保存状态未确认")
-                )
-        self._initialized = False
+        try:
+            while after is not None and not after.done():
+                self._workers_changed.clear()
+                pending = {future for future in self._workers if not future.done()}
+                changed = asyncio.create_task(self._workers_changed.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        {after, changed, *pending},
+                        timeout=self.CLOSE_TIMEOUT / 2 if pending else None,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    if not done:
+                        break
+                finally:
+                    changed.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await changed
+        finally:
+            self._closing = True
+            pending = set(self._workers)
+            if pending:
+                _, pending = await asyncio.wait(pending, timeout=self.CLOSE_TIMEOUT / 2)
+            for future in pending:
+                self._workers[future].set()
+            if pending:
+                _, pending = await asyncio.wait(pending, timeout=self.CLOSE_TIMEOUT / 2)
+            for future in pending:
+                if not future.done():
+                    future.set_exception(
+                        HistoryStorageError("历史服务关闭期限已到，保存状态未确认")
+                    )
+            self._initialized = False
+
+    def _pending_target(self, value: str) -> Path | None:
+        """旧备份中的绝对暂存路径不得操作当前历史目录之外的文件。"""
+
+        target = Path(os.path.abspath(value))
+        try:
+            root = self.root.resolve()
+            resolved = target.resolve()
+        except (OSError, RuntimeError):
+            return None
+        return target if resolved != root and resolved.is_relative_to(root) else None
 
     async def record(self, record: HistoryWrite) -> HistoryRecord:
         """校验并一次性保存一条任务记录；存储不完整时抛出带状态的异常。"""
@@ -682,9 +714,10 @@ class HistoryStore:
         connection: sqlite3.Connection,
         query: HistoryRecordQuery,
         *,
+        columns: tuple[str, ...],
         limited: bool = True,
     ) -> list[sqlite3.Row]:
-        """按查询条件读取记录行，并按时间倒序排列。"""
+        """按查询条件读取所需列，并按时间倒序排列。"""
 
         where: list[str] = []
         args: list[object] = []
@@ -698,7 +731,7 @@ class HistoryStore:
             if value is not None:
                 where.append(f"{column} {operator} ?")
                 args.append(value)
-        statement = "SELECT * FROM records"
+        statement = f"SELECT {', '.join(columns)} FROM records"
         if where:
             statement += " WHERE " + " AND ".join(where)
         statement += " ORDER BY timestamp DESC, id DESC"
@@ -855,6 +888,17 @@ class HistoryStore:
                 rows = self._select(
                     connection,
                     HistoryRecordQuery(start_date=start_date, end_date=end_date),
+                    columns=(
+                        "id",
+                        "time",
+                        "date",
+                        "username",
+                        "script_name",
+                        "status",
+                        "message",
+                        "data",
+                        "storage_errors",
+                    ),
                     limited=False,
                 )
                 for row in reversed(rows):
@@ -934,6 +978,7 @@ class HistoryStore:
                 for row in self._select(
                     connection,
                     HistoryRecordQuery(start_date=day, end_date=day),
+                    columns=("id", "time", "username", "status", "message"),
                     limited=False,
                 ):
                     overview = result.setdefault(
@@ -985,9 +1030,10 @@ class HistoryStore:
             for row in cast(
                 list[sqlite3.Row],
                 connection.execute(
-                    "SELECT byte_size FROM pending_files WHERE kind='video'"
+                    "SELECT byte_size, target_path FROM pending_files WHERE kind='video'"
                 ).fetchall(),
             )
+            if self._pending_target(cast(str, row["target_path"])) is not None
         )
         return total
 
@@ -1026,7 +1072,9 @@ class HistoryStore:
             ):
                 continue
             pending_id = UUID(cast(str, row["attachment_id"]))
-            target = Path(cast(str, row["target_path"]))
+            target = self._pending_target(cast(str, row["target_path"]))
+            if target is None:
+                continue
             pending_targets[pending_id] = target
             pending_candidates.append(
                 HistoryAttachment(
@@ -1208,6 +1256,9 @@ class HistoryStore:
                         raise HistoryStorageError("历史服务正在关闭，归档已停止")
 
                 source.backup(target, pages=128, progress=backup_progress)
+                # 未完成归档不属于快照，恢复后也不能沿用原安装的清理路径。
+                target.execute("DELETE FROM pending_files").close()
+                target.commit()
                 paths = [
                     cast(str, row["log_path"])
                     for row in cast(
