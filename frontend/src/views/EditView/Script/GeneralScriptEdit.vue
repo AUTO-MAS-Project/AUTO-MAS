@@ -556,30 +556,12 @@
             </a-col>
             <!-- 模拟器相关字段 -->
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.emulator')"
-                    :hint="t('edit.pickEmulatorUse')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="generalConfig.Game.EmulatorId"
-                  size="large"
-                  :placeholder="t('edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorSelectField
+                v-model="generalConfig.Game.EmulatorId"
+                :options="emulatorOptions"
+                :loading="emulatorLoading"
+                @change="handleEmulatorChange"
+              />
             </a-col>
 
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
@@ -603,54 +585,13 @@
             </a-col>
 
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    :title="
-                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
-                    "
-                  >
-                    <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    generalConfig.Game.EmulatorId
-                  "
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!generalConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorInstanceField
+                v-model="generalConfig.Game.EmulatorIndex"
+                :emulator-id="generalConfig.Game.EmulatorId"
+                :options="emulatorDeviceOptions"
+                :loading="emulatorDeviceLoading"
+                @save="handleChange('Game', 'EmulatorIndex', $event)"
+              />
             </a-col>
           </a-row>
 
@@ -815,6 +756,8 @@
 </template>
 
 <script setup lang="ts">
+import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
+import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import GeneralTemplateUpload from './components/GeneralTemplateUpload.vue'
 import { createGeneralScriptDraft } from './generalScriptDraft'

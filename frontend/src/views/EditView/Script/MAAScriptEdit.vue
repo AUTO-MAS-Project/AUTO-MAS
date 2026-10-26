@@ -69,80 +69,21 @@
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('edit.emulator')"
-                    :hint="t('edit.pickEmulatorUse')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="maaConfig.Emulator.Id"
-                  size="large"
-                  :placeholder="t('edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorSelectField
+                v-model="maaConfig.Emulator.Id"
+                :options="emulatorOptions"
+                :loading="emulatorLoading"
+                @change="handleEmulatorSelectChange"
+              />
             </a-col>
             <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    :title="
-                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
-                    "
-                  >
-                    <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    maaConfig.Emulator.Id
-                  "
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Emulator', 'Index', maaConfig.Emulator.Index)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="maaConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!maaConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorInstanceField
+                v-model="maaConfig.Emulator.Index"
+                :emulator-id="maaConfig.Emulator.Id"
+                :options="emulatorDeviceOptions"
+                :loading="emulatorDeviceLoading"
+                @save="handleChange('Emulator', 'Index', $event)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -357,6 +298,8 @@
 </template>
 
 <script setup lang="ts">
+import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
+import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import MaaUpdateSettings from './components/MaaUpdateSettings.vue'
 import { createMaaScriptDraft } from './maaScriptDraft'
@@ -374,7 +317,6 @@ import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 
