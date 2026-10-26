@@ -31,7 +31,6 @@ from ..fields import (
 )
 from ..fields.hints import UI_MASKED_VALUE, UiVisibility
 from ..types import TzMarker
-from .manager import config_manager
 from .node import ExportContext, NodeState
 from .staging import StagedOp
 
@@ -114,16 +113,11 @@ class ConfigGroup(BaseModel):
 
         entry = cast("ConfigEntry", entry)
         assert isinstance(group, str)
-        entry._require_initialization_access()
-        config_manager._require_regular_activation(entry)
 
         if is_virtual_model_field(field):
             raise AttributeError(f"虚拟字段 {group}.{name} 只读")
 
         if is_trigger_model_field(field):
-            config_manager._require_regular_activation()
-            if not entry._activation_ready:
-                raise ValueError("配置尚未完成激活，无法触发操作")
             if (group, name) not in type(entry)._cfg_trigger_specs:
                 raise AttributeError(f"触发器 {group}.{name} 须经 @trigger_field 注册")
             # 与 entry.update 一致：HIDE/DISABLE 不接受开闸
@@ -153,23 +147,19 @@ class ConfigGroup(BaseModel):
             entry._dispatch_trigger(group, name, value)
             return
 
-        if config_manager.in_transaction and entry._workspace is not None:
-            if getattr(entry._workspace, group, None) is self:
-                self.__pydantic_validator__.validate_assignment(
-                    self, name, value, context={"entry": entry}
-                )
-                return
-            if (
-                config_manager.in_init_transaction
-                and entry._workspace._workspace is not None
-                and getattr(entry._workspace._workspace, group, None) is self
-            ):
-                self.__pydantic_validator__.validate_assignment(
-                    self, name, value, context={"entry": entry}
-                )
-                return
+        workspace = entry.effective
+        if workspace is not entry and workspace.__dict__.get(group) is self:
+            entry._require_write_access()
+            # 父层引用也只能写本边界，不能绕过局部回退直接修改父壳。
+            entry._build_workspace()
+            target = entry.effective.__dict__[group]
+            target.__pydantic_validator__.validate_assignment(
+                target, name, value, context={"entry": entry}
+            )
+            return
 
         if entry.activation_state == NodeState.INACTIVE:
+            entry._require_write_access()
             # 未激活：纯 pydantic 校验直写（无事务 / 信号）；带 entry 以便时区
             self.__pydantic_validator__.validate_assignment(
                 self, name, value, context={"entry": entry}

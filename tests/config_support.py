@@ -1,4 +1,4 @@
-"""配置框架迁移期间的本地验证夹具；不进入实现提交。"""
+"""配置、API、归档与恢复测试共用的激活及分组适配夹具。"""
 
 from pathlib import Path
 
@@ -11,10 +11,9 @@ async def activate_config(config, path: Path | None = None):
         for root in list(config_manager.iter_persist_roots()):
             if root.persist_path == path:
                 config_manager.unregister_root(root)
-        if config.activation_state != NodeState.INACTIVE:
-            config_manager.register_root(config, path)
+        config_manager.register_root(config, path)
     if config.activation_state == NodeState.INACTIVE:
-        await config.activate(file=path)
+        await config.activate()
     await config_manager.flush()
     return config
 

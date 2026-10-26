@@ -19,8 +19,8 @@ from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from ..signals import CollectionChangeEvent
-from .manager import config_manager
-from .node import ConfigNode, ExportContext, NodeState
+from .manager import TransactionContext, config_manager
+from .node import ConfigNode, ExportContext, NodeState, _ActivationState
 from .staging import StagedOp, StageKind
 
 TEntry = TypeVar("TEntry", bound=ConfigNode)
@@ -45,7 +45,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     _default_entry_types: ClassVar[tuple[type[ConfigNode], ...]] = ()
     # 本实例允许的成员类型：类名 → 类型（构造灌入；运行时 add/remove/reload_type）
     _entry_types: dict[str, type[TEntry]] = PrivateAttr(default_factory=dict)
-    # remove 守卫随集合工作区提交、回退。
+    # remove 守卫（挂 live；不经工作区拷贝语义影响读路径）
     _remove_guards: list[RemoveGuard[TEntry]] = PrivateAttr(default_factory=list)
 
     order: list[CollectionOrderItem] = Field(default_factory=list)
@@ -60,6 +60,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         payload: dict[str, Any] | None = None,
         file: Path | str | None = None,
         name: str | None = None,
+        _activation: _ActivationState | None = None,
         **field_values: object,
     ) -> None:
         # 未激活导入（官方）：field_values 承接 model_validate 注入的 order/data；
@@ -69,11 +70,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         self._parent_ref = weakref.ref(parent) if parent is not None else None
         if payload is not None and file is not None:
             raise ValueError("payload 与 file 互斥")
-        # 构造只保存声明；激活内部以最终 UUID 登记。
+        # 登记前确定最终 UUID，激活只加载成员。
         if uid is not None:
             self._uid = uid if isinstance(uid, UUID) else UUID(uid)
         if file is not None:
-            self._declare_file(Path(file))
+            config_manager.register_root(self, Path(file))
         resolved_types: list[type[TEntry]]
         if entry_types is None:
             resolved_types = cast(
@@ -99,8 +100,13 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 raise ValueError(
                     "嵌套 Collection 禁止 name=；请事后 register_collection"
                 )
-            self._pending_name = name
+            config_manager.register_collection(name, self)
         self._pending_payload = payload
+        if _activation is None and parent is not None:
+            _activation = parent._activation
+        self._activation = (
+            _activation if _activation is not None and _activation.active else None
+        )
 
     @classmethod
     def build(
@@ -126,12 +132,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             payload=payload,
             file=file,
             name=name,
-            **field_values,
+            **cast("dict[str, Any]", field_values),
         )
         return self
 
     async def _commit_op(self, op: StagedOp) -> None:
-        config_manager._require_regular_activation()
         if op.kind not in (
             StageKind.COLLECTION_ADD,
             StageKind.COLLECTION_REMOVE,
@@ -147,12 +152,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             op.kind == StageKind.COLLECTION_ADD
             and self.activation_state == NodeState.INITIALIZING
         )
-        async with (
-            config_manager.init_transaction(node=self)
-            if use_init
-            else config_manager.transaction()
-        ):
-            (self._build_init_workspace if use_init else self._build_workspace)()
+        async with config_manager.transaction():
+            self._build_workspace()
 
             if op.kind == StageKind.COLLECTION_ADD:
                 assert op.entry_type is not None and op.uid is not None
@@ -171,7 +172,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     raise ValueError(f"不支持的 Entry 类型: {op.entry_type.__name__}")
                 entry = cast(
                     TEntry,
-                    op.entry_type.build(uid=op.uid, payload=op.payload, parent=self),
+                    op.entry_type.build(
+                        uid=op.uid,
+                        payload=op.payload,
+                        parent=self,
+                    ),
                 )
                 await entry.activate(regenerate_uuids=op.regenerate_uuids)
                 self.effective.data[entry.uid] = entry
@@ -193,7 +198,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 if entry.is_locked:
                     raise ValueError(f"成员已锁定，无法删除: {op.uid}")
                 # 先跑 remove_guard，再 mutate / send(remove)
-                for guard in self.effective._remove_guards:
+                for guard in self._remove_guards:
                     await guard(self, op.uid, entry)
                 await entry._delete()
                 del self.effective.data[op.uid]
@@ -250,7 +255,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     entry = self.effective.data[uid]
                     if entry.is_locked:
                         raise ValueError(f"成员已锁定，无法 remove_type: {uid}")
-                    for guard in self.effective._remove_guards:
+                    for guard in self._remove_guards:
                         await guard(self, uid, entry)
                     await entry._delete()
                     del self.effective.data[uid]
@@ -299,7 +304,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 ]
                 replacement = cast(
                     TEntry,
-                    op.entry_type.build(uid=op.uid, parent=self, payload=op.payload),
+                    op.entry_type.build(
+                        uid=op.uid,
+                        parent=self,
+                        payload=op.payload,
+                    ),
                 )
                 await replacement.activate()
                 self.effective.data[op.uid] = replacement
@@ -361,7 +370,9 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     new_entry = cast(
                         TEntry,
                         op.entry_type.build(
-                            uid=item.uid, payload=payloads[item.uid], parent=self
+                            uid=item.uid,
+                            payload=payloads[item.uid],
+                            parent=self,
                         ),
                     )
                     await new_entry.activate()
@@ -639,19 +650,13 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     def register_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """注册异步拒删守卫；在 commit 应用 remove 前依次 await。"""
-        self._require_initialization_access()
-        with config_manager._execution_gate_sync():
-            if config_manager.in_transaction:
-                self._build_workspace()
-            self.effective._remove_guards.append(guard)
+        self._require_lifecycle_access()
+        self._remove_guards.append(guard)
 
     def unregister_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """移除已注册的拒删守卫。"""
-        self._require_initialization_access()
-        with config_manager._execution_gate_sync():
-            if config_manager.in_transaction:
-                self._build_workspace()
-            self.effective._remove_guards.remove(guard)
+        self._require_lifecycle_access()
+        self._remove_guards.remove(guard)
 
     # ──────────────── 激活 ────────────────
 
@@ -688,13 +693,14 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     payload = cast(dict[str, Any], raw)
                 else:
                     payload = {}
-                self.add(
-                    type_name,
-                    uid=None if regenerate_uuids else uid,
-                    payload=payload,
-                    regenerate_uuids=regenerate_uuids,
-                )
-                await self.commit()
+                async with config_manager.transaction(new_boundary=True):
+                    self.add(
+                        type_name,
+                        uid=None if regenerate_uuids else uid,
+                        payload=payload,
+                        regenerate_uuids=regenerate_uuids,
+                    )
+                    await self.commit()
             except Exception as exc:  # noqa: BLE001
                 errors.append(exc)
 
@@ -703,41 +709,38 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     # ──────────────── 工作区 ────────────────
 
-    def _make_workspace_shell(
-        self, *, init: bool = False, source: ConfigNode | None = None
-    ) -> Self:
-        if source is not None:
-            src = cast(Self, source)
-        elif init:
-            assert self._workspace is not None
-            src = cast(Self, self._workspace)
-        else:
-            src = self
+    def _make_workspace_shell(self, source: ConfigNode) -> Self:
+        src = cast(Self, source)
         ws = src.model_copy()
         ws._staged_by_owner = weakref.WeakKeyDictionary()
+        ws._workspace = {}
         object.__setattr__(ws, "order", list(src.order))
         object.__setattr__(ws, "data", dict(src.data))
         ws._entry_types = dict(src._entry_types)
-        ws._remove_guards = list(src._remove_guards)
-        ws._workspace = None
-        ws._deleted = src._deleted
-        ws._activation_state = src._activation_state
-        ws._pending_payload = src._pending_payload
         ws._is_workspace = True
         return ws
 
-    def _apply_workspace(self, source: ConfigNode) -> None:
+    def _COMMIT(self, ctx: TransactionContext) -> None:
+        source = self._workspace.pop(ctx.scope_id, None)
+        if source is None:
+            return
         shell = cast(Self, source)
-        object.__setattr__(self, "order", list(shell.order))
-        object.__setattr__(self, "data", dict(shell.data))
-        self._entry_types = dict(shell._entry_types)
-        self._remove_guards = list(shell._remove_guards)
-        self._deleted = shell._deleted
-        self._activation_state = shell._activation_state
-        self._activation_lifecycle = shell._activation_lifecycle
-        self._pending_payload = shell._pending_payload
-        self._pending_file = shell._pending_file
-        self._pending_name = shell._pending_name
+        target = self
+        if ctx.parent is not None:
+            parent = self._workspace.get(ctx.parent.scope_id)
+            if parent is None:
+                self._workspace[ctx.parent.scope_id] = self._make_workspace_shell(
+                    source
+                )
+                return
+            target = cast(Self, parent)
+        object.__setattr__(target, "order", list(shell.order))
+        object.__setattr__(target, "data", dict(shell.data))
+        target._entry_types = dict(shell._entry_types)
+        target._deleted = shell._deleted
+        target._activation_state = shell._activation_state
+        target._activation = shell._activation
+        target._pending_payload = shell._pending_payload
 
     # ──────────────── 导出（官方 model_serializer）────────────────
 

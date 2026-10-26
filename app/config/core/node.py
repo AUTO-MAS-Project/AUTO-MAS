@@ -3,7 +3,7 @@
 ``ConfigNode`` 继承 ``BaseModel``（文档 schema），其上叠加：
 
 - 运行时私有状态（uid / parent / activation_state / deleted / locked / workspace）
-- 工作区两层 API：读 ``effective`` / 写 ``_build_workspace``
+- 按事务边界持有工作区：读 ``effective`` / 写 ``_build_workspace``
 - blinker 信号：``connect`` / ``disconnect`` / ``send``
 - 生命周期：``activate`` / ``delete`` / ``lock_s`` / ``lock_x`` / ``unlock`` / ``to_dict``
 """
@@ -29,7 +29,7 @@ from app.utils.io import read_dict_file
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import (
     ExecutionOwner,
-    _ActivationLifecycle,
+    TransactionContext,
     add_x_token,
     config_manager,
     discard_x_token,
@@ -77,6 +77,20 @@ class NodeState(str, Enum):
     INACTIVE = "inactive"
     INITIALIZING = "initializing"
     ACTIVE = "active"
+
+
+@dataclass
+class _ActivationState:
+    """一次递归激活共用的标记，与各节点自己的 NodeState 分开。"""
+
+    fast_init: bool = False
+    active: bool = True
+    transaction: weakref.ReferenceType[TransactionContext] | None = None
+
+    @property
+    def pending(self) -> bool:
+        transaction = self.transaction() if self.transaction is not None else None
+        return self.active or (transaction is not None and transaction.active)
 
 
 @dataclass(frozen=True)
@@ -169,6 +183,8 @@ class _SignalDescriptor:
             sender = obj  # 类访问时为 None
 
             def register(fn: SignalCallback) -> SignalCallback:
+                if sender is not None:
+                    sender._require_lifecycle_access()
                 if is_disconnect:
                     owner._disconnect_impl(
                         fn,
@@ -257,20 +273,18 @@ class ConfigNode(BaseModel):
     )
 
     signal: ClassVar[Signal] = Signal()
-    _signal_workspace: ClassVar[Signal | None] = None
+    _signal_workspace: ClassVar[dict[UUID, Signal]] = {}
 
     # ── 运行时私有状态 ──
     _uid: UUID = PrivateAttr(default_factory=uuid4)
     _parent_ref: ParentRef | None = PrivateAttr(default=None)
     _activation_state: NodeState = PrivateAttr(default=NodeState.INACTIVE)
-    _activation_lifecycle: _ActivationLifecycle | None = PrivateAttr(default=None)
+    _activation: _ActivationState | None = PrivateAttr(default=None)
+    _workspace: dict[UUID, ConfigNode] = PrivateAttr(default_factory=dict)
     _deleted: bool = PrivateAttr(default=False)
     _lock_s: set[UUID] = PrivateAttr(default_factory=set)
     _lock_x: UUID | None = PrivateAttr(default=None)
-    _workspace: "ConfigNode | None" = PrivateAttr(default=None)
     _pending_payload: dict[str, Any] | None = PrivateAttr(default=None)
-    _pending_file: Path | None = PrivateAttr(default=None)
-    _pending_name: str | None = PrivateAttr(default=None)
     _is_workspace: bool = PrivateAttr(default=False)
     # Task / Thread 为弱键；作用域只存标识，不把已结束事务或任务强引用进队列。
     _staged_by_owner: weakref.WeakKeyDictionary[
@@ -284,7 +298,7 @@ class ConfigNode(BaseModel):
         super().__pydantic_init_subclass__(**kwargs)
         # 每个具体子类拥有独立 Signal（Collection 子类共享 ConfigCollection.signal 亦可）
         cls.signal = Signal()
-        cls._signal_workspace = None
+        cls._signal_workspace = {}
 
     # ──────────────── 身份与层级 ────────────────
 
@@ -304,26 +318,35 @@ class ConfigNode(BaseModel):
 
     @property
     def _activation_ready(self) -> bool:
-        node = self.effective
-        lifecycle = node._activation_lifecycle
-        return node._activation_state == NodeState.ACTIVE and (
-            lifecycle is None
-            or lifecycle.complete
-            or (
-                lifecycle.finished
-                and lifecycle.owner() is execution_owner()
-                and config_manager.in_transaction
-            )
+        return self.activation_state == NodeState.ACTIVE and (
+            self._activation is None or not self._activation.pending
         )
 
-    def _require_initialization_access(self) -> None:
-        lifecycle = self._activation_lifecycle
-        if (
-            lifecycle is not None
-            and not lifecycle.complete
-            and lifecycle.owner() is not execution_owner()
-        ):
-            raise ValueError("配置仍在激活，其他执行者不能修改")
+    def _require_write_access(self) -> None:
+        """统一检查受管写入；初始化赋值与入口结束后的关联写入仍可执行。"""
+        activation = self._activation
+        if activation is not None and activation.pending:
+            ctx = config_manager.current
+            if (
+                ctx is None
+                or activation.transaction is None
+                or activation.transaction() is not ctx.root
+            ):
+                raise ValueError("配置仍在激活，其他执行者不能修改")
+        if self.activation_state != NodeState.ACTIVE:
+            return
+        if activation is not None and activation.active:
+            raise ValueError("所属激活流程尚未完成，不能执行热态修改")
+        if self.deleted:
+            raise DeletedNodeError(self.uid)
+        # S 锁拒写，X 锁仅允许持票上下文写入；锁状态仍挂在 live 上。
+        if self.is_locked and self._lock_x not in x_tokens():
+            raise ValueError("配置已锁定, 无法修改")
+
+    def _require_lifecycle_access(self) -> None:
+        """声明可在冷态建立；激活尚未发布时禁止修改非字段生命周期状态。"""
+        if self._activation is not None and self._activation.pending:
+            raise ValueError("激活期间不能修改生命周期状态")
 
     @property
     def deleted(self) -> bool:
@@ -333,8 +356,6 @@ class ConfigNode(BaseModel):
     @property
     def is_locked(self) -> bool:
         """派生：任一 S 或 X 持有即为真（不经工作区；仅已激活后有意义）。"""
-        # 外部实例的业务锁不归配置事务管理，不能作为可重试字段校验的稳定输入。
-        config_manager._require_regular_activation(self)
         return bool(self._lock_s) or self._lock_x is not None
 
     @property
@@ -355,15 +376,7 @@ class ConfigNode(BaseModel):
         """仅持久化根节点有路径；嵌套子节点激活不得误读根文件。"""
         if self.parent is not None:
             return None
-        return config_manager.get_file(self) or self._pending_file
-
-    def _declare_file(self, path: Path) -> None:
-        if not self.is_root:
-            raise ValueError("仅根节点可声明持久化文件")
-        path = Path(path)
-        if path.suffix.lower() not in {".yaml", ".yml"}:
-            raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
-        self._pending_file = path
+        return config_manager.get_file(self)
 
     # ── 暂存 / 提交：stage 仅记录 op 队列；生效修改只在事务 ws（effective）内 ──
 
@@ -401,15 +414,7 @@ class ConfigNode(BaseModel):
 
     def _stage(self, op: StagedOp) -> None:
         """热态写只登记申请；工作区应用、校验及信号在 commit 的事务内执行。"""
-        config_manager._require_regular_activation(self)
-        self._require_initialization_access()
-        if self.activation_state == NodeState.ACTIVE and not self._activation_ready:
-            raise ValueError("所属激活流程尚未完成，不能执行热态修改")
-        if self.deleted:
-            raise DeletedNodeError(self.uid)
-        # S/X 权限沿用原设计；本轮只修提交隔离，不改变业务锁策略。
-        if self.is_locked and self._lock_x not in x_tokens():
-            raise ValueError("配置已锁定, 无法修改")
+        self._require_write_access()
         self._stage_queue(config_manager.staging_scope, create=True).append(op)
         config_manager._register_staged(self)
 
@@ -417,19 +422,27 @@ class ConfigNode(BaseModel):
         """按序提交暂存 op；收集全部失败后 ``raise ConfigAggregateError``。
 
         manager 先取得全局入口再取节点锁；同 Task 嵌套复用入口及事务。
-        只快照并清空当前执行者、当前作用域的暂存；每个 op 仍独立事务。
+        只快照并清空当前执行者、当前作用域的暂存；默认逐 op，共享边界内复用。
         Cancel 时归还当前已回滚及尚未执行的记录，不自动重试业务修改。
         """
-        config_manager._require_regular_activation(self)
+        queue = self._current_staged()
+        if not queue:
+            queues = self._staged_by_owner.get(execution_owner(), {})
+            if any(queues.values()):
+                raise RuntimeError(
+                    "存在其它作用域的暂存，请在同一作用域内赋值并 commit"
+                )
+            return
+        # 在等待入口前拒绝非法初始化写入；空提交不需要写权限。
+        self._require_write_access()
+        reentrant_init = (
+            self.activation_state == NodeState.INITIALIZING
+            and config_manager.in_node_commit(self)
+        )
         async with config_manager.node_commit(self):
-            queue = self._current_staged()
-            if not queue:
-                queues = self._staged_by_owner.get(execution_owner(), {})
-                if any(queues.values()):
-                    raise RuntimeError(
-                        "存在其它作用域的暂存，请在同一作用域内赋值并 commit"
-                    )
-                return
+            if reentrant_init:
+                raise RuntimeError("禁止同节点重复开启 init 事务")
+            # 等待入口期间锁和删除状态可能变化，取得入口后再复核。
             if self.deleted:
                 raise DeletedNodeError(self.uid)
             if self.is_locked and self._lock_x not in x_tokens():
@@ -444,8 +457,6 @@ class ConfigNode(BaseModel):
                     try:
                         await self._commit_op(op)
                     except Exception as exc:  # noqa: BLE001
-                        if config_manager.in_fast_activation:
-                            raise
                         errors.append(exc)
                         self._current_staged().clear()
                     except BaseException:
@@ -464,109 +475,62 @@ class ConfigNode(BaseModel):
     # ──────────────── 工作区 API ────────────────
 
     @property
-    def init_workspace(self) -> Self | None:
-        """普通 ws 上的 init 层：``live._workspace._workspace``。"""
-        workspace = self._workspace
-        if workspace is None:
-            return None
-        return cast(Self | None, workspace._workspace)
-
-    @property
     def effective(self) -> Self:
-        """读入口：init 层（``ws.ws``）→ 普通 ws → live。"""
-        if config_manager.in_init_transaction:
-            init_workspace = self.init_workspace
-            if init_workspace is not None:
-                return init_workspace
-        if config_manager.in_transaction:
-            workspace = self._workspace
+        """读取本节点在当前事务或父事务中的工作区，其他执行者读 live。"""
+        ctx = config_manager.current
+        workspaces: dict[UUID, ConfigNode] = cast(
+            "dict[str, Any]", self.__pydantic_private__
+        )["_workspace"]
+        while ctx is not None:
+            workspace = workspaces.get(ctx.scope_id)
             if workspace is not None:
                 return cast(Self, workspace)
+            ctx = ctx.parent
         return self
 
     def _build_workspace(self) -> None:
-        if not config_manager.in_transaction:
+        ctx = config_manager.current
+        if ctx is None:
             return
         if self._is_workspace:
             raise RuntimeError("工作区不可再次创建工作区")
         if self._deleted:
             raise DeletedNodeError(self.uid)
-        config_manager._capture_workspace(
-            self, exclude_node_scope=self.init_workspace is not None
-        )
-        if self._workspace is not None:
-            return
-        self._workspace = self._make_workspace_shell(init=False)
-        config_manager._register_workspace(self)
+        workspaces: dict[UUID, ConfigNode] = cast(
+            "dict[str, Any]", self.__pydantic_private__
+        )["_workspace"]
+        if ctx.scope_id not in workspaces:
+            workspaces[ctx.scope_id] = self._make_workspace_shell(self.effective)
+            config_manager._register_workspace(self)
 
-    def _build_init_workspace(self) -> None:
-        """在 ``self._workspace._workspace`` 挂载 init 壳并登记。
-
-        禁止同节点在已有 init 壳时再次建立（禁止同节点重复开启 init 事务）。
-        跨节点嵌套 init（如集合 ADD 与成员字段）各自建壳，不受影响。
-        """
-        if not config_manager.in_init_transaction:
-            return
-        if self._is_workspace:
-            raise RuntimeError("须在 live 上调用 _build_init_workspace")
-        if self._workspace is None:
-            raise RuntimeError("init 须先建立普通工作区")
-        if self._workspace._workspace is not None:
-            if config_manager._reuse_init_workspace(self):
-                config_manager._register_init_workspace(self)
-                return
-            raise RuntimeError("禁止同节点重复开启 init 事务")
-        # 再入检查先于快照，当前字段自身不再复制普通工作区。
-        config_manager._capture_workspace(self, exclude_node_scope=True)
-        self._workspace._workspace = self._make_workspace_shell(init=True)
-        config_manager._register_init_workspace(self)
-
-    def _make_workspace_shell(
-        self, *, init: bool = False, source: ConfigNode | None = None
-    ) -> ConfigNode:
-        """``init=False`` 从 live 建普通 ws；``init=True`` 从 ``self._workspace`` 建 init 层。"""
+    def _make_workspace_shell(self, source: ConfigNode) -> ConfigNode:
         raise NotImplementedError
 
-    def _COMMIT(self) -> None:
-        if self._workspace is not None:
-            self._apply_workspace(self._workspace)
-            self._workspace = None
-
-    def _COMMIT_init(self) -> None:
-        workspace = self._workspace
-        if workspace is not None and workspace._workspace is not None:
-            workspace._apply_workspace(workspace._workspace)
-            workspace._workspace = None
-
-    def _apply_workspace(self, source: ConfigNode) -> None:
-        """回填字段及受管状态，保留目标节点和分组身份。"""
+    def _COMMIT(self, ctx: TransactionContext) -> None:
         raise NotImplementedError
 
-    def _ROLLBACK(self) -> None:
-        self._workspace = None
+    def _ROLLBACK(self, ctx: TransactionContext) -> None:
+        self._workspace.pop(ctx.scope_id, None)
         if self._activation_state == NodeState.INACTIVE:
-            self._activation_lifecycle = None
-
-    def _ROLLBACK_init(self) -> None:
-        if self._workspace is not None:
-            self._workspace._workspace = None
+            parent = self.effective
+            self._activation = parent._activation if parent is not self else None
 
     @classmethod
     def signal_effective(cls) -> Signal:
-        """信号读入口：事务内见信号工作区，否则 ``cls.signal``。"""
-        ws = cls._signal_workspace
-        if config_manager.in_transaction and ws is not None:
-            return ws
+        ctx = config_manager.current
+        while ctx is not None:
+            workspace = cls._signal_workspace.get(ctx.scope_id)
+            if workspace is not None:
+                return workspace
+            ctx = ctx.parent
         return cls.signal
 
     @classmethod
     def _build_signal_workspace(cls) -> None:
-        if not config_manager.in_transaction:
+        ctx = config_manager.current
+        if ctx is None or ctx.scope_id in cls._signal_workspace:
             return
-        config_manager._capture_signal(cls)
-        if cls._signal_workspace is not None:
-            return
-        source = cls.signal
+        source = cls.signal_effective()
         workspace = Signal()
         workspace.is_muted = source.is_muted
         # Blinker 没有公开的完整订阅枚举接口；这里自行读取接收者、发送者及
@@ -594,20 +558,21 @@ class ConfigNode(BaseModel):
                 receiver = stored() if isinstance(stored, weakref.ref) else stored
                 if receiver is not None:
                     workspace.connect(receiver, sender=sender, weak=weak)
-        cls._signal_workspace = workspace
+        cls._signal_workspace[ctx.scope_id] = workspace
         config_manager._register_workspace(cls)
 
     @classmethod
-    def _COMMIT_signal(cls) -> None:
-        ws = cls._signal_workspace
-        if ws is None:
-            return
-        cls.signal = ws
-        cls._signal_workspace = None
+    def _COMMIT_signal(cls, ctx: TransactionContext) -> None:
+        workspace = cls._signal_workspace.pop(ctx.scope_id, None)
+        if workspace is not None:
+            if ctx.parent is None:
+                cls.signal = workspace
+            else:
+                cls._signal_workspace[ctx.parent.scope_id] = workspace
 
     @classmethod
-    def _ROLLBACK_signal(cls) -> None:
-        cls._signal_workspace = None
+    def _ROLLBACK_signal(cls, ctx: TransactionContext) -> None:
+        cls._signal_workspace.pop(ctx.scope_id, None)
 
     # ──────────────── 信号 ────────────────
 
@@ -672,9 +637,6 @@ class ConfigNode(BaseModel):
                     raise TypeError("receiver 不可附属性，无法以弱引用注册信号")
                 wrapped = _wrap(receiver, phase, kind, group, field)
             assert wrapped is not None
-            config_manager._record_signal(
-                cls, wrapped, sender, weak=weak, was_connected=False
-            )
             sig.connect(wrapped, sender=probe, weak=weak)
             return wrapped
 
@@ -707,16 +669,6 @@ class ConfigNode(BaseModel):
             wrapped = store.get(key)
             if wrapped is None:
                 return
-            probe = sender if sender is not None else ANY
-            if wrapped not in sig.receivers_for(probe):
-                return
-            config_manager._record_signal(
-                cls,
-                wrapped,
-                sender,
-                weak=isinstance(sig.receivers.get(id(wrapped)), weakref.ReferenceType),
-                was_connected=True,
-            )
             if sender is not None:
                 sig.disconnect(wrapped, sender=sender)
             else:
@@ -734,100 +686,63 @@ class ConfigNode(BaseModel):
         self,
         *,
         regenerate_uuids: bool = False,
-        try_fast: bool = False,
-        file: Path | None = None,
+        fast_init: bool = False,
     ) -> None:
-        """未激活 → 已激活；热化尽量落地，聚合错误在事务提交后上抛。
+        """复用构造时关联的激活标记；没有进行中的标记时创建一次。
 
-        外层事务：成功字段/成员写入 ws；结束时标 ``ACTIVE`` 并清 ws 上 pending。
-        若本次为外层事务则 ``COMMIT`` 后实例可用；聚合错误再抛给调用方处理。
-        若嵌套在父事务中，父 ``ROLLBACK`` 时本节点随 ws 回到 ``INACTIVE``，live pending 仍保留。
-
-        ``regenerate_uuids``：递归为载荷中的集合成员生成新身份；默认保留载荷 UUID。
-        当前节点身份由构造或 ``Collection.add`` 分配；引用字段值不变。
-
-        ``try_fast``：字段赋值先共用 Init 工作区，失败后回退并使用原逐字段工作区。
-        信号仍逐字段即时执行；其余激活步骤沿原流程执行，不属于字段加速段。
-        锁及跨节点写入等操作在修改前转回原流程。
-        已有普通事务不另起快路径；本次激活的嵌套成员继承选择。取消不重试。
-        回调的外部副作用不在配置事务回滚范围。
-
-        ``file``：启动时补充持久化声明，避免先公开登记冷节点；与 payload 互斥。
-        递归节点共用生命周期标记；入口结束后所属 Task 可用，事务提交后对外可用。
+        可选地在整个字段循环外建立一次事务边界；失败先回退，再逐字段执行。
+        Init 信号保持即时，失败尝试与原流程可能重复调用接收者或第三方服务。
         """
-        config_manager._require_regular_activation()
-        self._require_initialization_access()
-        # 完整激活及字段回退共用执行入口，避免重试之间被其他提交插入。
+        self._require_write_access()
         async with config_manager.execution_gate():
             if self.activation_state != NodeState.INACTIVE:
                 raise ValueError("不可重复 activate")
-            if file is not None:
-                if not self.is_root or self._pending_payload is not None:
-                    raise ValueError("file 仅用于没有 payload 的根节点")
-                if self._pending_file is not None and self._pending_file != Path(file):
-                    raise ValueError("激活文件与构造声明不一致")
-                self._declare_file(file)
-            if self._pending_file is not None or self._pending_name is not None:
-                config_manager._check_activation_registration(self)
-            with config_manager._activation_scope(try_fast=try_fast):
-                mode = config_manager._current_activation_mode()
-                assert mode is not None
-                if mode.lifecycle is None:
-                    mode.lifecycle = _ActivationLifecycle(root=weakref.ref(self))
-                # live 仅公布“正在激活”，使其他 Task/线程不能误走冷态直写。
-                self._activation_lifecycle = mode.lifecycle
-                try:
+            activation = self._activation
+            owns_activation = activation is None or not activation.active
+            previous: list[tuple[ConfigNode, _ActivationState | None]] = []
+            activate_error: ConfigAggregateError | None = None
+            try:
+                async with config_manager.transaction():
+                    ctx = config_manager.current
+                    assert ctx is not None
+                    if owns_activation:
+                        activation = _ActivationState(
+                            fast_init=fast_init, transaction=weakref.ref(ctx.root)
+                        )
+                    # 已构造但尚未轮到 activate 的子节点也属于本次激活。
+                    nodes: list[ConfigNode] = [self]
+                    for node in nodes:
+                        if node._activation is not activation:
+                            previous.append((node, node._activation))
+                            node._activation = activation
+                        nodes.extend(node.iter_children())
                     if self._pending_payload is not None:
                         payload: dict[str, Any] = self._pending_payload
                     elif self.persist_path is not None:
-                        # 缺失及空文档可初始化；错误根类型保留原件并停止激活。
                         payload = read_dict_file(self.persist_path, allow_empty=True)
                     else:
                         payload = self.model_dump(
                             mode="json", context=ExportContext(audience="persist")
                         )
-                    await self._activate_with_payload(
-                        payload, regenerate_uuids=regenerate_uuids
-                    )
-                except BaseException:
-                    if (
-                        self._workspace is None
-                        and self._activation_state == NodeState.INACTIVE
-                    ):
-                        self._activation_lifecycle = None
-                    raise
-
-    async def _activate_with_payload(
-        self, payload: dict[str, Any], *, regenerate_uuids: bool
-    ) -> None:
-        """普通事务覆盖完整生命周期；字段加速和回退由 Entry 在事务内处理。"""
-        activate_error: ConfigAggregateError | None = None
-        async with config_manager.transaction():
-            self._build_workspace()
-            mode = config_manager._current_activation_mode()
-            transaction = config_manager.current
-            assert mode is not None and transaction is not None
-            assert mode.lifecycle is not None
-            if not any(item is mode.lifecycle for item in transaction.activations):
-                transaction.activations.append(mode.lifecycle)
-            self.effective._activation_lifecycle = mode.lifecycle
-            if self._pending_file is not None or self._pending_name is not None:
-                config_manager._register_activation(self)
-            self.effective._activation_state = NodeState.INITIALIZING
-            try:
-                await self._activate_from_payload(
-                    payload, regenerate_uuids=regenerate_uuids
-                )
-            except ConfigAggregateError as exc:
-                activate_error = exc
-            self.effective._activation_state = NodeState.ACTIVE
-            self.effective._pending_payload = None
-            self.effective._pending_file = None
-            self.effective._pending_name = None
-            if mode.lifecycle.root() is self:
-                mode.lifecycle.finished = True
-        if activate_error is not None:
-            raise activate_error
+                    self._build_workspace()
+                    self.effective._activation = activation
+                    self.effective._activation_state = NodeState.INITIALIZING
+                    try:
+                        await self._activate_from_payload(
+                            payload, regenerate_uuids=regenerate_uuids
+                        )
+                    except ConfigAggregateError as exc:
+                        activate_error = exc
+                    self.effective._activation_state = NodeState.ACTIVE
+                    self.effective._pending_payload = None
+            finally:
+                if owns_activation and activation is not None:
+                    activation.active = False
+                if self.activation_state == NodeState.INACTIVE:
+                    for node, old in previous:
+                        node._activation = old
+            if activate_error is not None:
+                raise activate_error
 
     async def _activate_from_payload(
         self, payload: dict[str, Any], *, regenerate_uuids: bool = False
@@ -856,7 +771,6 @@ class ConfigNode(BaseModel):
         仅已激活节点可取锁。``cascade=True``（默认）覆盖全部子节点；
         ``False`` 只锁本节点。
         """
-        config_manager._require_regular_activation()
         nodes: list[ConfigNode] = [self]
         if cascade:
             for node in nodes:
@@ -877,7 +791,6 @@ class ConfigNode(BaseModel):
         持票上下文可写本锁覆盖的节点（``_stage`` / ``commit`` 认 token）；
         其它上下文与 S 持有者仍禁写。仅已激活节点可取锁；``cascade`` 同 ``lock_s``。
         """
-        config_manager._require_regular_activation()
         nodes: list[ConfigNode] = [self]
         if cascade:
             for node in nodes:
@@ -895,7 +808,6 @@ class ConfigNode(BaseModel):
 
     async def try_lock_x(self, *, cascade: bool = True) -> LockTicket | None:
         """非阻塞取 X；冲突返回 ``None``，成功返回票据（语义同 ``lock_x``）。"""
-        config_manager._require_regular_activation()
         if self._lock_x is not None or self._lock_s:
             return None
         try:
@@ -905,7 +817,7 @@ class ConfigNode(BaseModel):
 
     async def unlock(self, ticket: LockTicket) -> None:
         """凭原凭证解锁；须在 ``ticket.issuer`` 节点调用。"""
-        config_manager._require_regular_activation()
+        self._require_lifecycle_access()
         if ticket.issuer != self.uid:
             raise ValueError("须在签发节点解锁")
         if ticket.mode == "s":

@@ -60,8 +60,8 @@ from ..shortcuts import virtual_field
 from ..signals import FieldChangeEvent
 from .collection import ConfigCollection
 from .group import ConfigGroup, ConfigTableColumn
-from .manager import config_manager, x_tokens
-from .node import ConfigNode, ExportContext, NodeState
+from .manager import TransactionContext, config_manager
+from .node import ConfigNode, ExportContext, NodeState, _ActivationState
 from .staging import StagedOp, StageKind
 
 logger = get_logger("配置激活")
@@ -169,6 +169,7 @@ class ConfigEntry(ConfigNode):
         uid: UUID | str | None = None,
         payload: dict[str, Any] | None = None,
         file: Path | None = None,
+        _activation: _ActivationState | None = None,
         **field_values: object,
     ) -> None:
         # 未激活导入（官方）：field_values 承接 model_validate 注入的字段（如 info=/data=），
@@ -177,12 +178,17 @@ class ConfigEntry(ConfigNode):
         self._parent_ref = weakref.ref(parent) if parent is not None else None
         if payload is not None and file is not None:
             raise ValueError("payload 与 file 互斥")
-        # 构造只保存声明；激活内部以最终 UUID 登记。
+        # 登记前确定最终 UUID，激活只加载字段。
         if uid is not None:
             self._uid = uid if isinstance(uid, UUID) else UUID(uid)
         if file is not None:
-            self._declare_file(file)
+            config_manager.register_root(self, file)
         self._pending_payload = payload
+        if _activation is None and parent is not None:
+            _activation = parent._activation
+        self._activation = (
+            _activation if _activation is not None and _activation.active else None
+        )
 
     @classmethod
     def build(
@@ -202,7 +208,12 @@ class ConfigEntry(ConfigNode):
         """
         self = object.__new__(cls)
         ConfigEntry.__init__(
-            self, parent=parent, uid=uid, payload=payload, file=file, **field_values
+            self,
+            parent=parent,
+            uid=uid,
+            payload=payload,
+            file=file,
+            **cast("dict[str, Any]", field_values),
         )
         return self
 
@@ -484,15 +495,13 @@ class ConfigEntry(ConfigNode):
             raise TypeError(f"Entry 不支持: {op.kind.value}")
         assert op.group is not None and op.field is not None
         use_init = self.activation_state == NodeState.INITIALIZING
-        async with (
-            config_manager.init_transaction(node=self)
-            if use_init
-            else config_manager.transaction()
-        ):
-            (self._build_init_workspace if use_init else self._build_workspace)()
+        async with config_manager.transaction():
+            self._build_workspace()
             group = getattr(self.effective, op.group)
             old = group.__dict__.get(op.field)
-            setattr(group, op.field, op.value)
+            group.__pydantic_validator__.validate_assignment(
+                group, op.field, op.value, context={"entry": self}
+            )
             new = group.__dict__.get(op.field)
             if use_init or old != new:
                 await type(self).send(
@@ -532,6 +541,10 @@ class ConfigEntry(ConfigNode):
         return stored
 
     def _dispatch_trigger(self, group: str, field: str, value: object = True) -> None:
+        if not self._activation_ready:
+            raise ValueError("配置尚未完成激活，无法触发操作")
+        if self.deleted:
+            raise DeletedNodeError(self.uid)
         handler = getattr(self, type(self)._cfg_trigger_specs[(group, field)])
         # bool：无额外参；Literal：传入触发值
         result = (
@@ -567,19 +580,13 @@ class ConfigEntry(ConfigNode):
           插件自身的批量落配置）；此时**仅**跳过虚拟字段与未赋值字段，
           这两类与显隐无关：前者无存储、后者调用方压根没打算改。
         """
-        config_manager._require_regular_activation()
         if type(other) is not type(self):
             raise TypeError(
                 f"update 须为同类 Entry，收到 {type(other).__name__}，"
                 f"期望 {type(self).__name__}"
             )
-        if not self._activation_ready:
+        if self.activation_state != NodeState.ACTIVE:
             raise ValueError("须先 activate")
-        # 与字段赋值、commit 一致：X 持票上下文可写，S 锁及无票上下文拒绝。
-        if self.is_locked and self._lock_x not in x_tokens():
-            raise RuntimeError("已锁定，不可 update")
-        if self.deleted:
-            raise DeletedNodeError(self.uid)
 
         errors: list[Exception] = []
         other_set = other.model_fields_set
@@ -620,9 +627,10 @@ class ConfigEntry(ConfigNode):
         payload = omit_masked_placeholders(
             type(self), migrate_legacy_fields(type(self), payload or {})
         )
+        activation = self._activation
         errors = (
             await self._try_fast_fields(payload)
-            if config_manager.try_fast_activation
+            if activation is not None and activation.fast_init
             else await self._activate_fields(payload)
         )
 
@@ -670,14 +678,12 @@ class ConfigEntry(ConfigNode):
             raise ConfigAggregateError(errors)
 
     async def _try_fast_fields(self, payload: dict[str, Any]) -> list[Exception]:
-        """字段共用 Init 工作区；失败先回退，再使用原逐字段工作区。"""
+        """字段共用局部事务；失败后在边界外恢复逐字段流程。"""
         failed: Exception | None = None
         try:
-            async with config_manager._fast_init_transaction(self) as fast:
+            async with config_manager.transaction(new_boundary=True):
                 try:
                     await self._activate_fields(payload, fail_fast=True)
-                    if fast.error is not None:
-                        raise fast.error
                 except Exception as exc:
                     failed = exc
                     raise
@@ -688,8 +694,8 @@ class ConfigEntry(ConfigNode):
             logger.debug(f"快速赋值退出，回退逐字段初始化：{type(exc).__name__}")
         else:
             return []
-        with config_manager._regular_activation():
-            return await self._activate_fields(payload)
+        # 共享边界已完整撤销；从首字段重试，每字段重新建立独立回退边界。
+        return await self._activate_fields(payload)
 
     async def _activate_fields(
         self, payload: dict[str, Any], *, fail_fast: bool = False
@@ -712,8 +718,13 @@ class ConfigEntry(ConfigNode):
                     if isinstance(value, EncryptedValue):
                         value = value.ciphertext()
                 try:
-                    setattr(group, field_name, value)
-                    await self.commit()
+                    async with config_manager.transaction(new_boundary=not fail_fast):
+                        setattr(group, field_name, value)
+                        await self.commit()
+                        if fail_fast:
+                            ctx = config_manager.current
+                            assert ctx is not None
+                            config_manager._check_staged(ctx)
                 except Exception as exc:  # noqa: BLE001
                     if fail_fast:
                         raise
@@ -722,29 +733,17 @@ class ConfigEntry(ConfigNode):
 
     # ──────────────── 工作区 ────────────────
 
-    def _make_workspace_shell(
-        self, *, init: bool = False, source: ConfigNode | None = None
-    ) -> ConfigEntry:
-        if source is not None:
-            src = cast(ConfigEntry, source)
-        elif init:
-            assert self._workspace is not None
-            src = cast(ConfigEntry, self._workspace)
-        else:
-            src = self
+    def _make_workspace_shell(self, source: ConfigNode) -> ConfigEntry:
+        src = cast(ConfigEntry, source)
         ws = src.model_copy()
         ws._staged_by_owner = weakref.WeakKeyDictionary()
-        ws._workspace = None
-        ws._deleted = src._deleted
-        ws._activation_state = src._activation_state
-        ws._pending_payload = src._pending_payload
+        ws._workspace = {}
         ws._is_workspace = True
         src_data = src.__dict__
         live_data = self.__dict__
         for gname in self._cfg_group_fields:
             src_g = cast(ConfigGroup, src_data[gname])
-            # TODO(R11): 分组浅复制仍共享可变字段；后续与读取侧保护一并处理，
-            # 仅深复制工作区无法阻止事务外通过原地修改写入 live。
+            # TODO(R11): 可变字段仍只支持整字段赋值；浅复制不保护原地修改。
             dup = src_g.model_copy()
             object.__setattr__(dup, "_entry", self)
             object.__setattr__(dup, "_group", gname)
@@ -753,24 +752,30 @@ class ConfigEntry(ConfigNode):
             object.__setattr__(ws, cname, live_data[cname])
         return ws
 
-    def _apply_workspace(self, source: ConfigNode) -> None:
-        live_data = self.__dict__
-        staged_data = source.__dict__
-        # 逐字段回填以保留 live 分组身份，外部可能持有其引用。
+    def _COMMIT(self, ctx: TransactionContext) -> None:
+        source = self._workspace.pop(ctx.scope_id, None)
+        if source is None:
+            return
+        target = self
+        if ctx.parent is not None:
+            parent = self._workspace.get(ctx.parent.scope_id)
+            if parent is None:
+                self._workspace[ctx.parent.scope_id] = self._make_workspace_shell(
+                    source
+                )
+                return
+            target = cast(ConfigEntry, parent)
+        # 逐字段回填，保留 live 及父工作区的分组身份。
         for gname in self._cfg_group_fields:
-            live = cast(ConfigGroup, live_data[gname])
-            staged = cast(ConfigGroup, staged_data[gname])
-            values: dict[str, object] = object.__getattribute__(staged, "__dict__")
-            for fname in type(live).model_fields:
-                if fname.startswith("_"):
-                    continue
-                object.__setattr__(live, fname, values.get(fname))
-        self._deleted = source._deleted
-        self._activation_state = source._activation_state
-        self._activation_lifecycle = source._activation_lifecycle
-        self._pending_payload = source._pending_payload
-        self._pending_file = source._pending_file
-        self._pending_name = source._pending_name
+            group = cast(ConfigGroup, target.__dict__[gname])
+            values = source.__dict__[gname].__dict__
+            for fname in type(group).model_fields:
+                if not fname.startswith("_"):
+                    object.__setattr__(group, fname, values.get(fname))
+        target._deleted = source._deleted
+        target._activation_state = source._activation_state
+        target._activation = source._activation
+        target._pending_payload = source._pending_payload
 
     # ──────────────── 迭代与导出 ────────────────
 
