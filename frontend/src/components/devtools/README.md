@@ -2,7 +2,7 @@
 
 同时满足开发构建与公共应用环境的 development 判定才加载；生产构建、常规 E2E 和独立辅助窗口不挂载工作台。
 
-- 右下角 `DEV` 或 `Ctrl/Cmd + Shift + D` 打开，`Esc` 关闭。
+- 右下角 `DEV` 或 `Ctrl + Shift + D` 打开，`Esc` 关闭；macOS 使用 `Cmd + Shift + D`。
 - 概览：真实 HTTP / WebSocket 地址、连接重试与订阅数、应用环境、Electron 启动模式、退出时保留后端的策略、按需健康探测和诊断摘要。
 - 存储：查看、搜索、编辑、格式化、复制和删除当前来源的 localStorage / sessionStorage；清空始终针对整个当前存储区，筛选不会改变删除范围。
 - 路由：当前参数、已注册路由和会话历史；所有跳转仍经过正常守卫。

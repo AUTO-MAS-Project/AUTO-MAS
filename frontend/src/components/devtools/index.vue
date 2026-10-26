@@ -107,7 +107,7 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
     </template>
     <template #extra>
       <a-space>
-        <kbd class="devtools-shortcut">Ctrl ⇧ D</kbd>
+        <kbd class="devtools-shortcut">Ctrl + Shift + D</kbd>
         <a-button type="text" :aria-label="t('devtools.close')" @click="closePanel">
           <CloseOutlined />
         </a-button>
