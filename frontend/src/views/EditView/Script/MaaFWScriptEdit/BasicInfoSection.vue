@@ -148,17 +148,20 @@
         <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
              日志再多也不会把面板撑高，底边永远和表格齐 -->
         <div class="env-log-wrap">
-          <div ref="envLogBoxRef" class="env-log-box">
-            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
+          <div ref="envLogBoxRef" class="env-log-box maafw-log-box">
+            <div
+              v-if="envTone === 'idle'"
+              class="env-log-line maafw-log-line maafw-log-line--empty"
+            >
               {{ t('edit.envPanelPlaceholder') }}
             </div>
-            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line maafw-log-line">
               {{ line }}
             </div>
             <div
               v-if="envTone !== 'idle'"
-              class="env-log-status"
-              :class="`env-log-status--${envTone}`"
+              class="env-log-status maafw-log-status"
+              :class="`maafw-log-status--${envTone}`"
             >
               <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
               <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
@@ -560,46 +563,6 @@ watch(
 .env-log-box {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.env-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
-.env-log-line--empty {
-  color: var(--ant-color-text-tertiary);
-}
-
-/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色 */
-.env-log-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.env-log-status--running {
-  color: var(--ant-color-primary);
-}
-
-.env-log-status--success {
-  color: var(--ant-color-success);
-}
-
-.env-log-status--failed {
-  color: var(--ant-color-error);
 }
 
 .env-log-status-hint {

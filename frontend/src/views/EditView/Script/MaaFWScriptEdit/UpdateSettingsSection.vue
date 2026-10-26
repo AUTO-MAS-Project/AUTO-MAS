@@ -183,25 +183,25 @@
           </div>
         </div>
         <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动；结论作为最后一行用强调色写出来 -->
-        <div ref="logBoxRef" class="update-log-box">
+        <div ref="logBoxRef" class="update-log-box maafw-log-box">
           <div
             v-if="updateProgress.phase === 'idle'"
-            class="update-log-line update-log-line--empty"
+            class="update-log-line maafw-log-line maafw-log-line--empty"
           >
             {{ t('edit.updateProcessPlaceholder') }}
           </div>
           <div
             v-for="(line, index) in updateProgress.logs"
             :key="index"
-            class="update-log-line"
+            class="update-log-line maafw-log-line"
             :class="{ 'update-log-line--alert': line.alert }"
           >
             {{ line.text }}
           </div>
           <div
             v-if="updateProgress.phase !== 'idle'"
-            class="update-log-status"
-            :class="`update-log-status--${summaryTone}`"
+            class="update-log-status maafw-log-status"
+            :class="`maafw-log-status--${summaryTone}`"
           >
             <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-log-status-icon" />
             <CheckCircleOutlined
@@ -594,50 +594,10 @@ watch(
 /* 定高、内部滚动：日志再长面板也不长个，左列小框才对得齐 */
 .update-log-box {
   height: 170px;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.update-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
-.update-log-line--empty {
-  color: var(--ant-color-text-tertiary);
 }
 
 /* 要用户留意的行（如项目发错版本号）整行标红 */
 .update-log-line--alert {
-  color: var(--ant-color-error);
-}
-
-/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色，代替原来单独的一条结果 alert */
-.update-log-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.update-log-status--running {
-  color: var(--ant-color-primary);
-}
-
-.update-log-status--success {
-  color: var(--ant-color-success);
-}
-
-.update-log-status--failed {
   color: var(--ant-color-error);
 }
 </style>
