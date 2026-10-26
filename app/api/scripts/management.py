@@ -353,7 +353,7 @@ async def update_script(
 
     try:
         data = script.data.model_dump(exclude_unset=True)
-        # 魔改 AVD 目前只支持 MaaFW 和 MAA：别的脚本选魔改 AVD 设备，保存时就拦下
+        # 设备绑定不受支持时拦截保存，避免先提交配置。
         refusal = await settings.update_script(script.scriptId, data)
         if refusal:
             return OutBase(code=500, status="error", message=refusal)

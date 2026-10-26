@@ -19,25 +19,15 @@
 
 """脚本路由的依赖组装：连接通用编辑用例与具体专项策略。"""
 
-from typing import Any
-
 from app.core import Config, emulator2
 from app.core.script_settings import ScriptSettings
 from app.models.config import BetterGIConfig
-
-
-def _prepare_bettergi_user_update(
-    script_id: str, user_id: str, *, data: dict[str, Any]
-) -> None:
-    from app.task.BetterGI import api_service
-
-    api_service.prepare_user_update(script_id, user_id, data=data)
-
+from app.task.BetterGI.api_service import prepare_user_update
 
 _script_settings = ScriptSettings(
     gateway=Config,
     validate_binding=emulator2.mod_avd_binding_error,
-    user_preparers={BetterGIConfig: _prepare_bettergi_user_update},
+    user_preparers={BetterGIConfig: prepare_user_update},
 )
 
 

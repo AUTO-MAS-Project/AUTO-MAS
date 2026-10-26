@@ -992,21 +992,11 @@ async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
     """静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。"""
 
     try:
-        # 统一走 _zzzod_root 哨兵校验（空串在此解析成 cwd 的边界被封住）
-        root = Config.get_zzzod_root(scriptId)
-        from app.task.ZzzOd.tools import (
-            get_task_app_fields,
-            get_task_app_jump,
-            list_app_catalog,
-        )
+        from app.task.ZzzOd import api_service as zzzod_api
 
         data = [
-            ZzzOdCatalogItemOut(
-                **item,
-                configurable=get_task_app_fields(str(item["app_id"])) is not None,
-                jump=get_task_app_jump(str(item["app_id"])),
-            )
-            for item in list_app_catalog(root)
+            ZzzOdCatalogItemOut(**item)
+            for item in zzzod_api.get_task_catalog(Config, scriptId)
         ]
         return ZzzOdCatalogOut(
             code=200,
@@ -1197,18 +1187,22 @@ async def save_zzzod_native_config_api(
     """白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。"""
 
     try:
-        await Config.save_zzzod_native_config(
-            script.scriptId,
-            script.instanceIdx,
-            script.account,
-            [t.model_dump() for t in script.tasks]
+        from app.task.ZzzOd import api_service as zzzod_api
+
+        data = await zzzod_api.save_native_config(
+            Config,
+            script_id=script.scriptId,
+            instance_idx=script.instanceIdx,
+            account=script.account,
+            tasks=[t.model_dump() for t in script.tasks]
             if script.tasks is not None
             else None,
-            script.instanceRun,
-            script.launchArgs.model_dump() if script.launchArgs is not None else None,
-            script.afterDone,
+            instance_run=script.instanceRun,
+            launch_args=script.launchArgs.model_dump()
+            if script.launchArgs is not None
+            else None,
+            after_done=script.afterDone,
         )
-        data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
             code=200,
             status="success",

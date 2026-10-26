@@ -3133,10 +3133,8 @@ class AppConfig:
         root, instance = self._zzzod_native_instance(script_id, instance_idx)
         slot = int(instance_idx)
 
+        from app.task.ZzzOd.api_service import read_task_catalog
         from app.task.ZzzOd.tools import (
-            get_task_app_fields,
-            get_task_app_jump,
-            list_app_catalog,
             read_native_account_fields,
             read_native_after_done,
             read_native_instance_run,
@@ -3144,14 +3142,7 @@ class AppConfig:
             read_native_tasks,
         )
 
-        catalog = [
-            {
-                **item,
-                "configurable": get_task_app_fields(str(item["app_id"])) is not None,
-                "jump": get_task_app_jump(str(item["app_id"])),
-            }
-            for item in list_app_catalog(root)
-        ]
+        catalog = read_task_catalog(root)
         return {
             "instanceIdx": slot,
             "instanceName": str(instance.get("name", "")),
