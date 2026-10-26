@@ -16,118 +16,100 @@
       </a-space>
     </template>
 
-    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
-    <div class="draggable-table-container">
-      <!-- 表头 -->
-      <div class="draggable-table-header">
+    <DraggableTableShell
+      v-model="timeSets"
+      group="timeSets"
+      item-key="id"
+      :disabled="loading"
+      :busy="loading"
+      @end="onDragEnd"
+    >
+      <template #header>
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
         <div class="header-cell status-cell">{{ t('queue.time.colStatus') }}</div>
         <div class="header-cell days-cell">{{ t('queue.time.colDays') }}</div>
         <div class="header-cell time-cell">{{ t('queue.time.colTime') }}</div>
         <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
-      </div>
+      </template>
 
-      <!-- 拖拽内容区域 -->
-      <draggable
-        v-model="timeSets"
-        group="timeSets"
-        item-key="id"
-        :animation="200"
-        :disabled="loading"
-        ghost-class="ghost"
-        chosen-class="chosen"
-        drag-class="drag"
-        handle=".drag-handle"
-        class="draggable-container"
-        @end="onDragEnd"
-      >
-        <template #item="{ element: record, index }">
-          <div class="draggable-row" :class="{ 'row-dragging': loading }">
-            <div class="row-cell drag-cell">
-              <DragHandle :title="t('queue.item.dragSort')" />
-            </div>
-            <div class="row-cell index-cell">{{ index + 1 }}</div>
-            <div class="row-cell status-cell">
-              <a-select
-                v-model:value="record.enabled"
-                size="small"
-                style="width: 80px"
-                class="status-select"
-                @change="updateTimeSetStatus(record)"
-              >
-                <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
-                <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
-              </a-select>
-            </div>
-            <div class="row-cell days-cell">
-              <a-select
-                v-model:value="record.days"
-                mode="multiple"
-                size="small"
-                style="width: 100%"
-                :placeholder="t('queue.time.selectDays')"
-                :disabled="loading"
-                :max-tag-count="7"
-                :bordered="false"
-                class="days-select"
-                @change="updateTimeSetDays(record)"
-              >
-                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
-                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
-                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
-                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
-                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
-              </a-select>
-            </div>
-            <div class="row-cell time-cell">
-              <a-time-picker
-                :value="record.timeValue"
-                format="HH:mm"
-                :placeholder="t('queue.time.selectTime')"
-                size="small"
-                :disabled="loading"
-                @change="updateTimeSetTime(record, $event)"
-              />
-            </div>
-            <div class="row-cell actions-cell">
-              <a-space>
-                <a-popconfirm
-                  :title="t('queue.time.deleteConfirm')"
-                  :ok-text="t('queue.ok')"
-                  :cancel-text="t('queue.cancel')"
-                  @confirm="deleteTimeSet(record.id)"
-                >
-                  <a-button size="middle" danger>
-                    <DeleteOutlined />
-                    {{ t('queue.del') }}
-                  </a-button>
-                </a-popconfirm>
-              </a-space>
-            </div>
-          </div>
-        </template>
-      </draggable>
-
-      <!-- 空状态 -->
-      <div v-if="timeSets.length === 0" class="empty-state">
-        <a-empty :image="noDataImage" :image-style="{ height: '200px' }" :description="false" />
-      </div>
-    </div>
+      <template #row="{ element: record, index }">
+        <div class="row-cell drag-cell">
+          <DragHandle :title="t('queue.item.dragSort')" />
+        </div>
+        <div class="row-cell index-cell">{{ index + 1 }}</div>
+        <div class="row-cell status-cell">
+          <a-select
+            v-model:value="record.enabled"
+            size="small"
+            style="width: 80px"
+            class="status-select"
+            @change="updateTimeSetStatus(record)"
+          >
+            <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
+            <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="row-cell days-cell">
+          <a-select
+            v-model:value="record.days"
+            mode="multiple"
+            size="small"
+            style="width: 100%"
+            :placeholder="t('queue.time.selectDays')"
+            :disabled="loading"
+            :max-tag-count="7"
+            :bordered="false"
+            class="days-select"
+            @change="updateTimeSetDays(record)"
+          >
+            <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+            <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+            <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+            <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+            <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+            <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+            <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+          </a-select>
+        </div>
+        <div class="row-cell time-cell">
+          <a-time-picker
+            :value="record.timeValue"
+            format="HH:mm"
+            :placeholder="t('queue.time.selectTime')"
+            size="small"
+            :disabled="loading"
+            @change="updateTimeSetTime(record, $event)"
+          />
+        </div>
+        <div class="row-cell actions-cell">
+          <a-space>
+            <a-popconfirm
+              :title="t('queue.time.deleteConfirm')"
+              :ok-text="t('queue.ok')"
+              :cancel-text="t('queue.cancel')"
+              @confirm="deleteTimeSet(record.id)"
+            >
+              <a-button size="middle" danger>
+                <DeleteOutlined />
+                {{ t('queue.del') }}
+              </a-button>
+            </a-popconfirm>
+          </a-space>
+        </div>
+      </template>
+    </DraggableTableShell>
   </a-card>
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
 import DragHandle from '@/components/DragHandle.vue'
+import DraggableTableShell from './DraggableTableShell.vue'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
-import draggable from 'vuedraggable'
 import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 
@@ -685,44 +667,7 @@ const onDragEnd = async (evt: any) => {
   background: var(--ant-color-fill-tertiary);
 }
 
-/* 拖拽表格样式 */
-.draggable-table-container {
-  width: 100%;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.draggable-table-header {
-  display: flex;
-  background-color: var(--ant-color-fill-quaternary);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-.header-cell {
-  padding: 12px 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-}
-
-.header-cell:last-child {
-  border-right: none;
-}
-
-.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-}
-
-.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-
+/* 拖拽表格业务列样式 */
 .status-cell {
   width: 120px;
   min-width: 120px;
@@ -738,147 +683,6 @@ const onDragEnd = async (evt: any) => {
   flex: 1;
   min-width: 120px;
   max-width: 200px;
-}
-
-.actions-cell {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-}
-
-.draggable-container {
-  min-height: 60px;
-}
-
-.draggable-row {
-  display: flex;
-  align-items: center;
-  background: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-  transition: all 0.2s ease;
-  cursor: default;
-}
-
-.draggable-row:last-child {
-  border-bottom: none;
-}
-
-.draggable-row:hover {
-  background-color: var(--ant-color-fill-quaternary);
-}
-
-.draggable-row.row-dragging {
-  cursor: not-allowed;
-}
-
-.row-cell {
-  padding: 12px 16px;
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.row-cell:last-child {
-  border-right: none;
-}
-
-.row-cell.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.row-cell.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-
-.row-cell.status-cell {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-}
-
-.row-cell.days-cell {
-  flex: 4;
-  min-width: 240px;
-}
-
-.row-cell.time-cell {
-  flex: 1;
-  min-width: 120px;
-  max-width: 200px;
-}
-
-.row-cell.actions-cell {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-}
-
-/* 拖拽状态样式 */
-.ghost {
-  opacity: 0 !important;
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.chosen {
-  cursor: grabbing !important;
-}
-
-.drag {
-  transform: rotate(3deg);
-  opacity: 1 !important;
-}
-
-.drag .draggable-row {
-  opacity: 1 !important;
-  transition: none !important;
-}
-
-/* 空状态样式 */
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .draggable-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .row-cell,
-  .header-cell {
-    border-right: none;
-    border-bottom: 1px solid var(--ant-color-border);
-  }
-
-  .row-cell:last-child,
-  .header-cell:last-child {
-    border-bottom: none;
-  }
-
-  .index-cell,
-  .drag-cell,
-  .status-cell,
-  .time-cell,
-  .days-cell,
-  .actions-cell {
-    width: 100% !important;
-    min-width: auto !important;
-    max-width: none !important;
-  }
 }
 
 /* 深色主题滚动条样式 - 时间选择器 */
