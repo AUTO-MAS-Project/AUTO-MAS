@@ -575,57 +575,6 @@ const onDragEnd = async (evt: any) => {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
 }
 
-/* Firefox 滚动条样式 - 时间选择器 */
-:deep(.ant-picker-time-panel-column) {
-  scrollbar-width: thin;
-  scrollbar-color: #d9d9d9 #f5f5f5;
-}
-
-.dark :deep(.ant-picker-time-panel-column) {
-  scrollbar-width: thin;
-  scrollbar-color: var(--ant-color-border) var(--ant-color-bg-layout);
-}
-
-/* 浅色主题滚动条样式 - 时间选择器 */
-:deep(.ant-picker-time-panel-column)::-webkit-scrollbar {
-  width: 8px;
-}
-
-:deep(.ant-picker-time-panel-column)::-webkit-scrollbar-track {
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-:deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-:deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
-}
-
-/* 深色主题滚动条样式 - 时间选择器 */
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar {
-  width: 8px;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-  border-radius: 4px;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-text-tertiary);
-}
-
 /* 时间选择器面板项目样式优化 */
 :deep(.ant-picker-time-panel-cell) {
   transition: all 0.2s ease;
@@ -653,35 +602,6 @@ const onDragEnd = async (evt: any) => {
   max-width: 200px;
 }
 
-/* 深色主题滚动条样式 - 时间选择器 */
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar {
-  width: 8px;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-layout);
-  border-radius: 4px;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb {
-  background: var(--ant-color-border);
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.dark :deep(.ant-picker-time-panel-column)::-webkit-scrollbar-thumb:hover {
-  background: var(--ant-color-text-tertiary);
-}
-
-/* 时间选择器面板项目样式优化 */
-:deep(.ant-picker-time-panel-cell) {
-  transition: all 0.2s ease;
-}
-
-:deep(.ant-picker-time-panel-cell:hover) {
-  background: var(--ant-color-fill-tertiary);
-}
-
 /* 执行周期选择器样式优化 */
 .days-select :deep(.ant-select-selection-item) {
   background: transparent !important;
@@ -691,70 +611,5 @@ const onDragEnd = async (evt: any) => {
 
 .days-select :deep(.ant-select-selection-item-remove) {
   display: none !important;
-}
-</style>
-
-<!-- 全局样式 - 用于时间选择器弹出面板 -->
-<style>
-/* 全局时间选择器面板滚动条样式 - 浅色主题 */
-.ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar {
-  width: 8px;
-}
-
-.ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-track {
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-.ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-.ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
-  background: #bfbfbf;
-}
-
-/* 全局时间选择器面板滚动条样式 - 深色主题 */
-:root.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar {
-  width: 8px;
-}
-
-:root.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-track {
-  background: #000000;
-  border-radius: 4px;
-}
-
-:root.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb {
-  background: #424242;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-:root.dark .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.45);
-}
-
-/* 另一种深色模式选择器 */
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar {
-  width: 8px;
-}
-
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-track {
-  background: #000000;
-  border-radius: 4px;
-}
-
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb {
-  background: #424242;
-  border-radius: 4px;
-  transition: background 0.2s ease;
-}
-
-[data-theme='dark']
-  .ant-picker-dropdown
-  .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.45);
 }
 </style>
