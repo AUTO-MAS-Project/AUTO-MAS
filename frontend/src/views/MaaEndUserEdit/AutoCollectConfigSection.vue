@@ -80,24 +80,16 @@
             </span>
           </div>
           <div class="route-card-grid">
-            <button
+            <a-checkbox
               v-for="option in panel.options"
               :key="String(option.value)"
-              type="button"
-              role="switch"
               class="route-card"
-              :class="{
-                'route-card-skipped': !selectedValues(panel).includes(String(option.value)),
-              }"
-              :aria-checked="selectedValues(panel).includes(String(option.value))"
+              :checked="selectedValues(panel).includes(String(option.value))"
               :disabled="controlsDisabled"
-              @click="toggleRoute(panel, String(option.value))"
+              @change="toggleRoute(panel, String(option.value))"
             >
               <span class="route-card-label">{{ option.label }}</span>
-              <span class="route-lamp-area" aria-hidden="true">
-                <span class="route-lamp" />
-              </span>
-            </button>
+            </a-checkbox>
           </div>
         </div>
       </div>
@@ -239,32 +231,26 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
 
 .route-card {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 8px;
   min-width: 0;
   min-height: 44px;
   padding: 6px 12px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
-.route-card:hover:not(:disabled) {
+.route-card:hover:not(.ant-checkbox-wrapper-disabled) {
   background: var(--ant-color-fill-quaternary);
 }
 
-.route-card:focus-visible {
+.route-card:focus-within {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: -2px;
 }
 
-.route-card:disabled {
+.route-card.ant-checkbox-wrapper-disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -272,28 +258,5 @@ const handleModeChange = (value: MaaEndAutoCollectMode) =>
 .route-card-label {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.route-card-skipped .route-card-label {
-  color: var(--ant-color-text-tertiary);
-}
-
-.route-lamp-area {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-}
-
-.route-lamp {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ant-color-success);
-}
-
-.route-card-skipped .route-lamp {
-  background: var(--ant-color-fill-secondary);
 }
 </style>
