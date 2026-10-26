@@ -124,61 +124,27 @@
             <!-- 基本信息布局：用户名:启用状态:剩余天数 = 2:1:1 -->
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('edit.username')"
-                      :hint="t('edit.bettergiUserNameHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="formData.userName"
-                    :placeholder="t('edit.enterUsername')"
-                    size="large"
-                    class="modern-input"
-                    @blur="saveField('Info.Name', formData.userName)"
-                  />
-                </a-form-item>
+                <UserNameField
+                  v-model="formData.userName"
+                  :hint="t('edit.bettergiUserNameHint')"
+                  :placeholder="t('edit.enterUsername')"
+                  enhanced
+                  @save="saveField('Info.Name', formData.userName)"
+                />
               </a-col>
               <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('edit.enabled')"
-                      :hint="t('edit.whetherThisUserEnabled')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Status"
-                    size="large"
-                    class="modern-select"
-                    @change="saveField('Info.Status', formData.Info.Status)"
-                  >
-                    <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
+                <UserStatusField
+                  v-model="formData.Info.Status"
+                  :hint="t('edit.whetherThisUserEnabled')"
+                  @save="saveField('Info.Status', formData.Info.Status)"
+                />
               </a-col>
               <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('edit.daysLeft')"
-                      :hint="t('edit.daysLeftAccount1')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
+                <UserRemainedDayField
+                  v-model="formData.Info.RemainedDay"
+                  :hint="t('edit.daysLeftAccount1')"
+                  @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                />
               </a-col>
             </a-row>
 
@@ -294,22 +260,14 @@
               </a-col>
             </a-row>
 
-            <a-form-item>
-              <template #label>
-                <FieldLabelWithHint
-                  :text="t('edit.note')"
-                  :hint="t('edit.addNoteAboutThis')"
-                  variant="form"
-                />
-              </template>
-              <a-textarea
-                v-model:value="formData.Info.Notes"
-                :placeholder="t('edit.enterNote')"
-                :rows="4"
-                class="modern-input"
-                @blur="saveField('Info.Notes', formData.Info.Notes)"
-              />
-            </a-form-item>
+            <UserNotesField
+              v-model="formData.Info.Notes"
+              :hint="t('edit.addNoteAboutThis')"
+              :placeholder="t('edit.enterNote')"
+              :rows="4"
+              enhanced
+              @save="saveField('Info.Notes', formData.Info.Notes)"
+            />
           </div>
         </a-form>
       </a-card>
@@ -826,6 +784,10 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useBettergiDragonQueue } from './BetterGIUserEdit/useBettergiDragonQueue'
 import BettergiDragonQueueList from './BetterGIUserEdit/BettergiDragonQueueList.vue'

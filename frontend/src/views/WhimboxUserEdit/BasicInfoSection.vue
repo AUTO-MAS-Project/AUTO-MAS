@@ -5,87 +5,50 @@
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
-        <a-form-item name="userName" required>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('edit.username')"
-              :hint="t('edit.displayNameUsedIdentify')"
-              variant="form"
-            />
-          </template>
-          <a-input
-            v-model:value="formData.userName"
-            :placeholder="t('edit.enterUsername')"
-            :disabled="loading"
-            size="large"
-            class="modern-input"
-            @blur="emit('save', 'userName', formData.userName)"
-          />
-        </a-form-item>
+        <UserNameField
+          name="userName"
+          required
+          v-model="formData.userName"
+          :hint="t('edit.displayNameUsedIdentify')"
+          :placeholder="t('edit.enterUsername')"
+          :disabled="loading"
+          enhanced
+          @save="emit('save', 'userName', formData.userName)"
+        />
       </a-col>
       <a-col :span="6">
-        <a-form-item name="status">
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('edit.enabled')"
-              :hint="t('edit.whetherThisUserEnabled')"
-              variant="form"
-            />
-          </template>
-          <a-select
-            v-model:value="formData.Info.Status"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @change="emit('save', 'Info.Status', formData.Info.Status)"
-          >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-          </a-select>
-        </a-form-item>
+        <UserStatusField
+          name="status"
+          v-model="formData.Info.Status"
+          :hint="t('edit.whetherThisUserEnabled')"
+          :disabled="loading"
+          @save="emit('save', 'Info.Status', formData.Info.Status)"
+        />
       </a-col>
       <a-col :span="6">
-        <a-form-item name="remainedDay">
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('edit.daysLeft')"
-              :hint="t('edit.daysLeftAccount1')"
-              variant="form"
-            />
-          </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            placeholder="-1"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @blur="emit('save', 'Info.RemainedDay', formData.Info.RemainedDay)"
-          />
-        </a-form-item>
+        <UserRemainedDayField
+          name="remainedDay"
+          v-model="formData.Info.RemainedDay"
+          :hint="t('edit.daysLeftAccount1')"
+          placeholder="-1"
+          :disabled="loading"
+          @save="emit('save', 'Info.RemainedDay', formData.Info.RemainedDay)"
+        />
       </a-col>
     </a-row>
 
     <a-row :gutter="24">
       <a-col :span="16">
-        <a-form-item name="notes">
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('edit.note')"
-              :hint="t('edit.addNoteAboutThis')"
-              variant="form"
-            />
-          </template>
-          <a-textarea
-            v-model:value="formData.Info.Notes"
-            :placeholder="t('edit.enterNote3')"
-            :rows="3"
-            :disabled="loading"
-            class="modern-input"
-            @blur="emit('save', 'Info.Notes', formData.Info.Notes)"
-          />
-        </a-form-item>
+        <UserNotesField
+          name="notes"
+          v-model="formData.Info.Notes"
+          :hint="t('edit.addNoteAboutThis')"
+          :placeholder="t('edit.enterNote3')"
+          :disabled="loading"
+          :rows="3"
+          enhanced
+          @save="emit('save', 'Info.Notes', formData.Info.Notes)"
+        />
       </a-col>
       <a-col :span="8">
         <a-form-item>
@@ -130,6 +93,10 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -204,23 +171,6 @@ const whimboxConfigModeOptions = WHIMBOX_CONFIG_MODES.map(value => ({
 
 .section-header {
   margin-bottom: 6px;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
 .user-tag-list {

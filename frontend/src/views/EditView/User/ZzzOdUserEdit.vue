@@ -108,42 +108,20 @@
 
               <a-row :gutter="24">
                 <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <FieldLabelWithHint
-                        :text="t('edit.username')"
-                        :hint="t('edit.zzzodUserNameHint')"
-                        variant="form"
-                      />
-                    </template>
-                    <a-input
-                      v-model:value="formData.userName"
-                      :placeholder="t('edit.enterUsername')"
-                      size="large"
-                      class="modern-input"
-                      @blur="handleNameBlur"
-                    />
-                  </a-form-item>
+                  <UserNameField
+                    v-model="formData.userName"
+                    :hint="t('edit.zzzodUserNameHint')"
+                    :placeholder="t('edit.enterUsername')"
+                    enhanced
+                    @save="handleNameBlur"
+                  />
                 </a-col>
                 <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <FieldLabelWithHint
-                        :text="t('edit.enabled')"
-                        :hint="t('edit.whetherThisUserEnabled')"
-                        variant="form"
-                      />
-                    </template>
-                    <a-select
-                      v-model:value="formData.Info.Status"
-                      size="large"
-                      class="modern-select"
-                      @change="saveField('Info.Status', formData.Info.Status)"
-                    >
-                      <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                      <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                    </a-select>
-                  </a-form-item>
+                  <UserStatusField
+                    v-model="formData.Info.Status"
+                    :hint="t('edit.whetherThisUserEnabled')"
+                    @save="saveField('Info.Status', formData.Info.Status)"
+                  />
                 </a-col>
               </a-row>
 
@@ -445,23 +423,11 @@
 
               <a-row :gutter="24">
                 <a-col :span="12">
-                  <a-form-item>
-                    <template #label>
-                      <FieldLabelWithHint
-                        :text="t('edit.daysLeft')"
-                        :hint="t('edit.daysLeftAccount1')"
-                        variant="form"
-                      />
-                    </template>
-                    <a-input-number
-                      v-model:value="formData.Info.RemainedDay"
-                      :min="-1"
-                      :max="9999"
-                      size="large"
-                      style="width: 100%"
-                      @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
-                    />
-                  </a-form-item>
+                  <UserRemainedDayField
+                    v-model="formData.Info.RemainedDay"
+                    :hint="t('edit.daysLeftAccount1')"
+                    @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                  />
                 </a-col>
                 <a-col :span="12">
                   <a-form-item>
@@ -874,6 +840,9 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useZzzodTaskConfig } from './ZzzOdUserEdit/useZzzodTaskConfig'
 import ZzzodTaskBoard from './ZzzOdUserEdit/ZzzodTaskBoard.vue'
