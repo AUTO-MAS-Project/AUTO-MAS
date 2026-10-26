@@ -1540,12 +1540,8 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
   flex-shrink: 0;
 }
 
@@ -1585,10 +1581,8 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
 }
 
 .section-header h3 {
-  margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: var(--ant-color-text);
 }
 
 .section-hint {

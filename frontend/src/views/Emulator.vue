@@ -1473,21 +1473,13 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .section-header h3 {
-  margin: 0;
-  color: var(--ant-color-text);
   font-size: 16px;
   font-weight: 600;
-  display: flex;
-  align-items: center;
   gap: 8px;
 }
 

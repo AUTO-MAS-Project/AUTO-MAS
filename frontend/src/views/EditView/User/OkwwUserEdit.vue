@@ -916,10 +916,7 @@ onUnmounted(() => {
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  border-bottom-width: 1px;
 }
 
 .form-label {
