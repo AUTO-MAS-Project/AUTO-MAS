@@ -34,7 +34,7 @@ from .security import (
     looks_like_dpapi_blob,
     sanitize_log_message,
 )
-from .supervision import is_backend_dev_mode, is_supervised
+from .supervision import is_supervised, should_preserve_backend
 
 _LAZY_EXPORTS = {
     "LogMonitor": (".LogMonitor", "LogMonitor"),
@@ -142,7 +142,7 @@ __all__ = [
     "looks_like_dpapi_blob",
     "format_exception_reason",
     "sanitize_log_message",
-    "is_backend_dev_mode",
+    "should_preserve_backend",
     "is_supervised",
     "resource_path",
     "strptime",

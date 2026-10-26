@@ -38,7 +38,8 @@ export default {
     reconnectAttempts: '当前轮次重连次数',
     autoReconnect: '自动重连',
     reconnectScheduled: '等待下一次重连',
-    backendDevMode: '后端开发模式',
+    preserveBackend: '退出时保留后端',
+    applicationEnvironment: '应用环境',
     runtime: '运行环境',
     statusFailed: '部分主进程状态读取失败，可刷新重试',
     appVersion: '前端版本',
@@ -3943,6 +3944,7 @@ export default {
       bluearchive: '碧蓝档案活动信息',
       stellasora: '星塔旅人活动信息',
       infinitynikki: '无限暖暖活动信息',
+      azurlane: '碧蓝航线活动信息',
       arknights: '明日方舟活动信息',
       activities: '游戏活动轮播',
     },
@@ -3957,6 +3959,7 @@ export default {
       bluearchive: '碧蓝档案',
       stellasora: '星塔旅人',
       infinitynikki: '无限暖暖',
+      azurlane: '碧蓝航线',
       arknights: '明日方舟',
     },
     carousel: {
@@ -3995,7 +3998,11 @@ export default {
       reverse1999: '暂无进行中的重返未来：1999 活动',
       stellasora: '暂无进行中的星塔旅人活动',
       infinitynikki: '暂无进行中的无限暖暖活动',
+      azurlane: '暂无进行中的碧蓝航线活动',
       noData: '无数据',
+    },
+    azurlane: {
+      sourceName: '碧蓝海事局 WIKI',
     },
     stella: {
       sourceName: '官网',

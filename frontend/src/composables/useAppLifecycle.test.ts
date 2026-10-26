@@ -15,7 +15,7 @@ const appQuit = vi.fn()
 const connectionMocks = vi.hoisted(() => ({
   connect: vi.fn(async () => true),
   connectionState: vi.fn(() => ({ value: 'open' })),
-  isBackendDevMode: vi.fn(() => false),
+  shouldPreserveBackend: vi.fn(() => false),
   onConnected: vi.fn(() => () => undefined),
   onDisconnected: vi.fn(() => () => undefined),
   onReconnectCycleFailed: vi.fn(() => () => undefined),
@@ -84,7 +84,7 @@ describe('useAppLifecycle 关闭流程', () => {
         return `sub_${filter.type}`
       }
     )
-    connectionMocks.isBackendDevMode.mockReturnValue(false)
+    connectionMocks.shouldPreserveBackend.mockReturnValue(false)
     closePost.mockResolvedValue(undefined)
     stopBackend.mockResolvedValue({ success: true })
     killAllProcesses.mockResolvedValue({ success: true })
@@ -115,7 +115,7 @@ describe('useAppLifecycle 关闭流程', () => {
 
     it('不发 POST /close、不等后端进程消失，只请求 Electron 经 Runtime 关闭后再退出', async () => {
       // 页面先于后端起来时 ws_meta 可能回退成 devMode=true；Runtime 链路下它不能左右关闭方式。
-      connectionMocks.isBackendDevMode.mockReturnValue(true)
+      connectionMocks.shouldPreserveBackend.mockReturnValue(true)
       const { closeApp } = await loadLifecycle()
 
       await closeApp()

@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 // WebSocket 连接层
 // 职责：地址协商、建立/关闭唯一连接、有限退避重连、消息解析与发送、
 // 按 id + type 分发、请求响应关联、断开事件通知生命周期协调器。
@@ -44,7 +45,7 @@ let automaticReconnectEnabled = true
 // 连接代次：每次 shutdown 递增，使协商期间在途的连接尝试恢复后失效，
 // 避免旧异步尝试创建的连接把已终止或已被立即重连替换的连接层复活
 let connectGeneration = 0
-let backendDevMode = import.meta.env.DEV === true || window.location.hostname === 'localhost'
+let backendDevMode = isDev
 // 连接前的 ws_meta 协商是否拿到了后端权威值：失败时 devMode 只是本地回退值，
 // 连接建立后必须再协商一次，否则页面先于后端起来的场景会一直拿着错误的 devMode。
 let backendMetaNegotiated = false
@@ -615,8 +616,8 @@ export function connectionState(): Ref<WSConnectionState> {
   return state
 }
 
-/** 后端是否处于开发模式（经 ws_meta 协商） */
-export function isBackendDevMode(): boolean {
+/** 前端退出时是否应保留后端；与应用环境、Runtime 托管模式分别判断。 */
+export function shouldPreserveBackend(): boolean {
   return backendDevMode
 }
 

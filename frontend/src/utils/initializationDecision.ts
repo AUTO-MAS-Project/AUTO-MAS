@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import type { RuntimeInitMode } from '@/types/electron'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 
@@ -58,7 +59,7 @@ async function resolveInitializationDecision(): Promise<InitializationDecision> 
     }
   }
 
-  if (import.meta.env.DEV) {
+  if (isDev) {
     return {
       mode: 'skip-home',
       currentVersion,

@@ -1,3 +1,4 @@
+import { getDevelopmentServerUrl, getRendererEnvironmentArguments } from './instanceConfig'
 import { app, BrowserWindow, ipcMain, screen } from 'electron'
 import type { Point } from 'electron'
 import * as path from 'path'
@@ -134,6 +135,7 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
       skipTaskbar: true,
       show: false,
       webPreferences: {
+        additionalArguments: getRendererEnvironmentArguments(),
         nodeIntegration: false,
         contextIsolation: true,
         preload: path.join(__dirname, '..', 'desktopMascotMenuPreload.js'),
@@ -152,7 +154,7 @@ export class DesktopMascotMenuService implements DesktopMascotMenuRuntime {
     win.on('closed', () => {
       if (this.window === win) this.close()
     })
-    const devServer = process.env.VITE_DEV_SERVER_URL
+    const devServer = getDevelopmentServerUrl()
     const loading = devServer
       ? win.loadURL(`${devServer.replace(/\/$/, '')}/mascot-menu.html`)
       : win.loadFile(path.join(app.getAppPath(), 'dist', 'mascot-menu.html'))

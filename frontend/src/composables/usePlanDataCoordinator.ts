@@ -1,3 +1,4 @@
+import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 /**
  * 计划表数据协调层
  *
@@ -569,7 +570,7 @@ export function usePlanDataCoordinator() {
     })
 
     // 只在开发环境输出排序日志
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev) {
       logger.debug(`关卡排序 ${timeKey}: ${sortedStages.join(' → ')}`)
     }
   }

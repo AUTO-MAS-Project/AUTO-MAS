@@ -9,50 +9,35 @@ from app.services import telemetry
 
 
 class MainDevelopmentEnvironmentTest(unittest.TestCase):
-    def test_explicit_development_environment(self) -> None:
-        with patch.dict(os.environ, {"AUTO_MAS_ENV": "development"}):
+    """公共启动环境契约：不依赖目录标记，只有显式 production 才是生产。"""
+
+    def test_default_and_unknown_values_are_development(self) -> None:
+        for value in ("", "development", "dev", "unknown"):
+            with self.subTest(value=value):
+                with patch.dict(os.environ, {"AUTO_MAS_ENV": value}):
+                    self.assertTrue(main.is_development_environment())
+        with patch.dict(os.environ):
+            os.environ.pop("AUTO_MAS_ENV", None)
             self.assertTrue(main.is_development_environment())
 
-    def test_repository_checkout_is_development_environment(self) -> None:
-        """源码仓库带 .env 标记文件，任意解释器直接启动都算开发环境。"""
-
+    def test_explicit_production_ignores_environment_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = Path(temp_dir)
-            (repository / ".git").mkdir()
             (repository / ".env").write_text("AUTO_MAS_ENV=development\n", "utf-8")
-
             with (
-                patch.dict(os.environ, {"AUTO_MAS_ENV": ""}),
+                patch.dict(os.environ, {"AUTO_MAS_ENV": " production "}),
                 patch.object(main, "current_dir", repository),
             ):
-                self.assertTrue(main.is_development_environment())
-
-    def test_user_installation_is_not_development(self) -> None:
-        """用户安装目录同样带 .git，但不含 .env，应视为生产环境。"""
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            application_dir = Path(temp_dir)
-            (application_dir / ".git").mkdir()
-
-            with (
-                patch.dict(os.environ, {"AUTO_MAS_ENV": ""}),
-                patch.object(main, "current_dir", application_dir),
-            ):
                 self.assertFalse(main.is_development_environment())
 
-    def test_hosted_launch_is_not_development(self) -> None:
-        """前端拉起的打包版后端只跳过提权，不应被判定为开发环境。"""
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            application_dir = Path(temp_dir)
-            (application_dir / ".git").mkdir()
-
-            with (
-                patch.dict(os.environ, {"AUTO_MAS_DEV": "1", "AUTO_MAS_ENV": ""}),
-                patch.object(main, "current_dir", application_dir),
-            ):
-                self.assertTrue(main.is_hosted_launch())
-                self.assertFalse(main.is_development_environment())
+    def test_hosted_marker_does_not_change_application_environment(self) -> None:
+        for value, expected in (("", True), ("production", False)):
+            with self.subTest(value=value):
+                with patch.dict(
+                    os.environ, {"AUTO_MAS_DEV": "1", "AUTO_MAS_ENV": value}
+                ):
+                    self.assertTrue(main.is_hosted_launch())
+                    self.assertIs(main.is_development_environment(), expected)
 
     def test_direct_launch_is_not_hosted(self) -> None:
         with patch.dict(os.environ, {"AUTO_MAS_DEV": ""}):

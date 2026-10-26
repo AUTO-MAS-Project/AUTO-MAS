@@ -11,6 +11,7 @@ import { useDevtoolsApi } from '@/composables/useDevtoolsApi'
 import { subscriptionCount } from '@/services/websocket/subscriptions'
 import type { BackendStatus, RuntimeLaunchModeState } from '@/types/electron'
 import { copyDevtoolsText } from './helpers'
+import { applicationEnvironment } from '@/utils/environment'
 
 const { t } = useI18n()
 const appVersion = import.meta.env.VITE_APP_VERSION
@@ -90,6 +91,7 @@ const copySummary = () =>
         appVersion: import.meta.env.VITE_APP_VERSION,
         vueVersion: version,
         host: browserHost ? 'browser' : 'electron',
+        applicationEnvironment,
         runtimeMode: runtimeMode.value?.mode ?? null,
         httpApi: OpenAPI.BASE,
         connection: getConnectionInfo(),
@@ -156,7 +158,7 @@ const copySummary = () =>
       <a-descriptions-item :label="t('devtools.reconnectScheduled')">{{
         t(connection.hasReconnectTimer ? 'devtools.yes' : 'devtools.no')
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.backendDevMode')">{{
+      <a-descriptions-item :label="t('devtools.preserveBackend')">{{
         t(connection.backendDevMode ? 'devtools.yes' : 'devtools.no')
       }}</a-descriptions-item>
     </a-descriptions>
@@ -172,6 +174,9 @@ const copySummary = () =>
     <a-descriptions :column="2" size="small">
       <a-descriptions-item :label="t('devtools.appVersion')">{{ appVersion }}</a-descriptions-item>
       <a-descriptions-item label="Vue">{{ version }}</a-descriptions-item>
+      <a-descriptions-item :label="t('devtools.applicationEnvironment')">{{
+        applicationEnvironment
+      }}</a-descriptions-item>
       <a-descriptions-item :label="t('devtools.launchMode')">{{ modeLabel }}</a-descriptions-item>
       <a-descriptions-item
         v-if="processStatus?.pid"

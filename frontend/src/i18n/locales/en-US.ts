@@ -36,7 +36,8 @@ export default {
     reconnectAttempts: 'Attempts in this cycle',
     autoReconnect: 'Automatic reconnection',
     reconnectScheduled: 'Reconnect scheduled',
-    backendDevMode: 'Backend development mode',
+    preserveBackend: 'Preserve backend on frontend exit',
+    applicationEnvironment: 'Application environment',
     runtime: 'Environment',
     statusFailed: 'Some main-process status could not be read. Try refreshing.',
     appVersion: 'Frontend version',
@@ -4005,6 +4006,7 @@ export default {
       bluearchive: 'Blue Archive events',
       stellasora: 'Stella Sora events',
       infinitynikki: 'Infinity Nikki events',
+      azurlane: 'Azur Lane events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -4019,6 +4021,7 @@ export default {
       bluearchive: 'Blue Archive',
       stellasora: 'Stella Sora',
       infinitynikki: 'Infinity Nikki',
+      azurlane: 'Azur Lane',
       arknights: 'Arknights',
     },
     carousel: {
@@ -4057,7 +4060,11 @@ export default {
       reverse1999: 'No Reverse: 1999 events running',
       stellasora: 'No Stella Sora events running',
       infinitynikki: 'No Infinity Nikki events running',
+      azurlane: 'No Azur Lane events running',
       noData: 'No data',
+    },
+    azurlane: {
+      sourceName: 'Azur Lane Wiki',
     },
     stella: {
       sourceName: 'Official site',

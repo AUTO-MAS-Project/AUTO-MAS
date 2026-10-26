@@ -259,6 +259,6 @@ describe('devMode 协商', () => {
     conn.shutdown('测试关闭')
     releaseMeta!() // 补协商完成，但连接层已终态
     await new Promise(resolve => setTimeout(resolve, 20))
-    expect(conn.isBackendDevMode()).toBe(true)
+    expect(conn.shouldPreserveBackend()).toBe(true)
   })
 })

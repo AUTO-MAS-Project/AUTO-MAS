@@ -87,7 +87,13 @@ import {
   recordMainStartup,
   setMainTelemetryEnabled,
 } from './services/sentry'
-import { applyInstanceIdentity, resolveStopAllTasksShortcut } from './services/instanceConfig'
+import {
+  applyInstanceIdentity,
+  resolveStopAllTasksShortcut,
+  isDevelopmentEnvironment,
+  getDevelopmentServerUrl,
+  getRendererEnvironmentArguments,
+} from './services/instanceConfig'
 import {
   PersistedRuntimeLaunchMode,
   isPersistedRuntimeLaunchMode,
@@ -562,14 +568,14 @@ function finishCoordinatedQuit(): void {
   app.quit()
 }
 
-async function shouldPreserveBackendForDevMode(): Promise<boolean> {
+async function shouldPreserveBackendOnExit(): Promise<boolean> {
   // 受 Runtime 监督的后端归 Runtime 生命周期管，即便是 development 模式也必须随之关闭，
   // 否则 Electron 退出后会遗留一个没人负责的监督进程。
   if (getBackendService().isRuntimeSupervised()) return false
 
-  const backendDevMode = await getBackendService().getBackendDevMode()
-  if (backendDevMode !== null) return backendDevMode
-  return Boolean(process.env.VITE_DEV_SERVER_URL) || !app.isPackaged
+  const preserveBackend = await getBackendService().shouldPreserveBackend()
+  if (preserveBackend !== null) return preserveBackend
+  return isDevelopmentEnvironment()
 }
 
 async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
@@ -580,7 +586,7 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
   logger.error(`renderer 未完成协调退出，执行最终强制清理: ${reason}`)
 
   // Electron 开发进程可能复用由开发者单独启动的后端；renderer 失联时也不能误杀。
-  if (await shouldPreserveBackendForDevMode()) {
+  if (await shouldPreserveBackendOnExit()) {
     logger.info('开发模式最终兜底：保留后端，仅关闭 Electron 前端')
     finishCoordinatedQuit()
     return
@@ -771,8 +777,8 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (app.isPackaged) return
-  if (process.env.VITE_DEV_SERVER_URL) return
+  if (!isDevelopmentEnvironment()) return
+  if (getDevelopmentServerUrl()) return
 
   const message =
     '开发环境未设置 VITE_DEV_SERVER_URL：前端必须由 vite 开发服务器提供，' +
@@ -852,6 +858,7 @@ function createWindow() {
     show: false, // 改为 false，等待页面加载完成后再显示
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff', // 根据系统主题设置背景色
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
@@ -1058,7 +1065,7 @@ function createWindow() {
 
   win.setMenuBarVisibility(false)
   assertDevelopmentRuntime()
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
@@ -1247,6 +1254,7 @@ function createLogWindow(file?: LogWindowFile) {
     height: 800,
     title: '日志查看 - AUTO-MAS',
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -1256,7 +1264,7 @@ function createLogWindow(file?: LogWindowFile) {
   })
 
   const hash = file ? `/logs?file=${file}` : '/logs'
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     logWindow.loadURL(`${devServer}#${hash}`)
   } else {
@@ -1387,6 +1395,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     show: false,
     title: '虚拟显示器 - AUTO-MAS',
     webPreferences: {
+      additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
@@ -1397,7 +1406,7 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
   win.setMenuBarVisibility(false)
 
   const hash = '/vdd-prompt'
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getDevelopmentServerUrl()
   if (devServer) {
     win.loadURL(`${devServer}#${hash}`)
   } else {
