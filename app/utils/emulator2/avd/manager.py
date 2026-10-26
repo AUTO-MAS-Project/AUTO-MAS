@@ -152,6 +152,15 @@ _BOOT_POLL_SECONDS = 1.0
 _STATUS_ADB_TIMEOUT = 5.0
 #: 装轻量桌面的超时。
 _INSTALL_TIMEOUT = 180.0
+#: 给申请了「安装未知应用」权限的每个应用放行（``android`` 自己除外），逐行打出放行了谁。
+#: 包名从 ``dumpsys package packages`` 里按「Package [包名]」段落取，实测 70 ms 左右。
+_ALLOW_INSTALL_SOURCES_SCRIPT = (
+    "for p in $(dumpsys package packages 2>/dev/null"
+    " | awk '/^  Package \\[/ { p = substr($2, 2, length($2) - 2) }"
+    ' /android.permission.REQUEST_INSTALL_PACKAGES/ { if (p != "") print p }\''
+    " | sort -u | grep -vx android); do"
+    ' appops set "$p" REQUEST_INSTALL_PACKAGES allow && echo "$p"; done'
+)
 #: 界面上「打开游戏中心」之类一次点击的上限（魔改 AVD 没有游戏中心，留作接口一致）。
 _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
@@ -1025,6 +1034,17 @@ class _AvdCore(DeviceBase):
                 f"实例 {idx} 关闭 NetworkWatchlistService 失败（下次开机仍会把安装包整个读一遍）: "
                 f"{output.strip()[-200:] or f'退出码 {code}'}"
             )
+
+        # 7c) 允许从任何来源装 APK（持久，每次开机给新装的应用补上）：模拟器不是手机，浏览器里下的安装包、
+        #     游戏自己下载的整包更新都不该被「出于安全考虑，不允许安装此来源的未知应用」拦下
+        code, output = await self._shell(idx, _ALLOW_INSTALL_SOURCES_SCRIPT)
+        if code != 0:
+            logger.warning(
+                f"实例 {idx} 放开「安装未知应用」失败（从浏览器装 APK 会被拦）: "
+                f"{output.strip()[-200:] or f'退出码 {code}'}"
+            )
+        else:
+            logger.debug(f"实例 {idx} 已允许安装未知应用: {' '.join(output.split())}")
 
         # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
