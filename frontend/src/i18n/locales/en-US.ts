@@ -64,7 +64,6 @@ export default {
     storageValue: 'Raw value',
     type: 'Type',
     text: 'Text',
-    size: 'Size',
     newEntry: 'New entry',
     searchStorage: 'Search keys or values',
     storageCount: '{count} entries · approximately {size} (UTF-16)',
