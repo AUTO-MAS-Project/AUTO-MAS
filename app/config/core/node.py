@@ -29,6 +29,7 @@ from app.utils.io import read_dict_file
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import (
     ExecutionOwner,
+    _ActivationLifecycle,
     add_x_token,
     config_manager,
     discard_x_token,
@@ -262,11 +263,14 @@ class ConfigNode(BaseModel):
     _uid: UUID = PrivateAttr(default_factory=uuid4)
     _parent_ref: ParentRef | None = PrivateAttr(default=None)
     _activation_state: NodeState = PrivateAttr(default=NodeState.INACTIVE)
+    _activation_lifecycle: _ActivationLifecycle | None = PrivateAttr(default=None)
     _deleted: bool = PrivateAttr(default=False)
     _lock_s: set[UUID] = PrivateAttr(default_factory=set)
     _lock_x: UUID | None = PrivateAttr(default=None)
     _workspace: "ConfigNode | None" = PrivateAttr(default=None)
     _pending_payload: dict[str, Any] | None = PrivateAttr(default=None)
+    _pending_file: Path | None = PrivateAttr(default=None)
+    _pending_name: str | None = PrivateAttr(default=None)
     _is_workspace: bool = PrivateAttr(default=False)
     # Task / Thread 为弱键；作用域只存标识，不把已结束事务或任务强引用进队列。
     _staged_by_owner: weakref.WeakKeyDictionary[
@@ -299,6 +303,29 @@ class ConfigNode(BaseModel):
         return self.effective._activation_state
 
     @property
+    def _activation_ready(self) -> bool:
+        node = self.effective
+        lifecycle = node._activation_lifecycle
+        return node._activation_state == NodeState.ACTIVE and (
+            lifecycle is None
+            or lifecycle.complete
+            or (
+                lifecycle.finished
+                and lifecycle.owner() is execution_owner()
+                and config_manager.in_transaction
+            )
+        )
+
+    def _require_initialization_access(self) -> None:
+        lifecycle = self._activation_lifecycle
+        if (
+            lifecycle is not None
+            and not lifecycle.complete
+            and lifecycle.owner() is not execution_owner()
+        ):
+            raise ValueError("配置仍在激活，其他执行者不能修改")
+
+    @property
     def deleted(self) -> bool:
         """读经 ``effective``：事务内见工作区软删标记。"""
         return self.effective._deleted
@@ -306,6 +333,8 @@ class ConfigNode(BaseModel):
     @property
     def is_locked(self) -> bool:
         """派生：任一 S 或 X 持有即为真（不经工作区；仅已激活后有意义）。"""
+        # 外部实例的业务锁不归配置事务管理，不能作为可重试字段校验的稳定输入。
+        config_manager._require_regular_activation(self)
         return bool(self._lock_s) or self._lock_x is not None
 
     @property
@@ -326,7 +355,15 @@ class ConfigNode(BaseModel):
         """仅持久化根节点有路径；嵌套子节点激活不得误读根文件。"""
         if self.parent is not None:
             return None
-        return config_manager.get_file(self)
+        return config_manager.get_file(self) or self._pending_file
+
+    def _declare_file(self, path: Path) -> None:
+        if not self.is_root:
+            raise ValueError("仅根节点可声明持久化文件")
+        path = Path(path)
+        if path.suffix.lower() not in {".yaml", ".yml"}:
+            raise ValueError(f"持久化文件必须是 .yaml / .yml: {path}")
+        self._pending_file = path
 
     # ── 暂存 / 提交：stage 仅记录 op 队列；生效修改只在事务 ws（effective）内 ──
 
@@ -364,6 +401,10 @@ class ConfigNode(BaseModel):
 
     def _stage(self, op: StagedOp) -> None:
         """热态写只登记申请；工作区应用、校验及信号在 commit 的事务内执行。"""
+        config_manager._require_regular_activation(self)
+        self._require_initialization_access()
+        if self.activation_state == NodeState.ACTIVE and not self._activation_ready:
+            raise ValueError("所属激活流程尚未完成，不能执行热态修改")
         if self.deleted:
             raise DeletedNodeError(self.uid)
         # S/X 权限沿用原设计；本轮只修提交隔离，不改变业务锁策略。
@@ -379,6 +420,7 @@ class ConfigNode(BaseModel):
         只快照并清空当前执行者、当前作用域的暂存；每个 op 仍独立事务。
         Cancel 时归还当前已回滚及尚未执行的记录，不自动重试业务修改。
         """
+        config_manager._require_regular_activation(self)
         async with config_manager.node_commit(self):
             queue = self._current_staged()
             if not queue:
@@ -402,6 +444,8 @@ class ConfigNode(BaseModel):
                     try:
                         await self._commit_op(op)
                     except Exception as exc:  # noqa: BLE001
+                        if config_manager.in_fast_activation:
+                            raise
                         errors.append(exc)
                         self._current_staged().clear()
                     except BaseException:
@@ -447,6 +491,9 @@ class ConfigNode(BaseModel):
             raise RuntimeError("工作区不可再次创建工作区")
         if self._deleted:
             raise DeletedNodeError(self.uid)
+        config_manager._capture_workspace(
+            self, exclude_node_scope=self.init_workspace is not None
+        )
         if self._workspace is not None:
             return
         self._workspace = self._make_workspace_shell(init=False)
@@ -465,22 +512,40 @@ class ConfigNode(BaseModel):
         if self._workspace is None:
             raise RuntimeError("init 须先建立普通工作区")
         if self._workspace._workspace is not None:
+            if config_manager._reuse_init_workspace(self):
+                config_manager._register_init_workspace(self)
+                return
             raise RuntimeError("禁止同节点重复开启 init 事务")
+        # 再入检查先于快照，当前字段自身不再复制普通工作区。
+        config_manager._capture_workspace(self, exclude_node_scope=True)
         self._workspace._workspace = self._make_workspace_shell(init=True)
         config_manager._register_init_workspace(self)
 
-    def _make_workspace_shell(self, *, init: bool = False) -> "ConfigNode":
+    def _make_workspace_shell(
+        self, *, init: bool = False, source: ConfigNode | None = None
+    ) -> ConfigNode:
         """``init=False`` 从 live 建普通 ws；``init=True`` 从 ``self._workspace`` 建 init 层。"""
         raise NotImplementedError
 
     def _COMMIT(self) -> None:
-        raise NotImplementedError
+        if self._workspace is not None:
+            self._apply_workspace(self._workspace)
+            self._workspace = None
 
     def _COMMIT_init(self) -> None:
+        workspace = self._workspace
+        if workspace is not None and workspace._workspace is not None:
+            workspace._apply_workspace(workspace._workspace)
+            workspace._workspace = None
+
+    def _apply_workspace(self, source: ConfigNode) -> None:
+        """回填字段及受管状态，保留目标节点和分组身份。"""
         raise NotImplementedError
 
     def _ROLLBACK(self) -> None:
         self._workspace = None
+        if self._activation_state == NodeState.INACTIVE:
+            self._activation_lifecycle = None
 
     def _ROLLBACK_init(self) -> None:
         if self._workspace is not None:
@@ -498,6 +563,7 @@ class ConfigNode(BaseModel):
     def _build_signal_workspace(cls) -> None:
         if not config_manager.in_transaction:
             return
+        config_manager._capture_signal(cls)
         if cls._signal_workspace is not None:
             return
         source = cls.signal
@@ -560,53 +626,57 @@ class ConfigNode(BaseModel):
         sender: "ConfigNode | None",
         weak: bool = True,
     ) -> WrappedSignal:
-        if config_manager.in_transaction:
-            cls._build_signal_workspace()
-        sig = cls.signal_effective()
-        key = (
-            phase,
-            kind,
-            group,
-            field,
-            id(sender) if sender is not None else None,
-        )
-        probe = sender if sender is not None else ANY
-        wrapped: WrappedSignal | None = None
-        try:
-            raw_store = getattr(receiver, "__signal_wrappers__", None)
-            if raw_store is None:
-                store: dict[
-                    tuple[str, str | None, str | None, str | None, int | None],
-                    WrappedSignal,
-                ] = {}
-                setattr(receiver, "__signal_wrappers__", store)
-            else:
-                store = cast(
-                    dict[
+        with config_manager._execution_gate_sync():
+            if config_manager.in_transaction:
+                cls._build_signal_workspace()
+            sig = cls.signal_effective()
+            key = (
+                phase,
+                kind,
+                group,
+                field,
+                id(sender) if sender is not None else None,
+            )
+            probe = sender if sender is not None else ANY
+            wrapped: WrappedSignal | None = None
+            try:
+                raw_store = getattr(receiver, "__signal_wrappers__", None)
+                if raw_store is None:
+                    store: dict[
                         tuple[str, str | None, str | None, str | None, int | None],
                         WrappedSignal,
-                    ],
-                    raw_store,
-                )
-            existing = store.get(key)
-            if existing is not None:
-                if existing in sig.receivers_for(probe):
-                    raise ValueError(
-                        "重复订阅同一 (phase, kind, group, field, sender)；"
-                        "请先 disconnect"
+                    ] = {}
+                    setattr(receiver, "__signal_wrappers__", store)
+                else:
+                    store = cast(
+                        dict[
+                            tuple[str, str | None, str | None, str | None, int | None],
+                            WrappedSignal,
+                        ],
+                        raw_store,
                     )
-                wrapped = existing  # 复用挂载点（wrappers 只增不减）
-            else:
+                existing = store.get(key)
+                if existing is not None:
+                    if existing in sig.receivers_for(probe):
+                        raise ValueError(
+                            "重复订阅同一 (phase, kind, group, field, sender)；"
+                            "请先 disconnect"
+                        )
+                    wrapped = existing  # 复用挂载点（wrappers 只增不减）
+                else:
+                    wrapped = _wrap(receiver, phase, kind, group, field)
+                    store[key] = wrapped
+            except (AttributeError, TypeError):
+                # 不可附属性需要以强引用订阅信号, 避免被垃圾回收
+                if weak:
+                    raise TypeError("receiver 不可附属性，无法以弱引用注册信号")
                 wrapped = _wrap(receiver, phase, kind, group, field)
-                store[key] = wrapped
-        except (AttributeError, TypeError):
-            # 不可附属性需要以强引用订阅信号, 避免被垃圾回收
-            if weak:
-                raise TypeError("receiver 不可附属性，无法以弱引用注册信号")
-            wrapped = _wrap(receiver, phase, kind, group, field)
-        assert wrapped is not None
-        sig.connect(wrapped, sender=probe, weak=weak)
-        return wrapped
+            assert wrapped is not None
+            config_manager._record_signal(
+                cls, wrapped, sender, weak=weak, was_connected=False
+            )
+            sig.connect(wrapped, sender=probe, weak=weak)
+            return wrapped
 
     @classmethod
     def _disconnect_impl(
@@ -619,27 +689,38 @@ class ConfigNode(BaseModel):
         field: str | None,
         sender: "ConfigNode | None",
     ) -> None:
-        if config_manager.in_transaction:
-            cls._build_signal_workspace()
-        sig = cls.signal_effective()
-        store = getattr(receiver, "__signal_wrappers__", None)
-        if not store:
-            return
-        key = (
-            phase,
-            kind,
-            group,
-            field,
-            id(sender) if sender is not None else None,
-        )
-        # wrappers 只作包装挂载点（防 GC），只增不减；解订仅动 blinker
-        wrapped = store.get(key)
-        if wrapped is None:
-            return
-        if sender is not None:
-            sig.disconnect(wrapped, sender=sender)
-        else:
-            sig.disconnect(wrapped)
+        with config_manager._execution_gate_sync():
+            if config_manager.in_transaction:
+                cls._build_signal_workspace()
+            sig = cls.signal_effective()
+            store = getattr(receiver, "__signal_wrappers__", None)
+            if not store:
+                return
+            key = (
+                phase,
+                kind,
+                group,
+                field,
+                id(sender) if sender is not None else None,
+            )
+            # wrappers 只作包装挂载点（防 GC），只增不减；解订仅动 blinker
+            wrapped = store.get(key)
+            if wrapped is None:
+                return
+            probe = sender if sender is not None else ANY
+            if wrapped not in sig.receivers_for(probe):
+                return
+            config_manager._record_signal(
+                cls,
+                wrapped,
+                sender,
+                weak=isinstance(sig.receivers.get(id(wrapped)), weakref.ReferenceType),
+                was_connected=True,
+            )
+            if sender is not None:
+                sig.disconnect(wrapped, sender=sender)
+            else:
+                sig.disconnect(wrapped)
 
     @classmethod
     async def send(cls, *, sender: "ConfigNode | None", event: ConfigEvent) -> None:
@@ -649,7 +730,13 @@ class ConfigNode(BaseModel):
 
     # ──────────────── 生命周期 ────────────────
 
-    async def activate(self, *, regenerate_uuids: bool = False) -> None:
+    async def activate(
+        self,
+        *,
+        regenerate_uuids: bool = False,
+        try_fast: bool = False,
+        file: Path | None = None,
+    ) -> None:
         """未激活 → 已激活；热化尽量落地，聚合错误在事务提交后上抛。
 
         外层事务：成功字段/成员写入 ws；结束时标 ``ACTIVE`` 并清 ws 上 pending。
@@ -658,24 +745,74 @@ class ConfigNode(BaseModel):
 
         ``regenerate_uuids``：递归为载荷中的集合成员生成新身份；默认保留载荷 UUID。
         当前节点身份由构造或 ``Collection.add`` 分配；引用字段值不变。
+
+        ``try_fast``：字段赋值先共用 Init 工作区，失败后回退并使用原逐字段工作区。
+        信号仍逐字段即时执行；其余激活步骤沿原流程执行，不属于字段加速段。
+        锁及跨节点写入等操作在修改前转回原流程。
+        已有普通事务不另起快路径；本次激活的嵌套成员继承选择。取消不重试。
+        回调的外部副作用不在配置事务回滚范围。
+
+        ``file``：启动时补充持久化声明，避免先公开登记冷节点；与 payload 互斥。
+        递归节点共用生命周期标记；入口结束后所属 Task 可用，事务提交后对外可用。
         """
-        if self.activation_state != NodeState.INACTIVE:
-            raise ValueError("不可重复 activate")
-        if self._pending_payload is not None:
-            payload: dict[str, Any] = self._pending_payload
-        elif self.persist_path is not None:
-            # 缺失及真正空文档可初始化；错误根类型须在激活前报错，保留原件。
-            payload = read_dict_file(self.persist_path, allow_empty=True)
-        else:
-            # 无 payload/file：用当前冷态字段作载荷（含默认值）→ 官方 model_dump
-            # persist：无响应式；加密字段以密文进入 activate（encrypted 解析器可接受）
-            payload = self.model_dump(
-                mode="json",
-                context=ExportContext(audience="persist"),
-            )
+        config_manager._require_regular_activation()
+        self._require_initialization_access()
+        # 完整激活及字段回退共用执行入口，避免重试之间被其他提交插入。
+        async with config_manager.execution_gate():
+            if self.activation_state != NodeState.INACTIVE:
+                raise ValueError("不可重复 activate")
+            if file is not None:
+                if not self.is_root or self._pending_payload is not None:
+                    raise ValueError("file 仅用于没有 payload 的根节点")
+                if self._pending_file is not None and self._pending_file != Path(file):
+                    raise ValueError("激活文件与构造声明不一致")
+                self._declare_file(file)
+            if self._pending_file is not None or self._pending_name is not None:
+                config_manager._check_activation_registration(self)
+            with config_manager._activation_scope(try_fast=try_fast):
+                mode = config_manager._current_activation_mode()
+                assert mode is not None
+                if mode.lifecycle is None:
+                    mode.lifecycle = _ActivationLifecycle(root=weakref.ref(self))
+                # live 仅公布“正在激活”，使其他 Task/线程不能误走冷态直写。
+                self._activation_lifecycle = mode.lifecycle
+                try:
+                    if self._pending_payload is not None:
+                        payload: dict[str, Any] = self._pending_payload
+                    elif self.persist_path is not None:
+                        # 缺失及空文档可初始化；错误根类型保留原件并停止激活。
+                        payload = read_dict_file(self.persist_path, allow_empty=True)
+                    else:
+                        payload = self.model_dump(
+                            mode="json", context=ExportContext(audience="persist")
+                        )
+                    await self._activate_with_payload(
+                        payload, regenerate_uuids=regenerate_uuids
+                    )
+                except BaseException:
+                    if (
+                        self._workspace is None
+                        and self._activation_state == NodeState.INACTIVE
+                    ):
+                        self._activation_lifecycle = None
+                    raise
+
+    async def _activate_with_payload(
+        self, payload: dict[str, Any], *, regenerate_uuids: bool
+    ) -> None:
+        """普通事务覆盖完整生命周期；字段加速和回退由 Entry 在事务内处理。"""
         activate_error: ConfigAggregateError | None = None
         async with config_manager.transaction():
             self._build_workspace()
+            mode = config_manager._current_activation_mode()
+            transaction = config_manager.current
+            assert mode is not None and transaction is not None
+            assert mode.lifecycle is not None
+            if not any(item is mode.lifecycle for item in transaction.activations):
+                transaction.activations.append(mode.lifecycle)
+            self.effective._activation_lifecycle = mode.lifecycle
+            if self._pending_file is not None or self._pending_name is not None:
+                config_manager._register_activation(self)
             self.effective._activation_state = NodeState.INITIALIZING
             try:
                 await self._activate_from_payload(
@@ -685,6 +822,10 @@ class ConfigNode(BaseModel):
                 activate_error = exc
             self.effective._activation_state = NodeState.ACTIVE
             self.effective._pending_payload = None
+            self.effective._pending_file = None
+            self.effective._pending_name = None
+            if mode.lifecycle.root() is self:
+                mode.lifecycle.finished = True
         if activate_error is not None:
             raise activate_error
 
@@ -712,13 +853,17 @@ class ConfigNode(BaseModel):
     async def lock_s(self, *, cascade: bool = True) -> LockTicket:
         """共享锁：可叠加；禁一切热写；与 X 互斥。
 
-        ``cascade=True``（默认）覆盖全部子节点；``False`` 只锁本节点。
+        仅已激活节点可取锁。``cascade=True``（默认）覆盖全部子节点；
+        ``False`` 只锁本节点。
         """
+        config_manager._require_regular_activation()
         nodes: list[ConfigNode] = [self]
         if cascade:
             for node in nodes:
                 nodes.extend(node.iter_children())
         # 完整预检后再登记；期间不让出执行，冲突时不留下部分锁。
+        if any(not node._activation_ready for node in nodes):
+            raise ValueError("配置尚未完成激活，无法加锁")
         if any(node._lock_x is not None for node in nodes):
             raise ValueError("已有 X 锁，无法加 S")
         token = uuid4()
@@ -730,13 +875,16 @@ class ConfigNode(BaseModel):
         """独占锁：至多一个；与任一 S 互斥。
 
         持票上下文可写本锁覆盖的节点（``_stage`` / ``commit`` 认 token）；
-        其它上下文与 S 持有者仍禁写。``cascade`` 同 ``lock_s``。
+        其它上下文与 S 持有者仍禁写。仅已激活节点可取锁；``cascade`` 同 ``lock_s``。
         """
+        config_manager._require_regular_activation()
         nodes: list[ConfigNode] = [self]
         if cascade:
             for node in nodes:
                 nodes.extend(node.iter_children())
         # 预检和登记复用同一覆盖范围，不能覆盖后代已有的票据。
+        if any(not node._activation_ready for node in nodes):
+            raise ValueError("配置尚未完成激活，无法加锁")
         if any(node._lock_x is not None or node._lock_s for node in nodes):
             raise ValueError("已有锁，无法加 X")
         token = uuid4()
@@ -747,6 +895,7 @@ class ConfigNode(BaseModel):
 
     async def try_lock_x(self, *, cascade: bool = True) -> LockTicket | None:
         """非阻塞取 X；冲突返回 ``None``，成功返回票据（语义同 ``lock_x``）。"""
+        config_manager._require_regular_activation()
         if self._lock_x is not None or self._lock_s:
             return None
         try:
@@ -756,6 +905,7 @@ class ConfigNode(BaseModel):
 
     async def unlock(self, ticket: LockTicket) -> None:
         """凭原凭证解锁；须在 ``ticket.issuer`` 节点调用。"""
+        config_manager._require_regular_activation()
         if ticket.issuer != self.uid:
             raise ValueError("须在签发节点解锁")
         if ticket.mode == "s":
@@ -838,7 +988,7 @@ class ConfigNode(BaseModel):
 
         校验 ``ACTIVE`` 与未软删；固定 ``audience=persist``（密文、无响应式）。
         """
-        if self.activation_state != NodeState.ACTIVE:
+        if not self._activation_ready:
             raise ValueError("to_dict 仅用于已激活节点")
         if self.deleted:
             raise DeletedNodeError(self.uid)

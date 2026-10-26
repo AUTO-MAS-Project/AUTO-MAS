@@ -244,7 +244,7 @@ class AppConfig:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         self.config_path.mkdir(parents=True, exist_ok=True)
 
-        # 所有集合先登记，随后按引用依赖激活；迁移完成前不登记持久化根。
+        # 先声明命名集合，再按引用依赖激活并登记；迁移完成后绑定持久化文件。
         self.setting = GlobalConfig.build()
         self.EmulatorConfig = ConfigCollection.build(
             [EmulatorConfig], name="EmulatorConfig"
@@ -509,7 +509,7 @@ class AppConfig:
                     )
                     self._config_nodes["setting"] = self.setting
                     self.startup_notices = self.setting.startup_notices
-                    await self.setting.activate()
+                    await self.setting.activate(try_fast=True)
 
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
@@ -543,13 +543,11 @@ class AppConfig:
                 normalize_m9a_managed_entries, self.config_path / "scripts.yaml"
             )
         for _old, new, key in CONFIG_FILES:
-            config_manager.register_root(
-                self._config_nodes[key], self.config_path / new
-            )
-        for _old, _new, key in CONFIG_FILES:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
-                await node.activate()
+                await node.activate(file=self.config_path / new, try_fast=True)
+            else:
+                config_manager.register_root(node, self.config_path / new)
         for script in self.ScriptConfig.values():
             if (
                 isinstance(script, MaaEndConfig)

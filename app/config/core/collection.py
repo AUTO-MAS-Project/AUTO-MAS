@@ -45,7 +45,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     _default_entry_types: ClassVar[tuple[type[ConfigNode], ...]] = ()
     # 本实例允许的成员类型：类名 → 类型（构造灌入；运行时 add/remove/reload_type）
     _entry_types: dict[str, type[TEntry]] = PrivateAttr(default_factory=dict)
-    # remove 守卫（挂 live；不经工作区拷贝语义影响读路径）
+    # remove 守卫随集合工作区提交、回退。
     _remove_guards: list[RemoveGuard[TEntry]] = PrivateAttr(default_factory=list)
 
     order: list[CollectionOrderItem] = Field(default_factory=list)
@@ -69,13 +69,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         self._parent_ref = weakref.ref(parent) if parent is not None else None
         if payload is not None and file is not None:
             raise ValueError("payload 与 file 互斥")
-        # 持久化登记以 UUID 为键，须先确定最终身份。
+        # 构造只保存声明；激活内部以最终 UUID 登记。
         if uid is not None:
             self._uid = uid if isinstance(uid, UUID) else UUID(uid)
         if file is not None:
-            if not self.is_root:
-                raise ValueError("仅根节点可 file=")
-            config_manager.register_root(self, Path(file))
+            self._declare_file(Path(file))
         resolved_types: list[type[TEntry]]
         if entry_types is None:
             resolved_types = cast(
@@ -101,7 +99,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 raise ValueError(
                     "嵌套 Collection 禁止 name=；请事后 register_collection"
                 )
-            config_manager.register_collection(name, self)
+            self._pending_name = name
         self._pending_payload = payload
 
     @classmethod
@@ -133,6 +131,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         return self
 
     async def _commit_op(self, op: StagedOp) -> None:
+        config_manager._require_regular_activation()
         if op.kind not in (
             StageKind.COLLECTION_ADD,
             StageKind.COLLECTION_REMOVE,
@@ -149,7 +148,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             and self.activation_state == NodeState.INITIALIZING
         )
         async with (
-            config_manager.init_transaction()
+            config_manager.init_transaction(node=self)
             if use_init
             else config_manager.transaction()
         ):
@@ -194,7 +193,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 if entry.is_locked:
                     raise ValueError(f"成员已锁定，无法删除: {op.uid}")
                 # 先跑 remove_guard，再 mutate / send(remove)
-                for guard in self._remove_guards:
+                for guard in self.effective._remove_guards:
                     await guard(self, op.uid, entry)
                 await entry._delete()
                 del self.effective.data[op.uid]
@@ -251,7 +250,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     entry = self.effective.data[uid]
                     if entry.is_locked:
                         raise ValueError(f"成员已锁定，无法 remove_type: {uid}")
-                    for guard in self._remove_guards:
+                    for guard in self.effective._remove_guards:
                         await guard(self, uid, entry)
                     await entry._delete()
                     del self.effective.data[uid]
@@ -640,11 +639,19 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     def register_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """注册异步拒删守卫；在 commit 应用 remove 前依次 await。"""
-        self._remove_guards.append(guard)
+        self._require_initialization_access()
+        with config_manager._execution_gate_sync():
+            if config_manager.in_transaction:
+                self._build_workspace()
+            self.effective._remove_guards.append(guard)
 
     def unregister_remove_guard(self, guard: RemoveGuard[TEntry]) -> None:
         """移除已注册的拒删守卫。"""
-        self._remove_guards.remove(guard)
+        self._require_initialization_access()
+        with config_manager._execution_gate_sync():
+            if config_manager.in_transaction:
+                self._build_workspace()
+            self.effective._remove_guards.remove(guard)
 
     # ──────────────── 激活 ────────────────
 
@@ -696,8 +703,12 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     # ──────────────── 工作区 ────────────────
 
-    def _make_workspace_shell(self, *, init: bool = False) -> Self:
-        if init:
+    def _make_workspace_shell(
+        self, *, init: bool = False, source: ConfigNode | None = None
+    ) -> Self:
+        if source is not None:
+            src = cast(Self, source)
+        elif init:
             assert self._workspace is not None
             src = cast(Self, self._workspace)
         else:
@@ -707,6 +718,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         object.__setattr__(ws, "order", list(src.order))
         object.__setattr__(ws, "data", dict(src.data))
         ws._entry_types = dict(src._entry_types)
+        ws._remove_guards = list(src._remove_guards)
         ws._workspace = None
         ws._deleted = src._deleted
         ws._activation_state = src._activation_state
@@ -714,30 +726,18 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         ws._is_workspace = True
         return ws
 
-    def _COMMIT(self) -> None:
-        if self._workspace is None:
-            return
-        shell = cast(Self, self._workspace)
+    def _apply_workspace(self, source: ConfigNode) -> None:
+        shell = cast(Self, source)
         object.__setattr__(self, "order", list(shell.order))
         object.__setattr__(self, "data", dict(shell.data))
         self._entry_types = dict(shell._entry_types)
+        self._remove_guards = list(shell._remove_guards)
         self._deleted = shell._deleted
         self._activation_state = shell._activation_state
+        self._activation_lifecycle = shell._activation_lifecycle
         self._pending_payload = shell._pending_payload
-        self._workspace = None
-
-    def _COMMIT_init(self) -> None:
-        if self._workspace is None or self._workspace._workspace is None:
-            return
-        init = cast(Self, self._workspace._workspace)
-        shell = cast(Self, self._workspace)
-        object.__setattr__(shell, "order", list(init.order))
-        object.__setattr__(shell, "data", dict(init.data))
-        shell._entry_types = dict(init._entry_types)
-        shell._deleted = init._deleted
-        shell._activation_state = init._activation_state
-        shell._pending_payload = init._pending_payload
-        shell._workspace = None
+        self._pending_file = shell._pending_file
+        self._pending_name = shell._pending_name
 
     # ──────────────── 导出（官方 model_serializer）────────────────
 

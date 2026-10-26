@@ -11,9 +11,10 @@ async def activate_config(config, path: Path | None = None):
         for root in list(config_manager.iter_persist_roots()):
             if root.persist_path == path:
                 config_manager.unregister_root(root)
-        config_manager.register_root(config, path)
+        if config.activation_state != NodeState.INACTIVE:
+            config_manager.register_root(config, path)
     if config.activation_state == NodeState.INACTIVE:
-        await config.activate()
+        await config.activate(file=path)
     await config_manager.flush()
     return config
 
