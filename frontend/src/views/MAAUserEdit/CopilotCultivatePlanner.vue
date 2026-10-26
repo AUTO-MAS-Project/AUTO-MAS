@@ -197,11 +197,17 @@ watch(
 watch([coverage, requireModules], () => {
   result.value = null
 })
-// 重新输入视为放弃旧结果：清空候选与零命中提示
-watch(authorKeyword, () => {
-  authorCandidates.value = []
-  authorNone.value = false
-})
+// 范围或关键词变化后，旧搜索响应不再有权更新作者或作业查询。
+watch(
+  [source, authorKeyword],
+  () => {
+    searchGeneration++
+    searching.value = false
+    authorCandidates.value = []
+    authorNone.value = false
+  },
+  { flush: 'sync' }
+)
 onScopeDispose(() => {
   generation++
   searchGeneration++
@@ -238,10 +244,14 @@ const searchAuthors = async () => {
   authorCandidates.value = []
   authorNone.value = false
   const version = ++searchGeneration
+  const isCurrentSearch = () =>
+    version === searchGeneration &&
+    source.value === 'author' &&
+    authorKeyword.value.trim() === keyword
   searching.value = true
   try {
     const response = await api.searchAuthors(keyword)
-    if (version !== searchGeneration) return
+    if (!isCurrentSearch()) return
     const matched = (response.data ?? []).flatMap(item =>
       item.value ? [{ label: item.label, value: item.value }] : []
     )
@@ -250,8 +260,7 @@ const searchAuthors = async () => {
     else if (matched.length > 1) authorCandidates.value = matched
     else authorNone.value = true
   } catch (e) {
-    if (version === searchGeneration)
-      error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
+    if (isCurrentSearch()) error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
   } finally {
     if (version === searchGeneration) searching.value = false
   }

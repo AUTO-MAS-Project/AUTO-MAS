@@ -45,35 +45,35 @@
     />
 
     <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <CultivationPage
-        v-if="cultivationPage && !isInitializing"
-        :script-id="scriptId"
-        :user-id="userId"
-        :script-name="scriptName"
-        :form-data="formData"
-        :loading="loading"
-        :leaving-page="leavingPage"
-        :editor-busy="editorBusy"
-        :operator-catalog="cultivateOperatorCatalog"
-        :operator-options-loading="cultivateOperatorOptionsLoading"
-        :operator-options-error="cultivateOperatorOptionsError"
-        :skland-role-options="sklandRoleOptions"
-        :skland-role-loading="sklandRoleLoading"
-        :skland-role-error="sklandRoleError"
-        :load-skland-role-options="loadSklandRoleOptions"
-        :item-options="depotItemOptions"
-        :cultivate-preview="cultivatePreview"
-        :cultivate-preview-loading="cultivatePreviewLoading"
-        :cultivate-preview-error="cultivatePreviewError"
-        :load-cultivate-preview="loadCultivatePreview"
-        :import-cultivate-targets="importCultivateTargets"
-        :prepare-copilot-analysis="prepareCopilotAnalysis"
-        @save="handleFieldSave"
-        @back="handleCancel"
-      />
-      <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
-      <a-card v-else class="config-card" :inert="editorBusy">
+    <CultivationPage
+      v-if="cultivationPage && !isInitializing"
+      :script-id="scriptId"
+      :user-id="userId"
+      :script-name="scriptName"
+      :form-data="formData"
+      :loading="loading"
+      :leaving-page="leavingPage"
+      :editor-busy="editorBusy"
+      :operator-catalog="cultivateOperatorCatalog"
+      :operator-options-loading="cultivateOperatorOptionsLoading"
+      :operator-options-error="cultivateOperatorOptionsError"
+      :skland-role-options="sklandRoleOptions"
+      :skland-role-loading="sklandRoleLoading"
+      :skland-role-error="sklandRoleError"
+      :load-skland-role-options="loadSklandRoleOptions"
+      :item-options="depotItemOptions"
+      :cultivate-preview="cultivatePreview"
+      :cultivate-preview-loading="cultivatePreviewLoading"
+      :cultivate-preview-error="cultivatePreviewError"
+      :load-cultivate-preview="loadCultivatePreview"
+      :import-cultivate-targets="importCultivateTargets"
+      :prepare-copilot-analysis="prepareCopilotAnalysis"
+      @save="handleFieldSave"
+      @back="handleCancel"
+    />
+    <div v-else-if="cultivationPage" class="cultivation-page-loading"><a-spin /></div>
+    <ConfigLockPanel v-else :script-id="scriptId" content-class="user-edit-content">
+      <a-card class="config-card" :inert="editorBusy">
         <a-form
           ref="formRef"
           :model="formData"

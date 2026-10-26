@@ -23,70 +23,72 @@
       </a-button>
     </header>
 
-    <!-- 后端运行提示（养成暂停/降级等原因说明） -->
-    <a-alert
-      v-if="formData?.Data?.CultivateNotice"
-      class="cultivation-notice"
-      :message="formData.Data.CultivateNotice"
-      type="warning"
-      show-icon
-    />
+    <ConfigLockPanel :script-id="scriptId" content-class="cultivation-body">
+      <!-- 后端运行提示（养成暂停/降级等原因说明） -->
+      <a-alert
+        v-if="formData?.Data?.CultivateNotice"
+        class="cultivation-notice"
+        :message="formData.Data.CultivateNotice"
+        type="warning"
+        show-icon
+      />
 
-    <!-- 总览：启停/绑定/执行设置 + 关键数字 -->
-    <CultivationOverview
-      :form-data="formData"
-      :loading="loading"
-      :editor-busy="editorBusy"
-      :enabled="cultivationEnabled"
-      :skland-bound="sklandBound"
-      :skland-bound-composite="sklandBoundComposite"
-      :skland-role-options="sklandRoleOptions"
-      :skland-role-loading="sklandRoleLoading"
-      :skland-role-error="sklandRoleError"
-      :load-skland-role-options="loadSklandRoleOptions"
-      :cultivate-preview="cultivatePreview"
-      @save="(key, value) => emit('save', key, value)"
-    />
+      <!-- 总览：启停/绑定/执行设置 + 关键数字 -->
+      <CultivationOverview
+        :form-data="formData"
+        :loading="loading"
+        :editor-busy="editorBusy"
+        :enabled="cultivationEnabled"
+        :skland-bound="sklandBound"
+        :skland-bound-composite="sklandBoundComposite"
+        :skland-role-options="sklandRoleOptions"
+        :skland-role-loading="sklandRoleLoading"
+        :skland-role-error="sklandRoleError"
+        :load-skland-role-options="loadSklandRoleOptions"
+        :cultivate-preview="cultivatePreview"
+        @save="(key, value) => emit('save', key, value)"
+      />
 
-    <!-- 内容卡：培养目标 / 作业规划 -->
-    <section class="cultivation-content" :inert="editorBusy">
-      <a-tabs v-model:active-key="activeTab" type="card" class="cultivation-tabs">
-        <a-tab-pane key="targets" :tab="t('maaCopilot.targetsTab')">
-          <!-- tab-content 类承接页面的标签页内容内边距（与游戏社区/设置页同款） -->
-          <CultivateTargetEditor
-            ref="editorRef"
-            class="tab-content"
-            :form-data="formData"
-            :loading="loading || copilotImporting"
-            :operator-catalog="operatorCatalog"
-            :operator-options-loading="operatorOptionsLoading"
-            :operator-options-error="operatorOptionsError"
-            :skland-bound="sklandBound"
-            :item-options="itemOptions"
-            :cultivate-preview="cultivatePreview"
-            :cultivate-preview-loading="cultivatePreviewLoading"
-            :cultivate-preview-error="cultivatePreviewError"
-            :load-cultivate-preview="loadCultivatePreview"
-            :import-cultivate-targets="importCultivateTargets"
-            @save="(key, value) => emit('save', key, value)"
-            @busy="clipboardImporting = $event"
-          />
-        </a-tab-pane>
-        <a-tab-pane key="copilot" :tab="t('maaCopilot.analysisTab')">
-          <CopilotCultivatePlanner
-            class="tab-content"
-            :disabled="loading || clipboardImporting"
-            :bound="sklandBound"
-            :binding-key="sklandBoundComposite ?? ''"
-            :catalog="operatorCatalog"
-            :import-targets="importCultivateTargets"
-            :prepare-analysis="prepareCopilotAnalysis"
-            @imported="handleCopilotImported"
-            @busy="copilotImporting = $event"
-          />
-        </a-tab-pane>
-      </a-tabs>
-    </section>
+      <!-- 内容卡：培养目标 / 作业规划 -->
+      <section class="cultivation-content" :inert="editorBusy">
+        <a-tabs v-model:active-key="activeTab" type="card" class="cultivation-tabs">
+          <a-tab-pane key="targets" :tab="t('maaCopilot.targetsTab')">
+            <!-- tab-content 类承接页面的标签页内容内边距（与游戏社区/设置页同款） -->
+            <CultivateTargetEditor
+              ref="editorRef"
+              class="tab-content"
+              :form-data="formData"
+              :loading="loading || copilotImporting"
+              :operator-catalog="operatorCatalog"
+              :operator-options-loading="operatorOptionsLoading"
+              :operator-options-error="operatorOptionsError"
+              :skland-bound="sklandBound"
+              :item-options="itemOptions"
+              :cultivate-preview="cultivatePreview"
+              :cultivate-preview-loading="cultivatePreviewLoading"
+              :cultivate-preview-error="cultivatePreviewError"
+              :load-cultivate-preview="loadCultivatePreview"
+              :import-cultivate-targets="importCultivateTargets"
+              @save="(key, value) => emit('save', key, value)"
+              @busy="clipboardImporting = $event"
+            />
+          </a-tab-pane>
+          <a-tab-pane key="copilot" :tab="t('maaCopilot.analysisTab')">
+            <CopilotCultivatePlanner
+              class="tab-content"
+              :disabled="loading || clipboardImporting"
+              :bound="sklandBound"
+              :binding-key="sklandBoundComposite ?? ''"
+              :catalog="operatorCatalog"
+              :import-targets="importCultivateTargets"
+              :prepare-analysis="prepareCopilotAnalysis"
+              @imported="handleCopilotImported"
+              @busy="copilotImporting = $event"
+            />
+          </a-tab-pane>
+        </a-tabs>
+      </section>
+    </ConfigLockPanel>
   </div>
 </template>
 
@@ -94,6 +96,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import type { CultivatePreviewOut } from '@/api'
 import CultivationOverview from './CultivationOverview.vue'
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
@@ -174,6 +177,13 @@ const sklandBoundComposite = computed(() => {
   flex-direction: column;
   width: 100%;
   min-height: 100%;
+}
+
+.cultivation-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .cultivation-header {

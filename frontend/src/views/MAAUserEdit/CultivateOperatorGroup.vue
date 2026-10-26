@@ -73,7 +73,7 @@
             <span class="goal-name" :title="line.label">{{ line.label }}</span>
             <CultivateGoalLineBody
               :line="line"
-              :disabled="busy"
+              :disabled="busy || (line.kind === 'skill' && !sklandBound)"
               :get-popup-container="getPopupContainer"
               :list-height="listHeight"
               @change="

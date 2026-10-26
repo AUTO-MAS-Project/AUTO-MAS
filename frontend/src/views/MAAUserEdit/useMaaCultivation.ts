@@ -165,6 +165,10 @@ export function useMaaCultivation(options: CultivationOptions) {
   )
 
   const loadCultivatePreview = async (targetsJson: string) => {
+    if (!parseCultivateTargets(targetsJson).length) {
+      resetCultivatePreview()
+      return
+    }
     const userId = options.getUserId()
     const seq = ++cultivatePreviewSeq
     cultivatePreviewLoading.value = true

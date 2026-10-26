@@ -470,10 +470,9 @@ const onImportBusy = (value: boolean) => {
 
 // 目标行变化 → 防抖后请求需求预览（竞态守卫在父级加载器里）。
 watch(rows, (nextRows, _previousRows, onCleanup) => {
-  const previewTimer = window.setTimeout(() => {
-    if (!nextRows.length) return
-    props.loadCultivatePreview(serializeCultivateTargets(nextRows))
-  }, 600)
+  const loadPreview = () => void props.loadCultivatePreview(serializeCultivateTargets(nextRows))
+  if (!nextRows.length) return loadPreview()
+  const previewTimer = window.setTimeout(loadPreview, 600)
   onCleanup(() => window.clearTimeout(previewTimer))
 })
 
