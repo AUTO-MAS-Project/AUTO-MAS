@@ -1537,28 +1537,6 @@ export class Service {
         });
     }
     /**
-     * 个人版「灾变防线」这一期的状态
-     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
-     *
-     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
-     * @param requestBody
-     * @returns MssDefenseStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
-        requestBody: MssDefenseStatusIn,
-    ): CancelablePromise<MssDefenseStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/mss/defense-status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 把选中的外壳配置实例导入成用户
      * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
      *
@@ -1745,6 +1723,28 @@ export class Service {
                 'root': root,
                 'path': path,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 个人版「灾变防线」这一期的状态
+     * MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
+     *
+     * 「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
+     * @param requestBody
+     * @returns MssDefenseStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMssDefenseStatusApiScriptsMaafwMssDefenseStatusPost(
+        requestBody: MssDefenseStatusIn,
+    ): CancelablePromise<MssDefenseStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mss/defense-status',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
