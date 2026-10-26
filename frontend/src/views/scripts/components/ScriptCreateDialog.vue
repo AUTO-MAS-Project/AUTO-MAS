@@ -7,7 +7,7 @@
     :mask-closable="!submitting"
     :confirm-loading="submitting"
     :z-index="900"
-    :footer="null"
+    :body-style="{ height: '500px', minHeight: 0, overflowY: 'auto' }"
     class="script-create-dialog"
     :title="t('scripts.create.title')"
     @cancel="handleCancel"
@@ -254,18 +254,25 @@
       </section>
     </div>
 
-    <div class="dialog-footer">
-      <a-button :disabled="!canGoBack || submitting" @click="handleBack">
-        <template #icon><ArrowLeftOutlined /></template>
-        {{ t('scripts.create.back') }}
-      </a-button>
-      <a-space>
-        <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
-        <a-button type="primary" :loading="submitting" :disabled="nextDisabled" @click="handleNext">
-          {{ primaryButtonText }}
+    <template #footer>
+      <div class="dialog-footer">
+        <a-button :disabled="!canGoBack || submitting" @click="handleBack">
+          <template #icon><ArrowLeftOutlined /></template>
+          {{ t('scripts.create.back') }}
         </a-button>
-      </a-space>
-    </div>
+        <a-space>
+          <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
+          <a-button
+            type="primary"
+            :loading="submitting"
+            :disabled="nextDisabled"
+            @click="handleNext"
+          >
+            {{ primaryButtonText }}
+          </a-button>
+        </a-space>
+      </div>
+    </template>
   </a-modal>
 </template>
 
@@ -556,14 +563,9 @@ const chooseCustomConfig = () => {
 }
 
 :global(.script-create-dialog .ant-modal-content) {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100vh - 128px);
-  overflow: hidden;
-}
-
-.create-layout {
-  height: min(500px, calc(100vh - 192px));
-  min-height: 0;
-  margin: -8px -24px 0;
   overflow: hidden;
 }
 
@@ -575,10 +577,8 @@ const chooseCustomConfig = () => {
 }
 
 .step-content {
-  height: 100%;
   min-width: 0;
-  padding: 24px 28px;
-  overflow-y: auto;
+  padding: 16px 4px;
   background: var(--ant-color-bg-elevated);
 }
 
@@ -785,9 +785,6 @@ const chooseCustomConfig = () => {
 .dialog-footer {
   display: flex;
   justify-content: space-between;
-  margin: 0 -24px -20px;
-  padding: 14px 24px;
-  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 @media (max-width: 760px) {

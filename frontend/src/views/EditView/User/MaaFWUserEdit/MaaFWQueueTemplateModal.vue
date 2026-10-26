@@ -261,8 +261,6 @@ const confirmDelete = (name: string) => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 60vh;
-  overflow: auto;
 }
 
 .queue-template-name-label {
