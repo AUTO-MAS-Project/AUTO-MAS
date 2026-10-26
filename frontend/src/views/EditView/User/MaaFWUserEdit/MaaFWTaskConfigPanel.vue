@@ -113,7 +113,7 @@ import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
 import MaaFWTaskWeekdaysField from './MaaFWTaskWeekdaysField.vue'
-import { maafwQueueEntryTitle, maafwTaskWeekdays } from './maafwTaskSnapshot'
+import { maafwDisplayedTaskWeekdays, maafwQueueEntryTitle } from './maafwTaskSnapshot'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWMissingQueuedTask,
@@ -187,8 +187,9 @@ const showWeekdays = computed(() => {
   return !isManagedMaaFWTask(task, props.managedTaskEntries ?? new Set())
 })
 
+// 红灯时七个勾全空（一天都不跑）；绿灯时是存的运行日
 const selectedWeekdays = computed(() =>
-  maafwTaskWeekdays(props.taskSnapshot.taskSchedules, props.selectedTaskId)
+  maafwDisplayedTaskWeekdays(props.taskSnapshot, props.selectedTaskId)
 )
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) =>

@@ -31,7 +31,7 @@ import {
   pickMaaFWTaskLabels,
   pickMaaFWTaskSchedules,
   withMaaFWTaskLabel,
-  withMaaFWTaskWeekdays,
+  applyMaaFWTaskWeekdaysSelection,
 } from './maafwTaskSnapshot'
 import type { MaaFWUserFormState } from './useMaaFWUserForm'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
@@ -374,16 +374,22 @@ export function useMaaFWTaskQueue({
   }
 
   /**
-   * 改一份实例的运行日（ISO 星期）：七天全勾就是不限制、不写这一条；一天都不勾由界面挡住，
-   * 这里收到空列表不做任何事。
+   * 右栏改了一份实例的运行日（ISO 星期）：一天都不勾 = 红灯（运行日恢复成每天），否则绿灯、
+   * 只在勾着的几天跑（规则见 applyMaaFWTaskWeekdaysSelection）。红绿与运行日一起改、只存一次。
    */
   const updateTaskWeekdays = async (taskId: string, weekdays: number[]) => {
     if (!getTaskInfoById(taskId) || !taskSnapshot.value.taskOrder.includes(taskId)) return
-    if (weekdays.length === 0) return
-    const next = withMaaFWTaskWeekdays(taskSnapshot.value.taskSchedules, taskId, weekdays)
-    const before = taskSnapshot.value.taskSchedules?.[taskId]?.weekdays.join(',') || ''
-    if (before === (next[taskId]?.weekdays.join(',') || '')) return
-    setTaskSchedules(next)
+    const next = applyMaaFWTaskWeekdaysSelection(taskSnapshot.value, taskId, weekdays)
+    const scheduleKey = (schedules?: Record<string, MaaFWTaskSchedule>) =>
+      schedules?.[taskId]?.weekdays.join(',') || ''
+    if (
+      (taskSnapshot.value.taskChecked[taskId] !== false) === next.taskChecked[taskId] &&
+      scheduleKey(taskSnapshot.value.taskSchedules) === scheduleKey(next.taskSchedules)
+    ) {
+      return
+    }
+    taskSnapshot.value.taskChecked = next.taskChecked
+    setTaskSchedules(next.taskSchedules)
     await persistQueuedSnapshot()
   }
 

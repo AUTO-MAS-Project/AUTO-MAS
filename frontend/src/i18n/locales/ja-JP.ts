@@ -1968,7 +1968,6 @@ export default {
     queueTaskRenameTitle: '表示名を変更',
     queueTaskDisplayName: '表示名',
     queueTaskWeekdays: '実行する曜日',
-    queueTaskWeekdaysKeepOne: '少なくとも 1 日は残してください',
     missingTaskValueSeparator: '、',
     missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',

@@ -2075,7 +2075,6 @@ export default {
     queueTaskRenameTitle: 'Edit display name',
     queueTaskDisplayName: 'Display name',
     queueTaskWeekdays: 'Run on',
-    queueTaskWeekdaysKeepOne: 'Keep at least one day',
     missingTaskValueSeparator: ', ',
     missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',

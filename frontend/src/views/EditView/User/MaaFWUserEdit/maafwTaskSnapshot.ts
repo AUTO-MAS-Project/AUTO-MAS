@@ -88,8 +88,8 @@ export const maafwTaskWeekdays = (
 ): number[] => normalizeMaaFWWeekdays(schedules?.[taskId]?.weekdays) ?? [...MAAFW_WEEKDAYS]
 
 /**
- * 改一份实例的运行日，返回新的运行日表（不改入参）。七天全勾就删掉这一条（不限制）；
- * 一天都没勾是界面挡住的情况，这里不当成任何设置，原样返回。
+ * 改一份实例的运行日，返回新的运行日表（不改入参）。七天全勾或一天都没有就删掉这一条（每天）：
+ * 存下来的运行日永远不是空表，「一天都不跑」由红灯表示。
  */
 export const withMaaFWTaskWeekdays = (
   schedules: Record<string, MaaFWTaskSchedule> | undefined,
@@ -97,7 +97,6 @@ export const withMaaFWTaskWeekdays = (
   weekdays: readonly number[]
 ): Record<string, MaaFWTaskSchedule> => {
   const next = { ...(schedules || {}) }
-  if (weekdays.length === 0) return next
   const normalized = normalizeMaaFWWeekdays([...weekdays])
   if (normalized) {
     next[taskId] = { weekdays: normalized }
@@ -106,6 +105,35 @@ export const withMaaFWTaskWeekdays = (
   }
   return next
 }
+
+/** 右栏「运行日」显示的勾：红灯时七个全空；绿灯时是存的运行日（没有条目就是七天全勾） */
+export const maafwDisplayedTaskWeekdays = (
+  snapshot: Pick<MaaFWTaskSnapshot, 'taskChecked' | 'taskSchedules'>,
+  taskId: string
+): number[] =>
+  snapshot.taskChecked[taskId] === false ? [] : maafwTaskWeekdays(snapshot.taskSchedules, taskId)
+
+/** 「全选」的样子：七天 → 勾上；一到六天 → 半选；一天都没有（红灯）→ 不勾 */
+export const maafwWeekdaysSelectAllState = (days: readonly number[]): 'all' | 'partial' | 'none' =>
+  days.length === MAAFW_WEEKDAYS.length ? 'all' : days.length > 0 ? 'partial' : 'none'
+
+/** 点「全选」后的勾选集合：已经七天就全部取消（变红灯），否则勾满七天（变绿灯、每天跑） */
+export const maafwWeekdaysAfterToggleAll = (days: readonly number[]): number[] =>
+  maafwWeekdaysSelectAllState(days) === 'all' ? [] : [...MAAFW_WEEKDAYS]
+
+/**
+ * 右栏改完运行日后得到的勾选集合 `days` 落到快照上（返回新的两张表，不改入参）：
+ * 一天都没勾 → 红灯，并删掉运行日条目（恢复成每天）；否则 → 绿灯，运行日 = `days`
+ * （七天全勾就删条目）。左边点灯只切红绿、不碰运行日，红灯切回绿灯会恢复原来的运行日。
+ */
+export const applyMaaFWTaskWeekdaysSelection = (
+  snapshot: Pick<MaaFWTaskSnapshot, 'taskChecked' | 'taskSchedules'>,
+  taskId: string,
+  days: readonly number[]
+): { taskChecked: Record<string, boolean>; taskSchedules: Record<string, MaaFWTaskSchedule> } => ({
+  taskChecked: { ...snapshot.taskChecked, [taskId]: days.length > 0 },
+  taskSchedules: withMaaFWTaskWeekdays(snapshot.taskSchedules, taskId, days),
+})
 
 type QueueEntryNameSource =
   | { missing: true; name: string; customLabel?: string }

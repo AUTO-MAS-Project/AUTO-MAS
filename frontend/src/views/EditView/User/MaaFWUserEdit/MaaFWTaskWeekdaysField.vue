@@ -2,37 +2,47 @@
   <!-- 样子照 MaaFWTaskOptionEditor 里的 checkbox 类型选项，看起来是项目选项的第一行 -->
   <div class="option-item task-weekdays-field">
     <div class="option-label">{{ t('edit.queueTaskWeekdays') }}</div>
-    <a-checkbox-group
-      :value="weekdays"
-      :disabled="disabled"
-      class="option-checkbox-group"
-      @change="handleChange"
-    >
-      <template v-for="option in weekdayOptions" :key="option.value">
-        <!-- 只剩一个勾时它不能再取消：不允许一天都不跑，不想跑用队列里的红灯 -->
-        <a-tooltip v-if="isLastChecked(option.value)" :title="t('edit.queueTaskWeekdaysKeepOne')">
-          <span>
-            <a-checkbox :value="option.value" disabled>{{ option.label }}</a-checkbox>
-          </span>
-        </a-tooltip>
-        <a-checkbox v-else :value="option.value">{{ option.label }}</a-checkbox>
-      </template>
-    </a-checkbox-group>
+    <div class="weekday-row">
+      <!-- 全选放在组外：放进 a-checkbox-group 里会被组的取值接管 -->
+      <a-checkbox
+        :checked="allChecked"
+        :indeterminate="partlyChecked"
+        :disabled="disabled"
+        @change="handleToggleAll"
+      >
+        {{ t('edit.shellImportSelectAll') }}
+      </a-checkbox>
+      <a-checkbox-group
+        :value="weekdays"
+        :disabled="disabled"
+        class="option-checkbox-group"
+        @change="handleChange"
+      >
+        <a-checkbox v-for="option in weekdayOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </a-checkbox>
+      </a-checkbox-group>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { MAAFW_WEEKDAYS } from './maafwTaskSnapshot'
+import {
+  MAAFW_WEEKDAYS,
+  maafwWeekdaysAfterToggleAll,
+  maafwWeekdaysSelectAllState,
+} from './maafwTaskSnapshot'
 
 const props = defineProps<{
-  /** 当前勾着的 ISO 星期（1=周一）；没设过就是七天全勾 */
+  /** 显示的勾（ISO 星期，1=周一）：红灯时为空，绿灯时是存的运行日（没设过就是七天） */
   weekdays: number[]
   disabled?: boolean
 }>()
 
 const emit = defineEmits<{
+  /** 改完后的勾选集合；为空表示一天都不跑（页面据此设成红灯） */
   update: [weekdays: number[]]
 }>()
 
@@ -53,14 +63,22 @@ const weekdayOptions = computed(() =>
   MAAFW_WEEKDAYS.map((value, index) => ({ value, label: t(WEEKDAY_KEYS[index]) }))
 )
 
-const isLastChecked = (day: number) => props.weekdays.length === 1 && props.weekdays[0] === day
+const selectAllState = computed(() => maafwWeekdaysSelectAllState(props.weekdays))
+const allChecked = computed(() => selectAllState.value === 'all')
+const partlyChecked = computed(() => selectAllState.value === 'partial')
 
 const handleChange = (value: unknown) => {
-  const weekdays = (Array.isArray(value) ? value : [])
-    .filter((day): day is number => typeof day === 'number')
-    .sort((left, right) => left - right)
-  if (weekdays.length === 0) return
-  emit('update', weekdays)
+  emit(
+    'update',
+    (Array.isArray(value) ? value : [])
+      .filter((day): day is number => typeof day === 'number')
+      .sort((left, right) => left - right)
+  )
+}
+
+// 已经七天全勾时取消全部（变红灯），否则勾满七天（变绿灯、每天跑）
+const handleToggleAll = () => {
+  emit('update', maafwWeekdaysAfterToggleAll(props.weekdays))
 }
 </script>
 
@@ -85,11 +103,12 @@ const handleChange = (value: unknown) => {
   color: var(--ant-color-text);
 }
 
-/* antd 的 .ant-checkbox-group 自带 align-self: center，在纵向排列的选项里会被挤到中间；靠左 */
+/* 全选与七天排成一行，间距同选项里的勾 */
+.weekday-row,
 .option-checkbox-group {
   display: flex;
   flex-wrap: wrap;
-  align-self: flex-start;
+  align-items: center;
   gap: 8px 16px;
 }
 </style>
