@@ -799,12 +799,6 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
 .baah-preview-title {
   margin: 16px 0 8px;

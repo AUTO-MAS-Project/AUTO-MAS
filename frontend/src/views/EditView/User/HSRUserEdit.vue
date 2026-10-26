@@ -1369,12 +1369,6 @@ const loadUserData = async () => {
   margin-bottom: 12px;
 }
 
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .hsr-preview-title {
   font-size: 15px;

@@ -883,12 +883,6 @@ onUnmounted(() => {
   margin-bottom: 6px;
 }
 
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .form-label {
   display: flex;
   align-items: center;

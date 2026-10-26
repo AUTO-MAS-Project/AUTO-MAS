@@ -62,6 +62,12 @@
   background: var(--ant-color-primary);
 }
 
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 嵌在表单分区内部的子配置块标题（如 日志预处理）：
    级别介于 .section-header（20px + 通栏分隔线）与表单标签（14px）之间；
    不带通栏分隔线——子块后面紧跟着普通表单行时，不会被误读进子块的范围 */

@@ -693,10 +693,7 @@ onMounted(() => {
 /* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
 .section-header-actions {
-  display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
   flex-wrap: wrap;
 }
 
