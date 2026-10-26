@@ -1,10 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.controlModeGameResource') }}</h3>
-    </div>
-
+  <MaaFWFormSection :title="t('edit.controlModeGameResource')">
     <a-row :gutter="24" class="controller-resource-row">
       <a-col :span="12">
         <a-form-item>
@@ -329,7 +325,7 @@
         </a-row>
       </div>
     </Transition>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -342,6 +338,7 @@ import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
 import { collectHotkeyOptions } from './hotkeyOptions'
 
@@ -403,34 +400,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;

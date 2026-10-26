@@ -1,9 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.projectUpdate') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('edit.projectUpdate')">
     <a-alert
       v-if="isAutoUpdateDisabled"
       class="update-alert"
@@ -217,7 +214,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -245,6 +242,7 @@ import {
   progressBarPercent,
   type MaaFWUpdateProgressPhase,
 } from './updateProgress'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import type {
   MaaFWScriptUpdateSectionEmits,
   MaaFWScriptUpdateSectionProps,
@@ -477,34 +475,6 @@ watch(
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;

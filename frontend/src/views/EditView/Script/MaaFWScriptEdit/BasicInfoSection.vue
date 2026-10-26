@@ -1,9 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('edit.basicInfo')">
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item name="name">
@@ -236,7 +233,7 @@
         {{ importError || previewError }}
       </p>
     </div>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -257,6 +254,7 @@ import type {
   MaaFWScriptBasicInfoSectionEmits,
   MaaFWScriptBasicInfoSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 
 const { t } = useI18n()
 
@@ -379,10 +377,6 @@ watch(
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
 .import-progress {
   display: flex;
   align-items: center;
@@ -449,30 +443,6 @@ watch(
 
 .follow-source-missing {
   color: var(--ant-color-warning);
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
 }
 
 .form-label {

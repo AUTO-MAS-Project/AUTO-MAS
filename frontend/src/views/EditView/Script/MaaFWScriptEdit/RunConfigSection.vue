@@ -1,9 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.runConfiguration') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('edit.runConfiguration')">
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item :label="t('edit.runsPerDayThis')">
@@ -130,7 +127,7 @@
         />
       </a-col>
     </a-row>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -139,6 +136,7 @@ import type {
   MaaFWScriptRunSectionEmits,
   MaaFWScriptRunSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'
 
 const { t } = useI18n()
@@ -159,34 +157,6 @@ const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => 
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
