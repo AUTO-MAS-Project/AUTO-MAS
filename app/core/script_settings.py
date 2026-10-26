@@ -19,7 +19,7 @@
 from typing import Any
 
 from app.core import Config
-from app.utils.emulator2 import service as emulator2_service
+from app.core import emulator2 as emulator2_service
 
 
 async def update_script(script_id: str, data: dict[str, Any]) -> str | None:
