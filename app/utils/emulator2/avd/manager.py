@@ -153,7 +153,8 @@ _STATUS_ADB_TIMEOUT = 5.0
 #: 装轻量桌面的超时。
 _INSTALL_TIMEOUT = 180.0
 #: 给申请了「安装未知应用」权限、这一项还是默认模式（没设过或设回了 default）的应用放行（``android``
-#: 自己除外），逐行打出本次放行了谁。设成别的模式的（用户在设置里手动关掉或打开过，或以前开机已放行）保持不动。枚举失败退出码 2；任一应用放行
+#: 自己除外），逐行打出本次放行了谁。设成别的模式的（用户在设置里手动关掉或打开过，或以前开机已放行）保持不动；
+#: 读不出当前模式（``appops get`` 非零）的不写，按失败算。枚举失败退出码 2；任一应用放行
 #: 失败打「failed: 包名」，其余照做，最后退出码 1。包名从 ``dumpsys package packages`` 里按
 #: 「Package [包名]」段落取，实测 70 ms 左右。dumpsys 找不到服务也返回 0，所以一个段落都没有就算枚举失败。
 _ALLOW_INSTALL_SOURCES_SCRIPT = (
@@ -165,7 +166,9 @@ _ALLOW_INSTALL_SOURCES_SCRIPT = (
     ' | sort -u) || { echo "dumpsys package failed"; exit 2; }; '
     "fail=0; "
     "for p in $list; do"
-    ' case "$(appops get "$p" REQUEST_INSTALL_PACKAGES 2>&1)" in'
+    ' m=$(appops get "$p" REQUEST_INSTALL_PACKAGES 2>&1)'
+    ' || { echo "failed: $p"; fail=1; continue; };'
+    ' case "$m" in'
     ' *"REQUEST_INSTALL_PACKAGES: default"*) ;;'
     ' *"REQUEST_INSTALL_PACKAGES: "*) continue ;; esac;'
     ' if appops set "$p" REQUEST_INSTALL_PACKAGES allow; then echo "$p";'
