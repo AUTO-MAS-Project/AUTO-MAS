@@ -1439,9 +1439,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         async def before_update_session() -> bool:
             # 更新会话会重新启动 MXU：先把失败阶段的现场归档，否则「启动时清理日志」
             # 会在归档前把 debug/ 清掉。返回 False 表示现场没保存好，新会话要关掉清理。
-            return await self._archive_failure_logs(
-                label=f"{stage_label}阶段失败的", stage=stage_label
-            )
+            return await self._archive_failure_logs(label=f"{stage_label}阶段失败的")
 
         def after_update_session_launch() -> None:
             # 会话真的起来了才记一次启动：debug/ 从此归它，收尾据此判断要不要补归档。
@@ -1706,7 +1704,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 # MXU 已退出，这次尝试的现场要赶在更新接管或下一次重试启动 MXU
                 # 之前取证，因为 MXU 一启动就会清空 debug/。
                 await self._archive_failure_logs(
-                    label=f"{stage_label}阶段第 {i} 次尝试", stage=stage_label
+                    label=f"{stage_label}阶段第 {i} 次尝试"
                 )
 
                 try:
@@ -2933,9 +2931,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if shot is not None:
             self._record_error_screenshot(shot)
 
-    async def _archive_failure_logs(
-        self, *, label: str, stage: str | None = None
-    ) -> bool:
+    async def _archive_failure_logs(self, *, label: str) -> bool:
         """把当前失败现场的 MaaEnd 运行日志打包到用户配置的保存目录。
 
         MXU 每次启动都会清空 ``debug/``（开启日志包时由 :meth:`set_maaend` 强制
@@ -2947,11 +2943,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         Args:
             label (str): 用户可见提示里的尝试标识，如 ``原配置阶段第 2 次尝试``。
-            stage (str | None): 写进日志包清单的阶段名。
 
         Returns:
-            bool: 这次现场是否已经安全落盘。``True`` 表示不需要保存或已经保存好；
-            ``False`` 表示本该保存却失败了，调用方不能让下一个会清日志的会话启动。
+            bool: 这次现场是否已经安全落盘。``True`` 表示不需要保存或已经完整保存；
+            ``False`` 表示本该保存却没全存下来，调用方不能让下一个会清日志的会话启动。
         """
 
         if not self.script_config.Run.IfSaveLogBundle:
@@ -2968,7 +2963,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     Path(target_dir),
                     root_path,
                     label=label,
-                    stage=stage,
                     launches=self._mxu_launch_count,
                 )
             )
@@ -2990,7 +2984,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         root_path: Path,
         *,
         label: str,
-        stage: str | None,
         launches: int,
     ) -> bool:
         """打包作业本体：一次现场一份日志包，规则同 MXU 的日志导出。
@@ -3005,17 +2998,28 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self._bundle_failed = True
             logger.opt(exception=True).warning(f"保存 MaaEnd 失败日志包失败: {error}")
             return False
-        # 有没有内容都记下已归档：同一份现场反复重试没有意义。
-        self._archived_launch_count = launches
         if export is None:
+            # 这份现场确实没有可打包的内容，反复重试没有意义，记下已归档。
+            self._archived_launch_count = launches
             logger.warning(f"MaaEnd {label}失败日志包没有可打包的内容")
             return True
-        incomplete = (
-            f"，{export.failed_files} 个文件未能写入" if export.failed_files else ""
-        )
+        if export.failed_files:
+            # 部分文件读不到时拿到的只是残缺包，不能当成「现场已保存」：既不消费这次
+            # 待归档现场（收尾还能再取一次，把当时读不到的文件补进去），也让本轮后续
+            # 启动不再清日志，免得漏包文件在安装目录里的唯一一份被删掉。
+            self._bundle_failed = True
+            message = (
+                f"MaaEnd {label}失败日志包不完整: {export.directory}"
+                f"（{len(export.volumes)} 卷，{export.failed_files} 个文件未能写入，"
+                "本轮后续启动不再清理日志）"
+            )
+            logger.warning(message)
+            await push_dispatch_log(self.script_info, message)
+            return False
+        self._archived_launch_count = launches
         message = (
             f"MaaEnd {label}失败日志包已保存: {export.directory}"
-            f"（{len(export.volumes)} 卷{incomplete}）"
+            f"（{len(export.volumes)} 卷）"
         )
         logger.success(message)
         await push_dispatch_log(self.script_info, message)
