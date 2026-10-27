@@ -37,6 +37,9 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     MaaFWTaskStartEvent,
     parse_run_record_event,
 )
+from app.utils import get_logger
+
+logger = get_logger("MaaFW 运行记录")
 
 # history 记录 data 里的键；值是 {"kind": "snapshot", "value": <MaaFWAttemptRecord>}
 RUN_RECORD_HISTORY_KEY = "maafw_run_record"
@@ -140,18 +143,33 @@ class MaaFWRunRecorder:
 
     @contextmanager
     def stage(self, stage: str, *, enabled: bool = True) -> Iterator[None]:
-        """宿主自己的一个阶段：正常走完记成功，异常（含取消）穿出记失败。"""
+        """宿主自己的一个阶段：正常走完记成功，异常（含取消）穿出记失败。
+
+        记录本身是旁路：起止记账出错只写一行 WARNING，被包住的那段照常执行、
+        它自己的异常照常穿出。"""
 
         if not enabled:
             yield
             return
-        self.stage_begin(stage)
+        self._stage_mark(stage, None)
         ok = False
         try:
             yield
             ok = True
         finally:
-            self.stage_end(stage, ok=ok)
+            self._stage_mark(stage, ok)
+
+    def _stage_mark(self, stage: str, ok: bool | None) -> None:
+        try:
+            if ok is None:
+                self.stage_begin(stage)
+            else:
+                self.stage_end(stage, ok=ok)
+        except Exception as exc:  # noqa: BLE001 - 旁路不能拖垮运行
+            logger.opt(exception=True).warning(
+                f"MaaFW 运行记录出错（不影响运行）: 阶段 {stage} "
+                f"{'开始' if ok is None else '结束'}记账失败: {exc}"
+            )
 
     def stage_begin(self, stage: str, *, now: float | None = None) -> None:
         record = self.current
