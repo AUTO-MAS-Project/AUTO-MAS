@@ -261,10 +261,10 @@ def sanitize_event(
 def is_telemetry_enabled(config_path: Path) -> bool:
     """读取遥测开关；缺失的旧配置按默认开启处理，损坏的配置按关闭处理。"""
 
-    from app.utils.config_document import read_bootstrap_setting
+    from app.utils import config_document as _utils_config_document
 
     try:
-        data = read_bootstrap_setting(config_path)
+        data = _utils_config_document.read_bootstrap_setting(config_path)
         value = data.get("Function", {}).get("IfEnableTelemetry", True)
     except OSError:
         return True

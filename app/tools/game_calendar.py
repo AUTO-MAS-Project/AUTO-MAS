@@ -11,7 +11,7 @@ import httpx
 
 from app.tools.azurlane_activity import fetch_azurlane_activities
 from app.tools.sra_activity import fetch_sra_activities
-from app.utils.constants import UTC8
+from app.utils import UTC8
 
 # 与首页游戏键对应；后台使用中文档，避免切换界面语言改变活动标识。
 CALENDAR_GAMES = {

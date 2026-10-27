@@ -1,6 +1,16 @@
 import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
-import type { MaaFWTaskInfo, MaaFWTaskOptionValue, MaaFWTaskSnapshot } from '@/types/script'
-import { pickMaaFWTaskLabels, taskLabelsField } from './MaaFWUserEdit/maafwTaskSnapshot'
+import type {
+  MaaFWTaskInfo,
+  MaaFWTaskOptionValue,
+  MaaFWTaskSchedule,
+  MaaFWTaskSnapshot,
+} from '@/types/script'
+import {
+  pickMaaFWTaskLabels,
+  pickMaaFWTaskSchedules,
+  taskLabelsField,
+  taskSchedulesField,
+} from './MaaFWUserEdit/maafwTaskSnapshot'
 
 type TaskNameLookup = { has: (value: string) => boolean }
 
@@ -36,7 +46,8 @@ export const selectPresetQueueEntries = (
 
 /**
  * 应用预设后的队列快照：原队列里的前置任务（pretask）保留在最前，其余换成预设的各个
- * 实例，每个实例带预设给它的那一套选项；`taskLabels` 给的实例显示名按同一份实例 id 带上。
+ * 实例，每个实例带预设给它的那一套选项；`taskLabels` 给的实例显示名与 `taskSchedules` 给的
+ * 运行日按同一份实例 id 带上（项目预设两样都没有）。
  */
 export const buildPresetAppliedSnapshot = (
   entries: readonly MaaFWPresetQueueEntry[],
@@ -44,7 +55,8 @@ export const buildPresetAppliedSnapshot = (
   currentTaskOrder: readonly string[],
   isPretaskId: (taskId: string) => boolean,
   taskLabels: Record<string, string> = {},
-  taskChecked: Record<string, boolean> = {}
+  taskChecked: Record<string, boolean> = {},
+  taskSchedules: Record<string, MaaFWTaskSchedule> = {}
 ): MaaFWTaskSnapshot => {
   const candidateIds = [
     ...currentTaskOrder.filter(taskId => isPretaskId(taskId)),
@@ -68,5 +80,6 @@ export const buildPresetAppliedSnapshot = (
         .map(([taskId, options]) => [taskId, { ...options }])
     ),
     ...taskLabelsField(pickMaaFWTaskLabels(taskLabels, taskIdSet)),
+    ...taskSchedulesField(pickMaaFWTaskSchedules(taskSchedules, taskIdSet)),
   }
 }

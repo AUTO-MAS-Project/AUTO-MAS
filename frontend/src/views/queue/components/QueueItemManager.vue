@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="t('queue.item.cardTitle')" class="queue-item-card">
+  <a-card :title="t('queue.item.cardTitle')" class="queue-manager-card queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
@@ -11,10 +11,15 @@
       </a-space>
     </template>
 
-    <!-- 使用vuedraggable替换a-table实现拖拽功能 -->
-    <div class="draggable-table-container">
-      <!-- 表头 -->
-      <div class="draggable-table-header">
+    <DraggableTableShell
+      v-model="queueItems"
+      group="queueItems"
+      item-key="id"
+      :disabled="loading || locked"
+      :busy="loading"
+      @end="onDragEnd"
+    >
+      <template #header>
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
         <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
@@ -25,212 +30,181 @@
           {{ t('queue.cycle.colConfig') }}
         </div>
         <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
-      </div>
+      </template>
 
-      <!-- 拖拽内容区域 -->
-      <draggable
-        v-model="queueItems"
-        group="queueItems"
-        item-key="id"
-        :animation="200"
-        :disabled="loading || locked"
-        ghost-class="ghost"
-        chosen-class="chosen"
-        drag-class="drag"
-        handle=".drag-handle"
-        class="draggable-container"
-        @end="onDragEnd"
-      >
-        <template #item="{ element: record, index }">
-          <div class="draggable-row" :class="{ 'row-dragging': loading }">
-            <div class="row-cell drag-cell">
-              <span
-                class="drag-handle"
-                :title="t('queue.item.dragSort')"
-                :aria-label="t('queue.item.dragSort')"
-              >
-                <span class="drag-dots" aria-hidden="true"></span>
-              </span>
-            </div>
-            <div class="row-cell index-cell">{{ index + 1 }}</div>
-            <div class="row-cell script-cell">
-              <a-select
-                v-model:value="record.script"
+      <template #row="{ element: record, index }">
+        <div class="row-cell drag-cell">
+          <DragHandle :title="t('queue.item.dragSort')" />
+        </div>
+        <div class="row-cell index-cell">{{ index + 1 }}</div>
+        <div class="row-cell script-cell">
+          <a-select
+            v-model:value="record.script"
+            size="small"
+            style="width: 200px"
+            class="script-select"
+            :placeholder="t('queue.item.selectScript')"
+            :options="scriptOptions"
+            :disabled="locked"
+            allow-clear
+            @change="updateQueueItemScript(record)"
+          />
+        </div>
+        <div v-if="!showCycleConfig" class="row-cell days-cell">
+          <a-select
+            v-model:value="record.schedule.Days"
+            mode="multiple"
+            size="small"
+            style="width: 100%"
+            class="days-select"
+            :placeholder="t('queue.time.selectDays')"
+            :disabled="locked"
+            :max-tag-count="7"
+            :bordered="false"
+            @change="saveDays(record)"
+          >
+            <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+            <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+            <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+            <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+            <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+            <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+            <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+          </a-select>
+        </div>
+        <div v-if="showCycleConfig" class="row-cell cycle-cell">
+          <div class="cycle-panel">
+            <div class="cycle-line">
+              <a-switch
+                v-model:checked="record.schedule.Enabled"
                 size="small"
-                style="width: 200px"
-                class="script-select"
-                :placeholder="t('queue.item.selectScript')"
-                :options="scriptOptions"
-                :disabled="locked"
-                allow-clear
-                @change="updateQueueItemScript(record)"
+                @change="saveSchedule(record, { Enabled: record.schedule.Enabled })"
               />
-            </div>
-            <div v-if="!showCycleConfig" class="row-cell days-cell">
               <a-select
-                v-model:value="record.schedule.Days"
-                mode="multiple"
+                v-model:value="record.schedule.Mode"
                 size="small"
-                style="width: 100%"
-                class="days-select"
-                :placeholder="t('queue.time.selectDays')"
-                :disabled="locked"
-                :max-tag-count="7"
-                :bordered="false"
-                @change="saveDays(record)"
+                style="width: 104px"
+                :disabled="!record.schedule.Enabled"
+                @change="saveSchedule(record, { Mode: record.schedule.Mode })"
               >
-                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
-                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
-                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
-                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
-                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+                <a-select-option value="fixed_time">
+                  {{ t('queue.cycle.modeFixed') }}
+                </a-select-option>
+                <a-select-option value="interval">
+                  {{ t('queue.cycle.modeInterval') }}
+                </a-select-option>
               </a-select>
-            </div>
-            <div v-if="showCycleConfig" class="row-cell cycle-cell">
-              <div class="cycle-panel">
-                <div class="cycle-line">
-                  <a-switch
-                    v-model:checked="record.schedule.Enabled"
-                    size="small"
-                    @change="saveSchedule(record, { Enabled: record.schedule.Enabled })"
-                  />
-                  <a-select
-                    v-model:value="record.schedule.Mode"
-                    size="small"
-                    style="width: 104px"
-                    :disabled="!record.schedule.Enabled"
-                    @change="saveSchedule(record, { Mode: record.schedule.Mode })"
-                  >
-                    <a-select-option value="fixed_time">
-                      {{ t('queue.cycle.modeFixed') }}
-                    </a-select-option>
-                    <a-select-option value="interval">
-                      {{ t('queue.cycle.modeInterval') }}
-                    </a-select-option>
-                  </a-select>
 
-                  <template v-if="record.schedule.Mode === 'interval'">
-                    <a-input-number
-                      v-model:value="record.schedule.IntervalMinutes"
-                      size="small"
-                      style="width: 104px"
-                      :min="1"
-                      :max="10080"
-                      :disabled="!record.schedule.Enabled"
-                      :addon-after="t('queue.cycle.minuteUnit')"
-                      @blur="saveInterval(record)"
-                      @press-enter="saveInterval(record)"
-                    />
-                    <a-select
-                      v-model:value="record.schedule.IntervalAnchor"
-                      size="small"
-                      style="width: 150px"
-                      :disabled="!record.schedule.Enabled"
-                      @change="
-                        saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })
-                      "
-                    >
-                      <a-select-option value="start">
-                        {{ t('queue.cycle.anchorStart') }}
-                      </a-select-option>
-                      <a-select-option value="finish">
-                        {{ t('queue.cycle.anchorFinish') }}
-                      </a-select-option>
-                    </a-select>
-                  </template>
-                  <template v-else>
-                    <a-time-picker
-                      v-model:value="record.scheduleTimeValue"
-                      format="HH:mm"
-                      size="small"
-                      style="width: 104px"
-                      :placeholder="t('queue.time.selectTime')"
-                      :disabled="!record.schedule.Enabled"
-                      :allow-clear="false"
-                      @change="saveScheduleTime(record)"
-                    />
-                    <a-select
-                      v-model:value="record.schedule.Days"
-                      mode="multiple"
-                      size="small"
-                      style="min-width: 168px"
-                      :placeholder="t('queue.time.selectDays')"
-                      :disabled="!record.schedule.Enabled"
-                      :max-tag-count="3"
-                      @change="saveDays(record)"
-                    >
-                      <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-                      <a-select-option value="Tuesday">
-                        {{ t('queue.time.Tuesday') }}
-                      </a-select-option>
-                      <a-select-option value="Wednesday">
-                        {{ t('queue.time.Wednesday') }}
-                      </a-select-option>
-                      <a-select-option value="Thursday">
-                        {{ t('queue.time.Thursday') }}
-                      </a-select-option>
-                      <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-                      <a-select-option value="Saturday">
-                        {{ t('queue.time.Saturday') }}
-                      </a-select-option>
-                      <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
-                    </a-select>
-                  </template>
-                </div>
-
-                <div class="cycle-line cycle-next-line">
-                  <span class="cycle-next-text">
-                    {{ t('queue.cycle.nextRun') }}
-                    {{ formatNextRun(record.schedule.NextRunAt) }}
-                  </span>
-                  <a-button
-                    type="link"
-                    size="small"
-                    :disabled="!record.schedule.Enabled"
-                    @click="runOnce(record)"
-                  >
-                    {{ t('queue.cycle.runOnce') }}
-                  </a-button>
-                </div>
-              </div>
-            </div>
-            <div class="row-cell actions-cell">
-              <a-space>
-                <a-popconfirm
-                  :title="t('queue.item.deleteConfirm')"
-                  :ok-text="t('queue.ok')"
-                  :cancel-text="t('queue.cancel')"
-                  @confirm="deleteQueueItem(record.id)"
+              <template v-if="record.schedule.Mode === 'interval'">
+                <a-input-number
+                  v-model:value="record.schedule.IntervalMinutes"
+                  size="small"
+                  style="width: 104px"
+                  :min="1"
+                  :max="10080"
+                  :disabled="!record.schedule.Enabled"
+                  :addon-after="t('queue.cycle.minuteUnit')"
+                  @blur="saveInterval(record)"
+                  @press-enter="saveInterval(record)"
+                />
+                <a-select
+                  v-model:value="record.schedule.IntervalAnchor"
+                  size="small"
+                  style="width: 150px"
+                  :disabled="!record.schedule.Enabled"
+                  @change="saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })"
                 >
-                  <a-button size="middle" danger :disabled="locked">
-                    <DeleteOutlined />
-                    {{ t('queue.del') }}
-                  </a-button>
-                </a-popconfirm>
-              </a-space>
+                  <a-select-option value="start">
+                    {{ t('queue.cycle.anchorStart') }}
+                  </a-select-option>
+                  <a-select-option value="finish">
+                    {{ t('queue.cycle.anchorFinish') }}
+                  </a-select-option>
+                </a-select>
+              </template>
+              <template v-else>
+                <a-time-picker
+                  v-model:value="record.scheduleTimeValue"
+                  format="HH:mm"
+                  size="small"
+                  style="width: 104px"
+                  :placeholder="t('queue.time.selectTime')"
+                  :disabled="!record.schedule.Enabled"
+                  :allow-clear="false"
+                  @change="saveScheduleTime(record)"
+                />
+                <a-select
+                  v-model:value="record.schedule.Days"
+                  mode="multiple"
+                  size="small"
+                  style="min-width: 168px"
+                  :placeholder="t('queue.time.selectDays')"
+                  :disabled="!record.schedule.Enabled"
+                  :max-tag-count="3"
+                  @change="saveDays(record)"
+                >
+                  <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                  <a-select-option value="Tuesday">
+                    {{ t('queue.time.Tuesday') }}
+                  </a-select-option>
+                  <a-select-option value="Wednesday">
+                    {{ t('queue.time.Wednesday') }}
+                  </a-select-option>
+                  <a-select-option value="Thursday">
+                    {{ t('queue.time.Thursday') }}
+                  </a-select-option>
+                  <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                  <a-select-option value="Saturday">
+                    {{ t('queue.time.Saturday') }}
+                  </a-select-option>
+                  <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+                </a-select>
+              </template>
+            </div>
+
+            <div class="cycle-line cycle-next-line">
+              <span class="cycle-next-text">
+                {{ t('queue.cycle.nextRun') }}
+                {{ formatNextRun(record.schedule.NextRunAt) }}
+              </span>
+              <a-button
+                type="link"
+                size="small"
+                :disabled="!record.schedule.Enabled"
+                @click="runOnce(record)"
+              >
+                {{ t('queue.cycle.runOnce') }}
+              </a-button>
             </div>
           </div>
-        </template>
-      </draggable>
-
-      <!-- 空状态 -->
-      <div v-if="queueItems.length === 0" class="empty-state">
-        <div class="empty-content">
-          <img src="@/assets/NoData.png" :alt="t('queue.noData')" class="empty-image" />
         </div>
-      </div>
-    </div>
+        <div class="row-cell actions-cell">
+          <a-space>
+            <a-popconfirm
+              :title="t('queue.item.deleteConfirm')"
+              :ok-text="t('queue.ok')"
+              :cancel-text="t('queue.cancel')"
+              @confirm="deleteQueueItem(record.id)"
+            >
+              <a-button size="middle" danger :disabled="locked">
+                <DeleteOutlined />
+                {{ t('queue.del') }}
+              </a-button>
+            </a-popconfirm>
+          </a-space>
+        </div>
+      </template>
+    </DraggableTableShell>
   </a-card>
 </template>
 
 <script setup lang="ts">
+import DragHandle from '@/components/DragHandle.vue'
+import DraggableTableShell from './DraggableTableShell.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
-import draggable from 'vuedraggable'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -553,36 +527,15 @@ onMounted(() => {
 })
 </script>
 
+<style scoped src="./queueManager.css"></style>
+
 <style scoped>
-.queue-item-card {
-  margin-bottom: 24px;
-}
-
-.queue-item-card :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-/* 操作按钮布局 */
-:deep(.ant-btn) {
-  min-width: auto;
-  height: 32px;
+.queue-item-card :deep(.ant-btn) {
   padding: 0 8px;
-  font-size: 14px;
-  line-height: 1.5;
 }
 
-:deep(.ant-space) {
-  gap: 6px !important;
-}
-
-:deep(.ant-space-item) {
+.queue-item-card :deep(.ant-space-item) {
   margin-right: 6px !important;
-}
-
-/* 按钮图标样式调整 */
-:deep(.ant-btn .anticon) {
-  font-size: 14px;
 }
 
 /* 队列项列表样式 */
@@ -633,105 +586,10 @@ onMounted(() => {
   gap: 8px;
 }
 
-/* 拖拽表格样式 */
-.draggable-table-container {
-  width: 100%;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.draggable-table-header {
-  display: flex;
-  background-color: var(--ant-color-fill-quaternary);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-.header-cell {
-  padding: 12px 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-}
-
-.header-cell:last-child {
-  border-right: none;
-}
-
-.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-}
-
-.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-
+/* 拖拽表格业务列样式 */
 .script-cell {
   flex: 1;
   min-width: 200px;
-}
-
-.actions-cell {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-}
-
-.draggable-container {
-  min-height: 60px;
-}
-
-.draggable-row {
-  display: flex;
-  align-items: center;
-  background: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-  transition: all 0.2s ease;
-  cursor: default;
-}
-
-.draggable-row:last-child {
-  border-bottom: none;
-}
-
-.draggable-row:hover {
-  background-color: var(--ant-color-fill-quaternary);
-}
-
-.draggable-row.row-dragging {
-  cursor: not-allowed;
-}
-
-.row-cell {
-  padding: 12px 16px;
-  text-align: center;
-  border-right: 1px solid var(--ant-color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.row-cell:last-child {
-  border-right: none;
-}
-
-.row-cell.index-cell {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.row-cell.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
 }
 
 .header-cell.cycle-cell,
@@ -769,97 +627,6 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
 }
 
-.row-cell.script-cell {
-  flex: 1;
-  min-width: 200px;
-}
-
-.row-cell.actions-cell {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
-}
-
-/* 拖拽状态样式 */
-.ghost {
-  opacity: 0 !important;
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
-}
-
-.chosen {
-  cursor: grabbing !important;
-}
-
-.drag {
-  transform: rotate(3deg);
-  opacity: 1 !important;
-}
-
-.drag .draggable-row {
-  opacity: 1 !important;
-  transition: none !important;
-}
-
-.drag-handle {
-  width: 16px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: grab;
-  user-select: none;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-dots {
-  width: 10px;
-  height: 16px;
-  display: block;
-  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
-  background-size: 5px 5px;
-  opacity: 0.65;
-}
-
-.drag-handle:hover .drag-dots {
-  opacity: 0.85;
-}
-
-/* 空状态样式 */
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
-}
-
-.empty-content {
-  display: flex;
-  justify-content: center;
-}
-
-.empty-image {
-  max-width: 200px;
-  height: auto;
-  opacity: 0.9;
-  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.1));
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.empty-image:hover {
-  transform: translateY(-4px);
-  filter: drop-shadow(0 12px 32px rgba(0, 0, 0, 0.15));
-}
-
 /* 响应式设计 */
 @media (max-width: 1200px) {
   .queue-items-grid {
@@ -874,32 +641,6 @@ onMounted(() => {
 
   .queue-item-card-item {
     padding: 12px;
-  }
-
-  .draggable-row {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .row-cell,
-  .header-cell {
-    border-right: none;
-    border-bottom: 1px solid var(--ant-color-border);
-  }
-
-  .row-cell:last-child,
-  .header-cell:last-child {
-    border-bottom: none;
-  }
-
-  .index-cell,
-  .drag-cell,
-  .script-cell,
-  .days-cell,
-  .actions-cell {
-    width: 100% !important;
-    min-width: auto !important;
-    max-width: none !important;
   }
 }
 

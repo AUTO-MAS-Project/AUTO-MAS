@@ -31,17 +31,15 @@
         </a-button>
       </template>
     </GuiSessionMask>
-    <!-- 头部组件 -->
-    <MAAUserEditHeader
+    <UserEditHeader
       v-if="!cultivationPage"
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :leaving="leavingPage"
-      :loading="loading"
-      :config-locked="configLocked || editorBusy"
+      script-edit-segment="maa"
       :user-id="userId"
-      @handle-cancel="handleCancel"
+      :cancel-loading="leavingPage"
+      @cancel="handleCancel"
     />
 
     <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
@@ -247,6 +245,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import CultivationPage from '@/views/MAAUserEdit/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -269,7 +268,6 @@ import type { HomeOverviewResponse } from '@/types/home.ts'
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
 // 导入拆分的组件
-import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
 import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigActionsSection from '@/views/EditView/User/ConfigActionsSection.vue'

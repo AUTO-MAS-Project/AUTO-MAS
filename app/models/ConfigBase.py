@@ -38,17 +38,17 @@ from pathlib import Path
 from typing import Any, Callable, Coroutine, Generic, Type, TypeVar
 
 from app.utils import (
+    DEFAULT_DATETIME,
+    FORBIDDEN_PATH_EXACT,
+    FORBIDDEN_PATH_PREFIXES,
     dpapi_decrypt,
     dpapi_encrypt,
     get_logger,
     looks_like_dpapi_blob,
 )
-from app.utils.constants import (
-    DEFAULT_DATETIME,
-    FORBIDDEN_PATH_EXACT,
-    FORBIDDEN_PATH_PREFIXES,
-)
-from app.utils.io import write_file
+from app.utils import io as _utils_io
+
+write_file = _utils_io.write_file
 
 logger = get_logger("配置基类")
 

@@ -38,8 +38,8 @@ native 池 = BetterGI 全局主配置 ``{RootPath}/User/config.json``（单文�
 import uuid
 from pathlib import Path
 
+from app.utils import config_restore as _utils_config_restore
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
     OVERLAY_SIDECAR_NAME,
@@ -61,14 +61,14 @@ from .backup_archive import (
 logger = get_logger("BetterGI 配置恢复")
 
 
-def _user_guard(ctx: RestoreContext) -> None:
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把配置恢复进孤儿目录。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
         raise ValueError("BetterGI 用户不存在，请刷新后重试")
 
 
-def _root_path(ctx: RestoreContext) -> Path | None:
+def _root_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """BetterGI 安装根目录；未配置脚本路径返回 ``None``。"""
 
     raw = str(ctx.script_config.Info.RootPath or "").strip()
@@ -78,7 +78,9 @@ def _root_path(ctx: RestoreContext) -> Path | None:
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, Path | str] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path | str] | None:
     """归档内容 = per-user 副本文件集 + 页面字段侧车（内存 JSON）。"""
 
     _user_guard(ctx)
@@ -89,11 +91,11 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, Path | str] | None:
     return files or None
 
 
-async def _mas_root(ctx: RestoreContext) -> Path:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     backup_dir = get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
@@ -101,7 +103,7 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     return build_mas_preview(backup_dir, overlay)
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     restored_overlay = restore_mas_backup(
@@ -119,7 +121,9 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = BetterGI 全局主配置（缺失项跳过）。"""
 
     root_path = _root_path(ctx)
@@ -128,21 +132,21 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return collect_native_files(root_path) or None
 
 
-async def _native_root(ctx: RestoreContext) -> Path | None:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     root_path = _root_path(ctx)
     if root_path is None:
         return None
     return native_backup_root(root_path)
 
 
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     root_path = _root_path(ctx)
     if root_path is None:
         return {"sections": []}
     return build_native_preview(root_path, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     root_path = _root_path(ctx)
     if root_path is None:
         raise ValueError("请先设置 BetterGI 脚本路径")
@@ -150,7 +154,7 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> None:
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="user_only",
@@ -159,7 +163,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

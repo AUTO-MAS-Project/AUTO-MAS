@@ -5,16 +5,13 @@
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip
-          :title="
+        <FieldLabelWithHint
+          variant="form"
+          :text="t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask')"
+          :hint="
             t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
           "
-        >
-          <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask') }}
-            <QuestionCircleOutlined class="help-icon" />
-          </span>
-        </a-tooltip>
+        />
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
@@ -26,40 +23,24 @@
           />
         </a-col>
         <a-col :span="20">
-          <a-input-group compact class="path-input-group">
-            <a-input
-              v-model:value="formData.Info.ScriptBeforeTask"
-              :placeholder="t('comp.pickScriptFile')"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask"
-              size="large"
-              class="path-input"
-              readonly
-            />
-            <a-button
-              size="large"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask"
-              class="path-button"
-              @click="selectScriptBeforeTask"
-            >
-              <template #icon>
-                <FileOutlined />
-              </template>
-              {{ t('comp.pickFile') }}
-            </a-button>
-          </a-input-group>
+          <PathPickerField
+            v-model="formData.Info.ScriptBeforeTask"
+            mode="file"
+            :placeholder="t('comp.pickScriptFile')"
+            :pick-label="t('comp.pickFile')"
+            :disabled="loading || !formData.Info.IfScriptBeforeTask"
+            @pick="selectScriptBeforeTask"
+          />
         </a-col>
       </a-row>
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip
-          :title="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
-        >
-          <span class="form-label">
-            {{ t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask') }}
-            <QuestionCircleOutlined class="help-icon" />
-          </span>
-        </a-tooltip>
+        <FieldLabelWithHint
+          variant="form"
+          :text="t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask')"
+          :hint="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
+        />
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
@@ -71,27 +52,14 @@
           />
         </a-col>
         <a-col :span="20">
-          <a-input-group compact class="path-input-group">
-            <a-input
-              v-model:value="formData.Info.ScriptAfterTask"
-              :placeholder="t('comp.pickScriptFile')"
-              :disabled="loading || !formData.Info.IfScriptAfterTask"
-              size="large"
-              class="path-input"
-              readonly
-            />
-            <a-button
-              size="large"
-              :disabled="loading || !formData.Info.IfScriptAfterTask"
-              class="path-button"
-              @click="selectScriptAfterTask"
-            >
-              <template #icon>
-                <FileOutlined />
-              </template>
-              {{ t('comp.pickFile') }}
-            </a-button>
-          </a-input-group>
+          <PathPickerField
+            v-model="formData.Info.ScriptAfterTask"
+            mode="file"
+            :placeholder="t('comp.pickScriptFile')"
+            :pick-label="t('comp.pickFile')"
+            :disabled="loading || !formData.Info.IfScriptAfterTask"
+            @pick="selectScriptAfterTask"
+          />
         </a-col>
       </a-row>
     </a-form-item>
@@ -101,7 +69,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 
 const { t } = useI18n()
 
@@ -176,69 +145,5 @@ const selectScriptAfterTask = async () => {
 .section-header {
   margin-bottom: 24px;
   padding-bottom: 12px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
-}
-
-.path-input-group:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.path-input-group:focus-within {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px var(--ant-color-primary-bg);
-}
-
-.path-input {
-  flex: 1;
-  border: none !important;
-  border-radius: 0 !important;
-  background: var(--ant-color-bg-container) !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
-}
-
-.path-button {
-  border: none;
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
-  padding: 0 20px;
-  transition: all 0.3s ease;
-  border-left: 1px solid var(--ant-color-border-secondary);
-}
-
-.path-button:hover {
-  background: var(--ant-color-primary);
-  color: white;
 }
 </style>

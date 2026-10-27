@@ -23,7 +23,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("脚本运行")
 

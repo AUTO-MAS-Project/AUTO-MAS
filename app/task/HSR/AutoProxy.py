@@ -36,8 +36,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.task.notify_core import build_script_statistics_payload
-from app.utils import ProcessManager, get_logger, is_process_running
-from app.utils.constants import UTC4
+from app.utils import UTC4, ProcessManager, get_logger, is_process_running
 
 from .history import save_hsr_user_history
 from .task_mapping import (

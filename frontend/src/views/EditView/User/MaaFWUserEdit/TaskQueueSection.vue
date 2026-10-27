@@ -294,112 +294,21 @@
         <div class="column-header">
           <span>{{ t('edit.taskConfiguration') }}</span>
         </div>
-        <div v-if="selectedTask" class="task-option-panel">
-          <div class="selected-task-header">
-            <img
-              v-if="resolveMaaFWAssetUrl(selectedTask.icon)"
-              :src="resolveMaaFWAssetUrl(selectedTask.icon)"
-              alt=""
-              width="32"
-              height="32"
-              class="selected-task-icon"
-              @error="hideBrokenMaaFWIcon"
-              @load="showLoadedMaaFWIcon"
-            />
-            <div>
-              <div class="selected-task-title">
-                {{ selectedTaskTitle.name }}
-                <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
-                  #{{ selectedTaskTitle.index }}
-                </span>
-              </div>
-              <!-- 入口 | 分组：原来是队列行里的两个标签，挪到这里当副标题 -->
-              <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
-            </div>
-          </div>
-          <!-- 按选中的实例重建：搜索词与没提交的草稿不带到下一个任务 -->
-          <MaaFWTaskOptionEditor
-            :key="selectedTaskId"
-            :option-names="getTaskOptionNames(selectedTask)"
-            :options="previewData.options"
-            :task-options="taskSnapshot.taskOptions[selectedTaskId] || {}"
-            :controller-name="effectiveControllerName"
-            :resource-name="effectiveResourceName"
-            :base-path="previewData.path"
-            :disabled="interfaceDependentDisabled"
-            @update="payload => emit('taskOptionUpdate', selectedTaskId, payload)"
-          />
-          <div v-if="selectedTask.description" class="selected-task-description">
-            <div class="selected-task-description-label">
-              {{ t('edit.taskDescriptionLabel') }}
-            </div>
-            <MaaFWDescriptionView
-              :content="selectedTask.description"
-              :base-path="previewData.path"
-            />
-          </div>
-          <a-popconfirm
-            :title="t('edit.deleteThisTask2')"
-            :ok-text="t('edit.ok')"
-            :cancel-text="t('edit.cancel')"
-            :disabled="interfaceDependentDisabled"
-            @confirm="emit('deleteSelectedTask')"
-          >
-            <a-button
-              danger
-              block
-              class="delete-task-button"
-              :disabled="interfaceDependentDisabled"
-            >
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              {{ t('edit.deleteThisTask') }}
-            </a-button>
-          </a-popconfirm>
-        </div>
-        <div v-else-if="selectedMissingTask" class="task-option-panel">
-          <div class="selected-task-header">
-            <div>
-              <div class="selected-task-title task-title-missing">
-                {{ selectedTaskTitle.name }}
-                <span v-if="selectedTaskTitle.index !== null" class="task-copy-index">
-                  #{{ selectedTaskTitle.index }}
-                </span>
-              </div>
-              <div class="selected-task-meta">{{ t('edit.missingTaskHint') }}</div>
-            </div>
-          </div>
-          <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
-            <div class="missing-task-settings-title">{{ t('edit.missingTaskSettings') }}</div>
-            <div v-for="row in missingTaskSettings" :key="row.key" class="missing-task-setting">
-              <span class="missing-task-setting-label">{{ row.label }}</span>
-              <span class="missing-task-setting-value">{{ row.value }}</span>
-            </div>
-          </div>
-          <a-popconfirm
-            :title="t('edit.deleteThisTask2')"
-            :ok-text="t('edit.ok')"
-            :cancel-text="t('edit.cancel')"
-            :disabled="interfaceDependentDisabled"
-            @confirm="emit('deleteSelectedTask')"
-          >
-            <a-button
-              danger
-              block
-              class="delete-task-button"
-              :disabled="interfaceDependentDisabled"
-            >
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              {{ t('edit.deleteThisTask') }}
-            </a-button>
-          </a-popconfirm>
-        </div>
-        <div v-else class="task-option-empty">
-          <a-empty :description="t('edit.pickTaskLeftConfigure')" />
-        </div>
+        <MaaFWTaskConfigPanel
+          :preview-data="previewData"
+          :selected-task="selectedTask"
+          :selected-queued-task="selectedQueuedTask"
+          :selected-task-id="selectedTaskId"
+          :task-snapshot="taskSnapshot"
+          :option-names="selectedTask ? getTaskOptionNames(selectedTask) : []"
+          :effective-controller-name="effectiveControllerName"
+          :effective-resource-name="effectiveResourceName"
+          :managed-task-entries="managedTaskEntries"
+          :disabled="interfaceDependentDisabled"
+          @task-option-update="(taskId, payload) => emit('taskOptionUpdate', taskId, payload)"
+          @weekdays-update="(taskId, weekdays) => emit('taskWeekdaysUpdate', taskId, weekdays)"
+          @delete-selected-task="emit('deleteSelectedTask')"
+        />
       </a-col>
     </a-row>
 
@@ -446,20 +355,18 @@ import {
   DownOutlined,
   UpOutlined,
   CloseOutlined,
-  DeleteOutlined,
   ExclamationCircleOutlined,
   HolderOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
-import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
 import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
-import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
+import MaaFWTaskConfigPanel from './MaaFWTaskConfigPanel.vue'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
@@ -467,7 +374,7 @@ import {
   maafwQueueEntryTitle,
 } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
-import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
+import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
@@ -508,21 +415,6 @@ const selectedQueuedTask = computed(
   () => props.orderedTasks.find(item => item.id === props.selectedTaskId) || null
 )
 
-const selectedMissingTask = computed<MaaFWMissingQueuedTask | null>(() => {
-  const item = selectedQueuedTask.value
-  return item?.missing ? item : null
-})
-
-// 虚影任务原来的设置：给用户对照着在新任务里重设
-const missingTaskSettings = computed(() => {
-  const item = selectedMissingTask.value
-  if (!item) return []
-  return describeMaaFWMissingTaskSettings(
-    props.taskSnapshot.taskOptions[item.id],
-    props.previewData?.options || []
-  )
-})
-
 const addTaskCascaderValueModel = computed({
   get: () => props.addTaskCascaderValue,
   set: value => emit('update:addTaskCascaderValue', value),
@@ -541,13 +433,6 @@ const taskCheckedLabel = (taskId: string) =>
       ? 'edit.queueTaskSkipped'
       : 'edit.queueTaskRuns'
   )
-
-// 右栏标题与队列行一致（虚影也一样）：同一个 maafwQueueEntryTitle
-const selectedTaskTitle = computed<{ name: string; index: number | null }>(() => {
-  const item = selectedQueuedTask.value
-  if (item) return maafwQueueEntryTitle(item)
-  return { name: props.selectedTask ? getDisplayName(props.selectedTask) : '', index: null }
-})
 
 // ── 队列行右键菜单：复制任务 / 重命名 / 删除任务 ──
 const contextTaskId = ref('')
@@ -623,17 +508,6 @@ const confirmRename = () => {
 
 const presetChips = (template: PresetTemplate) =>
   template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
-
-// 右侧副标题：入口名 | 分组名…，原来是队列行里的两个标签。分组显示 label，与「添加任务」里的叫法一致
-const selectedTaskMeta = computed(() => {
-  const task = props.selectedTask
-  if (!task) return ''
-  const groupLabels = new Map(
-    (props.previewData?.groups || []).map(group => [group.name, getDisplayName(group)] as const)
-  )
-  const groups = (task.group || []).map(groupName => groupLabels.get(groupName) || groupName)
-  return [task.entry || task.name, ...groups].filter(Boolean).join(' | ')
-})
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
@@ -735,30 +609,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 <style scoped>
 .form-section {
   margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .task-loading {
@@ -1104,106 +954,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   font-size: 16px;
   opacity: 0.5;
   cursor: default;
-}
-
-.missing-task-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: 6px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.missing-task-settings-title {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.missing-task-setting {
-  display: flex;
-  gap: 16px;
-}
-
-.missing-task-setting-label {
-  flex: none;
-  width: 120px;
-  color: var(--ant-color-text-secondary);
-  overflow-wrap: anywhere;
-}
-
-.missing-task-setting-value {
-  min-width: 0;
-  color: var(--ant-color-text);
-  overflow-wrap: anywhere;
-}
-
-.task-option-panel {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 20px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
-}
-
-.selected-task-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.selected-task-icon {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-  flex: 0 0 auto;
-}
-
-.selected-task-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-}
-
-.selected-task-meta {
-  margin-top: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
-}
-
-.selected-task-description {
-  margin: 20px 0 0;
-  padding: 16px 0 20px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.selected-task-description-label {
-  margin-bottom: 6px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.task-option-empty {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.delete-task-button {
-  margin-top: 24px;
-  height: 40px;
 }
 
 /* 与 :lg 断点对齐：栅格在 992px 以下就折成上下两块，定高要在同一宽度放开，否则两栏叠在 640px 里溢出 */

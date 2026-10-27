@@ -1,7 +1,7 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <div class="form-section">
-    <div class="section-header">
+    <div class="section-header section-header--compact">
       <h3>{{ t('edit.basicInfo') }}</h3>
     </div>
 
@@ -135,36 +135,7 @@ const statusValue = computed({
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
 }
 
 .form-label {

@@ -42,7 +42,7 @@ import psutil
 
 from app.task.proxy_helpers import find_pids_by_name
 from app.utils import get_logger
-from app.utils.io import read_dict_file
+from app.utils import io as _utils_io
 
 logger = get_logger("BetterGI 游戏信息")
 
@@ -108,7 +108,7 @@ def read_game_info(root_path: Path, user_game_path: str = "") -> dict[str, str |
         ``source``（"用户" / "全局"）。
     """
     config_path = root_path / _BGI_CONFIG_REL_PATH
-    data = read_dict_file(config_path)
+    data = _utils_io.read_dict_file(config_path)
     start_config = data.get("genshinStartConfig")
     global_path = (
         str(start_config.get("installPath") or "").strip()
@@ -142,7 +142,7 @@ def resolve_game_exe(root_path: Path, user_game_path: str = "") -> Path:
         game_exe = Path(user_path)
     else:
         config_path = root_path / _BGI_CONFIG_REL_PATH
-        data = read_dict_file(config_path)
+        data = _utils_io.read_dict_file(config_path)
         start_config = data.get("genshinStartConfig")
         install_path = (
             str(start_config.get("installPath") or "").strip()

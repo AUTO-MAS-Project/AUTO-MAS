@@ -20,9 +20,9 @@
 
 from pathlib import Path
 
-from app.utils import get_logger
+from app.utils import logger as _utils_logger
 
-logger = get_logger("ZZZ-OD 自动代理")
+logger = _utils_logger.get_logger("ZZZ-OD 自动代理")
 
 # 启动器标签 → exe 文件名（集成=WithRuntime 打包的 RuntimeLauncher；原始=旧安装器
 # Launcher；.bak 为启动器自更新残留，不参与发现）。元组顺序即默认发现顺序（集成优先）

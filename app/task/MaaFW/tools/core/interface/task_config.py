@@ -55,6 +55,10 @@ class MaaFWTaskPresetSnapshot(BaseModel):
     # 用户在队列里给某一份实例起的显示名 ``{实例 id: 名字}``：只影响界面显示，
     # 运行与项目更新匹配仍按实例 id / 任务 name。
     taskLabels: dict[str, str] = Field(default_factory=dict)
+    # 用户给某一份实例设的运行日 ``{实例 id: {"weekdays": [ISO 星期, …]}}``（1=周一 … 7=周日，
+    # 升序去重）。七天全选就是不限制、不写这一项；空表、非法值、超范围同样当不限制丢掉，
+    # 绝不变成「永远不跑」。运行时按本机今天的星期判，见 ``excluded_task_ids_for_weekday``。
+    taskSchedules: dict[str, dict[str, list[int]]] = Field(default_factory=dict)
     # ``true`` 表示快照来自新用户队列语义：队列中显式保留的 false 实例是
     # 用户本轮主动跳过的任务。旧快照缺少此键，前端继续隐藏 false 实例。
     keepUnchecked: bool = False
@@ -166,6 +170,11 @@ def normalize_snapshot(
         for task_id, label in raw_snapshot["taskLabels"].items()
         if task_id in normalized_order_set
     }
+    normalized_schedules = {
+        task_id: schedule
+        for task_id, schedule in raw_snapshot["taskSchedules"].items()
+        if task_id in normalized_order_set
+    }
     return MaaFWTaskPresetSnapshot(
         taskOrder=normalized_order,
         taskChecked=normalized_checked,
@@ -175,6 +184,7 @@ def normalize_snapshot(
             interface_model,
         ),
         taskLabels=normalized_labels,
+        taskSchedules=normalized_schedules,
         # 不带 keepUnchecked：这里按 interface 补齐了全部任务（未勾选），已不是用户的
         # 显式队列；红灯判断与跳过记录只认调用方给的原始快照。
     )
@@ -617,6 +627,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": _normalize_raw_task_options(snapshot.taskOptions),
             "globalOptions": _normalize_raw_option_values(snapshot.globalOptions),
             "taskLabels": _normalize_raw_task_labels(snapshot.taskLabels),
+            "taskSchedules": _normalize_raw_task_schedules(snapshot.taskSchedules),
             "keepUnchecked": snapshot.keepUnchecked is True,
         }
 
@@ -627,6 +638,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
             "taskOptions": {},
             "globalOptions": {},
             "taskLabels": {},
+            "taskSchedules": {},
             "keepUnchecked": False,
         }
 
@@ -650,6 +662,7 @@ def _normalize_raw_snapshot(snapshot: Any) -> dict[str, Any]:
         "taskOptions": _normalize_raw_task_options(snapshot.get("taskOptions")),
         "globalOptions": _normalize_raw_option_values(snapshot.get("globalOptions")),
         "taskLabels": _normalize_raw_task_labels(snapshot.get("taskLabels")),
+        "taskSchedules": _normalize_raw_task_schedules(snapshot.get("taskSchedules")),
         "keepUnchecked": snapshot.get("keepUnchecked") is True,
     }
 
@@ -664,6 +677,71 @@ def _normalize_raw_task_labels(value: Any) -> dict[str, str]:
         for task_id, label in value.items()
         if isinstance(task_id, str) and isinstance(label, str) and label.strip()
     }
+
+
+#: 一周七天的 ISO 星期（1=周一 … 7=周日）。
+ALL_WEEKDAYS = (1, 2, 3, 4, 5, 6, 7)
+
+
+def normalize_task_weekdays(value: Any) -> list[int] | None:
+    """一份实例的运行日：升序去重的 ISO 星期；不限制时返回 None。
+
+    七天全选是不限制。不是列表、空列表、有一项不是 1~7 的整数（布尔不算整数）都当不限制，
+    整项丢掉——宁可多跑，也不能让一份坏值把任务变成永远不跑。
+    """
+
+    if not isinstance(value, list) or not value:
+        return None
+    if any(
+        isinstance(item, bool) or not isinstance(item, int) or item not in ALL_WEEKDAYS
+        for item in value
+    ):
+        return None
+    weekdays = sorted(set(value))
+    if len(weekdays) == len(ALL_WEEKDAYS):
+        return None
+    return weekdays
+
+
+def _normalize_raw_task_schedules(value: Any) -> dict[str, dict[str, list[int]]]:
+    """实例运行日只留键是字符串、``weekdays`` 归一后确有限制的。"""
+
+    if not isinstance(value, dict):
+        return {}
+    schedules: dict[str, dict[str, list[int]]] = {}
+    for task_id, schedule in value.items():
+        if not isinstance(task_id, str) or not isinstance(schedule, dict):
+            continue
+        weekdays = normalize_task_weekdays(schedule.get("weekdays"))
+        if weekdays is not None:
+            schedules[task_id] = {"weekdays": weekdays}
+    return schedules
+
+
+def excluded_task_ids_for_weekday(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    iso_weekday: int,
+) -> list[str]:
+    """快照队列里勾选了、设了运行日、且运行日不含 ``iso_weekday`` 的实例 id（队列顺序，去重）。
+
+    按实例判，不按任务名：同一任务重复入队的几份各看各的。前置任务（pretask）不受运行日
+    影响，即使快照里有也不算。没勾选（红灯）的实例本来就不跑，不算「今天不在运行日」，
+    免得特调把它当成运行日跳过的实例处理。今天是星期几由调用方按本机时间给。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    schedules = raw_snapshot["taskSchedules"]
+    if not schedules:
+        return []
+    checked = raw_snapshot["taskChecked"]
+    return [
+        task_id
+        for task_id in dict.fromkeys(raw_snapshot["taskOrder"])
+        if not is_pretask_task_name(task_id)
+        and checked.get(task_id) is True
+        and task_id in schedules
+        and iso_weekday not in schedules[task_id]["weekdays"]
+    ]
 
 
 def _normalize_raw_task_options(

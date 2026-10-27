@@ -27,9 +27,8 @@ from typing import Any
 
 import json5
 
-from app.utils import get_logger
-from app.utils.constants import MAAEND_INVENTORY_TARGET_DEFAULTS
-from app.utils.io import atomic_write
+from app.utils import MAAEND_INVENTORY_TARGET_DEFAULTS, get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("MaaEnd 资源加载器")
 
@@ -180,7 +179,7 @@ class MaaEndResourceLoader:
                     for path, (signature, data) in self._file_cache.items()
                 },
             }
-            atomic_write(
+            _utils_io.atomic_write(
                 cache_path,
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             )
@@ -491,6 +490,12 @@ class MaaEndResourceLoader:
             )
 
         return {
+            "crisisDrills": self._localize_options(
+                self._task_options.get("ProtocolSpace", {})
+                .get("CrisisDrills", {})
+                .get("cases", []),
+                locale,
+            ),
             "inventory": self._inventory_options(locale),
             "autoCollectGroups": self._auto_collect_groups(locale),
             "controllers": self._localize_options(controller_cases, locale),
@@ -502,6 +507,13 @@ class MaaEndResourceLoader:
             "essenceMenus": essence_menus,
             "essenceTargetWeaponGroups": target_groups,
         }
+
+    def validate_crisis_drills(self, value: str) -> None:
+        """按当前安装版本校验危境预演任务，不维护高阶培养清单。"""
+        if value not in {item["value"] for item in self._options["crisisDrills"]}:
+            raise ValueError(
+                "当前 MaaEnd 不支持所选高阶培养任务，请更新 MaaEnd 或重新选择"
+            )
 
     def _inventory_options(self, locale: dict[str, str]) -> dict[str, Any] | None:
         """枚举上游库存输入声明，不维护材料与关卡的映射。"""

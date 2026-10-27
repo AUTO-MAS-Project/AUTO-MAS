@@ -76,12 +76,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsMaaendScriptInstances')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.tellsMaaendScriptInstances')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -94,28 +93,19 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.maaendPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingMaaend2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingMaaend')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.maaendPath')"
+                    :hint="t('edit.pickDirectoryHoldingMaaend2')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectMaaEndPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.pickDirectoryHoldingMaaend')"
+                  :pick-label="t('edit.pickDirectory')"
+                  @pick="selectMaaEndPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -130,12 +120,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.pickHowGameControlled')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.controller')"
+                    :hint="t('edit.pickHowGameControlled')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.ControllerType"
@@ -150,12 +139,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.closeGameAfterTask2') }}
-                    <a-tooltip :title="t('edit.whetherGameClosesAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.closeGameAfterTask2')"
+                    :hint="t('edit.whetherGameClosesAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.CloseOnFinish"
@@ -190,28 +178,19 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gamePath') }}
-                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.gamePath')"
+                    :hint="t('edit.pickEndfieldExePath')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="maaEndConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('edit.pickGameExecutable')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -247,12 +226,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.waitTime') }}
-                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.waitTime')"
+                    :hint="t('edit.pcControllersOnlySeconds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.WaitTime"
@@ -356,12 +334,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.pickEmulatorUse')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulator')"
+                    :hint="t('edit.pickEmulatorUse')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="maaEndConfig.Game.EmulatorId"
@@ -454,12 +431,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gameUpdateTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.endfieldUpdateTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.gameUpdateTimeoutMinutes')"
+                    :hint="t('edit.endfieldUpdateTimeoutHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="maaEndConfig.Game.UpdateTimeLimit"
@@ -539,10 +515,12 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import { createMaaEndScriptDraft } from './maaEndScriptDraft'
 import MaaEndRunConfigSection from './components/MaaEndRunConfigSection.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -563,12 +541,7 @@ import {
 } from '@/services/websocket/types'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SettingOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
 import { useMaaEndLauncher } from './useMaaEndLauncher'
@@ -1145,14 +1118,6 @@ onBeforeUnmount(() => {
   animation: fadeInUp 0.6s ease-out;
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 /* tooltip 包着 disabled 按钮时需要一层可挂事件的容器 */
 .endfield-update-check {
   display: inline-block;
@@ -1174,11 +1139,6 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--ant-color-text);
-}
-
-.path-input-group {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
 }
 
 .maaend-config-mask {

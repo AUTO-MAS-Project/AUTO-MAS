@@ -27,12 +27,11 @@
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t(CHANNEL_TIP_KEYS[activeChannel])">
-              <span class="form-label">
-                {{ t('edit.hsrStage') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.hsrStage')"
+              :hint="t(CHANNEL_TIP_KEYS[activeChannel])"
+              variant="form"
+            />
           </template>
           <a-select
             :value="activeStageValue"
@@ -58,12 +57,11 @@
         <a-form-item>
           <template #label>
             <!-- 遗器自动分解提醒放在悬停说明里 -->
-            <a-tooltip :title="t('edit.turnAutomaticRelicSalvage')">
-              <span class="form-label">
-                {{ t('edit.echoOfWar') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.echoOfWar')"
+              :hint="t('edit.turnAutomaticRelicSalvage')"
+              variant="form"
+            />
           </template>
           <a-select
             :value="eowSelectValue"
@@ -81,12 +79,11 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.startDayIfIt')">
-              <span class="form-label">
-                {{ t('edit.echoOfWarStartDay') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.echoOfWarStartDay')"
+              :hint="t('edit.startDayIfIt')"
+              variant="form"
+            />
           </template>
           <a-select
             :value="formData.TaskOpt.EchoOfWarWeekday ?? 'Monday'"
@@ -101,9 +98,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
@@ -347,10 +344,5 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
   align-items: center;
   gap: 6px;
   font-weight: 600;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 </style>

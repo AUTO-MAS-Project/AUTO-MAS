@@ -55,7 +55,7 @@
   ``resource_name`` 是运行计划的资源名；``package_name`` 是这次随模拟器拉起的包名（空串
   表示没拉起游戏）；``adb_path`` 为 ``None`` 时由钩子自己回退系统 adb；``if_auto_install``
   对应 ``AutoInstall``（``Check`` 为 False）；``progress`` 是写用户运行日志的异步回调。
-  返回 ``app.utils.game_update.GameUpdateResult``。
+  返回 ``app.utils.common.game_update.GameUpdateResult``。
 - **结果**：``NeedManualUpdate`` → 本用户本次运行判失败，失败原因就是 ``message``，发错误
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
@@ -149,13 +149,15 @@ from __future__ import annotations
 
 import importlib
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.game_update import GameUpdateResult
 
 logger = get_logger("MaaFW 特调")
 
@@ -183,7 +185,37 @@ class MaaFWFlavor(Protocol):
         resource_name: str | None,
         send_log: Callable[[str], None] | None,
     ) -> tuple[list[str], dict[str, Any]]:
-        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。"""
+        """在用户勾选的任务实例列表上做装饰，返回新的列表与选项。
+
+        列表里已去掉今天不在运行日的实例（``taskSchedules``）；钩子按自己的规则补回的同一实例
+        照常运行。钩子另读用户快照自动补任务时，要像尊重红灯一样尊重运行日：引擎判出的这些
+        实例 id 在调用期间由 ``off_day_task_ids()`` 给出，不要自己再判一次星期。
+        """
+
+
+_OFF_DAY_TASK_IDS: ContextVar[frozenset[str]] = ContextVar(
+    "maafw_off_day_task_ids", default=frozenset()
+)
+
+
+def off_day_task_ids() -> frozenset[str]:
+    """引擎这次建计划判出的「今天不在运行日」的实例 id。
+
+    只在引擎调 ``decorate_selection`` 期间有值（``off_day_scope``），其余时候是空集。
+    """
+
+    return _OFF_DAY_TASK_IDS.get()
+
+
+@contextmanager
+def off_day_scope(task_ids: Iterable[str]) -> Iterator[None]:
+    """引擎调装饰钩子时用：把判出的今天不跑的实例 id 交给钩子，钩子签名不变。"""
+
+    token = _OFF_DAY_TASK_IDS.set(frozenset(task_ids))
+    try:
+        yield
+    finally:
+        _OFF_DAY_TASK_IDS.reset(token)
 
 
 def _load_flavor(spec: str) -> Any | None:
@@ -268,7 +300,7 @@ def flavor_for_project(interface_model: MaaFWInterface) -> MaaFWFlavor | None:
     return _load_flavor(str(spec)) if spec else None
 
 
-GameUpdateHook = Callable[..., Awaitable[GameUpdateResult]]
+GameUpdateHook = Callable[..., Awaitable[_utils_game_update.GameUpdateResult]]
 """特调可选的游戏更新钩子，契约见模块说明"""
 
 
@@ -465,6 +497,8 @@ __all__ = [
     "MaaFWFlavor",
     "SnapshotSanitizer",
     "no_default_fallback_inputs",
+    "off_day_scope",
+    "off_day_task_ids",
     "decide_project_config_class",
     "flavor_for_project",
     "flavored_config_classes",

@@ -1,35 +1,36 @@
 <template>
   <div class="user-edit-header">
     <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link
-            :to="`/scripts/${scriptId}/edit/${scriptEditSegment}`"
-            class="breadcrumb-link"
-          >
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <span class="breadcrumb-current">
-            <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-            {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
-          </span>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+      <div class="breadcrumb-row">
+        <a-breadcrumb class="breadcrumb">
+          <a-breadcrumb-item>
+            <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item>
+            <router-link :to="scriptTarget" class="breadcrumb-link">
+              {{ scriptName }}
+            </router-link>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item>
+            <span class="breadcrumb-current">
+              <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
+              {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
+            </span>
+          </a-breadcrumb-item>
+        </a-breadcrumb>
+        <slot name="breadcrumb-extra" />
+      </div>
+      <slot name="below-breadcrumb" />
     </div>
 
-    <a-space size="middle">
+    <a-space :size="actionsSize">
       <slot name="extra-actions" />
 
       <a-button
         v-if="showConfigButton && !configActive"
         type="primary"
         ghost
-        size="large"
+        :size="buttonSize"
         :loading="configLoading"
         :disabled="configDisabled"
         @click="emit('config')"
@@ -42,7 +43,7 @@
       <a-button
         v-if="showConfigButton && configActive"
         type="default"
-        size="large"
+        :size="buttonSize"
         disabled
         class="configuring-button"
       >
@@ -54,7 +55,7 @@
 
       <a-button
         v-if="showFolderButton"
-        size="large"
+        :size="buttonSize"
         :loading="folderLoading"
         @click="handleOpenFolder"
       >
@@ -64,7 +65,12 @@
         {{ t('comp.openConfigFolder') }}
       </a-button>
 
-      <a-button size="large" class="cancel-button" @click="emit('cancel')">
+      <a-button
+        :size="buttonSize"
+        class="cancel-button"
+        :loading="cancelLoading"
+        @click="emit('cancel')"
+      >
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -77,6 +83,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import type { RouteLocationRaw } from 'vue-router'
 import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
 
@@ -91,7 +98,9 @@ const props = withDefaults(
     /** true 为编辑已有用户，false 为新增用户 */
     isEdit: boolean
     /** 脚本编辑路由段，如 maa / hsr / oknte，拼成 /scripts/:id/edit/<segment> */
-    scriptEditSegment: string
+    scriptEditSegment?: string
+    /** 脚本页命名路由；提供时优先于 scriptEditSegment */
+    scriptRoute?: RouteLocationRaw
     /** 覆盖第三级面包屑文字，默认按 isEdit 显示「编辑用户」「添加用户」 */
     currentLabel?: string
     /** 第三级面包屑前的脚本图标，省略则不显示 */
@@ -108,8 +117,16 @@ const props = withDefaults(
     configVisible?: boolean
     /** 当前用户 ID，编辑已有用户时提供，用于渲染「配置文件夹」按钮 */
     userId?: string
+    /** 返回按钮 loading 态，用于离开前等待保存或确认 */
+    cancelLoading?: boolean
+    /** 操作按钮尺寸，默认大号 */
+    buttonSize?: 'small' | 'middle' | 'large'
+    /** 操作按钮间距，默认中等 */
+    actionsSize?: 'small' | 'middle' | 'large'
   }>(),
   {
+    scriptEditSegment: undefined,
+    scriptRoute: undefined,
     currentLabel: undefined,
     logoSrc: undefined,
     configLabel: undefined,
@@ -118,6 +135,9 @@ const props = withDefaults(
     configDisabled: false,
     configVisible: true,
     userId: undefined,
+    cancelLoading: false,
+    buttonSize: 'large',
+    actionsSize: 'middle',
   }
 )
 
@@ -131,6 +151,10 @@ const showConfigButton = computed(() => Boolean(props.configLabel) && props.conf
 
 /** 已有用户才提供「配置文件夹」快捷入口，新增用户此时还没有配置目录 */
 const showFolderButton = computed(() => Boolean(props.userId))
+
+const scriptTarget = computed<RouteLocationRaw>(
+  () => props.scriptRoute ?? `/scripts/${props.scriptId}/edit/${props.scriptEditSegment}`
+)
 
 const { loading: folderLoading, openUserConfigFolder } = useUserApi()
 
@@ -152,6 +176,14 @@ const handleOpenFolder = async () => {
 
 .header-nav {
   flex: 1;
+  min-width: 0;
+}
+
+.breadcrumb-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 .breadcrumb {
@@ -176,9 +208,16 @@ const handleOpenFolder = async () => {
   color: var(--ant-color-text);
 }
 
-.cancel-button:hover {
+.cancel-button:hover,
+:slotted(.cancel-button:hover) {
   border-color: var(--ant-color-primary);
   color: var(--ant-color-primary);
+}
+
+:slotted(.cancel-button) {
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
 }
 
 .configuring-button {

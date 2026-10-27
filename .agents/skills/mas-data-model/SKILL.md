@@ -19,6 +19,15 @@ For config definitions, reads/writes, lifecycle, transactions, locks, signals, p
 
 Configuration fields are declared once in `ConfigEntry`/`ConfigGroup`; collections use `ConfigCollection[T]`. Hot writes stage whole-field or collection operations, then await `commit()`. Per-op transactions, explicit transaction boundaries and persistence completion are distinct contracts. Framework design changes follow existing user authorization; explain and obtain a decision for unapproved design changes before editing the base implementation.
 
+For startup activation, callers may pass `activate(fast_init=True)` to share one
+local transaction across the current Entry's field loop. The fast attempt keeps
+strict field order and immediate Init signals; any field or Init-signal failure
+rolls it back completely and reruns the original per-field path from the first
+field. Do not reuse values from the failed attempt or treat external side
+effects as transactional. The option does not change ordinary runtime
+`commit()` boundaries; the full lifecycle and activation-tree restrictions are
+in [config-framework.md](references/config-framework.md).
+
 ## Model Ownership
 1. Shared `schema.py` and endpoint-local models define external API contracts; config projections derive from config classes through `app/config/wire.py`.
 2. `config` models define persisted configuration structure and validation behavior.

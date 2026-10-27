@@ -43,7 +43,10 @@ from typing import Any
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
 from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
 from app.utils import get_logger, resource_path
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
+
+read_file = _utils_io.read_file
+write_file = _utils_io.write_file
 
 logger = get_logger("BetterGI 一条龙配置")
 

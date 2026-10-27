@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import get_logger
-from app.utils.io import read_file
+from app.utils import io as _utils_io
 
 logger = get_logger("配置模型")
 
@@ -134,7 +134,7 @@ def read_maa_config(path: Path) -> dict | None:
     """读取 MAA gui.new.json 配置; 缺失或损坏返回 None(损坏另记警告)。"""
 
     try:
-        data = read_file(path)
+        data = _utils_io.read_file(path)
     except (OSError, json.JSONDecodeError):
         logger.opt(exception=True).warning(f"读取 MAA 配置失败: {path}")
         return None

@@ -22,7 +22,7 @@ from typing import Any, Callable, Mapping
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 from app.utils import get_logger
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 from ..task_mapping import HSRTaskModule
 from . import m7a_config as m7a
@@ -209,7 +209,7 @@ class HSRM7AControl:
             whitelist=effective_whitelist,
             deep_merge_keys=deep_merge_keys,
         )
-        write_file(config_path, patched_config)
+        _utils_io.write_file(config_path, patched_config)
         logger.info(
             f"三月七 config.yaml 已写入 MAS 模板字段：{sorted(effective_patch.keys())}"
         )

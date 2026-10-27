@@ -1,62 +1,18 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/general`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ isEdit ? t('comp.editUser') : t('comp.addUser') }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button
-        v-if="!showGeneralConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="generalConfigLoading"
-        :disabled="configLocked"
-        @click="handleGeneralConfig()"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.generalConfiguration') }}
-      </a-button>
-      <a-button
-        v-if="showGeneralConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        {{ t('edit.configuring') }}
-      </a-button>
-      <a-button size="large" class="cancel-button" @click="handleCancel">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+  <UserEditHeader
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="general"
+    :current-label="isEdit ? t('comp.editUser') : t('comp.addUser')"
+    :user-id="userId"
+    :config-label="t('edit.generalConfiguration')"
+    :config-loading="generalConfigLoading"
+    :config-active="showGeneralConfigMask"
+    :config-disabled="configLocked"
+    @config="handleGeneralConfig()"
+    @cancel="handleCancel"
+  />
 
   <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
   <teleport to="body">
@@ -115,66 +71,34 @@
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
-              <a-form-item name="userName" required>
-                <template #label>
-                  <a-tooltip :title="t('edit.displayNameUsedIdentify')">
-                    <span class="form-label">
-                      {{ t('edit.username') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="formData.userName"
-                  :placeholder="t('edit.enterUsername')"
-                  :disabled="loading"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('userName', formData.userName)"
-                />
-              </a-form-item>
+              <UserNameField
+                name="userName"
+                required
+                v-model="formData.userName"
+                :hint="t('edit.displayNameUsedIdentify')"
+                :placeholder="t('edit.enterUsername')"
+                :disabled="loading"
+                enhanced
+                @save="handleFieldSave('userName', formData.userName)"
+              />
             </a-col>
             <a-col :span="6">
-              <a-form-item name="status">
-                <template #label>
-                  <a-tooltip :title="t('edit.whetherThisUserEnabled')">
-                    <span class="form-label">
-                      {{ t('edit.enabled') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.Status"
-                  size="large"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
+              <UserStatusField
+                name="status"
+                v-model="formData.Info.Status"
+                :hint="t('edit.whetherThisUserEnabled')"
+                @save="handleFieldSave('Info.Status', formData.Info.Status)"
+              />
             </a-col>
             <a-col :span="6">
-              <a-form-item name="remainedDay">
-                <template #label>
-                  <a-tooltip :title="t('edit.daysLeftAccount1')">
-                    <span class="form-label">
-                      {{ t('edit.daysLeft') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="formData.Info.RemainedDay"
-                  :min="-1"
-                  :max="9999"
-                  placeholder="-1"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                />
-              </a-form-item>
+              <UserRemainedDayField
+                name="remainedDay"
+                v-model="formData.Info.RemainedDay"
+                :hint="t('edit.daysLeftAccount1')"
+                placeholder="-1"
+                :disabled="loading"
+                @save="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              />
             </a-col>
             <a-col :span="24">
               <GeneralConfigModeSelector
@@ -188,24 +112,16 @@
             </a-col>
           </a-row>
 
-          <a-form-item name="notes">
-            <template #label>
-              <a-tooltip :title="t('edit.addNoteAboutThis')">
-                <span class="form-label">
-                  {{ t('edit.note') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-textarea
-              v-model:value="formData.Info.Notes"
-              :placeholder="t('edit.enterNote3')"
-              :rows="4"
-              :disabled="loading"
-              class="modern-input"
-              @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-            />
-          </a-form-item>
+          <UserNotesField
+            name="notes"
+            v-model="formData.Info.Notes"
+            :hint="t('edit.addNoteAboutThis')"
+            :placeholder="t('edit.enterNote3')"
+            :disabled="loading"
+            :rows="4"
+            enhanced
+            @save="handleFieldSave('Info.Notes', formData.Info.Notes)"
+          />
         </div>
 
         <!-- 额外脚本 -->
@@ -241,21 +157,19 @@
 </template>
 
 <script setup lang="ts">
+import UserNameField from '@/views/EditView/User/components/UserNameField.vue'
+import UserNotesField from '@/views/EditView/User/components/UserNotesField.vue'
+import UserRemainedDayField from '@/views/EditView/User/components/UserRemainedDayField.vue'
+import UserStatusField from '@/views/EditView/User/components/UserStatusField.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  ArrowLeftOutlined,
-  EyeOutlined,
-  FolderOpenOutlined,
-  HistoryOutlined,
-  QuestionCircleOutlined,
-  SettingOutlined,
-} from '@ant-design/icons-vue'
+import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -281,15 +195,7 @@ const logger = window.electronAPI.getLogger('通用用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const {
-  addUser,
-  updateUser,
-  getUsers,
-  loading: userLoading,
-  openUserConfigFolder,
-  loading: folderLoading,
-  error: userApiError,
-} = useUserApi()
+const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -302,10 +208,6 @@ const { enqueue } = useSaveQueue()
 // 路由参数
 const scriptId = route.params.scriptId as string
 
-const handleOpenFolder = async () => {
-  if (!userId) return
-  await openUserConfigFolder(scriptId, userId)
-}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)
@@ -910,22 +812,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 32px;
-  padding: 0 8px;
-}
-
-.header-nav {
-  flex: 1;
-}
-
-.breadcrumb {
-  margin: 0;
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -954,72 +840,6 @@ onUnmounted(() => {
 
 .section-header {
   margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
-}
-
-.modern-input:hover {
-  border-color: var(--ant-color-primary-hover);
-}
-
-.modern-input:focus,
-.modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
 }
 
 .switch-description {
@@ -1056,12 +876,6 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    gap: 16px;
-    align-items: stretch;
-  }
-
   .user-edit-content {
     max-width: 100%;
   }

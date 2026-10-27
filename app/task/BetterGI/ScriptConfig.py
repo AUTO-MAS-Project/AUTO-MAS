@@ -26,8 +26,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
-from app.utils import ProcessManager, get_logger
-from app.utils.platform import IS_ELEVATED
+from app.utils import IS_ELEVATED, ProcessManager, get_logger
 
 from .AutoProxy import _BGI_REL_EXE, _BGI_UNKILLABLE_HINT, _wait_bgi_exit
 from .tools import one_dragon

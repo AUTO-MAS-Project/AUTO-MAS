@@ -43,14 +43,14 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import (
+    IS_ELEVATED,
+    UTC4,
+    LogMonitor,
     ProcessInfo,
     ProcessManager,
     ProcessRunner,
     get_logger,
 )
-from app.utils.constants import UTC4
-from app.utils.LogMonitor import LogMonitor
-from app.utils.platform import IS_ELEVATED
 
 from .tools import (
     account_switch,

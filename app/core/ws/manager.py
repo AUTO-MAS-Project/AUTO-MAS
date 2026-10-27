@@ -29,7 +29,7 @@ from typing import Awaitable, Callable, Dict, List, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from pydantic import JsonValue
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 from .dispatcher import Dispatcher
 from .protocol import CLOSE_CODE_REPLACED, CLOSE_REASON_REPLACED, parse_envelope

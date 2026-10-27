@@ -30,9 +30,8 @@ from inspect import isawaitable
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, migrate_legacy_dir
-from app.utils.platform import is_admin
+from app.utils import ProcessManager, decode_bytes, get_logger, is_admin
+from app.utils import io as _utils_io
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -232,7 +231,7 @@ def write_sra_temp_config(
     """写出 SRA 运行 JSON，避免 SRA CLI 按 ANSI 读取时编码炸裂。"""
 
     target_path = _sra_temp_path(script_uid, user_uid, module_key)
-    atomic_write(
+    _utils_io.atomic_write(
         target_path,
         json.dumps(config, ensure_ascii=True, indent=4).encode("utf-8"),
     )
@@ -592,7 +591,7 @@ def disable_sra_windows_notifications() -> Path:
         return settings_path
 
     notification[SRA_SETTINGS_SYSTEM_NOTIFY_KEY] = False
-    atomic_write(
+    _utils_io.atomic_write(
         settings_path,
         json.dumps(settings, ensure_ascii=True, indent=2).encode("utf-8"),
     )
@@ -883,7 +882,9 @@ def _sra_temp_path(script_uid: str, user_uid: str, module_key: str) -> Path:
 
     app_root = Config.config_path.parent
     sra_config_dir = app_root / "data" / "hsr" / "sra-config"
-    migrate_legacy_dir(app_root / "runtime" / "hsr" / "sra-config", sra_config_dir)
+    _utils_io.migrate_legacy_dir(
+        app_root / "runtime" / "hsr" / "sra-config", sra_config_dir
+    )
     return sra_config_dir / script_uid / user_uid / f"{module_key}.json"
 
 

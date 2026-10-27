@@ -18,7 +18,7 @@ from pathlib import Path
 
 import httpx
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 from ...task_mapping import engine_label
 from .apply import (

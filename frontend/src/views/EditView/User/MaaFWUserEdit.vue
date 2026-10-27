@@ -94,6 +94,7 @@
             :task-snapshot="taskSnapshot"
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
+            :managed-task-entries="managedTaskEntries"
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
@@ -111,6 +112,7 @@
             @delete-task="deleteTask"
             @duplicate-task="duplicateTask"
             @rename-task="renameTask"
+            @task-weekdays-update="updateTaskWeekdays"
           />
           <MaaFWFlavorSlot
             part="userPage"
@@ -222,6 +224,7 @@ const {
   taskByName,
   effectiveControllerName,
   effectiveResourceName,
+  managedTaskEntries,
   interfaceDependentDisabled,
   handleFieldSave,
   showPresetModal,
@@ -238,6 +241,7 @@ const {
   deleteTask,
   duplicateTask,
   renameTask,
+  updateTaskWeekdays,
   handleTaskOptionUpdate,
   handleGlobalOptionUpdate,
   moveTask,

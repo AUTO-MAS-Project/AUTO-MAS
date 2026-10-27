@@ -24,13 +24,13 @@ import shutil
 import uuid
 
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
-from app.utils import get_logger
-from app.utils.constants import normalize_base_source
-from app.utils.io import ConfigCorruptedError
+from app.utils import constants as _utils_constants
+from app.utils import io as _utils_io
+from app.utils import logger as _utils_logger
 
 from .config_context import ZzzOdContext
 
-logger = get_logger("配置管理")
+logger = _utils_logger.get_logger("配置管理")
 
 
 class ZzzOdRecovery:
@@ -106,7 +106,7 @@ class ZzzOdRecovery:
         from app.task.ZzzOd.slots import collect_used_slot_idxs, ensure_user_slot
         from app.task.ZzzOd.tools import restore_recycle_slot
         from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
-        from app.utils.config_archive import get_backup_dir
+        from app.utils import config_archive as _utils_config_archive
 
         script_config = self.context.script_config(script_id)
         root = self.context.root(script_config)
@@ -117,7 +117,12 @@ class ZzzOdRecovery:
             raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
         # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
         # 条目不对就留下一个没内容的半成品用户
-        if get_backup_dir(recycle_backup_root(root, slot_idx), ts) is None:
+        if (
+            _utils_config_archive.get_backup_dir(
+                recycle_backup_root(root, slot_idx), ts
+            )
+            is None
+        ):
             raise ValueError(f"备份不存在: {ts}")
 
         created_uid: uuid.UUID | None = None
@@ -200,8 +205,7 @@ class ZzzOdRecovery:
             restore_mas_backup,
             restore_onedragon_backup,
         )
-        from app.utils.config_archive import dir_files
-        from app.utils.io import read_dict_file
+        from app.utils import config_archive as _utils_config_archive
 
         _, root, user_cfg, uid = self.context.user(script_id, user_id)
 
@@ -215,7 +219,7 @@ class ZzzOdRecovery:
                 raise ValueError(f"备份不存在: {ts}")
             backup_idxs = {
                 int(rel.split("/", 1)[0])
-                for rel in dir_files(backup_dir)
+                for rel in _utils_config_archive.dir_files(backup_dir)
                 if "/" in rel
                 and rel.split("/", 1)[0].isascii()
                 and rel.split("/", 1)[0].isdigit()
@@ -252,13 +256,15 @@ class ZzzOdRecovery:
             read_game(backup_dir)
             backup_apps = normalize_app_group_entries(read_app_group(backup_dir))
             read_team_list(backup_dir)
-            backup_info = read_dict_file(
+            backup_info = _utils_io.read_dict_file(
                 backup_dir / MAS_USER_INFO_FILE, allow_empty=True
             )
             # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
             if "Mode" in backup_info and "Base" not in backup_info:
-                backup_info["Base"] = normalize_base_source(backup_info.pop("Mode"))
-        except ConfigCorruptedError as exc:
+                backup_info["Base"] = _utils_constants.normalize_base_source(
+                    backup_info.pop("Mode")
+                )
+        except _utils_io.ConfigCorruptedError as exc:
             raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
         # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
@@ -266,7 +272,7 @@ class ZzzOdRecovery:
         # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
         try:
             occupant = self.context.slot_occupant(root, script_id, uid, slot)
-        except ConfigCorruptedError:
+        except _utils_io.ConfigCorruptedError:
             if not force:
                 raise
             occupant = None
@@ -286,7 +292,7 @@ class ZzzOdRecovery:
             read_game_account(slot_dir)
             read_game(slot_dir)
             read_app_group(slot_dir)
-        except ConfigCorruptedError:
+        except _utils_io.ConfigCorruptedError:
             if not force:
                 raise
             materialize_current = False
@@ -727,7 +733,6 @@ class ZzzOdRecovery:
             read_game_account,
             read_team_list,
         )
-        from app.utils.io import read_dict_file
 
         # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
         root = self.context.root(self.context.script_config(script_id))
@@ -758,7 +763,7 @@ class ZzzOdRecovery:
                 backup_idx_dir = backup / str(idx)
                 try:
                     account = read_game_account(backup_idx_dir)
-                except ConfigCorruptedError as exc:
+                except _utils_io.ConfigCorruptedError as exc:
                     warnings.append(
                         f"原生备份实例 {idx:02d} 账号配置损坏，无法预览：{exc}"
                     )
@@ -767,7 +772,7 @@ class ZzzOdRecovery:
                 task_fields = []
                 try:
                     app_group = read_app_group(backup_idx_dir)
-                except ConfigCorruptedError as exc:
+                except _utils_io.ConfigCorruptedError as exc:
                     warnings.append(
                         f"原生备份实例 {idx:02d} 任务编排损坏，无法预览：{exc}"
                     )
@@ -817,24 +822,26 @@ class ZzzOdRecovery:
         warnings: list[str] = []
         info: dict = {}
         try:
-            info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+            info = _utils_io.read_dict_file(
+                backup / MAS_USER_INFO_FILE, allow_empty=True
+            )
             # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
             if "Mode" in info and "Base" not in info:
-                info["Base"] = normalize_base_source(info.pop("Mode"))
-        except ConfigCorruptedError as exc:
+                info["Base"] = _utils_constants.normalize_base_source(info.pop("Mode"))
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
         account: dict = {}
         try:
             account = read_game_account(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份账号配置损坏，无法恢复：{exc}")
         try:
             read_game(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份启动参数损坏，无法恢复：{exc}")
         try:
             read_team_list(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份编队配置损坏，无法恢复：{exc}")
 
         info_fields = []
@@ -860,7 +867,7 @@ class ZzzOdRecovery:
         app_group: list = []
         try:
             app_group = read_app_group(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份任务编排损坏，无法恢复：{exc}")
         tasks = []
         for item in app_group:

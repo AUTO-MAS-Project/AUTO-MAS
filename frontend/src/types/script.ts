@@ -250,6 +250,16 @@ export interface MaaFWTaskSnapshot {
   globalOptions?: Record<string, MaaFWTaskOptionValue>
   /** 用户给某一份实例起的显示名（只影响显示，不改任务 name）；没改过名的实例不在里面 */
   taskLabels?: Record<string, string>
+  /**
+   * 用户给某一份实例设的运行日：`weekdays` 是 ISO 星期（1=周一 … 7=周日），升序去重。
+   * 七天全选（不限制）的实例不在里面；一项都没有时不写这个键
+   */
+  taskSchedules?: Record<string, MaaFWTaskSchedule>
+}
+
+/** 一份实例的运行日 */
+export interface MaaFWTaskSchedule {
+  weekdays: number[]
 }
 
 /** 任务队列里的一项：同名任务可以有多份，靠 `id` 区分。 */

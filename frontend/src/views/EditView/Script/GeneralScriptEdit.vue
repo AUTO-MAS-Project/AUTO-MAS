@@ -25,12 +25,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <a-tooltip :title="t('edit.giveScriptNameYou')">
-                    <span class="form-label">
-                      {{ t('edit.scriptName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.giveScriptNameYou')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -44,28 +43,19 @@
             <a-col :span="16">
               <a-form-item name="rootPath" :rules="rules.rootPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.rootDirectoryScriptEvery')">
-                    <span class="form-label">
-                      {{ t('edit.scriptRootDirectory') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.rootPath"
-                    :placeholder="t('edit.pickScriptRootDirectory2')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptRootDirectory')"
+                    :hint="t('edit.rootDirectoryScriptEvery')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectRootPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFolder') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.rootPath"
+                  mode="folder"
+                  :placeholder="t('edit.pickScriptRootDirectory2')"
+                  :pick-label="t('edit.pickFolder')"
+                  @pick="selectRootPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -80,39 +70,29 @@
             <a-col :span="12">
               <a-form-item name="scriptPath" :rules="rules.scriptPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.pathScriptSMain')">
-                    <span class="form-label">
-                      {{ t('edit.mainProgramPath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.scriptPath"
-                    :placeholder="t('edit.pickScriptSMain')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.mainProgramPath')"
+                    :hint="t('edit.pathScriptSMain')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectScriptPath">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.scriptPath"
+                  mode="file"
+                  :placeholder="t('edit.pickScriptSMain')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectScriptPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.extraArgumentsUsedWhen')">
-                    <span class="form-label">
-                      {{ t('edit.launchArguments') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.extraArgumentsUsedWhen')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.Arguments"
@@ -126,12 +106,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.treatScriptAsFinished')">
-                    <span class="form-label">
-                      {{ t('edit.trackChildProcesses') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.trackChildProcesses')"
+                    :hint="t('edit.treatScriptAsFinished')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Script.IfTrackProcess"
@@ -149,12 +128,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.nameProcessTrackOpen')">
-                    <span class="form-label">
-                      {{ t('edit.nameTrackedProcess') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.nameTrackedProcess')"
+                    :hint="t('edit.nameProcessTrackOpen')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessName"
@@ -174,49 +152,42 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.executablePathProcessTrack')">
-                    <span class="form-label">
-                      {{ t('edit.pathTrackedProcess') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Script.TrackProcessExe"
-                    :placeholder="t('edit.pickProcessExecutablePath')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.pathTrackedProcess')"
+                    :hint="t('edit.executablePathProcessTrack')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectTrackProcessExe">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-clear-icon-btn"
-                    :aria-label="t('edit.clearPath')"
-                    @click="clearTrackProcessExe"
-                  >
-                    <template #icon>
-                      <DeleteOutlined />
-                    </template>
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="generalConfig.Script.TrackProcessExe"
+                  mode="file"
+                  :placeholder="t('edit.pickProcessExecutablePath')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectTrackProcessExe"
+                >
+                  <template #after-pick>
+                    <a-button
+                      size="large"
+                      class="path-clear-icon-btn"
+                      :aria-label="t('edit.clearPath')"
+                      @click="clearTrackProcessExe"
+                    >
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.commandLineProcessTrack')">
-                    <span class="form-label">
-                      {{ t('edit.trackedProcessCommandLine') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.trackedProcessCommandLine')"
+                    :hint="t('edit.commandLineProcessTrack')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.TrackProcessCmdline"
@@ -251,41 +222,31 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.configPath"
-                    :placeholder="
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pickConfigurationFolder')
-                        : t('edit.pickConfigurationFile')
-                    "
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectConfigPath">
-                    <template #icon>
-                      <FolderOpenOutlined v-if="generalConfig.Script.ConfigPathMode === 'Folder'" />
-                      <FileOutlined v-else />
-                    </template>
-                    {{
-                      generalConfig.Script.ConfigPathMode === 'Folder'
-                        ? t('edit.pickFolder')
-                        : t('edit.pickFile')
-                    }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="formData.configPath"
+                  :mode="generalConfig.Script.ConfigPathMode === 'Folder' ? 'folder' : 'file'"
+                  :placeholder="
+                    generalConfig.Script.ConfigPathMode === 'Folder'
+                      ? t('edit.pickConfigurationFolder')
+                      : t('edit.pickConfigurationFile')
+                  "
+                  :pick-label="
+                    generalConfig.Script.ConfigPathMode === 'Folder'
+                      ? t('edit.pickFolder')
+                      : t('edit.pickFile')
+                  "
+                  @pick="selectConfigPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.scriptConfigurationFileType')">
-                    <span class="form-label">
-                      {{ t('edit.configurationFileType') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.configurationFileType')"
+                    :hint="t('edit.scriptConfigurationFileType')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Script.ConfigPathMode"
@@ -300,12 +261,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.updateScriptConfigurationFile')">
-                    <span class="form-label">
-                      {{ t('edit.whenConfigurationFileUpdated') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.whenConfigurationFileUpdated')"
+                    :hint="t('edit.updateScriptConfigurationFile')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Script.UpdateConfigMode"
@@ -324,28 +284,19 @@
             <a-col :span="12">
               <a-form-item name="logPath" :rules="rules.logPath">
                 <template #label>
-                  <a-tooltip :title="t('edit.pathFileScriptWrites')">
-                    <span class="form-label">
-                      {{ t('edit.logFilePath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.logPath"
-                    :placeholder="t('edit.pickLogFile')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.logFilePath')"
+                    :hint="t('edit.pathFileScriptWrites')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectLogPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.logPath"
+                  mode="file"
+                  :placeholder="t('edit.pickLogFile')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectLogPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -386,12 +337,11 @@
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
-                  <a-tooltip :title="t('edit.timestampFormatUsedScript')">
-                    <span class="form-label">
-                      {{ t('edit.logTimestampFormat') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.logTimestampFormat')"
+                    :hint="t('edit.timestampFormatUsedScript')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.logTimeFormat"
@@ -421,12 +371,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whenSetIfAny')">
-                    <span class="form-label">
-                      {{ t('edit.successLog') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.successLog')"
+                    :hint="t('edit.whenSetIfAny')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Script.SuccessLog"
@@ -456,12 +405,11 @@
             <a-col :span="12">
               <a-form-item name="errorLog" :rules="rules.errorLog">
                 <template #label>
-                  <a-tooltip :title="t('edit.ifFailureLogAppears')">
-                    <span class="form-label">
-                      {{ t('edit.failureLog') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.failureLog')"
+                    :hint="t('edit.ifFailureLogAppears')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.errorLog"
@@ -505,12 +453,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherAutoMasManages')">
-                    <span class="form-label">
-                      {{ t('edit.enableGameRelatedFeatures') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.enableGameRelatedFeatures')"
+                    :hint="t('edit.whetherAutoMasManages')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Game.Enabled"
@@ -525,12 +472,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whichPlatformGameRuns')">
-                    <span class="form-label">
-                      {{ t('edit.launchMode') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchMode')"
+                    :hint="t('edit.whichPlatformGameRuns')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Game.Type"
@@ -547,68 +493,39 @@
             <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.pathGameExecutable')">
-                    <span class="form-label">
-                      {{ t('edit.gamePath') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="generalConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable2')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.gamePath')"
+                    :hint="t('edit.pathGameExecutable')"
+                    variant="form"
                   />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="generalConfig.Game.Path"
+                  mode="file"
+                  :placeholder="t('edit.pickGameExecutable2')"
+                  :pick-label="t('edit.pickFile')"
+                  @pick="selectGamePath"
+                />
               </a-form-item>
             </a-col>
             <!-- 模拟器相关字段 -->
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.pickEmulatorUse')">
-                    <span class="form-label">
-                      {{ t('edit.emulator') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="generalConfig.Game.EmulatorId"
-                  size="large"
-                  :placeholder="t('edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorSelectField
+                v-model="generalConfig.Game.EmulatorId"
+                :options="emulatorOptions"
+                :loading="emulatorLoading"
+                @change="handleEmulatorChange"
+              />
             </a-col>
 
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.urlCustomProtocol')">
-                    <span class="form-label">
-                      {{ t('edit.url') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.url')"
+                    :hint="t('edit.urlCustomProtocol')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-group class="path-input-group">
                   <a-input
@@ -622,54 +539,13 @@
             </a-col>
 
             <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    :title="
-                      emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
-                        ? t('edit.thisEmulatorCannotBe')
-                        : t('edit.pickEmulatorInstance')
-                    "
-                  >
-                    <span class="form-label">
-                      {{ t('edit.emulatorInstance') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    generalConfig.Game.EmulatorId
-                  "
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="generalConfig.Game.EmulatorIndex"
-                  size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!generalConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                    :disabled="item.disabled"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
+              <EmulatorInstanceField
+                v-model="generalConfig.Game.EmulatorIndex"
+                :emulator-id="generalConfig.Game.EmulatorId"
+                :options="emulatorDeviceOptions"
+                :loading="emulatorDeviceLoading"
+                @save="handleChange('Game', 'EmulatorIndex', $event)"
+              />
             </a-col>
           </a-row>
 
@@ -678,12 +554,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
-                    <span class="form-label">
-                      {{ t('edit.launchArguments') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.commandLineArgumentsUsed')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Game.Arguments"
@@ -697,12 +572,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.howLongWaitAfter2')">
-                    <span class="form-label">
-                      {{ t('edit.waitAfterLaunchSeconds') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.waitAfterLaunchSeconds')"
+                    :hint="t('edit.howLongWaitAfter2')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="generalConfig.Game.WaitTime"
@@ -718,12 +592,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.whetherGameProcessForce')">
-                    <span class="form-label">
-                      {{ t('edit.forceGameClose') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.forceGameClose')"
+                    :hint="t('edit.whetherGameProcessForce')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Game.IfForceClose"
@@ -743,12 +616,11 @@
           <a-col :span="8">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.processNameEG')">
-                  <span class="form-label">
-                    {{ t('edit.processName') }}
-                    <QuestionCircleOutlined class="help-icon" />
-                  </span>
-                </a-tooltip>
+                <FieldLabelWithHint
+                  :text="t('edit.processName')"
+                  :hint="t('edit.processNameEG')"
+                  variant="form"
+                />
               </template>
               <a-input
                 v-model:value="generalConfig.Game.ProcessName"
@@ -771,67 +643,34 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.skipRunOnceThis')">
-                    <span class="form-label">
-                      {{ t('edit.runsPerDay') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.skipRunOnceThis')"
+                enhanced
+                @save="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.ifRunStillUnfinished')">
-                    <span class="form-label">
-                      {{ t('edit.retryLimit') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit')"
+                :hint="t('edit.ifRunStillUnfinished')"
+                enhanced
+                @save="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip :title="t('edit.treatRunAsTimed')">
-                    <span class="form-label">
-                      {{ t('edit.runTimeoutMinutes') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number
-                  v-model:value="generalConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="generalConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.treatRunAsTimed')"
+                enhanced
+                @save="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -841,6 +680,11 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
+import EmulatorSelectField from './components/EmulatorSelectField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import GeneralTemplateUpload from './components/GeneralTemplateUpload.vue'
 import { createGeneralScriptDraft } from './generalScriptDraft'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
@@ -857,12 +701,7 @@ import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
-import {
-  DeleteOutlined,
-  FileOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'

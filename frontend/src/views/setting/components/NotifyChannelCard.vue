@@ -69,6 +69,8 @@ const hintText = computed(() =>
   </button>
 </template>
 
+<style scoped src="./notifyChannel.css"></style>
+
 <style scoped>
 .chan-card {
   text-align: left;
@@ -156,12 +158,6 @@ const hintText = computed(() =>
 }
 
 .tag {
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 7px;
-  border-radius: 4px;
-  background: var(--ant-color-fill-tertiary);
-  color: var(--ant-color-text-secondary);
   font-weight: 400;
 }
 

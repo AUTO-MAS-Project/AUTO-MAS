@@ -32,7 +32,7 @@ from typing import Dict, Mapping, Optional
 from pydantic import JsonValue, ValidationError
 
 from app.models.schema import WSEnvelope
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("WS协议")
 

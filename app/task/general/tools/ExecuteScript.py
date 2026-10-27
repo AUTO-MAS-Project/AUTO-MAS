@@ -23,9 +23,7 @@
 import sys
 from pathlib import Path
 
-from app.utils import ProcessRunner, get_logger
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.process import platform_process
+from app.utils import IS_WINDOWS, ProcessRunner, get_logger, process_platform
 
 logger = get_logger("自定义脚本执行工具")
 
@@ -68,7 +66,7 @@ async def execute_script_task(script_path: Path | None, task_name: str) -> bool:
             return False
         else:
             # 使用系统默认程序打开
-            await platform_process.open_protocol(str(script_path))
+            await process_platform.platform_process.open_protocol(str(script_path))
             return True
 
         # 创建异步子进程

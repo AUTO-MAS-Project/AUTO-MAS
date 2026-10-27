@@ -35,7 +35,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import mark_native_config_injected, read_file, write_file
+from app.utils import io as _utils_io
 
 from .AutoProxy import (
     _MAA_CONFIG_FILES,
@@ -301,7 +301,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     configuration["TaskQueue"] = _repair_maa_task_queue(queue)
                     repaired_queues += 1
         if repaired_queues and not self.view_only:
-            write_file(mas_dir / "gui.new.json", base_gui_new_set)
+            _utils_io.write_file(mas_dir / "gui.new.json", base_gui_new_set)
             logger.info(f"MAA 已对齐 {repaired_queues} 个三段理智预设队列")
 
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
@@ -356,8 +356,8 @@ class ScriptConfigTask(TaskExecuteBase):
         update_set["AutoDownloadUpdatePackage"] = False
         update_set["AutoInstallUpdatePackage"] = False
 
-        write_file(self.maa_set_path / "gui.new.json", gui_new_set)
-        mark_native_config_injected(
+        _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maa_set_path,
             script_id=self.script_info.script_id,
@@ -409,7 +409,7 @@ class ScriptConfigTask(TaskExecuteBase):
         current_docs = {}
         for name in _MAA_CONFIG_FILES:
             try:
-                current = read_file(self.maa_set_path / name)
+                current = _utils_io.read_file(self.maa_set_path / name)
             except (OSError, json.JSONDecodeError) as e:
                 logger.opt(exception=True).warning(
                     f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
@@ -443,7 +443,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     if isinstance(queue, list):
                         configurations["TaskQueue"] = _repair_maa_task_queue(queue)
         for name, current in current_docs.items():
-            write_file(mas_dir / name, current)
+            _utils_io.write_file(mas_dir / name, current)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

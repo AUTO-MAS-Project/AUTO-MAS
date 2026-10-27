@@ -1,11 +1,7 @@
 <template>
   <div class="task-tree-container">
     <div v-if="taskData.length === 0" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-image-container">
-          <img src="@/assets/NoData.png" :alt="t('comp.noData2')" class="empty-image" />
-        </div>
-      </div>
+      <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
     </div>
     <div v-else class="task-tree">
       <div v-for="script in taskData" :key="`script-${script.script_id}`" class="script-card">
@@ -61,6 +57,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
@@ -380,34 +377,5 @@ defineExpose({
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

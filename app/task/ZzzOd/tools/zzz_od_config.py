@@ -38,14 +38,8 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app.utils.io import (
-    atomic_write,
-    read_dict_file,
-    read_file,
-    swap_in_dir,
-    write_file,
-)
-from app.utils.logger import get_logger
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("绝区零一条龙配置")
 
@@ -145,7 +139,7 @@ def _read_registry(root: Path) -> dict[str, Any]:
         ConfigCorruptedError: 文件存在但解析失败或根节点非映射。
     """
 
-    return read_dict_file(_one_dragon_file(root), format=".sanitized.yaml")
+    return _utils_io.read_dict_file(_one_dragon_file(root), format=".sanitized.yaml")
 
 
 def instance_dir(root: Path, idx: int) -> Path:
@@ -249,7 +243,7 @@ def write_after_done(root: Path, value: str) -> None:
     with _YAML_LOCK:
         data = _read_registry(root)
         data["after_done"] = value
-        write_file(_one_dragon_file(root), data)
+        _utils_io.write_file(_one_dragon_file(root), data)
 
 
 def write_instance_run(root: Path, value: str) -> None:
@@ -258,7 +252,7 @@ def write_instance_run(root: Path, value: str) -> None:
     with _YAML_LOCK:
         data = _read_registry(root)
         data["instance_run"] = value
-        write_file(_one_dragon_file(root), data)
+        _utils_io.write_file(_one_dragon_file(root), data)
 
 
 MAS_SLOT_BASE = 1001
@@ -338,7 +332,7 @@ def _registry_rmw(root: Path, mutator: Callable[[list[dict]], None]) -> None:
         ]
         mutator(entries)
         data["instance_list"] = entries
-        write_file(_one_dragon_file(root), data)
+        _utils_io.write_file(_one_dragon_file(root), data)
 
 
 def set_instance_active_in_od(root: Path, idx: int, value: bool) -> None:
@@ -543,7 +537,7 @@ def write_instance_view(
         # None（查看会话/运行）不写该键，GUI 按上游默认显示。
         if after_done is not None:
             payload["after_done"] = after_done
-        write_file(original, payload)
+        _utils_io.write_file(original, payload)
 
 
 def restore_instance_view(root: Path) -> None:
@@ -564,7 +558,7 @@ def restore_instance_view(root: Path) -> None:
 def read_game_account(config_dir: Path) -> dict:
     """读取账号配置（区服/游戏路径/账密/语言）。"""
 
-    return read_dict_file(config_dir / "game_account.yml", allow_empty=True)
+    return _utils_io.read_dict_file(config_dir / "game_account.yml", allow_empty=True)
 
 
 def write_game_account(config_dir: Path, patch: dict) -> dict:
@@ -572,9 +566,9 @@ def write_game_account(config_dir: Path, patch: dict) -> dict:
 
     path = config_dir / "game_account.yml"
     with _YAML_LOCK:
-        data = read_dict_file(path, allow_empty=True)
+        data = _utils_io.read_dict_file(path, allow_empty=True)
         data.update(patch)
-        write_file(path, data)
+        _utils_io.write_file(path, data)
         return data
 
 
@@ -657,7 +651,7 @@ def merge_dx12_argument(advance: str, dx12: bool) -> str:
 def read_game(config_dir: Path) -> dict:
     """读取游戏配置（启动参数等）。"""
 
-    return read_dict_file(config_dir / "game.yml", allow_empty=True)
+    return _utils_io.read_dict_file(config_dir / "game.yml", allow_empty=True)
 
 
 def write_game(config_dir: Path, patch: dict) -> dict:
@@ -665,9 +659,9 @@ def write_game(config_dir: Path, patch: dict) -> dict:
 
     path = config_dir / "game.yml"
     with _YAML_LOCK:
-        data = read_dict_file(path, allow_empty=True)
+        data = _utils_io.read_dict_file(path, allow_empty=True)
         data.update(patch)
-        write_file(path, data)
+        _utils_io.write_file(path, data)
         return data
 
 
@@ -708,7 +702,9 @@ def normalize_app_group_entries(items: list) -> list[dict]:
 def read_app_group(config_dir: Path) -> list[dict]:
     """读取一条龙任务编排（app_list，顺序即执行顺序，元素含 app_id/enabled）。"""
 
-    data = read_dict_file(config_dir / "one_dragon" / "_group.yml", allow_empty=True)
+    data = _utils_io.read_dict_file(
+        config_dir / "one_dragon" / "_group.yml", allow_empty=True
+    )
     return [
         dict(item) for item in (data.get("app_list") or []) if isinstance(item, dict)
     ]
@@ -717,7 +713,7 @@ def read_app_group(config_dir: Path) -> list[dict]:
 def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
     """整表写回一条龙任务编排（app_id + enabled，顺序即执行顺序）。"""
 
-    write_file(
+    _utils_io.write_file(
         config_dir / "one_dragon" / "_group.yml",
         {"app_list": normalize_app_group_entries(app_list)},
     )
@@ -726,7 +722,7 @@ def write_app_group(config_dir: Path, app_list: list[dict]) -> None:
 def read_team_list(config_dir: Path) -> list[dict]:
     """读取预备编队原始持久化条目（team.yml 的 team_list）。"""
 
-    data = read_dict_file(config_dir / "team.yml", allow_empty=True)
+    data = _utils_io.read_dict_file(config_dir / "team.yml", allow_empty=True)
     return [
         dict(item) for item in (data.get("team_list") or []) if isinstance(item, dict)
     ]
@@ -808,7 +804,7 @@ def write_team_list(config_dir: Path, teams: list[dict]) -> list[dict]:
                 "agent_id_list": agents,
             }
         )
-    write_file(config_dir / "team.yml", {"team_list": normalized})
+    _utils_io.write_file(config_dir / "team.yml", {"team_list": normalized})
     return normalized
 
 
@@ -838,7 +834,7 @@ def snapshot_run_records(root: Path, idx: int) -> dict[str, int]:
         return result
     for path in sorted(record_dir.glob("*.yml")):
         try:
-            data = read_file(path, format=".sanitized.yaml") or {}
+            data = _utils_io.read_file(path, format=".sanitized.yaml") or {}
         except Exception as exc:  # noqa: BLE001 - 单个坏记录不应中断整个任务
             logger.warning(f"运行记录读取失败，按未跑处理：{path.name}：{exc}")
             data = {}
@@ -928,7 +924,7 @@ def restore_run_record_files(
     record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
     for name, payload in snapshot.items():
         if payload is not None:
-            atomic_write(record_dir / name, payload)
+            _utils_io.atomic_write(record_dir / name, payload)
 
 
 # ── 实例槽备份 / 恢复（运行与配置会话的现场保护）──
@@ -938,7 +934,7 @@ def _atomic_copytree(source: Path, target: Path) -> None:
     """目录整体替换，目标旧目录先改名留底再换入。"""
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    swap_in_dir(source, target)
+    _utils_io.swap_in_dir(source, target)
 
 
 def backup_instance(root: Path, idx: int, backup_dir: Path) -> None:

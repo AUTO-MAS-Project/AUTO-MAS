@@ -2,11 +2,13 @@
   <div class="detail-panel">
     <!-- 未选择用户时的空状态 -->
     <div v-if="!hasUserSelected" class="empty-state">
-      <div class="empty-content">
-        <UserSwitchOutlined class="empty-icon" />
-        <span class="empty-title">{{ t('history.selectUser') }}</span>
-        <span class="empty-desc">{{ t('history.selectUserDesc') }}</span>
-      </div>
+      <a-empty :image-style="{ height: '56px' }">
+        <template #image><UserSwitchOutlined class="empty-icon" /></template>
+        <template #description>
+          <div>{{ t('history.selectUser') }}</div>
+          <div>{{ t('history.selectUserDesc') }}</div>
+        </template>
+      </a-empty>
     </div>
 
     <!-- 已选择用户时显示详情 -->
@@ -91,27 +93,8 @@ defineEmits<{
   min-height: 300px;
 }
 
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  text-align: center;
-}
-
 .empty-icon {
   font-size: 56px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-.empty-desc {
-  font-size: 14px;
-  max-width: 280px;
 }
 
 .detail-content {

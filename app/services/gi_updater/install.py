@@ -81,7 +81,7 @@ from app.services.gi_updater.versioning import (
     GameVersion,
     GameVersionBase,
 )
-from app.utils.update_files import directory_lock as game_dir_lock
+from app.utils import update_files as _utils_update_files
 
 __all__ = ["UpdateKind", "UpdatePlan", "InstallResult", "InstallManagerBase"]
 
@@ -393,7 +393,7 @@ class InstallManagerBase:
 
         beat = asyncio.create_task(heartbeat()) if on_progress is not None else None
         try:
-            async with game_dir_lock(game_path):
+            async with _utils_update_files.directory_lock(game_path):
                 await asyncio.to_thread(os.makedirs, temp_dir, exist_ok=True)
                 while pending:
                     if should_abort is not None and should_abort():
@@ -503,7 +503,7 @@ class InstallManagerBase:
         原子替换，没落盘的本轮就不认。删之前必须先拿到该目录的串行锁，否则同一目录上另一
         轮正在用的中间产物会被连着删掉。
         """
-        async with game_dir_lock(self.game_path):
+        async with _utils_update_files.directory_lock(self.game_path):
             temp_dir = os.path.join(self.game_path, _TEMP_DIR_NAME)
             if not os.path.isdir(temp_dir):
                 return []

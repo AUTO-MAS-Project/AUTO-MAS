@@ -99,9 +99,9 @@ class ZzzOdContext:
             RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
         """
 
-        from app.utils.config_archive import config_root_key
+        from app.utils import config_archive as _utils_config_archive
 
-        key = config_root_key(root)
+        key = _utils_config_archive.config_root_key(root)
         for script_config in self.scripts.values():
             if (
                 not isinstance(script_config, ZzzOdConfig)
@@ -109,7 +109,10 @@ class ZzzOdContext:
             ):
                 continue
             script_root = str(script_config.Info.RootPath or "").strip()
-            if script_root and config_root_key(script_root) == key:
+            if (
+                script_root
+                and _utils_config_archive.config_root_key(script_root) == key
+            ):
                 raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
 
     def user(
@@ -150,17 +153,20 @@ class ZzzOdContext:
         """
 
         from app.task.ZzzOd.tools import read_native_registry
-        from app.utils.config_archive import config_root_key
+        from app.utils import config_archive as _utils_config_archive
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
-        key = config_root_key(root)
+        key = _utils_config_archive.config_root_key(root)
         for script_uid, script_config in self.scripts.items():
             if not isinstance(script_config, ZzzOdConfig):
                 continue
             if exclude_same_script and str(script_uid) == script_id:
                 continue
             script_root = str(script_config.Info.RootPath or "").strip()
-            if not script_root or config_root_key(script_root) != key:
+            if (
+                not script_root
+                or _utils_config_archive.config_root_key(script_root) != key
+            ):
                 continue
             script_name = str(script_config.Info.Name or "未知脚本")
             for other_uid, cfg in script_config.UserData.items():

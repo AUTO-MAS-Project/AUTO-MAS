@@ -24,9 +24,8 @@ from app.tools.game_calendar import (
     CALENDAR_GAMES,
     fetch_calendar_activities,
 )
-from app.utils import get_logger
-from app.utils.constants import UTC8
-from app.utils.io import write_file
+from app.utils import UTC8, get_logger
+from app.utils import io as _utils_io
 
 if TYPE_CHECKING:
     from app.core.notify import HostNotificationService
@@ -447,7 +446,7 @@ class _GameCalendar:
             key: item for key, item in self._completions.items() if item.end_at > now
         }
         try:
-            write_file(
+            _utils_io.write_file(
                 Config.config_path / "GameCalendarSchedule.json",
                 {
                     "reminders": _SCHEDULE_ADAPTER.dump_python(

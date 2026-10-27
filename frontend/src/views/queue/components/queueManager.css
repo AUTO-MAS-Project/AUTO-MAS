@@ -1,0 +1,25 @@
+.queue-manager-card {
+  margin-bottom: 24px;
+}
+
+.queue-manager-card :deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* 操作按钮布局 */
+:deep(.ant-btn) {
+  min-width: auto;
+  height: 32px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:deep(.ant-space) {
+  gap: 6px !important;
+}
+
+/* 按钮图标样式调整 */
+:deep(.ant-btn .anticon) {
+  font-size: 14px;
+}

@@ -94,7 +94,12 @@ try:
         MaaFWLoopGuard,
         parse_loop_guard_exempt,
     )
-    from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
+    from .models import (
+        MaaFWDeviceConfig,
+        MaaFWFailureScreenshot,
+        MaaFWResourceFailure,
+        MaaFWRunResult,
+    )
     from .pipeline_override import deep_merge_pipeline_override
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
     from .run_signal import (
@@ -116,6 +121,7 @@ except ImportError:
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
+        MaaFWResourceFailure,
         MaaFWRunResult,
     )
     from pipeline_override import (  # type: ignore[no-redef]
@@ -343,6 +349,16 @@ class MaaFWTaskError(RuntimeError):
     def __init__(self, message: str, *, user_message: str | None = None) -> None:
         super().__init__(message)
         self.user_message = user_message
+
+
+class MaaFWResourceLoadError(RuntimeError):
+    """资源包没能加载（``kind`` 见 ``MaaFWResourceFailure``）。文案与以前相同（宿主日志、
+    ``errorMessage`` 不变），另外带上结构化的种类与目录，随结果交给宿主。"""
+
+    def __init__(self, message: str, *, kind: str, path: str) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.path = path
 
 
 @dataclass(frozen=True)
@@ -1231,6 +1247,11 @@ class MaaFWRunner:
                 userMessage=user_message,
                 failureScreenshots=self.failure_screenshots,
                 timedOut=isinstance(exc, MaaFWRunTimeoutError),
+                resourceFailure=(
+                    MaaFWResourceFailure(kind=exc.kind, path=exc.path)
+                    if isinstance(exc, MaaFWResourceLoadError)
+                    else None
+                ),
             )
         finally:
             self._cancel_task_deadline_timer()
@@ -1919,11 +1940,22 @@ class MaaFWRunner:
 
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
-            raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
-        self._wait_job(
-            self.resource.post_bundle(path_info.resolved),
-            failure=f"加载资源失败: {path_info.resolved}",
-        )
+            raise MaaFWResourceLoadError(
+                f"资源目录不存在: {path_info.resolved}",
+                kind="missing",
+                path=str(path_info.resolved),
+            )
+        try:
+            self._wait_job(
+                self.resource.post_bundle(path_info.resolved),
+                failure=f"加载资源失败: {path_info.resolved}",
+            )
+        except RuntimeError as exc:
+            # 资源加载是普通 Job，拿不到失败详情：具体原因只在原生 ERR 行里（原生日志与
+            # worker 的 stdout），由宿主按这里给的种类与目录去找。
+            raise MaaFWResourceLoadError(
+                str(exc), kind="load_failed", path=str(path_info.resolved)
+            ) from exc
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:

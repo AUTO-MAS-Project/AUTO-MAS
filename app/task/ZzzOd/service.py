@@ -23,13 +23,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.utils import get_logger
-from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, normalize_base_source
+from app.utils import constants as _utils_constants
+from app.utils import logger as _utils_logger
 
 from .config_context import ZzzOdContext
 from .recovery import ZzzOdRecovery
 
-logger = get_logger("配置管理")
+logger = _utils_logger.get_logger("配置管理")
 
 
 def read_task_catalog(root: Path) -> list[dict[str, Any]]:
@@ -56,17 +56,24 @@ class ZzzOdService:
         script_config = self.context.script_config(script_id)
         uid = uuid.UUID(user_id)
         user_config = script_config.UserData[uid]
-        new_base = normalize_base_source(data.get("Info", {}).get("Base"))
-        if new_base == BASE_NATIVE:
+        new_base = _utils_constants.normalize_base_source(
+            data.get("Info", {}).get("Base")
+        )
+        if new_base == _utils_constants.BASE_NATIVE:
             data.setdefault("OneDragon", {})["AppList"] = "[]"
             # 直控恒为纯原生裸跑，旧快速配置开关归关。
             data.setdefault("Info", {})["IfQuickConfig"] = False
         if (
-            new_base == BASE_NATIVE
-            and normalize_base_source(user_config.Info.Base or BASE_INDEPENDENT)
-            != BASE_NATIVE
+            new_base == _utils_constants.BASE_NATIVE
+            and _utils_constants.normalize_base_source(
+                user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
+            )
+            != _utils_constants.BASE_NATIVE
             and any(
-                normalize_base_source(cfg.Info.Base or BASE_INDEPENDENT) == BASE_NATIVE
+                _utils_constants.normalize_base_source(
+                    cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
+                )
+                == _utils_constants.BASE_NATIVE
                 for other_uid, cfg in script_config.UserData.items()
                 if other_uid != uid
             )

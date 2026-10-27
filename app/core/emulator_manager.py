@@ -28,9 +28,8 @@ from typing import Dict, Literal
 from app.models.emulator import DeviceBase
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.models.schema import WSEmulatorOperationData, WSTaskNoticeData
-from app.utils import EMULATOR_TYPE_BOOK, get_logger
-from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
-from app.utils.emulator2.facade import Emulator2Manager
+from app.utils import EMULATOR_SPLASH_ADS_PATH_BOOK, EMULATOR_TYPE_BOOK, get_logger
+from app.utils import emulator2 as _utils_emulator2
 
 from .config import Config
 from .ws import Publisher, protocol
@@ -95,7 +94,7 @@ class _EmulatorManager:
                 raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
             if operate == "open":
-                if isinstance(temp_emulator, Emulator2Manager):
+                if isinstance(temp_emulator, _utils_emulator2.facade.Emulator2Manager):
                     # 模拟器页手动点的启动：魔改 AVD 据此带窗口开机（任务拉起跟静默模式走）
                     await temp_emulator.open(index, manual=True)
                 else:

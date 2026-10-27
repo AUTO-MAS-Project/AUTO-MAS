@@ -13,14 +13,14 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
-from app.utils.expression import compile_expression
-from app.utils.LogPatternExtractor import (
+from app.utils import (
     LOG_TYPE_NORMAL,
     MultiLineAggregator,
     RegexMatcher,
     apply_patterns,
     compile_regex,
 )
+from app.utils import expression as _utils_expression
 
 from .logtype import LogType
 from .markers import emit, render_flush, render_push
@@ -171,7 +171,7 @@ class LogCollect:
         match_re = compile_regex(match_regex)
         if match_re is None:
             raise ValueError(f"匹配正则无效: {match_regex}")
-        extract = compile_expression(expr) if expr else None
+        extract = _utils_expression.compile_expression(expr) if expr else None
         self._line_rules.append(
             RegexMatcher(match=match_re, extract=extract, log_type=log_type)
         )

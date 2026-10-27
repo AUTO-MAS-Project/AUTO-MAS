@@ -56,8 +56,7 @@ import httpx
 
 from app.core import Config
 from app.services.community_http import create_community_client
-from app.utils.logger import get_logger
-from app.utils.security import format_exception_reason
+from app.utils import format_exception_reason, get_logger
 
 logger = get_logger("米游社扫码登录")
 

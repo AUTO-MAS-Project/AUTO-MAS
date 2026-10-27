@@ -19,12 +19,11 @@
       <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">
-              {{ t('edit.daysLeft') }}
-              <a-tooltip :title="t('edit.daysLeftAccount1')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.daysLeft')"
+              :hint="t('edit.daysLeftAccount1')"
+              variant="form"
+            />
           </template>
           <a-input-number
             v-model:value="formData.Info.RemainedDay"
@@ -57,12 +56,11 @@
       <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">
-              {{ t('edit.accountId') }}
-              <a-tooltip :title="t('edit.usedSwitchAccountsCn2')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.accountId')"
+              :hint="t('edit.usedSwitchAccountsCn2')"
+              variant="form"
+            />
           </template>
           <a-input
             v-model:value="formData.Info.Id"
@@ -75,12 +73,11 @@
       <a-col :xs="24" :sm="12" :md="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">
-              {{ t('edit.password') }}
-              <a-tooltip :title="t('edit.userSPasswordStored')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.password')"
+              :hint="t('edit.userSPasswordStored')"
+              variant="form"
+            />
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
@@ -147,6 +144,7 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 

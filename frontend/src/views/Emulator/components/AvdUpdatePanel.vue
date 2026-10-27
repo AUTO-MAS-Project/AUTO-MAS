@@ -256,14 +256,9 @@ onBeforeUnmount(() => {
   </section>
 </template>
 
-<style scoped>
-.block-title {
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
+<style scoped src="./avdSection.css"></style>
 
+<style scoped>
 .update-loading {
   display: flex;
   align-items: center;

@@ -41,17 +41,11 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
+from app.utils import config_archive as _utils_config_archive
+from app.utils import constants as _utils_constants
+from app.utils import game_update as _utils_game_update
 from app.utils import get_logger
-from app.utils.config_archive import archive_files
-from app.utils.constants import TASK_MODE_ZH, game_now
-from app.utils.game_update import GameUpdateResult
-from app.utils.io import (
-    clear_native_config_snapshot,
-    commit_native_config_snapshot,
-    read_native_config_snapshot,
-    recover_native_config,
-    swap_in_dir,
-)
+from app.utils import io as _utils_io
 
 from .AutoProxy import (
     AutoProxyTask,
@@ -126,7 +120,7 @@ class MaaManager(ScriptManagerBase):
         self.config_lock_acquired = False
         self._resource_access: ExitStack = ExitStack()
         self._device_provider = device_provider
-        self.game_update_results: dict[str, GameUpdateResult] = {}
+        self.game_update_results: dict[str, _utils_game_update.GameUpdateResult] = {}
         self._game_update_tasks: list[EmulatorGameUpdateTask] = []
         self._update_config_dir: Path | None = None
         self._pending_update: tuple[str, str] | None = None
@@ -155,7 +149,7 @@ class MaaManager(ScriptManagerBase):
                             self.script_info.status = "异常"
                             # 官方写盘后的配置可能无法按注入指纹自动恢复，原始内容留进已有备份池。
                             backup_path = await _run_write_thread(
-                                archive_files,
+                                _utils_config_archive.archive_files,
                                 files=collect_native_files(self.temp_path),
                                 store_root=native_backup_root(self.maa_set_path),
                                 force=True,
@@ -170,9 +164,9 @@ class MaaManager(ScriptManagerBase):
                                 self.temp_path.exists()
                                 and not self._keep_script_config_changes()
                             ):
-                                swap_in_dir(self.temp_path, self.maa_set_path)
+                                _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
                             await self._restore_pending_update()
-                            clear_native_config_snapshot(self.temp_path)
+                            _utils_io.clear_native_config_snapshot(self.temp_path)
                 finally:
                     self._resource_access.close()
 
@@ -382,7 +376,7 @@ class MaaManager(ScriptManagerBase):
             logger.info("检测到上次中断的 MAA 库存缓存存底, 先还原安装目录")
             restore_depot_cache(self.maa_set_path.parent, depot_snapshot)
 
-        if commit_native_config_snapshot(
+        if _utils_io.commit_native_config_snapshot(
             self.temp_path,
             self.maa_set_path,
             script_id=self.script_info.script_id,
@@ -421,18 +415,18 @@ class MaaManager(ScriptManagerBase):
         # 指纹不匹配会保护现场并清理 Temp；先入原安装的备份池，保留原始内容。
         # 上次归档若失败，本次也必须归档成功后才允许清理，不能只记录告警继续。
         if (
-            read_native_config_snapshot(
+            _utils_io.read_native_config_snapshot(
                 self.temp_path, expected_script_id=self.script_info.script_id
             )
             is not None
         ):
             files = collect_native_files(self.temp_path)
             if files:
-                archive_files(
+                _utils_config_archive.archive_files(
                     files=files,
                     store_root=native_backup_root(self.maa_set_path),
                 )
-        result = recover_native_config(
+        result = _utils_io.recover_native_config(
             self.temp_path,
             self.maa_set_path,
             expected_script_id=self.script_info.script_id,
@@ -512,9 +506,11 @@ class MaaManager(ScriptManagerBase):
                 ):
                     continue
                 # 单独运行是用户主动指定的一次性运行；上限为 0 时不限次数。
-                curdate = game_now(current_config.Info.Server).strftime("%Y-%m-%d")
+                curdate = _utils_constants.game_now(
+                    current_config.Info.Server
+                ).strftime("%Y-%m-%d")
                 if current_config.Data.LastProxyDate.strftime("%Y-%m-%d") != curdate:
-                    current_config.Data.LastProxyDate = game_now(
+                    current_config.Data.LastProxyDate = _utils_constants.game_now(
                         current_config.Info.Server
                     )
                     await current_config.commit()
@@ -605,7 +601,7 @@ class MaaManager(ScriptManagerBase):
                     await close_emulator(self)
                 await config_manager.flush()
 
-                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+                title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{_utils_constants.TASK_MODE_ZH[self.task_info.mode]}任务报告"
                 result = self.build_proxy_report()
 
                 try:

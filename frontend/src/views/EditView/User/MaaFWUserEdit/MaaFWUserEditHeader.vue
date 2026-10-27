@@ -1,21 +1,16 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-left">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="scriptRoute" class="breadcrumb-link">
-            {{ scriptName || 'MFW' }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <span class="breadcrumb-current">{{
-            isEdit ? t('comp.editUser') : t('comp.addUser2')
-          }}</span>
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+  <UserEditHeader
+    class="maafw-user-edit-header"
+    :script-id="scriptId"
+    :script-name="scriptName || 'MFW'"
+    :script-route="scriptRoute"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :cancel-loading="leaving"
+    actions-size="small"
+    @cancel="emit('cancel')"
+  >
+    <template #breadcrumb-extra>
       <Transition name="save-chip-fade">
         <span
           v-if="saveStatus !== 'idle'"
@@ -35,36 +30,14 @@
           }}</span>
         </span>
       </Transition>
-    </div>
-
-    <a-space>
-      <a-button v-if="props.userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <!-- 点了「返回」在等保存 / 确认框开着时转圈，不再重复触发 -->
-      <a-button size="large" :loading="props.leaving" @click="emit('cancel')">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </UserEditHeader>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import {
-  ArrowLeftOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  FolderOpenOutlined,
-  LoadingOutlined,
-} from '@ant-design/icons-vue'
-import { useUserApi } from '@/composables/useUserApi'
+import { CheckCircleOutlined, CloseCircleOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import type {
   MaaFWUserHeaderSectionEmits,
   MaaFWUserHeaderSectionProps,
@@ -73,37 +46,20 @@ import type {
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-const props = defineProps<MaaFWUserHeaderSectionProps>()
+defineProps<MaaFWUserHeaderSectionProps>()
 
 const emit = defineEmits<MaaFWUserHeaderSectionEmits>()
-
-const { loading: folderLoading, openUserConfigFolder } = useUserApi()
-
-const handleOpenFolder = async () => {
-  if (!props.userId) return
-  await openUserConfigFolder(props.scriptId, props.userId)
-}
 </script>
 
 <style scoped>
-.user-edit-header {
+.maafw-user-edit-header {
   max-width: 1400px;
   margin: 0 auto 24px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  padding: 0;
   gap: 16px;
 }
 
-.header-left {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.breadcrumb-link {
+.maafw-user-edit-header :deep(.breadcrumb-link) {
   display: inline-flex;
   align-items: center;
   color: var(--ant-color-text-secondary);
@@ -115,11 +71,11 @@ const handleOpenFolder = async () => {
   text-overflow: ellipsis;
 }
 
-.breadcrumb-link:hover {
+.maafw-user-edit-header :deep(.breadcrumb-link:hover) {
   color: var(--ant-color-primary);
 }
 
-.breadcrumb-current {
+.maafw-user-edit-header :deep(.breadcrumb-current) {
   display: inline-flex;
   align-items: center;
   color: var(--ant-color-text);
@@ -160,12 +116,5 @@ const handleOpenFolder = async () => {
 .save-chip-fade-enter-from,
 .save-chip-fade-leave-to {
   opacity: 0;
-}
-
-@media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
 }
 </style>

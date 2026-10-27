@@ -614,10 +614,12 @@ onMounted(() => {
         </draggable>
 
         <!-- 空状态 -->
-        <div v-if="accounts.length === 0" class="empty-state">
-          <div class="empty-hint">{{ t('gamesign.list.empty') }}</div>
-          <div class="empty-guide">{{ t('gamesign.list.emptyGuide') }}</div>
-        </div>
+        <a-empty v-if="accounts.length === 0" class="empty-state" :image="false">
+          <template #description>
+            <div>{{ t('gamesign.list.empty') }}</div>
+            <div>{{ t('gamesign.list.emptyGuide') }}</div>
+          </template>
+        </a-empty>
       </div>
     </div>
 
@@ -691,10 +693,7 @@ onMounted(() => {
 /* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
 .section-header-actions {
-  display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1104,15 +1103,6 @@ onMounted(() => {
 .empty-state {
   text-align: center;
   padding: 48px 0;
-}
-.empty-hint {
-  color: var(--ant-color-text-tertiary);
-  font-size: 15px;
-  margin-bottom: 6px;
-}
-.empty-guide {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 
 /* ==================== 模态框 ==================== */

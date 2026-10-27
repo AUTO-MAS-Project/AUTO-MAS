@@ -36,8 +36,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app.utils.io import force_rmtree
-from app.utils.update_files import file_md5, file_size, native_path, replace_file
+from app.utils import io as _utils_io
+from app.utils import update_files as _utils_update_files
 
 from .common import _HALF_LANDED_MESSAGE, EndfieldUpdateError, Release, logger
 from .protocol import _plain_file_name, _safe_file_name
@@ -156,7 +156,10 @@ def write_staging_state(staging: Path, state: StagingState) -> bool:
         temp.write_text(
             json.dumps(doc, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
         )
-        os.replace(native_path(temp), native_path(target))
+        os.replace(
+            _utils_update_files.native_path(temp),
+            _utils_update_files.native_path(target),
+        )
     except OSError as error:
         logger.warning(f"未能写入续传状态 {target}：{error}")
         return False
@@ -235,11 +238,13 @@ async def _reusable_parts(
             if candidate.name in claimed and candidate != target:
                 # 这个文件已经归了别的槽位，不能再动它
                 continue
-            if file_size(candidate) != part.size:
+            if _utils_update_files.file_size(candidate) != part.size:
                 continue
             if part.md5:
                 try:
-                    digest = await asyncio.to_thread(file_md5, candidate)
+                    digest = await asyncio.to_thread(
+                        _utils_update_files.file_md5, candidate
+                    )
                 except OSError as error:
                     # 读不动（被占用、权限）只说明这一卷这次认不出来，不打断整轮更新
                     logger.warning(
@@ -258,7 +263,7 @@ async def _reusable_parts(
             continue
         if found != target:
             try:
-                replace_file(found, target, clear_readonly=True)
+                _utils_update_files.replace_file(found, target, clear_readonly=True)
             except OSError as error:
                 logger.warning(f"未能把复用的分卷 {found.name} 改名为 {name}：{error}")
                 slots.append(None)
@@ -310,7 +315,7 @@ class _Staging:
             self.path, read_staging_state(self.path), self._release, now=time.time()
         )
         if state is None:
-            force_rmtree(self.path)
+            _utils_io.force_rmtree(self.path)
             if self.path.exists():
                 logger.warning(
                     f"未能清除上轮暂存 {self.path}，它占的还要算进本轮磁盘余量"
@@ -402,7 +407,7 @@ class _Staging:
 
         try:
             if completed or self._state is None:
-                force_rmtree(self.path)
+                _utils_io.force_rmtree(self.path)
                 return
             if self._state.landing_started:
                 logger.info("已保留落了一半的现场与已下载的分卷，下一轮接着完成")
@@ -410,7 +415,7 @@ class _Staging:
                 logger.info("已保留已下载的分卷，下一轮接着下")
             else:
                 # 盘上一个字节都没下成：留一个空目录加状态没有意义，下一轮还会从头来
-                force_rmtree(self.path)
+                _utils_io.force_rmtree(self.path)
         except OSError as error:
             logger.warning(f"收尾清理暂存 {self.path} 失败，留给下一轮再清：{error}")
 
@@ -436,7 +441,7 @@ def _residual_state(install_dir: Path) -> StagingState | None:
 def _clear_residual(install_dir: Path) -> None:
     """客户端已经不需要这份暂存了（已是目标版本、或已不是当初那个客户端）就清干净。"""
 
-    force_rmtree(install_dir / _STAGING_DIR_NAME)
+    _utils_io.force_rmtree(install_dir / _STAGING_DIR_NAME)
 
 
 def _half_landed_block(residual: StagingState | None) -> str | None:

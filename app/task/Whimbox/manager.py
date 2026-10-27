@@ -36,8 +36,7 @@ from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, get_logger
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask

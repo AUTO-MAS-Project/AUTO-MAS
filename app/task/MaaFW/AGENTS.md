@@ -60,10 +60,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
   改写 / 摘掉 `followSource`（见下面「跟随来源目录」）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
-  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有三个：latest
   自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
   新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
-  能加载的」，见 `payloads._replaces_older_projection_latest`）。「只前进」另有一个例外：手动更新
+  能加载的」，见 `payloads._replaces_older_projection_latest`；新登记的已与官方发行包核对过
+  （清单 `releaseCheck.result=clean`）而 latest 是导入来的、又没核对过，规则版本不比它低，见
+  `payloads._replaces_unverified_latest`——更新得来的 latest（`source.kind=update`，含区间差量）
+  就是发行包的精确投影，视同核对过（`payloads.release_settled`）：核对只比多余的文件、不比内容，
+  本地改过的导入不能顶掉原版；`_same_version_rank` 同口径）。「只前进」另有一个例外：手动更新
   把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
   `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
   开发者模式的脚本例外：它的组是
@@ -177,11 +181,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   视图路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
   与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
-  latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）就推进
-  整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时版本」那行日志仍是所选目录的
-  版本）。开发者模式下登记进私有渠道、就是它的 latest。没有 enable / disable 这种开关路由——唯一的
-  开关是 `Embedded.FollowSource`（上面「跟随来源目录」，仍在视图上跑），`Embedded.*` 里其余只有
-  报告、来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
+  latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）、或同版本
+  已与官方发行包核对过而组的 latest 是没核对过的导入（见下面「旧版本残留与发行包核对」；latest 是
+  更新得来的原版时不换）就推进整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时
+  版本」那行日志仍是所选目录的版本）。开发者模式下登记进私有渠道、就是它的 latest。没有 enable /
+  disable 这种开关路由——唯一的开关是 `Embedded.FollowSource`（上面「跟随来源目录」，仍在视图上跑），
+  `Embedded.*` 里其余只有报告、来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
 - **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
   链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
   留档到 `data/maafw_project_state/<视图哈希>/local-modified/<from>→<to>-<时间>/`、标记先写进
@@ -212,6 +217,26 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
   `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
   项目里铺运行时。
+- **旧版本残留与发行包核对**（`project_update/release_check.py`）：导入目录是旧版本被新包覆盖过的，
+  新版已删掉的 pipeline 会跟着进载荷，节点重名让 MaaFramework 整包拒收（MAA_Punish v3.12.7 的
+  `auto_battle.jsonc`）。导入（普通渠道，`embedded_project._verify_import_release`，硬时限、核对不了照旧
+  导入）与运行时资源包加载失败（`runner_task._recover_resource_failure` → `view_release_check`，每次运行
+  一次）各核对一次：依据是缓存的同版本完整包 → GitHub 资产中央目录（Range），残留口径同
+  `apply._import_origin_orphans`（资源目录含控制器的 `attach_resource_path`）。导入时残留不进载荷、进报告
+  `excludedReasons`（原因 `not-in-release`）；运行时建「旧载荷减残留」的同版本载荷、顶替 latest（只顶
+  没核对过的导入，更新得来的原版视同核对过）、切视图，然后不重启游戏 / 模拟器立刻再跑一次（不占重试
+  次数，日志里这一次不编号）。运行时看的是**本视图自己挂的**载荷：视图不在组 latest 上（同组兄弟已清理
+  过、传播时本脚本正在跑）就经组同步切过去再核对，视图换了就重跑——只看组 latest 会对着残留还在的
+  视图说「没有多余的文件」。**只在同一版本内切**：组 latest 已是另一个版本时运行中不切（interface、运行
+  计划、运行环境确认都是按本视图的版本做的），留给下次运行前的组同步；等锁时被推到新版本、视图跟着换了
+  （`CleanOutcome.version_changed`）也不重跑。发行包过不了 `range_delta._check_layout`（解压时会改名的
+  条目、重名条目、只差大小写的目录）记为核对不了、不删文件：条目名与落盘文件对不上，照条目名比会把
+  正式文件当残留删掉。导入时核对的后台线程超时后由 `release_check.TreeGate` 挡住，`verify_tree`
+  返回后不再读 staging（调用方紧接着就把它改名成载荷）。「项目下次更新时会自动清掉」只对导入来的载荷
+  说（下次更新一律全量包、跑 `_import_origin_orphans`）；更新得来的走差量包只按删除表删，不做这个承诺。
+  结果记在清单 `releaseCheck`。资源包加载失败
+  （`MaaFWRunResult.resourceFailure`）一律不重试，消息按原生 ERR 行说出原因（`resource_failure.py`，
+  优先读本次 `.maafw.log`：stdout 那份按控制台代码页转过，中文可能成了 `?`）。
 - **按内容共用文件**（`project_update/blob_store.py`）：共用谓词只有一个，
   `projection.is_shared_path(rel, size, private_paths)`——≥ 64 KB、首段不是 `config/ debug/ logs/
   temp/ cache/ .pycache/ .mas-update*`、后缀不是 `.lock .sha256 .pth .log .tmp`、不在 `*.dist-info`
@@ -565,7 +590,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
   不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
   同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
-  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰），
+  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：资源目录是 `resource[].path` 加控制器的
+  `attach_resource_path`——MAA_Punish 的 `resource/pgr_win32` 只挂在后者上，漏算时上游删掉的 pipeline
+  永远清不掉；用户内容目录与运行时目录不碰），
   再加上 `origin=import`、在被新包淘汰的外壳原生库位置上、不在包内的
   （`projection.abandoned_native_runtime_files`）：位置只有顶层 `maafw/`、`runtimes/<rid>/native`、
   `runtimes/<rid>` 与包根上的 MaaFramework 原生库，新包在某处带主库、旧的另一处也有主库而新包那处没有，
