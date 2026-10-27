@@ -18,12 +18,11 @@
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
-              <a-tooltip :title="t('comp.logTimestampStartPosition')">
-                <span class="form-label">
-                  {{ t('comp.logTimestampStart') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('comp.logTimestampStart')"
+                :hint="t('comp.logTimestampStartPosition')"
+                variant="form"
+              />
             </template>
             <a-input-number
               v-model:value="formData.logTimeStart"
@@ -38,12 +37,11 @@
         <a-col :span="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
-              <a-tooltip :title="t('comp.logTimestampEndPosition')">
-                <span class="form-label">
-                  {{ t('comp.logTimestampEnd') }}
-                  <QuestionCircleOutlined class="help-icon" />
-                </span>
-              </a-tooltip>
+              <FieldLabelWithHint
+                :text="t('comp.logTimestampEnd')"
+                :hint="t('comp.logTimestampEndPosition')"
+                variant="form"
+              />
             </template>
             <a-input-number
               v-model:value="formData.logTimeEnd"
@@ -116,10 +114,10 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 

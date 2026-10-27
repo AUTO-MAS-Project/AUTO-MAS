@@ -36,13 +36,14 @@
       </div>
 
       <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" :alt="t('home.empty.noData')" class="empty-image" />
+        <a-empty :image="noDataImage" :image-style="{ height: '120px' }" :description="false" />
       </div>
     </a-card>
   </section>
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { UserOutlined } from '@ant-design/icons-vue'
 import { formatStoredDateTime } from '@/utils/dateDisplay'
@@ -91,12 +92,6 @@ const formatProxyDisplay = (dateString: string) => {
 .empty-state {
   padding: 40px 0;
   text-align: center;
-}
-
-.empty-image {
-  width: 48%;
-  max-width: 180px;
-  opacity: 0.82;
 }
 
 .proxy-list .proxy-item {

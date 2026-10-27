@@ -25,12 +25,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.bettergiInstanceNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.bettergiInstanceNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -44,33 +43,20 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiPath') }}
-                    <a-tooltip :title="t('edit.bettergiPickExeDir')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.bettergiPath')"
+                    :hint="t('edit.bettergiPickExeDir')"
+                    variant="form"
                   />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :disabled="isSaving"
+                  @pick="selectRootPath"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -84,12 +70,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.controller') }}
-                    <a-tooltip :title="t('edit.bettergiControllerHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.controller')"
+                    :hint="t('edit.bettergiControllerHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.Controller"
@@ -112,12 +97,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiCloseGameOnFinish') }}
-                    <a-tooltip :title="t('edit.bettergiCloseGameOnFinishHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.bettergiCloseGameOnFinish')"
+                    :hint="t('edit.bettergiCloseGameOnFinishHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.CloseOnFinish"
@@ -136,12 +120,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.genshinUpdateAuto') }}
-                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.genshinUpdateAuto')"
+                    :hint="t('edit.genshinUpdateAutoHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Game.IfAutoUpdate"
@@ -157,12 +140,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.bettergiAccountSwitchMethod') }}
-                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.bettergiAccountSwitchMethod')"
+                    :hint="t('edit.bettergiAccountSwitchMethodHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="bettergiConfig.Run.AccountSwitchMethod"
@@ -193,64 +175,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.bettergiRetryLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.bettergiRetryLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.bettergiRunTimeoutHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="bettergiConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="bettergiConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.bettergiRunTimeoutHint')"
+                @save="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -260,15 +209,17 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
@@ -438,25 +389,5 @@ onMounted(loadScript)
 <style scoped>
 .section-header {
   border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
-.path-input-group {
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  min-width: 0;
-}
-
-.path-button {
-  flex-shrink: 0;
 }
 </style>

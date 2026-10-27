@@ -43,23 +43,29 @@
 
       <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
         <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
-        <button
-          v-for="mirror in mirrors"
-          :key="mirror.key"
-          type="button"
-          class="mirror-option"
-          :class="{ selected: selectedMirror === mirror.key }"
-          role="radio"
-          :aria-checked="selectedMirror === mirror.key"
+        <a-radio-group
+          :value="selectedMirror"
+          :name="mirrorGroupName"
           :disabled="updating"
-          @click="emit('update:selected-mirror', mirror.key)"
+          class="mirror-options"
+          role="radiogroup"
+          :aria-label="t('init.failure.mirrorTitle')"
+          @change="emit('update:selected-mirror', $event.target.value)"
         >
-          <span class="mirror-radio" aria-hidden="true"></span>
-          <span class="mirror-name">{{ mirror.name }}</span>
-          <span class="mirror-note">
-            {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
-          </span>
-        </button>
+          <a-radio
+            v-for="mirror in mirrors"
+            :key="mirror.key"
+            :value="mirror.key"
+            class="mirror-option"
+          >
+            <span class="mirror-content">
+              <span class="mirror-name">{{ mirror.name }}</span>
+              <span class="mirror-note">
+                {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
+              </span>
+            </span>
+          </a-radio>
+        </a-radio-group>
       </div>
 
       <details
@@ -109,7 +115,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message as feedback } from 'ant-design-vue'
 import { FileZipOutlined, TeamOutlined } from '@ant-design/icons-vue'
@@ -168,6 +174,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const mirrorGroupName = useId()
 const { exportingLogs, packageLogs } = useLogExport()
 const {
   updating,
@@ -329,42 +336,40 @@ watch(
   font-size: 12px;
 }
 
+.mirror-options {
+  display: block;
+}
+
 .mirror-option {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 10px;
+  margin-inline-end: 0;
   padding: 9px 14px;
   border: 0;
   border-top: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  color: var(--ant-color-text);
-  font: inherit;
   font-size: 13px;
-  text-align: left;
-  cursor: pointer;
 }
 
-.mirror-option:hover {
+.mirror-option:hover:not(.ant-radio-wrapper-disabled) {
   background: var(--ant-color-fill-quaternary);
 }
 
-.mirror-option:disabled,
 .failure-skip button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.mirror-radio {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 50%;
+.failure-mirrors .mirror-option :deep(.ant-radio + span) {
+  flex: 1;
+  min-width: 0;
 }
 
-.mirror-option.selected .mirror-radio {
-  border: 4px solid var(--ant-color-primary);
+.mirror-content {
+  display: flex;
+  align-items: center;
 }
 
 .mirror-name {

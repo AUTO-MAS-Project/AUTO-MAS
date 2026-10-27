@@ -18,8 +18,11 @@
 
     <div class="records-container">
       <div v-if="records.length === 0" class="empty-records">
-        <img src="@/assets/NoData.png" :alt="t('history.noData')" class="empty-image" />
-        <span class="empty-text">{{ t('history.emptyRecords') }}</span>
+        <a-empty
+          :image="noDataImage"
+          :image-style="{ height: '80px' }"
+          :description="t('history.emptyRecords')"
+        />
       </div>
 
       <div v-else class="records-scroll">
@@ -64,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,
@@ -158,24 +162,6 @@ const formatRecordTime = (date: string) => formatStoredDateTime(date)
   padding: 8px;
 }
 
-/* 滚动条样式 - 浅色 */
-.records-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.records-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
 .empty-records {
   display: flex;
   flex-direction: column;
@@ -183,17 +169,6 @@ const formatRecordTime = (date: string) => formatStoredDateTime(date)
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-}
-
-.empty-image {
-  width: 60px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-text {
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
 }
 
 .record-item {
@@ -287,16 +262,5 @@ const formatRecordTime = (date: string) => formatStoredDateTime(date)
   color: var(--ant-color-primary);
   font-size: 12px;
   flex-shrink: 0;
-}
-</style>
-
-<style>
-/* 深色模式滚动条 - 需要全局样式 */
-.dark .records-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.dark .records-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
 }
 </style>

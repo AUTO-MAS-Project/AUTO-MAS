@@ -17,12 +17,11 @@
             <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.baahScriptNameHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.baahScriptNameHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -45,44 +44,30 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.mainProgramPath') }}
-                    <a-tooltip :title="t('edit.baahScriptPathHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.baahPath"
-                    :placeholder="t('edit.pickScriptSMain')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.mainProgramPath')"
+                    :hint="t('edit.baahScriptPathHint')"
+                    variant="form"
                   />
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isSaving"
-                    @click="selectBaahPath"
-                  >
-                    <template #icon>
-                      <FileOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.baahPath"
+                  mode="file"
+                  :placeholder="t('edit.pickScriptSMain')"
+                  :pick-label="t('edit.pickFile')"
+                  :disabled="isSaving"
+                  @pick="selectBaahPath"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahManageConfig') }}
-                    <a-tooltip :title="t('edit.baahManageConfigHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahManageConfig')"
+                    :hint="t('edit.baahManageConfigHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.IfManageConfig"
@@ -98,12 +83,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.baahPushLogEnabled') }}
-                    <a-tooltip :title="t('edit.baahPushLogEnabledHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.baahPushLogEnabled')"
+                    :hint="t('edit.baahPushLogEnabledHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Script.PushLogEnabled"
@@ -136,12 +120,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.baahEmulatorHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulator')"
+                    :hint="t('edit.baahEmulatorHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Emulator.Id"
@@ -163,12 +146,11 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.emulatorInstance')"
+                    :hint="t('edit.pickEmulatorInstance')"
+                    variant="form"
+                  />
                 </template>
                 <!-- 当API返回空列表时显示输入框 -->
                 <a-input
@@ -218,44 +200,22 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.baahRunTimesLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="baahConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="baahConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.baahRunTimesLimitHint')"
+                @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.baahRunTimeLimitHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="baahConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="baahConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.baahRunTimeLimitHint')"
+                @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -265,14 +225,16 @@
 </template>
 
 <script setup lang="ts">
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PathPickerField from '@/components/PathPickerField.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { FileOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
@@ -452,17 +414,5 @@ onMounted(() => {
 
 .modern-input {
   border-radius: 8px;
-}
-
-.path-input-group {
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  min-width: 0;
-}
-
-.path-button {
-  flex-shrink: 0;
 }
 </style>

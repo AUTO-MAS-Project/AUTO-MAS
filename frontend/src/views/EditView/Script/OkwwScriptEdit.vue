@@ -16,12 +16,11 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.scriptName') }}
-                    <a-tooltip :title="t('edit.tellsOkWwScript')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.scriptName')"
+                    :hint="t('edit.tellsOkWwScript')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -35,46 +34,36 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.okWwPath') }}
-                    <a-tooltip :title="t('edit.pickDirectoryHoldingOk4')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    :placeholder="t('edit.pickDirectoryHoldingOk2')"
-                    size="large"
-                    class="path-input"
-                    readonly
+                  <FieldLabelWithHint
+                    :text="t('edit.okWwPath')"
+                    :hint="t('edit.pickDirectoryHoldingOk4')"
+                    variant="form"
                   />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringOkww"
-                    :disabled="isSaving"
-                    @click="discoverRootPath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="isDiscoveringOkww || isSaving"
-                    @click="selectRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                </template>
+                <PathPickerField
+                  v-model="formData.path"
+                  mode="folder"
+                  :placeholder="t('edit.pickDirectoryHoldingOk2')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :pick-disabled="isDiscoveringOkww || isSaving"
+                  @pick="selectRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringOkww"
+                      :disabled="isSaving"
+                      @click="discoverRootPath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
               </a-form-item>
             </a-col>
           </a-row>
@@ -88,12 +77,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.masTakesOverStarting')">
-                    <span class="form-label">
-                      {{ t('edit.enableGameConfiguration') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.enableGameConfiguration')"
+                    :hint="t('edit.masTakesOverStarting')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.Enabled"
@@ -109,12 +97,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.okwwAccountSwitchHint')">
-                    <span class="form-label">
-                      {{ t('edit.forceSwitchAccountBeforeRun') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.forceSwitchAccountBeforeRun')"
+                    :hint="t('edit.okwwAccountSwitchHint')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.AccountSwitch"
@@ -137,12 +124,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.beforeLaunchingGameRun')">
-                    <span class="form-label">
-                      {{ t('edit.updateAutomaticallyBeforeLaunching') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.updateAutomaticallyBeforeLaunching')"
+                    :hint="t('edit.beforeLaunchingGameRun')"
+                    variant="form"
+                  />
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.IfAutoUpdate"
@@ -168,12 +154,11 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip :title="t('edit.largeVersionGapNeeds')">
-                    <span class="form-label">
-                      {{ t('edit.wholeFileSyncLimit') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                  <FieldLabelWithHint
+                    :text="t('edit.wholeFileSyncLimit')"
+                    :hint="t('edit.largeVersionGapNeeds')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.UpdateFullSyncLimit"
@@ -217,12 +202,11 @@
               <a-form-item>
                 <template #label>
                   <div class="launch-type-label">
-                    <span class="form-label">
-                      {{ t('edit.launchType') }}
-                      <a-tooltip :title="t('edit.launchTypeHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
+                    <FieldLabelWithHint
+                      :text="t('edit.launchType')"
+                      :hint="t('edit.launchTypeHint')"
+                      variant="form"
+                    />
                     <a-radio-group
                       :value="okwwConfig.Game.Type"
                       class="launch-type-toggle"
@@ -240,40 +224,31 @@
                     </a-radio-group>
                   </div>
                 </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="okwwConfig.Game.Path"
-                    :placeholder="t('edit.pickLauncherDirectory')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                    :disabled="!okwwConfig.Game.Enabled"
-                  />
-                  <a-button
-                    type="primary"
-                    size="large"
-                    class="auto-import-button"
-                    :loading="isDiscoveringGame"
-                    :disabled="!okwwConfig.Game.Enabled || isSaving"
-                    @click="discoverGamePath"
-                  >
-                    <template #icon>
-                      <ImportOutlined />
-                    </template>
-                    {{ t('edit.import') }}
-                  </a-button>
-                  <a-button
-                    size="large"
-                    class="path-button"
-                    :disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
-                    @click="selectGameRootPath"
-                  >
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickDirectory') }}
-                  </a-button>
-                </a-input-group>
+                <PathPickerField
+                  v-model="okwwConfig.Game.Path"
+                  mode="folder"
+                  :placeholder="t('edit.pickLauncherDirectory')"
+                  :pick-label="t('edit.pickDirectory')"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  :pick-disabled="!okwwConfig.Game.Enabled || isDiscoveringGame || isSaving"
+                  @pick="selectGameRootPath"
+                >
+                  <template #before-pick>
+                    <a-button
+                      type="primary"
+                      size="large"
+                      class="auto-import-button"
+                      :loading="isDiscoveringGame"
+                      :disabled="!okwwConfig.Game.Enabled || isSaving"
+                      @click="discoverGamePath"
+                    >
+                      <template #icon>
+                        <ImportOutlined />
+                      </template>
+                      {{ t('edit.import') }}
+                    </a-button>
+                  </template>
+                </PathPickerField>
                 <a-alert
                   v-if="gamePathValidation.status !== 'unknown'"
                   :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
@@ -291,48 +266,38 @@
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
-                  <a-input-group compact class="path-input-group">
-                    <a-input
-                      :value="okwwConfig.Game.ClientPath || derivedClientPath"
-                      :placeholder="t('edit.clientPathPending')"
-                      size="large"
-                      class="path-input"
-                      readonly
-                      :disabled="!okwwConfig.Game.Enabled"
-                    />
-                    <a-button
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="selectClientPath"
-                    >
-                      <template #icon>
-                        <FolderOpenOutlined />
-                      </template>
-                      {{ t('edit.selectFile') }}
-                    </a-button>
-                    <a-button
-                      v-if="okwwConfig.Game.ClientPath"
-                      size="large"
-                      class="path-button"
-                      :disabled="!okwwConfig.Game.Enabled || isSaving"
-                      @click="resetClientPath"
-                    >
-                      {{ t('edit.resetAutoLocate') }}
-                    </a-button>
-                  </a-input-group>
+                  <PathPickerField
+                    :model-value="okwwConfig.Game.ClientPath || derivedClientPath"
+                    mode="file"
+                    :placeholder="t('edit.clientPathPending')"
+                    :pick-label="t('edit.selectFile')"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    :pick-disabled="!okwwConfig.Game.Enabled || isSaving"
+                    @pick="selectClientPath"
+                  >
+                    <template #after-pick>
+                      <a-button
+                        v-if="okwwConfig.Game.ClientPath"
+                        size="large"
+                        class="path-button"
+                        :disabled="!okwwConfig.Game.Enabled || isSaving"
+                        @click="resetClientPath"
+                      >
+                        {{ t('edit.resetAutoLocate') }}
+                      </a-button>
+                    </template>
+                  </PathPickerField>
                 </div>
               </a-form-item>
             </a-col>
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.gameLaunchArgumentsNot2')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.launchArguments')"
+                    :hint="t('edit.gameLaunchArgumentsNot2')"
+                    variant="form"
+                  />
                 </template>
                 <a-input
                   v-model:value="okwwConfig.Game.Arguments"
@@ -347,12 +312,11 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    {{ t('edit.startupWait') }}
-                    <a-tooltip :title="t('edit.howLongWaitAfter')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                  <FieldLabelWithHint
+                    :text="t('edit.startupWait')"
+                    :hint="t('edit.howLongWaitAfter')"
+                    variant="form"
+                  />
                 </template>
                 <a-input-number
                   v-model:value="okwwConfig.Game.WaitTime"
@@ -378,64 +342,31 @@
           />
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runsPerDay') }}
-                    <a-tooltip :title="t('edit.k0MeansNoLimit')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.ProxyTimesLimit"
+                kind="daily"
+                :label="t('edit.runsPerDay')"
+                :hint="t('edit.k0MeansNoLimit')"
+                @save="handleChange('Run', 'ProxyTimesLimit', okwwConfig.Run.ProxyTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.retryLimit2') }}
-                    <a-tooltip :title="t('edit.giveUpAfterThis')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.RunTimesLimit"
+                kind="retry"
+                :label="t('edit.retryLimit2')"
+                :hint="t('edit.giveUpAfterThis')"
+                @save="handleChange('Run', 'RunTimesLimit', okwwConfig.Run.RunTimesLimit)"
+              />
             </a-col>
             <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
-                    <a-tooltip :title="t('edit.logThatStaysUnchanged')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
-                />
-              </a-form-item>
+              <ScriptRunLimitField
+                v-model="okwwConfig.Run.RunTimeLimit"
+                kind="timeout"
+                :label="t('edit.runTimeoutMinutes')"
+                :hint="t('edit.logThatStaysUnchanged')"
+                @save="handleChange('Run', 'RunTimeLimit', okwwConfig.Run.RunTimeLimit)"
+              />
             </a-col>
           </a-row>
         </div>
@@ -497,6 +428,9 @@
 </template>
 
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
+import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { requestScriptUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -505,12 +439,7 @@ import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import {
-  FolderOpenOutlined,
-  ImportOutlined,
-  QuestionCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { ImportOutlined, QuestionCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
@@ -1206,25 +1135,9 @@ onUnmounted(() => {
   color: var(--ant-color-text-tertiary);
 }
 
-.control-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ant-color-text-tertiary);
-}
-
 .label-hint strong {
   font-weight: 600;
   color: var(--ant-color-text-secondary);
-}
-
-.path-input-group {
-  border: 1px solid var(--ant-color-border);
-}
-
-.path-input {
-  min-width: 0;
 }
 
 .auto-import-button {

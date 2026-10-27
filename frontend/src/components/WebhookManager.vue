@@ -82,13 +82,13 @@
     </div>
 
     <div v-else class="empty-state">
-      <div class="empty-icon">
-        <ApiOutlined />
-      </div>
-      <div class="empty-text">{{ t('comp.noCustomWebhooks') }}</div>
-      <div v-if="!compact" class="empty-description">
-        {{ t('comp.useButtonAboveAdd') }}
-      </div>
+      <a-empty :image-style="{ height: '48px' }">
+        <template #image><ApiOutlined class="empty-icon" /></template>
+        <template #description>
+          <div>{{ t('comp.noCustomWebhooks') }}</div>
+          <div v-if="!compact">{{ t('comp.useButtonAboveAdd') }}</div>
+        </template>
+      </a-empty>
     </div>
 
     <!-- 紧凑模式（通知配置弹窗里）添加按钮挪到底部虚线按钮 -->
@@ -837,15 +837,6 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
   font-size: 48px;
   margin-bottom: 16px;
   opacity: 0.5;
-}
-
-.empty-text {
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-
-.empty-description {
-  font-size: 14px;
 }
 
 .template-help {

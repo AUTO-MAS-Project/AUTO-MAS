@@ -35,27 +35,28 @@
           </a-tooltip>
         </div>
         <div class="task-option-panel">
-          <button
+          <label
             v-for="task in selectedGroup.tasks"
             :key="task.name"
-            type="button"
-            role="switch"
             class="task-row"
-            :class="{ 'task-row-skipped': !isTaskEnabled(task.name) }"
-            :aria-label="taskLabel(task.label)"
-            :aria-checked="isTaskEnabled(task.name)"
-            :disabled="controlsDisabled"
-            @click="handleTaskSwitchChange(task.name)"
+            :class="{
+              'task-row-skipped': !isTaskEnabled(task.name),
+              'task-row-disabled': controlsDisabled,
+            }"
           >
             <span class="task-title">{{ task.label }}</span>
             <a-tooltip
               :title="t(isTaskEnabled(task.name) ? 'edit.queueTaskRuns' : 'edit.queueTaskSkipped')"
             >
-              <span class="task-lamp-area" aria-hidden="true">
-                <span class="task-lamp" />
-              </span>
+              <a-switch
+                size="small"
+                :checked="isTaskEnabled(task.name)"
+                :aria-label="taskLabel(task.label)"
+                :disabled="controlsDisabled"
+                @change="handleTaskSwitchChange(task.name)"
+              />
             </a-tooltip>
-          </button>
+          </label>
         </div>
       </div>
     </div>
@@ -222,7 +223,7 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
   border-radius: 8px;
 }
 .task-group-row:hover,
-.task-row:hover:not(:disabled) {
+.task-row:hover:not(.task-row-disabled) {
   background: var(--ant-color-fill-quaternary);
 }
 .task-group-selected,
@@ -242,30 +243,20 @@ const taskLabel = (label: string) => label.slice(label.indexOf(' ') + 1)
 .task-row-skipped .task-title {
   color: var(--ant-color-text-tertiary);
 }
-.task-row:disabled {
+.task-row-disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 .task-group-row:focus-visible,
-.task-row:focus-visible {
+.task-row:focus-within {
   outline: 2px solid var(--ant-color-primary);
   outline-offset: -2px;
-}
-.task-lamp-area {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
 }
 .task-lamp {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--ant-color-success);
-}
-.task-row-skipped .task-lamp {
-  background: var(--ant-color-fill-secondary);
 }
 @container (max-width: 1200px) {
   .task-option-panel {

@@ -3,19 +3,20 @@
      副本克隆，运行时与模型共用、不另占空间，来源目录删了也能建）；只列与入口同类型的项目。
      第一行永远是「新建一个别的项目」。选中状态归对话框所有，这里只显示并交回选择。 -->
 <template>
-  <a-radio-group
-    :value="value"
-    class="choice-list"
-    @update:value="(next: string) => emit('update:value', next)"
+  <SelectableOptionList
+    :model-value="value"
+    @update:model-value="(next: string | null) => emit('update:value', next ?? 'new')"
   >
-    <label :class="['choice-row', { selected: value === 'new' }]">
-      <a-radio value="new" />
-      <span class="choice-icon"><FolderOpenOutlined /></span>
-      <span class="choice-copy">
-        <span class="choice-title">{{ t('scripts.create.mfwNewProject') }}</span>
-        <span class="choice-description">{{ t('scripts.create.mfwNewProjectDesc') }}</span>
-      </span>
-    </label>
+    <SelectableOptionCard
+      value="new"
+      :title="t('scripts.create.mfwNewProject')"
+      :description="t('scripts.create.mfwNewProjectDesc')"
+      :selected="value === 'new'"
+    >
+      <template #icon>
+        <span class="selectable-option-icon"><FolderOpenOutlined /></span>
+      </template>
+    </SelectableOptionCard>
     <div class="choice-group-heading">
       <span class="choice-group-title">{{ t('scripts.create.mfwReuse') }}</span>
       <span class="choice-group-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
@@ -30,29 +31,32 @@
       <span>{{ t('scripts.create.mfwReuseLoading') }}</span>
     </div>
     <template v-else-if="choices.length">
-      <label
+      <SelectableOptionCard
         v-for="choice in choices"
         :key="choice.scriptId"
-        :class="['choice-row', { selected: value === choice.scriptId, disabled: choice.busy }]"
+        :value="choice.scriptId"
+        :title="reuseTitle(choice)"
+        :description="reuseMeta(choice)"
+        :selected="value === choice.scriptId"
+        :disabled="choice.busy"
       >
-        <a-radio :value="choice.scriptId" :disabled="choice.busy" />
-        <span class="choice-icon"><CopyOutlined /></span>
-        <span class="choice-copy">
-          <span class="choice-title">{{ reuseTitle(choice) }}</span>
-          <span class="choice-description">{{ reuseMeta(choice) }}</span>
-        </span>
-      </label>
+        <template #icon>
+          <span class="selectable-option-icon"><CopyOutlined /></span>
+        </template>
+      </SelectableOptionCard>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
       {{ t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
     </div>
-  </a-radio-group>
+  </SelectableOptionList>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
+import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import type {
   MaaFWCreateSourceSectionEmits,
   MaaFWCreateSourceSectionProps,
@@ -82,49 +86,7 @@ const reuseMeta = (choice: MfwReuseChoice) => {
 }
 </script>
 
-<!-- 与新建对话框里同名的样式一字不差（对话框的 scoped 样式管不到子组件里面） -->
 <style scoped>
-.choice-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
-.choice-list {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.choice-row {
-  display: flex;
-  min-width: 0;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-}
-
-.choice-row:hover,
-.choice-row.selected {
-  border-color: var(--ant-color-primary);
-}
-
-.choice-row.selected {
-  background: var(--ant-color-primary-bg);
-}
-
-.choice-row.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .choice-group-heading {
   display: flex;
   flex-direction: column;
@@ -153,31 +115,6 @@ const reuseMeta = (choice: MfwReuseChoice) => {
   border-radius: 8px;
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
-}
-
-.choice-icon {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  font-size: 19px;
-}
-
-.choice-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.choice-description {
-  margin-top: 3px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 
 .template-alert {

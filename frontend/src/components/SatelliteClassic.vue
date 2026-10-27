@@ -10,7 +10,7 @@
     @pointerup="handlePointerUp"
     @pointercancel="releaseCenter"
   >
-    <div v-if="loading" class="loading-spinner"></div>
+    <a-spin v-if="loading" size="large" class="loading-spinner" />
     <!-- 低性能模式下动效本来就停着，恢复按钮恢复不了它 -->
     <SatelliteEffectsPausedChip
       v-if="effectsPaused && !performanceStore.lowPerformanceMode"
@@ -428,19 +428,7 @@ function spawnStarBurst(clientX: number, clientY: number): void {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  border: 2px solid var(--ant-color-border);
-  border-top-color: var(--ant-color-primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  transform: translate(-50%, -50%);
 }
 
 /* 浮字是运行时创建的，不在模板里，scoped 的选择器要用 :deep 才管得到 */

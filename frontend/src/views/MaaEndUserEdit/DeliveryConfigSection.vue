@@ -4,12 +4,11 @@
       <a-col :xs="24" :sm="24">
         <a-form-item name="IfSeizeDeliveryJobs">
           <template #label>
-            <span class="form-label">
-              {{ t('edit.maaEndSeizeDeliveryJobs') }}
-              <a-tooltip :title="t('edit.maaEndSeizeDeliveryJobsHint')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.maaEndSeizeDeliveryJobs')"
+              :hint="t('edit.maaEndSeizeDeliveryJobsHint')"
+              variant="form"
+            />
           </template>
           <a-switch
             v-model:checked="formData.Task.IfSeizeDeliveryJobs"
@@ -23,12 +22,11 @@
         <a-col :xs="24" :sm="12">
           <a-form-item name="SeizeDeliveryJobsReward">
             <template #label>
-              <span class="form-label">
-                {{ t('edit.maaEndSeizeDeliveryJobsReward') }}
-                <a-tooltip :title="t('edit.maaEndSeizeDeliveryJobsRewardHint')">
-                  <QuestionCircleOutlined class="help-icon" />
-                </a-tooltip>
-              </span>
+              <FieldLabelWithHint
+                :text="t('edit.maaEndSeizeDeliveryJobsReward')"
+                :hint="t('edit.maaEndSeizeDeliveryJobsRewardHint')"
+                variant="form"
+              />
             </template>
             <a-input-number
               v-model:value="formData.Task.SeizeDeliveryJobsReward"
@@ -61,8 +59,8 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   MAAEND_DELIVERY_COMMISSION_SOURCE_OPTIONS,
   type MaaEndDeliveryCommissionSource,
@@ -106,16 +104,4 @@ const handleCommissionSourceChange = (value: MaaEndDeliveryCommissionSource) => 
 }
 </script>
 
-<style scoped>
-.form-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-}
-</style>
+<style scoped></style>

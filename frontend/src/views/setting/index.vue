@@ -357,7 +357,7 @@ onMounted(() => {
   <div class="settings-container">
     <component :is="modalContextHolder" />
     <div class="settings-header">
-      <h1 class="page-title">{{ t('setting.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('setting.title') }}</h1>
     </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
@@ -464,16 +464,6 @@ onMounted(() => {
 
 .page-title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .settings-content {

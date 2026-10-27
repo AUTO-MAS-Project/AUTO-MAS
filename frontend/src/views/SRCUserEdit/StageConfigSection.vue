@@ -5,12 +5,11 @@
       <a-col :span="12">
         <a-form-item name="Channel">
           <template #label>
-            <a-tooltip :title="t('edit.pickStageTypeFarm')">
-              <span class="form-label">
-                {{ t('edit.farmType') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.farmType')"
+              :hint="t('edit.pickStageTypeFarm')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.Channel"
@@ -27,12 +26,11 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.activeStageTakenFrom')">
-              <span class="form-label">
-                {{ t('edit.activeStage') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.activeStage')"
+              :hint="t('edit.activeStageTakenFrom')"
+              variant="form"
+            />
           </template>
           <div class="current-stage-display">
             <a-tag :color="getCurrentStageColor()" size="large" class="stage-tag">
@@ -48,12 +46,11 @@
       <a-col :span="12">
         <a-form-item name="Relic">
           <template #label>
-            <a-tooltip :title="t('edit.pickRelicStageFarm')">
-              <span class="form-label">
-                {{ t('edit.relicStage') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.relicStage')"
+              :hint="t('edit.pickRelicStageFarm')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.Relic"
@@ -118,12 +115,11 @@
       <a-col :span="12">
         <a-form-item name="Ornament">
           <template #label>
-            <a-tooltip :title="t('edit.pickOrnamentStageFarm')">
-              <span class="form-label">
-                {{ t('edit.ornamentStage') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.ornamentStage')"
+              :hint="t('edit.pickOrnamentStageFarm')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.Ornament"
@@ -186,12 +182,11 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.filteredByMaterialStage')">
-              <span class="form-label">
-                {{ t('edit.materialCategory') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.materialCategory')"
+              :hint="t('edit.filteredByMaterialStage')"
+              variant="form"
+            />
           </template>
           <a-select v-model:value="materialCategory" size="large" :placeholder="t('edit.all')">
             <a-select-option value="">{{ t('edit.all') }}</a-select-option>
@@ -206,12 +201,11 @@
       <a-col :span="12">
         <a-form-item name="Materials">
           <template #label>
-            <a-tooltip :title="t('edit.pickMaterialStageFarm')">
-              <span class="form-label">
-                {{ t('edit.materialStage') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.materialStage')"
+              :hint="t('edit.pickMaterialStageFarm')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.Materials"
@@ -235,12 +229,11 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip :title="t('edit.pickDivergentUniverseStage3')">
-              <span class="form-label">
-                {{ t('edit.echoOfWar') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.echoOfWar')"
+              :hint="t('edit.pickDivergentUniverseStage3')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.EchoOfWar"
@@ -284,12 +277,11 @@
       <a-col :span="12">
         <a-form-item name="SimulatedUniverseWorld">
           <template #label>
-            <a-tooltip :title="t('edit.pickSimulatedUniverseWorld2')">
-              <span class="form-label">
-                {{ t('edit.simulatedUniverse') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.simulatedUniverse')"
+              :hint="t('edit.pickSimulatedUniverseWorld2')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.SimulatedUniverseWorld"
@@ -327,12 +319,11 @@
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="ExtractReservedTrailblazePower">
           <template #label>
-            <a-tooltip :title="t('edit.whetherReservedTrailblazePower')">
-              <span class="form-label">
-                {{ t('edit.useReservedTrailblazePower') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.useReservedTrailblazePower')"
+              :hint="t('edit.whetherReservedTrailblazePower')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.ExtractReservedTrailblazePower"
@@ -352,12 +343,11 @@
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="UseFuel">
           <template #label>
-            <a-tooltip :title="t('edit.whetherFuelUsed')">
-              <span class="form-label">
-                {{ t('edit.useFuel') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.useFuel')"
+              :hint="t('edit.whetherFuelUsed')"
+              variant="form"
+            />
           </template>
           <a-select
             v-model:value="formData.Stage.UseFuel"
@@ -372,12 +362,11 @@
       <a-col v-if="formData.Stage.UseFuel" :span="8">
         <a-form-item name="FuelReserve">
           <template #label>
-            <a-tooltip :title="t('edit.fuelKeepReserveWhen')">
-              <span class="form-label">
-                {{ t('edit.fuelKeep') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.fuelKeep')"
+              :hint="t('edit.fuelKeepReserveWhen')"
+              variant="form"
+            />
           </template>
           <a-input-number
             v-model:value="formData.Stage.FuelReserve"
@@ -395,9 +384,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const { t } = useI18n()
 
@@ -848,57 +837,6 @@ const filterOption = (input: string, option: any) => {
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 32px;
-}
-
-.section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
-}
-
 .current-stage-display {
   display: flex;
   align-items: center;

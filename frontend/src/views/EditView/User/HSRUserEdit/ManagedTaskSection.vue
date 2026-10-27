@@ -1,6 +1,6 @@
 <template>
   <div class="managed-task-section">
-    <div class="section-header">
+    <div class="section-header section-header--compact">
       <h3>{{ t('edit.hsrTaskConfig') }}</h3>
       <!-- 共享来源编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
       <a-tooltip v-if="shared" :title="t('edit.hsrSharedPlanHint')">
@@ -240,21 +240,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  gap: 10px;
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 20px;
-  background: var(--ant-color-primary);
 }
 
 .shared-tag {

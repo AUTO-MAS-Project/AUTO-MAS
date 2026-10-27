@@ -1,12 +1,9 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { computed, ref, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import {
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import { BetterGiService, type BetterGIUserConfig_Switch } from '@/api'
 import { useBetterGIUpdate } from '../useBetterGIUpdate'
 
@@ -261,12 +258,11 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     <a-col :span="12">
       <a-form-item>
         <template #label>
-          <span class="form-label">
-            {{ t('edit.bettergiGameServer') }}
-            <a-tooltip :title="t('edit.bettergiGameServerHint')">
-              <QuestionCircleOutlined class="help-icon" />
-            </a-tooltip>
-          </span>
+          <FieldLabelWithHint
+            :text="t('edit.bettergiGameServer')"
+            :hint="t('edit.bettergiGameServerHint')"
+            variant="form"
+          />
         </template>
         <a-select
           v-model:value="props.config.Resource"
@@ -292,12 +288,11 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
       <div class="game-client-row">
         <a-form-item>
           <template #label>
-            <span class="form-label">
-              {{ t('edit.bettergiGameClient') }}
-              <a-tooltip :title="t('edit.bettergiGameClientHint')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
+            <FieldLabelWithHint
+              :text="t('edit.bettergiGameClient')"
+              :hint="t('edit.bettergiGameClientHint')"
+              variant="form"
+            />
           </template>
           <a-input-group compact class="path-input-group">
             <a-input

@@ -27,12 +27,11 @@
       <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickSanityTaskType')">
-              <span class="form-label">
-                {{ t('edit.sanityTask') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.sanityTask')"
+              :hint="t('edit.pickSanityTaskType')"
+              variant="form"
+            />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
@@ -69,12 +68,7 @@
       <a-col :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="taskOptionTooltip">
-              <span class="form-label">
-                {{ taskOptionLabel }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint :text="taskOptionLabel" :hint="taskOptionTooltip" variant="form" />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
@@ -95,12 +89,11 @@
       <a-col v-if="showRewardGroupSelect" :xs="24" :sm="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.rewardGroupsProtocolSpace')">
-              <span class="form-label">
-                {{ t('edit.rewardGroup') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.rewardGroup')"
+              :hint="t('edit.rewardGroupsProtocolSpace')"
+              variant="form"
+            />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
@@ -121,9 +114,9 @@
 </template>
 
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import SanityStrategySection from './SanityStrategySection.vue'
 import type { ComboBoxItem } from '@/api'
 import {
@@ -501,25 +494,5 @@ watch(
   flex-shrink: 0;
   color: var(--ant-color-primary);
   font-size: 12px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-  cursor: help;
-  transition: color 0.3s ease;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 </style>

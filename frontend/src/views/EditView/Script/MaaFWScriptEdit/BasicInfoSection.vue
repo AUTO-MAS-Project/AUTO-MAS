@@ -1,9 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
-    </div>
+  <MaaFWFormSection :title="t('edit.basicInfo')">
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item name="name">
@@ -151,17 +148,20 @@
         <!-- 日志框绝对定位撑满外层：外层 flex:1 跟着 grid 行高走，行高由左边表格决定，
              日志再多也不会把面板撑高，底边永远和表格齐 -->
         <div class="env-log-wrap">
-          <div ref="envLogBoxRef" class="env-log-box">
-            <div v-if="envTone === 'idle'" class="env-log-line env-log-line--empty">
+          <div ref="envLogBoxRef" class="env-log-box maafw-log-box">
+            <div
+              v-if="envTone === 'idle'"
+              class="env-log-line maafw-log-line maafw-log-line--empty"
+            >
               {{ t('edit.envPanelPlaceholder') }}
             </div>
-            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line">
+            <div v-for="(line, index) in envLogs" :key="index" class="env-log-line maafw-log-line">
               {{ line }}
             </div>
             <div
               v-if="envTone !== 'idle'"
-              class="env-log-status"
-              :class="`env-log-status--${envTone}`"
+              class="env-log-status maafw-log-status"
+              :class="`maafw-log-status--${envTone}`"
             >
               <LoadingOutlined v-if="envTone === 'running'" spin class="env-log-status-icon" />
               <CheckCircleOutlined v-else-if="envTone === 'success'" class="env-log-status-icon" />
@@ -236,7 +236,7 @@
         {{ importError || previewError }}
       </p>
     </div>
-  </div>
+  </MaaFWFormSection>
 </template>
 
 <script setup lang="ts">
@@ -257,6 +257,7 @@ import type {
   MaaFWScriptBasicInfoSectionEmits,
   MaaFWScriptBasicInfoSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWFormSection from './MaaFWFormSection.vue'
 
 const { t } = useI18n()
 
@@ -378,11 +379,9 @@ watch(
 )
 </script>
 
-<style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
+<style scoped src="./maafwSection.css"></style>
 
+<style scoped>
 .import-progress {
   display: flex;
   align-items: center;
@@ -451,77 +450,16 @@ watch(
   color: var(--ant-color-warning);
 }
 
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-text-quaternary);
-  border-radius: 2px;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 14px;
-}
-
-.modern-input {
-  border-radius: 8px;
-}
-
-.path-input-group {
-  display: flex;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid var(--ant-color-border);
-}
-
 .path-input {
-  flex: 1;
   /* flex 子项默认 min-width:auto，窄屏下会被内容撑住不肯让位，
      把两个按钮挤出圆角容器；显式归零才能正常收缩。 */
   min-width: 0;
-  border: none !important;
-  border-radius: 0 !important;
-}
-
-.path-input:focus {
-  box-shadow: none !important;
 }
 
 .path-button {
   /* 两个按钮共用一套样式：各自带左分隔线，与输入框拼成一条完整控件。 */
   flex: 0 0 auto;
   white-space: nowrap;
-  border: none;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  border-radius: 0;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-weight: 600;
 }
 
 /* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */
@@ -625,46 +563,6 @@ watch(
 .env-log-box {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 6px;
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.env-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
-.env-log-line--empty {
-  color: var(--ant-color-text-tertiary);
-}
-
-/* 结论就是日志的最后一行，整行一个强调色：成功绿、失败红、进行中主色 */
-.env-log-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.env-log-status--running {
-  color: var(--ant-color-primary);
-}
-
-.env-log-status--success {
-  color: var(--ant-color-success);
-}
-
-.env-log-status--failed {
-  color: var(--ant-color-error);
 }
 
 .env-log-status-hint {

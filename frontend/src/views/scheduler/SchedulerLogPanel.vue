@@ -1,5 +1,5 @@
 <template>
-  <div class="log-panel">
+  <div class="scheduler-panel log-panel">
     <div class="scheduler-panel-header">
       <h3>{{ t('scheduler.log.title') }}</h3>
       <div class="log-controls">
@@ -31,11 +31,7 @@
       :style="{ backgroundColor: logBackground, color: logForeground }"
     >
       <div v-if="!logContent" class="empty-state">
-        <div class="empty-content">
-          <div class="empty-image-container">
-            <img src="@/assets/NoData.png" :alt="t('scheduler.log.empty')" class="empty-image" />
-          </div>
-        </div>
+        <a-empty :image="noDataImage" :image-style="{ height: '80px' }" :description="false" />
       </div>
       <div v-else class="monaco-container">
         <vue-monaco-editor
@@ -52,6 +48,7 @@
 </template>
 
 <script setup lang="ts">
+import noDataImage from '@/assets/NoData.png'
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useTheme } from '@/composables/useTheme'
@@ -229,28 +226,12 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.log-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
+<style scoped src="./schedulerPanel.css"></style>
 
+<style scoped>
 .scheduler-panel-header {
-  display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
 }
 
 .scheduler-panel-header h3 {
@@ -333,34 +314,5 @@ onUnmounted(() => {
   height: 100%;
   min-height: 200px;
   text-align: center;
-}
-
-.empty-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.empty-image-container {
-  margin-bottom: 16px;
-}
-
-.empty-image {
-  width: 80px;
-  height: auto;
-  opacity: 0.6;
-}
-
-.empty-title {
-  font-size: 16px;
-  font-weight: 500;
-  margin: 0 0 4px 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 </style>

@@ -611,30 +611,6 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   margin-bottom: 24px;
 }
 
-.section-header {
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.section-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 20px;
-  background: var(--ant-color-primary);
-  border-radius: 2px;
-}
-
 .task-loading {
   padding: 24px;
 }

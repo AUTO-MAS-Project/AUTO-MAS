@@ -1366,16 +1366,7 @@ const loadUserData = async () => {
 }
 
 .section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: 12px;
-}
-
-.section-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
