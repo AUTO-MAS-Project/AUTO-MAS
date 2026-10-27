@@ -38,6 +38,7 @@ from ..runtime_pool.requirements_file import (
     RequirementsFileError,
     read_requirements_file,
 )
+from ..worker_protocol import DETAIL_LOG_PREFIX
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
 
@@ -52,9 +53,8 @@ PIP_INSTALL_TIMEOUT = 120
 # pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
 # 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
 PIP_INSTALL_PER_INDEX_TIMEOUT = 300
-# 与 runner.DETAIL_LOG_PREFIX 同一个前缀（runner.py 会 import maa，这里不能引它）：
-# worker 里宿主据此只写进 .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。
-DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+# DETAIL_LOG_PREFIX（定义在 worker_protocol，runner 与这里共用一份）：worker 里据此只写进
+# .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。宿主的几处出口从这里引它。
 # 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
 DETAIL_OUTPUT_LIMIT = 20000
 #: Agent 程序文件不见了时给用户的处理建议。准备运行环境（声明的程序不存在）与 runner 起

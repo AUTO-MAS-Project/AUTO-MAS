@@ -84,6 +84,12 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     strip_host_python_environment,
 )
 
+# 宿主也要用的常量放在不依赖 maa 的 worker_protocol 里（本模块一导入就加载 maa，宿主引不了）
+from app.task.MaaFW.tools.core.worker_protocol import (
+    DETAIL_LOG_PREFIX,
+    SIGNAL_SCREENSHOT_KINDS,
+)
+
 # MaaFWRunResult 只在 models 里定义一份：宿主用它 model_validate worker 回传的
 # 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
 # 就这么丢过一次，见下方注释）。
@@ -189,8 +195,8 @@ _LEGACY_FOCUS_KEYS = {
 # 那条，宿主拦在界面外、只进 worker.log。
 TASK_CONFIG_LOG_UI_LIMIT = 240
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
-# 带这个前缀的行只进 *.worker.log，宿主 _should_forward_framework_log 不转发到界面。
-DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+# 带 DETAIL_LOG_PREFIX（见 worker_protocol）的行只进 *.worker.log：worker 发事件时据此把
+# audience 定成 worker_log，宿主不转发到界面。
 # 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
 # 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
 # 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
@@ -199,16 +205,11 @@ FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 # post_stop 都会产生它。脚本侧（如 MaaEnd 的分辨率闸门）用自定义动作强停时，
 # 我们只能从这里知道「这一轮不是自己结束的」。
 MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
-# 信号节点命中后的说明（界面日志与结果 errorMessage）与证据截图文件名里的 kind。
-# kind 只用小写字母：问题包导出按 ``<时分秒>.<kind>-<HHMMSS>-<任务>.png`` 收截图，
-# kind 部分是 ``[a-z]+``，带连字符就收不进去。
+# 信号节点命中后的说明（界面日志与结果 errorMessage）。证据截图文件名里的 kind 是
+# SIGNAL_SCREENSHOT_KINDS（worker_protocol：宿主按它认证据图）。
 SIGNAL_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中",
     CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端",
-}
-SIGNAL_SCREENSHOT_KINDS = {
-    SERVER_MAINTENANCE: "maintenance",
-    CLIENT_UPDATE_REQUIRED: "clientupdate",
 }
 # 对象形状的信号节点识别文本都不中时记一行 worker 日志；[JumpBack] 节点会反复命中，
 # 同一段文本只记一次，总数封顶。
