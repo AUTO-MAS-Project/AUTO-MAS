@@ -1,6 +1,6 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
-import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
+import type { WSTaskCyclePreviewData, WSTaskUserProgressData } from '@/services/websocket/types'
 import type { QueueScopeDisabledUser, QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
@@ -11,6 +11,8 @@ export interface User {
   user_id: string
   status: string
   name: string
+  // 面板回放快照时要带上，否则签名对不上、进度被清掉
+  progress?: WSTaskUserProgressData | null
 }
 
 export interface Script {

@@ -4679,6 +4679,7 @@ export default {
       unknownScript: 'Unknown managed script',
       userNotLoaded: 'Not loaded yet',
       userProgress: '{current}/{total} · {task}',
+      userProgressCount: '{current}/{total}',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',

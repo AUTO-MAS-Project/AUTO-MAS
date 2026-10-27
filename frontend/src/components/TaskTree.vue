@@ -69,6 +69,7 @@ import { useStatusLabel } from '@/i18n/status'
 import {
   isWaitingWithoutUsers,
   type TaskTreeUserProgress,
+  userProgressMessageKey,
   userProgressParams,
 } from './taskTreePresentation'
 
@@ -88,7 +89,7 @@ interface User {
 // MFW 用户正在跑的任务：「3/12 · 当前任务名」，其余专项没有进度、不显示
 const progressText = (user: User) => {
   const params = userProgressParams(user.progress)
-  return params ? t('scheduler.overview.userProgress', { ...params }) : ''
+  return params ? t(userProgressMessageKey(params), { ...params }) : ''
 }
 
 interface Script {

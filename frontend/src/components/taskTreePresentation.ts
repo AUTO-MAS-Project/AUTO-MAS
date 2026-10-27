@@ -14,7 +14,10 @@ export interface TaskTreeUserProgress {
   task: string
 }
 
-/** 调度台用户行「3/12 · 当前任务」的插值参数；没有进度或数字不成立时不显示。 */
+/**
+ * 调度台用户行「3/12 · 当前任务」的插值参数；没有进度或数字不成立时不显示。
+ * task 为空串时界面只显示「3/12」（见 userProgressMessageKey）。
+ */
 export const userProgressParams = (
   progress: TaskTreeUserProgress | null | undefined
 ): TaskTreeUserProgress | null => {
@@ -23,8 +26,16 @@ export const userProgressParams = (
   if (!Number.isInteger(current) || !Number.isInteger(total) || current < 1 || total < 1) {
     return null
   }
-  return { current: Math.min(current, total), total, task: task.trim() }
+  return {
+    current: Math.min(current, total),
+    total,
+    task: typeof task === 'string' ? task.trim() : '',
+  }
 }
+
+/** 没有任务名时换成只有数字的文案，避免末尾挂一个孤立的「 · 」。 */
+export const userProgressMessageKey = (params: TaskTreeUserProgress): string =>
+  params.task ? 'scheduler.overview.userProgress' : 'scheduler.overview.userProgressCount'
 
 interface SignatureUser {
   name?: string

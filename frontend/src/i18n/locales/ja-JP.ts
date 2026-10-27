@@ -4694,6 +4694,7 @@ export default {
       unknownScript: '不明なマネージドスクリプト',
       userNotLoaded: '未読み込み',
       userProgress: '{current}/{total} · {task}',
+      userProgressCount: '{current}/{total}',
     },
     modal: {
       cannotDeleteTitle: 'この実行パネルは閉じられません',
