@@ -9,6 +9,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from app.config import ConfigAggregateError
+from app.core import game_maintenance as host
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
 from app.utils.constants import UTC8
@@ -32,7 +34,7 @@ async def environment(monkeypatch):
                 else current.astimezone(tz)
             )
 
-    monkeypatch.setattr(service, "Config", SimpleNamespace(setting=config))
+    monkeypatch.setattr(host, "Config", SimpleNamespace(setting=config))
     monkeypatch.setattr(service, "datetime", ClockDatetime)
     monkeypatch.setattr(service.time, "monotonic", lambda: clock[0])
     return (config, clock)
@@ -79,7 +81,9 @@ async def test_config_update_error_fails_open(
         check_visibility=False,
     )
     await activate_config(config, tmp_path / "GlobalConfig.yaml")
-    update = AsyncMock(side_effect=OSError("simulated config update failure"))
+    update = AsyncMock(
+        side_effect=ConfigAggregateError([OSError("simulated config update failure")])
+    )
     monkeypatch.setattr(GlobalConfig, "update", update)
     requests = []
 
@@ -90,7 +94,9 @@ async def test_config_update_error_fails_open(
         )
 
     transport(monkeypatch, handler)
-    client = service.GameMaintenanceClient()
+    client = service.GameMaintenanceClient(
+        read_cache=host._read_cache, write_cache=host._write_cache
+    )
     assert await client.get_active("arknights") is None
     update.assert_awaited_once()
     clock[0] = service.RETRY_SECONDS - 1
@@ -112,7 +118,9 @@ async def test_empty_etag_is_omitted_on_first_fetch_and_refresh(
         return httpx.Response(200, json=maintenance_data())
 
     transport(monkeypatch, handler)
-    client = service.GameMaintenanceClient()
+    client = service.GameMaintenanceClient(
+        read_cache=host._read_cache, write_cache=host._write_cache
+    )
     assert await client.get_active("arknights") is not None
     clock[0] = service.CACHE_SECONDS
     assert await client.get_active("arknights") is not None
@@ -150,7 +158,9 @@ async def test_future_check_time_triggers_revalidation(
         )
 
     transport(monkeypatch, handler)
-    client = service.GameMaintenanceClient()
+    client = service.GameMaintenanceClient(
+        read_cache=host._read_cache, write_cache=host._write_cache
+    )
     assert await client.get_active("arknights") is None
     assert len(requests) == 1
     assert requests[0].headers["If-None-Match"] == '"old"'
