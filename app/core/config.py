@@ -791,13 +791,6 @@ class AppConfig:
                                 "RootPath": general_config["Script"]["RootPath"],
                             }
 
-                            general_config["Script"]["ConfigPathMode"] = (
-                                "File"
-                                if "所有文件"
-                                in general_config["Script"]["ConfigPathMode"]
-                                else "Folder"
-                            )
-
                             uid = legacy_uid(GeneralConfig)
                             sc = await legacy_scripts.put(
                                 uid=uid,
