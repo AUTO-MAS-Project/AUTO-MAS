@@ -355,7 +355,7 @@ def test_job_round_trips_to_worker(tmp_path: Path) -> None:
         task_time_limit_seconds=2700,
         task_time_limit_overrides={"切换账号": 600},
     )
-    channel = {"host": "127.0.0.1", "port": 50123, "token": "0123abcd"}
+    channel = {"pipe": r"\\.\pipe\auto-mas-maafw-1-0123abcd", "token": "0123abcd"}
     # 宿主写进 worker stdin 的字节，worker 读到 EOF 后解出来的就是这个。
     received = decode_job(encode_job(payload, event_channel=channel))
 

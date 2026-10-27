@@ -92,6 +92,7 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     WorkerEventServer,
     encode_job,
     event_audience,
+    event_channel_supported,
     forwards_to_ui,
     strip_ansi,
 )
@@ -219,9 +220,6 @@ _RELAY_YIELD_EVERY_LINES = 50
 # worker stdout / stderr 单行上限（字节）。更长的一行丢掉、记一句，读取继续。协议事件走独立的
 # 事件通道、按帧传，不受它限制；stdout 上只剩原生诊断，以及事件通道建不起来时退回的旧格式事件。
 _WORKER_STREAM_LINE_LIMIT = 16 * 1024 * 1024
-# worker 退出时事件通道还没连上的话，再等这么久看连接是否已在排队（连接先于退出建立、
-# 宿主还没来得及 accept）；之后就不等了——退回 stdout 的 worker 不会再连。
-_EVENT_CHANNEL_ACCEPT_GRACE_SECONDS = 1.0
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
 # Game.WaitTime 填 0 时等游戏窗口出现的上限（秒）
@@ -2045,14 +2043,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # job 经 worker 的 stdin 交过去、不再落盘；升级前的版本写过 job 文件，宿主与 worker
             # 一起被硬杀时会留在盘上（里面可能有解密后的密码选项），照旧清掉。
             await asyncio.to_thread(_sweep_legacy_runner_jobs)
-            # 事件（日志、结果）走独立通道；建不起来就让 worker 照旧写 stdout，这次运行不受影响。
-            try:
-                event_server = WorkerEventServer.open()
-            except OSError as exc:
-                event_server_failure = (
-                    f"MaaFW 事件通道建立失败（{exc!r}），本次运行事件改走标准输出"
-                )
-                logger.warning(event_server_failure)
+            # 事件（日志、结果）走独立通道（Windows 命名管道）；建不起来就让 worker 照旧写
+            # stdout，这次运行不受影响。没有这条通道的平台直接用 stdout，不记。
+            if event_channel_supported():
+                try:
+                    event_server = WorkerEventServer.open()
+                except OSError as exc:
+                    event_server_failure = (
+                        f"MaaFW 事件通道建立失败（{exc!r}），本次运行事件改走标准输出"
+                    )
+                    logger.warning(event_server_failure)
             job_bytes = encode_job(
                 payload,
                 event_channel=event_server.spec if event_server is not None else None,
@@ -2149,7 +2149,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(_framework_ui_message(message))
 
         async def read_events() -> None:
-            """读事件通道：worker 连回来、核对令牌后逐条分发；worker 关闭连接时结束。"""
+            """读事件通道：worker 打开管道、核对令牌后逐条分发；读到 EOF（worker 关闭管道或已退出、
+            已写进去的都读完了）时结束。"""
 
             if event_server is None:
                 return
@@ -2163,7 +2164,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         await asyncio.sleep(0)  # 同 read_stdout：别独占事件循环
                     handle_event(_redact_worker_event(event, secrets))
             finally:
-                # 不再读了就立刻关掉：worker 再发送会出错、改走 stdout，不会对着没人读的连接卡住
+                # 不再读了就立刻关掉：worker 再写会出错、改走 stdout，不会对着没人读的管道卡住
                 event_server.close()
 
         async def feed_job() -> None:
@@ -2251,17 +2252,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         stderr_task = asyncio.create_task(read_stderr())
 
         async def drain_readers(*, propagate_errors: bool) -> None:
-            # worker 已经退出（或已被结束）：stdin 不用再写；事件通道没连上的话只等一小会儿
-            # 看连接是否已在排队，退回 stdout 的 worker 不会再连回来。连上了的照常等 EOF。
+            # worker 已经退出（或已被结束）：stdin 不用再写。事件通道把管道里剩下的读完、读到
+            # EOF 就结束（写的一方没了，已写进去的照样读得出）；worker 从没打开过管道的话立刻
+            # 结束，不再等。第二次调用时读取任务都已结束，这里不会再等。
             feed_task.cancel()
-            if event_server is not None and not event_server.connected.is_set():
-                with suppress(asyncio.TimeoutError):
-                    await asyncio.wait_for(
-                        event_server.connected.wait(),
-                        timeout=_EVENT_CHANNEL_ACCEPT_GRACE_SECONDS,
-                    )
-                if not event_server.connected.is_set():
-                    events_task.cancel()
+            if event_server is not None:
+                event_server.worker_exited()
             _, pending_readers = await asyncio.wait(
                 (stdout_task, stderr_task, events_task),
                 timeout=5.0,

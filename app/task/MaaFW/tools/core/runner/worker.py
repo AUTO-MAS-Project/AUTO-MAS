@@ -33,12 +33,11 @@ import psutil
 
 from app.task.MaaFW.tools.core.worker_protocol import (
     AUDIENCE_WORKER_LOG,
-    LEVEL_INFO,
     LEVEL_WARNING,
     EventChannelClient,
     decode_job,
-    error_event,
     log_event,
+    with_log_fields,
 )
 
 # 并入自 mfwa：宿主进程存活探测间隔
@@ -70,14 +69,20 @@ else:
 
 
 _EMIT_LOCK = threading.Lock()
-# 宿主的事件通道（worker_protocol）。None 表示走 stdout：宿主没给端口、连不上，或连上后发送出错。
+# 宿主的事件通道（worker_protocol，命名管道）。None 表示走 stdout：宿主没给通道、打不开，
+# 或打开后写入出错。
 _CHANNEL: EventChannelClient | None = None
 
 
 def _emit(payload: dict[str, Any]) -> None:
-    """发一个事件给宿主：有事件通道走通道，否则一行一个 JSON 写 stdout（旧格式，宿主照样认）。"""
+    """发一个事件给宿主：有事件通道走通道，否则一行一个 JSON 写 stdout（旧格式，宿主照样认）。
+
+    日志 / 错误事件先补上 audience 与 level（worker_protocol.with_log_fields）：只传了文案的
+    按 forwards_to_ui 的规则定去向，宿主照字段办。其它类型（结果、以后新增的）原样发。
+    """
 
     global _CHANNEL
+    payload = with_log_fields(payload)
     with _EMIT_LOCK:
         channel = _CHANNEL
         if channel is not None:
@@ -85,7 +90,7 @@ def _emit(payload: dict[str, Any]) -> None:
                 channel.send(payload)
                 return
             except OSError as exc:
-                # 宿主关了连接（读到坏数据、或正在收尾）：后面的事件全走 stdout，这一条也补发过去
+                # 宿主关了管道（读到坏数据、或正在收尾）：后面的事件全走 stdout，这一条也补发过去
                 _CHANNEL = None
                 with suppress(OSError):
                     channel.close()
@@ -108,16 +113,8 @@ def _write_stdout_event(payload: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _emit_log(
-    message: str, *, audience: str | None = None, level: str = LEVEL_INFO
-) -> None:
-    # 去向（进界面 / 只进 .worker.log）在这里定好，宿主照 audience 办；不指定时按
-    # worker_protocol.forwards_to_ui 的规则判（runner 的 send_log 只传文案）
-    _emit(log_event(message, audience=audience, level=level))
-
-
 def _open_event_channel(spec: Any) -> None:
-    """按 job 里的参数连回宿主；连不上就留在 stdout，原因记进 .worker.log。"""
+    """按 job 里的参数打开宿主的事件通道；打不开就留在 stdout，原因记进 .worker.log。"""
 
     global _CHANNEL
     if not isinstance(spec, dict):
@@ -144,6 +141,10 @@ def _close_event_channel() -> None:
     if channel is not None:
         with suppress(OSError):
             channel.close()
+
+
+def _emit_log(message: str) -> None:
+    _emit({"type": "log", "message": message})
 
 
 # --- 以下四个函数并入自 mfwa（tools/worker.py）--------------------------------
@@ -232,9 +233,10 @@ def _read_job() -> tuple[dict[str, Any], Path | None]:
 def main() -> int:
     if len(sys.argv) > 2:
         _emit(
-            error_event(
-                "runner worker reads its job from stdin (or one legacy job json path)"
-            )
+            {
+                "type": "error",
+                "message": "runner worker reads its job from stdin (or one legacy job json path)",
+            }
         )
         return 64
 
@@ -285,7 +287,7 @@ def main() -> int:
         )
         with suppress(Exception):
             _emit({"type": "result", "data": result.model_dump(mode="json")})
-        _emit(error_event(str(exc)))
+        _emit({"type": "error", "message": str(exc)})
         return 1
     finally:
         if runner is not None:
