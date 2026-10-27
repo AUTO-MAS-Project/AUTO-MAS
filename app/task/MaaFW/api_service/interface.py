@@ -39,6 +39,8 @@ from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
@@ -93,6 +95,8 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
 
     root_path, error = await maafw_effective_root(script_id, path)
     if root_path is None:
+        if script_id or str(path or "").strip():
+            _log_preview_failure(script_id, path, error)
         return MaaFWApiReply.error(400, error)
     try:
         interface = await asyncio.to_thread(load_interface_model_cached, root_path)
@@ -109,6 +113,7 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
         )
         data = MaaFWInterfacePreviewData.model_validate(payload)
     except MaaFWInterfaceLoadError as exc:
+        _log_preview_failure(script_id, root_path, str(exc))
         return MaaFWApiReply.error(400, str(exc))
     except Exception as exc:
         logger.opt(exception=True).warning(
@@ -119,6 +124,19 @@ async def preview_project_interface(script_id: str | None, path: str) -> MaaFWAp
     return MaaFWApiReply(
         message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
         data=data,
+    )
+
+
+def _log_preview_failure(script_id: str | None, project: Any, reason: str) -> None:
+    """预览按 HTTP 200 + code=400 回给前端，原因不另写日志就只剩一行 200。"""
+
+    logger.warning(
+        mask_home_path(
+            redact_text(
+                f"MFW interface 预览失败（脚本 {script_id or '未指定'}，"
+                f"项目 {project or '未设置'}）：{reason}"
+            )
+        )
     )
 
 

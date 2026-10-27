@@ -597,11 +597,41 @@ def _scan_scan_select_cases(
             f"scan_select 选项 {option_name} 的 scan_filter 必须是非空字符串"
         )
 
-    resolved_scan_dir = _resolve_project_relative_path(
-        base_dir,
-        scan_dir,
-        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
-    )
+    try:
+        resolved_scan_dir = _resolve_project_relative_path(
+            base_dir,
+            scan_dir,
+            field_name=f"scan_select 选项 {option_name} 的 scan_dir",
+        )
+    except OSError as exc:
+        if not _is_untrusted_mount_point(exc):
+            raise
+        # 项目运行期自建的装入点（线上见过视图里的 BBchannel\settings）被系统判为不受信任，
+        # 解析不了就没法做越界判断：不读它，按没有可选项处理，别让整份 interface 读不出来。
+        logger.warning(
+            "MaaFW ProjectInterface scan_select 选项 %s 的 scan_dir 含不受信任的装入点，"
+            "无法解析：%s（%s）；按没有可选项处理",
+            option_name,
+            exc.filename or (base_dir / scan_dir),
+            exc,
+        )
+        if context is not None:
+            # 照样登记进缓存依赖（用未解析的路径，只拿来 stat / glob 算签名）：装入点被删掉
+            # 或变成可信后签名会变，缓存自动失效，不会一直空着。
+            context.scan_select_specs.add(
+                (
+                    base_dir
+                    / _normalize_project_relative_path(
+                        scan_dir,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
+                    ),
+                    _normalize_project_relative_path(
+                        scan_filter,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_filter",
+                    ),
+                )
+            )
+        return []
     normalized_scan_filter = _normalize_project_relative_path(
         scan_filter,
         field_name=f"scan_select 选项 {option_name} 的 scan_filter",
@@ -626,7 +656,7 @@ def _scan_scan_select_cases(
             {
                 file_path.relative_to(resolved_scan_dir).as_posix()
                 for file_path in resolved_scan_dir.glob(normalized_scan_filter)
-                if file_path.is_file()
+                if _is_scannable_file(file_path, option_name)
             }
         )
     except Exception as exc:
@@ -635,6 +665,29 @@ def _scan_scan_select_cases(
         ) from exc
 
     return [{"name": path, "label": path} for path in matched_paths]
+
+
+def _is_untrusted_mount_point(exc: BaseException) -> bool:
+    """Windows 拒绝穿过不受信任的装入点（ERROR_UNTRUSTED_MOUNT_POINT，WinError 448）。"""
+
+    return isinstance(exc, OSError) and getattr(exc, "winerror", None) == 448
+
+
+def _is_scannable_file(file_path: Path, option_name: str) -> bool:
+    """scan_select 扫到的条目是不是文件；穿不过不受信任装入点的条目跳过并告警。"""
+
+    try:
+        return file_path.is_file()
+    except OSError as exc:
+        if not _is_untrusted_mount_point(exc):
+            raise
+        logger.warning(
+            "MaaFW ProjectInterface scan_select 选项 %s 跳过含不受信任装入点的条目：%s（%s）",
+            option_name,
+            file_path,
+            exc,
+        )
+        return False
 
 
 def _expand_scan_select_options(
@@ -1435,8 +1488,13 @@ def _build_signature(
             continue
 
         for file in scan_files:
-            if file.is_file():
-                signature_parts.append(_file_signature(file.resolve()))
+            try:
+                if file.is_file():
+                    signature_parts.append(_file_signature(file.resolve()))
+            except OSError as exc:
+                if not _is_untrusted_mount_point(exc):
+                    raise
+                signature_parts.append(("untrusted-mount", str(file)))
 
     return tuple(signature_parts)
 
