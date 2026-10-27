@@ -523,6 +523,9 @@ async def delete_instance(emulator_id: str, slot: str) -> dict:
     改成写墓碑：该行从设备表消失，但**号码仍然不回收**——回收了的话，
     以后新建的实例可能拿到同一个号，而某个脚本还绑着它，就会悄悄连到另一台设备上。
     绑定了该号的脚本下次执行直接失败，不会回退到别的设备。
+
+    墓碑同时放开原生索引：雷电新建实例总是复用最小的空闲索引，墓碑占着它，
+    新实例就分不到号、在设备表里看不见。放开后新实例拿一个新号。
     """
     manager = await build_manager(emulator_id)
     record = manager.slots.resolve(str(slot))
