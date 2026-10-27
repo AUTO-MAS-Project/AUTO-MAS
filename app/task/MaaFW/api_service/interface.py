@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""读项目内容的端点背后的业务：interface 预览、游戏包名推断、项目内图片资源。"""
+"""读项目内容的端点背后的业务：interface 预览、游戏包名推断、项目内图片资源、项目图标。"""
 
 from __future__ import annotations
 
@@ -38,10 +38,12 @@ from app.task.MaaFW.tools.core.interface.loader import (
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
+    interface_text_translator,
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     embedded_projects_root,
     is_embedded_copy_dir_name,
+    resolve_maafw_project_root,
 )
 from app.task.MaaFW.tools.embedded.flavor import (
     flavor_for_project,
@@ -216,3 +218,53 @@ def maafw_asset_file_path(root: str, asset_path: str) -> Path:
     if not file_path.is_file():
         raise FileNotFoundError("MFW 图片资源不存在")
     return file_path
+
+
+async def maafw_script_icon_file(script_id: str) -> Path:
+    """``/maafw/icon``：脚本列表头像用的项目图标，即 interface 顶层 ``icon`` 指的图片。
+
+    只读已经导入的副本，不触发导入：脚本列表每次渲染都会来取。取不到（脚本不对、
+    副本还没建、interface 读不了、没写 icon、路径不合法或文件不在）一律
+    ``FileNotFoundError``，端点映射成 404，前端回退到类型图标。
+    """
+
+    try:
+        script_config = maafw_script_config(script_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        raise FileNotFoundError(f"MFW 脚本无效: {exc}") from exc
+    root_path = resolve_maafw_project_root(script_id, script_config)
+    return await asyncio.to_thread(_project_icon_file, root_path)
+
+
+def _project_icon_file(root_path: Path) -> Path:
+    if not root_path.is_dir():
+        raise FileNotFoundError("MFW 项目尚未导入")
+    try:
+        interface = load_interface_model_cached(root_path)
+    except (MaaFWInterfaceLoadError, OSError) as exc:
+        raise FileNotFoundError(f"MFW interface 读取失败: {exc}") from exc
+    # 协议允许 icon 写成 $ 开头的 i18n 键，按项目简体中文语言文件翻过再用
+    icon = interface_text_translator(root_path, interface)(interface.icon)
+    icon = _declared_icon_path(icon or "")
+    if not icon:
+        raise FileNotFoundError("MFW 项目没有声明本地图标")
+    try:
+        return maafw_asset_file_path(str(root_path), icon)
+    except ValueError as exc:
+        raise FileNotFoundError(str(exc)) from exc
+
+
+def _declared_icon_path(raw: str) -> str:
+    """interface 里写的图标路径 → 项目根内的相对路径。
+
+    与导入时把图标带进副本的口径（``projection._normalize_ui_asset_path``）一致：
+    容忍反斜杠、``./``（``maafw_asset_file_path`` 处理）、``{PROJECT_DIR}`` 前缀与以 ``/``
+    开头的项目根相对写法；远程 URL 与 data: URI 不代理，当没写；翻不出来的 ``$`` 键也当没写。
+    """
+
+    value = raw.strip().replace("\\", "/").replace("${PROJECT_DIR}", "{PROJECT_DIR}")
+    if value.startswith(("http://", "https://", "data:", "$")):
+        return ""
+    if value.startswith("{PROJECT_DIR}"):
+        value = value[len("{PROJECT_DIR}") :]
+    return value.lstrip("/")

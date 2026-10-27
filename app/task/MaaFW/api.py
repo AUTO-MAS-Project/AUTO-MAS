@@ -530,3 +530,25 @@ async def get_maafw_asset(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return FileResponse(file_path)
+
+
+@router.get(
+    "/maafw/icon",
+    tags=["MaaFW"],
+    summary="读取 MFW 脚本的项目图标",
+    response_class=FileResponse,
+)
+async def get_maafw_script_icon(
+    scriptId: str = Query(..., description="MFW 脚本 ID"),
+) -> FileResponse:
+    """脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+
+    取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标。
+    项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，让浏览器每次凭 ETag 确认。
+    """
+
+    try:
+        file_path = await maafw_interface_api.maafw_script_icon_file(scriptId)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(file_path, headers={"Cache-Control": "no-cache"})
