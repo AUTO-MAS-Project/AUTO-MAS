@@ -306,7 +306,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`environment.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
   （requirements.txt / pyproject `[project].dependencies` 的确切版本、离线目录里的 `maafw-*.whl`，或声明
   的范围不含该版本）——M9A 钉 5.12.3 而自带库 5.13.0、MaaStarResonance 钉 5.12.1 而自带库 5.11.1，
-  挂上约束它们的自装直接 ResolutionImpossible；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
+  挂上约束它们的自装直接 ResolutionImpossible。「自钉」**只认这三处**（根 requirements.txt 及其 `-r`
+  展开、pyproject `[project].dependencies`、离线 wheel）：只在 `agent/requirements.txt`、
+  optional-dependencies、dependency-groups 或 `[tool.poetry]` 里钉版本的项目会被当成没钉而挂上约束，
+  遇到真实项目再扩来源；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
   变量，装在带空格目录里的裸路径会让项目的 pip 整条报错；**文件只写 ASCII**——pip 读没有 BOM 的约束
   文件按本机代码页解码。目录由宿主经 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
   环境），没设就不挂；pip 带 `--isolated` 时会忽略这个变量。
