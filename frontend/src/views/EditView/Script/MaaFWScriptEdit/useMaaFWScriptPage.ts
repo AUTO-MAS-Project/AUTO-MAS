@@ -223,7 +223,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     handleChange,
     runPreview: () => runPreview(),
   })
-  const { prefillMirrorChyanCdk } = update
+  const { prefillMirrorChyanCdk, resumeManualUpdate } = update
 
   const { syncGamePackageName, handleResourceChangeWithPackage } = useMaaFWGamePackage({
     scriptId,
@@ -259,6 +259,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       // 特调在脚本页的替换分节与插入点：与后面的加载并行备好，不等它，不改动请求顺序
       void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
+      // 接回后台还在跑或刚跑完的手动更新；不等它，可能要几分钟
+      void resumeManualUpdate()
       if (!maafwConfig.Info.Name) {
         maafwConfig.Info.Name = scriptDetail.name ?? flavor.value.defaultScriptName
         formData.name = maafwConfig.Info.Name

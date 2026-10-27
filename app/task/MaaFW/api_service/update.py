@@ -43,6 +43,7 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
+from app.task.MaaFW.api_service.update_job import record_update_progress
 from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
@@ -370,6 +371,8 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     def publish_progress(data: WSMaaFWProjectUpdateProgressData | None) -> None:
         if data is None:
             return
+        # 后台手动更新（update_job）记一份过程，页面刷新后据此还原面板
+        record_update_progress(script_id, data)
         asyncio.run_coroutine_threadsafe(
             Publisher.send(
                 id=script_id,
