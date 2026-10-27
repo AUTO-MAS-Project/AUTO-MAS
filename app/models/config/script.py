@@ -2599,25 +2599,6 @@ class MaaFWConfig(DomainEntry):
             description="更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道， 和脚本本体的版本档位是两回事，串在一起只会让人猜。 Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致： 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]， 即 stable——这里的顺序同样不能随意调换。",
         )
 
-        GitHubAssetPattern: str = Field(
-            description="[已废弃] GitHub release asset 文件名匹配模式",
-            default_factory=lambda: "",
-        )
-
-        GitHubRepo: str = Field(
-            default_factory=lambda: "",
-            description="[已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
-        )
-
-        GitHubTag: str = Field(
-            description="[已废弃] GitHub release tag 覆盖", default_factory=lambda: ""
-        )
-
-        IfAutoUpdate: bool = Field(
-            default_factory=lambda: True,
-            description="[已废弃] 旧布尔开关，只在 load() 里迁移为 AutoUpdateMode（False → Off）， 运行流程不再读取；保留一个版本兼容旧配置文件后删除。",
-        )
-
         MirrorChyanCDK: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",
             description="Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是 AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。 （合并逻辑见 tools/embedded/update_credentials.py）",
