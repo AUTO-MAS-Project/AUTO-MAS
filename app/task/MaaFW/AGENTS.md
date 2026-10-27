@@ -298,6 +298,21 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
+  **钉回挡不住 agent 运行期自己升级**（MAA_bbb 的 `agent/deploy/deploy.py` 在 agent 启动后
+  `python -m pip install --upgrade -i <镜像> MaaFw`，新 `maa` 包与 runner 的旧原生库混用、自定义动作
+  静默失败、任务照报成功）：worker 起 Python agent（`project_python` / `isolated_venv`）时给它的环境挂
+  `PIP_CONSTRAINT` / `UV_CONSTRAINT`（`runner._inject_agent_pip_constraint`），约束文件
+  `data/maafw_agent_constraints/maafw_agent_<路径哈希>.txt` 只写 `maafw==<与钉回同一来源的版本>`
+  （`environment.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
+  （requirements.txt / pyproject `[project].dependencies` 的确切版本、离线目录里的 `maafw-*.whl`，或声明
+  的范围不含该版本）——M9A 钉 5.12.3 而自带库 5.13.0、MaaStarResonance 钉 5.12.1 而自带库 5.11.1，
+  挂上约束它们的自装直接 ResolutionImpossible。「自钉」**只认这三处**（根 requirements.txt 及其 `-r`
+  展开、pyproject `[project].dependencies`、离线 wheel）：只在 `agent/requirements.txt`、
+  optional-dependencies、dependency-groups 或 `[tool.poetry]` 里钉版本的项目会被当成没钉而挂上约束，
+  遇到真实项目再扩来源；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
+  变量，装在带空格目录里的裸路径会让项目的 pip 整条报错；**文件只写 ASCII**——pip 读没有 BOM 的约束
+  文件按本机代码页解码。目录由宿主经 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
+  环境），没设就不挂；pip 带 `--isolated` 时会忽略这个变量。
   **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
   MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
   按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志。之后**三个条件同时满足**
