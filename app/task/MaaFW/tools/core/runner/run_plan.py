@@ -95,8 +95,12 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # - v2.10.1：checkbox 的 min_count / max_count——界面限制勾选数，运行前不满足就报错。
 # - v2.10.2：welcome 字符串数组——能解析、投影带上每一条；「按数组顺序展示」是「应」级
 #   的界面行为，与 v2.8.0 那条一样不妨碍声明（单字符串的 welcome 也从未展示）。
-# 所以声明 v2.10.2（协议版本表截至 2026-09-08 的最新版本）。
-PI_INTERFACE_VERSION = "v2.10.2"
+# - v2.10.3：preset.pretask——用户页应用预设时按它设前置任务的勾选与选项值，未列出的
+#   不勾选；预设没声明时保持用户当前的前置任务不变（task_config._apply_preset_pretasks、
+#   前端 maafwPresetQueue.ts）。
+# 所以声明 v2.10.3。之后的 v2.10.4（preset.controller）、v2.10.5（inputs[].input_type）
+# 还没做，不能再往上声明。
+PI_INTERFACE_VERSION = "v2.10.3"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
