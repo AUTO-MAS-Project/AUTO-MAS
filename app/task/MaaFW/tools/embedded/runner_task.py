@@ -2110,6 +2110,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     await asyncio.to_thread(framework_log_writer.close)
                 framework_log_writer = None
             self._append_log(f"MaaFW worker 日志创建失败: {exc}")
+        except BaseException:
+            # 在这里被停止：事件通道还没交给读取任务、下面的收尾也走不到，先关掉它（worker
+            # 由 _run_maafw 结束）。不关的话管道句柄留在宿主里一直不释放。
+            if event_server is not None:
+                event_server.close()
+            raise
 
         def write_framework_log(source: str, message: str) -> None:
             if framework_log_writer is None:
