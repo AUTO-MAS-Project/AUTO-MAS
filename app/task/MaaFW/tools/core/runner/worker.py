@@ -143,6 +143,11 @@ def _close_event_channel() -> None:
             channel.close()
 
 
+def _emit_tagged_log(message: str, audience: str | None, level: str) -> None:
+    # runner 自己标了去向 / 级别的日志（详情行、失败原文回显、告警）；只传文案的走 _emit_log
+    _emit(log_event(message, audience=audience, level=level))
+
+
 def _emit_log(message: str) -> None:
     _emit({"type": "log", "message": message})
 
@@ -270,6 +275,7 @@ def main() -> int:
                 else None
             ),
             loop_guard_enabled=payload.get("loopGuard") is True,
+            send_log_event=_emit_tagged_log,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})

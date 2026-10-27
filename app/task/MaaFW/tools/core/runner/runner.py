@@ -86,7 +86,11 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 
 # 宿主也要用的常量放在不依赖 maa 的 worker_protocol 里（本模块一导入就加载 maa，宿主引不了）
 from app.task.MaaFW.tools.core.worker_protocol import (
+    AUDIENCE_WORKER_LOG,
     DETAIL_LOG_PREFIX,
+    LEVEL_ERROR,
+    LEVEL_INFO,
+    LEVEL_WARNING,
     SIGNAL_SCREENSHOT_KINDS,
 )
 
@@ -195,8 +199,9 @@ _LEGACY_FOCUS_KEYS = {
 # 那条，宿主拦在界面外、只进 worker.log。
 TASK_CONFIG_LOG_UI_LIMIT = 240
 TASK_CONFIG_LOG_VALUE_LIMIT = 1200
-# 带 DETAIL_LOG_PREFIX（见 worker_protocol）的行只进 *.worker.log：worker 发事件时据此把
-# audience 定成 worker_log，宿主不转发到界面。
+# 带 DETAIL_LOG_PREFIX（见 worker_protocol）的行只进 *.worker.log：runner 自己的详情行经
+# _log_detail 发、事件上直接标 audience=worker_log；经 send_log 只传文案的（agent 环境准备
+# 转来的等）由 worker 按这个前缀判。宿主都不转发到界面。
 # 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
 # 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
 # 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
@@ -918,6 +923,7 @@ class MaaFWRunner:
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
         loop_guard_enabled: bool = False,
+        send_log_event: Callable[[str, str | None, str], None] | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -1022,10 +1028,30 @@ class MaaFWRunner:
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
+        # 带去向（audience）/ 级别的日志出口，参数是（文案, audience 或 None, level），见
+        # worker_protocol。worker 接上它；没接（本地直接构造 runner）时 _log 退回 send_log 只传文案。
+        self._send_log_event: Callable[[str, str | None, str], None] | None = (
+            send_log_event
+        )
 
     @property
     def failure_screenshots(self) -> list[MaaFWFailureScreenshot]:
         return list(self._failure_screenshots)
+
+    def _log(
+        self, message: str, *, audience: str | None = None, level: str = LEVEL_INFO
+    ) -> None:
+        """发一条标了去向 / 级别的日志（文案照旧）；``audience`` 为 None 时由 worker 按文案规则判。"""
+
+        if self._send_log_event is not None:
+            self._send_log_event(message, audience, level)
+        else:
+            self.send_log(message)
+
+    def _log_detail(self, message: str, *, level: str = LEVEL_INFO) -> None:
+        """只进 ``.worker.log`` 的详情行（文案自带 ``DETAIL_LOG_PREFIX``）。"""
+
+        self._log(message, audience=AUDIENCE_WORKER_LOG, level=level)
 
     def _ensure_initialized(self, device_config: MaaFWDeviceConfig) -> None:
         if self._initialized:
@@ -1220,7 +1246,12 @@ class MaaFWRunner:
             # 或收尾任务被放过时，已完成数会比实际位置少，指到前面的任务上。
             # 初始化阶段失败时还没有任务，为 None。
             failed_task = self._current_task_name
-            self.send_log(f"MaaFW 任务执行失败: {exc}")
+            # 异常原文回显只进 .worker.log：界面上有整理过的失败说明
+            self._log(
+                f"MaaFW 任务执行失败: {exc}",
+                audience=AUDIENCE_WORKER_LOG,
+                level=LEVEL_ERROR,
+            )
             user_message = exc.user_message if isinstance(exc, MaaFWTaskError) else None
             if user_message:
                 # 中止本轮之前已经有任务失败过（失败后继续的那些）：一并点名，
@@ -1300,9 +1331,9 @@ class MaaFWRunner:
         if self._stop_requested.is_set():
             return
         if not in_flight:
-            self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再投递后续任务")
+            self._log(f"{RUN_TIMEOUT_MESSAGE}，不再投递后续任务", level=LEVEL_WARNING)
             return
-        self.send_log(f"{RUN_TIMEOUT_MESSAGE}，正在停止当前任务并截图")
+        self._log(f"{RUN_TIMEOUT_MESSAGE}，正在停止当前任务并截图", level=LEVEL_WARNING)
         self._deadline_stop_posted = True
         try:
             self._post_self_stop()
@@ -1390,7 +1421,9 @@ class MaaFWRunner:
             self._task_deadline_hit.set()
         if self._stop_requested.is_set():
             return
-        self.send_log(f"{TASK_TIMEOUT_MESSAGE}，正在停止当前任务并截图")
+        self._log(
+            f"{TASK_TIMEOUT_MESSAGE}，正在停止当前任务并截图", level=LEVEL_WARNING
+        )
         self._task_deadline_stop_posted = True
         try:
             self._post_self_stop()
@@ -1448,9 +1481,10 @@ class MaaFWRunner:
                 return "skip_rest"
             # 特调声明的收尾任务：截图、记一行，不算本轮失败
             stopped = "已停止并继续后续任务" if has_next else "已停止"
-            self.send_log(
+            self._log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），{stopped}: "
-                f"{display_name}；{task.nonFatalMessage}"
+                f"{display_name}；{task.nonFatalMessage}",
+                level=LEVEL_WARNING,
             )
             return "next"
         if index == 0 or task.abortRoundMessage:
@@ -1473,13 +1507,15 @@ class MaaFWRunner:
         )
         # 与普通任务失败同一口径：最后一个任务不说「继续后续任务」。
         if index + 1 < len(self.plan.tasks):
-            self.send_log(
+            self._log(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止并继续后续任务: "
-                f"{display_name}"
+                f"{display_name}",
+                level=LEVEL_WARNING,
             )
         else:
-            self.send_log(
-                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
+            self._log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}",
+                level=LEVEL_WARNING,
             )
         return "next"
 
@@ -1743,22 +1779,29 @@ class MaaFWRunner:
                     # 锁内启动：主线程拿到命中标记时线程一定已经在跑，join 才等得到它。
                     thread.start()
         if verdict.kind == "unsupported":
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}原地打转检测：MaaFramework 通知缺少所需字段"
                 f"（{verdict.detail}），本次运行不做检测"
             )
             return
         summary = _format_loop_guard_detail(verdict)
         if verdict.kind == "warn":
-            self.send_log(f"{DETAIL_LOG_PREFIX}疑似原地打转：{summary}")
+            self._log_detail(
+                f"{DETAIL_LOG_PREFIX}疑似原地打转：{summary}", level=LEVEL_WARNING
+            )
             return
         if thread is None:
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}判定原地打转时没有可停止的任务，已忽略：{summary}"
             )
             return
-        self.send_log(f"{DETAIL_LOG_PREFIX}判定原地打转：{summary}")
-        self.send_log(f"{_format_loop_guard_reason(verdict)}，正在停止当前任务并截图")
+        self._log_detail(
+            f"{DETAIL_LOG_PREFIX}判定原地打转：{summary}", level=LEVEL_WARNING
+        )
+        self._log(
+            f"{_format_loop_guard_reason(verdict)}，正在停止当前任务并截图",
+            level=LEVEL_WARNING,
+        )
 
     def _post_loop_guard_stop(self) -> None:
         try:
@@ -1864,7 +1907,7 @@ class MaaFWRunner:
         resource = self.resource
         get_node_data = getattr(resource, "get_node_data", None)
         if not callable(get_node_data):
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}MaaFW binding 没有 get_node_data，不识别项目声明的"
                 "维护 / 更新信号节点"
             )
@@ -1875,7 +1918,7 @@ class MaaFWRunner:
         except Exception as exc:
             self._signal_lookup_on_hit = True
             self._loop_guard_lookup_on_hit = collect_exempt
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}MaaFW binding 列不出节点（{exc}），不强开维护 / "
                 "更新信号节点，只在节点命中时按名字判定"
             )
@@ -1899,7 +1942,7 @@ class MaaFWRunner:
         exempt_text = (
             f"，原地打转检测豁免节点: {'、'.join(sorted(exempt))}" if exempt else ""
         )
-        self.send_log(
+        self._log_detail(
             f"{DETAIL_LOG_PREFIX}信号节点扫描：{len(names)} 个节点，用时 "
             f"{elapsed_ms:.0f} ms，信号节点: {found}{exempt_text}"
         )
@@ -1975,8 +2018,9 @@ class MaaFWRunner:
         try:
             actual = str(self.resource.hash or "").strip()
         except Exception as exc:
-            self.send_log(
-                f"{DETAIL_LOG_PREFIX}读取资源 hash 失败，跳过完整性校验: {exc}"
+            self._log_detail(
+                f"{DETAIL_LOG_PREFIX}读取资源 hash 失败，跳过完整性校验: {exc}",
+                level=LEVEL_WARNING,
             )
             return
         if not actual or actual.casefold() == expected.casefold():
@@ -1985,10 +2029,11 @@ class MaaFWRunner:
         resource_name = (
             label if label and not label.startswith("$") else self.plan.resource.name
         )
-        self.send_log(
+        self._log_detail(
             f"{DETAIL_LOG_PREFIX}资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
             f"实际加载得到 {actual}。资源文件可能被改动或更新不完整，建议重新下载或"
-            "更新该项目；本次照常运行"
+            "更新该项目；本次照常运行",
+            level=LEVEL_WARNING,
         )
 
     def _preflight_device(self, device_config: MaaFWDeviceConfig) -> None:
@@ -2734,7 +2779,10 @@ class MaaFWRunner:
             if self._deadline_hit.is_set():
                 # RunTimeLimit 比连接预算短时，到点就按超时收尾（timedOut 结果回传），
                 # 不能一直等到宿主「限时 + 宽限」强杀 worker。
-                self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再等待 Agent 连接: {label}")
+                self._log(
+                    f"{RUN_TIMEOUT_MESSAGE}，不再等待 Agent 连接: {label}",
+                    level=LEVEL_WARNING,
+                )
                 raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
             handshake_error = self._agent_handshake_errors.get(process.pid)
             if handshake_error:
@@ -2883,11 +2931,13 @@ class MaaFWRunner:
                 exit_code = process.poll()
         if exit_code is None:
             # 输出关了但进程还活着（agent 自己关了 stdout）：不能说成已退出
-            self.send_log(f"{DETAIL_LOG_PREFIX}Agent 输出已关闭，进程仍在运行: {label}")
+            self._log_detail(
+                f"{DETAIL_LOG_PREFIX}Agent 输出已关闭，进程仍在运行: {label}"
+            )
             return
         if self._stop_requested.is_set() or not self._initialized:
             # 收尾时是我们自己结束的 agent；连接阶段退出由连接循环报错。只进 .worker.log
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}Agent 进程已退出: {label}, exit={exit_code}"
             )
             return
@@ -2935,6 +2985,7 @@ class MaaFWRunner:
                 self.send_log,
                 self._on_node_notification,
                 self._note_tasker_entry,
+                log=self._log,
             )
             if self.tasker.add_sink(tasker_sink) is not None:
                 self.event_sinks.append(tasker_sink)
@@ -3347,7 +3398,7 @@ class MaaFWRunner:
                 raise RuntimeError("MaaFW tasker 已释放，无法继续投递任务")
             display_name = _task_display_name(task)
             self.send_log(_format_task_config_log(task))
-            self.send_log(_format_task_config_detail_log(task))
+            self._log_detail(_format_task_config_detail_log(task))
             self.send_log(f"正在运行任务: {display_name}")
             self._task_failure_summaries.clear()
             self._node_success_seq.clear()
@@ -3443,8 +3494,9 @@ class MaaFWRunner:
                             f"{display_name}；{task.nonFatalMessage}"
                         )
                         break
-                    self.send_log(
-                        f"任务失败: {display_name}: {reason}；{task.nonFatalMessage}"
+                    self._log(
+                        f"任务失败: {display_name}: {reason}；{task.nonFatalMessage}",
+                        level=LEVEL_WARNING,
                     )
                     time.sleep(0.1)
                     continue
@@ -3466,9 +3518,12 @@ class MaaFWRunner:
                 # 这条现在会实时出现在任务日志里，措辞不能对最后一个
                 # 任务说「将继续后续任务」。
                 if index + 1 < total_tasks:
-                    self.send_log(f"任务失败，将继续后续任务: {display_name}: {reason}")
+                    self._log(
+                        f"任务失败，将继续后续任务: {display_name}: {reason}",
+                        level=LEVEL_ERROR,
+                    )
                 else:
-                    self.send_log(f"任务失败: {display_name}: {reason}")
+                    self._log(f"任务失败: {display_name}: {reason}", level=LEVEL_ERROR)
                 time.sleep(0.1)
                 continue
             if self._stop_requested.is_set():
@@ -3590,11 +3645,11 @@ class MaaFWRunner:
                 )
                 self._signal_stop_thread = thread
         if thread is None:
-            self.send_log(
+            self._log_detail(
                 f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中时没有任务在投递中，已忽略"
             )
             return
-        self.send_log(
+        self._log_detail(
             f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中：{signal}，正在停止当前任务"
         )
         thread.start()
@@ -3611,7 +3666,7 @@ class MaaFWRunner:
             detail = "识别文本: " + " / ".join(texts)
         else:
             detail = "不是 OCR 识别或没有识别文本，按规则无法判定"
-        self.send_log(
+        self._log_detail(
             f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中但未匹配任何信号规则，{detail}"
         )
 
@@ -3691,11 +3746,16 @@ class MaaFWRunner:
         # a submission failure instead of reporting an instant success.
         if getattr(job, "job_id", 1) == 0:
             if failure is not None:
-                self.send_log(f"{DETAIL_LOG_PREFIX}{failure}: MaaFW job id=0")
+                self._log_detail(
+                    f"{DETAIL_LOG_PREFIX}{failure}: MaaFW job id=0", level=LEVEL_ERROR
+                )
                 raise RuntimeError(
                     f"{failure}：MaaFramework 未接受这个请求，原因见本次运行的 .maafw.log"
                 )
-            self.send_log(f"{DETAIL_LOG_PREFIX}MaaFW tasker 未接受任务（task_id=0）")
+            self._log_detail(
+                f"{DETAIL_LOG_PREFIX}MaaFW tasker 未接受任务（task_id=0）",
+                level=LEVEL_ERROR,
+            )
             raise RuntimeError(
                 "MaaFramework 拒绝了这个任务（多半是任务选项生成的覆盖无效），"
                 "原因见本次运行的 .maafw.log"
@@ -3712,7 +3772,7 @@ class MaaFWRunner:
                 message = f"{lead}，详见本次运行的 .maafw.log"
             elif failure is not None:
                 message = f"{failure}：{message}"
-            self.send_log(f"{DETAIL_LOG_PREFIX}{message}")
+            self._log_detail(f"{DETAIL_LOG_PREFIX}{message}", level=LEVEL_ERROR)
             raise MaaFWTaskError(message, user_message=user_message or None)
 
     def _on_node_notification(self, message: str, details: dict[str, Any]) -> None:
@@ -3733,8 +3793,9 @@ class MaaFWRunner:
                 if not self._loop_guard_error_logged:
                     self._loop_guard_error_logged = True
                     with suppress(Exception):
-                        self.send_log(
-                            f"{DETAIL_LOG_PREFIX}处理原地打转检测通知失败: {exc}"
+                        self._log_detail(
+                            f"{DETAIL_LOG_PREFIX}处理原地打转检测通知失败: {exc}",
+                            level=LEVEL_WARNING,
                         )
         try:
             focus_texts = self._resolve_focus_texts(message, details)
@@ -3793,7 +3854,7 @@ class MaaFWRunner:
                 "其余只进本次运行的 .worker.log"
             )
         if count <= FOCUS_LOG_HARD_LIMIT_PER_TASK:
-            self.send_log(f"{DETAIL_LOG_PREFIX}{FOCUS_LOG_PREFIX}{text}")
+            self._log_detail(f"{DETAIL_LOG_PREFIX}{FOCUS_LOG_PREFIX}{text}")
 
     def _record_task_failure_summary(
         self,
@@ -3817,7 +3878,9 @@ class MaaFWRunner:
         if not diagnostic:
             return
         self._failure_event_seq += 1
-        self.send_log(f"{DETAIL_LOG_PREFIX}框架失败事件: {diagnostic}")
+        self._log_detail(
+            f"{DETAIL_LOG_PREFIX}框架失败事件: {diagnostic}", level=LEVEL_WARNING
+        )
         node_details = details.get("node_details")
         summary = _TaskFailureSummary(
             event=message,
@@ -4159,11 +4222,14 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         send_log: Callable[[str], None],
         on_notification: Callable[[str, dict[str, Any]], None],
         note_entry: Callable[[NotificationType, str], None] | None = None,
+        log: Callable[..., None] | None = None,
     ) -> None:
         super().__init__()
         self.send_log = send_log
         self.on_notification = on_notification
         self.note_entry = note_entry
+        # 带去向 / 级别的出口（MaaFWRunner._log）；没给时只按文案发 send_log
+        self.log = log
         # 装上 context sink 后 Node.* 由它负责；这里只剩 Tasker.Task.*。
         # 老 binding 没有 context sink 时保持 True，Node.* 仍从这里过。
         self.handle_node_events = True
@@ -4174,9 +4240,27 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         noti_type: NotificationType,
         detail: TaskerEventSink.TaskerTaskDetail,
     ) -> None:
-        self.send_log(
-            f"[MaaFW Tasker] {_notification_label(noti_type)}: {detail.entry}"
-        )
+        message = f"[MaaFW Tasker] {_notification_label(noti_type)}: {detail.entry}"
+        if self.log is None:
+            self.send_log(message)
+        elif noti_type in (
+            NotificationType.Starting,
+            NotificationType.Succeeded,
+            NotificationType.Failed,
+        ):
+            # 开始 / 成功是英文入口名，与前后的「正在运行任务 / 任务完成」重复；失败是原样
+            # 回声，runner 另发整理过的「任务失败」：都只进 .worker.log
+            self.log(
+                message,
+                audience=AUDIENCE_WORKER_LOG,
+                level=(
+                    LEVEL_WARNING
+                    if noti_type == NotificationType.Failed
+                    else LEVEL_INFO
+                ),
+            )
+        else:
+            self.log(message)
         if self.note_entry is not None:
             self.note_entry(noti_type, detail.entry)
 
