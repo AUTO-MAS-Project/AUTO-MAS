@@ -212,7 +212,7 @@ class QueueItemNotFoundError(LookupError):
 
 
 class AppConfig:
-    VERSION = "v5.8.0-beta.1"
+    VERSION = "v5.8.0-beta.2"
 
     def __init__(self) -> None:
 
