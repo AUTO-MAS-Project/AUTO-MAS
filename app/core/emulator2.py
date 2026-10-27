@@ -427,8 +427,11 @@ async def remove_path(emulator_id: str, path_id: str) -> dict:
     manager = await build_manager(emulator_id)
     affected = find_affected_scripts(emulator_id, manager.slots.slots_of(path_id))
     # 先把早先删除实例留下、还挂在这条路径上的墓碑退役，
-    # 否则写完路径墓碑就分不出来了，重新添加时会把已删除实例的号一起复活
-    manager.slots.retire_tombstones(path_id)
+    # 否则写完路径墓碑就分不出来了，重新添加时会把已删除实例的号一起复活。
+    # 只对在用路径做：路径已移除（上次移除成功但响应丢了、用户重试）时，
+    # 这条路径上的墓碑都是路径墓碑，清掉就没法在重新添加时沿用原号。
+    if manager.path_of(path_id) is not None:
+        manager.slots.retire_tombstones(path_id)
     tombstoned = manager.slots.tombstone_path(path_id)
     paths = [record for record in manager.paths if record.path_id != path_id]
 
