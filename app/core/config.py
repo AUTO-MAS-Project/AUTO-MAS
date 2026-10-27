@@ -110,8 +110,6 @@ from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils import paths as _utils_paths
 
-# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
-MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
 # 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
 DIAGNOSTIC_FILE_SUFFIXES = frozenset({".log", ".png", ".jpg"})
@@ -2938,67 +2936,11 @@ class AppConfig:
         )
 
     async def clean_maafw_agent_venvs(self) -> None:
-        """清掉已无脚本引用的 MFW agent 隔离 venv。
+        """清掉已无脚本引用的 MFW agent 隔离 venv。"""
 
-        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
-        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
-        永远留着。
+        from app.task.MaaFW.tools.embedded import startup_maintenance
 
-        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
-        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
-        把开发者磁盘上的真 venv 删掉了。
-
-        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
-        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
-        """
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.core.agent_env.planner import (
-            collect_orphan_agent_venvs,
-        )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        root = Path.cwd() / "config" / "maafw_agent_venvs"
-        if not root.is_dir():
-            return
-
-        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
-        # 会把副本的 venv 当孤儿删掉。
-        live_paths = [
-            path
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-            and (path := str(resolve_maafw_project_root(str(uid), config)).strip())
-        ]
-
-        # 有效根都是本机 data/ 下的副本：不存在只说明这个脚本还没导入过（新建未选目录、
-        # 升级后没打开过），它名下不可能有 venv，从存活集合里去掉即可；不能像路径模式
-        # 那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
-        missing = [path for path in live_paths if not Path(path).exists()]
-        if missing:
-            logger.debug(
-                f"MFW 隔离 venv 清理：{len(missing)} 个脚本还没有副本，不计入存活"
-            )
-            live_paths = [path for path in live_paths if Path(path).exists()]
-
-        try:
-            orphans = collect_orphan_agent_venvs(root, live_paths)
-        except Exception as exc:
-            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
-            return
-
-        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
-        for venv_path in orphans:
-            try:
-                if venv_path.stat().st_mtime > cutoff:
-                    continue  # 刚动过，可能有运行正在用它
-                shutil.rmtree(venv_path)
-            except OSError as exc:
-                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
-                continue
-            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+        await startup_maintenance.clean_maafw_agent_venvs(self)
 
     async def _settle_m9a_migration(self, report: Any) -> None:
         """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。
