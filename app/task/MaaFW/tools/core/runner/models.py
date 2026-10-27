@@ -183,3 +183,6 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 原地打转检测（实验性）：任务在短周期里反复执行同一串节点、识别结果又不变时停掉它，
     # 收尾与单任务超时同一口径。宿主按 Run.LoopGuard 下发，默认关。
     loopGuard: bool = False
+    # 失败回放（实验性）：worker 把用过的截图留在内存环里，失败时写进 failureScreenshotDir 下
+    # 的 ``<主干>.replay/``，宿主合成视频。宿主按全局 Replay.FrameReplay 下发，默认关。
+    frameReplay: bool = False

@@ -213,6 +213,7 @@ class MaaFWRunnerService:
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
         loop_guard: bool = False,
+        frame_replay: bool = False,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -242,6 +243,7 @@ class MaaFWRunnerService:
             taskTimeLimitSeconds=task_time_limit_seconds,
             taskTimeLimitOverrides=task_time_limit_overrides,
             loopGuard=bool(loop_guard),
+            frameReplay=bool(frame_replay),
         )
 
     def prepare_environment(

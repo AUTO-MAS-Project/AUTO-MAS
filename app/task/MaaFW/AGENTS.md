@@ -367,6 +367,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `attach.auto_mas`**：`run_signal.parse_signal_spec` 遇到未知键会忽略整个信号节点，而且写了
   `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
   节点时退回命中时按名字查。
+- **截图回放**（全局 `Replay.FrameReplay`，**实验性、默认关**；worker 侧 `tools/core/runner/frame_replay.py`，
+  宿主合成 `tools/embedded/frame_replay_video.py`）：worker 把用过的截图编成 PNG 放内存环（≤ 64 MB），
+  `_capture_failure_screenshot` 出图时（信号节点证据图除外）写成 `<主干>.replay/`，宿主保存历史时把本用户
+  最后 3 段合成 VP8 WebM、作 `kind="video"` 附件，和 OBS 回放共用视频容量。几条只有实测才知道的：
+  取帧只能挂 `Node.NextList.Starting` 与 controller 的 `screencap` 成功两处（此刻 `cached_image` 就是刚用的帧；
+  流水线内部截图不发 controller 事件，agent 的发），**不能另开线程轮询** `cached_image`（截图中读会失败、每次往
+  maafw.log 写一行 ERR）；回调同步挡流水线，里面只复制不编码；不开 debug 模式（全节点 focus 刷屏）。
+  worker 被强杀时内存环跟着没，所以 `runDeadlineAt + 60 s` 有计时器先写出——必须小于宿主的
+  `_RUN_DEADLINE_GRACE_SECONDS`（90 s）。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /

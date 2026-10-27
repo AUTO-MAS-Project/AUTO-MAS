@@ -20,6 +20,7 @@ const props = defineProps<{
 
 const replaySettings = computed(() => props.settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
+const frameReplayEnabled = computed(() => replaySettings.value?.FrameReplay ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
 const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
 const videoStorageLimitDraft = ref<number | null>(videoStorageLimit.value)
@@ -327,6 +328,28 @@ const runSaveReplay = async () => {
         <div v-if="checkResult.directory" class="replay-path">{{ checkResult.directory }}</div>
       </template>
     </a-alert>
+
+    <a-row :gutter="24">
+      <a-col :span="8">
+        <div class="form-item-vertical">
+          <div class="form-label-wrapper">
+            <span class="form-label">{{ t('setting.replay.frameEnable') }}</span>
+            <a-tooltip :title="t('setting.replay.frameEnableTip')">
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
+          </div>
+          <a-select
+            :value="frameReplayEnabled"
+            size="large"
+            style="width: 100%"
+            @change="(value: any) => updateReplaySetting('FrameReplay', value)"
+          >
+            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+          </a-select>
+        </div>
+      </a-col>
+    </a-row>
   </div>
 </template>
 

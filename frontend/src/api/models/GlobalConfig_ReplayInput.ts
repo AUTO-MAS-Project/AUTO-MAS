@@ -23,5 +23,9 @@ export type GlobalConfig_ReplayInput = {
      * OBS 密码是否已配置，只读
      */
     readonly PasswordConfigured?: (boolean | null);
+    /**
+     * MaaFW 任务失败时用脚本自己的截图合成失败前的回放（实验性），不需要 OBS。
+     */
+    FrameReplay?: (boolean | null);
 };
 

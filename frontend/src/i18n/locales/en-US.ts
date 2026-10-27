@@ -5280,6 +5280,9 @@ export default {
       active: 'Active',
       inactive: 'Inactive',
       version: 'OBS version',
+      frameEnable: 'MaaFW screenshot replay (experimental)',
+      frameEnableTip:
+        'When a MaaFW task fails, builds a replay of the last minute or two from the screenshots the script itself took and saves it to history. Does not need OBS; uses the video storage limit above.',
     },
     display: {
       section: 'Virtual display',

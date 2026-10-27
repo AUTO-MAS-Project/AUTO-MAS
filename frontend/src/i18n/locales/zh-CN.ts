@@ -5042,6 +5042,9 @@ export default {
       active: '已启动',
       inactive: '未启动',
       version: 'OBS 版本',
+      frameEnable: 'MaaFW 截图回放（实验性）',
+      frameEnableTip:
+        'MaaFW 系任务失败时，用脚本自己截的图合成失败前一两分钟的回放，存进历史记录。不需要 OBS，占用上面的视频容量。',
     },
     display: {
       section: '虚拟显示器',

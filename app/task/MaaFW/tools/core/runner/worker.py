@@ -176,6 +176,7 @@ def main() -> int:
                 else None
             ),
             loop_guard_enabled=payload.get("loopGuard") is True,
+            frame_replay_enabled=payload.get("frameReplay") is True,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})

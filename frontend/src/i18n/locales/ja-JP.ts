@@ -5317,6 +5317,9 @@ export default {
       active: '有効',
       inactive: '無効',
       version: 'OBS バージョン',
+      frameEnable: 'MaaFW スクリーンショットリプレイ（実験的）',
+      frameEnableTip:
+        'MaaFW 系タスクが失敗したとき、スクリプト自身が撮ったスクリーンショットから失敗直前 1〜2 分のリプレイを作り、履歴に保存します。OBS は不要で、上の動画容量を使います。',
     },
     display: {
       section: '仮想ディスプレイ',

@@ -61,6 +61,10 @@ from app.task.MaaFW.tools.core.runner.environment import (
     MaaFWRunnerEnvironment,
     describe_project_runtime_architecture_mismatch,
 )
+from app.task.MaaFW.tools.core.runner.frame_replay import (
+    FRAME_REPLAY_MAX_SEGMENTS,
+    find_frame_replay_segments,
+)
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
@@ -517,6 +521,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._attempt_title: str | None = None
         self._history_temp = tempfile.TemporaryDirectory(prefix="mas-maafw-run-")
         self._history_attachments: dict[int, list[HistoryAttachmentInput]] = {}
+        # 失败回放的帧序列（worker 写出的 ``*.replay/``），按尝试记下；保存历史时才合成
+        self._frame_replay_segments: dict[int, list[Path]] = {}
         self._history_statuses: dict[int, HistoryStatus] = {}
         self._history_saved = False
         self._user_finalized = False
@@ -2073,6 +2079,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_time_limit_seconds=task_time_limit_seconds,
                 task_time_limit_overrides=task_time_limit_overrides,
                 loop_guard=loop_guard,
+                frame_replay=Config.setting.Replay.FrameReplay,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
@@ -2327,6 +2334,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             display_name=image.name,
                         )
                     )
+            # worker 被强杀时也在：截止计时器抢在宽限期满前写出过
+            segments = find_frame_replay_segments(history_dir)
+            if segments:
+                self._frame_replay_segments.setdefault(attempt_key, []).extend(segments)
             with suppress(Exception):
                 await asyncio.to_thread(job_path.unlink)
             with suppress(Exception):
@@ -3403,6 +3414,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"冻结通知截图失败：{error}", warning=True)
         await self.signal_tracker.freeze_user_screenshots(str(self.cur_user_uid))
 
+    async def _attach_frame_replays(
+        self, attempt_keys: list[int], records: list[HistoryWrite]
+    ) -> None:
+        """本用户各次尝试写出的失败回放只合成最后几段，挂到各自那次尝试的记录上。
+
+        重试会让失败回放越攒越多（一段合成约 6 秒、5 MB），只留最后
+        ``FRAME_REPLAY_MAX_SEGMENTS`` 段；没合成的帧序列随临时目录一起清掉。
+        """
+
+        pending = [
+            (index, segment)
+            for index, key in enumerate(attempt_keys)
+            for segment in self._frame_replay_segments.pop(key, [])
+        ]
+        if not pending:
+            return
+        # 导入 opencv / Pillow 放在事件循环线程里做，合成才进工作线程
+        from .frame_replay_video import compose_frame_replay
+
+        for index, segment in pending[-FRAME_REPLAY_MAX_SEGMENTS:]:
+            try:
+                video = await asyncio.to_thread(compose_frame_replay, segment)
+            except Exception as error:
+                self._append_log(f"失败回放合成失败：{error}", warning=True)
+                logger.opt(exception=True).warning(f"失败回放合成失败：{error}")
+                continue
+            if video is not None and index < len(records):
+                records[index].attachments.append(
+                    HistoryAttachmentInput(
+                        path=video,
+                        kind="video",
+                        role="frame_replay",
+                        display_name=video.name,
+                    )
+                )
+
     async def _save_user_history(self) -> None:
         if self._history_saved:
             return
@@ -3437,6 +3484,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             record.attachments.extend(self._history_attachments.get(id(log_item), []))
             records.append(record)
+        await self._attach_frame_replays(
+            [id(log_item) for _, log_item in items], records
+        )
         if records:
             try:
                 attachments = await self.task_info.collect_user_history_attachments(
