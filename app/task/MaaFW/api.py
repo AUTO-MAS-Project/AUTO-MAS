@@ -543,12 +543,15 @@ async def get_maafw_script_icon(
 ) -> FileResponse:
     """脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
 
-    取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标。
+    取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
+    具体原因只写日志，不放进响应。
     项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，让浏览器每次凭 ETag 确认。
     """
 
     try:
         file_path = await maafw_interface_api.maafw_script_icon_file(scriptId)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        # 原因里可能带本机副本路径，只进日志；响应只给固定文案（列表每次渲染都会来取，记 debug）
+        logger.debug(f"MFW 项目图标取不到: scriptId={scriptId}, 原因: {exc}")
+        raise HTTPException(status_code=404, detail="MFW 项目图标不存在") from exc
     return FileResponse(file_path, headers={"Cache-Control": "no-cache"})
