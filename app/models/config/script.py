@@ -3625,6 +3625,19 @@ class GeneralConfig(DomainEntry):
     Script: ScriptFields = Field(default_factory=ScriptFields)
     UserData: ConfigCollection[GeneralUserConfig] = collection(GeneralUserConfig)
 
+    @classmethod
+    def normalize_payload(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data = super().normalize_payload(data)
+        script = data.get("Script")
+        if isinstance(script, dict):
+            # 旧模板使用文件选择器文案，未知值仍交给字段校验拒绝。
+            mode = script.get("ConfigPathMode")
+            if mode == "所有文件 (*)":
+                script["ConfigPathMode"] = "File"
+            elif mode == "文件夹":
+                script["ConfigPathMode"] = "Folder"
+        return data
+
 
 class OkwwConfig(DomainEntry):
     "OK-WW 配置（ok-script 线）"
