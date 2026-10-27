@@ -25,6 +25,191 @@
 
 import sys
 from importlib import import_module
+from typing import TYPE_CHECKING
+
+# 静态检查显式声明导出；运行时仍由下方入口按需加载。
+if TYPE_CHECKING:
+    from .common import OCR as OCR
+    from .common import LogPatternExtractor as LogPatternExtractor
+    from .common import community as community
+    from .common import config_archive as config_archive
+    from .common import config_document as config_document
+    from .common import config_restore as config_restore
+    from .common import constants as constants
+    from .common import emulator as emulator
+    from .common import emulator2 as emulator2
+    from .common import environment as environment
+    from .common import errors as errors
+    from .common import exception as exception
+    from .common import expression as expression
+    from .common import fluxdown_cli as fluxdown_cli
+    from .common import game_apk as game_apk
+    from .common import game_update as game_update
+    from .common import hpatchz as hpatchz
+    from .common import i18n as i18n
+    from .common import io as io
+    from .common import logger as logger
+    from .common import mirrorchyan as mirrorchyan
+    from .common import notification_render as notification_render
+    from .common import notification_template as notification_template
+    from .common import paths as paths
+    from .common import process as process
+    from .common import process_runner as process_runner
+    from .common import security as security
+    from .common import supervision as supervision
+    from .common import tools as tools
+    from .common import update_files as update_files
+    from .common import websocket as websocket
+    from .common.constants import ANSI_ESCAPE_RE as ANSI_ESCAPE_RE
+    from .common.constants import APPDATA_PATH as APPDATA_PATH
+    from .common.constants import ARKNIGHTS_GAME_DAY_TZ as ARKNIGHTS_GAME_DAY_TZ
+    from .common.constants import BASE_INDEPENDENT as BASE_INDEPENDENT
+    from .common.constants import BASE_NATIVE as BASE_NATIVE
+    from .common.constants import BASE_SHARED as BASE_SHARED
+    from .common.constants import BASE_SOURCE_LABELS as BASE_SOURCE_LABELS
+    from .common.constants import BROWSER_ENV as BROWSER_ENV
+    from .common.constants import CYCLE_DATETIME_FORMAT as CYCLE_DATETIME_FORMAT
+    from .common.constants import CYCLE_EMPTY_TIME as CYCLE_EMPTY_TIME
+    from .common.constants import DEFAULT_DATETIME as DEFAULT_DATETIME
+    from .common.constants import DES_RULE as DES_RULE
+    from .common.constants import EMULATOR_PATH_BOOK as EMULATOR_PATH_BOOK
+    from .common.constants import (
+        EMULATOR_SPLASH_ADS_PATH_BOOK as EMULATOR_SPLASH_ADS_PATH_BOOK,
+    )
+    from .common.constants import ENDFIELD_SERVER_PRESETS as ENDFIELD_SERVER_PRESETS
+    from .common.constants import FORBIDDEN_PATH_EXACT as FORBIDDEN_PATH_EXACT
+    from .common.constants import FORBIDDEN_PATH_PREFIXES as FORBIDDEN_PATH_PREFIXES
+    from .common.constants import ILLEGAL_CHARS as ILLEGAL_CHARS
+    from .common.constants import KEYBOARD_KEYS as KEYBOARD_KEYS
+    from .common.constants import LEGACY_BASE_SOURCES as LEGACY_BASE_SOURCES
+    from .common.constants import MAA_STAGE_KEY as MAA_STAGE_KEY
+    from .common.constants import MAAEND_AUTO_COLLECT_MODES as MAAEND_AUTO_COLLECT_MODES
+    from .common.constants import MAAEND_AUTO_COLLECT_TASK as MAAEND_AUTO_COLLECT_TASK
+    from .common.constants import MAAEND_AUTO_ESSENCE_MENUS as MAAEND_AUTO_ESSENCE_MENUS
+    from .common.constants import (
+        MAAEND_DELIVERY_COMMISSION_SOURCES as MAAEND_DELIVERY_COMMISSION_SOURCES,
+    )
+    from .common.constants import MAAEND_DELIVERY_TASK as MAAEND_DELIVERY_TASK
+    from .common.constants import (
+        MAAEND_INVENTORY_TARGET_DEFAULTS as MAAEND_INVENTORY_TARGET_DEFAULTS,
+    )
+    from .common.constants import (
+        MAAEND_PROTOCOL_SPACE_TASK_OPTIONS as MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
+    )
+    from .common.constants import MAAEND_RUN_MOOD_BOOK as MAAEND_RUN_MOOD_BOOK
+    from .common.constants import (
+        MAAEND_SANITY_TASK_DEFAULTS as MAAEND_SANITY_TASK_DEFAULTS,
+    )
+    from .common.constants import (
+        MAAEND_SANITY_TASK_DETAIL_LABELS as MAAEND_SANITY_TASK_DETAIL_LABELS,
+    )
+    from .common.constants import MAAEND_SANITY_TASK_FIELDS as MAAEND_SANITY_TASK_FIELDS
+    from .common.constants import MAAEND_SANITY_TASK_LABELS as MAAEND_SANITY_TASK_LABELS
+    from .common.constants import MAAEND_SANITY_TASK_TYPES as MAAEND_SANITY_TASK_TYPES
+    from .common.constants import MAAEND_STAGE_WITH_AB as MAAEND_STAGE_WITH_AB
+    from .common.constants import MAAEND_TASK_GROUPS as MAAEND_TASK_GROUPS
+    from .common.constants import MAAEND_TASKS as MAAEND_TASKS
+    from .common.constants import MATERIALS_MAP as MATERIALS_MAP
+    from .common.constants import MIRROR_ERROR_INFO as MIRROR_ERROR_INFO
+    from .common.constants import (
+        MSS_DEFAULT_TRIBULATION_STAGE as MSS_DEFAULT_TRIBULATION_STAGE,
+    )
+    from .common.constants import MSS_TRIBULATION_STAGES as MSS_TRIBULATION_STAGES
+    from .common.constants import PLAN_CONSUMER_VALUES as PLAN_CONSUMER_VALUES
+    from .common.constants import RESERVED_NAMES as RESERVED_NAMES
+    from .common.constants import RESOURCE_STAGE_INFO as RESOURCE_STAGE_INFO
+    from .common.constants import SKLAND_SM_CONFIG as SKLAND_SM_CONFIG
+    from .common.constants import (
+        STARRAIL_CN_UPDATE_LINK_URL as STARRAIL_CN_UPDATE_LINK_URL,
+    )
+    from .common.constants import STARRAIL_PACKAGE_NAME as STARRAIL_PACKAGE_NAME
+    from .common.constants import STARRAIL_STAGE_BOOK as STARRAIL_STAGE_BOOK
+    from .common.constants import (
+        STARRAIL_UPDATE_LINK_SERVER as STARRAIL_UPDATE_LINK_SERVER,
+    )
+    from .common.constants import TASK_MODE_ZH as TASK_MODE_ZH
+    from .common.constants import TIME_FIELDS as TIME_FIELDS
+    from .common.constants import TYPE_BOOK as TYPE_BOOK
+    from .common.constants import UTC4 as UTC4
+    from .common.constants import UTC8 as UTC8
+    from .common.constants import game_now as game_now
+    from .common.constants import get_game_day_tz as get_game_day_tz
+    from .common.constants import normalize_base_source as normalize_base_source
+    from .common.emulator import EMULATOR_TYPE_BOOK as EMULATOR_TYPE_BOOK
+    from .common.emulator import LDManager as LDManager
+    from .common.emulator import MumuManager as MumuManager
+    from .common.emulator import search_all_emulators as search_all_emulators
+    from .common.errors import UnsupportedPlatformError as UnsupportedPlatformError
+    from .common.logger import get_logger as get_logger
+    from .common.LogMonitor import LogMonitor as LogMonitor
+    from .common.LogMonitor import strptime as strptime
+    from .common.LogPatternExtractor import LOG_TYPE_ERROR as LOG_TYPE_ERROR
+    from .common.LogPatternExtractor import LOG_TYPE_NORMAL as LOG_TYPE_NORMAL
+    from .common.LogPatternExtractor import SIGN_MODE_REGEX as SIGN_MODE_REGEX
+    from .common.LogPatternExtractor import SIGN_MODE_SPLIT as SIGN_MODE_SPLIT
+    from .common.LogPatternExtractor import LogSignMatcher as LogSignMatcher
+    from .common.LogPatternExtractor import MultiLineAggregator as MultiLineAggregator
+    from .common.LogPatternExtractor import RegexMatcher as RegexMatcher
+    from .common.LogPatternExtractor import apply_patterns as apply_patterns
+    from .common.LogPatternExtractor import compile_log_signs as compile_log_signs
+    from .common.LogPatternExtractor import compile_regex as compile_regex
+    from .common.LogPatternExtractor import debug_pattern as debug_pattern
+    from .common.LogPatternExtractor import flush_patterns as flush_patterns
+    from .common.LogPatternExtractor import load_patterns as load_patterns
+    from .common.mirrorchyan import MirrorChyanError as MirrorChyanError
+    from .common.mirrorchyan import (
+        compare_mirrorchyan_versions as compare_mirrorchyan_versions,
+    )
+    from .common.paths import resource_path as resource_path
+    from .common.process import ProcessInfo as ProcessInfo
+    from .common.process import ProcessManager as ProcessManager
+    from .common.process import ProcessResult as ProcessResult
+    from .common.process import ProcessRunner as ProcessRunner
+    from .common.process import is_process_alive as is_process_alive
+    from .common.process import is_process_running as is_process_running
+    from .common.security import dpapi_decrypt as dpapi_decrypt
+    from .common.security import dpapi_encrypt as dpapi_encrypt
+    from .common.security import format_exception_reason as format_exception_reason
+    from .common.security import looks_like_dpapi_blob as looks_like_dpapi_blob
+    from .common.security import sanitize_log_message as sanitize_log_message
+    from .common.supervision import is_supervised as is_supervised
+    from .common.supervision import should_preserve_backend as should_preserve_backend
+    from .common.tools import busy_wait as busy_wait
+    from .common.tools import decode_bytes as decode_bytes
+    from .common.websocket import WebSocketClient as WebSocketClient
+
+    if sys.platform == "win32":
+        from .windows import audio as audio
+        from .windows import display as display
+        from .windows import emulator_native as emulator_native
+        from .windows import host as host
+        from .windows import notification as notification
+        from .windows import process as process_platform
+        from .windows import registry as registry
+        from .windows import secret as secret
+        from .windows import update_native as update_native
+        from .windows import vdd as vdd
+        from .windows import window as window
+        from .windows.host import IS_ELEVATED as IS_ELEVATED
+        from .windows.host import IS_WINDOWS as IS_WINDOWS
+        from .windows.host import is_admin as is_admin
+        from .windows.host import is_long_path_supported as is_long_path_supported
+    else:
+        from .common import audio as audio
+        from .common import display as display
+        from .common import emulator_native as emulator_native
+        from .common import host as host
+        from .common import notification as notification
+        from .common import process_platform as process_platform
+        from .common import registry as registry
+        from .common import secret as secret
+        from .common import update_native as update_native
+        from .common import vdd as vdd
+        from .common import window as window
+        from .common.host import IS_ELEVATED as IS_ELEVATED
+        from .common.host import IS_WINDOWS as IS_WINDOWS
+        from .common.host import is_admin as is_admin
+        from .common.host import is_long_path_supported as is_long_path_supported
 
 _LAZY_EXPORTS = {
     "SIGN_MODE_REGEX": (".common.LogPatternExtractor", "SIGN_MODE_REGEX"),
@@ -270,4 +455,149 @@ class LazyProxy:
         setattr(self._resolve(), attr, value)
 
 
-__all__ = list(dict.fromkeys([*_LAZY_EXPORTS, *_COMMON_MODULES, "LazyProxy"]))
+__all__ = [
+    "SIGN_MODE_REGEX",
+    "SIGN_MODE_SPLIT",
+    "get_game_day_tz",
+    "game_now",
+    "normalize_base_source",
+    "LOG_TYPE_ERROR",
+    "LOG_TYPE_NORMAL",
+    "UnsupportedPlatformError",
+    "LogMonitor",
+    "strptime",
+    "ProcessManager",
+    "ProcessRunner",
+    "ProcessInfo",
+    "ProcessResult",
+    "is_process_running",
+    "is_process_alive",
+    "RegexMatcher",
+    "MultiLineAggregator",
+    "compile_regex",
+    "load_patterns",
+    "apply_patterns",
+    "flush_patterns",
+    "debug_pattern",
+    "LogSignMatcher",
+    "compile_log_signs",
+    "MumuManager",
+    "LDManager",
+    "search_all_emulators",
+    "EMULATOR_TYPE_BOOK",
+    "decode_bytes",
+    "busy_wait",
+    "WebSocketClient",
+    "MirrorChyanError",
+    "compare_mirrorchyan_versions",
+    "IS_WINDOWS",
+    "IS_ELEVATED",
+    "is_admin",
+    "is_long_path_supported",
+    "get_logger",
+    "resource_path",
+    "is_supervised",
+    "should_preserve_backend",
+    "dpapi_encrypt",
+    "dpapi_decrypt",
+    "looks_like_dpapi_blob",
+    "format_exception_reason",
+    "sanitize_log_message",
+    "UTC4",
+    "UTC8",
+    "TYPE_BOOK",
+    "PLAN_CONSUMER_VALUES",
+    "MSS_TRIBULATION_STAGES",
+    "MSS_DEFAULT_TRIBULATION_STAGE",
+    "MAAEND_RUN_MOOD_BOOK",
+    "MAAEND_DELIVERY_TASK",
+    "MAAEND_AUTO_COLLECT_TASK",
+    "MAAEND_DELIVERY_COMMISSION_SOURCES",
+    "MAAEND_AUTO_COLLECT_MODES",
+    "MAA_STAGE_KEY",
+    "ARKNIGHTS_GAME_DAY_TZ",
+    "MAAEND_SANITY_TASK_LABELS",
+    "MAAEND_SANITY_TASK_DETAIL_LABELS",
+    "MAAEND_SANITY_TASK_TYPES",
+    "MAAEND_AUTO_ESSENCE_MENUS",
+    "MAAEND_PROTOCOL_SPACE_TASK_OPTIONS",
+    "MAAEND_STAGE_WITH_AB",
+    "MAAEND_TASK_GROUPS",
+    "MAAEND_TASKS",
+    "MAAEND_SANITY_TASK_DEFAULTS",
+    "MAAEND_INVENTORY_TARGET_DEFAULTS",
+    "MAAEND_SANITY_TASK_FIELDS",
+    "ENDFIELD_SERVER_PRESETS",
+    "EMULATOR_PATH_BOOK",
+    "RESOURCE_STAGE_INFO",
+    "MATERIALS_MAP",
+    "STARRAIL_PACKAGE_NAME",
+    "STARRAIL_CN_UPDATE_LINK_URL",
+    "STARRAIL_UPDATE_LINK_SERVER",
+    "STARRAIL_STAGE_BOOK",
+    "TIME_FIELDS",
+    "RESERVED_NAMES",
+    "ILLEGAL_CHARS",
+    "KEYBOARD_KEYS",
+    "MIRROR_ERROR_INFO",
+    "DEFAULT_DATETIME",
+    "SKLAND_SM_CONFIG",
+    "BROWSER_ENV",
+    "DES_RULE",
+    "ANSI_ESCAPE_RE",
+    "TASK_MODE_ZH",
+    "APPDATA_PATH",
+    "FORBIDDEN_PATH_PREFIXES",
+    "FORBIDDEN_PATH_EXACT",
+    "EMULATOR_SPLASH_ADS_PATH_BOOK",
+    "CYCLE_DATETIME_FORMAT",
+    "CYCLE_EMPTY_TIME",
+    "BASE_SHARED",
+    "BASE_INDEPENDENT",
+    "BASE_NATIVE",
+    "LEGACY_BASE_SOURCES",
+    "BASE_SOURCE_LABELS",
+    "update_native",
+    "emulator_native",
+    "registry",
+    "audio",
+    "update_files",
+    "exception",
+    "config_restore",
+    "window",
+    "paths",
+    "mirrorchyan",
+    "host",
+    "hpatchz",
+    "tools",
+    "security",
+    "constants",
+    "io",
+    "game_apk",
+    "notification_render",
+    "process_runner",
+    "config_archive",
+    "logger",
+    "display",
+    "fluxdown_cli",
+    "supervision",
+    "community",
+    "secret",
+    "config_document",
+    "environment",
+    "notification_template",
+    "process",
+    "errors",
+    "process_platform",
+    "LogPatternExtractor",
+    "game_update",
+    "vdd",
+    "websocket",
+    "emulator",
+    "emulator2",
+    "OCR",
+    "i18n",
+    "expression",
+    "notification",
+    "LazyProxy",
+]
