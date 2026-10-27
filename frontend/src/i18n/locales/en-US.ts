@@ -3168,8 +3168,7 @@ export default {
       'A multi-select setting has too few or too many choices; this user will fail to run until it is fixed',
     maafwQueueContextItem: '{label}: {value}',
     maafwHiddenTaskCount: '{count} unavailable, hidden',
-    maafwHiddenTaskTooltip:
-      'Not compatible with the current control mode / game resource. Their settings are kept and they come back when you switch back:',
+    maafwHiddenTaskTooltip: 'Not compatible with the current control mode / game resource:',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',
