@@ -1754,7 +1754,8 @@ export class Service {
      * 读取 MFW 脚本的项目图标
      * 脚本列表的头像：项目 interface 顶层 ``icon`` 指的图片。
      *
-     * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标。
+     * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
+     * 具体原因只写日志，不放进响应。
      * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，让浏览器每次凭 ETag 确认。
      * @param scriptId MFW 脚本 ID
      * @returns any Successful Response
