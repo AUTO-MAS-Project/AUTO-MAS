@@ -4693,6 +4693,7 @@ export default {
       title: 'タスク概要',
       unknownScript: '不明なマネージドスクリプト',
       userNotLoaded: '未読み込み',
+      userProgress: '{current}/{total} · {task}',
     },
     modal: {
       cannotDeleteTitle: 'この実行パネルは閉じられません',

@@ -4433,6 +4433,7 @@ export default {
       title: '任务总览',
       unknownScript: '未知托管',
       userNotLoaded: '暂未加载',
+      userProgress: '{current}/{total} · {task}',
     },
     modal: {
       cannotDeleteTitle: '无法删除调度台',

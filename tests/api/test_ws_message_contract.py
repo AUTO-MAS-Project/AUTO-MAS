@@ -18,7 +18,8 @@ CONTRACT: dict[str, frozenset[str]] = {
     "WSEmulatorOperationData": frozenset(
         {"emulatorId", "index", "operate", "ok", "message"}
     ),
-    "WSTaskUserInfoData": frozenset({"user_id", "name", "status"}),
+    "WSTaskUserProgressData": frozenset({"current", "total", "task"}),
+    "WSTaskUserInfoData": frozenset({"user_id", "name", "status", "progress"}),
     "WSTaskScriptInfoData": frozenset({"script_id", "name", "status", "userList"}),
     "WSTaskCyclePreviewData": frozenset(
         {"queueItemId", "scriptId", "scriptName", "nextRunAt", "isDue", "isRunning"}

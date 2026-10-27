@@ -14,6 +14,10 @@
 import { useI18n } from 'vue-i18n'
 import { ref, shallowRef } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
+import {
+  buildTaskInfoSignature,
+  type TaskTreeUserProgress,
+} from '@/components/taskTreePresentation'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('任务总览面板')
@@ -22,6 +26,7 @@ interface User {
   user_id: string
   status: string
   name: string
+  progress?: TaskTreeUserProgress | null
 }
 
 interface Script {
@@ -46,17 +51,6 @@ const getScriptStats = (scripts: Script[]) => {
   const scriptCount = scripts.length
   const userCount = scripts.reduce((total, script) => total + (script.user_list?.length || 0), 0)
   return { scriptCount, userCount }
-}
-
-const buildTaskInfoSignature = (taskInfo: any[]) => {
-  return taskInfo
-    .map((task, index) => {
-      const users = Array.isArray(task.userList)
-        ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
-        : ''
-      return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
-    })
-    .join('|')
 }
 
 // 应用任务信息快照（来自 task.info.updated / task.completed 消息）

@@ -4678,6 +4678,7 @@ export default {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
       userNotLoaded: 'Not loaded yet',
+      userProgress: '{current}/{total} · {task}',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',
