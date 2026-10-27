@@ -12,8 +12,8 @@
 回调里只复制一帧（1–2 ms）入队，PNG 编码在后台线程。不能另开线程轮询 ``cached_image``：
 截图进行中读会失败，每失败一次往 maafw.log 写一行 ERR。
 
-写出的一段是一个目录：``0000.png`` 起的帧加 ``timeline.json``（每帧的时刻、任务、节点、
-识别框、动作）。宿主把它合成 WebM 挂到历史记录上（``tools/embedded/frame_replay_video``）。
+写出的一段是一个目录：``0000.png`` 起的帧加 ``timeline.json``（每帧的时刻、任务，以及这一
+画面上依次发生的各步：节点、命中、识别框、动作）。宿主把它合成 WebM 挂到历史记录上（``tools/embedded/frame_replay_video``）。
 
 本模块只用标准库与 numpy；编码与取帧由调用方传入，不碰 MaaFramework。
 """
@@ -41,6 +41,8 @@ FRAME_REPLAY_AGENT_INTERVAL_SECONDS = 1.0
 _NON_INPUT_ACTIONS = frozenset({"connect", "inactive"})
 # 等编码的原图（每张约 2.7 MB）最多积压几张，超了新帧直接丢：编码一帧约 27 ms，正常追得上。
 FRAME_REPLAY_MAX_PENDING = 8
+# 同一画面上最多记几步（原地点个不停时只留最后这些）
+FRAME_REPLAY_MAX_STEPS = 30
 # 一次运行最多留几段（一段约 60 MB 的 PNG 临时文件），超了删最早的；宿主跨重试再收一次。
 FRAME_REPLAY_MAX_SEGMENTS = 3
 # 宿主在 runDeadlineAt 后再宽限 90 s 才强杀（runner_task._RUN_DEADLINE_GRACE_SECONDS）；
@@ -58,31 +60,61 @@ _CHANGED_PIXELS = 8
 
 
 @dataclass
-class _Frame:
+class _Step:
+    """一帧画面上的一步：哪个节点、命中了谁、识别框、做了什么动作。"""
+
     at: float
-    task: str
     node: str
-    image: Any = None  # 原图，编码完清掉
-    png: bytes | None = None
-    dropped: bool = False
     hit: str = ""
     box: list[int] | None = None
     action: str = ""
     action_failed: bool = False
-    extra: dict[str, Any] = field(default_factory=dict)
 
-    def timeline_entry(self, file: str) -> dict[str, Any]:
+    def entry(self) -> dict[str, Any]:
         return {
-            "file": file,
             "at": self.at,
-            "task": self.task,
             "node": self.node,
             "hit": self.hit,
             "box": self.box,
             "action": self.action,
             "actionFailed": self.action_failed,
-            **self.extra,
         }
+
+
+@dataclass
+class _Frame:
+    at: float
+    task: str
+    image: Any = None  # 原图，编码完清掉
+    png: bytes | None = None
+    dropped: bool = False
+    final: bool = False
+    # 画面不变时连续几轮的识别、动作都记在这一帧上，一步一条，不互相覆盖
+    steps: list[_Step] = field(default_factory=list)
+
+    def step(self, at: float, node: str) -> _Step:
+        """接下来的识别、动作记到哪一步：最后一步还没命中也没动作就沿用（等待中的轮询
+        不刷出一串），否则新开一步。"""
+
+        last = self.steps[-1] if self.steps else None
+        if last is not None and not last.hit and not last.action:
+            last.node = node or last.node
+            return last
+        step = _Step(at=at, node=node)
+        self.steps.append(step)
+        del self.steps[:-FRAME_REPLAY_MAX_STEPS]
+        return step
+
+    def timeline_entry(self, file: str) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "file": file,
+            "at": self.at,
+            "task": self.task,
+            "steps": [step.entry() for step in self.steps],
+        }
+        if self.final:
+            entry["final"] = True
+        return entry
 
 
 def find_frame_replay_segments(directory: Path) -> list[Path]:
@@ -140,13 +172,13 @@ class FrameReplayRecorder:
         self._encoding = 0
         self._bytes = 0
         self._last_sample: Any = None
-        self._last_grab = float("-inf")
-        self._last_pipeline_grab = float("-inf")
+        # 两路最近一次看画面（复制过 cached_image）与流水线最近一次存新帧的时刻
+        self._last_look = float("-inf")
+        self._last_pipeline_frame = float("-inf")
         self._task = ""
         self._node = ""
-        # 本轮流水线取到的帧、最近一张 agent 截图：之后的识别、动作记到它们上面
-        self._round: _Frame | None = None
-        self._agent: _Frame | None = None
+        # 本轮流水线的那一步：之后的识别、动作记到它上面
+        self._round: _Step | None = None
         self._closed = False
         self._segments: list[Path] = []
         self._thread = threading.Thread(
@@ -159,10 +191,11 @@ class FrameReplayRecorder:
             self._task = name
             self._node = ""
             self._round = None
-            self._agent = None
+            # 换任务后哪怕画面没变也开新帧，字幕里的任务名不挂到上一个任务的帧上
+            self._last_sample = None
 
     def on_node(self, message: str, details: Any, grab: Callable[[], Any]) -> None:
-        """context sink 的 ``Node.*``：每轮识别前取帧，识别命中与动作记到这一帧上。"""
+        """context sink 的 ``Node.*``：每轮识别前取帧，识别命中与动作记到这一轮的那一步上。"""
 
         if not isinstance(details, dict):
             return
@@ -172,7 +205,9 @@ class FrameReplayRecorder:
                 self._node = name
             frame = self._grab(grab, pipeline=True)
             with self._cond:
-                self._round = frame
+                self._round = (
+                    frame.step(self._clock(), name) if frame is not None else None
+                )
             return
         if message == "Node.Action.Starting":
             # Custom 动作里 agent 自己截的图挂在这个节点名下
@@ -180,27 +215,29 @@ class FrameReplayRecorder:
                 self._node = name
             return
         with self._cond:
-            frame = self._round
-            if frame is None:
+            step = self._round
+            if step is None:
                 return
             if message == "Node.Recognition.Succeeded":
                 reco = details.get("reco_details")
-                frame.hit = name
-                frame.box = _box(reco.get("box")) if isinstance(reco, dict) else None
-                frame.action = ""
-                frame.action_failed = False
+                step.hit = name
+                step.box = _box(reco.get("box")) if isinstance(reco, dict) else None
             elif message in ("Node.Action.Succeeded", "Node.Action.Failed"):
-                if frame.hit != name:
+                if step.hit != name:
                     return
                 action = details.get("action_details")
                 if isinstance(action, dict) and action.get("action"):
-                    frame.action = str(action["action"])
-                frame.action_failed = message.endswith("Failed")
+                    step.action = str(action["action"])
+                step.action_failed = message.endswith("Failed")
 
     def on_controller(
         self, action: str, *, succeeded: bool, grab: Callable[[], Any]
     ) -> None:
-        """controller sink：agent 截图按限流取帧，agent 的点击、滑动、按键记到最近那张上。"""
+        """controller sink：agent 截图按限流取帧，agent 的点击、滑动、按键记到环里最新那帧上。
+
+        最新那帧是此刻已知最近的画面；流水线在跑时 agent 截图大多轮不到取帧，记到
+        「agent 上次取到的帧」会落到一张早已过去的旧画面上。
+        """
 
         if action == "screencap":
             if not succeeded:
@@ -208,40 +245,34 @@ class FrameReplayRecorder:
             frame = self._grab(grab, pipeline=False)
             if frame is not None:
                 with self._cond:
-                    self._agent = frame
+                    frame.step(self._clock(), self._node)
             return
         if not action or action in _NON_INPUT_ACTIONS:
             return
         with self._cond:
-            frame = self._agent
-            if frame is None:
+            if not self._frames:
                 return
-            frame.action = action
-            frame.action_failed = not succeeded
+            step = self._frames[-1].step(self._clock(), self._node)
+            step.action = action
+            step.action_failed = not succeeded
 
     def _grab(self, grab: Callable[[], Any], *, pipeline: bool) -> _Frame | None:
-        """限流后复制一帧入队；画面和上一帧一样时返回上一帧，不存新的。
+        """复制一帧比对：画面和上一帧一样就返回上一帧，变了就（限流内）存成新帧入队。
 
-        流水线这一路只和自己比间隔，不让 agent 截图挤掉命中节点的那一轮；agent 这一路
-        要离上一次取帧（哪一路都算）满 1 秒，只在流水线空下来（Custom 动作跑着）时补帧。
+        流水线每轮都看（一轮至多复制一次，1–2 ms），这样画面没变时本轮的识别、动作
+        总能记到上一帧上；新帧每秒最多 2 张。变了但离上一张流水线新帧不到 0.5 秒、或
+        编码积压时返回 None——那一轮没有画面，它的识别不能记到旧画面上。agent 截图最高
+        约 40 次/秒，离上一次看画面（哪一路都算）满 1 秒才看。
         """
 
         now = self._clock()
         with self._cond:
-            if (
-                self._closed
-                or len(self._pending) >= FRAME_REPLAY_MAX_PENDING
-                or (
-                    now - self._last_pipeline_grab
-                    < FRAME_REPLAY_PIPELINE_INTERVAL_SECONDS
-                    if pipeline
-                    else now - self._last_grab < FRAME_REPLAY_AGENT_INTERVAL_SECONDS
-                )
+            if self._closed or (
+                not pipeline
+                and now - self._last_look < FRAME_REPLAY_AGENT_INTERVAL_SECONDS
             ):
                 return None
-            self._last_grab = now
-            if pipeline:
-                self._last_pipeline_grab = now
+            self._last_look = now
         try:
             image = grab()
         except Exception:
@@ -254,9 +285,16 @@ class FrameReplayRecorder:
                 return None
             last = self._frames[-1] if self._frames else None
             if last is not None and not _changed(self._last_sample, sample):
-                # 画面没变：不存新帧，本轮的识别、动作记到上一帧上
                 return last
-            frame = _Frame(at=now, task=self._task, node=self._node, image=image)
+            if len(self._pending) >= FRAME_REPLAY_MAX_PENDING or (
+                pipeline
+                and now - self._last_pipeline_frame
+                < FRAME_REPLAY_PIPELINE_INTERVAL_SECONDS
+            ):
+                return None
+            if pipeline:
+                self._last_pipeline_frame = now
+            frame = _Frame(at=now, task=self._task, image=image)
             self._last_sample = sample
             self._frames.append(frame)
             self._pending.append(frame)
@@ -294,18 +332,16 @@ class FrameReplayRecorder:
             frame.dropped = True
             if frame.png:
                 self._bytes -= len(frame.png)
-            if frame is self._round:
-                self._round = None
-            if frame is self._agent:
-                self._agent = None
 
     def flush(
         self, directory: Path, stem: str, *, final_png: bytes | None = None
     ) -> Path | None:
         """把环里的帧写成一段（``<stem>.replay/``）并清空环；没有帧时什么都不写。
 
-        ``final_png`` 是失败当刻那张截图，接在最后。一次运行最多留
-        ``FRAME_REPLAY_MAX_SEGMENTS`` 段，超了删最早写出的那段。
+        ``final_png`` 是失败当刻那张截图，接在最后。同名目录已在（同一秒同一任务又失败、
+        截止计时器与主线程同时写出）时加 ``-2``、``-3`` 后缀，不覆盖。一次运行最多留
+        ``FRAME_REPLAY_MAX_SEGMENTS`` 段，超了删最早写出的那段。``timeline.json`` 最后写，
+        宿主只认有它的目录。
         """
 
         deadline = time.monotonic() + _FLUSH_DRAIN_SECONDS
@@ -323,22 +359,28 @@ class FrameReplayRecorder:
             self._bytes = 0
             self._last_sample = None
             self._round = None
-            self._agent = None
             task, node = self._task, self._node
         if final_png:
+            now = self._clock()
             frames.append(
                 _Frame(
-                    at=self._clock(),
+                    at=now,
                     task=task,
-                    node=node,
                     png=final_png,
-                    extra={"final": True},
+                    final=True,
+                    steps=[_Step(at=now, node=node)],
                 )
             )
         if not frames:
             return None
-        target = directory / f"{stem}{FRAME_REPLAY_DIR_SUFFIX}"
-        target.mkdir(parents=True, exist_ok=True)
+        with self._cond:
+            # 在锁里挑名字并建目录：并发的两次写出拿到的一定是两个目录
+            target = directory / f"{stem}{FRAME_REPLAY_DIR_SUFFIX}"
+            suffix = 2
+            while target.exists():
+                target = directory / f"{stem}-{suffix}{FRAME_REPLAY_DIR_SUFFIX}"
+                suffix += 1
+            target.mkdir(parents=True)
         timeline = []
         for index, frame in enumerate(frames):
             file = f"{index:04d}.png"
