@@ -367,6 +367,7 @@ import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import MaaFWTaskConfigPanel from './MaaFWTaskConfigPanel.vue'
+import { matchesMaaFWAddTaskKeyword } from './maafwAddTaskMenu'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
@@ -595,15 +596,8 @@ const checkboxIssueTaskIds = computed(() => {
   return ids
 })
 
-const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
-  const keyword = inputValue.trim().toLowerCase()
-  if (!keyword) return true
-  return path.some(option =>
-    String(option.searchText ?? option.label ?? '')
-      .toLowerCase()
-      .includes(keyword)
-  )
-}
+const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) =>
+  matchesMaaFWAddTaskKeyword(inputValue, path)
 </script>
 
 <style scoped>
