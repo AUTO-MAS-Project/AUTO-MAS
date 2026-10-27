@@ -28,6 +28,27 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
   就是链路上多了一处 `from app.utils import ...`。要放宽这条边界，在那个测试里显式加白名单并在
   PR 里说明，不要只改这段文字。
+- **宿主 ↔ worker 协议**（`tools/core/worker_protocol.py`，只依赖标准库）：事件格式、两边共用的常量
+  （`DETAIL_LOG_PREFIX`、信号取值与证据截图 kind）、日志去向规则、分帧与通道都在这一处，宿主不再
+  复制 runner 的常量（`runner.py` 一导入就加载 maa，宿主引不了它）。
+  - **job 经 worker 的 stdin 传**、写完就关，不落盘（计划里有解密后的密码选项）。升级前写过的
+    `data/maafw_runner_jobs/*.json` 残留照旧按 1 小时清扫（`runner_task._sweep_legacy_runner_jobs`）。
+    worker 仍认一个 job 文件路径参数，只为兜「旧宿主进程拉起新 worker」的升级窗口。
+  - **事件走独立通道**：宿主在 `127.0.0.1` 临时端口上监听（`WorkerEventServer`，独占绑定），端口与
+    一次性令牌随 job 交给 worker；worker 连回来先发带令牌的 `hello`，之后一个事件一条消息，按帧传
+    （4 字节头、单片 ≤ 1 MB、整条不限长，接收端只为内存设 64 MB 上限，超了丢这一条、记一句、接着读）。
+    stdout 只剩原生诊断，照旧逐行进 `.worker.log`。选套接字不选管道：套接字默认不可继承，管道要先设成
+    可继承才传得过去，宿主同时拉起的模拟器 / 游戏、worker 拉起的 adb / agent 会带走句柄，常驻的继承者
+    让读的一方等不到 EOF。宿主也不靠 EOF 收尾：worker 退出后通道没连上只再等 1 s、连上了最多等 5 s。
+  - **建不起通道就退回 stdout 旧格式**（一行一个 JSON 事件）：宿主监听失败、worker 连不上、连上后
+    发送出错（宿主读到坏数据会关连接）都退回，原因各记一行进 `.worker.log`；宿主一直按行解析 stdout，
+    运行照常。选退回而不是报错：旧格式是跑了很久的路径，回环被安全软件拦住这类原因用户处理不了，
+    而 job 仍走 stdin，退回也不会让密码落盘。
+  - **日志去向由 worker 定**：日志 / 错误事件带 `audience`（`ui` / `worker_log`）与 `level`，worker 发出时
+    按 `worker_protocol.forwards_to_ui` 判 `audience`，宿主照字段办；不带 `audience` 的旧格式事件和
+    stdout 上的原生诊断仍按同一个函数判。`level` 目前只随事件带着，宿主不据它改界面或 app.log。
+  - 新增事件类型照旧：worker 里 `_emit({"type": ..., ...})`，宿主在 `runner_task` 的 `handle_event`
+    里按 `type` 加一个分支，两条传输都会经过它；宿主不认识的类型忽略。
 
 ## 项目目录与运行
 
@@ -337,11 +358,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`runner._check_native_agent_runtime`），不等连接超时。
   检查失败时界面与报错第一行只给 traceback 的最后一行（项目目录换成 `<项目>`：任务结果与预检失败通知
   只取第一行、再截 200 / 120 字），完整输出逐行带 `[MaaFW 详情] ` 前缀、只进 `.worker.log` / 后端
-  日志——worker 转发、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）
+  日志——worker 转发（worker 发事件时据此定 `audience`）、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）
   与手动更新（`api_service/update.py`）四处都按这个前缀拦在界面外，新增的日志出口也要拦。子进程输出进日志一律按结尾截（`runtime_pool/_shared.output_tail`），
   截开头会正好丢掉异常那一行——那次现场所有日志都断在 `File "D:\douy`。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**，与其他专项的"日志停滞超时"
-  不同义。截止时刻随 job 文件交给 worker（`runDeadlineAt`）：到点 worker 自己 post_stop 当前任务、
+  不同义。截止时刻随 job 交给 worker（`runDeadlineAt`）：到点 worker 自己 post_stop 当前任务、
   截一张 `timeout` 图、把已完成的任务连同 `timedOut=True` 正常回传；宿主的 `asyncio.wait_for`
   只在其后加一段宽限（`_RUN_DEADLINE_GRACE_SECONDS`）兜底，worker 没停下才强杀，那时才没有截图
   和进度。`Run.TaskTimeLimit` / `TaskTimeLimitOverrides` 是单任务时限：只停卡住的那个任务，计划里
@@ -504,8 +525,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口对
   **长度至少 4 个字符**（`MIN_REDACTED_SECRET_LENGTH`）的密码值都已打码
   （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`runner_task` 复制到
-  历史详情中 `native_log` 角色的原生日志附件、转发的 worker stdout（协议行先解析、只打码给人读的
-  文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
+  历史详情中 `native_log` 角色的原生日志附件、转发的 worker 事件（事件通道与 stdout 退回格式都先解析、
+  只打码给人读的文本，见 `_redact_worker_event`）、stdout 上的原生诊断与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
   项目更新撤掉了 password 标记的字段，快照里留着的密文建计划前照样在内存里解开（解不开的告警、丢值，
@@ -668,7 +689,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 测试与排障
 
 - 改 `tools/core/` 先跑 `tests/task/test_maafw_core.py`：核心最小回归，进仓库、长期保留，只收
-  缺一条就要命的（worker 导入闭包、宿主与 worker 之间的 job 文件和结果、agent 的 maafw 钉版与
+  缺一条就要命的（worker 导入闭包、宿主与 worker 之间的 job 和结果、agent 的 maafw 钉版与
   原生库一致、agent venv 失效判定）。收录标准见 `tests/AGENTS.md`「核心最小回归」；其余 MaaFW
   测试照旧只在本地跑。
 - 夹具要照抄真实输出的形状（interface 加载结果、更新器返回、运行计划），臆造键名会让
