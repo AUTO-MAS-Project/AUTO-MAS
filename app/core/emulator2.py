@@ -585,6 +585,9 @@ async def list_devices(emulator_id: str, *, with_settings: bool = True) -> dict:
                 )
             continue
 
+        # sync_path 里也会退役，这里先单独退一次：只退役、没新增设备号时也要落盘
+        if manager.slots.retire_tombstones(path.path_id):
+            dirty = True
         if manager.slots.sync_path(path.path_id, list(info)):
             dirty = True
 
