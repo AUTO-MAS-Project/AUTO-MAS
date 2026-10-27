@@ -389,9 +389,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     了输出管道，`communicate()` / `Process.wait()` 都要等管道关闭，会一直卡到游戏退出（本机实测：
     子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
     `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
+    打码在 `_PretaskOutputPump` 里做，转去后端日志的那段输出也过同一套打码，别挪回 sink 里。
   - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
     「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
-    任何进程都不碰。
+    任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`pretask_cleanup`）：超时清理途中
+    用户点停止，清理照样做完，`_shutdown_runner` 等的是同一个清理任务。
   - **exec 越出项目目录**（`..` 上跳过头、绝对路径）：投影与运行计划同一口径（`agent_entry.
     bundled_python_escape_path`）——以 `python/python.exe` 结尾的相对写法映射回项目自带的 Python
     （MFABD2 发行包的 `../../python/python.exe`，按 MFAA 的工作目录 `resource/base` 写的），其余
