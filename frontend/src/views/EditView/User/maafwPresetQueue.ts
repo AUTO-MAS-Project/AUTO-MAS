@@ -83,3 +83,103 @@ export const buildPresetAppliedSnapshot = (
     ...taskSchedulesField(pickMaaFWTaskSchedules(taskSchedules, taskIdSet)),
   }
 }
+
+type TaskOptionMap = Record<string, Record<string, MaaFWTaskOptionValue>>
+
+/** 项目预设声明的前置任务（PI v2.10.3 `preset.pretask`），键都是前置任务 id。 */
+export type MaaFWPresetPretasks = {
+  /** interface 的全部前置任务：预设列出且启用的为 true，其余（含未列出的）为 false */
+  checked: Record<string, boolean>
+  /** 预设给各前置任务写的选项值（只有写了的项） */
+  options: TaskOptionMap
+}
+
+/**
+ * 预设快照（`/maafw/preview` 原样给的，未按勾选过滤）里的前置任务部分。后端在预设声明了
+ * `pretask` 时把 interface 的全部前置任务排进快照（未列出的为 false），没声明时一个不带，
+ * 所以快照里没有前置任务就是「没声明」，返回 null。
+ */
+export const pickPresetPretasks = (
+  snapshot: Pick<MaaFWTaskSnapshot, 'taskOrder' | 'taskChecked' | 'taskOptions'>,
+  isPretaskId: (taskId: string) => boolean
+): MaaFWPresetPretasks | null => {
+  const taskIds = snapshot.taskOrder.filter(
+    (taskId, index, values) => isPretaskId(taskId) && values.indexOf(taskId) === index
+  )
+  if (taskIds.length === 0) return null
+  return {
+    checked: Object.fromEntries(
+      taskIds.map(taskId => [taskId, snapshot.taskChecked[taskId] === true])
+    ),
+    options: Object.fromEntries(
+      taskIds.map(taskId => [taskId, snapshot.taskOptions?.[taskId] ?? {}])
+    ),
+  }
+}
+
+const cloneOptions = (options: Record<string, MaaFWTaskOptionValue> | undefined) =>
+  JSON.parse(JSON.stringify(options ?? {})) as Record<string, MaaFWTaskOptionValue>
+
+/**
+ * 应用项目预设后的队列快照：普通任务换成预设的各个实例（一律绿灯，带预设的选项，项目预设
+ * 没有显示名与运行日）。前置任务分两种情况：
+ *
+ * - 预设没声明 `pretask`（`pretasks` 为 null）：当前队列里的前置任务原样保留——勾选、选项、
+ *   显示名、运行日都不动，与从别的用户导入队列（`buildMaaFWQueueReplacement`）同一口径；
+ * - 声明了：当前队列里的前置任务按预设设勾选（未列出的设为跳过），选项在用户自己的值上叠
+ *   预设写了的项（启动器路径这类用户自己填的不被冲掉），显示名与运行日照留；预设启用、队列里
+ *   还没有这个前置任务的，把 `pretaskEntries` 里的补进来（带预设的选项）。预设没启用、队列里
+ *   也没有的不补——不在队列里本来就不跑。
+ *
+ * `pretaskEntries` 是预设启用的前置任务里当前控制器 / 资源下可用的项（同 `entries` 的口径）。
+ * `resolveTaskName` 把实例 id 解析回任务名：用户复制过的前置任务实例也按前置任务名对上预设。
+ */
+export const buildProjectPresetAppliedSnapshot = (
+  entries: readonly MaaFWPresetQueueEntry[],
+  presetTaskOptions: TaskOptionMap,
+  pretasks: MaaFWPresetPretasks | null,
+  pretaskEntries: readonly MaaFWPresetQueueEntry[],
+  current: MaaFWTaskSnapshot,
+  isPretaskId: (taskId: string) => boolean,
+  resolveTaskName: (taskId: string) => string
+): MaaFWTaskSnapshot => {
+  const currentPretaskIds = current.taskOrder.filter(taskId => isPretaskId(taskId))
+  const currentPretaskNames = new Set(currentPretaskIds.map(taskId => resolveTaskName(taskId)))
+  const addedEntries = pretasks
+    ? pretaskEntries.filter(
+        entry =>
+          pretasks.checked[entry.task.name] === true && !currentPretaskNames.has(entry.task.name)
+      )
+    : []
+  const pretaskOptions: TaskOptionMap = Object.fromEntries([
+    ...currentPretaskIds.map(taskId => [
+      taskId,
+      {
+        ...cloneOptions(current.taskOptions[taskId]),
+        ...cloneOptions(pretasks?.options[resolveTaskName(taskId)]),
+      },
+    ]),
+    ...addedEntries.map(entry => [entry.id, cloneOptions(pretasks?.options[entry.task.name])]),
+  ])
+  const pretaskChecked: Record<string, boolean> = Object.fromEntries([
+    ...currentPretaskIds.map(taskId => [
+      taskId,
+      pretasks
+        ? pretasks.checked[resolveTaskName(taskId)] === true
+        : current.taskChecked[taskId] !== false,
+    ]),
+    ...addedEntries.map(entry => [entry.id, true]),
+  ])
+  const presetOptions = Object.fromEntries(
+    Object.entries(presetTaskOptions).filter(([taskId]) => !isPretaskId(taskId))
+  )
+  return buildPresetAppliedSnapshot(
+    [...addedEntries, ...entries.filter(entry => !isPretaskId(entry.id))],
+    { ...presetOptions, ...pretaskOptions },
+    current.taskOrder,
+    isPretaskId,
+    pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds),
+    pretaskChecked,
+    pickMaaFWTaskSchedules(current.taskSchedules, currentPretaskIds)
+  )
+}

@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
-  buildPresetAppliedSnapshot,
+  buildProjectPresetAppliedSnapshot,
+  pickPresetPretasks,
   selectPresetQueueEntries,
   type MaaFWPresetQueueEntry,
 } from '../maafwPresetQueue'
@@ -164,15 +165,26 @@ export function useMaaFWTaskQueue({
     return presetOptions.value
       .map(preset => {
         const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-        // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
+        // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用。
+        // 前置任务单独处理（预设声明了 pretask 才有，见 pickPresetPretasks），不算预设的任务项
         const entries = selectPresetQueueEntries(
-          snapshot.taskOrder,
+          snapshot.taskOrder.filter(taskId => !isPretaskId(taskId)),
           activeTaskByName,
           validTaskNames.value
         )
+        const pretasks = pickPresetPretasks(preset.snapshot, isPretaskId)
+        const pretaskEntries = pretasks
+          ? selectPresetQueueEntries(
+              Object.keys(pretasks.checked).filter(taskId => pretasks.checked[taskId]),
+              activeTaskByName,
+              validTaskNames.value
+            )
+          : []
         return {
           preset,
           entries,
+          pretasks,
+          pretaskEntries,
           taskOptions: snapshot.taskOptions,
           globalOptions: snapshot.globalOptions || {},
         }
@@ -257,22 +269,22 @@ export function useMaaFWTaskQueue({
     const template = presetTemplates.value.find(item => item.preset.name === presetName)
     if (!template) return
 
-    // 项目预设不带显示名与运行日；保留下来的前置任务留着自己的显示名
-    const nextSnapshot = buildPresetAppliedSnapshot(
+    // 项目预设不带显示名与运行日；前置任务按预设的 pretask 声明处理，没声明就原样保留
+    // （勾选、选项、显示名、运行日），规则见 buildProjectPresetAppliedSnapshot
+    const nextSnapshot = buildProjectPresetAppliedSnapshot(
       template.entries,
       template.taskOptions,
-      taskSnapshot.value.taskOrder,
+      template.pretasks,
+      template.pretaskEntries,
+      taskSnapshot.value,
       isPretaskId,
-      pickMaaFWTaskLabels(
-        taskSnapshot.value.taskLabels,
-        taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
-      )
+      resolveTaskName
     )
     taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
     setTaskLabels(nextSnapshot.taskLabels || {})
-    setTaskSchedules({})
+    setTaskSchedules(nextSnapshot.taskSchedules || {})
     // 预设里写了的全局选项值并进用户的全局表；没写的保持用户自己的设置
     if (Object.keys(template.globalOptions).length > 0) {
       taskSnapshot.value.globalOptions = {
