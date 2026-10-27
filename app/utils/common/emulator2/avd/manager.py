@@ -151,6 +151,29 @@ _BOOT_POLL_SECONDS = 1.0
 _STATUS_ADB_TIMEOUT = 5.0
 #: 装轻量桌面的超时。
 _INSTALL_TIMEOUT = 180.0
+#: 给申请了「安装未知应用」权限、这一项还是默认模式（没设过或设回了 default）的应用放行（``android``
+#: 自己除外），逐行打出本次放行了谁。设成别的模式的（用户在设置里手动关掉或打开过，或以前开机已放行）保持不动；
+#: 读不出当前模式（``appops get`` 非零）的不写，按失败算。枚举失败退出码 2；任一应用放行
+#: 失败打「failed: 包名」，其余照做，最后退出码 1。包名从 ``dumpsys package packages`` 里按
+#: 「Package [包名]」段落取，实测 70 ms 左右。dumpsys 找不到服务也返回 0，所以一个段落都没有就算枚举失败。
+_ALLOW_INSTALL_SOURCES_SCRIPT = (
+    "set -o pipefail; "
+    "list=$(dumpsys package packages 2>/dev/null"
+    " | awk '/^  Package \\[/ { n++; p = substr($2, 2, length($2) - 2) }"
+    ' /android.permission.REQUEST_INSTALL_PACKAGES/ { if (p != "" && p != "android") print p }'
+    " END { if (n == 0) exit 3 }'"
+    ' | sort -u) || { echo "dumpsys package failed"; exit 2; }; '
+    "fail=0; "
+    "for p in $list; do"
+    ' m=$(appops get "$p" REQUEST_INSTALL_PACKAGES 2>&1)'
+    ' || { echo "failed: $p"; fail=1; continue; };'
+    ' case "$m" in'
+    ' *"REQUEST_INSTALL_PACKAGES: default"*) ;;'
+    ' *"REQUEST_INSTALL_PACKAGES: "*) continue ;; esac;'
+    ' if appops set "$p" REQUEST_INSTALL_PACKAGES allow; then echo "$p";'
+    ' else echo "failed: $p"; fail=1; fi;'
+    " done; exit $fail"
+)
 #: 界面上「打开游戏中心」之类一次点击的上限（魔改 AVD 没有游戏中心，留作接口一致）。
 _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
@@ -968,6 +991,18 @@ class _AvdCore(DeviceBase):
                 f"实例 {idx} 关闭 NetworkWatchlistService 失败（下次开机仍会把安装包整个读一遍）: "
                 f"{output.strip()[-200:] or f'退出码 {code}'}"
             )
+
+        # 7c) 允许从任何来源装 APK（持久，每次开机给新装的应用补上）：模拟器不是手机，浏览器里下的安装包、
+        #     游戏自己下载的整包更新都不该被「出于安全考虑，不允许安装此来源的未知应用」拦下。
+        #     用户在设置里手动改过的应用不动；每次安装仍由系统安装器弹窗让用户确认
+        code, output = await self._shell(idx, _ALLOW_INSTALL_SOURCES_SCRIPT)
+        if code != 0:
+            logger.warning(
+                f"实例 {idx} 放开「安装未知应用」没做完（这些来源装 APK 仍会被拦）: "
+                f"{' '.join(output.split())[-300:] or f'退出码 {code}'}"
+            )
+        elif output.strip():
+            logger.debug(f"实例 {idx} 本次允许安装未知应用: {' '.join(output.split())}")
 
         # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
         #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
