@@ -523,6 +523,9 @@ def _describe_source_path_error(source: str, raw: str) -> str:
         )
     try:
         resolved = Path(source).resolve()
+        # 盘根先判：AUTO-MAS 所在盘的盘根也是安装目录的上层，不先判会被说成「移出 AUTO-MAS 目录」
+        if resolved == Path(resolved.anchor):
+            return "不能直接选择驱动器根目录，请选择解压后直接包含 interface.json 的那一层目录"
         install = Path.cwd().resolve()
         if (
             resolved == install
@@ -533,8 +536,6 @@ def _describe_source_path_error(source: str, raw: str) -> str:
                 "项目目录不能放在 AUTO-MAS 的安装目录里，也不能是它的上层目录；"
                 "请把项目移出 AUTO-MAS 目录后再选择"
             )
-        if resolved == Path(resolved.anchor):
-            return "不能直接选择驱动器根目录，请选择解压后直接包含 interface.json 的那一层目录"
     except (OSError, ValueError, RuntimeError):
         pass
     if "系统" in raw:
