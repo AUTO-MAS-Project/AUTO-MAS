@@ -16,8 +16,8 @@ from time import monotonic
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal
 from uuid import UUID, uuid4
 
-from app.utils.io import write_file
-from app.utils.logger import get_logger
+from app.utils import get_logger
+from app.utils import io as _utils_io
 
 from ..errors import ConfigAggregateError, ConfigPersistenceError
 
@@ -268,7 +268,7 @@ class ConfigManager:
                 for record in records
             ]
             for destination, payload in zip(destinations, payloads, strict=True):
-                write_file(destination, payload)
+                _utils_io.write_file(destination, payload)
 
     # ──────────────── 全局执行入口 ────────────────
 
@@ -713,7 +713,7 @@ class ConfigManager:
                 if self._roots.get(root.uid) is not record:
                     continue
                 phase = "write"
-                write_file(record.path, payload)
+                _utils_io.write_file(record.path, payload)
             except Exception as exc:
                 if self._roots.get(root.uid) is not record:
                     continue

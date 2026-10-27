@@ -17,6 +17,7 @@ dependencies = [
     "httpx[socks]==0.28.1",
     "gitpython==3.1.45",
     "plyer==2.1.0",
+    "windows-toasts==1.3.1; sys_platform == 'win32'",
     "psutil==7.0.0",
     "jinja2==3.1.6",
     "pywin32==310; sys_platform == 'win32'",

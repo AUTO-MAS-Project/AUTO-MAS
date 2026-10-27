@@ -35,7 +35,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.utils.io import read_file
+from app.utils import io as _utils_io
 
 _COMPENDIUM_REL = Path("assets") / "game_data" / "compendium_data.yml"
 
@@ -60,7 +60,7 @@ def _read_compendium(root: Path) -> list:
     cached = _SCAN_CACHE.get(path)
     if cached is not None and cached[0] == signature:
         return cached[1]
-    data = read_file(path) or []
+    data = _utils_io.read_file(path) or []
     _SCAN_CACHE[path] = (signature, data)
     return data
 
@@ -75,7 +75,7 @@ def _read_yml_dir(dir_path: Path) -> list[tuple[Path, Any]]:
     cached = _SCAN_CACHE.get(dir_path)
     if cached is not None and cached[0] == signature:
         return cached[1]
-    entries = [(path, read_file(path)) for path in paths]
+    entries = [(path, _utils_io.read_file(path)) for path in paths]
     _SCAN_CACHE[dir_path] = (signature, entries)
     return entries
 
@@ -213,7 +213,7 @@ def coffee_options(root: Path, day: int) -> list[dict]:
     """指定星期几（1~7）可选的咖啡选项（assets/game_data/coffee_data.yml，
     与上游 ``get_coffee_config_list_by_day`` 同源同规则）。"""
 
-    data = read_file(root / _COFFEE_REL) or {}
+    data = _utils_io.read_file(root / _COFFEE_REL) or {}
     if not isinstance(data, dict):
         return []
     all_coffee = {

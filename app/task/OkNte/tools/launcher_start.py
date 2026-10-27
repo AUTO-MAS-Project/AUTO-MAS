@@ -56,9 +56,8 @@ from PIL import Image
 
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
+from app.utils import IS_WINDOWS, get_logger
+from app.utils import display as _utils_display
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -240,7 +239,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -273,7 +272,7 @@ def _click_box(
     hwnd: int, box: Box, *, activate: bool = False, after_sleep: float = 0.3
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -321,7 +320,7 @@ def _capture_game_window_frame(hwnd: int) -> np.ndarray | None:
     抓取失败（独占全屏等）返回 None，由调用方按未命中放行。
     """
     try:
-        with _per_monitor_dpi():
+        with _utils_display.per_monitor_dpi():
             width, height = _client_size(hwnd)
             if width <= 0 or height <= 0:
                 return None

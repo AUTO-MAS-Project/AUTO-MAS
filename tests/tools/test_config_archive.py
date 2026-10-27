@@ -23,18 +23,7 @@
 
 from pathlib import Path
 
-from app.utils.config_archive import (
-    BASE_FILE_NAME,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    file_set_hash,
-    list_times,
-    read_backup_base,
-    read_overlay_sidecar,
-    restore_dir,
-    restore_files,
-    write_backup_base,
-)
+from app.utils import config_archive as _utils_config_archive
 
 
 def test_archive_files_memory_content(tmp_path: Path) -> None:
@@ -45,22 +34,24 @@ def test_archive_files_memory_content(tmp_path: Path) -> None:
     disk.write_text(text, encoding="utf-8")
 
     root_a = tmp_path / "pool_a"
-    dest_a = archive_files({"sidecar.json": text, "raw.bin": b"\x00\x01"}, root_a)
+    dest_a = _utils_config_archive.archive_files(
+        {"sidecar.json": text, "raw.bin": b"\x00\x01"}, root_a
+    )
     assert dest_a is not None
     assert (dest_a / "sidecar.json").read_text("utf-8") == text
     assert (dest_a / "raw.bin").read_bytes() == b"\x00\x01"
 
     # 同内容的 Path 源与内存 str 源指纹一致：换源形态不产生重复归档条目
     root_b = tmp_path / "pool_b"
-    archive_files({"sidecar.json": disk}, root_b)
-    dest_b2 = archive_files({"sidecar.json": text}, root_b)
+    _utils_config_archive.archive_files({"sidecar.json": disk}, root_b)
+    dest_b2 = _utils_config_archive.archive_files({"sidecar.json": text}, root_b)
     assert dest_b2 is None  # 指纹去重生效
 
     # 指纹函数对三种源形态直接等价
     assert (
-        file_set_hash({"f": disk})
-        == file_set_hash({"f": text})
-        == file_set_hash({"f": text.encode("utf-8")})
+        _utils_config_archive.file_set_hash({"f": disk})
+        == _utils_config_archive.file_set_hash({"f": text})
+        == _utils_config_archive.file_set_hash({"f": text.encode("utf-8")})
     )
 
 
@@ -68,18 +59,20 @@ def test_restore_dir_excludes_base_metadata(tmp_path: Path) -> None:
     """归档含 _mas_base 元数据时 restore_dir 不把它落回目标目录（整目录替换）。"""
 
     root = tmp_path / "pool"
-    dest = archive_files({"a.json": '{"x": 1}'}, root)
+    dest = _utils_config_archive.archive_files({"a.json": '{"x": 1}'}, root)
     assert dest is not None
-    write_backup_base(dest, "shared")
-    assert read_backup_base(dest) == "shared"
+    _utils_config_archive.write_backup_base(dest, "shared")
+    assert _utils_config_archive.read_backup_base(dest) == "shared"
 
     target = tmp_path / "target"
     target.mkdir()
     (target / "a.json").write_text("{}", encoding="utf-8")
     (target / "leftover.txt").write_text("old", encoding="utf-8")
-    restore_dir(root, dest.name, target)
+    _utils_config_archive.restore_dir(root, dest.name, target)
     assert (target / "a.json").read_text("utf-8") == '{"x": 1}'  # 内容找回
-    assert not (target / BASE_FILE_NAME).exists()  # 元数据不落配置目录
+    assert not (
+        target / _utils_config_archive.BASE_FILE_NAME
+    ).exists()  # 元数据不落配置目录
     assert not (target / "leftover.txt").exists()  # 整目录替换语义不变
 
 
@@ -87,15 +80,15 @@ def test_restore_files_excludes_base_metadata(tmp_path: Path) -> None:
     """restore_files 默认受管键排除顶级 _ 前缀元数据（_mas_base 不落目标）。"""
 
     root = tmp_path / "pool"
-    dest = archive_files({"a.json": '{"x": 1}'}, root)
+    dest = _utils_config_archive.archive_files({"a.json": '{"x": 1}'}, root)
     assert dest is not None
-    write_backup_base(dest, "shared")
+    _utils_config_archive.write_backup_base(dest, "shared")
 
     target = tmp_path / "target"
     target.mkdir()
-    restore_files(dest, target)
+    _utils_config_archive.restore_files(dest, target)
     assert (target / "a.json").read_text("utf-8") == '{"x": 1}'
-    assert not (target / BASE_FILE_NAME).exists()
+    assert not (target / _utils_config_archive.BASE_FILE_NAME).exists()
 
 
 def test_list_times_only_accepts_timestamp_dirs(tmp_path: Path) -> None:
@@ -118,7 +111,7 @@ def test_list_times_only_accepts_timestamp_dirs(tmp_path: Path) -> None:
     (pool / "mas-backups").mkdir()
     (pool / "not-a-time").mkdir()
 
-    assert list_times(pool) == [
+    assert _utils_config_archive.list_times(pool) == [
         "20260921-225131-10",
         "20260921-225131-2",
         "20260921-225131",
@@ -134,7 +127,9 @@ def test_list_times_keeps_full_retention_with_sibling_dir(tmp_path: Path) -> Non
 
     # 11 份内容互不相同的归档，keep=10：应保留 10 份真实快照
     for i in range(11):
-        archive_files({f"{i}.json": f'{{"i": {i}}}'}, pool, keep=10)
+        _utils_config_archive.archive_files(
+            {f"{i}.json": f'{{"i": {i}}}'}, pool, keep=10
+        )
 
     # 直接数盘上的时间戳目录（不走 list_times，避免与实现同源自证）：
     # 保留份数不受同级非时间戳子目录占位影响

@@ -37,7 +37,7 @@ from typing import Any
 from xml.etree import ElementTree
 
 from app.utils import get_logger
-from app.utils.i18n import parse_mo, parse_po
+from app.utils import i18n as _utils_i18n
 
 logger = get_logger("OK-NTE 配置 Schema")
 
@@ -49,7 +49,7 @@ _OKNTE_CONFIG_WRITE_LOCK = Lock()
 def _parse_po_file(po_path: Path) -> dict[str, str]:
     """解析 .po 翻译文件，返回 {msgid: msgstr} 映射。"""
     try:
-        return parse_po(po_path)
+        return _utils_i18n.parse_po(po_path)
     except Exception as e:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
         return {}
@@ -57,7 +57,7 @@ def _parse_po_file(po_path: Path) -> dict[str, str]:
 
 def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。"""
-    labels = parse_mo(mo_path)
+    labels = _utils_i18n.parse_mo(mo_path)
     if not labels:
         logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path}")
     return labels

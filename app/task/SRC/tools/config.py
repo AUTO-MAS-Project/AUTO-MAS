@@ -25,7 +25,7 @@ from pathlib import Path
 import yaml
 
 from app.utils import get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 logger = get_logger("SRC 配置持久化")
 
@@ -90,7 +90,7 @@ def read_src_config_snapshot_state(
 ) -> SrcConfigSnapshotState:
     """读取并校验已提交 SRC 配置快照的归属信息。"""
 
-    state = read_file(state_path, format=".json")
+    state = _utils_io.read_file(state_path, format=".json")
     if not isinstance(state, dict):
         raise ValueError(f"SRC 配置快照状态无效: {state_path}")
 
@@ -145,7 +145,7 @@ def write_src_config_snapshot_state(
         installation_id = read_src_installation_id(src_root_path)
     elif not isinstance(installation_id, str) or not installation_id.strip():
         raise ValueError(f"SRC 配置快照安装标识无效: {installation_id}")
-    write_file(
+    _utils_io.write_file(
         state_path,
         {
             "script_id": script_id,
@@ -175,18 +175,18 @@ def is_src_config_available(path: Path) -> bool:
             return False
         if deploy_path.exists():
             if not deploy_path.is_file() or not isinstance(
-                read_file(deploy_path), dict
+                _utils_io.read_file(deploy_path), dict
             ):
                 return False
         elif deploy_template_path.exists():
             if not deploy_template_path.is_file() or not isinstance(
-                read_file(deploy_template_path), dict
+                _utils_io.read_file(deploy_template_path), dict
             ):
                 return False
         else:
             return False
         for json_path in json_paths:
-            read_file(json_path)
+            _utils_io.read_file(json_path)
     except (OSError, UnicodeError, ValueError, yaml.YAMLError):
         return False
     return True
@@ -321,16 +321,16 @@ def save_src_user_config(
     if not is_src_config_available(staging_path):
         raise RuntimeError(f"SRC 用户配置内容不完整: {staging_path}")
     if runtime_baseline is not None:
-        current = read_file(staging_path / "src.json")
-        source = read_file(config_path / "src.json")
+        current = _utils_io.read_file(staging_path / "src.json")
+        source = _utils_io.read_file(config_path / "src.json")
         _restore_unchanged_source_values(current, runtime_baseline, source)
-        write_file(staging_path / "src.json", current)
+        _utils_io.write_file(staging_path / "src.json", current)
     if expected_installation_id is not None:
         validate_src_installation(
             src_set_path.parent,
             expected_installation_id,
         )
-    write_file(staging_ready_path, {"ready": True}, format=".json")
+    _utils_io.write_file(staging_ready_path, {"ready": True}, format=".json")
 
     if config_path.exists():
         config_path.rename(backup_path)

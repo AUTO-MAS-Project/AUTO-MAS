@@ -26,7 +26,7 @@ from pydantic import (
 )
 from pydantic_core import PydanticUseDefault, core_schema
 
-from app.utils.constants import (
+from app.utils import (
     FORBIDDEN_PATH_EXACT,
     FORBIDDEN_PATH_PREFIXES,
     ILLEGAL_CHARS,

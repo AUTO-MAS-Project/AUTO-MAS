@@ -47,9 +47,8 @@ from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
-from app.utils import get_logger
-from app.utils.paths import SOURCE_ROOT
-from app.utils.security import sanitize_log_message
+from app.utils import get_logger, sanitize_log_message
+from app.utils import paths as _utils_paths
 
 _maafw_env_logger = get_logger("MFW 运行环境")
 
@@ -322,7 +321,7 @@ async def prepare_agent_env(
                     runtime_pool_id=route.pool_id,
                     # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
                     # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                    import_paths=[SOURCE_ROOT],
+                    import_paths=[_utils_paths.SOURCE_ROOT],
                     send_log=append_log,
                     progress=publish_progress,
                 )

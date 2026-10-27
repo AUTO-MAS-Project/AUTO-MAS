@@ -6,7 +6,7 @@ from app.models.notification import (
     NotificationImage,
     NotifyPayload,
 )
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 
 def build_statistics_payload(
@@ -27,6 +27,8 @@ def build_statistics_payload(
     return NotifyPayload(
         title=title,
         text=message_text,
-        html=deferred_notification_template("MaaFW_statistics.html", message),
+        html=_utils_notification_template.deferred_notification_template(
+            "MaaFW_statistics.html", message
+        ),
         images=tuple(images),
     )

@@ -54,8 +54,7 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
     read_config_base,
 )
-from app.utils import get_logger
-from app.utils.constants import UTC4
+from app.utils import UTC4, get_logger
 
 from .contracts import (
     IProcessLauncher,

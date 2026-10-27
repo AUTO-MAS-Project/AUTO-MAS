@@ -53,7 +53,7 @@ from app.models.notification_channel import (
 )
 from app.notification_channels.common import RemoteHTTPError, split_text
 from app.utils import get_logger
-from app.utils.platform import secret as platform_secret
+from app.utils import secret as platform_secret
 
 logger = get_logger("QQ官方机器人")
 

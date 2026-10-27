@@ -43,9 +43,9 @@ EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 def mod_avd_open_kwargs(manager: Any, *, allowed: bool) -> dict[str, Any]:
     """给设备管理器 ``open`` 的额外参数：Emulator 2.0 门面要知道调用方能不能用魔改 AVD（不能时
     设备是魔改 AVD 就拒绝开机）；旧式模拟器管理器不收这个参数，返回空字典。"""
-    from app.utils.emulator2.facade import Emulator2Manager
+    from app.utils import emulator2 as _utils_emulator2
 
-    if isinstance(manager, Emulator2Manager):
+    if isinstance(manager, _utils_emulator2.facade.Emulator2Manager):
         return {"allow_mod_avd": allowed}
     return {}
 
@@ -73,19 +73,17 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
         return None
     import os
 
-    from app.utils.emulator2.avd import host
-    from app.utils.emulator2.avd.components import (
-        root_from_manager_exe,
-        script_adb_env,
-    )
+    from app.utils import emulator2 as _utils_emulator2
 
-    root = root_from_manager_exe(device_ref.manager_path)
+    root = _utils_emulator2.avd.components.root_from_manager_exe(
+        device_ref.manager_path
+    )
     env = dict(os.environ)
-    env.update(script_adb_env(root))
+    env.update(_utils_emulator2.avd.components.script_adb_env(root))
     try:
         # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
-        await host.ensure_script_adb_server(root)
-    except host.ScriptAdbPortConflict:
+        await _utils_emulator2.avd.host.ensure_script_adb_server(root)
+    except _utils_emulator2.avd.host.ScriptAdbPortConflict:
         raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
     except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
         logger.warning(f"预先启动脚本专用 adb server 失败: {e}")

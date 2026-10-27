@@ -40,16 +40,17 @@ if __name__ == "__main__" and os.getenv("AUTO_MAS_SUPERVISED") != "1":
     os.chdir(current_dir)
 
 from app.utils import (  # noqa: E402
+    IS_WINDOWS,
     get_logger,
+    is_admin,
     is_supervised,
     resource_path,
     sanitize_log_message,
 )
-from app.utils.platform import IS_WINDOWS, is_admin  # noqa: E402
-from app.utils.environment import (  # noqa: E402
-    get_application_environment,
-    is_development_environment,
-)
+from app.utils import environment as _utils_environment  # noqa: E402
+
+is_development_environment = _utils_environment.is_development_environment
+get_application_environment = _utils_environment.get_application_environment
 
 logger = get_logger("主程序")
 
@@ -242,9 +243,9 @@ def main():
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
         logger.warning("AUTO_MAS_ENV 取值无效，按开发环境启动")
-    os.environ["AUTO_MAS_ENV"] = get_application_environment()
-    development_environment = is_development_environment()
-    logger.info(f"应用运行环境: {get_application_environment()}")
+    os.environ["AUTO_MAS_ENV"] = _utils_environment.get_application_environment()
+    development_environment = _utils_environment.is_development_environment()
+    logger.info(f"应用运行环境: {_utils_environment.get_application_environment()}")
 
     supervised = is_supervised()
     admin = is_admin()
@@ -296,7 +297,7 @@ def main():
 
         await Config.init_config()
         from app.core.history import history_store
-        from app.utils.constants import UTC4
+        from app.utils import UTC4
 
         # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
         await history_store.initialize(

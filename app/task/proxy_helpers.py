@@ -40,13 +40,8 @@ from collections.abc import Callable, Iterable
 import psutil
 
 from app.services import System
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    normalize_base_source,
-)
 
 logger = get_logger("专项进程清理")
 
@@ -148,9 +143,9 @@ def append_push_log(cur_user_item: object, log_type: str, text: str, ts: float) 
 # （保留实现，将来恢复开关可直接复用）。
 
 # 取值只在 app.utils.constants 定义一处，这里按专项层习惯名再导出
-CONFIG_BASE_SHARED = BASE_SHARED
-CONFIG_BASE_INDEPENDENT = BASE_INDEPENDENT
-CONFIG_BASE_NATIVE = BASE_NATIVE
+CONFIG_BASE_SHARED = _utils_constants.BASE_SHARED
+CONFIG_BASE_INDEPENDENT = _utils_constants.BASE_INDEPENDENT
+CONFIG_BASE_NATIVE = _utils_constants.BASE_NATIVE
 
 
 def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> str:
@@ -166,7 +161,7 @@ def read_config_base(config: object, default: str = CONFIG_BASE_INDEPENDENT) -> 
     except (AttributeError, KeyError, TypeError):
         return default
     # 存量配置里可能还是旧来源字面量（脚本/用户/直控），一并归一
-    base = normalize_base_source(raw)
+    base = _utils_constants.normalize_base_source(raw)
     if base in (CONFIG_BASE_SHARED, CONFIG_BASE_INDEPENDENT, CONFIG_BASE_NATIVE):
         return base
     return default

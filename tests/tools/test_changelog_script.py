@@ -14,13 +14,13 @@ from types import ModuleType
 
 import pytest
 
-from app.utils.paths import SOURCE_ROOT
+from app.utils import paths as _utils_paths
 
 
 def _load_changelog_module() -> ModuleType:
     """scripts/ 不是包，按路径加载。"""
 
-    script_path = SOURCE_ROOT / "scripts" / "changelog.py"
+    script_path = _utils_paths.SOURCE_ROOT / "scripts" / "changelog.py"
     spec = importlib.util.spec_from_file_location("changelog_script", script_path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

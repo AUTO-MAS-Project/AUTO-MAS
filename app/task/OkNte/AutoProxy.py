@@ -49,20 +49,18 @@ from app.task.proxy_helpers import (
     user_uses_quick_config,
 )
 from app.utils import (
+    SIGN_MODE_SPLIT,
+    UTC4,
+    LogMonitor,
+    LogSignMatcher,
     ProcessInfo,
     ProcessManager,
+    compile_log_signs,
     get_logger,
     is_process_alive,
     is_process_running,
 )
-from app.utils.constants import UTC4
-from app.utils.io import mark_native_config_injected, read_file, swap_in_dir
-from app.utils.LogMonitor import LogMonitor
-from app.utils.LogPatternExtractor import (
-    SIGN_MODE_SPLIT,
-    LogSignMatcher,
-    compile_log_signs,
-)
+from app.utils import io as _utils_io
 
 from .config_schema import (
     DAILY_ROUTINE_TASK_FILE,
@@ -126,7 +124,7 @@ def _load_nte_launcher_path(config_path: Path) -> Path | None:
     launcher_config_path = (
         config_path / "LauncherTask.json" if config_path.is_dir() else config_path
     )
-    config = read_file(launcher_config_path)
+    config = _utils_io.read_file(launcher_config_path)
     if not isinstance(config, dict):
         return None
 
@@ -557,13 +555,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         # 每用户先还原任务级原生基线，避免原生来源沿用上一用户的注入值。
         if self.native_base:
             if folder_mode and temp.is_dir():
-                swap_in_dir(temp, self.script_config_path)
+                _utils_io.swap_in_dir(temp, self.script_config_path)
             elif not folder_mode and (temp / "config.temp").is_file():
                 shutil.copyfile(temp / "config.temp", self.script_config_path)
         else:
             source = self._ensure_oknte_mas_config_dir()
             if folder_mode:
-                swap_in_dir(source, self.script_config_path)
+                _utils_io.swap_in_dir(source, self.script_config_path)
             else:
                 shutil.copyfile(
                     source / self.script_config_path.name, self.script_config_path
@@ -574,7 +572,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         )
         self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
         if folder_mode:
-            mark_native_config_injected(
+            _utils_io.mark_native_config_injected(
                 temp,
                 self.script_config_path,
                 script_id=self.script_info.script_id,

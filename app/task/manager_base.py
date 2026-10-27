@@ -22,9 +22,8 @@ from app.task.maintenance import (
 )
 from app.task.notification_lifecycle import NotificationTaskBase
 from app.task.notify_core import push_maintenance_notice
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
-from app.utils.game_update import GameUpdateResult
+from app.utils import TASK_MODE_ZH, get_logger
+from app.utils import game_update as _utils_game_update
 
 logger = get_logger("脚本调度")
 
@@ -202,7 +201,7 @@ class ScriptManagerBase(NotificationTaskBase):
         user: UserItem,
         user_config: UserConfigType,
         *,
-        game_update_result: GameUpdateResult | None = None,
+        game_update_result: _utils_game_update.GameUpdateResult | None = None,
     ) -> bool:
         if self.task_info.mode != "AutoProxy":
             return True

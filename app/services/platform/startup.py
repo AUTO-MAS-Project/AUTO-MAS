@@ -1,4 +1,4 @@
-from app.utils.platform import IS_WINDOWS
+from app.utils import IS_WINDOWS
 
 if IS_WINDOWS:
     from .windows.startup import WindowsStartupManager

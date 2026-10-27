@@ -30,7 +30,7 @@ import re
 from dataclasses import dataclass
 from typing import Callable, Optional, Pattern
 
-from app.utils.LogPatternExtractor import compile_regex
+from app.utils import compile_regex
 
 # 钩子类型：drop = 丢弃命中行；replace = 按正则改写命中内容
 HOOK_TYPE_DROP = "drop"

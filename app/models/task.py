@@ -32,7 +32,7 @@ from typing import List, Literal, Optional
 from app.models.notification_ports import LocalNotifier, TaskNotifications
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("任务执行")
 

@@ -41,7 +41,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from app.utils.io import force_rmtree
+from app.utils import io as _utils_io
 
 _COMMIT_FILE = "version.json"
 _CHUNK = 1024 * 1024
@@ -83,7 +83,7 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
     zip 损坏或条目路径越界（绝对路径 / ``..``）时抛异常，由调用方兜底。
     """
     if dest_dir.exists():
-        force_rmtree(dest_dir)
+        _utils_io.force_rmtree(dest_dir)
     dest_dir.mkdir(parents=True)
     root = dest_dir.resolve()
     with zipfile.ZipFile(zip_path) as archive:

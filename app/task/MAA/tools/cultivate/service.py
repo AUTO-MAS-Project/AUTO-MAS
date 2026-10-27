@@ -42,7 +42,7 @@ from typing import Awaitable, Callable, Collection, Mapping, Sequence
 
 import httpx
 
-from app.utils.constants import UTC4
+from app.utils import UTC4
 
 from .engine import (
     apply_achievements,

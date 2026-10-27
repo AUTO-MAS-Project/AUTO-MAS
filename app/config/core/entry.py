@@ -30,7 +30,7 @@ from pydantic import (
 )
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from ..fields import (

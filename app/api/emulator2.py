@@ -39,8 +39,8 @@ from pydantic import (
 from app.core import avd_update as avd_updater
 from app.core import emulator2 as service
 from app.models.schema import OutBase
+from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
-from app.utils.emulator2.avd import service as avd_service
 
 
 class Emulator2SearchIn(BaseModel):
@@ -900,7 +900,9 @@ async def avd_status(
     组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
     """
     try:
-        result = await avd_service.status(payload.root, refresh=payload.refresh)
+        result = await _utils_emulator2.avd.service.status(
+            payload.root, refresh=payload.refresh
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"avd_status失败: {type(e).__name__}: {e}")
         return Emulator2AvdStatusOut(**_error(e))

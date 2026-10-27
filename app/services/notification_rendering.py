@@ -13,7 +13,7 @@ from app.models.notification import (
     RenderedNotification,
     SummaryPolicy,
 )
-from app.utils.notification_render import render_for_target
+from app.utils import notification_render as _utils_notification_render
 
 
 class AsyncNotificationRenderer:
@@ -60,7 +60,7 @@ class AsyncNotificationRenderer:
                 and not capabilities.image_presentations
             )
         ):
-            return render_for_target(
+            return _utils_notification_render.render_for_target(
                 payload,
                 capabilities,
                 summary_policy=summary_policy,
@@ -76,7 +76,7 @@ class AsyncNotificationRenderer:
             payload.images.prepare_for_render()
 
         render = partial(
-            render_for_target,
+            _utils_notification_render.render_for_target,
             payload,
             capabilities,
             summary_policy=summary_policy,

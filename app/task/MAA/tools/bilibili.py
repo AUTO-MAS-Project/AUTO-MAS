@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
@@ -34,9 +34,9 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
 
     # tasks.json 通常是严格 JSON, json5 解析要慢近千倍, 仅在严格解析失败时回退
     try:
-        data: Any = read_file(maa_tasks_path, format=".json")
+        data: Any = _utils_io.read_file(maa_tasks_path, format=".json")
     except json.JSONDecodeError:
-        data = read_file(maa_tasks_path, format=".json5")
+        data = _utils_io.read_file(maa_tasks_path, format=".json5")
     original = copy.deepcopy(data)
     if if_agree and Config.setting.Function.IfAgreeBilibili:
         data["BilibiliAgreement_AUTO"] = {
@@ -55,4 +55,4 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
         if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
             data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
     if data != original:
-        write_file(maa_tasks_path, data)
+        _utils_io.write_file(maa_tasks_path, data)
