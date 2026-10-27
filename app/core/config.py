@@ -2948,13 +2948,21 @@ class AppConfig:
         只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
         把开发者磁盘上的真 venv 删掉了。
 
-        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
-        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
+        隔离 venv 按依赖清单 + maafw 版本 + 宿主身份跨视图共用，目录名不再由项目路径推出：
+        存活集合按各存活脚本的引用记录（准备时写在 ``.refs/`` 下）、建计划时会算出的目录、
+        以及还没准备过的脚本升级前按路径建的老目录算，不读 venv 目录内的清单；存活脚本的
+        引用记录读不出来就整轮不回收（见 ``agent_env.planner.collect_orphan_agent_venvs``）。
+        再加两道保护——刚动过的一律不碰；正被准备（锁文件被占）的也不碰，避免与正在
+        准备环境的运行抢。不属于任何存活脚本的引用记录一并删掉。
         """
 
         from app.models.config import MaaFWConfig
         from app.task.MaaFW.tools.core.agent_env.planner import (
             collect_orphan_agent_venvs,
+        )
+        from app.task.MaaFW.tools.core.agent_env.venv_share import (
+            collect_stale_venv_refs,
+            isolated_venv_guard,
         )
         from app.task.MaaFW.tools.embedded.embedded_project import (
             resolve_maafw_project_root,
@@ -2994,11 +3002,30 @@ class AppConfig:
             try:
                 if venv_path.stat().st_mtime > cutoff:
                     continue  # 刚动过，可能有运行正在用它
-                shutil.rmtree(venv_path)
+                with isolated_venv_guard(venv_path, blocking=False) as locked:
+                    if not locked:
+                        logger.info(
+                            f"MFW 隔离 venv 正在被准备，本次不清理: {venv_path}"
+                        )
+                        continue
+                    shutil.rmtree(venv_path)
             except OSError as exc:
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
+
+        try:
+            stale_refs = collect_stale_venv_refs(root, live_paths)
+        except Exception as exc:
+            logger.warning(f"MFW 隔离 venv 引用记录扫描失败: {exc}")
+            return
+        for ref_path in stale_refs:
+            try:
+                ref_path.unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(f"MFW 隔离 venv 引用记录清理失败: {ref_path} - {exc}")
+                continue
+            logger.debug(f"已清理无主的 MFW 隔离 venv 引用记录: {ref_path}")
 
     async def _settle_m9a_migration(self, report: Any) -> None:
         """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。

@@ -53,6 +53,13 @@ from app.task.MaaFW.tools.core.agent_env.import_check import (
 from app.task.MaaFW.tools.core.agent_env.planner import (
     compute_isolated_venv_path,
 )
+from app.task.MaaFW.tools.core.agent_env.venv_share import (
+    VENV_LOCKS_DIR_NAME,
+    VENV_REFS_DIR_NAME,
+    isolated_venv_guard,
+    read_venv_ref,
+    remove_venv_ref,
+)
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
@@ -65,6 +72,8 @@ logger = get_logger("MFW 更新预检")
 # ``prepare_agent_envs`` 对隔离 venv 是先 rmtree 再重装，直接建在正式根会把
 # 旧版本还能用的 venv 先删掉——预检失败后旧版本就没 agent 了。
 PRECHECK_AGENT_ROOT_NAME = "precheck_agent_venvs"
+# 清理时等另一处预检用完同一份 venv 的上限；等不到就留给下次。
+PRECHECK_CLEANUP_LOCK_SECONDS = 60.0
 
 
 class PrepareProjectEnvironment(Protocol):
@@ -84,14 +93,41 @@ def precheck_agent_root(pool_root: str | Path) -> Path:
 
 
 def cleanup_precheck_agent_venv(project_path: Path, agent_root: Path) -> None:
-    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。"""
+    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。
 
-    venv_path = compute_isolated_venv_path(project_path, managed_env_root=agent_root)
-    shutil.rmtree(venv_path, ignore_errors=True)
-    try:
-        agent_root.rmdir()
-    except OSError:
-        pass
+    隔离 venv 按依赖清单 + maafw 版本 + 宿主身份共用之后，目录名不再由项目路径推出：
+    按准备时记下的引用找（``venv_share``），再加上建计划时会算出的那个。删之前拿该
+    venv 的锁，不在另一处预检准备同一份时动手。
+    """
+
+    names: set[str] = set()
+    ref = read_venv_ref(agent_root, project_path)
+    if ref is not None:
+        names.add(str(ref["venv"]))
+    names.add(
+        compute_isolated_venv_path(project_path, managed_env_root=agent_root).name
+    )
+    for name in sorted(names):
+        venv_path = agent_root / name
+        if not venv_path.exists():
+            continue
+        try:
+            with isolated_venv_guard(venv_path, timeout=PRECHECK_CLEANUP_LOCK_SECONDS):
+                shutil.rmtree(venv_path, ignore_errors=True)
+        except TimeoutError:
+            logger.warning(
+                f"预检隔离 venv 正被另一处预检占用，这次不删（下次预检同一项目时再删）：{venv_path}"
+            )
+    remove_venv_ref(agent_root, project_path)
+    for directory in (
+        agent_root / VENV_REFS_DIR_NAME,
+        agent_root / VENV_LOCKS_DIR_NAME,
+        agent_root,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
 
 
 def _resolve_requirement(project_path: Path) -> str | None:
