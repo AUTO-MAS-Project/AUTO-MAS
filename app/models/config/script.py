@@ -3630,9 +3630,9 @@ class GeneralConfig(DomainEntry):
         data = super().normalize_payload(data)
         script = data.get("Script")
         if isinstance(script, dict):
-            # 旧模板使用文件选择器文案，未知值仍交给字段校验拒绝。
+            # 保留旧文件选择器文案的变体兼容，无关未知值仍交给字段校验拒绝。
             mode = script.get("ConfigPathMode")
-            if mode == "所有文件 (*)":
+            if isinstance(mode, str) and "所有文件" in mode:
                 script["ConfigPathMode"] = "File"
             elif mode == "文件夹":
                 script["ConfigPathMode"] = "Folder"
