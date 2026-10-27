@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ScriptMirrorCdkData } from '@/api'
 import type { MAAScriptConfig } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -70,12 +70,11 @@ const handleEnabled = (enabled: boolean) => {
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverTip')">
-              <span class="form-label">
-                {{ t('edit.updateTakeoverSwitch') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.updateTakeoverSwitch')"
+              :hint="t('edit.updateTakeoverTip')"
+              variant="form"
+            />
           </template>
           <a-switch
             :checked="update.TakeoverEnabled"
@@ -88,12 +87,11 @@ const handleEnabled = (enabled: boolean) => {
       <a-col :span="16">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateTakeoverCdkTip')">
-              <span class="form-label">
-                {{ t('edit.updateTakeoverCdk') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <FieldLabelWithHint
+              :text="t('edit.updateTakeoverCdk')"
+              :hint="t('edit.updateTakeoverCdkTip')"
+              variant="form"
+            />
           </template>
           <a-input-password
             :value="update.MirrorChyanCDK"

@@ -1,5 +1,5 @@
 <template>
-  <div class="overview-panel">
+  <div class="scheduler-panel overview-panel">
     <div class="scheduler-panel-header">
       <h3>{{ t('scheduler.overview.title') }}</h3>
       <!--      <a-badge :count="totalTaskCount" :overflow-count="99" />-->
@@ -94,28 +94,9 @@ defineExpose({
 })
 </script>
 
+<style scoped src="./schedulerPanel.css"></style>
+
 <style scoped>
-.overview-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.scheduler-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  flex-shrink: 0;
-}
-
 .scheduler-panel-header h3 {
   margin: 0;
   font-size: 18px;

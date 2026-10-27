@@ -1,57 +1,40 @@
 <template>
-  <div class="user-edit-header">
-    <div class="header-nav">
-      <a-breadcrumb class="breadcrumb">
-        <a-breadcrumb-item>
-          <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/maaend`" class="breadcrumb-link">
-            {{ scriptName }}
-          </router-link>
-        </a-breadcrumb-item>
-        <a-breadcrumb-item>
-          {{ t(isEdit ? 'edit.maaEndEditAccount' : 'edit.maaEndAddAccount') }}
-        </a-breadcrumb-item>
-      </a-breadcrumb>
+  <UserEditHeader
+    class="maaend-user-edit-header"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    script-edit-segment="maaend"
+    :current-label="t(isEdit ? 'edit.maaEndEditAccount' : 'edit.maaEndAddAccount')"
+    :user-id="userId"
+    button-size="middle"
+    actions-size="middle"
+    @cancel="emit('cancel')"
+  >
+    <template #below-breadcrumb>
       <div class="account-heading">
         <img :src="maaEndIcon" alt="" class="account-icon" />
         <div class="account-title">
           <h1>{{ userName || t(isEdit ? 'edit.maaEndEditAccount' : 'edit.maaEndAddAccount') }}</h1>
-          <span
-            ><LoadingOutlined v-if="saving" />
-            {{ t(saving ? 'edit.maaEndSaving' : 'edit.maaEndAutoSaveHint') }}</span
-          >
+          <span>
+            <LoadingOutlined v-if="saving" />
+            {{ t(saving ? 'edit.maaEndSaving' : 'edit.maaEndAutoSaveHint') }}
+          </span>
         </div>
       </div>
-    </div>
-
-    <a-space size="middle">
-      <a-button v-if="props.userId" :loading="folderLoading" @click="handleOpenFolder">
-        <template #icon>
-          <FolderOpenOutlined />
-        </template>
-        {{ t('comp.openConfigFolder') }}
-      </a-button>
-      <a-button @click="$emit('handleCancel')">
-        <template #icon>
-          <ArrowLeftOutlined />
-        </template>
-        {{ t('edit.back') }}
-      </a-button>
-    </a-space>
-  </div>
+    </template>
+  </UserEditHeader>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { ArrowLeftOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons-vue'
-import { useUserApi } from '@/composables/useUserApi'
+import { LoadingOutlined } from '@ant-design/icons-vue'
+import UserEditHeader from '@/components/UserEditHeader.vue'
 import maaEndIcon from '@/assets/MaaEnd.png'
 
 const { t } = useI18n()
 
-const props = defineProps<{
+defineProps<{
   scriptId: string
   scriptName: string
   isEdit: boolean
@@ -60,36 +43,21 @@ const props = defineProps<{
   saving: boolean
 }>()
 
-defineEmits<{
-  handleCancel: []
+const emit = defineEmits<{
+  cancel: []
 }>()
-
-const { loading: folderLoading, openUserConfigFolder } = useUserApi()
-
-const handleOpenFolder = async () => {
-  if (!props.userId) return
-  await openUserConfigFolder(props.scriptId, props.userId)
-}
 </script>
 
 <style scoped>
-.user-edit-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.maaend-user-edit-header {
   margin-bottom: 24px;
-  padding-bottom: 24px;
+  padding: 0 0 24px;
   gap: 24px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.header-nav {
-  flex: 1;
-  min-width: 0;
-}
-
-.breadcrumb {
-  margin: 0;
+.maaend-user-edit-header :deep(.breadcrumb) {
+  font-size: 12px;
 }
 
 .account-heading {
@@ -118,15 +86,10 @@ const handleOpenFolder = async () => {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
 }
-.breadcrumb {
-  font-size: 12px;
-}
 
 @media (max-width: 768px) {
-  .user-edit-header {
-    flex-direction: column;
+  .maaend-user-edit-header {
     gap: 16px;
-    align-items: stretch;
   }
 }
 </style>

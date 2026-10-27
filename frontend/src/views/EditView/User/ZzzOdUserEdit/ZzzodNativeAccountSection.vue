@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import PathPickerField from '@/components/PathPickerField.vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { ZzzOdNativeAccountField } from '@/api'
 import { pickZzzGameExe } from './pickZzzGameExe'
 const props = defineProps<{
@@ -51,21 +52,14 @@ const selectDirectGamePath = async () => {
                 </a-tooltip>
               </span>
             </template>
-            <a-input-group v-if="f.key === 'game_path'" compact class="path-input-group">
-              <a-input
-                v-model:value="nativeAccountValues[f.key]"
-                :placeholder="t('edit.zzzodGamePathPlaceholder')"
-                size="large"
-                class="path-input"
-                readonly
-              />
-              <a-button size="large" class="path-button" @click="selectDirectGamePath">
-                <template #icon>
-                  <FolderOpenOutlined />
-                </template>
-                {{ t('edit.pickFile') }}
-              </a-button>
-            </a-input-group>
+            <PathPickerField
+              v-if="f.key === 'game_path'"
+              v-model="nativeAccountValues[f.key]"
+              mode="file"
+              :placeholder="t('edit.zzzodGamePathPlaceholder')"
+              :pick-label="t('edit.pickFile')"
+              @pick="selectDirectGamePath"
+            />
             <a-input-password
               v-else-if="f.key === 'password'"
               v-model:value="nativeAccountValues[f.key]"

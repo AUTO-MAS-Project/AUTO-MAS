@@ -4,7 +4,7 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     @restore="openRestoreModal"
-    @back="handleCancel"
+    @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">

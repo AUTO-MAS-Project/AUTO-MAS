@@ -4,7 +4,7 @@
     <!-- 页面头部 -->
     <div class="scheduler-header">
       <div class="header-left">
-        <h1 class="page-title">{{ t('scheduler.title') }}</h1>
+        <h1 class="page-title app-page-title">{{ t('scheduler.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
@@ -337,16 +337,6 @@ onDeactivated(() => {
 
 .page-title {
   margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  background: var(
-    --app-page-title-color,
-    linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover))
-  );
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .header-actions {

@@ -4,7 +4,7 @@
       <a-col :xs="24" :md="12">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
+            <FieldLabelWithHint
               :text="t('edit.stageConfigMode')"
               :hint="t('edit.stageConfigModeHint')"
             />
@@ -30,7 +30,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <LabelWithHint :text="t('edit.medicineNumb')" />
+            <FieldLabelWithHint :text="t('edit.medicineNumb')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -59,7 +59,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint :text="t('edit.seriesNumb')" :hint="t('edit.seriesNumbHint')" />
+            <FieldLabelWithHint :text="t('edit.seriesNumb')" :hint="t('edit.seriesNumbHint')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -102,7 +102,7 @@
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint :text="t('edit.stageSelection')" />
+            <FieldLabelWithHint :text="t('edit.stageSelection')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -133,7 +133,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
+            <FieldLabelWithHint
               :text="t('edit.alternateStage', { n: 1 })"
               :hint="t('edit.alternateStageHint')"
             />
@@ -167,7 +167,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
+            <FieldLabelWithHint
               :text="t('edit.alternateStage', { n: 2 })"
               :hint="t('edit.alternateStageHint')"
             />
@@ -201,7 +201,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <LabelWithHint
+            <FieldLabelWithHint
               :text="t('edit.alternateStage', { n: 3 })"
               :hint="t('edit.alternateStageHint')"
             />
@@ -239,7 +239,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { CalendarOutlined } from '@ant-design/icons-vue'
-import LabelWithHint from './LabelWithHint.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import StageSelector from './StageSelector.vue'
 import { navigateTo } from '@/router'
 

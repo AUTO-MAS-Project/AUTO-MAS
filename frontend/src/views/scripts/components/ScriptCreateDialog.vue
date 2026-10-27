@@ -28,31 +28,25 @@
               <template #prefix><SearchOutlined /></template>
             </a-input>
           </div>
-          <a-radio-group
-            v-if="filteredTypes.length"
-            v-model:value="selectedType"
-            class="type-sections"
-          >
+          <SelectableOptionList v-if="filteredTypes.length" v-model="selectedType">
             <section v-if="typeSections.general.length" class="type-section">
               <div class="type-section-heading">
                 <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
               </div>
               <div class="type-grid">
-                <label
+                <SelectableOptionCard
                   v-for="option in typeSections.general"
                   :key="option.value"
-                  :class="[
-                    'type-row general-type-row',
-                    { selected: selectedType === option.value },
-                  ]"
+                  :value="option.value"
+                  :title="option.title"
+                  :description="option.description"
+                  :selected="selectedType === option.value"
+                  radio-position="end"
                 >
-                  <img :src="option.icon" :alt="option.title" class="type-icon" />
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ option.title }}</span>
-                    <span class="choice-description">{{ option.description }}</span>
-                  </span>
-                  <a-radio :value="option.value" />
-                </label>
+                  <template #icon>
+                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
+                  </template>
+                </SelectableOptionCard>
               </div>
             </section>
             <section
@@ -63,21 +57,22 @@
                 <span class="type-section-title">{{ t('scripts.create.groupSpecialized') }}</span>
               </div>
               <div class="type-grid">
-                <label
+                <SelectableOptionCard
                   v-for="option in typeSections.specialized"
                   :key="option.value"
-                  :class="['type-row', { selected: selectedType === option.value }]"
+                  :value="option.value"
+                  :title="option.title"
+                  :description="option.description"
+                  :selected="selectedType === option.value"
+                  radio-position="end"
                 >
-                  <img :src="option.icon" :alt="option.title" class="type-icon" />
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ option.title }}</span>
-                    <span class="choice-description">{{ option.description }}</span>
-                  </span>
-                  <a-radio :value="option.value" />
-                </label>
+                  <template #icon>
+                    <img :src="option.icon" :alt="option.title" class="selectable-option-image" />
+                  </template>
+                </SelectableOptionCard>
               </div>
             </section>
-          </a-radio-group>
+          </SelectableOptionList>
           <a-empty v-else :description="t('scripts.create.noTypeMatch')">
             <a-button @click="clearTypeFilters">{{ t('scripts.clearSearch') }}</a-button>
           </a-empty>
@@ -114,24 +109,28 @@
               :title="t('scripts.create.sourceHeading')"
               :description="t('scripts.create.sourceHeadingDesc')"
             />
-            <a-radio-group v-model:value="selectedConfigMode" class="choice-list">
-              <label :class="['choice-row', { selected: selectedConfigMode === 'template' }]">
-                <a-radio value="template" />
-                <span class="choice-icon"><DatabaseOutlined /></span>
-                <span class="choice-copy">
-                  <span class="choice-title">{{ t('scripts.create.fromTemplate') }}</span>
-                  <span class="choice-description">{{ t('scripts.create.fromTemplateDesc') }}</span>
-                </span>
-              </label>
-              <label :class="['choice-row', { selected: selectedConfigMode === 'custom' }]">
-                <a-radio value="custom" />
-                <span class="choice-icon"><SettingOutlined /></span>
-                <span class="choice-copy">
-                  <span class="choice-title">{{ t('scripts.create.custom') }}</span>
-                  <span class="choice-description">{{ t('scripts.create.customDesc') }}</span>
-                </span>
-              </label>
-            </a-radio-group>
+            <SelectableOptionList v-model="selectedConfigMode">
+              <SelectableOptionCard
+                value="template"
+                :title="t('scripts.create.fromTemplate')"
+                :description="t('scripts.create.fromTemplateDesc')"
+                :selected="selectedConfigMode === 'template'"
+              >
+                <template #icon>
+                  <span class="selectable-option-icon"><DatabaseOutlined /></span>
+                </template>
+              </SelectableOptionCard>
+              <SelectableOptionCard
+                value="custom"
+                :title="t('scripts.create.custom')"
+                :description="t('scripts.create.customDesc')"
+                :selected="selectedConfigMode === 'custom'"
+              >
+                <template #icon>
+                  <span class="selectable-option-icon"><SettingOutlined /></span>
+                </template>
+              </SelectableOptionCard>
+            </SelectableOptionList>
           </template>
 
           <template v-else>
@@ -170,17 +169,17 @@
               <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
             </div>
             <template v-else-if="templates.length">
-              <a-radio-group v-model:value="selectedTemplateKey" class="entity-list template-list">
-                <label
+              <SelectableOptionList v-model="selectedTemplateKey">
+                <SelectableOptionCard
                   v-for="template in templates"
                   :key="template.configKey"
-                  :class="[
-                    'entity-row template-row',
-                    { selected: selectedTemplateKey === template.configKey },
-                  ]"
+                  :value="template.configKey"
+                  :title="template.displayName"
+                  :selected="selectedTemplateKey === template.configKey"
+                  align="start"
+                  radio-position="end"
                 >
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ template.displayName }}</span>
+                  <template #meta>
                     <span class="template-meta">
                       <span
                         ><UserOutlined />
@@ -190,13 +189,14 @@
                         ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
                       >
                     </span>
+                  </template>
+                  <template #description>
                     <span class="template-description">{{
                       template.description || t('scripts.noDescription')
                     }}</span>
-                  </span>
-                  <a-radio :value="template.configKey" />
-                </label>
-              </a-radio-group>
+                  </template>
+                </SelectableOptionCard>
+              </SelectableOptionList>
               <div v-if="templateTotal > templatePageSize" class="template-pagination">
                 <a-pagination
                   size="small"
@@ -299,6 +299,8 @@ import {
 } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { openExternalUrl } from '@/utils/openExternal'
+import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
+import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
@@ -569,13 +571,6 @@ const chooseCustomConfig = () => {
   overflow: hidden;
 }
 
-.choice-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
 .step-content {
   min-width: 0;
   padding: 16px 4px;
@@ -591,74 +586,6 @@ const chooseCustomConfig = () => {
 :deep(.step-heading p) {
   margin: 6px 0 20px;
   color: var(--ant-color-text-secondary);
-}
-
-.choice-list,
-.entity-list {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.choice-row,
-.entity-row,
-.type-row {
-  display: flex;
-  min-width: 0;
-  gap: 12px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-container);
-  cursor: pointer;
-}
-
-.choice-row:hover,
-.entity-row:hover,
-.type-row:hover,
-.choice-row.selected,
-.entity-row.selected,
-.type-row.selected {
-  border-color: var(--ant-color-primary);
-}
-
-.choice-row.selected,
-.entity-row.selected,
-.type-row.selected {
-  background: var(--ant-color-primary-bg);
-}
-
-.entity-row.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.choice-icon {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
-  font-size: 19px;
-}
-
-.choice-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.choice-description {
-  margin-top: 3px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
 }
 
 .list-toolbar {
@@ -710,32 +637,11 @@ const chooseCustomConfig = () => {
   border-top: 1px solid var(--ant-color-border-secondary);
 }
 
-.general-type-row {
-  background: var(--ant-color-bg-container);
-}
-
-.type-icon {
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
-  border-radius: 6px;
-  object-fit: contain;
-}
-
-.entity-list,
-.template-list {
-  width: 100%;
-}
-
 .ellipsis {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.template-row {
-  align-items: flex-start;
 }
 
 .template-meta {
