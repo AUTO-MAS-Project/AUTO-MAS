@@ -52,7 +52,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app.services.community_http import create_community_client
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 from .community_activity_roles import (
     CommunityActivityCapability,

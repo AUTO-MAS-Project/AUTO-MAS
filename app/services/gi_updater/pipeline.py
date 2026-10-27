@@ -56,7 +56,7 @@ from app.services.gi_updater.install import UpdateKind
 from app.services.gi_updater.presets import get_profile
 from app.services.gi_updater.versioning import MIN_EXECUTABLE_SIZE
 from app.utils import get_logger, sanitize_log_message
-from app.utils.hpatchz import ensure_hpatchz
+from app.utils import hpatchz as _utils_hpatchz
 
 logger = get_logger("更新引擎")
 
@@ -291,7 +291,7 @@ async def _run_plan(
         # 补丁工具只在确实要打增量时才取：没装过游戏、拿不到差分的轮次都用不上它，
         # 更早地失败会把一轮本不需要它的任务白白拦下
         try:
-            hpatchz = str(await ensure_hpatchz(on_progress=on_progress))
+            hpatchz = str(await _utils_hpatchz.ensure_hpatchz(on_progress=on_progress))
         except Exception as error:  # noqa: BLE001
             # 没有补丁工具就打不出增量，只能整文件重下——那是要用户付流量的事，停手问一句
             reason = f"获取增量补丁工具失败：{error}"

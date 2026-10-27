@@ -2,7 +2,7 @@
 # vulkanfix.sh <orig sha256> <patched sha256> - bind-mount the patched guest Vulkan encoder (bindlock2, includes
 # khrfix) over the image's own and restart zygote (it preloads the driver). Run as root (su 0 sh ...). Same steps as
 # -VulkanFix in aemu-lab tools\launcher\avd-p0.ps1; the patch itself is made on the host from the image's own library
-# (app/utils/emulator2/avd/vulkanfix.py), the patched file is never shipped.
+# (app/utils/common/emulator2/avd/vulkanfix.py), the patched file is never shipped.
 #
 # The patched copy stays in /data/local/tmp as a cache: the next boot mounts it again without a new upload. It is
 # relabelled for /vendor and then no longer writable by adb, so the host uploads under a separate name.

@@ -33,7 +33,7 @@ from shutil import copy2
 from typing import Any
 
 from app.utils import get_logger, resource_path
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .one_dragon import _mas_user_short_id, resolve_custom_group
 from .one_dragon_plan import resolve_base_name
@@ -88,7 +88,7 @@ _EXEC_SEGMENT_PREFIX = "MAS-{short}-执行层段"
 def _load_group_template() -> dict[str, Any]:
     """读取执行层配置组模板（提供组级 ``config`` 与 MASOneDragon 项目骨架）。"""
     template_path = _RES_TEMPLATE_DIR / f"{GROUP_NAME}.json"
-    template = read_file(template_path)
+    template = _utils_io.read_file(template_path)
     if not isinstance(template, dict) or not isinstance(template.get("projects"), list):
         raise RuntimeError(f"一条龙执行层配置组模板无效: {template_path}")
     if not isinstance(template["projects"][0], dict):
@@ -273,7 +273,7 @@ def write_execution_groups(
             group["config"] = seg["config"]
         group["projects"] = list(seg.get("projects") or [])
         out_path = out_dir / f"{name}.json"
-        write_file(out_path, group)
+        _utils_io.write_file(out_path, group)
         created.append(out_path)
     logger.info(
         f"已生成一条龙执行层配置组 {len(created)} 段: {[p.stem for p in created]}"

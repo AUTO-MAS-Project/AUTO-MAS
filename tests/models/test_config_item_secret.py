@@ -18,7 +18,7 @@ from app.models.ConfigBase import (
     ConfigItem,
     EncryptValidator,
 )
-from app.utils.platform import IS_WINDOWS
+from app.utils import IS_WINDOWS
 
 pytestmark = pytest.mark.skipif(not IS_WINDOWS, reason="仅 Windows 走 DPAPI 实现")
 
@@ -82,7 +82,7 @@ def test_password_can_be_re_entered_over_foreign_ciphertext(
 
 
 def test_own_ciphertext_survives_load_unchanged(password_item: ConfigItem) -> None:
-    from app.utils.platform.windows.secret import dpapi_encrypt
+    from app.utils.windows.secret import dpapi_encrypt
 
     stored = dpapi_encrypt("my-real-password")
 
@@ -111,12 +111,12 @@ def test_legacy_user_scope_ciphertext_survives_load_unchanged(
 
 
 def test_plaintext_input_is_encrypted(password_item: ConfigItem) -> None:
-    from app.utils.platform.common.secret import looks_like_dpapi_blob
+    from app.utils import secret as _utils_secret
 
     password_item.setValue("typed-by-the-user")
 
     stored = password_item.getValue(if_decrypt=False)
-    assert looks_like_dpapi_blob(stored) is True
+    assert _utils_secret.looks_like_dpapi_blob(stored) is True
     assert stored != "typed-by-the-user"
     assert password_item.getValue(if_decrypt=True) == "typed-by-the-user"
 

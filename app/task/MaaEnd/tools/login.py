@@ -36,8 +36,8 @@ from typing import TYPE_CHECKING
 import cv2
 import numpy as np
 
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
+from app.utils import IS_WINDOWS
+from app.utils import display as _utils_display
 
 if TYPE_CHECKING:
     import pyautogui
@@ -175,7 +175,7 @@ def _client_size(hwnd: int, *, check_ratio: bool = True) -> tuple[int, int]:
 def _capture_window_image(
     hwnd: int, *, activate: bool = True, check_ratio: bool = True
 ) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd, check_ratio=check_ratio)
@@ -260,7 +260,7 @@ def _read_text(frame: np.ndarray, roi: Box) -> list[OCRItem]:
 
 
 def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)

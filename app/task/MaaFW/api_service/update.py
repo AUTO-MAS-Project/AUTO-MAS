@@ -79,8 +79,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 from app.task.MaaFW.tools.embedded.update_progress import (
     MaaFWUpdateProgressTracker,
 )
-from app.utils import get_logger
-from app.utils.security import sanitize_log_message
+from app.utils import get_logger, sanitize_log_message
 
 UPDATE_SCRIPT_BUSY = "脚本正在运行，运行结束后再更新项目"
 UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"

@@ -34,7 +34,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("MCP 服务")
 

@@ -27,7 +27,7 @@
 
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import user_statistics_text
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
@@ -58,7 +58,7 @@ def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
         ).strip(),
         "failure_notes_text": failure_notes_text,
     }
-    message_html = deferred_notification_template(
+    message_html = _utils_notification_template.deferred_notification_template(
         "general_statistics.html", render_data
     )
 

@@ -23,7 +23,7 @@ from pydantic import (
 )
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
-from app.utils.constants import UTC8
+from app.utils import UTC8
 
 from ..fields import (
     is_trigger_model_field,

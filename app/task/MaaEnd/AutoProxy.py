@@ -63,25 +63,18 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
 )
 from app.utils import (
+    MAAEND_AUTO_COLLECT_TASK,
+    MAAEND_DELIVERY_TASK,
+    MAAEND_RUN_MOOD_BOOK,
+    MAAEND_TASKS,
+    UTC4,
     LogMonitor,
     ProcessManager,
     ProcessRunner,
     get_logger,
     is_process_running,
 )
-from app.utils.constants import (
-    MAAEND_AUTO_COLLECT_TASK,
-    MAAEND_DELIVERY_TASK,
-    MAAEND_RUN_MOOD_BOOK,
-    MAAEND_TASKS,
-    UTC4,
-)
-from app.utils.io import (
-    mark_native_config_injected,
-    read_file,
-    swap_in_dir,
-    write_file,
-)
+from app.utils import io as _utils_io
 
 from .inventory_report import INVENTORY_REPORT_RULE, InventoryReport, inventory_resolve
 from .push_log import MAAEND_PUSH_RULES, maaend_resolve
@@ -734,7 +727,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
     @staticmethod
     def _game_window_present() -> bool:
         """终末地客户端窗口是否真实存在：进程残留但窗口已消失时不能当作在运行。"""
-        from app.utils.platform import IS_WINDOWS
+        from app.utils import IS_WINDOWS
 
         if not IS_WINDOWS:
             return False
@@ -1168,7 +1161,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.maaend_config_file is None:
             return None
         try:
-            source_config = read_file(self.maaend_config_file)
+            source_config = _utils_io.read_file(self.maaend_config_file)
         except (OSError, TypeError, ValueError):
             return None
         if not isinstance(source_config, dict):
@@ -1363,7 +1356,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     self.emulator_manager is None
                     and self.game_launch_result_path.is_file()
                 ):
-                    result = read_file(self.game_launch_result_path)
+                    result = _utils_io.read_file(self.game_launch_result_path)
                     if result["error"] is not None:
                         return str(result["error"])
                 await asyncio.sleep(0.5)
@@ -2198,7 +2191,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         maaend_local_config = None
         if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
-            maaend_local_config = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
+            maaend_local_config = _utils_io.read_file(
+                self.maaend_set_path / "mxu-MaaEnd.json"
+            )
 
         config_base = maaend_config_base(self.cur_user_config.Info.Base)
         maaend_config_path = (
@@ -2229,13 +2224,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 base=config_base,
             )
 
-        swap_in_dir(maaend_config_path, self.maaend_set_path)
-        mark_native_config_injected(
+        _utils_io.swap_in_dir(maaend_config_path, self.maaend_set_path)
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maaend_set_path,
             script_id=self.script_info.script_id,
         )
-        maaend_set = read_file(self.maaend_set_path / "mxu-MaaEnd.json")
+        maaend_set = _utils_io.read_file(self.maaend_set_path / "mxu-MaaEnd.json")
         for field in ("version", "interfaceTaskSnapshot"):
             maaend_set.pop(field, None)
             if maaend_local_config is not None and field in maaend_local_config:
@@ -2767,8 +2762,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.script_config.Run.IfSaveLogBundle:
             settings["autoClearLogsOnLaunch"] = not self._bundle_failed
 
-        write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
-        mark_native_config_injected(
+        _utils_io.write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.maaend_set_path,
             script_id=self.script_info.script_id,

@@ -27,7 +27,7 @@ import psutil
 
 from app.services import System
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .config import (
     is_src_config_available,
@@ -149,7 +149,7 @@ def read_src_process_state(
     if not state_path.exists():
         return None
 
-    state = read_file(state_path)
+    state = _utils_io.read_file(state_path)
     if (
         not isinstance(state, dict)
         or "script_id" not in state
@@ -222,7 +222,7 @@ def write_src_process_state(
         installation_id = read_src_installation_id(src_root_path)
     elif not isinstance(installation_id, str) or not installation_id.strip():
         raise ValueError(f"SRC 进程状态安装标识无效: {installation_id}")
-    write_file(
+    _utils_io.write_file(
         state_path,
         {
             "script_id": script_id,

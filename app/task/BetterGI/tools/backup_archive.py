@@ -62,19 +62,11 @@ BetterGI 特有的副本布局、字段侧车、恢复语义（恢复前强制�
 import json
 from pathlib import Path
 
-from app.utils import get_logger
-from app.utils.config_archive import (
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    read_overlay_sidecar,
-    restore_files,
-)
-from app.utils.constants import BASE_SOURCE_LABELS
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import config_archive as _utils_config_archive
+
+OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("BetterGI 配置备份")
 
@@ -209,7 +201,7 @@ def _collect_mas_files(script_id: str, user_id: str) -> dict[str, Path]:
         sub_dir = user_root / sub
         if not sub_dir.is_dir():
             continue
-        for rel, path in dir_files(sub_dir).items():
+        for rel, path in _utils_config_archive.dir_files(sub_dir).items():
             files[f"{sub}/{rel}"] = path
     return files
 
@@ -232,7 +224,9 @@ def archive_mas_backup(
         files[OVERLAY_SIDECAR_NAME] = overlay_sidecar_content(overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
@@ -243,13 +237,13 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """用户池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取用户池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -278,11 +272,13 @@ def restore_mas_backup(
     # 把归档内副本文件（按 OneDragon/… 相对键）写回 per-user 根目录
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel not in _utils_config_archive.META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     ]
     if managed:
-        restore_files(backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed)
+        _utils_config_archive.restore_files(
+            backup_dir, mas_user_dir(script_id, user_id), rel_keys=managed
+        )
     restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
     return restored_overlay
@@ -324,7 +320,11 @@ def native_backup_root(root_path: str | Path) -> Path:
     """
 
     return (
-        Path.cwd() / "data" / "BetterGIBackups" / "native" / config_root_key(root_path)
+        Path.cwd()
+        / "data"
+        / "BetterGIBackups"
+        / "native"
+        / _utils_config_archive.config_root_key(root_path)
     )
 
 
@@ -349,7 +349,7 @@ def collect_native_files(root_path: Path) -> dict[str, Path]:
         files[config_path.name] = config_path
     dragon_dir = root_path / _BGI_ONE_DRAGON_REL_DIR
     if dragon_dir.is_dir():
-        for rel, path in dir_files(dragon_dir).items():
+        for rel, path in _utils_config_archive.dir_files(dragon_dir).items():
             if Path(rel).name == f"{_BGI_ONE_DRAGON_SLOT_NAME}.json":
                 continue
             files[f"OneDragon/{rel}"] = path
@@ -366,7 +366,9 @@ def archive_native_backup(root_path: str | Path, force: bool = False) -> Path | 
     files = collect_native_files(root_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(root_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(root_path), force=force
+    )
     if dest is None:
         logger.info("BetterGI 原生配置无变化，跳过归档")
         return None
@@ -377,13 +379,13 @@ def archive_native_backup(root_path: str | Path, force: bool = False) -> Path | 
 def list_native_backups(root_path: str | Path) -> list[str]:
     """BetterGI 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(root_path))
+    return _utils_config_archive.list_times(native_backup_root(root_path))
 
 
 def get_native_backup_dir(root_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(root_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(root_path), ts)
 
 
 def restore_native_backup(root_path: str | Path, ts: str) -> None:
@@ -403,7 +405,7 @@ def restore_native_backup(root_path: str | Path, ts: str) -> None:
         raise ValueError(f"备份不存在: {ts}")
     root_path = Path(root_path)
     archive_native_backup(root_path, force=True)
-    restore_files(
+    _utils_config_archive.restore_files(
         backup_dir,
         root_path / _BGI_GLOBAL_CONFIG_REL.parent,
         dir_map={_BGI_ONE_DRAGON_REL_DIR.name: root_path / _BGI_ONE_DRAGON_REL_DIR},
@@ -541,8 +543,8 @@ def build_mas_preview(backup_dir: Path, overlay: dict | None) -> dict:
     sections = build_overlay_preview(overlay or {})["sections"]
     files = {
         rel: path.stat().st_size
-        for rel, path in dir_files(backup_dir).items()
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel, path in _utils_config_archive.dir_files(backup_dir).items()
+        if rel not in _utils_config_archive.META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
     }
     if files:
         file_rows = [
@@ -608,7 +610,7 @@ def build_native_preview(root_path: str | Path, ts: str) -> dict:
     backup_dir = get_native_backup_dir(root_path, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
-    files = dir_files(backup_dir)
+    files = _utils_config_archive.dir_files(backup_dir)
     if not files:
         raise ValueError(f"备份内容为空: {ts}")
 

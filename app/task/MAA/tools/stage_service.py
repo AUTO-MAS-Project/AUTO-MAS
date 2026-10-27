@@ -12,8 +12,8 @@ from typing import Any, Literal, cast
 import httpx
 
 from app.core import Config
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import RESOURCE_STAGE_INFO, game_now
 
 from ..constants import RESOURCE_STAGE_DATE_TEXT, RESOURCE_STAGE_DROP_INFO
 
@@ -48,14 +48,14 @@ class MaaStageService:
 
         stage_by_server = await self.get_stage(refresh=refresh)
         # 开放日按区服的游戏日判断
-        game_today = game_now(server)
+        game_today = _utils_constants.game_now(server)
         server = "Official" if server == "Bilibili" else server
         stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
             today = game_today.isoweekday()
             res_stage_info = []
-            for stage in RESOURCE_STAGE_INFO:
+            for stage in _utils_constants.RESOURCE_STAGE_INFO:
                 if (
                     today in stage["days"]
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO

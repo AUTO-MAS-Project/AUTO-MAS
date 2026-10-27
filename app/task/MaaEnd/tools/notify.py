@@ -27,7 +27,7 @@ from pathlib import Path
 
 from app.models.notification import NotificationImage, NotifyPayload
 from app.utils import get_logger
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 logger = get_logger("MaaEnd 通知工具")
 _ERROR_IMAGE_LIMIT = 3
@@ -143,7 +143,9 @@ def build_statistics_payload(
     return NotifyPayload(
         title=title,
         text=message_text,
-        html=deferred_notification_template("MaaEnd_statistics.html", message),
+        html=_utils_notification_template.deferred_notification_template(
+            "MaaEnd_statistics.html", message
+        ),
         images=tuple(images),
     )
 

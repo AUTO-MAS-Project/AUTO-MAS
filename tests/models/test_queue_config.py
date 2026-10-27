@@ -1,10 +1,11 @@
-from app.utils.io import read_dict_file
-from tests.config_support import activate_config, group_view
 import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
 from app.models.config import QueueConfig
+from app.utils import io as _utils_io
+from tests.config_support import activate_config
 
 
 class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
@@ -21,7 +22,7 @@ class QueueConfigStartupModeMigrationTest(unittest.IsolatedAsyncioTestCase):
         )
 
     def read_config(self) -> dict:
-        return read_dict_file(self.config_path)
+        return _utils_io.read_dict_file(self.config_path)
 
     async def test_load_migrates_enabled_legacy_startup_setting(self) -> None:
         self.write_config({"Info": {"StartUpEnabled": True}})

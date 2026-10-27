@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, normalize_base_source
+from app.utils import constants as _utils_constants
 
 from .m7a_runtime import M7ARunner
 from .run_model import HSRPhase
@@ -166,10 +166,12 @@ def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
     指定用户的接口调用）同样按 ``shared`` 处理。
     """
 
-    base = normalize_base_source(_config_value(user_config, "Info", "Base", "") or "")
-    if base == BASE_NATIVE:
+    base = _utils_constants.normalize_base_source(
+        _config_value(user_config, "Info", "Base", "") or ""
+    )
+    if base == _utils_constants.BASE_NATIVE:
         return None
-    if base == BASE_INDEPENDENT:
+    if base == _utils_constants.BASE_INDEPENDENT:
         return "user"
     return "script"
 

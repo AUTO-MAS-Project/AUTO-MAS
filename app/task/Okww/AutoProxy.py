@@ -48,16 +48,16 @@ from app.task.proxy_helpers import (
     split_args,
 )
 from app.utils import (
+    LogMonitor,
     ProcessInfo,
     ProcessManager,
     get_logger,
     is_process_alive,
     is_process_running,
 )
-from app.utils.constants import BASE_NATIVE, BASE_SHARED, UTC4, normalize_base_source
-from app.utils.i18n import PoTranslator
-from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
-from app.utils.LogMonitor import LogMonitor
+from app.utils import constants as _utils_constants
+from app.utils import i18n as _utils_i18n
+from app.utils import io as _utils_io
 
 from .push_log import (
     OKWW_PUSH_RULES,
@@ -135,7 +135,7 @@ _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 def _okww_config_base(raw: object) -> str:
     """读取 OK-WW 配置来源（base 三态），并兼容旧版字面量。"""
 
-    return normalize_base_source(raw) or BASE_SHARED
+    return _utils_constants.normalize_base_source(raw) or _utils_constants.BASE_SHARED
 
 
 def _okww_mas_config_dir(script_id: str, user_id: str, base: str) -> Path:
@@ -153,7 +153,7 @@ def _update_json(path: Path, values: dict[str, object]) -> None:
     if not isinstance(data, dict):
         raise ValueError(f"OK-WW 配置文件格式错误: {path.name}")
     data.update(values)
-    write_file(path, data)
+    _utils_io.write_file(path, data)
 
 
 def _configure_okww_launcher(script_root_path: Path) -> None:
@@ -183,7 +183,7 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     if not changed:
         return
 
-    write_file(app_json_path, app_config)
+    _utils_io.write_file(app_json_path, app_config)
     logger.info("已补齐 OK-WW 启动器默认设置")
 
 
@@ -227,7 +227,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.log_monitor: LogMonitor | None = None
         # log_box：用户级「是否采集节点详情」关闭时不创建（prepare 按配置启停）
         self.log_collect: LogCollect | None = None
-        self.log_translator: PoTranslator | None = None
+        self.log_translator: _utils_i18n.PoTranslator | None = None
         self.script_config_path: Path | None = None
 
     async def check(self) -> str:
@@ -239,7 +239,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if not (root / _OKWW_REL_APP_JSON).is_file():
             return "请设置ok-ww脚本路径"
         # 启动检查早于每日重置，旧日期的次数不参与今日上限判断。
-        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         proxy_times = (
             self.cur_user_config.Data.ProxyTimes
             if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") == curdate
@@ -343,7 +343,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     )
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
-        if config_base == BASE_NATIVE:
+        if config_base == _utils_constants.BASE_NATIVE:
             config_dir = root / _OKWW_REL_CONFIG_DIR
             if not config_dir.is_dir() or not any(
                 item.is_file() for item in config_dir.rglob("*")
@@ -414,7 +414,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
             # 前置翻译：ok-ww 自带 ok.po + AutoMAS 项目自带的补充 .po（补充优先）
             self.log_translator = (
-                PoTranslator()
+                _utils_i18n.PoTranslator()
                 .load([OKWW_REL_I18N_PO], base=self.script_root_path)
                 .load_supplement([_okww_supplement_po()])
             )
@@ -471,7 +471,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         _configure_okww_launcher(self.script_root_path)
 
         config_base = _okww_config_base(self.cur_user_config.Info.Base)
-        if config_base != BASE_NATIVE:
+        if config_base != _utils_constants.BASE_NATIVE:
             # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
             # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（shared 来源
             # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
@@ -493,13 +493,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 str(self.cur_user_uid),
                 config_base,
             )
-            swap_in_dir(mas_config_dir, self.script_config_path)
+            _utils_io.swap_in_dir(mas_config_dir, self.script_config_path)
         else:
             source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             if source.is_dir():
-                swap_in_dir(source, self.script_config_path)
+                _utils_io.swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
-        mark_native_config_injected(
+        _utils_io.mark_native_config_injected(
             Path.cwd() / f"data/{self.script_info.script_id}/Temp",
             self.script_config_path,
             script_id=self.script_info.script_id,
@@ -766,9 +766,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
     async def main_task(self):
         await self.prepare()
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        self.curdate = datetime.now(tz=_utils_constants.UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.Data.LastProxyDate.strftime("%Y-%m-%d") != self.curdate:
-            self.cur_user_config.Data.LastProxyDate = datetime.now(tz=UTC4)
+            self.cur_user_config.Data.LastProxyDate = datetime.now(
+                tz=_utils_constants.UTC4
+            )
             await self.cur_user_config.commit()
             self.cur_user_config.Data.ProxyTimes = 0
             await self.cur_user_config.commit()
@@ -1088,7 +1090,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             history_records.append(
                 HistoryWrite(
-                    time=t.astimezone(UTC4),
+                    time=t.astimezone(_utils_constants.UTC4),
                     username=self.cur_user_item.name,
                     script_name=self.script_info.name,
                     status=(

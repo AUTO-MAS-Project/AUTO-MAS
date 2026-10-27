@@ -26,9 +26,14 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED
-from app.utils.io import mark_native_config_injected, swap_in_dir
+from app.utils import (
+    BASE_INDEPENDENT,
+    BASE_NATIVE,
+    BASE_SHARED,
+    ProcessManager,
+    get_logger,
+)
+from app.utils import io as _utils_io
 
 from .AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
@@ -133,8 +138,8 @@ class ScriptConfigTask(TaskExecuteBase):
             and self.mas_config_dir.is_dir()
             and any(item.is_file() for item in self.mas_config_dir.rglob("*"))
         ):
-            swap_in_dir(self.mas_config_dir, self.script_config_path)
-            mark_native_config_injected(
+            _utils_io.swap_in_dir(self.mas_config_dir, self.script_config_path)
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
@@ -166,7 +171,7 @@ class ScriptConfigTask(TaskExecuteBase):
             # 字段永久固化进 base。运行期由 AutoProxy._apply_mas_overrides 覆盖，
             # 任务结束由整目录快照还原，base 只保留用户在 ok-ww GUI 里的设置。
             self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
-            swap_in_dir(self.script_config_path, self.mas_config_dir)
+            _utils_io.swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")
             self.cur_user_item.status = "完成"
         elif not self.crashed:

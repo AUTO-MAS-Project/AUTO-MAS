@@ -23,7 +23,7 @@ import re
 from datetime import datetime
 from typing import Iterable
 
-from app.utils.LogPatternExtractor import LOG_TYPE_ERROR
+from app.utils import LOG_TYPE_ERROR
 
 # 推送模式（与用户配置 Notify.PushLogMode / 前端下拉框取值一致）
 PUSH_LOG_MODE_OFF = "关闭"

@@ -62,7 +62,7 @@ def _install_fake_spawn(
 
 
 def test_windows_creation_flags_split_base_and_breakaway() -> None:
-    from app.utils.platform.windows.process import WindowsProcessPlatform
+    from app.utils.windows.process import WindowsProcessPlatform
 
     breakaway = subprocess.CREATE_BREAKAWAY_FROM_JOB
 
@@ -81,8 +81,8 @@ def test_windows_creation_flags_split_base_and_breakaway() -> None:
 
 
 def test_open_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils.platform.common.process import ProcessManager
-    from app.utils.platform.windows.process import WindowsProcessPlatform
+    from app.utils import ProcessManager
+    from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
 
@@ -94,8 +94,8 @@ def test_open_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_open_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils.platform.common.process import ProcessManager
-    from app.utils.platform.windows.process import WindowsProcessPlatform
+    from app.utils import ProcessManager
+    from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
 
@@ -112,7 +112,7 @@ def test_open_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> No
 def test_open_process_retries_without_breakaway_on_access_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.utils.platform.common.process import ProcessManager
+    from app.utils import ProcessManager
 
     breakaway = subprocess.CREATE_BREAKAWAY_FROM_JOB
     calls = _install_fake_spawn(monkeypatch, deny_first=True)
@@ -134,7 +134,7 @@ def test_open_process_default_does_not_retry_on_access_denied(
 ) -> None:
     """没带 breakaway 位时的 WinError 5 不是「breakaway 被拒」，不能重试吞掉。"""
 
-    from app.utils.platform.common.process import ProcessManager
+    from app.utils import ProcessManager
 
     calls = _install_fake_spawn(monkeypatch, deny_first=True)
 
@@ -149,7 +149,7 @@ def test_open_process_does_not_retry_on_unrelated_os_error(
 ) -> None:
     """不是「breakaway 被拒」的失败要照常往外抛，不能被这层兜底吞掉。"""
 
-    from app.utils.platform.common.process import ProcessManager
+    from app.utils import ProcessManager
 
     calls: list[dict] = []
 
@@ -173,12 +173,14 @@ def test_open_process_does_not_retry_on_unrelated_os_error(
 
 
 def test_run_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils.platform.common.process_runner import ProcessRunner
-    from app.utils.platform.windows.process import WindowsProcessPlatform
+    from app.utils import process_runner as _utils_process_runner
+    from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
 
-    result = asyncio.run(ProcessRunner.run_process("taskkill", "/F", "/PID", "1"))
+    result = asyncio.run(
+        _utils_process_runner.ProcessRunner.run_process("taskkill", "/F", "/PID", "1")
+    )
 
     assert result.returncode == 0
     assert len(calls) == 1
@@ -187,13 +189,13 @@ def test_run_process_default_stays_in_job(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_run_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.utils.platform.common.process_runner import ProcessRunner
-    from app.utils.platform.windows.process import WindowsProcessPlatform
+    from app.utils import process_runner as _utils_process_runner
+    from app.utils.windows.process import WindowsProcessPlatform
 
     calls = _install_fake_spawn(monkeypatch)
 
     asyncio.run(
-        ProcessRunner.run_process(
+        _utils_process_runner.ProcessRunner.run_process(
             "C:/fake/does-not-exist/MuMuManager.exe", "control", breakaway=True
         )
     )
@@ -207,13 +209,13 @@ def test_run_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_run_process_retries_without_breakaway_on_access_denied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.utils.platform.common.process_runner import ProcessRunner
+    from app.utils import process_runner as _utils_process_runner
 
     breakaway = subprocess.CREATE_BREAKAWAY_FROM_JOB
     calls = _install_fake_spawn(monkeypatch, deny_first=True)
 
     result = asyncio.run(
-        ProcessRunner.run_process(
+        _utils_process_runner.ProcessRunner.run_process(
             "C:/fake/does-not-exist/MuMuManager.exe", "control", breakaway=True
         )
     )

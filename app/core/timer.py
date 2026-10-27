@@ -29,8 +29,7 @@ from app.models.notification_community import community_notification_results
 from app.models.notification_ports import CommunityNotifier
 from app.services import Matomo
 from app.services.telemetry import record_daily_active
-from app.utils import get_logger
-from app.utils.constants import UTC4, UTC8
+from app.utils import UTC4, UTC8, get_logger
 
 from .community_scheduler import (
     TASK_COMMUNITY_SOURCES,

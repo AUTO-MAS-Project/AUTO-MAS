@@ -13,7 +13,7 @@ from app.config import ConfigAggregateError
 from app.core import game_maintenance as host
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
-from app.utils.constants import UTC8
+from app.utils import UTC8
 from tests.config_support import activate_config
 
 

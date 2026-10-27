@@ -28,9 +28,8 @@ from app.models.notification import (
     NotifyPayload,
     image_reference,
 )
-from app.utils import get_logger
-from app.utils.notification_template import deferred_notification_template
-from app.utils.paths import resource_path
+from app.utils import get_logger, resource_path
+from app.utils import notification_template as _utils_notification_template
 
 logger = get_logger("MAA 通知工具")
 
@@ -101,7 +100,9 @@ def build_statistics_payload(
     return NotifyPayload(
         title=title,
         text=_statistic_text(message),
-        html=deferred_notification_template("MAA_statistics.html", message),
+        html=_utils_notification_template.deferred_notification_template(
+            "MAA_statistics.html", message
+        ),
         signature_sep=SIGNATURE_SEP,
         images=images,
     )
@@ -114,7 +115,9 @@ def build_recruitment_payload(*, title: str, message: dict) -> NotifyPayload:
         title=title,
         text="好羡慕~",
         markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
-        html=deferred_notification_template("MAA_six_star.html", message),
+        html=_utils_notification_template.deferred_notification_template(
+            "MAA_six_star.html", message
+        ),
         signature_sep=SIGNATURE_SEP,
         images=DeferredContent(
             lambda: (

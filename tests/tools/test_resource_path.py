@@ -5,14 +5,14 @@
 必须按源码位置解析，不能再假设等于 Path.cwd()。
 """
 
+from app.utils import paths as _utils_paths
 from app.utils import resource_path
-from app.utils.paths import SOURCE_ROOT
 
 
 def test_source_root_points_at_repository_root() -> None:
     """parents 层级算对了：SOURCE_ROOT 应是仓库根，main.py 就在其下。"""
 
-    assert (SOURCE_ROOT / "main.py").is_file()
+    assert (_utils_paths.SOURCE_ROOT / "main.py").is_file()
 
 
 def test_resource_path_ignores_cwd(monkeypatch, tmp_path) -> None:
@@ -22,7 +22,7 @@ def test_resource_path_ignores_cwd(monkeypatch, tmp_path) -> None:
 
     materials_dir = resource_path("images", "materials")
 
-    assert materials_dir == SOURCE_ROOT / "res" / "images" / "materials"
+    assert materials_dir == _utils_paths.SOURCE_ROOT / "res" / "images" / "materials"
     assert materials_dir.is_dir()
 
 
@@ -33,5 +33,5 @@ def test_resource_path_joins_arbitrary_parts(monkeypatch, tmp_path) -> None:
 
     version_path = resource_path("version.json")
 
-    assert version_path == SOURCE_ROOT / "res" / "version.json"
+    assert version_path == _utils_paths.SOURCE_ROOT / "res" / "version.json"
     assert version_path.is_file()

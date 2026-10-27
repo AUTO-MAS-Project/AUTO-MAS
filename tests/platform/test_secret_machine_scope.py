@@ -14,8 +14,8 @@ import base64
 
 import pytest
 
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.common.secret import looks_like_dpapi_blob
+from app.utils import IS_WINDOWS
+from app.utils import secret as _utils_secret
 
 # 真实 DPAPI 密文固定的开头：4 字节版本号 + 16 字节 provider GUID。
 # 用户作用域与机器作用域的这 20 字节完全一致。
@@ -29,7 +29,7 @@ def _blob(payload: bytes = b"\x00" * 64) -> str:
 
 
 def test_real_blob_header_is_recognized() -> None:
-    assert looks_like_dpapi_blob(_blob()) is True
+    assert _utils_secret.looks_like_dpapi_blob(_blob()) is True
 
 
 @pytest.mark.parametrize(
@@ -45,19 +45,19 @@ def test_real_blob_header_is_recognized() -> None:
     ],
 )
 def test_non_ciphertext_values_are_treated_as_plaintext(value: str) -> None:
-    assert looks_like_dpapi_blob(value) is False
+    assert _utils_secret.looks_like_dpapi_blob(value) is False
 
 
 @pytest.mark.parametrize("value", [None, 123, b"bytes", ["list"]])
 def test_non_string_values_are_rejected(value: object) -> None:
-    assert looks_like_dpapi_blob(value) is False
+    assert _utils_secret.looks_like_dpapi_blob(value) is False
 
 
 @pytest.mark.skipif(not IS_WINDOWS, reason="仅 Windows 走 DPAPI 实现")
 def test_encrypt_uses_machine_scope() -> None:
     """加密必须带机器作用域标志，否则换个 Windows 账户就读不出密码。"""
 
-    from app.utils.platform.windows import secret as windows_secret
+    from app.utils.windows import secret as windows_secret
 
     captured: dict[str, object] = {}
 
@@ -79,11 +79,11 @@ def test_encrypt_uses_machine_scope() -> None:
 
 @pytest.mark.skipif(not IS_WINDOWS, reason="仅 Windows 走 DPAPI 实现")
 def test_machine_scope_ciphertext_round_trips() -> None:
-    from app.utils.platform.windows.secret import dpapi_decrypt, dpapi_encrypt
+    from app.utils.windows.secret import dpapi_decrypt, dpapi_encrypt
 
     ciphertext = dpapi_encrypt("账号密码 with ascii")
 
-    assert looks_like_dpapi_blob(ciphertext) is True
+    assert _utils_secret.looks_like_dpapi_blob(ciphertext) is True
     assert dpapi_decrypt(ciphertext) == "账号密码 with ascii"
 
 
@@ -93,12 +93,12 @@ def test_legacy_user_scope_ciphertext_still_decrypts() -> None:
 
     import win32crypt
 
-    from app.utils.platform.windows.secret import dpapi_decrypt
+    from app.utils.windows.secret import dpapi_decrypt
 
     legacy_blob = win32crypt.CryptProtectData(
         "legacy-password".encode("utf-8"), None, None, None, None, 0
     )
     legacy = base64.b64encode(legacy_blob).decode("utf-8")
 
-    assert looks_like_dpapi_blob(legacy) is True
+    assert _utils_secret.looks_like_dpapi_blob(legacy) is True
     assert dpapi_decrypt(legacy) == "legacy-password"

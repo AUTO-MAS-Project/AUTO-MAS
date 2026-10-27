@@ -61,7 +61,7 @@ from app.task.MaaFW.tools.core.interface.models import (
 )
 
 if TYPE_CHECKING:
-    from app.utils.game_update import GameUpdateResult
+    from app.utils import game_update as _utils_game_update
 
 TYPE_KEY = "M9A"
 
@@ -330,7 +330,7 @@ class M9AFlavor:
         adb_address: str,
         if_auto_install: bool,
         progress: Callable[[str], Awaitable[None]] | None,
-    ) -> GameUpdateResult:
+    ) -> _utils_game_update.GameUpdateResult:
         """引擎的可选游戏更新钩子：只查官服，契约见 MaaFW 的 ``flavor.py`` 模块说明。"""
 
         # 按需导入：本包在导入期不拉起网络与 adb 相关模块（迁移也会导入 flavor）

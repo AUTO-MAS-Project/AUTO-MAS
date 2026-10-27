@@ -100,10 +100,8 @@ from app.task.notify_core import (
     prepare_screenshot_images,
     screenshot_entries,
 )
-from app.utils import get_logger
-from app.utils.constants import TASK_MODE_ZH
-from app.utils.paths import SOURCE_ROOT
-from app.utils.security import sanitize_log_message
+from app.utils import TASK_MODE_ZH, get_logger, sanitize_log_message
+from app.utils import paths as _utils_paths
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查，运行期不导入 maa
     from app.task.MaaFW.tools.embedded.runner_task import MaaFWPluginAutoProxyTask
@@ -1482,7 +1480,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 agent_env_root=agent_env_root,
                 # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
                 # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[SOURCE_ROOT],
+                import_paths=[_utils_paths.SOURCE_ROOT],
                 send_log=send_log,
                 cancel_event=cancel_event,
                 lenient_health_check=lenient_health_check,

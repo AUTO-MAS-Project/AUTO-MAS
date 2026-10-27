@@ -1,4 +1,4 @@
-from app.utils.platform.common.errors import UnsupportedPlatformError
+from app.utils import UnsupportedPlatformError
 
 
 class CommonDisplayHold:

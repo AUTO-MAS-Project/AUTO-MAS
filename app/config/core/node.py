@@ -24,7 +24,7 @@ from blinker import ANY, Signal
 from blinker.base import ANY_ID
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from app.utils.io import read_dict_file
+from app.utils import io as _utils_io
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from .manager import (
@@ -719,7 +719,9 @@ class ConfigNode(BaseModel):
                     if self._pending_payload is not None:
                         payload: dict[str, Any] = self._pending_payload
                     elif self.persist_path is not None:
-                        payload = read_dict_file(self.persist_path, allow_empty=True)
+                        payload = _utils_io.read_dict_file(
+                            self.persist_path, allow_empty=True
+                        )
                     else:
                         payload = self.model_dump(
                             mode="json", context=ExportContext(audience="persist")

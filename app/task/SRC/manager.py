@@ -36,8 +36,7 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
-from app.utils import ProcessManager, get_logger
-from app.utils.constants import TASK_MODE_ZH
+from app.utils import TASK_MODE_ZH, ProcessManager, get_logger
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask

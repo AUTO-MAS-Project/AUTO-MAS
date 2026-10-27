@@ -45,27 +45,17 @@ import json
 from pathlib import Path
 
 from app.config import ConfigEntry
-from app.utils import get_logger
-from app.utils.config_archive import (
-    META_FILE_NAMES,
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    mask_account,
-    read_overlay_sidecar,
-    restore_dir,
-    write_backup_base,
-)
-from app.utils.constants import (
+from app.utils import (
     BASE_SOURCE_LABELS,
     MAAEND_AUTO_COLLECT_TASK,
     MAAEND_DELIVERY_TASK,
     MAAEND_TASK_GROUPS,
     MAAEND_TASKS,
+    get_logger,
 )
+from app.utils import config_archive as _utils_config_archive
+
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("MaaEnd 配置备份")
 
@@ -106,7 +96,11 @@ def native_backup_root(config_path: str | Path) -> Path:
     配置无论被哪个脚本引用都归同一个池；跨脚本共享、不随脚本删除。
     """
 
-    return project_backup_root() / "native" / config_root_key(config_path)
+    return (
+        project_backup_root()
+        / "native"
+        / _utils_config_archive.config_root_key(config_path)
+    )
 
 
 def mas_config_dir(script_id: str, owner: str) -> Path:
@@ -339,9 +333,11 @@ def collect_mas_files(
     mas_dir = Path(mas_dir)
     files: dict[str, "Path | str"] = {}
     if mas_dir.is_dir():
-        files.update(dir_files(mas_dir))
+        files.update(_utils_config_archive.dir_files(mas_dir))
     if overlay:
-        files[OVERLAY_SIDECAR_NAME] = json.dumps(overlay, ensure_ascii=False, indent=2)
+        files[_utils_config_archive.OVERLAY_SIDECAR_NAME] = json.dumps(
+            overlay, ensure_ascii=False, indent=2
+        )
     return files
 
 
@@ -371,12 +367,14 @@ def archive_mas_backup(
     files = collect_mas_files(mas_dir, overlay)
     if not files:
         return None
-    dest = archive_files(files, mas_backup_root(script_id, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, mas_backup_root(script_id, user_id), force=force
+    )
     if dest is None:
         logger.info("MAS 配置无变化，跳过归档")
         return None
     if base:
-        write_backup_base(dest, base)
+        _utils_config_archive.write_backup_base(dest, base)
     logger.info(f"用户 {user_id} 的 MAS 配置已归档: {dest.name}")
     return dest
 
@@ -384,13 +382,13 @@ def archive_mas_backup(
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
     """用户池的全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
     """取用户池指定时间戳的归档目录；不存在返回 None。"""
 
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(
@@ -425,14 +423,20 @@ def restore_mas_backup(
     # restore_dir 会把目标清空再写回元数据、随后 unlink 侧车，只剩空目录
     managed = [
         rel
-        for rel in dir_files(backup_dir)
-        if rel not in META_FILE_NAMES | {OVERLAY_SIDECAR_NAME}
+        for rel in _utils_config_archive.dir_files(backup_dir)
+        if rel
+        not in _utils_config_archive.META_FILE_NAMES
+        | {_utils_config_archive.OVERLAY_SIDECAR_NAME}
     ]
     if managed:
-        restore_dir(mas_backup_root(script_id, user_id), ts, mas_dir)
+        _utils_config_archive.restore_dir(
+            mas_backup_root(script_id, user_id), ts, mas_dir
+        )
         restored_overlay = read_overlay_sidecar(mas_dir)
         if restored_overlay is not None:
-            (mas_dir / OVERLAY_SIDECAR_NAME).unlink(missing_ok=True)
+            (mas_dir / _utils_config_archive.OVERLAY_SIDECAR_NAME).unlink(
+                missing_ok=True
+            )
     else:
         restored_overlay = read_overlay_sidecar(backup_dir)
     logger.info(f"用户 {user_id} 的 MAS 配置已恢复备份 {ts}")
@@ -477,7 +481,7 @@ def collect_native_files(config_path: str | Path) -> dict[str, Path]:
     config_path = Path(config_path)
     if not config_path.is_dir() or not any(config_path.iterdir()):
         return {}
-    return dir_files(config_path)
+    return _utils_config_archive.dir_files(config_path)
 
 
 def archive_native_backup(config_path: Path, force: bool = False) -> Path | None:
@@ -490,7 +494,9 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
     files = collect_native_files(config_path)
     if not files:
         return None
-    dest = archive_files(files, native_backup_root(config_path), force=force)
+    dest = _utils_config_archive.archive_files(
+        files, native_backup_root(config_path), force=force
+    )
     if dest is None:
         logger.info("MaaEnd 原生配置无变化，跳过归档")
         return None
@@ -501,13 +507,13 @@ def archive_native_backup(config_path: Path, force: bool = False) -> Path | None
 def list_native_backups(config_path: str | Path) -> list[str]:
     """MaaEnd 原生配置全部归档时间戳（倒序，最新在前）。"""
 
-    return list_times(native_backup_root(config_path))
+    return _utils_config_archive.list_times(native_backup_root(config_path))
 
 
 def get_native_backup_dir(config_path: str | Path, ts: str) -> Path | None:
     """取指定时间戳的原生配置归档目录；不存在返回 None。"""
 
-    return get_backup_dir(native_backup_root(config_path), ts)
+    return _utils_config_archive.get_backup_dir(native_backup_root(config_path), ts)
 
 
 def restore_native_backup(config_path: Path, ts: str) -> None:
@@ -522,7 +528,7 @@ def restore_native_backup(config_path: Path, ts: str) -> None:
     config_path = Path(config_path)
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_path, force=True)
-    restore_dir(native_backup_root(config_path), ts, config_path)
+    _utils_config_archive.restore_dir(native_backup_root(config_path), ts, config_path)
     logger.info(f"MaaEnd 原生配置已恢复备份 {ts}")
 
 
@@ -738,7 +744,7 @@ def build_backup_file_summary(backup_dir: Path) -> list[dict]:
     """
 
     files: list[dict] = []
-    for rel in sorted(dir_files(backup_dir)):
+    for rel in sorted(_utils_config_archive.dir_files(backup_dir)):
         if "/" in rel or rel != NATIVE_CONFIG_FILE:
             continue
         try:
@@ -760,7 +766,9 @@ def _overlay_value(key: str, value) -> str:
     """覆盖层字段值转展示文本（枚举词表、账号脱敏、布尔转是否、超长截断）。"""
 
     if key == "Id":
-        return mask_account(value)  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
+        return _utils_config_archive.mask_account(
+            value
+        )  # 账号脱敏展示；侧车原值仍完整保存（恢复需要）
     if isinstance(value, bool):
         return "是" if value else "否"
     enum = {

@@ -83,10 +83,16 @@ from app.task.proxy_helpers import (
     split_args,
     user_uses_native_base,
 )
-from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
-from app.utils.config_archive import config_root_key
-from app.utils.constants import BASE_SOURCE_LABELS, UTC4
-from app.utils.LogMonitor import LogMonitor
+from app.utils import (
+    BASE_SOURCE_LABELS,
+    UTC4,
+    LogMonitor,
+    ProcessInfo,
+    ProcessManager,
+    get_logger,
+    is_process_running,
+)
+from app.utils import config_archive as _utils_config_archive
 
 from .push_log import ACCOUNT_PREFIX_RE, ZZZOD_PUSH_RULES, make_zzzod_resolve
 from .tools import (
@@ -342,7 +348,7 @@ def _allocated_ledger_path(root: Path) -> Path:
         Path.cwd()
         / "data"
         / _ALLOCATED_SLOT_LEDGER_DIR
-        / f"{config_root_key(root)}.json"
+        / f"{_utils_config_archive.config_root_key(root)}.json"
     )
 
 
@@ -451,12 +457,12 @@ def forget_allocated_slot(root: Path, slot_idx: int) -> None:
 def _owner_alive(root: Path, owner: str) -> bool:
     """归属用户是否仍存在于指向同一份安装的任一 ZzzOd 脚本（按 uid 比对）。"""
 
-    key = config_root_key(root)
+    key = _utils_config_archive.config_root_key(root)
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
             continue
         script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
+        if not script_root or _utils_config_archive.config_root_key(script_root) != key:
             continue
         if any(str(uid) == owner for uid in script_config.UserData.keys()):
             return True
@@ -621,14 +627,14 @@ def collect_used_slot_idxs(
     ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
     """
 
-    key = config_root_key(root)
+    key = _utils_config_archive.config_root_key(root)
     used: set[int] = set()
     excluded = exclude_uids or set()
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
             continue
         script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
+        if not script_root or _utils_config_archive.config_root_key(script_root) != key:
             continue
         for uid, cfg in script_config.UserData.items():
             if uid in excluded:
@@ -648,13 +654,13 @@ def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
     时最需要看到的一行（没跑过的用户只有绑定号、没有目录）。
     """
 
-    key = config_root_key(root)
+    key = _utils_config_archive.config_root_key(root)
     owners: dict[int, list[dict]] = {}
     for script_uid, script_config in Config.ScriptConfig.items():
         if not isinstance(script_config, ZzzOdConfig):
             continue
         script_root = str(script_config.Info.RootPath or "").strip()
-        if not script_root or config_root_key(script_root) != key:
+        if not script_root or _utils_config_archive.config_root_key(script_root) != key:
             continue
         script_name = str(script_config.Info.Name or "")
         for uid, cfg in script_config.UserData.items():
@@ -684,7 +690,7 @@ def running_zzzod_scripts(
     正在跑的现场。自动回收据此跳过本轮（见 :func:`recycle_unbound_slots`）。
     """
 
-    key = config_root_key(root)
+    key = _utils_config_archive.config_root_key(root)
     running: list[str] = []
     for script_uid, script_config in Config.ScriptConfig.items():
         if not isinstance(script_config, ZzzOdConfig) or not script_config.is_locked:
@@ -692,7 +698,7 @@ def running_zzzod_scripts(
         if exclude_script_id and str(script_uid) == str(exclude_script_id):
             continue
         script_root = str(script_config.Info.RootPath or "").strip()
-        if script_root and config_root_key(script_root) == key:
+        if script_root and _utils_config_archive.config_root_key(script_root) == key:
             running.append(str(script_config.Info.Name or script_uid))
     return running
 

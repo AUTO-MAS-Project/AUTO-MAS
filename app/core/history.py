@@ -38,7 +38,7 @@ from app.models.schema import (
     HistoryWrite,
 )
 from app.utils import get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 logger = get_logger("历史记录")
 _T = TypeVar("_T")
@@ -455,7 +455,7 @@ class HistoryStore:
                     try:
                         if cancel.is_set():
                             raise HistoryStorageError("历史服务正在关闭，归档已停止")
-                        write_file(log_target, record.logs)
+                        _utils_io.write_file(log_target, record.logs)
                         log_path = f"{relative}/0.log"
                         fallback = None
                     except OSError as error:
@@ -796,7 +796,7 @@ class HistoryStore:
                 reason = None
                 if detail.log_path is not None:
                     try:
-                        content = read_file(self.root / detail.log_path)
+                        content = _utils_io.read_file(self.root / detail.log_path)
                         if isinstance(content, str):
                             detail.log_content = content
                     except (OSError, UnicodeError) as error:

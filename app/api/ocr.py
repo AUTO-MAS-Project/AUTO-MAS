@@ -38,14 +38,14 @@ from app.models.schema import OutBase
 from app.utils import get_logger
 
 if TYPE_CHECKING:
-    from app.utils.OCR.OCRtool import OCRTool as OCRTool
+    from app.utils import OCR as _utils_OCR
 
 
-def _ocr_tool() -> "type[OCRTool]":
+def _ocr_tool() -> "type[_utils_OCR.OCRtool.OCRTool]":
     # OCRtool 依赖 cv2/pyautogui/rapidocr (约 200ms)，延迟到首次请求时导入
-    from app.utils.OCR.OCRtool import OCRTool
+    from app.utils import OCR as _utils_OCR
 
-    return OCRTool
+    return _utils_OCR.OCRtool.OCRTool
 
 
 logger = get_logger("OCR API")

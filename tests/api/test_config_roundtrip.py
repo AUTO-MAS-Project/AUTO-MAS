@@ -22,10 +22,10 @@ from fastapi import FastAPI
 
 import app.api.setting as setting_api
 from app.config import config_manager
-from tests.config_support import activate_config
-from app.utils.io import read_dict_file
 from app.core.config import AppConfig
 from app.models.config import GlobalConfig as RuntimeGlobalConfig
+from app.utils import io as _utils_io
+from tests.config_support import activate_config
 
 
 class _TempConfig(AppConfig):
@@ -102,7 +102,7 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
         return body["data"]
 
     def _on_disk(self) -> dict:
-        return read_dict_file(self.config_file)
+        return _utils_io.read_dict_file(self.config_file)
 
     async def test_partial_update_keeps_siblings_and_other_groups(self) -> None:
         await self._update({"Update": {"Source": "MirrorChyan"}})

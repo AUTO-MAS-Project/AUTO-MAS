@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Iterable
 
-from app.utils.constants import CYCLE_EMPTY_TIME
+from app.utils import CYCLE_EMPTY_TIME
 
 WEEKDAY_NAMES = (
     "Monday",
