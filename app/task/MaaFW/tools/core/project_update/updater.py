@@ -677,7 +677,7 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
-        message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
+        message = f"MaaFW project update failed: {_exception_detail(exc)}"
         send_update_log(message)
         _report_progress(
             progress,
@@ -827,7 +827,7 @@ async def update_maafw_project_if_needed(
                 final=True,
             )
             raise
-        detail = _sanitize_log_message(str(exc))
+        detail = _exception_detail(exc)
         message = (
             detail
             if detail.startswith("MaaFW project update failed:")
@@ -1273,9 +1273,7 @@ async def _discover_project_update_detailed(
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
         # unavailable_reason / skipped_reason 里，让上层照常继续运行脚本。
-        return unavailable(
-            f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
-        )
+        return unavailable(f"GitHub Release 查询失败: {_exception_detail(exc)}")
 
     if github_discovery is None:
         return unavailable(
@@ -2059,7 +2057,7 @@ async def _query_mirrorchyan_latest(
             response = await client.get(url, params=params, headers=HTTP_HEADERS)
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan update check failed: {_sanitize_log_message(str(exc))}"
+            f"MirrorChyan update check failed: {_exception_detail(exc)}"
         ) from None
 
     result = _load_response_json(response)
@@ -3024,6 +3022,12 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
     if "maafw" in directory_names:
         return "MXU"
     return ""
+
+
+def _exception_detail(exc: BaseException) -> str:
+    """异常的打码文案；超时、连不上这类 ``str`` 为空的异常退成类名（如 ``ConnectTimeout``）。"""
+
+    return _sanitize_log_message(str(exc)).strip() or type(exc).__name__
 
 
 def _sanitize_log_message(message: str) -> str:
