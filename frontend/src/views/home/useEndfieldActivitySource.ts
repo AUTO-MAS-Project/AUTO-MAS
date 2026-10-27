@@ -149,7 +149,10 @@ export const useEndfieldActivitySource = () => {
     clock = null
   }
   const onVisibilityChange = () => {
-    if (active && document.visibilityState === 'visible') void refreshSra()
+    if (active && document.visibilityState === 'visible') {
+      ake.updateTime(Date.now())
+      void refreshSra()
+    }
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   onScopeDispose(() => {
@@ -171,6 +174,7 @@ export const useEndfieldActivitySource = () => {
       if (clock === null) {
         clock = window.setInterval(() => {
           now.value = Date.now()
+          ake.updateTime(now.value)
           if (document.visibilityState === 'visible' && now.value - refreshedAt >= 15 * 60_000) {
             void refreshSra()
           }
@@ -178,6 +182,7 @@ export const useEndfieldActivitySource = () => {
       }
       sra.start()
       ake.start()
+      ake.updateTime(now.value)
       if (started) void refreshSra()
       started = true
     },
