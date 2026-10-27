@@ -113,6 +113,7 @@ from .update_takeover import (
 logger = get_logger("MaaEnd 自动代理")
 
 _MAAEND_ACCOUNT_SWITCH_TASK = "AccountSwitch"
+_MAAEND_ANDROID_OPEN_GAME_TASK = "AndroidOpenGame"
 _MAAEND_GAME_SETTING_PRETASK = "__MXU_PRETASK__GameSetting"
 _MAAEND_LAUNCH_GAME_PRETASK = "__MXU_PRETASK__LaunchGamePC"
 _MAAEND_CLOSE_GAME_TASK = "CloseGamePC"
@@ -1266,6 +1267,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             target_sanity_task_name: str | None = None
             for task in tasks:
                 task_name = str(task.get("taskName", ""))
+                if (
+                    task_name == _MAAEND_ANDROID_OPEN_GAME_TASK
+                    and str(self.script_config.Game.ControllerType) == "CloudADB"
+                ):
+                    continue
                 if task_name.startswith("__MXU_") or task_name in {
                     _MAAEND_ACCOUNT_SWITCH_TASK,
                     _MAAEND_CLOSE_GAME_TASK,
@@ -1570,6 +1576,14 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             self.script_info.log = "正在启动游戏..."
             account_switch_method = self._account_switch_method()
             use_mas_account_switch = account_switch_method == "MAS"
+            cloud_adb = str(self.script_config.Game.ControllerType) == "CloudADB"
+            if cloud_adb and str(self.cur_user_config.Info.Id).strip():
+                self.retryable = False
+                await self.handle_pre_maaend_error(
+                    "云终末地暂不支持自动切号，请清空账号并先登录游戏",
+                    kill_game=False,
+                )
+                break
             # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
@@ -1580,7 +1594,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 else:
                     logger.info(f"启动模拟器: {self.script_config.Game.EmulatorIndex}")
                     self.emulator_info = await self.emulator_manager.open(
-                        self.script_config.Game.EmulatorIndex, "com.hypergryph.endfield"
+                        self.script_config.Game.EmulatorIndex,
+                        "" if cloud_adb else "com.hypergryph.endfield",
                     )
             except Exception as e:
                 # 启动阶段失败后游戏状态不再可信：清除保留标记，避免下一轮
@@ -1628,12 +1643,21 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 logger.info(
                     f"用户 {self.cur_user_item.user_id} 未配置账号，跳过账号切换"
                 )
-                self.script_info.log = "游戏已启动，未配置账号，跳过账号切换"
+                self.script_info.log = (
+                    "等待 MaaEnd 启动游戏"
+                    if cloud_adb
+                    else "游戏已启动，未配置账号，跳过账号切换"
+                )
 
             if self.emulator_manager is not None:
                 await self.set_maaend(self.emulator_info)
 
-            if not any(any(tasks.values()) for tasks in self.task_dict.values()):
+            if not any(
+                any(tasks.values())
+                for name, tasks in self.task_dict.items()
+                if not cloud_adb
+                or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
+            ):
                 self.retryable = False
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置"
@@ -2276,6 +2300,24 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 task_id=f"mas{self.cur_user_uid.hex[:4]}",
             )
 
+        cloud_launch_task = None
+        if (
+            device_info is not None
+            and str(self.script_config.Game.ControllerType) == "CloudADB"
+        ):
+            maaend_instance["controllerName"] = "CloudADB"
+            if self._maaend_task_supported(_MAAEND_ANDROID_OPEN_GAME_TASK) is not True:
+                raise ValueError("当前 MaaEnd 不支持安卓启动游戏任务，请更新 MaaEnd")
+            # 游戏启动由上游任务完成，其选项决定客户端；先于账号切换执行。
+            cloud_launch_task = _place_managed_task(
+                maaend_tasks,
+                task_name=_MAAEND_ANDROID_OPEN_GAME_TASK,
+                task_id="automas-android-open-game",
+                controller_type="CloudADB",
+                enabled=True,
+                first=True,
+            )
+
         if self.emulator_manager is None:
             controller_type = str(self.script_config.Game.ControllerType)
             remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
@@ -2527,6 +2569,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
+                task["enabled"] = True
+                self.task_dict.setdefault(task_name, {})[task["id"]] = True
+                self.task_name_map[task_name] = task_name_value
+
+            if cloud_launch_task is task:
+                # 模拟器可能在失败重试后重启，每轮都交由上游重新启动游戏。
                 task["enabled"] = True
                 self.task_dict.setdefault(task_name, {})[task["id"]] = True
                 self.task_name_map[task_name] = task_name_value
