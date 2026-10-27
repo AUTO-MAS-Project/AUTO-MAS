@@ -7,18 +7,24 @@
   即 manifest 的 ``requirements``）+ maafw requirement + 宿主身份，sha256 取 16 位，目录名
   ``maafw_venv_<16hex>``（老的按路径哈希的是 12 位，长度不同、不会撞名）。任一不同就是另一个
   目录，不共用，也不会为了迁就某个视图去改别人那份。
-- **宿主身份**：平台、CPU 架构、解释器实现。venv 根目录本来就在本机这份安装的
-  ``config/maafw_agent_venvs`` 下，跨安装不会相遇；引导解释器具体是哪一个（便携 Python、
-  宿主 / worker 自己、PATH 上的）不进目录名——宿主与 worker 挑出来的本来就可能不同，按它分
-  会让 worker 在宿主刚建好的旁边再建一份。它记在 venv 自己的 ``pyvenv.cfg`` 里，引导解释器
-  没了按「基解释器已不存在」重建（那时用它的视图本来就都起不来）。
+- **宿主身份**：平台、CPU 架构、解释器实现与小版本（``3.12``）。venv 根目录本来就在本机
+  这份安装的 ``config/maafw_agent_venvs`` 下，跨安装不会相遇；引导解释器具体是哪一个（便携
+  Python、宿主 / worker 自己、PATH 上的）不进目录名——宿主与 worker 挑出来的本来就可能不同，
+  按它分会让 worker 在宿主刚建好的旁边再建一份。它记在 venv 自己的 ``pyvenv.cfg`` 里，引导
+  解释器没了按「基解释器已不存在」重建（那时用它的视图本来就都起不来）。
 - **视图引用**：准备成功后在 ``<根>/.refs/<视图路径哈希>.json`` 记下本视图这次用的目录。
   回收按「存活视图引用的目录」算，不再按路径推名字；建计划时同样先看它，项目没自带原生库、
   maafw 版本要等 runner 解析出来才定的那种，计划阶段才能拿到准备时实际用的那份。
 - **跨进程锁**：宿主与 worker 是两个进程，两个视图可能同时准备同一份 venv（宿主为 A 准备、
   worker 为 B 运行前准备）。``<根>/.locks/<目录名>.lock`` 上的字节锁把准备串行化，等的一方看到的
-  一定是建好的或没建的，不会把别人建了一半的当「不完整」删掉。锁文件不删（同
-  ``project_update.state.DurableFileLock`` 的理由）。
+  一定是建好的或没建的，不会把别人建了一半的当「不完整」删掉。锁文件一般不删（同
+  ``project_update.state.DurableFileLock`` 的理由），只在回收删掉目录之后按
+  ``discard_venv_lock_file`` 的条件去掉。
+- **运行中的 venv**：锁只管准备，不管运行——agent 跑着时不持锁。共用 venv 靠「键相同就
+  不重建」保住：共用目录只在基解释器没了、结构不完整、依赖清单缺失或损坏时才重建，那时
+  它对同键的所有视图都已经不能用。重建前先改名，只挡得住「有不带共享删除打开的句柄」的情形；
+  Windows 上正在跑的 ``python.exe`` 与已加载的 ``.pyd`` / ``.dll`` 不挡改名，挡不住正在
+  运行的 agent。
 
 本模块只用标准库：worker 的导入闭包会经 ``agent_env`` 拉到这里。
 """
@@ -95,12 +101,16 @@ def legacy_isolated_venv_name(project_path: str | Path) -> str:
 
 
 def agent_venv_host_identity() -> dict[str, str]:
-    """键里的宿主身份（见模块说明：不含具体的引导解释器）。"""
+    """键里的宿主身份（见模块说明：不含具体是哪一个引导解释器，含解释器小版本）。"""
 
     return {
         "platform": sys.platform,
         "machine": (platform.machine() or "unknown").lower(),
         "implementation": sys.implementation.name,
+        # 引导解释器取自宿主同版本的便携 Python 或宿主 / worker 自己（见
+        # ``env._venv_bootstrap_python``、``host_bootstrap_python_request``），小版本与本进程
+        # 一致；宿主换了 Python 小版本（发版升级解释器）时不沿用旧小版本建的那份。
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
     }
 
 
@@ -327,6 +337,21 @@ def venv_lock_file(venv_path: Path) -> Path:
     return venv_path.parent / VENV_LOCKS_DIR_NAME / f"{venv_path.name}.lock"
 
 
+def discard_venv_lock_file(venv_path: str | Path) -> None:
+    """目录已被回收删掉之后，去掉它的锁文件（在 ``isolated_venv_guard`` 之外调用）。
+
+    重建改名留下的 ``*.trash-*`` 名字是随机的、不会再有人锁，总是可以删。正常目录名
+    只在 Windows 上删：别处正开着它（在等锁）时删除会失败、照旧留着；POSIX 上删掉
+    别人正在等的那个 inode 会让两边各锁各的文件，所以不删。删不掉一律忽略。
+    """
+
+    path = Path(venv_path)
+    if VENV_TRASH_MARKER not in path.name and os.name != "nt":
+        return
+    with contextlib.suppress(OSError):
+        venv_lock_file(path).unlink(missing_ok=True)
+
+
 def _try_os_lock(handle: Any) -> bool:
     try:
         if os.name == "nt":
@@ -388,7 +413,8 @@ def isolated_venv_guard(
     """本进程内按线程锁、跨进程按锁文件，串行化对同一份隔离 venv 的准备 / 删除。
 
     同一线程重入不再碰锁文件（Windows 上同一进程的第二个句柄也拿不到同一字节）。
-    ``blocking=False`` 时拿不到就 yield ``False``、什么都不等（回收用）。
+    ``blocking=False`` 时拿不到就 yield ``False``、什么都不等（回收用）。等线程锁和等锁文件
+    都记「正由另一处准备」那一行，``timeout`` 是两段合计的上限，超时抛 ``VenvLockTimeout``。
     """
 
     path = Path(venv_path).resolve()
@@ -396,9 +422,21 @@ def isolated_venv_guard(
     held: dict[str, int] = getattr(_HELD, "counts", None) or {}
     _HELD.counts = held
     thread_lock = venv_thread_lock(path)
-    if not thread_lock.acquire(blocking=blocking):
-        yield False
-        return
+    started = time.monotonic()
+    announced = False
+    if not thread_lock.acquire(blocking=False):
+        if not blocking:
+            yield False
+            return
+        # 本进程另一个线程正在准备同一份（如编辑页准备与运行前准备撞上）：和跨进程等锁
+        # 一样记一行、受同一个上限约束，不静默地一直等下去。
+        if log is not None:
+            log(f"[Python环境] 隔离 venv 正由另一处准备，等它完成: {path}")
+        announced = True
+        if not thread_lock.acquire(timeout=-1 if timeout is None else timeout):
+            raise VenvLockTimeout(
+                f"等另一处准备隔离 venv 超时（{time.monotonic() - started:.0f} 秒）: {path}"
+            )
     try:
         if held.get(key):
             held[key] += 1
@@ -409,9 +447,7 @@ def isolated_venv_guard(
             return
         handle = _open_lock_handle(venv_lock_file(path))
         try:
-            started = time.monotonic()
             next_progress = VENV_LOCK_PROGRESS_SECONDS
-            announced = False
             while not _try_os_lock(handle):
                 if not blocking:
                     yield False
@@ -455,6 +491,7 @@ __all__ = [
     "collect_orphan_agent_venvs",
     "collect_stale_venv_refs",
     "default_agent_venv_root",
+    "discard_venv_lock_file",
     "is_shared_venv_name",
     "isolated_venv_guard",
     "legacy_isolated_venv_name",

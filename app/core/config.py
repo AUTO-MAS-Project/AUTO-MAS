@@ -2962,6 +2962,7 @@ class AppConfig:
         )
         from app.task.MaaFW.tools.core.agent_env.venv_share import (
             collect_stale_venv_refs,
+            discard_venv_lock_file,
             isolated_venv_guard,
         )
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -3012,6 +3013,8 @@ class AppConfig:
             except OSError as exc:
                 logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
                 continue
+            # 锁文件出了锁才删得掉（Windows 上开着的文件删不了）
+            discard_venv_lock_file(venv_path)
             logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
 
         try:

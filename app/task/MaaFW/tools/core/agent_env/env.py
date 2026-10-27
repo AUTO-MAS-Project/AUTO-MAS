@@ -8,7 +8,6 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -49,7 +48,6 @@ from .venv_share import (
     resolve_agent_venv_root,
     shared_venv_key_inputs,
     shared_venv_name,
-    venv_thread_lock,
     write_venv_ref,
 )
 
@@ -699,12 +697,6 @@ def _restore_stashed_dist_infos(
             log(f"[Python环境] 放回旧的 maafw 安装记录 {original.name} 失败: {exc}")
 
 
-def _isolated_venv_lock(path: Path) -> threading.RLock:
-    """本进程内的那一半锁；准备时用的是 ``venv_share.isolated_venv_guard``（还有锁文件）。"""
-
-    return venv_thread_lock(path)
-
-
 def _resolve_isolated_venv_target(
     plan: MaaFWAgentCommandPlan,
     project_path: Path,
@@ -1086,9 +1078,11 @@ def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
         "maafw_venv_"
     ):
         raise MaaFWAgentEnvError(f"拒绝重建非托管隔离 venv: {venv_path}")
-    # 先改名再删：venv 可能被别的视图共用，正有 agent 从里面跑着时 Windows 不让改名，
-    # 这时报错、不动它——以前 rmtree(ignore_errors) 会删掉一半、留个谁都用不了的残骸。
-    # 改名成功后删不干净的残留同前缀，启动期按孤儿回收。
+    # 先改名再删：改名是原子的，原名下要么是整份旧 venv、要么什么都没有，不会像以前
+    # rmtree(ignore_errors) 那样删掉一半、留个谁都用不了的残骸；改名成功后删不干净的残留
+    # 同前缀，启动期按孤儿回收。改名只在有人以不带共享删除的方式开着里面的文件时失败，
+    # 这时报错、不动它。它挡不住正在运行的 agent（Windows 上运行中的 python.exe、已加载的
+    # .pyd / .dll 都不挡改名）：共用 venv 不被删靠的是「键相同就不重建」，见 venv_share。
     trash = venv_path.with_name(
         f"{venv_path.name}{VENV_TRASH_MARKER}{uuid.uuid4().hex[:8]}"
     )
