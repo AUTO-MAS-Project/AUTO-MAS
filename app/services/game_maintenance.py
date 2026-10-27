@@ -7,12 +7,13 @@
 import asyncio
 import json
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Protocol
 
 import httpx
 
-from app.core import Config
 from app.utils import get_logger
 
 logger = get_logger("游戏维护")
@@ -22,6 +23,27 @@ MAINTENANCE_URL = (
 )
 CACHE_SECONDS = 60 * 60
 RETRY_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class MaintenanceCache:
+    """宿主提供的维护缓存快照。"""
+
+    content: str
+    etag: str
+    checked_at: datetime
+
+
+class MaintenanceCacheWriter(Protocol):
+    """异步保存缓存；未提供的正文和 ETag 保持不变。"""
+
+    def __call__(
+        self,
+        *,
+        checked_at: datetime,
+        content: str | None = None,
+        etag: str | None = None,
+    ) -> Awaitable[None]: ...
 
 
 @dataclass(frozen=True)
@@ -75,7 +97,14 @@ def parse_maintenance(data: object) -> dict[str, MaintenanceWindow]:
 
 
 class GameMaintenanceClient:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        read_cache: Callable[[], MaintenanceCache],
+        write_cache: MaintenanceCacheWriter,
+    ) -> None:
+        self._read_cache = read_cache
+        self._write_cache = write_cache
         self._windows: dict[str, MaintenanceWindow] = {}
         self._next_refresh = 0.0
         self._lock = asyncio.Lock()
@@ -94,14 +123,13 @@ class GameMaintenanceClient:
 
     async def _refresh(self, *, proxy: httpx.Proxy | None) -> None:
         # 与公告一样持久保存内容、ETag 和检查时间，重启后继续复用。
+        cache = self._read_cache()
         try:
-            cached_windows = parse_maintenance(
-                json.loads(Config.setting.Data.Maintenance)
-            )
+            cached_windows = parse_maintenance(json.loads(cache.content))
         except ValueError as exc:
             cached_windows = None
             logger.warning(f"维护信息缓存无效，重新获取: {exc}")
-        checked_at = Config.setting.Data.LastMaintenanceUpdated
+        checked_at = cache.checked_at
         remaining = (
             CACHE_SECONDS - (datetime.now().astimezone() - checked_at).total_seconds()
         )
@@ -111,7 +139,7 @@ class GameMaintenanceClient:
             return
 
         try:
-            etag = Config.setting.Data.MaintenanceETag
+            etag = cache.etag
             headers = (
                 {"If-None-Match": etag} if cached_windows is not None and etag else {}
             )
@@ -124,34 +152,14 @@ class GameMaintenanceClient:
                         if cached_windows is None:
                             raise ValueError("维护信息未变更但本地缓存无效")
                         windows = cached_windows
-                        await Config.setting.update(
-                            type(Config.setting).model_validate(
-                                {
-                                    "Data": {
-                                        "LastMaintenanceUpdated": datetime.now().astimezone()
-                                    }
-                                }
-                            ),
-                            check_visibility=False,
-                        )
+                        await self._write_cache(checked_at=datetime.now().astimezone())
                     elif response.status_code == 200:
                         data = response.json()
                         windows = parse_maintenance(data)
-                        await Config.setting.update(
-                            type(Config.setting).model_validate(
-                                {
-                                    "Data": {
-                                        "Maintenance": json.dumps(
-                                            data, ensure_ascii=False
-                                        ),
-                                        "MaintenanceETag": response.headers.get(
-                                            "ETag", ""
-                                        ),
-                                        "LastMaintenanceUpdated": datetime.now().astimezone(),
-                                    }
-                                }
-                            ),
-                            check_visibility=False,
+                        await self._write_cache(
+                            content=json.dumps(data, ensure_ascii=False),
+                            etag=response.headers.get("ETag", ""),
+                            checked_at=datetime.now().astimezone(),
                         )
                     else:
                         response.raise_for_status()
@@ -165,6 +173,3 @@ class GameMaintenanceClient:
         else:
             self._windows = windows
             self._next_refresh = time.monotonic() + CACHE_SECONDS
-
-
-GameMaintenance = GameMaintenanceClient()

@@ -7,6 +7,7 @@
 import httpx
 
 from app.config import ConfigEntry
+from app.core.game_maintenance import GameMaintenance
 from app.models.config import (
     MaaConfig,
     MaaEndConfig,
@@ -15,7 +16,7 @@ from app.models.config import (
     OkNteConfig,
     OkwwConfig,
 )
-from app.services.game_maintenance import GameMaintenance, MaintenanceWindow
+from app.services.game_maintenance import MaintenanceWindow
 
 
 def get_maintenance_message(
