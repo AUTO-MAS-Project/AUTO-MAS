@@ -34,19 +34,30 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **job 经 worker 的 stdin 传**、写完就关，不落盘（计划里有解密后的密码选项）。升级前写过的
     `data/maafw_runner_jobs/*.json` 残留照旧按 1 小时清扫（`runner_task._sweep_legacy_runner_jobs`）。
     worker 仍认一个 job 文件路径参数，只为兜「旧宿主进程拉起新 worker」的升级窗口。
-  - **事件走独立通道**：宿主在 `127.0.0.1` 临时端口上监听（`WorkerEventServer`，独占绑定），端口与
-    一次性令牌随 job 交给 worker；worker 连回来先发带令牌的 `hello`，之后一个事件一条消息，按帧传
-    （4 字节头、单片 ≤ 1 MB、整条不限长，接收端只为内存设 64 MB 上限，超了丢这一条、记一句、接着读）。
-    stdout 只剩原生诊断，照旧逐行进 `.worker.log`。选套接字不选管道：套接字默认不可继承，管道要先设成
-    可继承才传得过去，宿主同时拉起的模拟器 / 游戏、worker 拉起的 adb / agent 会带走句柄，常驻的继承者
-    让读的一方等不到 EOF。宿主也不靠 EOF 收尾：worker 退出后通道没连上只再等 1 s、连上了最多等 5 s。
-  - **建不起通道就退回 stdout 旧格式**（一行一个 JSON 事件）：宿主监听失败、worker 连不上、连上后
-    发送出错（宿主读到坏数据会关连接）都退回，原因各记一行进 `.worker.log`；宿主一直按行解析 stdout，
-    运行照常。选退回而不是报错：旧格式是跑了很久的路径，回环被安全软件拦住这类原因用户处理不了，
-    而 job 仍走 stdin，退回也不会让密码落盘。
-  - **日志去向由 worker 定**：日志 / 错误事件带 `audience`（`ui` / `worker_log`）与 `level`，worker 发出时
-    按 `worker_protocol.forwards_to_ui` 判 `audience`，宿主照字段办；不带 `audience` 的旧格式事件和
-    stdout 上的原生诊断仍按同一个函数判。`level` 目前只随事件带着，宿主不据它改界面或 app.log。
+  - **事件走独立通道：Windows 命名管道**（`WorkerEventServer`：只进不出、名字随机、只有一个实例、
+    拒绝远程连接），管道名与一次性令牌随 job 交给 worker；worker 按名字打开（`EventChannelClient`），
+    先发带令牌的 `hello`，之后一个事件一条消息，按帧传（4 字节头、单片 ≤ 1 MB、整条不限长，接收端只为
+    内存设 64 MB 上限，超了丢这一条、记一句、接着读）。stdout 只剩原生诊断，照旧逐行进 `.worker.log`。
+    **不要换成本机套接字**：worker 原生崩溃 / 被结束时，套接字对端收到 RST，宿主还没读走的数据被
+    Windows 直接丢掉（实测宿主读取滞后 50 ms 就 10 次 10 次丢事件、连结果一起丢——结果发出后在
+    `runner.shutdown()` 里崩溃，就成了「没有结果」去重试）；命名管道与 stdout 一样，写的一方没了，
+    已写进去的照样读得出。两端句柄都不带安全属性建 / 开，不可继承：宿主同时拉起的模拟器 / 游戏、
+    worker 拉起的 adb / agent 都带不走（常驻的继承者会让读的一方等不到 EOF）。
+    宿主用一个后台线程读（重叠 I/O + 100 ms 轮询，随时能停，不依赖事件循环实现），事件循环积压超过
+    32 MB 时先停读，worker 的写跟着等（同 stdout 写满）。worker 退出后（`worker_exited()`）把管道里
+    剩下的读完、读到 EOF 就结束，从没打开过的立刻结束；兜底最多再读 5 s。
+  - **建不起通道就退回 stdout 旧格式**（一行一个 JSON 事件）：宿主建管道失败、worker 打不开、打开后
+    写入出错（宿主令牌不对 / 握手超时 / 读到坏数据都会关管道）都退回，原因各记一行进 `.worker.log`；
+    宿主一直按行解析 stdout，运行照常。选退回而不是报错：旧格式是跑了很久的路径，通道建不起来的原因
+    （安全软件拦截之类）用户处理不了，而 job 仍走 stdin，退回也不会让密码落盘。非 Windows 上没有这条
+    通道，直接用旧格式、不记。
+  - **日志去向在发出时定**：日志 / 错误事件带 `audience`（`ui` / `worker_log`）与 `level`
+    （`info` / `warning` / `error`），宿主照字段办。runner 自己知道去向的行发出时就标好
+    （`MaaFWRunner._log_detail` 发 `[MaaFW 详情]` 行、`[MaaFW Tasker] 开始/成功/失败` 回声、
+    「MaaFW 任务执行失败」原文回显），失败 / 超时类的带 `warning` / `error`；只经 `send_log` 传文案的
+    （agent 与环境准备转来的输出等）由 worker 的 `_emit` 按 `worker_protocol.forwards_to_ui` 补
+    `audience`。不带 `audience` 的旧格式事件和 stdout 上的原生诊断仍按同一个函数判。`level` 目前只随
+    事件带着，宿主不据它改界面或 app.log。新增的 runner 日志知道去向的就用 `_log` / `_log_detail`。
   - 新增事件类型照旧：worker 里 `_emit({"type": ..., ...})`，宿主在 `runner_task` 的 `handle_event`
     里按 `type` 加一个分支，两条传输都会经过它；宿主不认识的类型忽略。
 
