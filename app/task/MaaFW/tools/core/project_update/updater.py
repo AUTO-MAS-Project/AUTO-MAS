@@ -19,6 +19,7 @@ from packaging import version
 
 from app.utils import MIRROR_ERROR_INFO
 
+from ..file_lockers import describe_lockers
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path
 from .apply import (
@@ -1787,8 +1788,13 @@ async def apply_maafw_project_update(
         # 载荷已在册，没切过去的视图下次运行前的组同步会补上，不算更新失败。
         try:
             await after_register(registered)
-        except Exception:
-            logger.warning("MaaFW 新版本登记后的切换失败", exc_info=True)
+        except Exception as exc:
+            # 换视图被占用（rename 拒绝访问）时尽力点出占用者；查不到就什么都不加。
+            lockers = await asyncio.to_thread(describe_lockers, exc)
+            logger.warning(
+                "MaaFW 新版本登记后的切换失败" + (f"（{lockers}）" if lockers else ""),
+                exc_info=True,
+            )
             send_update_log("新版本已就绪，但切换脚本时出错；下次运行前会再同步")
     return {
         "operationId": operation.operation_id,
