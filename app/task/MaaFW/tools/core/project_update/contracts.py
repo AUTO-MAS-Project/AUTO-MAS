@@ -31,19 +31,24 @@ FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json", VIEW_MARKER_FIL
 # 早有这些文件；它们不属于任何版本：采纳时不进载荷，切换版本时视图里有就按视图私有文件
 # 原样带过去——按受管文件处理的话，换版本会把它们换回导入那一刻的内容（更新包从旧载荷
 # 继承了它），或当成「新版本删掉的文件」丢掉。
-RUNTIME_STATE_FILES = frozenset(
-    {
-        "config/maa_option.json",
-        "config/m9a_data.json",
-        "config/warehouse_inventory.json",
-        "data/manifest_cache.json",
-    }
-)
-# 上面这些里随版本走的一部分：M9A 热更新的清单缓存与随版本发布的 data/ 表成对，缓存里的时间戳
-# 说明「数据已经更新到哪」。换到另一个载荷时 data/ 取新载荷，缓存也只能取新载荷那份（新载荷
-# 没有就不要，M9A 下次全量检查）；带视图这份会让缓存比数据新，热更新一直走快速路径跳过。
-# 同一载荷上重建视图（采纳、修复）时数据没变，照常按运行期状态带过去。
+#
+# 其中随版本走的一部分（VERSION_BOUND_STATE_FILES）：M9A 热更新的清单缓存与随版本发布的 data/
+# 表成对，缓存里的时间戳说明「数据已经更新到哪」。换到另一个载荷时 data/ 取新载荷，缓存也只能取
+# 新载荷那份（新载荷没有就不要，M9A 下次全量检查）；带视图这份会让缓存比数据新，热更新一直走快速
+# 路径跳过。同一载荷上重建视图（采纳、修复）时数据没变，照常按运行期状态带过去。
 VERSION_BOUND_STATE_FILES = frozenset({"data/manifest_cache.json"})
+# 版本绑定的按构造并进运行期状态（子集关系是不变量：embedded_project._realize_view 先判版本绑定、
+# 再判运行期状态，只在前一张表里的项在同载荷重建、补齐时会被当成受管文件处理，而不是原样带过去）。
+RUNTIME_STATE_FILES = (
+    frozenset(
+        {
+            "config/maa_option.json",
+            "config/m9a_data.json",
+            "config/warehouse_inventory.json",
+        }
+    )
+    | VERSION_BOUND_STATE_FILES
+)
 
 # 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
 # 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是

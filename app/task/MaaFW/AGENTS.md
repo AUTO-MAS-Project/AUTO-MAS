@@ -205,7 +205,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   是自己一直在用的目录，里面早有这些文件）。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
   例外中的例外是 `contracts.VERSION_BOUND_STATE_FILES`（M9A 热更新的 `data/manifest_cache.json`）：
   它和随版本发布的 `data/` 表成对，换到另一个载荷时只取新载荷那份（没有就不要），带视图这份会让
-  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。自带解释器里的 maafw
+  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。它必须是
+  `RUNTIME_STATE_FILES` 的子集（`_realize_view` 先判它、再判运行期状态，不在后一张表里的同载荷重建时
+  会按受管文件处理），落点：`contracts.py` 里 `RUNTIME_STATE_FILES` 按构造并入它，加版本绑定的文件
+  只往它里面加。自带解释器里的 maafw
   binding（`…/site-packages/maa/`、`maafw-*.dist-info/`）也不按受管文件处理：它是准备运行环境
   钉回的（或 agent 部署脚本升级的），切换时一律以新载荷为准，不留档、不当私有文件带过去，
   下次准备再按新原生库钉回（`embedded_project._is_maafw_binding_path`）。
