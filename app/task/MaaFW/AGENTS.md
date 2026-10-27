@@ -53,8 +53,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `register` 允许同版本新登记顶替）。
 - **载荷 + 视图**：项目内容按「谱系 + 版本 + 内容哈希」登记成不可变**载荷**
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
-  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 / venv /
-  备份桶都不用改键），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
+  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 /
+  备份桶都不用改键；隔离 venv 不按路径，按依赖跨视图共用），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`、`envConfirmedFor`、
   开发者模式的 `followSource`）是物化事实的唯一来源，不进指纹、不进任何清单，只随目录原子换入、
   不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
@@ -141,7 +141,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     兜底（去掉开头的 `../` → `agent/main.py`），投影（`cfa_agent_entry`）与 planner 共用；CFA 的固定
     兜底 `agent/main.py` 是它的特例。不改写是因为 runner / planner / 预览 / 导入检查都按 base_dir
     解析路径，平铺之后一处兜底就全对，而改写 interface 要在每份载荷里维持一份与来源不同的文件。
-  - **运行时**：裸 `python` → 项目专属隔离 venv（按视图根的 `requirements.txt`）；没自带原生库 →
+  - **运行时**：裸 `python` → 隔离 venv（按视图根的 `requirements.txt`，见下面「隔离 venv 跨视图共用」）；没自带原生库 →
     runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
     `environment.maafw_version`，worker 传实际加载的 binding 版本，见
     `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
@@ -285,8 +285,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
-  （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
-  定位）；其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
+  （PI v2 示例与 MAA_Punish 的写法）→ 隔离 venv（`isolated_venv`，按依赖跨视图共用，见下一条）；
+  其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
   worker 跑在运行池 venv 里，Windows 上 `CreateProcess` 先按父进程（基解释器）所在目录找，
   且用的是父进程的 PATH，传给子进程的 `env["PATH"]` 不参与查找，结果永远是没装 `maa` 的
   基解释器。隔离 venv 只装 `requirements.txt` 写的（`maafw` 钉成自带原生库的版本）；**压根
@@ -324,6 +324,33 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`agent_env/env._stale_maafw_dist_infos`）。**只有 pip 成功且复读版本一致才删暂放目录**；pip 失败
   （断网、中继挂了、索引缺版本）或复读不一致就原样挪回——dist-info 集合是指纹输入，失败时集合必须
   回到钉回前，否则离线本来能过的项目会被拒绝缓存（钉回「任何一步失败只记日志，不拦准备」）。
+- **隔离 venv 跨视图共用**（`agent_env/venv_share.py`，方案「MFW副本复用与版本切换」§7-5）：目录
+  `config/maafw_agent_venvs/maafw_venv_<16hex>`，键 = 装进去的依赖清单（洗过、maafw 钉成确切版本、
+  补过引导包，即 manifest 的 `requirements`）+ maafw requirement + 宿主身份（平台 / 架构 / 解释器实现），
+  任一不同就是另一个目录；同一项目建几个脚本、依赖没变的新版本都用同一份，只装一次。
+  - **宿主身份不含具体的引导解释器**：宿主与 worker 挑出来的本来就可能不同（worker 的
+    `sys.executable` 是运行池 venv），按它分会在宿主刚建好的旁边再建一份；它记在 venv 的
+    `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。
+  - **计划阶段不一定知道最终目录**：项目没自带原生库、只声明范围的，maafw 要等 runner 解析出版本
+    才定。`compute_isolated_venv_path` 先看本视图的引用记录（`.refs/<视图路径哈希>.json`：上次准备
+    实际用的目录 + 当时建计划算出的键，键对得上才信），`prepare_agent_envs` 再按确切版本定一次并
+    **改写计划**（`isolatedVenvPath` / `executable` / `command[0]`），worker 起 agent 与结果里的计划都
+    是改写后的。新增读计划里 venv 路径的地方要在准备之后读，或者走 `compute_isolated_venv_path`。
+  - **重建判据**：共用目录只比 manifest 的 `venvKey` 与 `requirementsHash`；`projectPath` /
+    `interfaceHash` 只记建它的视图，不参与——否则另一个视图、依赖没变的新版本会把别人正在用的
+    删了重建。目录名与本项目的键对不上直接拒绝（`_prepare_isolated_venv_env`），不按本项目判据动它。
+    重建先把旧目录改名成 `<名>.trash-<随机>` 再删：有 agent 正从里面跑着时 Windows 不让改名，
+    这时报「正被占用」、不动它（以前 `rmtree(ignore_errors)` 会删一半）。
+  - **并发**：准备期间持 `isolated_venv_guard`（本进程线程锁 + `.locks/<名>.lock` 字节锁，宿主与
+    worker 跨进程也串行），等的一方日志写「正由另一处准备」，只会看到建好的或没建的。锁文件不删。
+  - **升级前按路径建的老目录**（`maafw_venv_<12hex>`）不迁移、不改名（venv 不可搬家）：共用目录还没
+    建、老目录按老判据（项目路径 + interface + 依赖清单都没变）还能用时第一跑沿用它，不重建、不联网；
+    项目一更新或同依赖的共用目录建好就换过去。
+  - **回收**（启动期 `Config.clean_maafw_agent_venvs` → `planner.collect_orphan_agent_venvs`）：存活 =
+    各存活视图引用记录里的目录 ∪ 建计划会算出的目录 ∪ 没有引用记录的视图的老目录；存活视图的引用
+    记录读不出来就整轮不回收。照旧跳过刚动过的，锁被占的也跳过；无主的引用记录一并删。
+  - **更新预检**仍建在池根下的 `precheck_agent_venvs`、用完即删（`precheck.cleanup_precheck_agent_venv`
+    按引用记录找、持锁删），没有「预检那份直接提升为正式 venv」。
 - **项目自带 Python 的健康检查要和 agent 真跑时用同一份原生库**（`agent_env/env._build_project_python_probe_env`）：
   M9A 的发行包不在自带解释器的 `site-packages/maa/bin` 放库，agent 在 `import maa` 之前自己把
   `MAAFW_BINARY_PATH` 指到 `runtimes/<rid>/native`（它的 `agent/maafw_paths.py`）。检查沿用 pip 的环境、
