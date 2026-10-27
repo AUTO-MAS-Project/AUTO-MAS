@@ -30,7 +30,7 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.8.0-beta.2] - 2026-10-27
 
 ### 破坏性变更
 
@@ -55,13 +55,17 @@
 - 【MAA】干员养成单独或合并执行时沿用“配置 MAA”的 AUTO 代理倍率设置 (#1623) by @jinghero
 - 【MFW】添加任务里的 NEW 标记显示过一次后，离开页面再进来就不再显示 (#1606) by @qiyinxi
 - 【主页】重构开发调试面板，新增存储与 Vue 调试工具，并移除首页滚动提示的雾状背景。 (#1657) by @ClozyA
+- 【主页】终末地卡池数据改为启动及每日检查，减少重复下载，开放后自动显示 (#1675) by @HarcoChen
 - 【模拟器】魔改 AVD 带窗口开机时显示开机动画，不再黑屏到出桌面 (#1591) by @qiyinxi
 - 【模拟器】魔改 AVD 上游戏更新下载提速约两成 (#1581) by @qiyinxi
 - 【模拟器】魔改 AVD 每天第一次开机不再把所有安装包整个读一遍，实例占的内存更少 (#1636) by @qiyinxi
+- 【模拟器】魔改 AVD 默认允许安装任意来源的 APK，浏览器里下载的安装包不再被拦 (#1668) by @qiyinxi
 - 【通知】通知独立发送，单个渠道异常不再拖慢任务收尾或影响其他通知 (#1594) by @jinghero
 - 【通知】MAA 与 MaaEnd 失败通知支持原尺寸补截，窗口不明确或手动停止时跳过。 (#1502) by @jinghero
+- 【通知】Windows 系统通知改用原生 Toast 推送。 (#1674) by @HarcoChen
 - 【工具】缩短 MCP 工具就绪等待时间 (#1646) by @jinghero
 - 【设置】优化桌宠点击、拖动、动画衔接和任务提醒体验 (#1600) by @jinghero
+- 【设置】加快配置加载与修改响应（仅公测） (#1651) by @jinghero
 
 ### 修复
 
@@ -70,15 +74,19 @@
 - 【MAA】修复托管启动时仍需手动选择模拟器连接地址的问题 (#1620) by @jinghero
 - 【end】修复原生启动游戏较慢时提前超时、无法继续托管的问题 by @HarcoChen
 - 【end】修复高阶培养缺少新材料，选项随已安装脚本自动更新 (#1662) by @HarcoChen
+- 【end】修复补齐理智任务后提前关闭游戏、导致协议空间无法执行的问题 (#1672) by @HarcoChen
+- 【end】修复云终末地自动代理时错误启动安卓本体的问题 (#1670) by @ClozyA
 - 【bgi】修复任务结果误报，补充领取失败、提前停止及正常跳过的具体提示。 (#1628) by @AthenaHibou
 - 【ok-ww】修复鸣潮和奇想盒昨日运行满额后次日不再自动运行的问题 (#1616) by @jinghero
 - 【ok-ww】修复强制切换账号时目标账号可见却连续选择失败的问题 (#1644) by @jinghero
 - 【MFW】魔改 AVD 模拟器意外退出时，MFW 任务立即重试，不再空等约 8 分钟 (#1615) by @qiyinxi
 - 【MFW】项目目录残留旧版本文件导致资源加载失败时说明原因，并自动清掉残留后重跑 (#1665) by @qiyinxi
+- 【通用脚本】修复从配置中心导入旧版模板失败的问题 (#1673) by @jinghero
 - 【主页】修复网络波动时活动信息与日历更新失败的问题 (#1599) by @jinghero
 - 【调度】修复清空剩余天数、运行参数及计划理智药数量或重置剿灭状态时保存失败的问题（仅公测） (#1596) by @jinghero
 - 【调度】修复删除队列后返回调度台仍选中旧队列并反复加载失败的问题 (#1633) by @jinghero
 - 【调度】修复新建托管及部分设置弹窗内容挤压、横向滚动和小窗口下操作受阻的问题 (#1653) by @jinghero
+- 【调度】修复检查游戏维护信息失败后任务中断或错误跳过的问题 (#1671) by @jinghero
 - 【模拟器】修复删除模拟器失败后仍清空其他脚本绑定的问题（仅公测） (#1597) by @Lance0174
 - 【通知】修复通知渠道配置弹窗的状态文字与启用开关不一致的问题 (#1637) by @anlan1027
 - 【设置】修复旧版升级后模拟器类型及部分连战、剿灭和基建设置被重置的问题（仅公测） (#1597) by @Lance0174
@@ -659,7 +667,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...dev
+[v5.8.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...v5.8.0-beta.2
 [v5.8.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0-beta.1
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
