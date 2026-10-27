@@ -2320,15 +2320,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
         if self.emulator_manager is None:
             controller_type = str(self.script_config.Game.ControllerType)
-            remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
-                list(MAAEND_RUN_MOOD_BOOK).index(self.mode) + 1 :
-            ]
-            has_later_mode = any(not self.run_book[mode] for mode in remaining_modes)
-            close_after_mode = (
-                has_later_mode
-                and self.script_config.Run.TaskTransitionMethod == "ExitGame"
-                or (not has_later_mode and self.script_config.Game.CloseOnFinish)
-            )
             setting_pretask = self._game_setting_pretask()
             if setting_pretask is not None:
                 apply_settings = self.mode == self.first_run_mode and bool(
@@ -2362,15 +2353,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     _MAAEND_LAUNCH_GAME_PRETASK,
                 }:
                     task["enabled"] = False
-            if if_quick_config or close_after_mode:
-                _place_managed_task(
-                    maaend_tasks,
-                    task_name=_MAAEND_CLOSE_GAME_TASK,
-                    task_id="automas-close-game",
-                    controller_type=controller_type,
-                    enabled=close_after_mode,
-                    first=False,
-                )
             self.game_launch_result_path.unlink(missing_ok=True)
             _configure_game_pre_action(
                 maaend_instance,
@@ -2436,6 +2418,27 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
             if self.cur_user_config.Task.IfSanity:
                 self._ensure_sanity_task(maaend_tasks, target_task_name)
+
+        # 补齐业务任务后再放置关闭游戏任务，避免理智任务落到关游戏之后。
+        if self.emulator_manager is None:
+            remaining_modes = list(MAAEND_RUN_MOOD_BOOK)[
+                list(MAAEND_RUN_MOOD_BOOK).index(self.mode) + 1 :
+            ]
+            has_later_mode = any(not self.run_book[mode] for mode in remaining_modes)
+            close_after_mode = (
+                has_later_mode
+                and self.script_config.Run.TaskTransitionMethod == "ExitGame"
+                or (not has_later_mode and self.script_config.Game.CloseOnFinish)
+            )
+            if if_quick_config or close_after_mode:
+                _place_managed_task(
+                    maaend_tasks,
+                    task_name=_MAAEND_CLOSE_GAME_TASK,
+                    task_id="automas-close-game",
+                    controller_type=str(self.script_config.Game.ControllerType),
+                    enabled=close_after_mode,
+                    first=False,
+                )
 
         restore_task = self._configure_resolution_restore(maaend_tasks)
 
