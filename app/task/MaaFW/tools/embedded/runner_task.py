@@ -4141,7 +4141,12 @@ class _PretaskOutputPump:
         self._sink = to_backend_log
 
     def _emit(self, raw: bytes) -> None:
-        text = _decode_subprocess_output(raw.rstrip(b"\r"))
+        # 与原来整段 splitlines() 同口径：单独的 \r（进度条原地刷新）也算换行
+        for part in raw.rstrip(b"\r").split(b"\r"):
+            self._emit_line(part)
+
+    def _emit_line(self, raw: bytes) -> None:
+        text = _decode_subprocess_output(raw)
         if not text.strip():
             # 空白行先记数：后面还有内容才补写（夹在中间），到结尾都没有就不写
             if self._seen_text:
