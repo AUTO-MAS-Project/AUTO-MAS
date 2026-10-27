@@ -1205,6 +1205,16 @@ def register(
             if str(info_value or "").strip():
                 data[info_key] = str(info_value)
         current_latest = data["latest"].get(channel)
+        if always_advance and not is_private_channel(channel):
+            # 不变量（AGENTS.md「跟随来源目录」）：always_advance 只给开发者模式的私有渠道用。
+            # 违反时照旧前进（不改行为），只留一行告警，免得普通渠道被一份不比版本的登记推着走
+            # 而没人察觉。
+            logger.warning(
+                "谱系 %s 渠道 %s 不是私有渠道却按 always_advance 登记 %s（应只给开发者模式用）",
+                lineage,
+                channel,
+                payload_id,
+            )
         facts = _latest_facts(
             root,
             lineage,

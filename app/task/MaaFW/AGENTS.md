@@ -70,6 +70,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   本地改过的导入不能顶掉原版；`_same_version_rank` 同口径）。「只前进」另有一个例外：手动更新
   把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
   `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
+  **换不换只在一处判定**：`payloads.decide_latest` 按有序规则表 `LATEST_RULES`（私有渠道
+  `always_advance` → 组里没有 latest → latest 不完整 → 版本更高 → 发错版本号回退 → 上面三个同版本
+  例外，都不管就保留），迁移时同版本挑一份用同口径的 `same_version_sort_key`；加新例外就往表里加
+  一条，别在 `register` 里另写判断。登记时 debug 日志记下定结论的规则。
   开发者模式的脚本例外：它的组是
   谱系 + 私有渠道 `dev:<视图名>`，见下一条。
   谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
@@ -79,7 +83,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
     （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
     碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
-    每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
+    每次导入都前进、不比版本；普通渠道不传，语义一字不改（传了照旧前进，`register` 记一行告警）。
+    私有渠道建出的载荷（清单 `channel` 是
     `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest；版本另带 PEP 440 本地段
     `+dev`（`follow_source_payload_version`：`1.5.0` → `1.5.0+dev`，已有本地段的追加 `.dev`），
     所以没有这条过滤的老代码按「版本字符串相等」挑同版本候选时也挑不中它，载荷 id 也与同内容的
@@ -160,7 +165,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     「路径越界」。要支持新的越界写法，先补运行时映射再放行。
   - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
     MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
-- **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
+- **投影**：按 interface 白名单（`project_update/projection.py`；`build_projection_rules` 按声明类别
+  分在 `_ProjectionScan` 的 `_scan_*` 里，扫完再判源码形态、依赖清单、自带原生库、小顶层条目），
+  **白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
