@@ -91,11 +91,10 @@ from app.task.notify_core import (
     prepare_screenshot_images,
     screenshot_entries,
 )
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.constants import UTC4
-from app.utils.game_apk import adb_runner_scope
-from app.utils.io import migrate_legacy_dir
-from app.utils.paths import SOURCE_ROOT
+from app.utils import UTC4, ProcessInfo, ProcessManager, get_logger
+from app.utils import game_apk as _utils_game_apk
+from app.utils import io as _utils_io
+from app.utils import paths as _utils_paths
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -312,9 +311,11 @@ _FRAMEWORK_COORDINATE_RE = re.compile(
 
 def _avd_adb_path(manager_path: str | Path) -> Path:
     """魔改 AVD 这条安装的 adb：SDK 的 ``platform-tools\\adb.exe``（指定了本地 SDK 时取它的）。"""
-    from app.utils.emulator2.avd.components import adb_exe, root_from_manager_exe
+    from app.utils import emulator2 as _utils_emulator2
 
-    return adb_exe(root_from_manager_exe(manager_path))
+    return _utils_emulator2.avd.components.adb_exe(
+        _utils_emulator2.avd.components.root_from_manager_exe(manager_path)
+    )
 
 
 @dataclass(frozen=True)
@@ -1545,7 +1546,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         try:
             # 魔改 AVD 实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
             # 不落到 5037；其余模拟器不接管
-            with adb_runner_scope(await resolve_host_adb(self)):
+            with _utils_game_apk.adb_runner_scope(await resolve_host_adb(self)):
                 result = await hook(
                     script_config=self.script_config,
                     resource_name=self.run_plan.resourceName,
@@ -1678,20 +1679,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
         """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用魔改 AVD（MaaFW 脚本一律放行）；
         旧式模拟器管理器不收这个参数。"""
-        from app.utils.emulator2.facade import Emulator2Manager
+        from app.utils import emulator2 as _utils_emulator2
 
-        if isinstance(self.emulator_manager, Emulator2Manager):
+        if isinstance(self.emulator_manager, _utils_emulator2.facade.Emulator2Manager):
             return {"allow_mod_avd": True}
         return {}
 
     def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
         """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
-        from app.utils.emulator2.avd.components import (
-            adb_server_port,
-            root_from_manager_exe,
-        )
-        from app.utils.emulator2.avd.constants import console_port
-        from app.utils.emulator2.avd.maafw_extras import build_maafw_avd_config
+        from app.utils import emulator2 as _utils_emulator2
 
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
         if not capability.get("screencap"):
@@ -1702,9 +1698,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         adb_path = _avd_adb_path(device_ref.manager_path)
         if not adb_path.is_file():
             raise RuntimeError(f"找不到魔改 AVD 的 adb：{adb_path}")
-        root = root_from_manager_exe(device_ref.manager_path)
-        console = console_port(device_ref.native_index)
-        config = build_maafw_avd_config(adb_path, adb_server_port(root), console)
+        root = _utils_emulator2.avd.components.root_from_manager_exe(
+            device_ref.manager_path
+        )
+        console = _utils_emulator2.avd.constants.console_port(device_ref.native_index)
+        config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
+            adb_path, _utils_emulator2.avd.components.adb_server_port(root), console
+        )
         self._append_log(
             f"魔改 AVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
         )
@@ -1723,30 +1723,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             device_ref = resolve_device(emulator_index) if resolve_device else None
         if device_ref is None or device_ref.emulator_type != "avd":
             return {}
-        from app.utils.emulator2.avd import host
-        from app.utils.emulator2.avd.components import (
-            root_from_manager_exe,
-            script_adb_env,
-        )
+        from app.utils import emulator2 as _utils_emulator2
 
-        root = root_from_manager_exe(device_ref.manager_path)
+        root = _utils_emulator2.avd.components.root_from_manager_exe(
+            device_ref.manager_path
+        )
         # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
         try:
-            await host.ensure_script_adb_server(root)
-        except host.ScriptAdbPortConflict:
+            await _utils_emulator2.avd.host.ensure_script_adb_server(root)
+        except _utils_emulator2.avd.host.ScriptAdbPortConflict:
             raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
         except Exception:  # noqa: BLE001 - 起不来就交给 worker 自己的 adb
             pass
-        return script_adb_env(root)
+        return _utils_emulator2.avd.components.script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """魔改 AVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
         if profile is None or profile.emulator_type != "avd":
             return
-        from app.utils.emulator2.avd.maafw_extras import avd_extras_supported
+        from app.utils import emulator2 as _utils_emulator2
 
-        supported = avd_extras_supported(maafw_version)
+        supported = _utils_emulator2.avd.maafw_extras.avd_extras_supported(
+            maafw_version
+        )
         if supported is False:
             raise RuntimeError(
                 f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持魔改 AVD 的截图通道"
@@ -2023,7 +2023,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     lease_ttl_seconds=max(
                         600, int(self.script_config.Run.RunTimeLimit or 120) * 60 + 600
                     ),
-                    import_paths=[SOURCE_ROOT],
+                    import_paths=[_utils_paths.SOURCE_ROOT],
                     send_log=send_runner_log,
                     cancel_event=prepare_cancel_event,
                 )
@@ -3693,7 +3693,7 @@ def _maafw_runner_jobs_dir() -> Path:
     """
 
     new_dir = Path.cwd() / "data" / "maafw_runner_jobs"
-    migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
+    _utils_io.migrate_legacy_dir(Path.cwd() / "runtime" / "maafw_runner_jobs", new_dir)
     _sweep_stale_runner_jobs(new_dir)
     return new_dir
 

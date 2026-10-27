@@ -14,7 +14,7 @@ from app.models.ConfigBase import (
     MultipleConfig,
     ValidatorBase,
 )
-from app.utils.io import read_dict_file
+from app.utils import io as _utils_io
 
 
 class _LegacyValueValidator(ValidatorBase):
@@ -32,7 +32,7 @@ class LegacyConfig(ConfigBase):
 
     async def connect(self, path: Path) -> None:
         # 旧 connect 对损坏 JSON 会回退默认值；升级必须先严格读取，禁止覆盖。
-        read_dict_file(path)
+        _utils_io.read_dict_file(path)
         if not path.exists():
             # 先原子创建有效 JSON，避免旧 connect.touch 留下不可重试的空白文件。
             self.file = path
@@ -106,7 +106,7 @@ class LegacyCollection(MultipleConfig[LegacyConfig]):
         super().__init__([LegacyConfig])
 
     async def connect(self, path: Path) -> None:
-        read_dict_file(path)
+        _utils_io.read_dict_file(path)
         if not path.exists():
             self.file = path
             await self.save()

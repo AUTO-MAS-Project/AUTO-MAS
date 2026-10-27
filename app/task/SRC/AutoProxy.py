@@ -38,9 +38,15 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     resolve_config_base,
 )
-from app.utils import LogMonitor, ProcessManager, get_logger, strptime
-from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
-from app.utils.io import read_file, write_file
+from app.utils import (
+    STARRAIL_PACKAGE_NAME,
+    UTC4,
+    LogMonitor,
+    ProcessManager,
+    get_logger,
+    strptime,
+)
+from app.utils import io as _utils_io
 
 from .tools import (
     archive_mas_runtime_backup,
@@ -550,7 +556,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             overlay_path=overlay_path,
         )
 
-        src_set = read_file(staging_path / "src.json")
+        src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read(staging_path / "deploy.yaml")
 
         # 直接运行任务
@@ -573,7 +579,7 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
         if self.cur_user_config.Info.IfQuickConfig:
             self._apply_src_quick_config(src_set)
 
-        write_file(staging_path / "src.json", src_set)
+        _utils_io.write_file(staging_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             staging_path / "deploy.yaml",

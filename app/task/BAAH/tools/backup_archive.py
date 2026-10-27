@@ -57,17 +57,11 @@ from app.task.BAAH.tools.config_manager import (
     SOFTWARE_CONFIG_RELATIVE,
     resolve_config_name,
 )
-from app.utils import get_logger
-from app.utils.config_archive import (
-    OVERLAY_SIDECAR_NAME,
-    archive_files,
-    config_root_key,
-    dir_files,
-    get_backup_dir,
-    list_times,
-    read_overlay_sidecar,
-)
-from app.utils.constants import BASE_SOURCE_LABELS
+from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import config_archive as _utils_config_archive
+
+OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
+read_overlay_sidecar = _utils_config_archive.read_overlay_sidecar
 
 logger = get_logger("BAAH 配置备份")
 
@@ -115,7 +109,7 @@ def archive_mas_backup(
 ) -> Path | None:
     """归档 MAS 页面字段侧车到用户池（指纹去重，无变化跳过）。"""
 
-    dest = archive_files(
+    dest = _utils_config_archive.archive_files(
         {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)},
         mas_backup_root(script_id, user_id),
         force=force,
@@ -128,11 +122,11 @@ def archive_mas_backup(
 
 
 def list_mas_backups(script_id: str, user_id: str) -> list[str]:
-    return list_times(mas_backup_root(script_id, user_id))
+    return _utils_config_archive.list_times(mas_backup_root(script_id, user_id))
 
 
 def get_mas_backup_dir(script_id: str, user_id: str, ts: str) -> Path | None:
-    return get_backup_dir(mas_backup_root(script_id, user_id), ts)
+    return _utils_config_archive.get_backup_dir(mas_backup_root(script_id, user_id), ts)
 
 
 def restore_mas_backup(script_id: str, user_id: str, ts: str) -> dict | None:
@@ -165,7 +159,7 @@ def native_backup_root(config_dir: str | Path, user_id: str) -> Path:
         / "data"
         / "BAAHBackups"
         / "native"
-        / config_root_key(config_dir)
+        / _utils_config_archive.config_root_key(config_dir)
         / user_id
     )
 
@@ -221,7 +215,9 @@ def archive_native_backup(
     targets = collect_native_files(config_dir, config_name)
     if not targets:
         return None
-    dest = archive_files(targets, native_backup_root(config_dir, user_id), force=force)
+    dest = _utils_config_archive.archive_files(
+        targets, native_backup_root(config_dir, user_id), force=force
+    )
     if dest is None:
         logger.info("BAAH 配置无变化，跳过归档")
         return None
@@ -230,11 +226,13 @@ def archive_native_backup(
 
 
 def list_native_backups(config_dir: str | Path, user_id: str) -> list[str]:
-    return list_times(native_backup_root(config_dir, user_id))
+    return _utils_config_archive.list_times(native_backup_root(config_dir, user_id))
 
 
 def get_native_backup_dir(config_dir: str | Path, user_id: str, ts: str) -> Path | None:
-    return get_backup_dir(native_backup_root(config_dir, user_id), ts)
+    return _utils_config_archive.get_backup_dir(
+        native_backup_root(config_dir, user_id), ts
+    )
 
 
 def restore_native_backup(
@@ -257,7 +255,7 @@ def restore_native_backup(
     # 恢复前强制归档当前——「恢复前的配置」在列表里有明确的时间戳条目
     archive_native_backup(config_dir, config_name, user_id, force=True)
 
-    files = dir_files(backup_dir)
+    files = _utils_config_archive.dir_files(backup_dir)
     user_files = [
         rel for rel in files if rel != _SOFTWARE_CONFIG_KEY and rel.endswith(".json")
     ]
@@ -332,7 +330,7 @@ def build_native_preview(config_dir: Path, user_id: str, ts: str) -> dict:
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
 
-    files = dir_files(backup_dir)
+    files = _utils_config_archive.dir_files(backup_dir)
     user_rels = [
         rel for rel in files if rel != _SOFTWARE_CONFIG_KEY and rel.endswith(".json")
     ]

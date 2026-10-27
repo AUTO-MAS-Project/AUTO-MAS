@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     import uvicorn
 
     from app.config import ConfigEntry
-    from app.utils.config_restore import ConfigRestorePool, ConfigRestoreService
+    from app.utils import config_restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
@@ -104,20 +104,11 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
-from app.utils import get_logger, is_supervised
-from app.utils.community import next_community_account_name
-from app.utils.constants import (
-    BASE_INDEPENDENT,
-    BASE_NATIVE,
-    BASE_SHARED,
-    TYPE_BOOK,
-    UTC4,
-    UTC8,
-    normalize_base_source,
-)
-from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
-from app.utils.paths import SOURCE_ROOT
-from app.utils.platform import IS_WINDOWS
+from app.utils import IS_WINDOWS, get_logger, is_supervised
+from app.utils import community as _utils_community
+from app.utils import constants as _utils_constants
+from app.utils import io as _utils_io
+from app.utils import paths as _utils_paths
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
@@ -166,13 +157,13 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
 def _save_game_sign_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
-    """原子保存游戏社区结果快照（走 ``app.utils.io.write_file``）。"""
+    """原子保存游戏社区结果快照（走 ``app.utils.common.io.write_file``）。"""
 
     if path is None:
         return
 
     try:
-        write_file(path, {"date": result_date, "result": result})
+        _utils_io.write_file(path, {"date": result_date, "result": result})
     except (OSError, TypeError, ValueError) as e:
         logger.warning(f"保存游戏社区结果快照失败: {e}")
 
@@ -226,7 +217,8 @@ class AppConfig:
     def __init__(self) -> None:
 
         self._restore_pool_resolver: (
-            Callable[["ConfigEntry"], list["ConfigRestorePool"]] | None
+            Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
+            | None
         ) = None
 
         logger.info("")
@@ -374,7 +366,7 @@ class AppConfig:
 
                 # .git 随源码走：受 AUTO-MAS-Runtime 监督时源码在 <app-root>/repo/，
                 # 工作目录（app-root）下没有仓库，不能再按 Path.cwd() 打开
-                self._repo = Repo(SOURCE_ROOT)
+                self._repo = Repo(_utils_paths.SOURCE_ROOT)
             except Exception as e:
                 logger.warning(f"Git仓库初始化失败: {e}")
                 self._repo = None
@@ -398,7 +390,7 @@ class AppConfig:
                 self.startup_notices.append(result.notice())
 
         # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
             self.config_path / GAME_SIGN_RESULT_FILENAME,
             result_date=today,
@@ -502,14 +494,15 @@ class AppConfig:
                 if source.exists() and not is_blank_file(source):
                     # 空白主配置没有可迁数据，跳过转换；随后统一升级会按默认
                     # 配置生成 setting.yaml 并照常归档，激活走下方统一分支。
-                    from app.utils.io import read_dict_file
 
                     self.setting = GlobalConfig.build(
-                        payload=convert_legacy(read_dict_file(source), self.setting)
+                        payload=convert_legacy(
+                            _utils_io.read_dict_file(source), self.setting
+                        )
                     )
                     self._config_nodes["setting"] = self.setting
                     self.startup_notices = self.setting.startup_notices
-                    await self.setting.activate()
+                    await self.setting.activate(fast_init=True)
 
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
@@ -549,7 +542,7 @@ class AppConfig:
         for _old, _new, key in CONFIG_FILES:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
-                await node.activate()
+                await node.activate(fast_init=True)
         for script in self.ScriptConfig.values():
             if (
                 isinstance(script, MaaEndConfig)
@@ -790,13 +783,6 @@ class AppConfig:
                                 "Name": general_config["Script"]["Name"],
                                 "RootPath": general_config["Script"]["RootPath"],
                             }
-
-                            general_config["Script"]["ConfigPathMode"] = (
-                                "File"
-                                if "所有文件"
-                                in general_config["Script"]["ConfigPathMode"]
-                                else "Folder"
-                            )
 
                             uid = legacy_uid(GeneralConfig)
                             sc = await legacy_scripts.put(
@@ -1286,14 +1272,14 @@ class AppConfig:
         # 还有 sleep 重试），放线程里跑，别让事件循环跟着等。
         script_data_dir = Path.cwd() / f"data/{uid}"
         if script_data_dir.exists():
-            await asyncio.to_thread(force_rmtree, script_data_dir)
+            await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
         # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
         # 快照），所以这里单独删。
         from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
 
         embedded_copy = embedded_project_dir(str(uid))
         if embedded_copy.exists():
-            await asyncio.to_thread(force_rmtree, embedded_copy)
+            await asyncio.to_thread(_utils_io.force_rmtree, embedded_copy)
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1588,7 +1574,7 @@ class AppConfig:
                 await ensure_user_config_dir(
                     script_id=script_id,
                     user_id=str(uid),
-                    base=str(config.Info.Base or BASE_SHARED),
+                    base=str(config.Info.Base or _utils_constants.BASE_SHARED),
                 )
             except Exception:
                 # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
@@ -1841,9 +1827,9 @@ class AppConfig:
             RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
         """
 
-        from app.utils.config_archive import config_root_key
+        from app.utils import config_archive as _utils_config_archive
 
-        key = config_root_key(root)
+        key = _utils_config_archive.config_root_key(root)
         for script_config in self.ScriptConfig.values():
             if (
                 not isinstance(script_config, ZzzOdConfig)
@@ -1851,7 +1837,10 @@ class AppConfig:
             ):
                 continue
             script_root = str(script_config.Info.RootPath or "").strip()
-            if script_root and config_root_key(script_root) == key:
+            if (
+                script_root
+                and _utils_config_archive.config_root_key(script_root) == key
+            ):
                 raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
 
     async def clean_zzzod_slots(self, script_id: str) -> list[int]:
@@ -1943,7 +1932,7 @@ class AppConfig:
         from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
         from app.task.ZzzOd.tools import restore_recycle_slot
         from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
-        from app.utils.config_archive import get_backup_dir
+        from app.utils import config_archive as _utils_config_archive
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
@@ -1954,7 +1943,12 @@ class AppConfig:
             raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
         # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
         # 条目不对就留下一个没内容的半成品用户
-        if get_backup_dir(recycle_backup_root(root, slot_idx), ts) is None:
+        if (
+            _utils_config_archive.get_backup_dir(
+                recycle_backup_root(root, slot_idx), ts
+            )
+            is None
+        ):
             raise ValueError(f"备份不存在: {ts}")
 
         created_uid: uuid.UUID | None = None
@@ -2361,8 +2355,7 @@ class AppConfig:
             restore_mas_backup,
             restore_onedragon_backup,
         )
-        from app.utils.config_archive import dir_files
-        from app.utils.io import read_dict_file
+        from app.utils import config_archive as _utils_config_archive
 
         _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
 
@@ -2376,7 +2369,7 @@ class AppConfig:
                 raise ValueError(f"备份不存在: {ts}")
             backup_idxs = {
                 int(rel.split("/", 1)[0])
-                for rel in dir_files(backup_dir)
+                for rel in _utils_config_archive.dir_files(backup_dir)
                 if "/" in rel
                 and rel.split("/", 1)[0].isascii()
                 and rel.split("/", 1)[0].isdigit()
@@ -2413,13 +2406,15 @@ class AppConfig:
             read_game(backup_dir)
             backup_apps = normalize_app_group_entries(read_app_group(backup_dir))
             read_team_list(backup_dir)
-            backup_info = read_dict_file(
+            backup_info = _utils_io.read_dict_file(
                 backup_dir / MAS_USER_INFO_FILE, allow_empty=True
             )
             # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
             if "Mode" in backup_info and "Base" not in backup_info:
-                backup_info["Base"] = normalize_base_source(backup_info.pop("Mode"))
-        except ConfigCorruptedError as exc:
+                backup_info["Base"] = _utils_constants.normalize_base_source(
+                    backup_info.pop("Mode")
+                )
+        except _utils_io.ConfigCorruptedError as exc:
             raise ValueError(f"备份内容已损坏，无法恢复：{exc}") from exc
         # 恢复守卫：目标槽必须仍归本用户或空闲，被其他实体占用则拦截并点名，
         # 避免把别人的槽内容覆盖掉（覆盖前也不归档他人内容）。注册表损坏时
@@ -2427,7 +2422,7 @@ class AppConfig:
         # （用户已确认，覆盖前 restore_mas_backup 内部仍会强制存底）
         try:
             occupant = self._zzzod_slot_occupant(root, script_id, uid, slot)
-        except ConfigCorruptedError:
+        except _utils_io.ConfigCorruptedError:
             if not force:
                 raise
             occupant = None
@@ -2447,7 +2442,7 @@ class AppConfig:
             read_game_account(slot_dir)
             read_game(slot_dir)
             read_app_group(slot_dir)
-        except ConfigCorruptedError:
+        except _utils_io.ConfigCorruptedError:
             if not force:
                 raise
             materialize_current = False
@@ -2760,17 +2755,20 @@ class AppConfig:
         """
 
         from app.task.ZzzOd.tools import read_native_registry
-        from app.utils.config_archive import config_root_key
+        from app.utils import config_archive as _utils_config_archive
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
-        key = config_root_key(root)
+        key = _utils_config_archive.config_root_key(root)
         for script_uid, script_config in self.ScriptConfig.items():
             if not isinstance(script_config, ZzzOdConfig):
                 continue
             if exclude_same_script and str(script_uid) == script_id:
                 continue
             script_root = str(script_config.Info.RootPath or "").strip()
-            if not script_root or config_root_key(script_root) != key:
+            if (
+                not script_root
+                or _utils_config_archive.config_root_key(script_root) != key
+            ):
                 continue
             script_name = str(script_config.Info.Name or "未知脚本")
             for other_uid, cfg in script_config.UserData.items():
@@ -2941,7 +2939,6 @@ class AppConfig:
             read_game_account,
             read_team_list,
         )
-        from app.utils.io import read_dict_file
 
         # 脚本安装根目录（onedragon/mas 两条分支都要用：实例名书、槽目录）
         root = self._zzzod_root(self._zzzod_script_config(script_id))
@@ -2972,7 +2969,7 @@ class AppConfig:
                 backup_idx_dir = backup / str(idx)
                 try:
                     account = read_game_account(backup_idx_dir)
-                except ConfigCorruptedError as exc:
+                except _utils_io.ConfigCorruptedError as exc:
                     warnings.append(
                         f"原生备份实例 {idx:02d} 账号配置损坏，无法预览：{exc}"
                     )
@@ -2981,7 +2978,7 @@ class AppConfig:
                 task_fields = []
                 try:
                     app_group = read_app_group(backup_idx_dir)
-                except ConfigCorruptedError as exc:
+                except _utils_io.ConfigCorruptedError as exc:
                     warnings.append(
                         f"原生备份实例 {idx:02d} 任务编排损坏，无法预览：{exc}"
                     )
@@ -3031,24 +3028,26 @@ class AppConfig:
         warnings: list[str] = []
         info: dict = {}
         try:
-            info = read_dict_file(backup / MAS_USER_INFO_FILE, allow_empty=True)
+            info = _utils_io.read_dict_file(
+                backup / MAS_USER_INFO_FILE, allow_empty=True
+            )
             # 旧归档的信息快照键是 Info.Mode（现 Info.Base），读入时归一
             if "Mode" in info and "Base" not in info:
-                info["Base"] = normalize_base_source(info.pop("Mode"))
-        except ConfigCorruptedError as exc:
+                info["Base"] = _utils_constants.normalize_base_source(info.pop("Mode"))
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份信息快照损坏，无法恢复：{exc}")
         account: dict = {}
         try:
             account = read_game_account(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份账号配置损坏，无法恢复：{exc}")
         try:
             read_game(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份启动参数损坏，无法恢复：{exc}")
         try:
             read_team_list(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份编队配置损坏，无法恢复：{exc}")
 
         info_fields = []
@@ -3074,7 +3073,7 @@ class AppConfig:
         app_group: list = []
         try:
             app_group = read_app_group(backup)
-        except ConfigCorruptedError as exc:
+        except _utils_io.ConfigCorruptedError as exc:
             warnings.append(f"备份任务编排损坏，无法恢复：{exc}")
         tasks = []
         for item in app_group:
@@ -3255,7 +3254,10 @@ class AppConfig:
     # ════════════ 配置恢复（宿主注入池解析，门面绑定上下文） ════════════
 
     def set_restore_pool_resolver(
-        self, resolver: Callable[["ConfigEntry"], list["ConfigRestorePool"]]
+        self,
+        resolver: Callable[
+            ["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]
+        ],
     ) -> None:
         """由宿主装配恢复池解析函数，绑定仅作用于当前配置实例。"""
 
@@ -3263,7 +3265,7 @@ class AppConfig:
 
     def restore_service(
         self, script_id: str, user_id: str, *, force: bool = False
-    ) -> "ConfigRestoreService":
+    ) -> "_utils_config_restore.ConfigRestoreService":
         """通过注入的解析函数取得恢复池，绑定上下文构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），由宿主
@@ -3271,14 +3273,14 @@ class AppConfig:
         （当前仅 ZzzOd 消费）。
         """
 
-        from app.utils.config_restore import RestoreContext, build_restore_service
+        from app.utils import config_restore as _utils_config_restore
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if self._restore_pool_resolver is None:
             raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
         pools = self._restore_pool_resolver(script_config)
-        return build_restore_service(
-            RestoreContext(
+        return _utils_config_restore.build_restore_service(
+            _utils_config_restore.RestoreContext(
                 config=self,
                 script_config=script_config,
                 script_id=script_id,
@@ -3386,22 +3388,30 @@ class AppConfig:
         # ZzzOd 切到原生来源时同步清空任务编排残留：原生来源不消费 AppList，残留
         # 会让注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）。
         if isinstance(script_config, (ZzzOdConfig, MaaConfig, SrcConfig)):
-            new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
+            new_base = _utils_constants.normalize_base_source(
+                data.get("Info", {}).get("Base", "")
+            )
             # 仅 ZzzOd 需要清空任务编排残留: 原生来源不消费 AppList, 残留会让
             # 注入名单误把原生来源用户卷入多账号运行（原生来源=MAS 零注入零干涉）
-            if new_base == BASE_NATIVE and isinstance(script_config, ZzzOdConfig):
+            if new_base == _utils_constants.BASE_NATIVE and isinstance(
+                script_config, ZzzOdConfig
+            ):
                 data.setdefault("OneDragon", {})["AppList"] = "[]"
                 # 快速配置已封锁（覆盖写槽与原生来源零写入相悖，维护者决策）：
                 # 切到原生来源时同步归关，免得界面隐藏的开关残留旧值
                 data.setdefault("Info", {})["IfQuickConfig"] = False
             if (
-                new_base == BASE_NATIVE
-                and normalize_base_source(user_config.Info.Base or BASE_INDEPENDENT)
-                != BASE_NATIVE
+                new_base == _utils_constants.BASE_NATIVE
+                and _utils_constants.normalize_base_source(
+                    user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
+                )
+                != _utils_constants.BASE_NATIVE
                 and any(
                     (
-                        normalize_base_source(cfg.Info.Base or BASE_INDEPENDENT)
-                        == BASE_NATIVE
+                        _utils_constants.normalize_base_source(
+                            cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
+                        )
+                        == _utils_constants.BASE_NATIVE
                         for uid, cfg in script_config.UserData.items()
                         if uid != user_uid
                     )
@@ -3493,7 +3503,7 @@ class AppConfig:
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
         # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
         # 静默残留会让随后的覆盖写入抛 PermissionError。
-        force_rmtree(target_config_dir)
+        _utils_io.force_rmtree(target_config_dir)
         target_config_dir.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 
@@ -3530,7 +3540,7 @@ class AppConfig:
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
         if user_data_dir.exists():
-            await asyncio.to_thread(force_rmtree, user_data_dir)
+            await asyncio.to_thread(_utils_io.force_rmtree, user_data_dir)
 
     async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
         """获取用户配置目录, 不存在时创建"""
@@ -3985,7 +3995,7 @@ class AppConfig:
 
         logger.debug("获取工具设置")
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         if self._game_sign_result_date != today:
             self.ToolsConfig._game_sign_result_data = {}
             self._game_sign_result_date = today
@@ -4004,7 +4014,7 @@ class AppConfig:
 
         from app.tools.community_sign_provider import merge_community_sign_results
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         existing = (
             self.ToolsConfig._game_sign_result_data
             if self._game_sign_result_date == today
@@ -4067,7 +4077,7 @@ class AppConfig:
                     existing_names.append(account.GameSignAccount.Name)
                 except (AttributeError, KeyError):
                     continue
-            account_name = next_community_account_name(existing_names)
+            account_name = _utils_community.next_community_account_name(existing_names)
             uid = self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
             await self.ToolsConfig.GameSign_Accounts.commit()
             config = self.ToolsConfig.GameSign_Accounts[uid]
@@ -4082,7 +4092,7 @@ class AppConfig:
     def _clear_game_sign_account_results(self, account_id: str) -> None:
         """清除指定游戏社区账号的结果。"""
 
-        today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
+        today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         result = self.ToolsConfig._game_sign_result_data
         if getattr(self, "_game_sign_result_date", today) != today:
             result.clear()
@@ -4141,7 +4151,9 @@ class AppConfig:
                 type(account).model_validate(
                     {
                         "GameSignAccount": {
-                            "LastSignDate": datetime(2000, 1, 1, tzinfo=UTC8)
+                            "LastSignDate": datetime(
+                                2000, 1, 1, tzinfo=_utils_constants.UTC8
+                            )
                         }
                     }
                 ),
@@ -4390,7 +4402,9 @@ class AppConfig:
 
         from app.core.history import history_store
 
-        users = await history_store.get_overview(day=datetime.now(tz=UTC4).date())
+        users = await history_store.get_overview(
+            day=datetime.now(tz=_utils_constants.UTC4).date()
+        )
         return {
             username: {
                 "LastProxyDate": (
@@ -4415,7 +4429,7 @@ class AppConfig:
         for uid, script in self.ScriptConfig.items():
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                    "label": f"{_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
                     "value": str(uid),
                 }
             )
@@ -4434,7 +4448,7 @@ class AppConfig:
             if not script.is_locked:
                 data.append(
                     {
-                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
+                        "label": f"脚本 - {_utils_constants.TYPE_BOOK[type(script).__name__]} - {script.Info.Name}",
                         "value": str(uid),
                     }
                 )
@@ -5197,9 +5211,7 @@ class AppConfig:
         if path is None or not path.is_file():
             return True
         try:
-            from app.utils.io import read_dict_file
-
-            data = read_dict_file(path, allow_empty=True)
+            data = _utils_io.read_dict_file(path, allow_empty=True)
         except (OSError, ValueError):
             return False
         return not bool(data.get("order"))

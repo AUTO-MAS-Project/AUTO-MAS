@@ -41,7 +41,7 @@ from app.models.notification_channel import DispatchResult
 from app.models.notification_report import ReportScreenshot
 from app.models.task import TaskItem
 from app.utils import get_logger
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 logger = get_logger("任务通知核心")
 
@@ -60,7 +60,9 @@ def user_statistics_text(message: dict) -> str:
 def build_user_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
     """构造含用户信息的简单统计通知。"""
 
-    message_html = deferred_notification_template("general_statistics.html", message)
+    message_html = _utils_notification_template.deferred_notification_template(
+        "general_statistics.html", message
+    )
     return NotifyPayload(
         title=title,
         text=user_statistics_text(message),
@@ -73,7 +75,9 @@ def build_script_statistics_payload(
 ) -> NotifyPayload:
     """构造使用专项结果标签的简单统计通知，沿用末尾两次换行。"""
 
-    message_html = deferred_notification_template("general_statistics.html", message)
+    message_html = _utils_notification_template.deferred_notification_template(
+        "general_statistics.html", message
+    )
     return NotifyPayload(
         title=title,
         text=(

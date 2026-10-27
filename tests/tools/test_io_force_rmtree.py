@@ -10,7 +10,7 @@ import os
 import stat
 from pathlib import Path
 
-from app.utils.io import force_rmtree, replace_dir
+from app.utils import io as _utils_io
 
 
 def _write_readonly(path: Path) -> None:
@@ -29,7 +29,7 @@ def test_removes_tree_containing_readonly_files(tmp_path: Path) -> None:
         _write_readonly(pack_dir / f"pack-aabb.{suffix}")
     (tmp_path / "configs" / "Basic Options.json").write_text("{}", encoding="utf-8")
 
-    force_rmtree(tmp_path / "configs")
+    _utils_io.force_rmtree(tmp_path / "configs")
 
     assert not (tmp_path / "configs").exists()
 
@@ -37,8 +37,8 @@ def test_removes_tree_containing_readonly_files(tmp_path: Path) -> None:
 def test_missing_path_is_a_noop(tmp_path: Path) -> None:
     """路径不存在时不抛异常，重复调用幂等。"""
 
-    force_rmtree(tmp_path / "not-exists")
-    force_rmtree(tmp_path / "not-exists")
+    _utils_io.force_rmtree(tmp_path / "not-exists")
+    _utils_io.force_rmtree(tmp_path / "not-exists")
 
     assert not (tmp_path / "not-exists").exists()
 
@@ -54,7 +54,7 @@ def test_replace_dir_overwrites_readonly_target(tmp_path: Path) -> None:
     (dst / "user.json").write_text('{"a": 999}', encoding="utf-8")
     (src / "user.json").write_text('{"a": 1}', encoding="utf-8")
 
-    replace_dir(src, dst)
+    _utils_io.replace_dir(src, dst)
 
     assert (dst / "user.json").read_text(encoding="utf-8") == '{"a": 1}'
     assert not (tmp_path / "configs.tmp").exists()
@@ -72,7 +72,7 @@ def test_replace_dir_restores_when_target_still_held(tmp_path: Path) -> None:
     (dst / "held.bin").write_bytes(b"x" * 64)
 
     with (dst / "held.bin").open("rb"):
-        replace_dir(src, dst)
+        _utils_io.replace_dir(src, dst)
 
         # 关键断言：不是「删了一半、备份一个没拷回」
         assert (dst / "user.json").exists()
@@ -86,6 +86,6 @@ def test_replace_dir_creates_missing_target(tmp_path: Path) -> None:
     src.mkdir()
     (src / "user.json").write_text("{}", encoding="utf-8")
 
-    replace_dir(src, tmp_path / "brand-new")
+    _utils_io.replace_dir(src, tmp_path / "brand-new")
 
     assert (tmp_path / "brand-new" / "user.json").exists()

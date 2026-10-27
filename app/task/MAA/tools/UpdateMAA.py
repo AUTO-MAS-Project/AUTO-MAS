@@ -25,7 +25,7 @@ from pathlib import Path
 
 from app.services import System
 from app.utils import ProcessRunner, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from ..base_preset import ensure_maa_default_configuration
 from .native_config import maa_scheme_name
@@ -44,14 +44,14 @@ async def update_maa(maa_path: Path):
 
     # NEW: Update.UpdatePackage 优先生效
     try:
-        new_set = read_file(maa_path / "config/gui.new.json")
+        new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
         maa_update_package = new_set.get("Update", {}).get("UpdatePackage", "")
     except json.JSONDecodeError:
         maa_update_package = ""
     # OLD: Global.VersionUpdate.package
     if not maa_update_package:
         try:
-            old_set = read_file(maa_path / "config/gui.json")
+            old_set = _utils_io.read_file(maa_path / "config/gui.json")
             maa_update_package = old_set.get("Global", {}).get(
                 "VersionUpdate.package", ""
             )
@@ -66,7 +66,7 @@ async def update_maa(maa_path: Path):
             "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
         )
 
-    maa_new_set = read_file(maa_path / "config/gui.new.json")
+    maa_new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
     active_scheme = maa_scheme_name(maa_new_set)
     original_default = None
     if active_scheme != "Default":
@@ -122,7 +122,7 @@ async def update_maa(maa_path: Path):
             configurations["Default"] = original_default
         maa_new_set["Current"] = active_scheme
 
-    write_file(maa_path / "config/gui.new.json", maa_new_set)
+    _utils_io.write_file(maa_path / "config/gui.new.json", maa_new_set)
 
     try:
         await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=60)

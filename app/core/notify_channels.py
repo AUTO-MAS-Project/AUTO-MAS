@@ -224,10 +224,9 @@ def create_notification_service(
     system_notify = None
     if "system" in registry.by_id:
         try:
-            from plyer import notification
+            from app.utils import notification
 
-            # 在事件循环线程解析 plyer 的惰性后端，再交给工作线程调用。
-            system_notify = notification.notify
+            system_notify = notification.prepare_sender()
         except Exception as exc:
             get_logger("通知服务").warning(f"系统通知依赖不可用: {type(exc).__name__}")
 
@@ -242,9 +241,9 @@ def create_notification_service(
         return connect(*args, **kwargs)
 
     def websocket_manager() -> Any:
-        from app.utils.websocket import WSClientManager
+        from app.utils import websocket as _utils_websocket
 
-        return WSClientManager()
+        return _utils_websocket.WSClientManager()
 
     runtime_config = RuntimeConfigView(
         config.setting,

@@ -30,9 +30,8 @@ import psutil
 
 from app.core.ws import MainConnection, Publisher, protocol
 from app.models.schema import PowerCountdownSnapshot, WSPowerCountdownData
-from app.utils import LazyProxy, get_logger
-from app.utils.environment import is_development_environment
-from app.utils.platform.process import platform_process
+from app.utils import LazyProxy, get_logger, process_platform
+from app.utils import environment as _utils_environment
 
 from .platform.power import power
 from .platform.startup import startup
@@ -97,7 +96,7 @@ class _SystemHandler:
         """设置程序开机自启。"""
 
         # 开发环境不管理需要提权的开机自启任务计划
-        if is_development_environment():
+        if _utils_environment.is_development_environment():
             return
         if not startup.supported:
             # 同上, 启动流程会无条件调用, 记录后跳过
@@ -318,9 +317,9 @@ class _SystemHandler:
         不拦住电源操作。
         """
         try:
-            from app.utils.emulator2.avd import service as avd_service
+            from app.utils import emulator2 as _utils_emulator2
 
-            await avd_service.close_running_instances()
+            await _utils_emulator2.avd.service.close_running_instances()
         except Exception as e:  # noqa: BLE001 - 关不掉也要继续关机
             logger.warning(f"关闭魔改 AVD 实例失败，继续电源操作: {e}")
 
@@ -416,7 +415,9 @@ class _SystemHandler:
         """
 
         logger.info(f"开始中止进程 PID: {pid}")
-        succeeded, reason = await platform_process.kill_process(pid, kill_tree)
+        succeeded, reason = await process_platform.platform_process.kill_process(
+            pid, kill_tree
+        )
         if not succeeded:
             if not psutil.pid_exists(pid):
                 logger.info(f"进程已自行退出 PID: {pid}")

@@ -43,7 +43,7 @@ from typing import Any
 
 from app.models.schema import WSMaaFWProjectUpdateProgressData
 from app.task.MaaFW.tools.core.project_update.timing import format_duration
-from app.utils.security import sanitize_log_message
+from app.utils import sanitize_log_message
 
 STATUS_RUNNING = "running"
 STATUS_SUCCESS = "success"

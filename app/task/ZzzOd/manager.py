@@ -29,8 +29,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.task.manager_base import ScriptManagerBase
 from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
-from app.utils import get_logger
-from app.utils.constants import BASE_NATIVE, TASK_MODE_ZH
+from app.utils import BASE_NATIVE, TASK_MODE_ZH, get_logger
 
 from .AutoProxy import AutoProxyTask, find_launcher_exe
 from .ScriptConfig import ScriptConfigTask

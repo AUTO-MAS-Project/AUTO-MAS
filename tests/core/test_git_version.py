@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.core import Config
-from app.utils.paths import SOURCE_ROOT
+from app.utils import paths as _utils_paths
 
 EXPECTED_COMMIT = "0123456789abcdef0123456789abcdef01234567"
 COMMIT_TIME = datetime(2026, 9, 1, 12, 0, 0)
@@ -93,7 +93,7 @@ class GetRepoTest(unittest.TestCase):
         finally:
             Config._repo, Config._repo_initialized = saved
 
-        fake_git.Repo.assert_called_once_with(SOURCE_ROOT)
+        fake_git.Repo.assert_called_once_with(_utils_paths.SOURCE_ROOT)
 
 
 if __name__ == "__main__":

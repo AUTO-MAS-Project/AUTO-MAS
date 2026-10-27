@@ -50,9 +50,8 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
-from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
-from app.utils.constants import UTC4
-from app.utils.update_files import directory_lock
+from app.utils import UTC4, LogMonitor, ProcessManager, compile_log_signs, get_logger
+from app.utils import update_files as _utils_update_files
 
 from .tools import (
     BAAH_PUSH_RULES,
@@ -589,7 +588,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         """
 
         # 不同 MAS 托管可指向同一安装；软件配置也共享，按真实安装目录串行。
-        async with directory_lock(self.root_path.resolve()):
+        async with _utils_update_files.directory_lock(self.root_path.resolve()):
             await self._run_once_locked()
 
     async def _run_once_locked(self) -> None:

@@ -58,9 +58,8 @@ from PIL import Image
 from app.services.endfield_launcher import launcher_root
 from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
-from app.utils import get_logger
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform.display import per_monitor_dpi as _per_monitor_dpi
+from app.utils import IS_WINDOWS, get_logger
+from app.utils import display as _utils_display
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -356,7 +355,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd)
         width, height = _client_size(hwnd)
@@ -395,7 +394,7 @@ def _click_box(
 ) -> None:
     """点击 1080p 坐标空间中的一个文字框中心。"""
     _pause(0, stop_event)
-    with _per_monitor_dpi():
+    with _utils_display.per_monitor_dpi():
         if activate:
             _activate_window(hwnd, stop_event=stop_event)
         width, height = _client_size(hwnd)

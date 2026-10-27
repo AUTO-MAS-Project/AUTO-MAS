@@ -17,7 +17,7 @@ from urllib.parse import quote
 import httpx
 from packaging import version
 
-from app.utils.constants import MIRROR_ERROR_INFO
+from app.utils import MIRROR_ERROR_INFO
 
 from ..interface.models import MaaFWInterface
 from ..log_redact import mask_home_path

@@ -33,8 +33,8 @@ from typing import Any
 import aiofiles
 import httpx
 
-from app.utils.constants import MIRROR_ERROR_INFO
-from app.utils.update_files import file_size, native_path
+from app.utils import MIRROR_ERROR_INFO
+from app.utils import update_files as _utils_update_files
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
 
@@ -208,7 +208,7 @@ _DOWNLOAD_CHUNK = 1024**2
 
 def _hash_prefix(digest: Any, path: Path, limit: int) -> None:
     """续传前把已有字节计入调用方的摘要，不读取前缀之外的内容。"""
-    with open(native_path(path), "rb") as handle:
+    with open(_utils_update_files.native_path(path), "rb") as handle:
         remaining = limit
         while remaining:
             block = handle.read(min(16 * _DOWNLOAD_CHUNK, remaining))
@@ -236,7 +236,7 @@ async def download_resumable(
     416），只能整份重来。实收超过期望值直接判废，不写进盘：磁盘门按声明体积留的余量，
     超发会把那份余量吃穿、把问题转成落地的 OSError。
     """
-    done = max(file_size(destination), 0)
+    done = max(_utils_update_files.file_size(destination), 0)
     if done >= expected_size:
         destination.unlink(missing_ok=True)
         done = 0
@@ -252,7 +252,7 @@ async def download_resumable(
             await asyncio.to_thread(_hash_prefix, digest, destination, done)
         destination.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(
-            native_path(destination), "ab" if append else "wb"
+            _utils_update_files.native_path(destination), "ab" if append else "wb"
         ) as sink:
             async for block in response.aiter_bytes(_DOWNLOAD_CHUNK):
                 if not block:
@@ -340,7 +340,9 @@ async def download_range(
 ) -> int:
     """将指定字节范围流式写到文件，返回接收量；不负责解压与校验。"""
     received = 0
-    async with aiofiles.open(native_path(destination), "wb") as sink:
+    async with aiofiles.open(
+        _utils_update_files.native_path(destination), "wb"
+    ) as sink:
         async with aclosing(
             _range_blocks(client, url, offset, length, timeout)
         ) as blocks:

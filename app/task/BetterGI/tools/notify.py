@@ -21,7 +21,7 @@ from datetime import datetime
 from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import user_statistics_text
 from app.tools.push_log import render_aggregate_push_log
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 from .drop_statistics import format_drop_statistics
 from .push_log import steps_to_push_log
@@ -105,7 +105,9 @@ def build_statistics_payload(*, title: str, message: dict) -> NotifyPayload:
     )
     # 完整版：4 字段 + 「一条龙分步执行」+ 掉落统计
     message_text_full = f"{message_text}{steps_text}{drops_text}"
-    message_html = deferred_notification_template("general_statistics.html", message)
+    message_html = _utils_notification_template.deferred_notification_template(
+        "general_statistics.html", message
+    )
 
     return NotifyPayload(
         title=title,

@@ -66,7 +66,7 @@ from app.services.notification import Notification
 from app.services.notification_dispatch import dispatch as dispatch_notification
 from app.services.notification_rendering import AsyncNotificationRenderer
 from app.utils import get_logger
-from app.utils.notification_template import deferred_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 if TYPE_CHECKING:
     from app.core.config import AppConfig
@@ -507,7 +507,7 @@ class HostNotificationService:
             NotifyPayload(
                 title=title,
                 text=message_text,
-                html=deferred_notification_template(
+                html=_utils_notification_template.deferred_notification_template(
                     result_template, report.template_context()
                 ),
                 signature_sep=signature_sep,

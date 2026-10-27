@@ -36,7 +36,7 @@ from typing import Any, Mapping
 import httpx
 
 from app.utils import get_logger
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 from .types import (
     CultivateDataSet,
@@ -953,7 +953,7 @@ async def _load_operator_catalog(
     path = snapshot_path(cache_dir)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        write_file(path, payload)
+        _utils_io.write_file(path, payload)
     except OSError:
         pass  # 目录只是缓存，写失败不影响本次返回
     return catalog
@@ -987,7 +987,7 @@ def write_snapshot(cache_dir: Path, dataset: CultivateDataSet) -> None:
         payload = snapshot if isinstance(snapshot, dict) else {}
         payload["saved_at"] = time.time()
         payload["dataset"] = dataset_to_json(dataset)
-        write_file(path, payload)
+        _utils_io.write_file(path, payload)
     except OSError:
         pass
 

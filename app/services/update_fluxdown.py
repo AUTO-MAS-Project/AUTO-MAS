@@ -47,18 +47,8 @@ from app.core import Config
 from app.models.config.setting import FluxdownRecord
 from app.services.update_transport import DownloadProgress
 from app.services.update_transport import download_file as _httpx_download
-from app.utils.fluxdown_cli import (
-    FluxdownCancelUnconfirmed,
-    FluxdownDownloadRecord,
-    fluxdown_download,
-    fluxdown_find_cli,
-    fluxdown_server_available,
-    fluxdown_server_download,
-    fluxdown_server_forget,
-    fluxdown_server_mark_failure,
-    fluxdown_server_task_safe_to_overwrite,
-)
-from app.utils.logger import get_logger
+from app.utils import fluxdown_cli as _utils_fluxdown_cli
+from app.utils import get_logger
 
 logger = get_logger("FluxDown")
 
@@ -109,7 +99,9 @@ async def download_file(
         # 无论是显式选内置还是配置默认走内置，只要此前可能经 FluxDown 下载过
         # 同一 (url, destination)，都需先确认旧 server 任务已停止再覆写；
         # 显式内置成功后再清理映射，避免残留任务在下次同 url 下载时被无谓 resume
-        cli = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
+        cli = _utils_fluxdown_cli.fluxdown_find_cli(
+            str(Config.setting.Update.FluxdownPath or "")
+        )
         if cli is not None:
             await _ensure_can_downgrade(
                 cli,
@@ -126,14 +118,16 @@ async def download_file(
             # 用户多次失败后显式选择 httpx 并下载成功：清掉 FluxDown 任务映射,
             # 避免残留任务在下次同 url 下载时被无谓 resume
             if cli is not None:
-                fluxdown_server_forget(cli, url, destination)
+                _utils_fluxdown_cli.fluxdown_server_forget(cli, url, destination)
                 logger.info(
                     "已按用户选择使用内置 httpx 完成下载,清理 FluxDown 任务映射"
                 )
         return size
 
     # ---- FluxDown 路径 ----
-    cli_path = fluxdown_find_cli(str(Config.setting.Update.FluxdownPath or ""))
+    cli_path = _utils_fluxdown_cli.fluxdown_find_cli(
+        str(Config.setting.Update.FluxdownPath or "")
+    )
     if cli_path is None:
         # CLI 不存在 → 回退 httpx
         logger.warning("未找到 FluxDown CLI,回退内置 httpx 下载")
@@ -145,7 +139,7 @@ async def download_file(
         return await _download_via_fluxdown(
             url, destination, cli_path, timeout, proxy, progress
         )
-    except FluxdownCancelUnconfirmed:
+    except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
         # 取消时无法确认 FluxDown 任务已停止：文件所有权不明，绝不能回退 httpx
         # 覆写同一目标，原样抛给上层显式报告失败并保留映射待续传
         raise
@@ -166,7 +160,7 @@ async def download_file(
             action="回退内置 httpx",
         )
         await _append_history(
-            FluxdownDownloadRecord(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
                 url=url,
                 destination=str(destination),
                 size=0,
@@ -203,9 +197,11 @@ async def _download_via_fluxdown(
     proxy_str = _proxy_to_str(proxy)
     server_on = bool(Config.setting.Update.FluxdownServerMode)
 
-    if server_on and fluxdown_server_available(cli_path, enabled=True):
+    if server_on and _utils_fluxdown_cli.fluxdown_server_available(
+        cli_path, enabled=True
+    ):
         try:
-            size, record = await fluxdown_server_download(
+            size, record = await _utils_fluxdown_cli.fluxdown_server_download(
                 url,
                 destination,
                 cli_exe=cli_path,
@@ -216,9 +212,9 @@ async def _download_via_fluxdown(
             )
             await _append_history(record)
             # 下载成功 → 清映射（MAS 后续哈希校验如失败会重下，重新 add）
-            fluxdown_server_forget(cli_path, url, destination)
+            _utils_fluxdown_cli.fluxdown_server_forget(cli_path, url, destination)
             return size
-        except FluxdownCancelUnconfirmed:
+        except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
             # 不能按"普通进程异常"降级 --local：daemon 可能仍在写目标文件
             raise
         except Exception as exc:
@@ -254,7 +250,9 @@ async def _download_via_fluxdown(
             else:
                 # 任务级失败（超时/断网/任务 failed/add probe 失败）→ 保留映射，抛可续传错误；
                 # 累计中断次数，达到阈值后在错误信息里建议改用内置 httpx
-                count = fluxdown_server_mark_failure(cli_path, url, destination)
+                count = _utils_fluxdown_cli.fluxdown_server_mark_failure(
+                    cli_path, url, destination
+                )
                 hint = (
                     "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
                     if count >= _RESUMABLE_HINT_THRESHOLD
@@ -265,7 +263,7 @@ async def _download_via_fluxdown(
                 )
                 # 中断也记入历史（status=interrupted），成功续传后会有对应 success 记录
                 await _append_history(
-                    FluxdownDownloadRecord(
+                    _utils_fluxdown_cli.FluxdownDownloadRecord(
                         url=url,
                         destination=str(destination),
                         size=0,
@@ -291,7 +289,7 @@ async def _download_via_fluxdown(
         proxy_str=proxy_str,
         action="降级 --local 一次性下载",
     )
-    size, record = await fluxdown_download(
+    size, record = await _utils_fluxdown_cli.fluxdown_download(
         url,
         destination,
         cli_exe=cli_path,
@@ -312,7 +310,10 @@ async def _can_downgrade(cli_path: Path, url: str, destination: Path) -> bool:
     同一目标时启动第二个写入者。
     """
     return await asyncio.to_thread(
-        fluxdown_server_task_safe_to_overwrite, cli_path, url, destination
+        _utils_fluxdown_cli.fluxdown_server_task_safe_to_overwrite,
+        cli_path,
+        url,
+        destination,
     )
 
 
@@ -326,7 +327,7 @@ async def _block_downgrade(
     detail: str,
 ) -> None:
     """任务未确认停止：记一次失败、留中断记录并抛可续传错误，禁止启动新写入者。"""
-    count = fluxdown_server_mark_failure(cli_path, url, destination)
+    count = _utils_fluxdown_cli.fluxdown_server_mark_failure(cli_path, url, destination)
     hint = (
         "；已多次重试仍失败，可在设置中将下载器改为内置（httpx）后重试"
         if count >= _RESUMABLE_HINT_THRESHOLD
@@ -334,7 +335,7 @@ async def _block_downgrade(
     )
     logger.warning(f"server 任务未确认停止（第 {count} 次）, 保留映射待续传: {detail}")
     await _append_history(
-        FluxdownDownloadRecord(
+        _utils_fluxdown_cli.FluxdownDownloadRecord(
             url=url,
             destination=str(destination),
             size=0,
@@ -393,7 +394,7 @@ def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
 _HISTORY_LOCK = threading.Lock()
 
 
-async def _append_history(record: FluxdownDownloadRecord) -> None:
+async def _append_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> None:
     """把下载记录追加到 Update.LastUpdateHistory，保留最近 50 条。
 
     配置模型返回内部列表引用：必须先复制再追加，否则原地 append 后

@@ -37,8 +37,8 @@ from pydantic import (
 from app.core import Config
 from app.models.schema import OutBase, UpdateDownloadSnapshot
 from app.services import Updater
+from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
-from app.utils.fluxdown_cli import fluxdown_detect
 
 
 class UpdateCheckIn(BaseModel):
@@ -246,7 +246,9 @@ async def detect_fluxdown() -> FluxdownDetectOut:
 
     try:
         configured = str(Config.setting.Update.FluxdownPath or "")
-        result = await asyncio.to_thread(fluxdown_detect, configured)
+        result = await asyncio.to_thread(
+            _utils_fluxdown_cli.fluxdown_detect, configured
+        )
         return FluxdownDetectOut(**result)
     except Exception as e:
         logger.opt(exception=True).warning(

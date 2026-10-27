@@ -44,11 +44,9 @@ import httpx
 import pyzipper
 
 from app.services import System
-from app.utils.game_update import GameUpdateResult, is_client_outdated
-from app.utils.hpatchz import ensure_hpatchz
-from app.utils.update_files import (
-    directory_lock,
-)
+from app.utils import game_update as _utils_game_update
+from app.utils import hpatchz as _utils_hpatchz
+from app.utils import update_files as _utils_update_files
 
 from .checks import (
     _check_baselines,
@@ -100,7 +98,7 @@ async def ensure_game_updated(
     time_limit_minutes: int,
     progress: ProgressFn | None = None,
     entry: str = "自动",
-) -> GameUpdateResult:
+) -> _utils_game_update.GameUpdateResult:
     """对外入口：跑一轮判定，并把开始、过程与结论都写进 `debug/app.log`。
 
     时限包住「核对基线 + 退出客户端 + 下载差量 + 落地」四段；进度行只往调度台推，同一行
@@ -112,12 +110,12 @@ async def ensure_game_updated(
         f"（限时 {time_limit_minutes} 分钟）"
     )
     outcome = ("已取消", "本轮更新被取消（用户点了停止，或看门狗下发了中止）")
-    lock = directory_lock(game_exe.parent)
+    lock = _utils_update_files.directory_lock(game_exe.parent)
     try:
         if lock.locked():
             # 同一目录上的第二轮只会跟第一轮互删暂存与分卷，这一轮不发起，也不排队等：
             # 一轮落地要几十分钟，排队会让调度轮和手动按钮一起挂住
-            result = GameUpdateResult(
+            result = _utils_game_update.GameUpdateResult(
                 "NeedManualUpdate",
                 "已有一轮终末地客户端更新正在这个目录上进行，本轮不再发起，"
                 "请等它结束后再运行",
@@ -142,7 +140,7 @@ async def _ensure_game_updated(
     *,
     time_limit_minutes: int,
     progress: ProgressFn | None,
-) -> GameUpdateResult:
+) -> _utils_game_update.GameUpdateResult:
     """检查并在需要时由 MAS 接管终末地 PC 客户端的差量更新。
 
     对外承诺不抛异常：判不了的走 `Skipped`（读不到本地版本、问不动服务端），确认要更新
@@ -152,7 +150,9 @@ async def _ensure_game_updated(
     """
 
     if not game_exe.is_file():
-        return GameUpdateResult("Skipped", f"未找到终末地客户端: {game_exe}")
+        return _utils_game_update.GameUpdateResult(
+            "Skipped", f"未找到终末地客户端: {game_exe}"
+        )
 
     install_dir = game_exe.parent
     identity = read_install_identity(install_dir)
@@ -175,8 +175,8 @@ async def _ensure_game_updated(
     if not identity.version:
         block = _half_landed_block(residual)
         if block is not None:
-            return GameUpdateResult("NeedManualUpdate", block)
-        return GameUpdateResult(
+            return _utils_game_update.GameUpdateResult("NeedManualUpdate", block)
+        return _utils_game_update.GameUpdateResult(
             "Skipped",
             f"读不到终末地客户端的版本号（{install_dir / _CONFIG_MEMBER}），跳过检查",
         )
@@ -185,8 +185,8 @@ async def _ensure_game_updated(
         _log_unknown_server(identity)
         block = _half_landed_block(residual)
         if block is not None:
-            return GameUpdateResult("NeedManualUpdate", block)
-        return GameUpdateResult("Skipped", UNKNOWN_SERVER_MESSAGE)
+            return _utils_game_update.GameUpdateResult("NeedManualUpdate", block)
+        return _utils_game_update.GameUpdateResult("Skipped", UNKNOWN_SERVER_MESSAGE)
 
     try:
         release = await _fetch_release(identity, preset=preset)
@@ -194,8 +194,8 @@ async def _ensure_game_updated(
         logger.warning(f"检查终末地客户端更新失败，跳过检查: {error}")
         block = _half_landed_block(residual)
         if block is not None:
-            return GameUpdateResult("NeedManualUpdate", block)
-        return GameUpdateResult(
+            return _utils_game_update.GameUpdateResult("NeedManualUpdate", block)
+        return _utils_game_update.GameUpdateResult(
             "Skipped", f"未能获取终末地客户端版本信息（{error}），跳过检查"
         )
 
@@ -208,12 +208,12 @@ async def _ensure_game_updated(
 
     latest = f"终末地客户端已是最新版本 {identity.version}"
 
-    def up_to_date(message: str) -> GameUpdateResult:
+    def up_to_date(message: str) -> _utils_game_update.GameUpdateResult:
         """不需要更新就顺手把残留清了：客户端已是目标版本，那份暂存再没有用处。"""
 
         if residual is not None:
             _clear_residual(install_dir)
-        return GameUpdateResult("UpToDate", message)
+        return _utils_game_update.GameUpdateResult("UpToDate", message)
 
     if identity.version == release.version:
         # 服务端给的差量卷可能是按别的基线算的：本地已是目标版就什么都不做，否则基线
@@ -221,14 +221,14 @@ async def _ensure_game_updated(
         return up_to_date(latest)
     if not release.parts:
         # 空差量段：要么已是最新，要么这条基线没有差量
-        if not is_client_outdated(identity.version, release.version):
+        if not _utils_game_update.is_client_outdated(identity.version, release.version):
             return up_to_date(latest)
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"终末地客户端版本落后（已安装 {identity.version}，最新 {release.version}），"
             f"但官方没有 {identity.version} 这一路的增量包，请用启动器手动更新一次",
         )
-    if not is_client_outdated(identity.version, release.version):
+    if not _utils_game_update.is_client_outdated(identity.version, release.version):
         logger.warning(
             f"服务端给出差量但本地版本不比它旧（本地 {identity.version}，"
             f"目标 {release.version}）"
@@ -273,7 +273,9 @@ async def _ensure_game_updated(
             "游戏目录（下载差量包）",
         )
         if short:
-            return GameUpdateResult("NeedManualUpdate", f"{outdated}，{short}")
+            return _utils_game_update.GameUpdateResult(
+                "NeedManualUpdate", f"{outdated}，{short}"
+            )
         async with asyncio.timeout(time_limit_minutes * 60):
             await report(
                 f"{outdated}\n按 {preset['label']} 的服务器参数核对官方差量清单"
@@ -296,7 +298,7 @@ async def _ensure_game_updated(
             )
             if bad:
                 shown = "、".join(Path(path).name for path in bad[:5])
-                return GameUpdateResult(
+                return _utils_game_update.GameUpdateResult(
                     "NeedManualUpdate",
                     f"{outdated}，本地 {len(bad)} 个文件与官方基线不符（{shown}"
                     f"{' 等' if len(bad) > 5 else ''}），MAS 不覆盖改动过的客户端，"
@@ -332,7 +334,7 @@ async def _ensure_game_updated(
                     "游戏目录（下载与落地）",
                 )
                 if short:
-                    return GameUpdateResult(
+                    return _utils_game_update.GameUpdateResult(
                         "NeedManualUpdate",
                         f"{outdated}，本轮尚未开始下载："
                         f"还需下载差量包约 {remaining_download / 1024**3:.1f} GB，"
@@ -343,9 +345,11 @@ async def _ensure_game_updated(
             # 核对通过才动游戏目录：先退出正在运行的客户端
             blocked = await _release_install_dir(game_exe)
             if blocked:
-                return GameUpdateResult("NeedManualUpdate", f"{outdated}，{blocked}")
+                return _utils_game_update.GameUpdateResult(
+                    "NeedManualUpdate", f"{outdated}，{blocked}"
+                )
 
-            hpatchz = await ensure_hpatchz(on_progress=report)
+            hpatchz = await _utils_hpatchz.ensure_hpatchz(on_progress=report)
             files = await _download_release(
                 release, staging.path, report, identity, staging.reusable
             )
@@ -414,7 +418,7 @@ async def _ensure_game_updated(
                 stream.close()
     except TimeoutError:
         abort.set()
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"{outdated}，MAS 更新超过 {time_limit_minutes} 分钟已中止，"
             "请放宽游戏更新超时限制或手动更新一次",
@@ -442,7 +446,7 @@ async def _ensure_game_updated(
             if isinstance(error, httpx.HTTPError)
             else "请手动更新游戏"
         )
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"{outdated}，MAS 自动更新失败（{detail}），{hint}",
         )
@@ -454,7 +458,7 @@ async def _ensure_game_updated(
         logger.opt(exception=True).warning(
             f"终末地差量更新出现未预料的异常（{type(error).__name__}: {error}）"
         )
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"{outdated}，MAS 自动更新中途停手，原因记在该脚本的运行日志里；"
             "请用启动器手动更新一次，若反复出现请带上日志反馈",
@@ -471,7 +475,7 @@ async def _ensure_game_updated(
 
     committed = read_installed_version(install_dir)
     if committed != release.version:
-        return GameUpdateResult(
+        return _utils_game_update.GameUpdateResult(
             "NeedManualUpdate",
             f"MAS 已完成差量落地，但游戏版本号仍是 {committed or '未知'}"
             f"（目标 {release.version}），请手动更新一次后重试；若反复出现请反馈",
@@ -481,4 +485,6 @@ async def _ensure_game_updated(
         + (f"，沿用上轮已落地的 {len(done_entries)} 个" if done_entries else "")
         + f"，共 {release.download_size / 1024**3:.1f} GB 差量）"
     )
-    return GameUpdateResult("Updated", f"MAS 已将终末地客户端更新至 {committed}{note}")
+    return _utils_game_update.GameUpdateResult(
+        "Updated", f"MAS 已将终末地客户端更新至 {committed}{note}"
+    )

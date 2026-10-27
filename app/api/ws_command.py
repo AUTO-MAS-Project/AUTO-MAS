@@ -42,7 +42,7 @@ from typing import Any, Callable, Dict, Optional, Type
 
 from pydantic import BaseModel, ValidationError
 
-from app.utils.logger import get_logger
+from app.utils import get_logger
 
 logger = get_logger("WS命令")
 

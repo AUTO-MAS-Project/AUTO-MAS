@@ -31,7 +31,7 @@ from app.task.proxy_helpers import (
     read_config_base,
 )
 from app.utils import ProcessManager, get_logger
-from app.utils.io import read_file, write_file
+from app.utils import io as _utils_io
 
 from .tools import (
     archive_mas_runtime_backup,
@@ -236,7 +236,7 @@ class ScriptConfigTask(TaskExecuteBase):
             overlay_path=config_path if config_path.exists() else None,
         )
 
-        src_set = read_file(staging_path / "src.json")
+        src_set = _utils_io.read_file(staging_path / "src.json")
         deploy_set = poor_yaml_read((staging_path / "deploy.yaml"))
 
         # 不直接运行任务
@@ -256,7 +256,7 @@ class ScriptConfigTask(TaskExecuteBase):
         # 养成规划
         src_set["Dungeon"]["PlannerTarget"]["Enable"] = False
 
-        write_file(staging_path / "src.json", src_set)
+        _utils_io.write_file(staging_path / "src.json", src_set)
         poor_yaml_write(
             deploy_set,
             staging_path / "deploy.yaml",

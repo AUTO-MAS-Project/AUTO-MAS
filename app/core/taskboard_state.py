@@ -28,9 +28,8 @@ from pathlib import Path
 
 from app.core.config import Config
 from app.models.taskboard import TaskboardDoneRecord, TaskboardState
-from app.utils import get_logger
-from app.utils.constants import UTC8
-from app.utils.io import write_file
+from app.utils import UTC8, get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("任务台状态")
 
@@ -98,7 +97,7 @@ def _read() -> TaskboardState:
 def _write(state: TaskboardState) -> None:
     """裁剪后原子写回任务台状态文件。"""
 
-    write_file(state_path(), _prune(state).model_dump())
+    _utils_io.write_file(state_path(), _prune(state).model_dump())
 
 
 async def load_state() -> TaskboardState:

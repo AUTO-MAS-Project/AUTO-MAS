@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 import httpx
 import pytest
+from app.core import game_maintenance as host
 from app.models.config import GlobalConfig
 from app.services import game_maintenance as service
 
@@ -16,7 +17,7 @@ from app.services import game_maintenance as service
 async def isolated_config(monkeypatch):
     config = GlobalConfig.build()
     await activate_config(config)
-    monkeypatch.setattr(service, "Config", SimpleNamespace(setting=config))
+    monkeypatch.setattr(host, "Config", SimpleNamespace(setting=config))
 
 
 def payload(start, end):
@@ -112,7 +113,9 @@ async def test_cache_failure_clears_stale_window_and_throttles_retry(
     )
     warning = Mock()
     monkeypatch.setattr(service, "logger", Mock(warning=warning))
-    client = service.GameMaintenanceClient()
+    client = service.GameMaintenanceClient(
+        read_cache=host._read_cache, write_cache=host._write_cache
+    )
     first, concurrent = await asyncio.gather(
         client.get_active("arknights"), client.get_active("arknights")
     )

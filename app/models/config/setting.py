@@ -46,7 +46,7 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
-from app.utils.constants import MATERIALS_MAP, RESOURCE_STAGE_INFO
+from app.utils import MATERIALS_MAP, RESOURCE_STAGE_INFO
 
 from .base import DomainEntry
 from .queue import Webhook

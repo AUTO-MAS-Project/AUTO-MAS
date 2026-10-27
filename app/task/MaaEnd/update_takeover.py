@@ -28,9 +28,8 @@ from pathlib import Path
 
 import psutil
 
-from app.utils import ProcessManager, get_logger
-from app.utils.io import read_dict_file, write_file
-from app.utils.mirrorchyan import compare_mirrorchyan_versions
+from app.utils import ProcessManager, compare_mirrorchyan_versions, get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("MaaEnd 更新接管")
 
@@ -100,7 +99,7 @@ class _UpdateProgress:
 
 
 def _read_installed_version(root_path: Path, target_version: str | None) -> str:
-    interface = read_dict_file(root_path / "interface.json", format=".json5")
+    interface = _utils_io.read_dict_file(root_path / "interface.json", format=".json5")
     version = str(interface.get("version") or "").strip()
     if not version:
         raise MaaEndUpdateError("interface.json 未声明 version")
@@ -119,7 +118,7 @@ def _prepare_session_config(config_path: Path, *, keep_logs: bool) -> Iterator[N
     结束一并换回，不写回脚本或用户配置来源。
     """
 
-    config = read_dict_file(config_path, format=".json5")
+    config = _utils_io.read_dict_file(config_path, format=".json5")
     had_settings = "settings" in config
     settings = config.setdefault("settings", {})
     if not isinstance(settings, dict):
@@ -137,11 +136,11 @@ def _prepare_session_config(config_path: Path, *, keep_logs: bool) -> Iterator[N
         yield
         return
 
-    write_file(config_path, config)
+    _utils_io.write_file(config_path, config)
     try:
         yield
     finally:
-        config = read_dict_file(config_path, format=".json5")
+        config = _utils_io.read_dict_file(config_path, format=".json5")
         settings = config.setdefault("settings", {})
         if not isinstance(settings, dict):
             raise MaaEndUpdateError("MXU 配置中的 settings 不是对象")
@@ -154,7 +153,7 @@ def _prepare_session_config(config_path: Path, *, keep_logs: bool) -> Iterator[N
                 settings.pop("autoRunOnLaunch", None)
             if not had_settings and not settings:
                 config.pop("settings", None)
-            write_file(config_path, config)
+            _utils_io.write_file(config_path, config)
 
 
 def _find_executable_processes(executable: Path) -> list[psutil.Process]:

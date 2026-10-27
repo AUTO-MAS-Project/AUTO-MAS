@@ -52,8 +52,9 @@ from app.services.gi_updater.sophon import (
     decompress,
     inflate_file,
 )
-from app.utils.update_files import file_md5 as md5_file
-from app.utils.update_files import file_size, replace_file
+from app.utils import update_files as _utils_update_files
+
+md5_file = _utils_update_files.file_md5
 
 __all__ = [
     "METHOD_COPYOVER",
@@ -295,10 +296,14 @@ async def summarize_assets(
 
     def inspect(asset: PatchAsset) -> Tuple[str, int]:
         """给出这一个文件的结论与要从网络取的字节数。"""
-        if file_size(safe_join(game_path, asset.name)) == asset.target_size:
+        if (
+            _utils_update_files.file_size(safe_join(game_path, asset.name))
+            == asset.target_size
+        ):
             return _VERDICT_READY, 0
         if asset.is_patch and (
-            file_size(safe_join(game_path, asset.original_name)) != asset.original_size
+            _utils_update_files.file_size(safe_join(game_path, asset.original_name))
+            != asset.original_size
         ):
             return _VERDICT_FULL, asset.target_size
         return _VERDICT_DIFF, asset.patch_length
@@ -337,7 +342,10 @@ async def _target_is_current(target: str, asset: PatchAsset) -> bool:
     先比体积（近乎免费），一致才算整文件 MD5。这是中断后接着更新的依据：上次已落盘的文件
     本轮不必重做——不查就重做，原位补丁会拿新内容当旧文件打补丁，产物校验必败。
     """
-    if await asyncio.to_thread(file_size, target) != asset.target_size:
+    if (
+        await asyncio.to_thread(_utils_update_files.file_size, target)
+        != asset.target_size
+    ):
         return False
     return await asyncio.to_thread(md5_file, target) == asset.target_md5.casefold()
 
@@ -424,7 +432,10 @@ async def _old_file_usable(game_path: str, asset: PatchAsset) -> bool:
     都该降级整文件重下。
     """
     old = safe_join(game_path, asset.original_name)
-    if await asyncio.to_thread(file_size, old) != asset.original_size:
+    if (
+        await asyncio.to_thread(_utils_update_files.file_size, old)
+        != asset.original_size
+    ):
         return False
     if not asset.original_md5:
         return True
@@ -441,7 +452,7 @@ def _staging_name(target: str) -> str:
 async def _replace_from(staging: str, target: str) -> None:
     """把已校验的临时文件原子换成目标文件。"""
     await asyncio.to_thread(os.makedirs, os.path.dirname(target) or ".", exist_ok=True)
-    await asyncio.to_thread(replace_file, staging, target)
+    await asyncio.to_thread(_utils_update_files.replace_file, staging, target)
 
 
 def _inflate_place(

@@ -33,17 +33,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
-from app.utils.emulator2.avd.constants import MOD_AVD_UNSUPPORTED_MESSAGE
-from app.utils.emulator2.detect import DetectResult, probe_install_path
-from app.utils.emulator2.facade import (
-    DeviceUnavailableError,
-    Emulator2Manager,
-    dump_paths,
-)
-from app.utils.emulator2.guard import capture, dump_baselines
-from app.utils.emulator2.settings import SettingsConflictError, validate_changes
-from app.utils.emulator2.slots import PathRecord, SlotTable, make_path_id
 
 from .config import Config
 
@@ -56,19 +47,20 @@ def readable_error(error: BaseException) -> str:
     界面上不该出现 ``ValueError: badly formed hexadecimal UUID string`` 这种东西。
     认得出的失败给中文原因；认不出的才退回类名加消息，好歹还能报 issue。
     """
-    if isinstance(error, DeviceUnavailableError):
+    if isinstance(error, _utils_emulator2.facade.DeviceUnavailableError):
         return str(error)
-    if isinstance(error, SettingsConflictError):
+    if isinstance(error, _utils_emulator2.settings.SettingsConflictError):
         return "配置在编辑期间被改动，请刷新后重试"
     if isinstance(error, ValueError):
         return str(error)
-    from app.utils.emulator2.avd.host import AdbPortConflict
-    from app.utils.emulator2.avd.precheck import PrecheckFailed
 
     # 魔改 AVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
     if isinstance(
         error,
-        (PrecheckFailed, AdbPortConflict),
+        (
+            _utils_emulator2.avd.precheck.PrecheckFailed,
+            _utils_emulator2.avd.host.AdbPortConflict,
+        ),
     ):
         return str(error)
     if isinstance(error, KeyError):
@@ -134,10 +126,19 @@ def _emulator_config(emulator_id: str):
     return Config.EmulatorConfig[uuid.UUID(emulator_id)]
 
 
-async def _save(emulator_id: str, paths: list[PathRecord], slots: SlotTable) -> None:
+async def _save(
+    emulator_id: str,
+    paths: list[_utils_emulator2.slots.PathRecord],
+    slots: _utils_emulator2.slots.SlotTable,
+) -> None:
     await Config.update_emulator(
         emulator_id,
-        {"Info": {"Paths": dump_paths(paths), "Slots": slots.to_json()}},
+        {
+            "Info": {
+                "Paths": _utils_emulator2.facade.dump_paths(paths),
+                "Slots": slots.to_json(),
+            }
+        },
     )
 
 
@@ -145,14 +146,15 @@ async def _save_baselines(
     emulator_id: str, baselines: dict[str, dict[str, int]]
 ) -> None:
     await Config.update_emulator(
-        emulator_id, {"Info": {"Baselines": dump_baselines(baselines)}}
+        emulator_id,
+        {"Info": {"Baselines": _utils_emulator2.guard.dump_baselines(baselines)}},
     )
 
 
 async def capture_baselines(emulator_id: str) -> dict:
     """把当前所有设备的设置记成守卫基准。开启守卫时调一次。
 
-    只记用户显式设过的字段——见 ``app.utils.emulator2.guard.capture``。
+    只记用户显式设过的字段——见 ``app.utils.common.emulator2.guard.capture``。
     """
     manager = await build_manager(emulator_id)
 
@@ -165,7 +167,7 @@ async def capture_baselines(emulator_id: str) -> dict:
         except Exception as e:  # noqa: BLE001 - 单台读不出不该拖垮整批
             logger.warning(f"读取设备 #{record.slot} 设置失败，跳过基准: {e}")
             continue
-        fields = capture(settings)
+        fields = _utils_emulator2.guard.capture(settings)
         if fields:
             baselines[record.slot] = fields
 
@@ -188,9 +190,9 @@ async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
     await _save_baselines(emulator_id, baselines)
 
 
-async def build_manager(emulator_id: str) -> Emulator2Manager:
+async def build_manager(emulator_id: str) -> _utils_emulator2.facade.Emulator2Manager:
     """按配置 id 构造门面。"""
-    return Emulator2Manager(_emulator_config(emulator_id))
+    return _utils_emulator2.facade.Emulator2Manager(_emulator_config(emulator_id))
 
 
 def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedScript]:
@@ -272,7 +274,7 @@ async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
         if await is_mod_avd_device(emulator_id, index) and not script_supports_mod_avd(
             script
         ):
-            return MOD_AVD_UNSUPPORTED_MESSAGE
+            return _utils_emulator2.avd.constants.MOD_AVD_UNSUPPORTED_MESSAGE
     return None
 
 
@@ -283,9 +285,9 @@ async def search(emulator_id: str | None = None) -> list[SearchItem]:
     """
     import asyncio
 
-    from app.utils.emulator.tools import search_all_emulators
+    from app.utils import emulator as _utils_emulator
 
-    found = await asyncio.to_thread(search_all_emulators)
+    found = await asyncio.to_thread(_utils_emulator.tools.search_all_emulators)
 
     added: set[str] = set()
     if emulator_id is not None:
@@ -299,11 +301,13 @@ async def search(emulator_id: str | None = None) -> list[SearchItem]:
     for entry in found:
         manager_exe = str(entry.get("path", ""))
         emulator_type = str(entry.get("type", ""))
-        result = await probe_install_path(manager_exe, emulator_type)
+        result = await _utils_emulator2.detect.probe_install_path(
+            manager_exe, emulator_type
+        )
         install_path = result.install_path or manager_exe
         reason = result.reason
         supported = result.supported
-        if supported and make_path_id(install_path) in added:
+        if supported and _utils_emulator2.slots.make_path_id(install_path) in added:
             supported, reason = False, "already_added"
         items.append(
             SearchItem(
@@ -327,18 +331,20 @@ async def add_path(
     emulator_id: str, install_path: str, alias: str | None = None
 ) -> dict:
     """添加一条模拟器路径：探测版本 → 落库 → 为它的实例分配设备号。"""
-    result: DetectResult = await probe_install_path(install_path)
+    result: _utils_emulator2.detect.DetectResult = (
+        await _utils_emulator2.detect.probe_install_path(install_path)
+    )
     if not result.supported:
         return {"ok": False, "reason": result.reason, "version": result.version}
 
     manager = await build_manager(emulator_id)
     resolved_path = result.install_path or install_path
-    path_id = make_path_id(resolved_path)
+    path_id = _utils_emulator2.slots.make_path_id(resolved_path)
 
     if manager.path_of(path_id) is not None:
         return {"ok": False, "reason": "already_added", "version": result.version}
 
-    record = PathRecord(
+    record = _utils_emulator2.slots.PathRecord(
         path_id=path_id,
         install_path=resolved_path,
         alias=alias or _default_alias(resolved_path),
@@ -363,10 +369,11 @@ async def add_path(
 
     if record.type == "avd":
         # MAS 不下载组件；解压出来的根目录可能还没有 mas-avd.json：补一份
-        from app.utils.emulator2.avd.components import ensure_metadata
 
         try:
-            if await asyncio.to_thread(ensure_metadata, resolved_path):
+            if await asyncio.to_thread(
+                _utils_emulator2.avd.components.ensure_metadata, resolved_path
+            ):
                 logger.info(f"魔改 AVD {resolved_path} 没有 mas-avd.json，已补写")
         except OSError as e:
             logger.warning(f"魔改 AVD {resolved_path} 补写 mas-avd.json 失败: {e}")
@@ -647,7 +654,7 @@ async def _read_overviews(backend, records) -> dict[str, tuple[dict, bool, list]
 
 
 def _device_row(
-    path: PathRecord,
+    path: _utils_emulator2.slots.PathRecord,
     slot: str,
     native_index: str,
     info,
@@ -686,7 +693,7 @@ async def apply_settings(
     manager = await build_manager(emulator_id)
     try:
         applied = await manager.write_settings(str(slot), changes, expected)
-    except SettingsConflictError as e:
+    except _utils_emulator2.settings.SettingsConflictError as e:
         return {
             "ok": False,
             "conflicts": e.fields,
@@ -742,7 +749,7 @@ async def apply_settings_to_all(emulator_id: str, changes: dict) -> dict:
     manager = await build_manager(emulator_id)
 
     # 先校验一次，参数不合法就整批拒绝，不要写到一半才报错
-    cleaned = validate_changes(changes)
+    cleaned = _utils_emulator2.settings.validate_changes(changes)
 
     results: list[dict] = []
     for record in manager.slots.records:
@@ -770,14 +777,13 @@ async def apply_settings_to_all(emulator_id: str, changes: dict) -> dict:
 
 
 async def _avd_backend(emulator_id: str, slot: str):
-    from app.utils.emulator2.avd.manager import AvdManager
 
     manager = await build_manager(emulator_id)
     path, record = manager.resolve_slot(str(slot))
     if path.type != "avd":
         raise ValueError("该设备不是魔改 AVD")
     backend = await manager.manager_for(path)
-    assert isinstance(backend, AvdManager)
+    assert isinstance(backend, _utils_emulator2.avd.manager.AvdManager)
     return backend, record.native_index
 
 

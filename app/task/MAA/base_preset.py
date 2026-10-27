@@ -4,7 +4,7 @@ import json
 from copy import deepcopy
 from pathlib import Path
 
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 MAA_STAMINA_LEGACY_FILENAME = "_mas_stamina_legacy.json"
 """历史活动优先侧车文件；保留时不复制到 MAA 运行目录。"""
@@ -33,7 +33,7 @@ def seed_maa_base_config(config_dir: Path) -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     path = config_dir / "gui.new.json"
     if not path.exists():
-        write_file(path, deepcopy(_MAA_BASE_PRESET))
+        _utils_io.write_file(path, deepcopy(_MAA_BASE_PRESET))
 
 
 def _fill_missing(target: dict, defaults: dict) -> None:

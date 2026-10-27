@@ -39,10 +39,12 @@ from app.models.config import (
 
 if TYPE_CHECKING:
     from app.config import ConfigEntry
-    from app.utils.config_restore import ConfigRestorePool
+    from app.utils import config_restore as _utils_config_restore
 
 
-def resolve_restore_pools(script_config: ConfigEntry) -> list[ConfigRestorePool]:
+def resolve_restore_pools(
+    script_config: ConfigEntry,
+) -> list[_utils_config_restore.ConfigRestorePool]:
     """匹配后才导入专项池，保留继承匹配与池表顺序。"""
 
     if isinstance(script_config, ZzzOdConfig):

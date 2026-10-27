@@ -40,9 +40,8 @@ from app.models.schema import (
     WSUpdateFailedData,
     WSUpdateProgressData,
 )
-from app.utils import LazyProxy, ProcessRunner, get_logger
-from app.utils.fluxdown_cli import FluxdownCancelUnconfirmed
-from app.utils.platform.process import platform_process
+from app.utils import LazyProxy, ProcessRunner, get_logger, process_platform
+from app.utils import fluxdown_cli as _utils_fluxdown_cli
 
 from .system import System
 from .update_fluxdown import FluxdownResumableError, download_file
@@ -256,7 +255,7 @@ class _UpdateHandler:
             await task
         except asyncio.CancelledError:
             pass
-        except FluxdownCancelUnconfirmed as error:
+        except _utils_fluxdown_cli.FluxdownCancelUnconfirmed as error:
             # 暂停未确认：daemon 可能仍在写目标文件。按失败上报并抛出，
             # 让调用方走失败路径（API 500 / 切源中止），绝不能继续覆写
             # 同一目标或报告取消成功
@@ -518,7 +517,7 @@ class _UpdateHandler:
         except asyncio.CancelledError:
             logger.info("更新下载已取消")
             raise
-        except FluxdownCancelUnconfirmed:
+        except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
             # 透传给 cancel_download 的 await task：由那里按失败上报，
             # 不走通用"下载失败"路径，更不能在后台状态未知时报告取消成功
             raise
@@ -604,7 +603,7 @@ class _UpdateHandler:
                 self.is_locked = False
                 break
 
-            except FluxdownCancelUnconfirmed:
+            except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
                 # 取消但无法确认 FluxDown 任务已停止：不是可重试的下载错误，
                 # 必须退出取消流程，不能睡眠后自动 resume 状态未知的任务
                 raise
@@ -710,7 +709,7 @@ class _UpdateHandler:
                 "/LANG=Chinese",
                 f"/DIR={Path.cwd()}",
             ],
-            creationflags=platform_process.detached_flags,
+            creationflags=process_platform.platform_process.detached_flags,
         )
         await System.set_power("KillSelf")
 

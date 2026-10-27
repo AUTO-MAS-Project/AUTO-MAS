@@ -31,9 +31,8 @@ from pathlib import Path
 
 from app.core import Config
 from app.models.config import OkwwConfig
-from app.utils import get_logger
-from app.utils.constants import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED
-from app.utils.io import force_rmtree
+from app.utils import BASE_INDEPENDENT, BASE_NATIVE, BASE_SHARED, get_logger
+from app.utils import io as _utils_io
 
 from ..AutoProxy import (
     _OKWW_REL_CONFIG_DIR,
@@ -103,10 +102,10 @@ async def ensure_user_config_dir(script_id: str, user_id: str, base: str) -> Pat
     try:
         shutil.copytree(source_config_dir, temporary_path)
         target_config_dir.parent.mkdir(parents=True, exist_ok=True)
-        force_rmtree(target_config_dir)
+        _utils_io.force_rmtree(target_config_dir)
         temporary_path.rename(target_config_dir)
     finally:
-        force_rmtree(temporary_path)
+        _utils_io.force_rmtree(temporary_path)
 
     logger.info(
         f"已从 OK-WW 脚本默认配置初始化用户配置: {script_id} - {target_config_dir.parent.name}"
@@ -185,7 +184,7 @@ async def import_script_config_dir(script_id: str, user_id: str) -> Path:
     try:
         shutil.copytree(source_config_dir, temporary_path)
         target_touched = True
-        force_rmtree(target_config_dir)
+        _utils_io.force_rmtree(target_config_dir)
         temporary_path.rename(target_config_dir)
     except Exception as exc:
         if not target_touched:
@@ -217,7 +216,7 @@ async def import_script_config_dir(script_id: str, user_id: str) -> Path:
             f"导入配置失败，已恢复到导入前的配置（备份 {rollback_ts}）：{exc}"
         ) from exc
     finally:
-        force_rmtree(temporary_path)
+        _utils_io.force_rmtree(temporary_path)
 
     logger.info(f"{script_id} - {owner} 已从 OK-WW 目录导入配置文件")
     return target_config_dir

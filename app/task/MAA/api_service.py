@@ -46,9 +46,9 @@ from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     read_config_base,
 )
+from app.utils import constants as _utils_constants
 from app.utils import get_logger
-from app.utils.constants import game_now
-from app.utils.io import write_file
+from app.utils import io as _utils_io
 
 from .constants import MAA_DEPOT_EXCLUDED_ITEM_IDS
 
@@ -395,7 +395,7 @@ async def set_infrast_plan_select(script_id: str, user_id: str, index: int) -> i
         return index
     for task in tasks:
         task["PlanSelect"] = index
-    write_file(config_dir / "gui.new.json", data)
+    _utils_io.write_file(config_dir / "gui.new.json", data)
     return index
 
 
@@ -790,7 +790,9 @@ async def get_cultivate_preview(
         maa_data_dir=archive_dir,
         config_path=Config.config_path,
         proxy=Config.proxy,
-        today=game_now(script_config.UserData[uuid.UUID(user_id)].Info.Server).date(),
+        today=_utils_constants.game_now(
+            script_config.UserData[uuid.UUID(user_id)].Info.Server
+        ).date(),
         skland=skland,
     )
     # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；

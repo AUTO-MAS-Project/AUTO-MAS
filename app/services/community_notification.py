@@ -30,7 +30,7 @@ from typing import Literal
 
 from app.models.notification import DeferredContent, NotificationImage, NotifyPayload
 from app.models.notification_community import CommunityNotificationResult
-from app.utils.notification_template import get_notification_template
+from app.utils import notification_template as _utils_notification_template
 
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
@@ -284,7 +284,9 @@ def _prepare_community_html(
 ) -> Callable[[], str]:
     """按 MAS 通知模板渲染社区签到邮件正文。"""
 
-    template = get_notification_template("community_result.html")
+    template = _utils_notification_template.get_notification_template(
+        "community_result.html"
+    )
     return lambda: template.render(
         title=title,
         content=_community_html_fragment(

@@ -39,6 +39,8 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
 from app.task.proxy_helpers import CONFIG_BASE_NATIVE, read_config_base
 from app.utils import (
+    LOG_TYPE_NORMAL,
+    UTC4,
     LogMonitor,
     ProcessInfo,
     ProcessManager,
@@ -50,9 +52,7 @@ from app.utils import (
     load_patterns,
     strptime,
 )
-from app.utils.constants import UTC4
-from app.utils.io import mark_native_config_injected, swap_in_dir
-from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
+from app.utils import io as _utils_io
 
 logger = get_logger("通用脚本自动代理")
 
@@ -683,11 +683,11 @@ class AutoProxyTask(ScriptAutoProxyBase[GeneralConfig, GeneralUserConfig]):
                     "无法按 「目录」 模式换入"
                 )
                 return
-            swap_in_dir(
+            _utils_io.swap_in_dir(
                 mas_config_dir,
                 self.script_config_path,
             )
-            mark_native_config_injected(
+            _utils_io.mark_native_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,

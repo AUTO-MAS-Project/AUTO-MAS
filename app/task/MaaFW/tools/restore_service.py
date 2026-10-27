@@ -53,8 +53,8 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
 )
+from app.utils import config_restore as _utils_config_restore
 from app.utils import get_logger
-from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
 from .backup_archive import (
     OVERLAY_SIDECAR_NAME,
@@ -75,14 +75,14 @@ from .backup_archive import (
 logger = get_logger("MaaFW 配置恢复")
 
 
-def _user_guard(ctx: RestoreContext) -> None:
+def _user_guard(ctx: _utils_config_restore.RestoreContext) -> None:
     """恢复守卫：目标用户必须存在，避免把字段回填进孤儿配置。"""
 
     if uuid.UUID(ctx.user_id) not in ctx.script_config.UserData:
         raise ValueError("MaaFW 用户不存在，请刷新后重试")
 
 
-def _project_path(ctx: RestoreContext) -> Path | None:
+def _project_path(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。
 
     内嵌脚本的有效根是副本：运行时物化写在副本里，恢复也只能写回副本——来源目录
@@ -96,7 +96,9 @@ def _project_path(ctx: RestoreContext) -> Path | None:
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
+async def _mas_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, str] | None:
     """归档内容 = 页面核心字段侧车（内存 JSON，免临时文件）。"""
 
     _user_guard(ctx)
@@ -107,11 +109,11 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
     return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
 
 
-async def _mas_root(ctx: RestoreContext) -> Path:
+async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path:
     return mas_backup_root(ctx.script_id, ctx.user_id)
 
 
-async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     backup_dir = get_mas_backup_dir(ctx.script_id, ctx.user_id, ts)
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
@@ -156,7 +158,7 @@ def _task_label_resolver(project_path: Path) -> Callable[[str], str] | None:
     return resolve
 
 
-async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
+async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
     # 恢复前把当前字段终态存底（force），误恢复可找回
@@ -176,7 +178,9 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════
 
 
-async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
+async def _native_files(
+    ctx: _utils_config_restore.RestoreContext,
+) -> dict[str, Path] | None:
     """归档内容 = 项目 ``config/``（缺失项跳过）。"""
 
     project_path = _project_path(ctx)
@@ -185,21 +189,21 @@ async def _native_files(ctx: RestoreContext) -> dict[str, Path] | None:
     return collect_native_files(project_path) or None
 
 
-async def _native_root(ctx: RestoreContext) -> Path | None:
+async def _native_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
     project_path = _project_path(ctx)
     if project_path is None:
         return None
     return native_backup_root(ctx.script_id, project_path)
 
 
-async def _preview_native(ctx: RestoreContext, ts: str) -> dict:
+async def _preview_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
     project_path = _project_path(ctx)
     if project_path is None:
         return {"sections": []}
     return build_native_preview(ctx.script_id, project_path, ts)
 
 
-async def _restore_native(ctx: RestoreContext, ts: str) -> None:
+async def _restore_native(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
     project_path = _project_path(ctx)
     if project_path is None:
         raise ValueError("请先设置 MaaFW 项目路径")
@@ -215,7 +219,7 @@ async def _restore_native(ctx: RestoreContext, ts: str) -> None:
 
 
 RESTORE_POOLS = [
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="mas",
         kind="user",
         mas_base="sidecar_only",
@@ -224,7 +228,7 @@ RESTORE_POOLS = [
         preview=_preview_mas,
         restore=_restore_mas,
     ),
-    ConfigRestorePool(
+    _utils_config_restore.ConfigRestorePool(
         key="native",
         kind="script",
         files=_native_files,

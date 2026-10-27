@@ -27,9 +27,8 @@ from typing import Any
 
 import json5
 
-from app.utils import get_logger
-from app.utils.constants import MAAEND_INVENTORY_TARGET_DEFAULTS
-from app.utils.io import atomic_write
+from app.utils import MAAEND_INVENTORY_TARGET_DEFAULTS, get_logger
+from app.utils import io as _utils_io
 
 logger = get_logger("MaaEnd 资源加载器")
 
@@ -180,7 +179,7 @@ class MaaEndResourceLoader:
                     for path, (signature, data) in self._file_cache.items()
                 },
             }
-            atomic_write(
+            _utils_io.atomic_write(
                 cache_path,
                 json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             )

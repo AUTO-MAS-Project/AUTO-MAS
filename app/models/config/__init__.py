@@ -19,7 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from app.utils.constants import PLAN_CONSUMER_VALUES
+from app.utils import PLAN_CONSUMER_VALUES
 
 from .emulator import *
 from .plan import *

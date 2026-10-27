@@ -35,8 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
 from app.task.proxy_helpers import push_dispatch_log
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.platform import IS_ELEVATED
+from app.utils import IS_ELEVATED, ProcessInfo, ProcessManager, get_logger
 
 from .tools.upstream import APP_EXE_NAME, WheelAssetsConfigSurface
 
