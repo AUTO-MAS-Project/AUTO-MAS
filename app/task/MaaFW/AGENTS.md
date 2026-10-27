@@ -367,6 +367,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `attach.auto_mas`**：`run_signal.parse_signal_spec` 遇到未知键会忽略整个信号节点，而且写了
   `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
   节点时退回命中时按名字查。
+- **结构化运行记录**（第 19 条）：worker 经 `_emit` 发 `{"type": "record", "data": …}`，事件形状、阶段名、
+  结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
+  `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
+  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
+  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
+  （`UserItem.progress`）与推送里单列的原地打转 / 单任务超时。记录是旁路，**不参与重试判断**。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /

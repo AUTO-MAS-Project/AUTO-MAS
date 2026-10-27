@@ -395,6 +395,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
         self._missing_task_notices: list[str] = []
         self._missing_task_user_ids: set[str] = set()
+        # 各用户被原地打转检测 / 单任务时限停下过的任务（之后重试成功了也列），随「代理结果」发出
+        self._run_incident_notices: list[str] = []
         # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
         # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
         self.signal_tracker = MaaFWSignalTracker()
@@ -1766,6 +1768,13 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     user_item = self.inner_task.cur_user_item
                     self._missing_task_notices.append(f"{user_item.name}: {notice}")
                     self._missing_task_user_ids.add(user_item.user_id)
+            with suppress(Exception):
+                incidents = self.inner_task.run_incident_notice()
+                if incidents:
+                    user_item = self.inner_task.cur_user_item
+                    self._run_incident_notices.extend(
+                        f"{user_item.name}: {line}" for line in incidents.splitlines()
+                    )
 
     async def _commit_user_data(self) -> None:
         """保存已提交的运行状态，并在异常或取消时也释放 X 锁。"""
@@ -1912,11 +1921,20 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 + len(attention_users)
                 + len(waiting_users or [])
             ),
-            # 失效任务每个用户一行跟在结果后面：通用模板没有单独的块，结果框按原样换行
+            # 原地打转 / 单任务超时、失效任务每个用户一行跟在结果后面：通用模板没有单独的块，
+            # 结果框按原样换行
             "result": "\n\n".join(
-                [self.script_info.result, "\n".join(self._missing_task_notices)]
-                if self._missing_task_notices
-                else [self.script_info.result]
+                [
+                    self.script_info.result,
+                    *(
+                        "\n".join(lines)
+                        for lines in (
+                            self._run_incident_notices,
+                            self._missing_task_notices,
+                        )
+                        if lines
+                    ),
+                ]
             ),
         }
         summary_title = self._signal_summary_title(
