@@ -615,6 +615,22 @@ def _scan_scan_select_cases(
             exc.filename or (base_dir / scan_dir),
             exc,
         )
+        if context is not None:
+            # 照样登记进缓存依赖（用未解析的路径，只拿来 stat / glob 算签名）：装入点被删掉
+            # 或变成可信后签名会变，缓存自动失效，不会一直空着。
+            context.scan_select_specs.add(
+                (
+                    base_dir
+                    / _normalize_project_relative_path(
+                        scan_dir,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_dir",
+                    ),
+                    _normalize_project_relative_path(
+                        scan_filter,
+                        field_name=f"scan_select 选项 {option_name} 的 scan_filter",
+                    ),
+                )
+            )
         return []
     normalized_scan_filter = _normalize_project_relative_path(
         scan_filter,
