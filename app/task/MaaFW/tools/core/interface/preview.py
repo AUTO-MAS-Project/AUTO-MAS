@@ -295,8 +295,9 @@ def build_interface_preview_data(
                         "default": input_item.default,
                         "pipelineType": input_item.pipeline_type,
                         "verify": input_item.verify,
-                        "verifyError": input_item.verify_error,
-                        "patternMsg": input_item.pattern_msg,
+                        # 校验失败提示与 label 同一口径翻 `$键`（MaaEnd 的 pattern_msg 全是键）
+                        "verifyError": tr_text(input_item.verify_error),
+                        "patternMsg": tr_text(input_item.pattern_msg),
                         "password": input_item.password,
                     }
                     for input_item in option.inputs or []

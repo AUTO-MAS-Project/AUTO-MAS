@@ -71,6 +71,23 @@
           </div>
         </div>
         <div class="task-list">
+          <!-- 控制方式 / 游戏资源是脚本级设置，这里只显示；不兼容的实例只是不显示，快照原样保留 -->
+          <div v-if="showQueueContext" class="queue-context">
+            <span class="queue-context-text">{{ queueContextText }}</span>
+            <a-tooltip
+              v-if="hiddenQueueTaskNames.length > 0"
+              placement="bottomLeft"
+              :overlay-style="{ maxWidth: '360px' }"
+            >
+              <template #title>
+                <div>{{ t('edit.maafwHiddenTaskTooltip') }}</div>
+                <div v-for="name in hiddenQueueTaskNames" :key="name">{{ name }}</div>
+              </template>
+              <span class="queue-context-hidden">
+                {{ t('edit.maafwHiddenTaskCount', { count: hiddenQueueTasks.length }) }}
+              </span>
+            </a-tooltip>
+          </div>
           <!-- 队列为空：先列我的模板，再列项目预设，哪组没有就不显示那组 -->
           <div
             v-if="
@@ -367,13 +384,16 @@ import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import MaaFWTaskConfigPanel from './MaaFWTaskConfigPanel.vue'
+import { matchesMaaFWAddTaskKeyword } from './maafwAddTaskMenu'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
+import { listMaaFWHiddenQueueTasks, summarizeMaaFWHiddenQueueTasks } from './maafwHiddenTasks'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
   maafwQueueEntryBaseName,
   maafwQueueEntryTitle,
 } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
+import { isSupportedMaaFWControllerType } from '@/types/script'
 import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
   MaaFWUserTaskQueueSectionEmits,
@@ -595,15 +615,48 @@ const checkboxIssueTaskIds = computed(() => {
   return ids
 })
 
-const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) => {
-  const keyword = inputValue.trim().toLowerCase()
-  if (!keyword) return true
-  return path.some(option =>
-    String(option.searchText ?? option.label ?? '')
-      .toLowerCase()
-      .includes(keyword)
+const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) =>
+  matchesMaaFWAddTaskKeyword(inputValue, path)
+
+// 队列框顶部一行：当前控制方式 / 游戏资源（脚本页设的），以及因不兼容而不显示的实例数
+const hiddenQueueTasks = computed(() =>
+  listMaaFWHiddenQueueTasks(
+    props.taskSnapshot.taskOrder,
+    props.taskByName,
+    props.effectiveControllerName,
+    props.effectiveResourceName,
+    props.taskSnapshot.taskLabels
   )
-}
+)
+const hiddenQueueTaskNames = computed(() => summarizeMaaFWHiddenQueueTasks(hiddenQueueTasks.value))
+// 项目只有一种控制方式、一种资源时这行没有信息量，不显示（有隐藏的实例时照样显示）
+const showQueueContext = computed(() => {
+  const data = props.previewData
+  if (!data) return false
+  const controllerCount = data.controllers.filter(controller =>
+    isSupportedMaaFWControllerType(controller.type)
+  ).length
+  return controllerCount > 1 || data.resources.length > 1 || hiddenQueueTasks.value.length > 0
+})
+const queueContextText = computed(() => {
+  const data = props.previewData
+  const controller = data?.controllers.find(item => item.name === props.effectiveControllerName)
+  const resource = data?.resources.find(item => item.name === props.effectiveResourceName)
+  return [
+    controller &&
+      t('edit.maafwQueueContextItem', {
+        label: t('edit.controlMode'),
+        value: getDisplayName(controller),
+      }),
+    resource &&
+      t('edit.maafwQueueContextItem', {
+        label: t('edit.gameResource'),
+        value: getDisplayName(resource),
+      }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+})
 </script>
 
 <style scoped>
@@ -690,6 +743,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
 .task-list {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   overflow-x: hidden;
@@ -697,9 +752,41 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   background: var(--ant-color-bg-container);
 }
 
-/* 右键菜单的触发区：撑满队列框，拖拽列表的 min-height: 100% 才有定高可依 */
+/* 队列框顶部一行：当前控制方式 / 游戏资源与隐藏数，滚动时钉在顶上 */
+.queue-context {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  /* 填充色是半透明的，垫一层容器底色，滚过去的行不透上来 */
+  background:
+    linear-gradient(var(--ant-color-fill-quaternary), var(--ant-color-fill-quaternary)),
+    var(--ant-color-bg-container);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.queue-context-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.queue-context-hidden {
+  color: var(--ant-color-warning);
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* 右键菜单的触发区：撑满队列框余下的高度（基准 0 才是定高），拖拽列表的 min-height: 100% 才有定高可依 */
 .task-queue-menu-area {
-  height: 100%;
+  flex: 1 0 0;
 }
 
 .task-queue-list {

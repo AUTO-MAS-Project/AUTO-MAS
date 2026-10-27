@@ -250,6 +250,7 @@ export type AddTaskCascaderOption = {
   value: string
   /** 带 NEW 标记时是 VNode；搜索按 searchText 匹配 */
   label: string | VNode
+  /** 任务项含显示名、任务名与入口名（换行分隔），分组项是显示文字 */
   searchText: string
   children?: AddTaskCascaderOption[]
 }

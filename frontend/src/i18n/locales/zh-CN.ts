@@ -3042,6 +3042,9 @@ export default {
     maafwInputVerifyFailed: '输入不符合脚本要求',
     maafwQueueTaskCheckboxCountInvalid:
       '有多选项的勾选数量不符合要求，不改的话这个用户运行时会失败',
+    maafwQueueContextItem: '{label}：{value}',
+    maafwHiddenTaskCount: '{count} 项不可用已隐藏',
+    maafwHiddenTaskTooltip: '与当前控制方式 / 游戏资源不兼容，设置仍保留，切换回去即恢复：',
     unknownType: '未知',
     savingNow: '保存中…',
     autoSaved: '已自动保存',

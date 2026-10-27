@@ -2564,6 +2564,10 @@ export default {
     maafwInputVerifyFailed: '入力がスクリプトの要件を満たしていません',
     maafwQueueTaskCheckboxCountInvalid:
       '選択数が要件を満たしていない複数選択項目があります。修正しないとこのユーザーは実行に失敗します',
+    maafwQueueContextItem: '{label}：{value}',
+    maafwHiddenTaskCount: '{count} 件は利用できないため非表示',
+    maafwHiddenTaskTooltip:
+      '現在の制御方式 / ゲームリソースと互換性がありません。設定は保持され、切り替えると元に戻ります：',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',
