@@ -32,9 +32,6 @@
             @load="showLoadedMaaFWIcon"
           />
           <span>{{ getOptionLabel(option) }}</span>
-          <a-tooltip v-if="option.description" :title="option.description">
-            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-          </a-tooltip>
         </div>
 
         <a-radio-group
@@ -49,7 +46,19 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            {{ getCaseLabel(caseItem) }}
+            <span class="case-label">
+              <img
+                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
+                :src="resolveMaaFWAssetUrl(caseItem.icon)"
+                alt=""
+                width="16"
+                height="16"
+                class="case-icon"
+                @error="hideBrokenMaaFWIcon"
+                @load="showLoadedMaaFWIcon"
+              />
+              <span>{{ getCaseLabel(caseItem) }}</span>
+            </span>
           </a-radio>
         </a-radio-group>
 
@@ -66,7 +75,19 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            {{ getCaseLabel(caseItem) }}
+            <span class="case-label">
+              <img
+                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
+                :src="resolveMaaFWAssetUrl(caseItem.icon)"
+                alt=""
+                width="16"
+                height="16"
+                class="case-icon"
+                @error="hideBrokenMaaFWIcon"
+                @load="showLoadedMaaFWIcon"
+              />
+              <span>{{ getCaseLabel(caseItem) }}</span>
+            </span>
           </a-select-option>
         </a-select>
 
@@ -83,7 +104,19 @@
             :value="caseItem.name"
             :disabled="isCheckboxCaseLocked(option, getStringListValue(option), caseItem.name)"
           >
-            {{ getCaseLabel(caseItem) }}
+            <span class="case-label">
+              <img
+                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
+                :src="resolveMaaFWAssetUrl(caseItem.icon)"
+                alt=""
+                width="16"
+                height="16"
+                class="case-icon"
+                @error="hideBrokenMaaFWIcon"
+                @load="showLoadedMaaFWIcon"
+              />
+              <span>{{ getCaseLabel(caseItem) }}</span>
+            </span>
           </a-checkbox>
         </a-checkbox-group>
 
@@ -197,6 +230,22 @@
           {{ getCheckboxCountHint(option)?.text }}
         </div>
 
+        <!-- 选中的 case 自己的说明（多选时每个勾选项一段，前面标上是哪一项） -->
+        <div
+          v-for="caseItem in getSelectedCaseDescriptions(option)"
+          :key="`case:${caseItem.name}`"
+          class="case-description"
+        >
+          <div v-if="option.type === 'checkbox'" class="case-description-label">
+            {{ getCaseLabel(caseItem) }}
+          </div>
+          <MaaFWDescriptionView
+            :content="caseItem.description"
+            :base-path="basePath"
+            class="option-description"
+          />
+        </div>
+
         <MaaFWDescriptionView
           v-if="option.description"
           :content="option.description"
@@ -231,7 +280,6 @@
 import { useI18n } from 'vue-i18n'
 import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
 import {
@@ -251,6 +299,7 @@ import {
   checkMaaFWInputValue,
   resolveMaaFWCheckboxValue,
   resolveMaaFWChoiceValue,
+  selectedMaaFWCasesWithDescription,
   storedMaaFWInputFieldValue,
 } from './maafwOptionValues'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from './maafwIconImage'
@@ -401,6 +450,9 @@ const getStringValue = (option: MaaFWOptionInfo) =>
 
 const getStringListValue = (option: MaaFWOptionInfo) =>
   resolveMaaFWCheckboxValue(option, getStoredValue(option))
+
+const getSelectedCaseDescriptions = (option: MaaFWOptionInfo) =>
+  selectedMaaFWCasesWithDescription(option, getStoredValue(option))
 
 const getInputValueObject = (option: MaaFWOptionInfo): Record<string, string> => {
   const value = getStoredValue(option)
@@ -686,9 +738,24 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   margin-top: 8px;
 }
 
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
+.case-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.case-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.case-description-label {
+  margin-bottom: 2px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .option-control {
