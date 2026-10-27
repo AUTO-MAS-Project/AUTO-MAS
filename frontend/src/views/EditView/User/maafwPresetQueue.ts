@@ -173,10 +173,22 @@ export const buildProjectPresetAppliedSnapshot = (
   const presetOptions = Object.fromEntries(
     Object.entries(presetTaskOptions).filter(([taskId]) => !isPretaskId(taskId))
   )
+  // 补进来的前置任务按 interface 顶层 pretask 的顺序插到已有前置任务之间（协议：前置任务
+  // 按顶层顺序执行）；已有的保持用户排好的相对顺序。`pretasks.checked` 的键序即顶层顺序。
+  const pretaskRank = new Map(
+    Object.keys(pretasks?.checked ?? {}).map((taskName, index) => [taskName, index])
+  )
+  const rankOf = (taskName: string) => pretaskRank.get(taskName) ?? Number.MAX_SAFE_INTEGER
+  const pretaskOrder = [...currentPretaskIds]
+  for (const entry of addedEntries) {
+    const rank = rankOf(entry.task.name)
+    const index = pretaskOrder.findIndex(taskId => rankOf(resolveTaskName(taskId)) > rank)
+    pretaskOrder.splice(index === -1 ? pretaskOrder.length : index, 0, entry.id)
+  }
   return buildPresetAppliedSnapshot(
-    [...addedEntries, ...entries.filter(entry => !isPretaskId(entry.id))],
+    entries.filter(entry => !isPretaskId(entry.id)),
     { ...presetOptions, ...pretaskOptions },
-    current.taskOrder,
+    pretaskOrder,
     isPretaskId,
     pickMaaFWTaskLabels(current.taskLabels, currentPretaskIds),
     pretaskChecked,
