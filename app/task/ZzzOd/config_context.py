@@ -16,7 +16,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ZZZ-OD 配置定位与跨脚本占用校验；只依赖注入的配置集合与落盘能力。"""
+"""ZZZ-OD 配置定位与跨脚本占用校验；配置操作能力由宿主注入。"""
 
 import uuid
 from collections.abc import Awaitable, Callable
@@ -34,18 +34,22 @@ class ZzzOdConfigGateway(Protocol):
 
     async def flush(self) -> None: ...
 
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigEntry]: ...
+
 
 class ZzzOdContext:
-    """绑定配置集合；不持有配置总管或全局单例。"""
+    """共享配置集合，通过注入能力完成通用配置操作。"""
 
     def __init__(
         self,
         scripts: ConfigCollection[ConfigEntry],
         *,
         flush: Callable[[], Awaitable[None]],
+        add_user: Callable[[str], Awaitable[tuple[uuid.UUID, ConfigEntry]]],
     ) -> None:
         self.scripts = scripts
         self.flush = flush
+        self.add_user = add_user
 
     def script_config(self, script_id: str) -> ZzzOdConfig:
         """解析 ZZZ-OD 脚本配置并拒绝跨类型 ID 访问。"""

@@ -25,8 +25,14 @@ from .service import ZzzOdService, read_task_catalog
 
 
 def get_service(gateway: ZzzOdConfigGateway) -> ZzzOdService:
-    """只注入配置集合与落盘能力，不把专项操作委托回宿主。"""
-    return ZzzOdService(ZzzOdContext(gateway.ScriptConfig, flush=gateway.flush))
+    """注入配置操作能力，实例、槽位及恢复流程由专项持有。"""
+    return ZzzOdService(
+        ZzzOdContext(
+            gateway.ScriptConfig,
+            flush=gateway.flush,
+            add_user=gateway.add_user,
+        )
+    )
 
 
 def get_task_catalog(

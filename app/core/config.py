@@ -1766,7 +1766,9 @@ class AppConfig:
         if isinstance(script_config, ZzzOdConfig):
             from app.task.ZzzOd.api_service import get_service
 
-            get_service(self).prepare_user_update(script_id, user_id, data)
+            get_service(self).prepare_user_update(
+                script_id=script_id, user_id=user_id, data=data
+            )
         elif isinstance(script_config, (MaaConfig, SrcConfig)):
             new_base = normalize_base_source(data.get("Info", {}).get("Base", ""))
             if (

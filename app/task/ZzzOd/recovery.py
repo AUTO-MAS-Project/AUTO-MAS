@@ -126,11 +126,12 @@ class ZzzOdRecovery:
                 name = str(new_user_name).strip()
                 if not name:
                     raise ValueError("新用户名称不能为空")
-                # 通过公开集合操作创建并提交；锁定时由配置框架拒绝。
-                uid = script_config.UserData.add(ZzzOdUserConfig)
-                await script_config.UserData.commit()
-                user_cfg = script_config.UserData[uid]
+                # 复用宿主的通用添加用户入口，初始化与守卫不另走分支。
+                uid, created_user = await self.context.add_user(script_id)
                 created_uid = uid
+                if not isinstance(created_user, ZzzOdUserConfig):
+                    raise TypeError("用户配置类型错误")
+                user_cfg = created_user
                 await user_cfg.update(
                     type(user_cfg).model_validate({"Info": {"Name": name}}),
                     check_visibility=False,
