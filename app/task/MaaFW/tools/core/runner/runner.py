@@ -705,13 +705,7 @@ def _inject_agent_pip_constraint(
             )
         )
         return
-    applied, skipped = apply_agent_pip_constraint(
-        env, constraint_file, project_env=getattr(plan, "piEnv", None)
-    )
-    if skipped:
-        send_log(
-            f"[Python环境] interface 的 env 已自行设置 {' / '.join(skipped)}，不覆盖"
-        )
+    applied = apply_agent_pip_constraint(env, constraint_file)
     if applied:
         send_log(
             mask_home_path(

@@ -1450,32 +1450,27 @@ def write_agent_pip_constraint(
 def apply_agent_pip_constraint(
     env: MutableMapping[str, str],
     constraint_file: Path,
-    *,
-    project_env: Mapping[str, str] | None = None,
-) -> tuple[list[str], list[str]]:
-    """把约束文件挂到 ``env`` 的 ``PIP_CONSTRAINT`` / ``UV_CONSTRAINT`` 上，返回（设了的，没设的）。
+) -> list[str]:
+    """把约束文件挂到 ``env`` 的 ``PIP_CONSTRAINT`` / ``UV_CONSTRAINT`` 上，返回设了的变量名。
 
     值写成 ``file:`` URI：pip 与 uv 都按空格把这两个变量拆成多个文件，AUTO-MAS 装在带空格的
     目录里时裸路径会被拆断、项目的 pip 直接报找不到文件；URI 里空格与中文都是百分号编码，
     两者都能读（本机 pip 25.0.1 / uv 0.11.26 实测）。环境里已有值（用户自己设的）就追加在后面，
-    pip 会同时遵守；interface 的 ``env`` 里项目自己写了这个变量就不动——那是项目自己在管。
+    pip 会同时遵守。PI v2 的 agent 声明没有 env 字段（``piEnv`` 只有 ``PI_*`` 键），项目没有
+    渠道经 interface 自设这两个变量，所以这里不做「项目自设就跳过」的判断。
     """
 
     uri = Path(constraint_file).resolve().as_uri()
-    project_keys = {str(key).upper() for key in (project_env or {})}
     applied: list[str] = []
-    skipped: list[str] = []
     for key in AGENT_PIP_CONSTRAINT_ENV_KEYS:
-        if key in project_keys:
-            skipped.append(key)
-            continue
         existing = str(env.get(key) or "").strip()
-        if existing and uri not in existing.split():
-            env[key] = f"{existing} {uri}"
-        else:
+        if not existing:
             env[key] = uri
+        elif uri not in existing.split():
+            env[key] = f"{existing} {uri}"
+        # 已经挂过就原样保留，别把前面用户自己的约束冲掉
         applied.append(key)
-    return applied, skipped
+    return applied
 
 
 def _normalize_maafw_requirement(
