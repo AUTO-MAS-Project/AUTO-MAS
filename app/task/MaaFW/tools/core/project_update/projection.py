@@ -1066,6 +1066,35 @@ def build_projection_rules(
         else (source_root,)
     )
     view = _FileView(roots, sizes)
+    base_relative, interface_relative = _locate_interface(roots)
+    scan = _ProjectionScan(view, base_relative, strict=strict)
+    scan.visit_interface(interface_relative, interface_relative.as_posix())
+    source_layout = _check_source_layout(scan)
+    _scan_dependency_entries(scan, source_layout)
+    _scan_bundled_native_runtime(scan, roots, source_root)
+    confirmed_shell = _adopt_undeclared_entries(scan, source_layout)
+    conservative = _apply_conservative_mode(scan)
+    _check_assets_layout_escape(scan, source_layout)
+
+    rules = ProjectionRules(
+        source_root=source_root,
+        interface_base=source_root / base_relative,
+        targets=scan.targets,
+        required=scan.required,
+        agents=scan.agents,
+        conservative=conservative,
+        warnings=scan.warnings,
+        unavailable_resources=scan.unavailable_resources,
+        confirmed_shell=confirmed_shell,
+        source_layout=source_layout,
+    )
+    return rules
+
+
+def _locate_interface(roots: tuple[Path, ...]) -> tuple[Path, Path]:
+    """interface 在哪一层：返回 (interface 所在目录, interface 文件)，都相对于找到它的根，
+    在根上时目录是 ``ROOT``。"""
+
     # interface 在哪一层？叠加视图里以包内的为准，包里没有再看项目。
     interface_base: Path | None = None
     interface_relative: Path | None = None
@@ -1080,18 +1109,34 @@ def build_projection_rules(
     if interface_base is None or interface_relative is None:
         raise ProjectionError("目录里没有 interface.json（根目录或 assets/ 下都没有）")
     base_relative = interface_base if interface_base.parts else ROOT
+    return base_relative, interface_relative
 
-    targets: dict[Path, TargetMode] = {}
-    required: list[RequiredPath] = []
-    warnings: list[str] = []
-    agents: list[dict[str, Any]] = []
-    unavailable_resources: list[str] = []
-    opaque_found = False
-    # 运行时能把越出 interface 目录的写法映射回视图的声明（agent 的第一个 Python 入口，
-    # ``interface.agent_entry.flattened_entry_path``）：源码形态只放行这些越界
-    mapped_entry_labels: set[str] = set()
+
+class _ProjectionScan:
+    """:func:`build_projection_rules` 一次扫描的状态，按规则类别分方法收集白名单目标。
+
+    拆分是纯搬动：各方法开头把要用的状态取成局部名，下面的方法体与拆分前
+    ``build_projection_rules`` 里对应的那段逐字相同；:meth:`visit_interface` 按原来的顺序
+    依次调用各类别，``targets`` / ``required`` / ``warnings`` 的次序与拆分前一致。
+    """
+
+    def __init__(self, view: _FileView, base_relative: Path, *, strict: bool) -> None:
+        self.view = view
+        self.base_relative = base_relative
+        self.strict = strict
+        self.targets: dict[Path, TargetMode] = {}
+        self.required: list[RequiredPath] = []
+        self.warnings: list[str] = []
+        self.agents: list[dict[str, Any]] = []
+        self.unavailable_resources: list[str] = []
+        self.opaque_found = False
+        # 运行时能把越出 interface 目录的写法映射回视图的声明（agent 的第一个 Python 入口，
+        # ``interface.agent_entry.flattened_entry_path``）：源码形态只放行这些越界
+        self.mapped_entry_labels: set[str] = set()
+        self.visited: set[Path] = set()
 
     def add_target(
+        self,
         relative: Path,
         *,
         complete: bool,
@@ -1101,6 +1146,8 @@ def build_projection_rules(
         python_interpreter: bool = False,
         verbatim_runtime: bool = False,
     ) -> None:
+        view, strict = self.view, self.strict
+        targets, required, warnings = self.targets, self.required, self.warnings
         exists = view.exists(relative)
         if not exists:
             if python_interpreter:
@@ -1152,15 +1199,18 @@ def build_projection_rules(
                 )
             )
 
-    def declare(raw: str, label: str, *, must_exist: bool) -> Path | None:
+    def declare(self, raw: str, label: str, *, must_exist: bool) -> Path | None:
+        view, strict, base_relative = self.view, self.strict, self.base_relative
         relative = _normalize_declared_path(raw, base_relative, label)
         if must_exist and strict and not view.exists(relative):
             raise ProjectionError(f"{label} 声明的路径不存在：{raw}")
         return relative
 
-    def cfa_agent_entry(raw: str, label: str) -> Path | None:
+    def cfa_agent_entry(self, raw: str, label: str) -> Path | None:
         """相对写法的入口脚本经 ``..`` 越出 interface 所在目录、而 CFA 的兜底入口在时
         返回兜底入口；否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
+
+        view, warnings, base_relative = self.view, self.warnings, self.base_relative
 
         if not is_relative_entry_path(raw):
             # 绝对路径 / 盘符：照旧报「必须是项目内的相对路径」，不兜底。
@@ -1186,7 +1236,8 @@ def build_projection_rules(
                 return fallback
         return None
 
-    def declare_executable(raw: str, label: str) -> Path:
+    def declare_executable(self, raw: str, label: str) -> Path:
+        view, base_relative = self.view, self.base_relative
         relative = _normalize_declared_path(raw, base_relative, label)
         if view.exists(relative):
             return relative
@@ -1197,7 +1248,7 @@ def build_projection_rules(
         return relative
 
     def add_retention_target(
-        referenced: Path, *, required_label: str | None, required_path: Path
+        self, referenced: Path, *, required_label: str | None, required_path: Path
     ) -> None:
         """agent / pretask 引用的文件：所在目录整个保留（按分类表剔除）。
 
@@ -1205,6 +1256,8 @@ def build_projection_rules(
         更可信：把它当显式目标、豁免名字本身（与 resource 目录叫 ``runtime`` 同一口径），
         里面照常按分类表剔除。
         """
+
+        view, add_target = self.view, self.add_target
 
         retention = _retention_root(referenced, view)
         directory = retention if view.is_dir(retention) else retention.parent
@@ -1217,16 +1270,27 @@ def build_projection_rules(
             allow_excluded_root=python_source,
         )
 
-    visited: set[Path] = set()
-
-    def visit_interface(relative: Path, scope: str) -> None:
-        nonlocal opaque_found
-        if relative in visited:
+    def visit_interface(self, relative: Path, scope: str) -> None:
+        if relative in self.visited:
             return
-        visited.add(relative)
-        data = view.read_json(relative, "ProjectInterface")
-        add_target(relative, complete=True, required_label="ProjectInterface")
+        self.visited.add(relative)
+        data = self.view.read_json(relative, "ProjectInterface")
+        self.add_target(relative, complete=True, required_label="ProjectInterface")
+        self._scan_imports(data)
+        self._scan_resources(data)
+        self._scan_controller_attach(data)
+        self._scan_ui_files(data)
+        self._scan_languages(data)
+        self._scan_agents(data, scope)
+        self._scan_pretask_exec(data)
+        self._scan_pretask_args(data)
 
+    def _scan_imports(self, data: Mapping[str, Any]) -> None:
+        """``import``：递归进被导入的 interface；漏打包的 import 文件只告警。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        declare, add_target = self.declare, self.add_target
+        visit_interface = self.visit_interface
         raw_imports = data.get("import")
         if raw_imports is not None:
             if not isinstance(raw_imports, list) or not all(
@@ -1257,6 +1321,12 @@ def build_projection_rules(
                         required_label="ProjectInterface import",
                     )
 
+    def _scan_resources(self, data: Mapping[str, Any]) -> None:
+        """``resource[].path``：整目录保留；声明了却没打进包的只是这一个资源不可用。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        declare, add_target = self.declare, self.add_target
+        unavailable_resources = self.unavailable_resources
         for index, resource in enumerate(_as_list(data.get("resource"))):
             if not isinstance(resource, dict):
                 continue
@@ -1288,6 +1358,11 @@ def build_projection_rules(
                         allow_excluded_root=True,
                     )
 
+    def _scan_controller_attach(self, data: Mapping[str, Any]) -> None:
+        """控制器的 ``attach_resource_path``：与 resource 同一口径。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        declare, add_target = self.declare, self.add_target
         for index, controller in enumerate(_as_list(data.get("controller"))):
             if not isinstance(controller, dict):
                 continue
@@ -1326,6 +1401,12 @@ def build_projection_rules(
                         allow_excluded_root=True,
                     )
 
+    def _scan_ui_files(self, data: Mapping[str, Any]) -> None:
+        """界面素材、说明文档与 welcome 正文里的图片：只在文件确实在时带上，缺了不告警。"""
+
+        view, base_relative = self.view, self.base_relative
+        add_target = self.add_target
+
         # 界面素材：只在文件确实在时保留，缺了不记警告——发行包里 icon 指向不存在
         # 的文件很常见，那是上游的事，不该把投影报告刷满。
         for raw_asset in collect_ui_asset_paths(data):
@@ -1358,6 +1439,11 @@ def build_projection_rules(
                         add_target(image_relative, complete=True, required_label=None)
                         break
 
+    def _scan_languages(self, data: Mapping[str, Any]) -> None:
+        """``languages``：翻译文件；漏打包的只是这个语言不可用。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        declare, add_target = self.declare, self.add_target
         languages = data.get("languages")
         if isinstance(languages, dict):
             for language, raw_path in languages.items():
@@ -1381,6 +1467,15 @@ def build_projection_rules(
                         required_label=f"languages.{language}",
                     )
 
+    def _scan_agents(self, data: Mapping[str, Any], scope: str) -> None:
+        """``agent``：解释器、入口脚本与参数里的项目文件；越界入口先过 CFA / 源码形态兜底。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        targets, agents, base_relative = self.targets, self.agents, self.base_relative
+        declare, declare_executable = self.declare, self.declare_executable
+        add_target, add_retention_target = self.add_target, self.add_retention_target
+        cfa_agent_entry = self.cfa_agent_entry
+        mapped_entry_labels = self.mapped_entry_labels
         for index, agent in enumerate(_as_list(data.get("agent"))):
             if not isinstance(agent, dict):
                 continue
@@ -1400,7 +1495,7 @@ def build_projection_rules(
             classification, opaque = classify_agent(
                 declared_type, child_exec, child_args
             )
-            opaque_found = opaque_found or opaque
+            self.opaque_found = self.opaque_found or opaque
             discovered: list[str] = []
             if child_exec and looks_like_local_path(child_exec):
                 label = f"agent[{index}].child_exec"
@@ -1498,6 +1593,15 @@ def build_projection_rules(
                 }
             )
 
+    def _scan_pretask_exec(self, data: Mapping[str, Any]) -> None:
+        """``pretask[].exec``：引用的程序所在目录整个保留。"""
+
+        view, strict, warnings = self.view, self.strict, self.warnings
+        # base_relative 这里暂时没用到，照样取好：拆分前它在这段循环里随手可用，拆分前起的、
+        # 改这段循环的分支合进来时不会因为少了这个名字在运行时才 NameError。
+        base_relative = self.base_relative  # noqa: F841
+        declare_executable = self.declare_executable
+        add_retention_target = self.add_retention_target
         for index, pretask in enumerate(_as_list(data.get("pretask"))):
             if not isinstance(pretask, dict):
                 continue
@@ -1516,6 +1620,12 @@ def build_projection_rules(
                 raise ProjectionError(f"{label} 声明的路径不存在：{raw_exec}")
             else:
                 warnings.append(f"{label} 声明的路径当前不存在：{raw_exec}")
+
+    def _scan_pretask_args(self, data: Mapping[str, Any]) -> None:
+        """``pretask[].args`` 里引用的项目文件：所在目录整个保留，找不到只告警。"""
+
+        view, warnings, base_relative = self.view, self.warnings, self.base_relative
+        add_retention_target = self.add_retention_target
 
         # pretask 参数里引用的项目文件（"exec": "python", "args": ["./scripts/p.py"]）：
         # 所在目录整个保留。参数也可能只是自由文本，找不到只记警告，不让导入失败。
@@ -1552,7 +1662,13 @@ def build_projection_rules(
                 else:
                     warnings.append(f"{label} 声明的路径当前不存在：{raw_arg}")
 
-    visit_interface(interface_relative, interface_relative.as_posix())
+
+def _check_source_layout(scan: _ProjectionScan) -> bool:
+    """认不认源码形态（interface 在子目录里、声明越出它）；越界写法没有运行时映射的直接拒绝。"""
+
+    strict, warnings, base_relative = scan.strict, scan.warnings, scan.base_relative
+    targets, required = scan.targets, scan.required
+    mapped_entry_labels = scan.mapped_entry_labels
 
     # 源码形态：interface 在 assets/ 这类子目录里，声明的路径（源码仓的 ``./../agent/main.py``）
     # 越出它、落在来源根上。以前整包拒绝（「这种布局无法提升」）；现在按发行包的打包流程
@@ -1589,6 +1705,14 @@ def build_projection_rules(
             f"源码形态导入，{base_relative.as_posix()}/ 里的内容与根目录上的 agent 等平铺进"
             "副本根（与发行包的布局相同）；源码形态始终跟随来源目录，不做项目更新"
         )
+    return source_layout
+
+
+def _scan_dependency_entries(scan: _ProjectionScan, source_layout: bool) -> None:
+    """依赖清单（``requirements.txt`` 这类文件与依赖目录）：根目录与 interface 所在目录都看。"""
+
+    view, warnings, base_relative = scan.view, scan.warnings, scan.base_relative
+    add_target = scan.add_target
 
     # 依赖清单：根目录与 interface 所在目录都看一眼。
     for base in {ROOT, base_relative}:
@@ -1615,6 +1739,16 @@ def build_projection_rules(
                 )
                 continue
             add_target(entry, complete=False, required_label=None)
+
+
+def _scan_bundled_native_runtime(
+    scan: _ProjectionScan, roots: tuple[Path, ...], source_root: Path
+) -> None:
+    """项目自带的 MaaFramework 原生库目录原样带走，并补上原生库相关的导入告警。"""
+
+    view, strict, warnings = scan.view, scan.strict, scan.warnings
+    agents, base_relative = scan.agents, scan.base_relative
+    add_target = scan.add_target
 
     # 项目自带的 MaaFramework 原生库目录原样带走：runner 优先加载它（与路径模式一致），
     # 非 Python 的 agent 更是启动时就从 <项目>/maafw 加载。
@@ -1663,6 +1797,15 @@ def build_projection_rules(
         if mixed_runtime:
             warnings.append(mixed_runtime)
 
+
+def _adopt_undeclared_entries(
+    scan: _ProjectionScan, source_layout: bool
+) -> dict[Path, str]:
+    """白名单之外 ≤ 64 MB 的顶层条目带走；返回按内容确认的外壳（``confirmed_shell``）。"""
+
+    view, warnings, base_relative = scan.view, scan.warnings, scan.base_relative
+    targets = scan.targets
+
     confirmed_shell: dict[Path, str] = {}
     _adopt_small_undeclared_entries(
         view, base_relative, targets, warnings, confirmed_shell
@@ -1678,13 +1821,27 @@ def build_projection_rules(
             confirmed_shell,
             skip=frozenset({base_relative, *base_relative.parents} - {ROOT}),
         )
+    return confirmed_shell
 
-    conservative = opaque_found
+
+def _apply_conservative_mode(scan: _ProjectionScan) -> bool:
+    """agent 不透明时退回保守模式：保留整棵目录，只去掉分类表命中的。"""
+
+    targets, warnings = scan.targets, scan.warnings
+
+    conservative = scan.opaque_found
     if conservative:
         targets[ROOT] = TargetMode(complete=False, allow_excluded_root=False)
         warnings.append(
             "agent 是 custom / command / 不透明形态，投影退回保守模式：保留整棵目录，只去掉分类表命中的外壳与缓存。"
         )
+    return conservative
+
+
+def _check_assets_layout_escape(scan: _ProjectionScan, source_layout: bool) -> None:
+    """assets 布局（不是源码形态）里声明路径逃出 interface 所在目录的，整份拒绝。"""
+
+    targets, base_relative = scan.targets, scan.base_relative
 
     # 声明路径逃出 interface 所在目录的，assets 布局提升后会指向不存在的位置（源码形态
     # 平铺，不在此列）。
@@ -1695,20 +1852,6 @@ def build_projection_rules(
                     f"interface 在 {base_relative.as_posix()}/ 下，但声明的路径 "
                     f"{target.as_posix()} 在它之外；这种目录布局不支持导入"
                 )
-
-    rules = ProjectionRules(
-        source_root=source_root,
-        interface_base=source_root / base_relative,
-        targets=targets,
-        required=required,
-        agents=agents,
-        conservative=conservative,
-        warnings=warnings,
-        unavailable_resources=unavailable_resources,
-        confirmed_shell=confirmed_shell,
-        source_layout=source_layout,
-    )
-    return rules
 
 
 def _add_root_python_siblings(
