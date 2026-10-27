@@ -73,7 +73,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   **换不换只在一处判定**：`payloads.decide_latest` 按有序规则表 `LATEST_RULES`（私有渠道
   `always_advance` → 组里没有 latest → latest 不完整 → 版本更高 → 发错版本号回退 → 上面三个同版本
   例外，都不管就保留），迁移时同版本挑一份用同口径的 `same_version_sort_key`；加新例外就往表里加
-  一条，别在 `register` 里另写判断。登记时 debug 日志记下定结论的规则。
+  一条，别在 `register` 里另写判断。登记时 debug 日志记下定结论的规则。登记与迁移挑同版本之外，
+  改写 latest 的只有两处，都不是新例外、不进表：投影补齐后的跟随改指（`projection_heal.repoint_latest`：
+  别的渠道已把同一份载荷补齐成新载荷，本渠道 latest 还指着旧的就跟过去，不比版本、不看加载性），
+  以及启动期摘掉不再算引用的私有渠道 latest（`embedded_project._prune_follow_source_latest`，见
+  「跟随来源目录」的「回收」）。
   开发者模式的脚本例外：它的组是
   谱系 + 私有渠道 `dev:<视图名>`，见下一条。
   谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关

@@ -1769,6 +1769,7 @@ def collect_unreferenced(
 
 
 __all__ = [
+    "LATEST_RULES",
     "LINEAGE_FILE_NAME",
     "ORIGIN_IMPORT",
     "ORIGIN_PACKAGE",
@@ -1779,7 +1780,6 @@ __all__ = [
     "PROJECTION_REVISION_FIELD",
     "RELEASE_CHECK_CLEAN",
     "RELEASE_CHECK_FIELD",
-    "LATEST_RULES",
     "FinalizeResult",
     "LatestDecision",
     "LatestFacts",
