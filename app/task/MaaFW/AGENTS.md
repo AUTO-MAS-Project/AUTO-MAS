@@ -385,6 +385,18 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
   看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
   MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
+  - **等的是 pretask 进程退出，不是输出管道 EOF**（`_run_pretasks`）：它拉起的游戏 / 启动器常常继承
+    了输出管道，`communicate()` / `Process.wait()` 都要等管道关闭，会一直卡到游戏退出（本机实测：
+    子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
+    `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
+  - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
+    「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
+    任何进程都不碰。
+  - **exec 越出项目目录**（`..` 上跳过头、绝对路径）：投影与运行计划同一口径（`agent_entry.
+    bundled_python_escape_path`）——以 `python/python.exe` 结尾的相对写法映射回项目自带的 Python
+    （MFABD2 发行包的 `../../python/python.exe`，按 MFAA 的工作目录 `resource/base` 写的），其余
+    这一条 pretask 只告警、运行时跳过，不再让整份投影作废（Sentry AUTO-MAS-BACKEND-NM）；越界的任意
+    程序仍然不运行。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
   桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
   游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
