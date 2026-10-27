@@ -441,18 +441,34 @@ def _import_origin_orphans(
             # 「这个目录本该是空的」的依据。
             continue
         directory = _project_target(project_path, relative_dir)
-        if directory.is_symlink() or not directory.is_dir():
+        if _is_link(directory) or not directory.is_dir():
             continue
-        for path in directory.rglob("*"):
-            if path.is_symlink() or not path.is_file():
-                continue
-            relative = safe_relative_path(path.relative_to(project_path).as_posix())
-            if relative in plan.files or _is_bytecode_artifact(relative):
-                continue
-            if any(part.startswith(".auto_mas") for part in relative.split("/")):
-                continue
-            orphans.add(relative)
+        # 不跟随链接：链接指到的是项目树外的内容，算成残留就会被清掉。Windows 的目录联接
+        # （junction）不算 symlink，rglob / os.walk(followlinks=False) 照样会走进去，要自己剪掉。
+        for current_raw, directory_names, file_names in os.walk(
+            directory, followlinks=False
+        ):
+            current = Path(current_raw)
+            directory_names[:] = [
+                name for name in directory_names if not _is_link(current / name)
+            ]
+            for file_name in file_names:
+                path = current / file_name
+                if path.is_symlink() or not path.is_file():
+                    continue
+                relative = safe_relative_path(path.relative_to(project_path).as_posix())
+                if relative in plan.files or _is_bytecode_artifact(relative):
+                    continue
+                if any(part.startswith(".auto_mas") for part in relative.split("/")):
+                    continue
+                orphans.add(relative)
     return orphans
+
+
+def _is_link(path: Path) -> bool:
+    """符号链接或 Windows 目录联接（junction）：扫描时都不跟进去。"""
+
+    return path.is_symlink() or path.is_junction()
 
 
 def _is_bytecode_artifact(relative: str) -> bool:
