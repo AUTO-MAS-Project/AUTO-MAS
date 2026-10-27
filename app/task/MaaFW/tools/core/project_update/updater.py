@@ -3031,7 +3031,11 @@ def detect_maafw_project_shell_hint(project_path: Path) -> str:
 
 
 def _exception_detail(exc: BaseException) -> str:
-    """异常的打码文案；超时、连不上这类 ``str`` 为空的异常退成类名（如 ``ConnectTimeout``）。"""
+    """异常的打码文案；超时、连不上这类 ``str`` 为空的异常退成类名（如 ``ConnectTimeout``）。
+
+    与 ``transport._reason`` 的区别：这里用本模块的 ``_sanitize_log_message`` 打码（含
+    Mirror 酱下载地址里的 CDK），且不截断——这几处日志 / 文案原来就是完整的 ``str(exc)``，
+    只在它为空时补类名，不改变非空时的样子。"""
 
     return _sanitize_log_message(str(exc)).strip() or type(exc).__name__
 
