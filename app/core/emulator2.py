@@ -426,6 +426,9 @@ async def remove_path(emulator_id: str, path_id: str) -> dict:
     """
     manager = await build_manager(emulator_id)
     affected = find_affected_scripts(emulator_id, manager.slots.slots_of(path_id))
+    # 先把早先删除实例留下、还挂在这条路径上的墓碑退役，
+    # 否则写完路径墓碑就分不出来了，重新添加时会把已删除实例的号一起复活
+    manager.slots.retire_tombstones(path_id)
     tombstoned = manager.slots.tombstone_path(path_id)
     paths = [record for record in manager.paths if record.path_id != path_id]
 
@@ -524,8 +527,8 @@ async def delete_instance(emulator_id: str, slot: str) -> dict:
     以后新建的实例可能拿到同一个号，而某个脚本还绑着它，就会悄悄连到另一台设备上。
     绑定了该号的脚本下次执行直接失败，不会回退到别的设备。
 
-    墓碑同时放开原生索引：雷电新建实例总是复用最小的空闲索引，墓碑占着它，
-    新实例就分不到号、在设备表里看不见。放开后新实例拿一个新号。
+    退役的号同时和路径、原生索引脱钩：雷电新建实例总是复用最小的空闲索引，墓碑占着它，
+    新实例就分不到号、在设备表里看不见。脱钩后新实例拿一个新号。
     """
     manager = await build_manager(emulator_id)
     record = manager.slots.resolve(str(slot))

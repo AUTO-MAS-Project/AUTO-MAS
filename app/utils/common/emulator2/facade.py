@@ -139,11 +139,9 @@ class Emulator2Manager(DeviceBase):
         if record is None:
             raise DeviceUnavailableError(str(slot), "设备号不存在")
         if record.state == "tombstone":
-            # 删除实例的墓碑原生索引为空（见 SlotTable.tombstone_slot）
+            # 删除实例退役的号与路径脱钩，pathId 为空（见 SlotTable.tombstone_slot）
             reason = (
-                "该设备已被删除"
-                if not record.native_index
-                else "该设备所属的模拟器已被移除"
+                "该设备已被删除" if not record.path_id else "该设备所属的模拟器已被移除"
             )
             raise DeviceUnavailableError(str(slot), reason)
         path = self.path_of(record.path_id)
