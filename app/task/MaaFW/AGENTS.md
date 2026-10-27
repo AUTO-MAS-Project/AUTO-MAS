@@ -326,11 +326,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   回到钉回前，否则离线本来能过的项目会被拒绝缓存（钉回「任何一步失败只记日志，不拦准备」）。
 - **隔离 venv 跨视图共用**（`agent_env/venv_share.py`，方案「MFW副本复用与版本切换」§7-5）：目录
   `config/maafw_agent_venvs/maafw_venv_<16hex>`，键 = 装进去的依赖清单（洗过、maafw 钉成确切版本、
-  补过引导包，即 manifest 的 `requirements`）+ maafw requirement + 宿主身份（平台 / 架构 / 解释器实现），
-  任一不同就是另一个目录；同一项目建几个脚本、依赖没变的新版本都用同一份，只装一次。
+  补过引导包，即 manifest 的 `requirements`）+ maafw requirement + 宿主身份（平台 / 架构 / 解释器实现
+  与小版本），任一不同就是另一个目录；同一项目建几个脚本、依赖没变的新版本都用同一份，只装一次。
   - **宿主身份不含具体的引导解释器**：宿主与 worker 挑出来的本来就可能不同（worker 的
     `sys.executable` 是运行池 venv），按它分会在宿主刚建好的旁边再建一份；它记在 venv 的
-    `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。
+    `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。解释器小版本（本进程的
+    `sys.version_info`，引导解释器与它同版本）进键：发版换了 Python 小版本时不沿用旧版本建的那份。
   - **计划阶段不一定知道最终目录**：项目没自带原生库、只声明范围的，maafw 要等 runner 解析出版本
     才定。`compute_isolated_venv_path` 先看本视图的引用记录（`.refs/<视图路径哈希>.json`：上次准备
     实际用的目录 + 当时建计划算出的键，键对得上才信），`prepare_agent_envs` 再按确切版本定一次并
@@ -339,18 +340,29 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **重建判据**：共用目录只比 manifest 的 `venvKey` 与 `requirementsHash`；`projectPath` /
     `interfaceHash` 只记建它的视图，不参与——否则另一个视图、依赖没变的新版本会把别人正在用的
     删了重建。目录名与本项目的键对不上直接拒绝（`_prepare_isolated_venv_env`），不按本项目判据动它。
-    重建先把旧目录改名成 `<名>.trash-<随机>` 再删：有 agent 正从里面跑着时 Windows 不让改名，
-    这时报「正被占用」、不动它（以前 `rmtree(ignore_errors)` 会删一半）。
+    重建先把旧目录改名成 `<名>.trash-<随机>` 再删（改名是原子的，不再像 `rmtree(ignore_errors)` 那样
+    删一半）；改名只在有人以不带共享删除的方式开着里面的文件时失败，这时报「正被占用」、不动它。
+  - **运行中的 venv 没有锁保护**：agent 跑着时不持锁，改名也挡不住它（10-27 实测：Windows 上运行中的
+    `Scripts\python.exe`、已由 ctypes 加载的 DLL 都不挡整个 venv 目录改名，删完存活进程再 import 就
+    `ModuleNotFoundError`）。共用 venv 不被别的视图删掉，靠的是「键相同就不重建」：共用目录只在基解释器
+    没了、结构不完整、依赖清单缺失或损坏时重建，那时它对同键的所有视图都已不能用。要放宽重建判据，
+    先补运行期的租约（如 worker 起 agent 前持共享锁）。
   - **并发**：准备期间持 `isolated_venv_guard`（本进程线程锁 + `.locks/<名>.lock` 字节锁，宿主与
-    worker 跨进程也串行），等的一方日志写「正由另一处准备」，只会看到建好的或没建的。锁文件不删。
+    worker 跨进程也串行），等线程锁、等锁文件都在日志写「正由另一处准备」，两段合计 30 分钟超时；
+    等的一方只会看到建好的或没建的。锁文件一般不删，回收删掉目录后才去掉（`discard_venv_lock_file`：
+    `*.trash-*` 总删，正常名只在 Windows 上删）。
   - **升级前按路径建的老目录**（`maafw_venv_<12hex>`）不迁移、不改名（venv 不可搬家）：共用目录还没
     建、老目录按老判据（项目路径 + interface + 依赖清单都没变）还能用时第一跑沿用它，不重建、不联网；
     项目一更新或同依赖的共用目录建好就换过去。
   - **回收**（启动期 `Config.clean_maafw_agent_venvs` → `planner.collect_orphan_agent_venvs`）：存活 =
     各存活视图引用记录里的目录 ∪ 建计划会算出的目录 ∪ 没有引用记录的视图的老目录；存活视图的引用
     记录读不出来就整轮不回收。照旧跳过刚动过的，锁被占的也跳过；无主的引用记录一并删。
-  - **更新预检**仍建在池根下的 `precheck_agent_venvs`、用完即删（`precheck.cleanup_precheck_agent_venv`
-    按引用记录找、持锁删），没有「预检那份直接提升为正式 venv」。
+  - **更新预检不参与共用**：仍建在池根下的 `precheck_agent_venvs`，但每个 staging 一个子目录
+    `s<staging 路径哈希 10 位>`（`precheck.precheck_staging_agent_root`），用完整个删掉
+    （`precheck.cleanup_precheck_agent_venv`）。不能让预检 venv 在 `precheck_agent_venvs` 下按键共用：
+    上次预检被杀或没删干净的同键残留会被判「要重建」，而 `_reset_isolated_venv` 只肯重建
+    `maafw_agent_venvs` 下的目录，预检直接失败、记成 `other`，这个版本的运行前自动更新就停住了；
+    两个同依赖的预检并发时，先结束的也会删掉另一个正在用的那份。没有「预检那份直接提升为正式 venv」。
 - **项目自带 Python 的健康检查要和 agent 真跑时用同一份原生库**（`agent_env/env._build_project_python_probe_env`）：
   M9A 的发行包不在自带解释器的 `site-packages/maa/bin` 放库，agent 在 `import maa` 之前自己把
   `MAAFW_BINARY_PATH` 指到 `runtimes/<rid>/native`（它的 `agent/maafw_paths.py`）。检查沿用 pip 的环境、
