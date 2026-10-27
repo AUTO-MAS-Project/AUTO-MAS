@@ -34,6 +34,8 @@ from .models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
+    MaaFWPreset,
+    MaaFWPresetPretask,
     MaaFWPretask,
     build_pretask_task_name,
     coerce_option_count,
@@ -61,7 +63,9 @@ _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 
 # 4：加载器开始改写模型（password 字段丢 default、checkbox 选择数放宽），旧缓存没经过这一步。
 # 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们。
-DISK_CACHE_VERSION = 5
+# 6：加载器开始校验 ``preset.pretask``（PI v2.10.3，丢对不上的条目、按 case 校验选项值），
+#    旧缓存里它是没经校验的原样字段。
+DISK_CACHE_VERSION = 6
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -699,10 +703,31 @@ def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
     for preset in presets:
         if not isinstance(preset, dict):
             continue
-        for preset_task in preset.get("task") or []:
+        raw_pretasks = preset.get("pretask")
+        if raw_pretasks is not None and not isinstance(raw_pretasks, list):
+            logger.warning(
+                "MaaFW ProjectInterface preset %s.pretask 不是数组，按未声明处理",
+                preset.get("name"),
+            )
+        preset_entries = [("task", item) for item in preset.get("task") or []] + [
+            ("pretask", item)
+            for item in (raw_pretasks if isinstance(raw_pretasks, list) else [])
+        ]
+        for kind, preset_task in preset_entries:
+            if kind == "pretask" and (
+                not isinstance(preset_task, dict)
+                or not isinstance(preset_task.get("name"), str)
+            ):
+                logger.warning(
+                    "MaaFW ProjectInterface preset %s.pretask 里有一条不是带 name 的对象，"
+                    "已忽略：%s",
+                    preset.get("name"),
+                    json.dumps(preset_task, ensure_ascii=False, default=str),
+                )
+                continue
             if not isinstance(preset_task, dict):
                 continue
-            location = f"preset {preset.get('name')}.task {preset_task.get('name')}"
+            location = f"preset {preset.get('name')}.{kind} {preset_task.get('name')}"
             raw_options = preset_task.get("option")
             if raw_options is None:
                 continue
@@ -1179,6 +1204,16 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
         _collect_reachable_option_names(task.option or [], option_map, collected)
         reachable_options_by_task[task.name] = collected
 
+    # 前置任务没有全局层：只有它自己声明的选项及其子选项。preset.pretask 按 name 引用，
+    # 没有 name 的前置任务引用不到
+    pretask_options_by_name: dict[str, set[str]] = {}
+    for pretask in iter_pretasks(interface_model):
+        if not pretask.name or pretask.name in pretask_options_by_name:
+            continue
+        collected = set()
+        _collect_reachable_option_names(pretask.option or [], option_map, collected)
+        pretask_options_by_name[pretask.name] = collected
+
     for preset in interface_model.preset:
         # 同一任务在 preset 里出现多次是合法的（MRA 周常配置把「自动出征」排了 9 次），
         # 消费端 build_interface_preset_snapshot 把后续出现展开成重复任务实例，所以每一次
@@ -1207,6 +1242,50 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
                 if sanitized is not None:
                     sanitized_options[option_name] = sanitized
             preset_task.option = sanitized_options
+
+        if preset.pretask is not None:
+            preset.pretask = _validate_preset_pretasks(
+                preset, pretask_options_by_name, option_map
+            )
+
+
+def _validate_preset_pretasks(
+    preset: MaaFWPreset,
+    pretask_options_by_name: dict[str, set[str]],
+    option_map: dict[str, MaaFWOption],
+) -> list[MaaFWPresetPretask]:
+    """``preset.pretask``（PI v2.10.3）：名字对不上顶层 ``pretask[].name`` 的条目告警后丢掉
+    （协议：找不到对应预任务的条目应忽略），选项值与预设任务同一口径校验。"""
+
+    kept: list[MaaFWPresetPretask] = []
+    for preset_pretask in preset.pretask or []:
+        reachable_options = pretask_options_by_name.get(preset_pretask.name)
+        if reachable_options is None:
+            logger.warning(
+                "MaaFW ProjectInterface preset %s 引用的前置任务 %s 不存在，应用该预设时忽略它",
+                preset.name,
+                preset_pretask.name,
+            )
+            continue
+        kept.append(preset_pretask)
+        if not preset_pretask.option:
+            continue
+        sanitized_options: dict[str, Any] = {}
+        for option_name, option_value in preset_pretask.option.items():
+            option = option_map.get(option_name)
+            if option_name not in reachable_options or option is None:
+                sanitized_options[option_name] = option_value
+                continue
+            sanitized = _sanitize_option_case_values(
+                option_name,
+                option,
+                option_value,
+                location=f"preset {preset.name}.pretask {preset_pretask.name}",
+            )
+            if sanitized is not None:
+                sanitized_options[option_name] = sanitized
+        preset_pretask.option = sanitized_options
+    return kept
 
 
 def _build_common_option_names(interface_model: MaaFWInterface) -> list[str]:

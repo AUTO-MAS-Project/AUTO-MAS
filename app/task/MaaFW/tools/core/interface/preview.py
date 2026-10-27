@@ -17,6 +17,7 @@ from .models import (
     MaaFWInterface,
     build_pretask_task_name,
     hotkey_modifier_count,
+    is_pretask_task_name,
     iter_pretasks,
     simplified_chinese_language_file,
     task_repeat_count,
@@ -146,8 +147,15 @@ def build_interface_preview_data(
             task_order=task_order,
             task_option_maps=task_option_maps,
             include_default_options=False,
+            # 预设声明的前置任务（PI v2.10.3）随快照给用户页：队列里的 pretask 伪任务 id 打头，
+            # 声明了就带上全部前置任务（未列出的不勾选），没声明就一个不带
+            include_pretasks=True,
         )
-        checked_count = sum(1 for checked in snapshot.taskChecked.values() if checked)
+        checked_count = sum(
+            1
+            for task_id, checked in snapshot.taskChecked.items()
+            if checked and not is_pretask_task_name(task_id)
+        )
         presets.append(
             {
                 "name": preset.name,
