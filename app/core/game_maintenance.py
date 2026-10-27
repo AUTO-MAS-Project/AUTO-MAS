@@ -6,6 +6,7 @@
 
 from datetime import datetime
 
+from app.config import ConfigError, config_manager
 from app.core import Config
 from app.services.game_maintenance import GameMaintenanceClient, MaintenanceCache
 
@@ -30,10 +31,16 @@ async def _write_cache(
         data["Maintenance"] = content
     if etag is not None:
         data["MaintenanceETag"] = etag
-    await Config.setting.update(
-        type(Config.setting).model_validate({"Data": data}),
-        check_visibility=False,
-    )
+    try:
+        # 正文、ETag 与检查时间必须一起提交，避免旧内容被标记为新缓存。
+        async with config_manager.transaction():
+            await Config.setting.update(
+                type(Config.setting).model_validate({"Data": data}),
+                check_visibility=False,
+            )
+    except ConfigError as exc:
+        # 在宿主边界转换框架异常，客户端仍只处理通用缓存写入失败。
+        raise OSError(f"维护信息缓存更新失败: {exc}") from exc
 
 
 GameMaintenance = GameMaintenanceClient(

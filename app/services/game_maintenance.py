@@ -35,7 +35,7 @@ class MaintenanceCache:
 
 
 class MaintenanceCacheWriter(Protocol):
-    """异步保存缓存；未提供的正文和 ETag 保持不变。"""
+    """异步保存缓存；未提供的正文和 ETag 保持不变，写入故障抛 OSError。"""
 
     def __call__(
         self,
