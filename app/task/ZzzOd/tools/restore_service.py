@@ -23,10 +23,8 @@
 （``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-ZzzOd 是门面委托式：恢复与预览的业务语义（槽占用守卫、字段回填、预览
-构建）保留在 ``app.core.config`` 的门面公开方法中，本模块只做池声明与薄
-委托；声明式 ``files`` / ``backup_root`` 回调包装专项 backup_archive 函数
-（物化 + 收集），不读取门面内部状态。
+恢复与预览由专项 recovery 服务持有；池函数只装配配置集合与落盘能力，
+文件级归档与替换继续复用通用基座。
 
 mas 池 = 绑定槽目录整份 + 信息字段快照（mas_user_info.yml，内存 YAML）；
 归档前先物化本页账号+编排进槽（账号/编排只存在 UserData，槽要注入才带，
@@ -39,6 +37,8 @@ import uuid
 from pathlib import Path
 
 from app.utils import config_restore as _utils_config_restore
+
+from ..api_service import get_service
 
 
 def _mas_user(ctx: _utils_config_restore.RestoreContext):
@@ -65,7 +65,7 @@ def _mas_slot(ctx: _utils_config_restore.RestoreContext) -> int | None:
     return slot if slot > 0 else None
 
 
-# ══════════════════ mas 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ mas 池（声明式 + 专项预览/恢复） ══════════════════
 
 
 async def _mas_files(
@@ -73,7 +73,7 @@ async def _mas_files(
 ) -> dict[str, "Path | str"] | None:
     """归档内容 = 绑定槽目录整份 + 信息字段快照（内存 YAML）。
 
-    与门面原快照入口同构：归档前先物化本页账号+编排进槽（不物化会漏、
+    归档前先物化本页账号+编排进槽（不物化会漏、
     恢复会把本页字段清空）；未绑定槽、安装路径未配置或槽目录缺失时返回
     ``None``（无可归档内容）。
     """
@@ -107,18 +107,18 @@ async def _mas_root(ctx: _utils_config_restore.RestoreContext) -> Path | None:
 
 
 async def _preview_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> dict:
-    return ctx.config.get_zzzod_backup_preview(
+    return get_service(ctx.config).recovery.get_backup_preview(
         ctx.script_id, ctx.user_id, ts, target="mas"
     )
 
 
 async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> None:
-    await ctx.config.restore_zzzod_backup(
+    await get_service(ctx.config).recovery.restore_backup(
         ctx.script_id, ctx.user_id, ts, target="mas", force=ctx.force
     )
 
 
-# ══════════════════ onedragon 池（声明式 + 门面预览/恢复） ══════════════════
+# ══════════════════ onedragon 池（声明式 + 专项预览/恢复） ══════════════════
 
 
 async def _onedragon_files(
@@ -146,7 +146,7 @@ async def _onedragon_root(ctx: _utils_config_restore.RestoreContext) -> Path | N
 async def _preview_onedragon(
     ctx: _utils_config_restore.RestoreContext, ts: str
 ) -> dict:
-    return ctx.config.get_zzzod_backup_preview(
+    return get_service(ctx.config).recovery.get_backup_preview(
         ctx.script_id, ctx.user_id, ts, target="onedragon"
     )
 
@@ -154,7 +154,7 @@ async def _preview_onedragon(
 async def _restore_onedragon(
     ctx: _utils_config_restore.RestoreContext, ts: str
 ) -> None:
-    await ctx.config.restore_zzzod_backup(
+    await get_service(ctx.config).recovery.restore_backup(
         ctx.script_id, ctx.user_id, ts, target="onedragon", force=ctx.force
     )
 

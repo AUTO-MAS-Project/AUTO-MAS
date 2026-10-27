@@ -35,6 +35,7 @@ from app.models.schema import (
     ComboBoxItem,
     OutBase,
 )
+from app.task.ZzzOd import api_service as zzzod_api
 from app.utils import get_logger
 
 
@@ -510,7 +511,8 @@ async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
 
     try:
         data = [
-            ZzzOdInstanceOut(**item) for item in Config.get_zzzod_instances(scriptId)
+            ZzzOdInstanceOut(**item)
+            for item in zzzod_api.get_service(Config).get_instances(scriptId)
         ]
         return ZzzOdInstancesOut(
             code=200,
@@ -544,7 +546,7 @@ async def add_zzzod_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.add_zzzod_instance(body.scriptId, body.name)
+            zzzod_api.get_service(Config).add_instance(body.scriptId, body.name)
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -572,7 +574,9 @@ async def rename_zzzod_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.rename_zzzod_instance(body.scriptId, body.instanceIdx, body.name)
+            zzzod_api.get_service(Config).rename_instance(
+                body.scriptId, body.instanceIdx, body.name
+            )
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -600,7 +604,7 @@ async def set_zzzod_instance_active_in_od_api(
 
     try:
         return _zzzod_instances_response(
-            Config.set_zzzod_instance_active_in_od(
+            zzzod_api.get_service(Config).set_instance_active_in_od(
                 body.scriptId, body.instanceIdx, body.activeInOd
             )
         )
@@ -630,7 +634,9 @@ async def set_zzzod_active_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.set_zzzod_instance_active(body.scriptId, body.instanceIdx)
+            zzzod_api.get_service(Config).set_instance_active(
+                body.scriptId, body.instanceIdx
+            )
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -658,7 +664,7 @@ async def set_zzzod_instance_force_login_api(
 
     try:
         return _zzzod_instances_response(
-            Config.set_zzzod_instance_force_login(
+            zzzod_api.get_service(Config).set_instance_force_login(
                 body.scriptId, body.instanceIdx, body.forceLogin
             )
         )
@@ -687,7 +693,9 @@ async def set_zzzod_instance_run_mode_api(
     """白名单校验后写回全局 instance_run（与直控页当前编辑哪个实例无关）。"""
 
     try:
-        Config.set_zzzod_instance_run_mode(body.scriptId, body.instanceRun)
+        zzzod_api.get_service(Config).set_instance_run_mode(
+            body.scriptId, body.instanceRun
+        )
         return OutBase()
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -714,7 +722,9 @@ async def delete_zzzod_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.delete_zzzod_instance(body.scriptId, body.instanceIdx)
+            zzzod_api.get_service(Config).delete_instance(
+                body.scriptId, body.instanceIdx
+            )
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -743,8 +753,11 @@ async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
     """
 
     try:
-        # 阻塞 IO 在 Config.get_zzzod_slots 内放线程执行，懒导入留在事件循环
-        data = [ZzzOdSlotOut(**item) for item in await Config.get_zzzod_slots(scriptId)]
+        # 阻塞 IO 在 zzzod_api.get_service(Config).get_slots 内放线程执行，懒导入留在事件循环
+        data = [
+            ZzzOdSlotOut(**item)
+            for item in await zzzod_api.get_service(Config).get_slots(scriptId)
+        ]
         return ZzzOdSlotsOut(
             code=200,
             status="success",
@@ -776,7 +789,7 @@ async def clean_zzzod_slots_api(
     """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
 
     try:
-        removed = await Config.clean_zzzod_slots(body.scriptId)
+        removed = await zzzod_api.get_service(Config).clean_slots(body.scriptId)
         return ZzzOdSlotCleanOut(
             code=200,
             status="success",
@@ -808,7 +821,7 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
     try:
         data = [
             ZzzOdRecycleEntryOut(**item)
-            for item in await Config.get_zzzod_recycle(scriptId)
+            for item in await zzzod_api.get_service(Config).get_recycle(scriptId)
         ]
         return ZzzOdRecycleOut(
             code=200,
@@ -841,7 +854,7 @@ async def clear_zzzod_recycle_api(
     """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
 
     try:
-        count = await Config.clear_zzzod_recycle(body.scriptId)
+        count = await zzzod_api.get_service(Config).clear_recycle(body.scriptId)
         return ZzzOdRecycleClearOut(
             code=200,
             status="success",
@@ -876,7 +889,7 @@ async def restore_zzzod_recycle_api(
     """
 
     try:
-        slot, user_name = await Config.restore_zzzod_recycle(
+        slot, user_name = await zzzod_api.get_service(Config).recovery.restore_recycle(
             body.scriptId,
             body.slot,
             body.ts,
@@ -914,7 +927,9 @@ async def get_zzzod_teams_api(
     """读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。"""
 
     try:
-        data = await Config.get_zzzod_teams(scriptId, userId, instance_idx=instanceIdx)
+        data = await zzzod_api.get_service(Config).get_teams(
+            scriptId, userId, instance_idx=instanceIdx
+        )
         return ZzzOdTeamsOut(
             code=200,
             status="success",
@@ -949,7 +964,7 @@ async def save_zzzod_teams_api(
     """直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。"""
 
     try:
-        saved = await Config.save_zzzod_teams(
+        saved = await zzzod_api.get_service(Config).save_teams(
             script.scriptId,
             script.userId,
             script.teams,
@@ -992,8 +1007,6 @@ async def get_zzzod_catalog_api(scriptId: str) -> ZzzOdCatalogOut:
     """静态解析安装目录下的应用注册信息，供用户配置渲染任务卡片中文名。"""
 
     try:
-        from app.task.ZzzOd import api_service as zzzod_api
-
         data = [
             ZzzOdCatalogItemOut(**item)
             for item in zzzod_api.get_task_catalog(Config, scriptId)
@@ -1029,7 +1042,7 @@ async def get_zzzod_app_config_api(
     """返回任务可配置字段、选项与当前值（直控传 instanceIdx 读原生实例，否则读绑定槽）。"""
 
     try:
-        data = await Config.get_zzzod_app_config(
+        data = await zzzod_api.get_service(Config).get_app_config(
             scriptId, userId, appId, instance_idx=instanceIdx
         )
         return ZzzOdAppConfigOut(
@@ -1063,7 +1076,7 @@ async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOpti
     """静态读取安装目录（compendium 数据 + 配置目录扫描），与一条龙原生 GUI 选项同源。"""
 
     try:
-        data = await Config.get_zzzod_task_options(scriptId, appId)
+        data = await zzzod_api.get_service(Config).get_task_options(scriptId, appId)
         return ZzzOdTaskOptionsOut(
             code=200,
             status="success",
@@ -1099,7 +1112,7 @@ async def save_zzzod_app_config_api(
     """字段白名单校验后写入 per-app YAML（缺省写用户绑定槽，原生来源写指定原生实例）。"""
 
     try:
-        data = await Config.save_zzzod_app_config(
+        data = await zzzod_api.get_service(Config).save_app_config(
             script.scriptId,
             script.userId,
             script.appId,
@@ -1144,7 +1157,9 @@ async def get_zzzod_native_config_api(
     """读取所选实例 game_account.yml 与 _group.yml（含默认值合并与任务目录并入）。"""
 
     try:
-        data = await Config.get_zzzod_native_config(scriptId, instanceIdx)
+        data = await zzzod_api.get_service(Config).get_native_config(
+            scriptId, instanceIdx
+        )
         return ZzzOdNativeConfigOut(
             code=200,
             status="success",
@@ -1187,8 +1202,6 @@ async def save_zzzod_native_config_api(
     """白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。"""
 
     try:
-        from app.task.ZzzOd import api_service as zzzod_api
-
         data = await zzzod_api.save_native_config(
             Config,
             script_id=script.scriptId,
@@ -1243,7 +1256,7 @@ async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
     """渲染「启动器」下拉用（native/shared 两态通用）：未安装的启动器选项禁用变灰。"""
 
     try:
-        data = Config.get_zzzod_launchers(scriptId)
+        data = zzzod_api.get_service(Config).get_launchers(scriptId)
         return ZzzOdLauncherOut(code=200, status="success", message="", **data)
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -1272,7 +1285,7 @@ async def import_zzzod_config_api(
     导入前状态可在「配置恢复」中找回。"""
 
     try:
-        data = await Config.import_zzzod_config(
+        data = await zzzod_api.get_service(Config).recovery.import_config(
             script.scriptId, script.userId, script.instanceIdx
         )
         return ZzzOdImportOut(

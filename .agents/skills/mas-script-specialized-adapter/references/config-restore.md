@@ -8,10 +8,11 @@
 > [config-archive.md](config-archive.md)。
 >
 > **接入前先定模式**：守卫/预览/快照/恢复只依赖 `script_config` + 备份文件
-> → **自包含式**（逻辑全在专项 tools，范本 OkNte）；需操作门面全局状态
-> （字段回填/合成视图/跨脚本锁/凭据加密落盘）→ **薄委托式**（池函数委托
-> `ctx.config`，范本 ZzzOd）。两种模式池声明接口一致，同一专项不同池也可
-> 分开选。
+> → **自包含式**（逻辑全在专项 tools，范本 OkNte）；需使用跨脚本配置集合、
+> 共用用户创建或落盘能力 → **服务装配式**（从 `ctx.config` 注入所需的通用
+> 配置能力，池函数调用专项服务，范本 ZzzOd）。业务流程与语义仍归专项，
+> 不经配置总管的专项方法反向委托。两种模式池声明接口一致，同一专项不同池
+> 也可分开选。
 >
 > 已解耦为三层，**通用层零专项分支**：
 >
@@ -80,8 +81,8 @@
 >   `config.yaml` + SRA `settings.json`/`cache.json`/`configs/`（按 SRA appdata
 >   根 + M7A 安装根**组合指纹**分桶，两根任一不同即独立池；跨脚本共享、M7A
 >   随 SRA 池一并归档）；无原生 GUI 遮罩会话
-> - ZzzOd（门面委托式）：需要门面内部状态时池函数经 `ctx.config` 薄委托**公开**
->   方法，内部 helper 留在门面
+> - **ZzzOd（服务装配式）**：宿主注入配置集合、通用用户创建与落盘能力，
+>   恢复/预览及跨脚本占用检查由专项服务持有；池函数不委托 core 专项门面。
 
 ---
 
@@ -243,7 +244,7 @@ from app.utils.config_archive import OVERLAY_SIDECAR_NAME
 
 async def _mas_files(ctx) -> dict[str, str] | None:
     """归档什么：相对键 → Path 或内存内容（str 按 UTF-8 / bytes 原样）。"""
-    _user_guard(ctx)               # 守卫在池函数内（自包含优先；门面内部状态经 ctx.config）
+    _user_guard(ctx)               # 自包含守卫；需要宿主能力时注入专项服务
     overlay = read_overlay_values(ctx.script_config.UserData[uuid.UUID(ctx.user_id)])
     if not overlay:
         return None                # 无可归档内容 → snapshot 报无变化
