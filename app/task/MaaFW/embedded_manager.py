@@ -56,7 +56,7 @@ from app.task.MaaFW.tools.backup_archive import (
     archive_native_backup,
     read_overlay_values,
 )
-from app.task.MaaFW.tools.core.file_lockers import describe_lockers
+from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
@@ -1080,7 +1080,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             )
         except Exception as exc:  # noqa: BLE001 - 同步失败不挡运行，视图留在原版本
             # 换视图被占用（rename 拒绝访问）时尽力点出占用者；查不到就什么都不加。
-            lockers = await asyncio.to_thread(describe_lockers, exc)
+            lockers = await describe_lockers_async(exc)
             suffix = f"（{lockers}）" if lockers else ""
             logger.opt(exception=True).warning(
                 f"MFW 组同步失败，本轮沿用当前版本：{exc}{suffix}"

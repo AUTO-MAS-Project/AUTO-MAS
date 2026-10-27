@@ -11,6 +11,7 @@ Restart Manager 只认文件，不认目录，也看不到「当前工作目录�
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from collections.abc import Iterable, Sequence
@@ -103,6 +104,33 @@ def describe_lockers(error: BaseException) -> str:
         more = f" 等 {len(lockers)} 个进程" if len(lockers) > _MAX_LISTED else ""
         return f"占用者：{shown}{more}"
     except Exception:  # noqa: BLE001 - best effort
+        return ""
+
+
+#: 异步查询最多等多久：RmGetList 本身没有时限，进程多的机器上不能拖住组同步 / 更新收尾。
+_ASYNC_TIMEOUT_SECONDS = 2.0
+
+
+async def describe_lockers_async(
+    error: BaseException, *, timeout: float = _ASYNC_TIMEOUT_SECONDS
+) -> str:
+    """在线程里跑 :func:`describe_lockers`，最多等 ``timeout`` 秒；超时、任何失败都返回空串。
+
+    调用方都在 ``except`` 分支里、原来到 ``return`` 之前没有 await。查询期间若任务被取消，
+    这里不抛 ``CancelledError``，而是把取消推迟到调用方的下一个 await（与没加这次查询时
+    一样）：告警照写，调用方的降级 / 收尾流程不被打断。"""
+
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(describe_lockers, error), timeout
+        )
+    except asyncio.CancelledError:
+        task = asyncio.current_task()
+        if task is not None:
+            task.uncancel()
+            task.cancel()
+        return ""
+    except Exception:  # noqa: BLE001 - 超时、事件循环 / 线程池已关闭等，一律当查不到
         return ""
 
 
