@@ -3,8 +3,9 @@
     :script-type="flavor.type"
     :title="pageTitle"
     :doc-url="flavor.docUrl"
-    :logo-src="flavor.logo"
+    :logo-src="headerLogo"
     :logo-alt="flavor.typeTagLabel"
+    :logo-fallback-src="flavor.logo"
     :cancel-disabled="shellImporting"
     @cancel="handleCancel"
   />
@@ -221,7 +222,12 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
-import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import {
+  resolveMaaFWFlavorSlot,
+  useMaaFWSections,
+  usesMaaFWProjectIcon,
+} from '@/composables/useMaaFWFlavor'
+import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
@@ -311,6 +317,14 @@ const {
   handleCancel,
   flavorSlotContext,
 } = useMaaFWScriptPage({ scriptId })
+
+// 面包屑图标：特调用自己声明的；通用 MaaFW 用读到的项目图标，没读到或加载失败用 MaaFW 图标
+const headerLogo = computed(
+  () =>
+    (usesMaaFWProjectIcon(flavor.value) &&
+      buildMaaFWAssetUrl(previewData.value?.path, previewData.value?.project.icon)) ||
+    flavor.value.logo
+)
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)

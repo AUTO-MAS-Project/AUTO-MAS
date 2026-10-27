@@ -22,6 +22,7 @@ import {
   maafwUserConfigTypes,
   prepareMaaFWFlavorPage,
   useMaaFWFlavor,
+  usesMaaFWProjectIcon,
   type MaaFWUserSlotContext,
 } from '@/composables/useMaaFWFlavor'
 import type {
@@ -107,8 +108,11 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const preferAdbController = ref(false)
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
+  // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 用项目图标
   const projectIconUrl = computed(() =>
-    buildMaaFWAssetUrl(previewData.value?.path, previewData.value?.project.icon)
+    usesMaaFWProjectIcon(flavor.value)
+      ? buildMaaFWAssetUrl(previewData.value?.path, previewData.value?.project.icon)
+      : ''
   )
 
   const handleProjectIconError = (event: Event) => {

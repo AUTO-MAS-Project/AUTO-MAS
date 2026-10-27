@@ -7,7 +7,12 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img :src="headerLogo" :alt="headerLogoAlt" class="breadcrumb-logo" />
+            <img
+              :src="headerLogo"
+              :alt="headerLogoAlt"
+              class="breadcrumb-logo"
+              @error="handleLogoError"
+            />
             {{ headerTitle }}
           </div>
         </a-breadcrumb-item>
@@ -42,6 +47,7 @@ import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { fallbackToMaaFWLogo } from '@/utils/maafwProjectIcon'
 
 const { t } = useI18n()
 
@@ -54,6 +60,8 @@ const props = defineProps<{
   docUrl?: string
   logoSrc?: string
   logoAlt?: string
+  /** logoSrc 加载失败时换成它（通用 MFW 的项目图标取不到时回退 MaaFW 图标）；留空不回退 */
+  logoFallbackSrc?: string
   /** 导入等不可中断流程由页面决定何时允许返回。 */
   cancelDisabled?: boolean
 }>()
@@ -66,6 +74,9 @@ const emit = defineEmits<{ cancel: [] }>()
 
 const headerLogo = computed(() => props.logoSrc ?? SCRIPT_LOGOS[props.scriptType])
 const headerLogoAlt = computed(() => props.logoAlt ?? SCRIPT_LABELS[props.scriptType])
+const handleLogoError = (event: Event) => {
+  if (props.logoFallbackSrc) fallbackToMaaFWLogo(event, props.logoFallbackSrc)
+}
 const docUrl = computed(
   () =>
     props.docUrl ??
