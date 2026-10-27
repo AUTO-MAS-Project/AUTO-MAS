@@ -509,7 +509,7 @@ class AppConfig:
                     )
                     self._config_nodes["setting"] = self.setting
                     self.startup_notices = self.setting.startup_notices
-                    await self.setting.activate()
+                    await self.setting.activate(fast_init=True)
 
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
@@ -549,7 +549,7 @@ class AppConfig:
         for _old, _new, key in CONFIG_FILES:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
-                await node.activate()
+                await node.activate(fast_init=True)
         for script in self.ScriptConfig.values():
             if (
                 isinstance(script, MaaEndConfig)
