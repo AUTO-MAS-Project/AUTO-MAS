@@ -1618,12 +1618,21 @@ def same_version_sort_key(
     )
 
 
-def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None:
+def settle_same_version_latest(
+    root: Path,
+    key: str,
+    channel: str,
+    *,
+    candidate_ids: Iterable[str] | None = None,
+) -> str | None:
     """``latest[channel]`` 所在版本有多份载荷时，确定地挑一份：本机能加载自带 MaaFramework
     的优先，其次按 :func:`_same_version_rank`。
 
     迁移先把全部副本登记完再调它（登记是「同版本保留先来的」，先来的可能是残缺的那份），
     然后才统一切换。返回换成的 id；没变返回 None。损坏（``damaged``）或目录不在的不参选。
+
+    ``candidate_ids``：宿主已知属于本组的候选；给了则只在它们与当前 latest 中排名。
+    不以清单的初次登记渠道推断共享载荷的组归属（同内容可被多个渠道复用）。
     """
 
     if is_private_channel(channel):
@@ -1638,8 +1647,15 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
         if not version:
             return None
         damaged = {str(item) for item in data.get("damaged") or []}
+        candidates = (
+            None
+            if candidate_ids is None
+            else {str(item) for item in candidate_ids} | {str(entry["id"])}
+        )
         manifests: dict[str, dict[str, Any]] = {}
         for payload_id in list_ids(root, key):
+            if candidates is not None and payload_id not in candidates:
+                continue
             if payload_id in damaged or not payload_dir(root, key, payload_id).is_dir():
                 continue
             manifest = read_manifest(root, key, payload_id)
@@ -1647,11 +1663,14 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
                 continue
             if str(manifest.get("version") or "").strip().lstrip("vV") != version:
                 continue
-            if payload_id != str(entry["id"]) and is_private_channel(
-                str(manifest.get("channel") or "")
+            if (
+                candidates is None
+                and payload_id != str(entry["id"])
+                and is_private_channel(str(manifest.get("channel") or ""))
             ):
                 # 开发者模式导入建出来的载荷（来源目录里本地改过、版本号没变）不参选普通
                 # 渠道的 latest：否则「文件多 / 规则新」会把同组的正式版换成某人的本地修改。
+                # 显式候选已有宿主的组归属证明，不再按初次登记渠道排除共享载荷。
                 continue
             manifests[payload_id] = manifest
         if len(manifests) < 2:

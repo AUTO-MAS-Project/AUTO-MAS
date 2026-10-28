@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 import { BackendService } from './backendService'
+import { analyticsService } from './analyticsService'
 import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV } from './runtime'
 
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
@@ -495,6 +496,320 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
+  it('准备失败时合并的 stderr 保留最近 200 行', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 200; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stderr',
+          message: `协议-${i}`,
+        })
+      )
+    }
+    child.stderr.feed(Array.from({ length: 205 }, (_, i) => `原始-${i}`).join('\n'))
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs?.split('\n')).toHaveLength(201)
+    expect(result.logs).toContain('原始-5')
+    expect(result.logs).not.toContain('原始-4\n')
+  })
+
+  it('准备失败时长日志只保留有界尾部', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 2,
+        source: 'runtime',
+        stream: 'stdout',
+        message: 'a'.repeat(100_000) + '尾部',
+      })
+    )
+    child.stderr.feed('b'.repeat(100_000) + 'stderr尾部')
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs?.length).toBeLessThanOrEqual(2 * 65_536 + 30)
+    expect(result.logs).toContain('尾部')
+    expect(result.logs).toContain('stderr尾部')
+    expect(JSON.stringify(record.mock.calls)).not.toContain('stderr尾部')
+    record.mockRestore()
+  })
+
+  it('准备失败时多条消息与内嵌换行均受行数和字符上限约束', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 100; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stdout',
+          message: 'x'.repeat(1_024),
+        })
+      )
+    }
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 102,
+        source: 'runtime',
+        stream: 'stderr',
+        message: '行\n'.repeat(250) + '最后一行',
+      })
+    )
+    child.close(50)
+
+    const result = await pending
+    const [stdout, stderr] = result.logs!.split('\n\n')
+    expect(stdout.length - '[stdout]\n'.length).toBeLessThanOrEqual(65_536)
+    expect(stderr.split('\n')).toHaveLength(201)
+    expect(stderr).toContain('最后一行')
+  })
+
+  it('准备失败时未知日志流不标记为 stdout', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'log',
+        sequence: 2,
+        source: 'runtime',
+        stream: 'other',
+        message: '未知流日志',
+      })
+    )
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs).toBe('[other]\n未知流日志')
+  })
+
+  it.each(['workspace check', 'bootstrap'] as const)(
+    '%s 准备失败时保留 Runtime 协议日志',
+    async command => {
+      appState.isPackaged = true
+      process.env[RUNTIME_MODE_ENV] = 'managed'
+      process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+      const service = createService()
+      mockSpawn()
+      const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+      const pending = service.startBackend()
+      let preparation = await waitForSpawn(0)
+      if (command === 'bootstrap') {
+        preparation.stdout.feed(
+          line({
+            ...base,
+            type: 'hello',
+            sequence: 1,
+            runtimeVersion: 'dev',
+            command: 'workspace check',
+            capabilities: [],
+          }) +
+            line({
+              ...base,
+              type: 'log',
+              sequence: 2,
+              source: 'runtime',
+              stream: 'stdout',
+              message: '上一次检查成功日志',
+            }) +
+            line({
+              ...base,
+              type: 'result',
+              sequence: 3,
+              success: true,
+              code: 'OK',
+              stage: 'workspace.check',
+              status: 'succeeded',
+              message: '检查完成',
+              retryable: false,
+              remediation: [],
+              details: { healthy: true, version: 'v5.5.0-beta.3' },
+            })
+        )
+        preparation.close(0)
+        preparation = await waitForSpawn(1)
+      }
+      preparation.stdout.feed(
+        line({
+          ...base,
+          type: 'hello',
+          sequence: 1,
+          runtimeVersion: 'dev',
+          command,
+          capabilities: [],
+        }) +
+          line({
+            ...base,
+            type: 'log',
+            sequence: 2,
+            source: 'runtime',
+            stream: 'stdout',
+            message: '准备步骤日志',
+          }) +
+          line({
+            ...base,
+            type: 'log',
+            sequence: 3,
+            source: 'runtime',
+            stream: 'stderr',
+            message: '依赖失败详情',
+          }) +
+          line({
+            ...base,
+            type: 'result',
+            sequence: 4,
+            success: false,
+            code: 'DEPENDENCY_SYNC_FAILED',
+            stage: 'dependency.sync',
+            status: 'failed',
+            message: '准备失败',
+            retryable: true,
+            remediation: ['retry-sync'],
+            details: {},
+          })
+      )
+      preparation.close(50)
+
+      const result = await pending
+      expect(result.success).toBe(false)
+      expect(result.code).toBe('DEPENDENCY_SYNC_FAILED')
+      expect(result.logs).toBe('[stdout]\n准备步骤日志\n\n[stderr]\n依赖失败详情')
+      expect(record).toHaveBeenCalled()
+      expect(JSON.stringify(record.mock.calls)).not.toContain('准备步骤日志')
+      expect(JSON.stringify(record.mock.calls)).not.toContain('依赖失败详情')
+      record.mockRestore()
+      expect(spawnMock).toHaveBeenCalledTimes(command === 'bootstrap' ? 2 : 1)
+    }
+  )
+
+  it('准备命令异常退出时仍保留有界日志，不把日志送入遥测', async () => {
+    appState.isPackaged = true
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    mockSpawn()
+    const record = vi.spyOn(analyticsService, 'recordMainEvent')
+
+    const pending = service.startBackend()
+    const child = await waitForSpawn(0)
+    child.stdout.feed(
+      line({
+        ...base,
+        type: 'hello',
+        sequence: 1,
+        runtimeVersion: 'dev',
+        command: 'workspace check',
+        capabilities: [],
+      })
+    )
+    for (let i = 0; i < 205; i++) {
+      child.stdout.feed(
+        line({
+          ...base,
+          type: 'log',
+          sequence: i + 2,
+          source: 'runtime',
+          stream: 'stderr',
+          message: `本地诊断-${i}`,
+        })
+      )
+    }
+    child.close(50)
+
+    const result = await pending
+    expect(result.success).toBe(false)
+    expect(result.logs).toContain('本地诊断-5')
+    expect(result.logs).not.toContain('本地诊断-4\n')
+    expect(result.logs).toContain('本地诊断-204')
+    expect(result.logs?.split('\n')).toHaveLength(201)
+    expect(record).toHaveBeenCalled()
+    expect(JSON.stringify(record.mock.calls)).not.toContain('本地诊断-')
+    record.mockRestore()
+    expect(spawnMock).toHaveBeenCalledTimes(1)
+  })
+
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
     appState.isPackaged = true
     process.env.AUTO_MAS_ENV = 'development'
