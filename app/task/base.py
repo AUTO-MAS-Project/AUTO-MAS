@@ -5,6 +5,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 
+from app.core.custom_script import execute_script_task
 from app.core.ws import Publisher, protocol
 from app.models.config import (
     BAAHConfig,
@@ -104,9 +105,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     async def run_user_scripts_before(self) -> None:
         """执行用户级任务前脚本；每用户一次，先于全部重试。"""
 
-        # 就地导入：专项包会反向导入本模块，模块级导入会成环。
-        from app.task.general.tools import execute_script_task
-
         self._user_scripts_started = True
         if getattr(self.cur_user_config.Info, "IfScriptBeforeTask", False):
             await execute_script_task(
@@ -116,8 +114,6 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
     async def run_user_scripts_after(self) -> None:
         """执行用户级任务后脚本；前置未执行过时跳过，保证成对且只一次。"""
-
-        from app.task.general.tools import execute_script_task
 
         if not self._user_scripts_started:
             return

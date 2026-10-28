@@ -4,7 +4,9 @@
   <Transition name="egg-polaroid">
     <figure v-if="polaroid" :key="polaroid.key" class="egg-polaroid">
       <img :src="polaroid.src" alt="" />
-      <figcaption>{{ t('home.satelliteEgg.photoCaption') }} · {{ polaroid.caption }}</figcaption>
+      <figcaption>
+        {{ t('core.home.satelliteEgg.photoCaption') }} · {{ polaroid.caption }}
+      </figcaption>
     </figure>
   </Transition>
 
@@ -20,7 +22,7 @@
       >
         <div class="egg-genshin-gate"></div>
         <div class="egg-genshin-content">
-          <div class="egg-genshin-title">{{ t('home.satelliteEgg.genshinLaunch') }}</div>
+          <div class="egg-genshin-title">{{ t('core.home.satelliteEgg.genshinLaunch') }}</div>
           <div class="egg-genshin-ornament"></div>
           <div class="egg-genshin-elements">
             <span
@@ -29,7 +31,7 @@
               :style="{ '--element': color, '--delay': `${0.6 + index * 0.22}s` }"
             ></span>
           </div>
-          <div class="egg-genshin-enter">{{ t('home.satelliteEgg.clickToEnter') }}</div>
+          <div class="egg-genshin-enter">{{ t('core.home.satelliteEgg.clickToEnter') }}</div>
         </div>
       </div>
     </Transition>
@@ -44,7 +46,7 @@
     @click.stop="launchRockets"
   >
     <RocketOutlined />
-    <span>{{ t('home.satelliteEgg.rocketButton') }}</span>
+    <span>{{ t('core.home.satelliteEgg.rocketButton') }}</span>
   </button>
   <SatelliteRocketRace ref="race" />
 </template>

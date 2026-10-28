@@ -141,5 +141,5 @@ export async function importZzzodInstance(
   input: Parameters<typeof Service.importZzzodConfigApiApiScriptsZzzodImportPost>[0]
 ) {
   const result = await AdapterSetupService.importZzzodConfigApiApiScriptsZzzodImportPost(input)
-  if (result.code !== 200) throw new Error(result.message || t('edit.zzzodImportFailed'))
+  if (result.code !== 200) throw new Error(result.message || t('core.edit.zzzodImportFailed'))
 }

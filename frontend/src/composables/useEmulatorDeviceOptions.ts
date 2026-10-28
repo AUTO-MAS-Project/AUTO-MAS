@@ -46,7 +46,7 @@ const loadEmulatorType = async (emulatorId: string, parentSignal: AbortSignal) =
           Service.getEmulatorApiEmulatorGetPost({ emulatorId })
         )
         if (response.code !== 200)
-          throw new Error(response.message || t('edit.couldNotLoadEmulator'))
+          throw new Error(response.message || t('core.edit.couldNotLoadEmulator'))
         return response.data[emulatorId]?.Info?.Type ?? ''
       },
     })
@@ -65,7 +65,7 @@ const deviceOptionsQuery = (emulatorId: string) =>
         Service.getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost({ emulatorId })
       )
       if (response.code !== 200) {
-        throw new Error(response.message || t('apiErrors.emulatorDevicesFailed'))
+        throw new Error(response.message || t('core.apiErrors.emulatorDevicesFailed'))
       }
       let devices: Emulator2DeviceItem[] = []
       // 类型/设备属性读取仍按原行为降级；列表可用时不因附属信息失败阻断选择。
@@ -115,7 +115,7 @@ export const useEmulatorDeviceOptions = ({
       options,
       value => value !== null && modAvdSlots.has(value),
       allowModAvd,
-      t('emulator2.avd.unsupportedScript')
+      t('core.emulator2.avd.unsupportedScript')
     )
   })
 

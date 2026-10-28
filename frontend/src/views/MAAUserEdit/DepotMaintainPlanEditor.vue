@@ -3,7 +3,7 @@
     <a-alert v-if="itemOptionsError" :message="itemOptionsError" type="warning" show-icon />
     <div v-if="eventMode && activityLoading" class="activity-loading">
       <a-spin size="small" />
-      <span>{{ t('eventDepotPreview.loading') }}</span>
+      <span>{{ t('core.eventDepotPreview.loading') }}</span>
     </div>
     <a-alert
       v-if="eventMode && activityError"
@@ -19,7 +19,7 @@
           :disabled="loading"
           @click="emit('retryActivity')"
         >
-          {{ t('eventDepotPreview.retry') }}
+          {{ t('core.eventDepotPreview.retry') }}
         </a-button>
       </template>
     </a-alert>
@@ -28,12 +28,12 @@
       <div v-if="eventRows.length" class="plan-scroll">
         <div class="plan-grid-header is-event">
           <span />
-          <span>{{ t('eventDepotPreview.stageColumn') }}</span>
-          <span>{{ t('edit.item') }}</span>
-          <span>{{ t('edit.targetStock') }}</span>
+          <span>{{ t('core.eventDepotPreview.stageColumn') }}</span>
+          <span>{{ t('core.edit.item') }}</span>
+          <span>{{ t('core.edit.targetStock') }}</span>
           <span>
             <a-tooltip :title="stockColumnTitle">
-              <span>{{ t('edit.stock') }}</span>
+              <span>{{ t('core.edit.stock') }}</span>
             </a-tooltip>
           </span>
         </div>
@@ -48,7 +48,7 @@
               <a-checkbox
                 :checked="row.farmed"
                 :disabled="loading"
-                :aria-label="t('eventDepotPreview.farmStage')"
+                :aria-label="t('core.eventDepotPreview.farmStage')"
                 @change="toggleFarm(row, $event.target.checked)"
               />
             </span>
@@ -62,7 +62,7 @@
               :disabled="loading"
               :min="1"
               :precision="0"
-              :aria-label="t('edit.targetStock')"
+              :aria-label="t('core.edit.targetStock')"
               @change="setStageTarget(row, $event)"
             />
             <span class="stock-value">{{ eventStockOf(row) }}</span>
@@ -72,7 +72,9 @@
       <a-empty
         v-else
         :description="
-          eligibleStages.length ? t('edit.noStockKeepingPlans') : t('eventDepotPreview.noActivity')
+          eligibleStages.length
+            ? t('core.edit.noStockKeepingPlans')
+            : t('core.eventDepotPreview.noActivity')
         "
         :image-style="{ height: '48px' }"
       />
@@ -83,13 +85,13 @@
           <a-dropdown :disabled="loading" :trigger="['click']">
             <a-button type="dashed" size="small" :disabled="loading">
               <template #icon><AppstoreAddOutlined /></template>
-              {{ t('edit.addPreset') }}
+              {{ t('core.edit.addPreset') }}
               <DownOutlined />
             </a-button>
             <template #overlay>
               <a-menu>
                 <a-menu-item key="all" @click="importPreset('all')">{{
-                  t('edit.allPresets')
+                  t('core.edit.allPresets')
                 }}</a-menu-item>
                 <a-menu-divider />
                 <a-menu-item
@@ -104,17 +106,17 @@
           </a-dropdown>
           <a-button type="dashed" size="small" :disabled="loading" @click="addPlan">
             <template #icon><PlusOutlined /></template>
-            {{ t('edit.addItem') }}
+            {{ t('core.edit.addItem') }}
           </a-button>
           <a-popconfirm
-            :title="t('edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
-            :ok-text="t('edit.ok')"
-            :cancel-text="t('edit.cancel')"
+            :title="t('core.edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
+            :ok-text="t('core.edit.ok')"
+            :cancel-text="t('core.edit.cancel')"
             @confirm="removeSelectedPlans"
           >
             <a-button danger size="small" :disabled="loading || selectedRowKeys.length === 0">
               <template #icon><DeleteOutlined /></template>
-              {{ t('edit.deleteSelected') }}
+              {{ t('core.edit.deleteSelected') }}
             </a-button>
           </a-popconfirm>
         </a-space>
@@ -130,16 +132,16 @@
               :checked="allSelected"
               :indeterminate="someSelected"
               :disabled="loading"
-              :aria-label="t('edit.selectPlanRows')"
+              :aria-label="t('core.edit.selectPlanRows')"
               @change="toggleAll($event.target.checked)"
             />
           </span>
-          <span>{{ t('edit.stage') }}</span>
-          <span>{{ t('edit.item') }}</span>
-          <span>{{ t('edit.targetStock') }}</span>
+          <span>{{ t('core.edit.stage') }}</span>
+          <span>{{ t('core.edit.item') }}</span>
+          <span>{{ t('core.edit.targetStock') }}</span>
           <span>
             <a-tooltip :title="stockColumnTitle">
-              <span>{{ t('edit.stock') }}</span>
+              <span>{{ t('core.edit.stock') }}</span>
             </a-tooltip>
           </span>
           <span />
@@ -158,8 +160,8 @@
             <div class="plan-row" :class="{ 'row-selected': selectedKeys.has(record.key) }">
               <span
                 class="depot-drag-handle"
-                :title="t('edit.maaDepotDragSortHint')"
-                :aria-label="t('edit.maaDepotDragSortHint')"
+                :title="t('core.edit.maaDepotDragSortHint')"
+                :aria-label="t('core.edit.maaDepotDragSortHint')"
               >
                 <span class="drag-dots" aria-hidden="true"></span>
               </span>
@@ -167,7 +169,7 @@
                 <a-checkbox
                   :checked="selectedKeys.has(record.key)"
                   :disabled="loading"
-                  :aria-label="t('edit.selectPlanRow')"
+                  :aria-label="t('core.edit.selectPlanRow')"
                   @change="toggleRow(record.key, $event.target.checked)"
                 />
               </span>
@@ -183,7 +185,7 @@
                 :get-popup-container="getPopupContainer"
                 :list-height="popupListHeight"
                 :popup-match-select-width="false"
-                :placeholder="t('edit.pickStage')"
+                :placeholder="t('core.edit.pickStage')"
                 @change="onStageChange(record)"
                 @dropdown-visible-change="
                   (open: boolean) => open && record.DropId && loadStageCandidates(record.DropId)
@@ -200,7 +202,7 @@
                 :virtual="false"
                 :get-popup-container="getPopupContainer"
                 :list-height="popupListHeight"
-                :placeholder="t('edit.pickItem')"
+                :placeholder="t('core.edit.pickItem')"
                 @change="onItemChange(record)"
               />
               <a-input-number
@@ -208,7 +210,7 @@
                 :disabled="loading"
                 :min="1"
                 :precision="0"
-                :aria-label="t('edit.targetStock')"
+                :aria-label="t('core.edit.targetStock')"
                 @change="queueSave"
               />
               <span class="stock-value">{{ stockOf(record) }}</span>
@@ -217,7 +219,7 @@
                 <a-button
                   type="text"
                   size="small"
-                  :aria-label="t('edit.maaDepotMoveUp')"
+                  :aria-label="t('core.edit.maaDepotMoveUp')"
                   :disabled="loading || index === 0"
                   @click="moveRow(index, -1)"
                 >
@@ -226,7 +228,7 @@
                 <a-button
                   type="text"
                   size="small"
-                  :aria-label="t('edit.maaDepotMoveDown')"
+                  :aria-label="t('core.edit.maaDepotMoveDown')"
                   :disabled="loading || index === plans.length - 1"
                   @click="moveRow(index, 1)"
                 >
@@ -235,7 +237,7 @@
                 <a-button
                   type="text"
                   danger
-                  :aria-label="t('edit.deleteStockKeepingPlan')"
+                  :aria-label="t('core.edit.deleteStockKeepingPlan')"
                   :disabled="loading"
                   @click="removePlan(record.key)"
                 >
@@ -248,13 +250,13 @@
       </div>
       <a-empty
         v-else
-        :description="t('edit.noStockKeepingPlans')"
+        :description="t('core.edit.noStockKeepingPlans')"
         :image-style="{ height: '48px' }"
       />
     </template>
     <a-alert
       v-if="eventMode && !activityUnavailable && eligibleStages.length === 0 && plans.length"
-      :message="t('eventDepotPreview.expiredHint')"
+      :message="t('core.eventDepotPreview.expiredHint')"
       type="warning"
       show-icon
     />
@@ -266,7 +268,7 @@
       rel="noreferrer"
       @click="handleExternalLink"
     >
-      {{ t('edit.maaDataSourceYituliu') }}
+      {{ t('core.edit.maaDataSourceYituliu') }}
     </a-typography-link>
   </div>
 </template>
@@ -342,8 +344,8 @@ type EventRow = {
 
 const stockColumnTitle = computed(() =>
   props.depotInventoryTime
-    ? t('edit.stockRecognizedAt', { time: props.depotInventoryTime })
-    : t('edit.stock')
+    ? t('core.edit.stockRecognizedAt', { time: props.depotInventoryTime })
+    : t('core.edit.stock')
 )
 
 const eventMode = computed(() => props.activityStages !== undefined)
@@ -431,8 +433,8 @@ watch(
 /** 关卡类别：搓玉关只有一处，不带序号；材料关按序号区分。 */
 const stageKindOf = (row: EventRow) =>
   row.type === 'orundum'
-    ? t('eventDepotPreview.orundumStage')
-    : t('eventDepotPreview.stageIndex', { n: row.index })
+    ? t('core.eventDepotPreview.orundumStage')
+    : t('core.eventDepotPreview.stageIndex', { n: row.index })
 
 const stageTextOf = (row: EventRow) => [row.stage.Display, stageKindOf(row)].join(' · ')
 

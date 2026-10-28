@@ -30,6 +30,7 @@ from pydantic import BaseModel, Field
 
 from app.api.notification_dependencies import get_notification_service
 from app.core.notify import HostNotificationService
+from app.models.config.setting import QQGroupCommandWhitelist
 from app.models.schema import OutBase
 from app.notification_channels.openclaw_qq.transport import Sender
 from app.utils import get_logger
@@ -89,14 +90,21 @@ class OpenClawQQGroupsOut(OutBase):
     groups: list[OpenClawQQGroup] = Field(
         default_factory=list, description="自动记录的群"
     )
+    groupCommandWhitelist: QQGroupCommandWhitelist = Field(
+        default_factory=list, description="群控制成员 OpenID 白名单，空列表允许所有成员"
+    )
     errorCode: str = Field(default="", description="可本地化的错误标识")
 
 
 class OpenClawQQTargetIn(BaseModel):
-    """选择私聊、全部群聊或两者。"""
+    """选择通知位置并可选更新群控制成员白名单。"""
 
     bindingId: str = Field(min_length=1, description="查询群列表时返回的绑定版本")
     targetType: Literal["c2c", "group", "all"] = Field(description="通知接收位置")
+    groupCommandWhitelist: QQGroupCommandWhitelist | None = Field(
+        default=None,
+        description="群控制成员 OpenID 白名单；省略保持现值，空列表允许所有成员",
+    )
 
 
 router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人通知"])
@@ -108,6 +116,7 @@ def _groups_out(sender: Sender) -> OpenClawQQGroupsOut:
     return OpenClawQQGroupsOut(
         bindingId=snapshot.binding_id,
         targetType=snapshot.target_type,
+        groupCommandWhitelist=list(snapshot.group_command_whitelist),
         groups=[
             OpenClawQQGroup(openId=group.openid, lastSeen=group.last_seen)
             for group in snapshot.groups
@@ -150,13 +159,14 @@ async def set_target(
         HostNotificationService, Depends(get_notification_service)
     ],
 ) -> OpenClawQQGroupsOut:
-    """验证绑定版本后保存通知模式，无需选择群。"""
+    """验证绑定版本后保存通知模式与可选的群控制白名单。"""
 
     try:
         sender = notifications.channel_sender("openclaw_qq")
         await sender.set_target(
             binding_id=body.bindingId,
             target_type=body.targetType,
+            group_command_whitelist=body.groupCommandWhitelist,
         )
         return _groups_out(sender)
     except ValueError as exc:

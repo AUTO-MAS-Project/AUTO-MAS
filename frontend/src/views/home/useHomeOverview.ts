@@ -74,7 +74,7 @@ export const useHomeOverview = () => {
         hasSnapshot.value = true
         saveOverviewCache(data)
       } else {
-        error.value = response.message || t('home.overview.fetchFailed')
+        error.value = response.message || t('core.home.overview.fetchFailed')
         logger.warn('获取首页概览失败: ' + error.value)
       }
     } catch (requestError) {
@@ -84,7 +84,7 @@ export const useHomeOverview = () => {
       const errorMessage =
         requestError instanceof Error ? requestError.message : String(requestError)
       logger.error('获取首页概览失败: ' + errorMessage)
-      error.value = t('home.overview.networkFailed')
+      error.value = t('core.home.overview.networkFailed')
     } finally {
       if (version === fetchVersion && !quiet) {
         loading.value = false

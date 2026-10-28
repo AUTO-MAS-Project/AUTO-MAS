@@ -81,7 +81,7 @@ export const useTaskboardData = (t: Composer['t']) => {
       const overview = blueArchivePresentation(server.overview)
       out.push({
         key: `bluearchive-${server.key}`,
-        name: `${t('home.game.bluearchive')} · ${server.label}`,
+        name: `${t('core.home.game.bluearchive')} · ${server.label}`,
         cover: overview.cover || overview.activities.find(item => item.cover)?.cover || '',
       })
     }
@@ -241,23 +241,32 @@ export const useTaskboardData = (t: Composer['t']) => {
       )
       return {
         tone: 'muted',
-        text: left > 0 ? t('taskboard.deleteInDays', { p0: left }) : t('taskboard.deleteToday'),
+        text:
+          left > 0
+            ? t('core.taskboard.deleteInDays', { p0: left })
+            : t('core.taskboard.deleteToday'),
       }
     }
     const left = remaining(e)
     if (!e.end_time) return { tone: 'normal', text: '' }
-    if (left <= 0) return { tone: 'muted', text: t('taskboard.ended') }
-    if (left < 3600000) return { tone: 'urgent', text: t('taskboard.endsSoon') }
+    if (left <= 0) return { tone: 'muted', text: t('core.taskboard.ended') }
+    if (left < 3600000) return { tone: 'urgent', text: t('core.taskboard.endsSoon') }
     if (left < DAY)
-      return { tone: 'urgent', text: t('taskboard.leftHours', { p0: Math.ceil(left / 3600000) }) }
+      return {
+        tone: 'urgent',
+        text: t('core.taskboard.leftHours', { p0: Math.ceil(left / 3600000) }),
+      }
     const days = Math.ceil(left / DAY)
-    return { tone: days <= 7 ? 'urgent' : 'normal', text: t('taskboard.leftDays', { p0: days }) }
+    return {
+      tone: days <= 7 ? 'urgent' : 'normal',
+      text: t('core.taskboard.leftDays', { p0: days }),
+    }
   }
 
   /* 一律按北京时间显示：1999 源给的是 UTC（带 Z），直接切字符串会差 8 小时 */
   const fmtDate = (value?: string) => {
     const ts = parseActivityTime(value)
-    if (!ts) return t('taskboard.undetermined')
+    if (!ts) return t('core.taskboard.undetermined')
     const date = new Date(ts + 8 * 3600 * 1000)
     const pad = (n: number) => String(n).padStart(2, '0')
     return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
@@ -268,9 +277,9 @@ export const useTaskboardData = (t: Composer['t']) => {
     for (const [key, module] of gameModules) {
       const section = module.buildPanel(nowTs.value).activities
       if (!section.loading && !section.available) {
-        issues.push(`${gameName(key)}: ${t('taskboard.sourceUnavailable')}`)
+        issues.push(`${gameName(key)}: ${t('core.taskboard.sourceUnavailable')}`)
       } else if (section.stale) {
-        issues.push(`${gameName(key)}: ${t('taskboard.sourceStale')}`)
+        issues.push(`${gameName(key)}: ${t('core.taskboard.sourceStale')}`)
       }
       for (const alert of section.alerts ?? []) {
         issues.push(`${gameName(key)}: ${alert.message}`)
@@ -279,16 +288,16 @@ export const useTaskboardData = (t: Composer['t']) => {
     for (const server of baSource.servers.value) {
       const key = `bluearchive-${server.key}`
       if (!baSource.loadingByServer[server.key] && !server.overview.Available) {
-        issues.push(`${gameName(key)}: ${t('taskboard.sourceUnavailable')}`)
+        issues.push(`${gameName(key)}: ${t('core.taskboard.sourceUnavailable')}`)
       } else if (server.overview.Stale) {
-        issues.push(`${gameName(key)}: ${t('taskboard.sourceStale')}`)
+        issues.push(`${gameName(key)}: ${t('core.taskboard.sourceStale')}`)
       }
     }
     if (taskboardState.errorMessage) {
-      issues.push(`${t('taskboard.stateFailed')}: ${taskboardState.errorMessage}`)
+      issues.push(`${t('core.taskboard.stateFailed')}: ${taskboardState.errorMessage}`)
     }
     if (taskboardState.archiveError) {
-      issues.push(`${t('taskboard.archiveFailed')}: ${taskboardState.archiveError}`)
+      issues.push(`${t('core.taskboard.archiveFailed')}: ${taskboardState.archiveError}`)
     }
     return [...new Set(issues)]
   })

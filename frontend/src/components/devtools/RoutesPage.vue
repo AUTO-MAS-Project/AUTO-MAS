@@ -45,28 +45,28 @@ const registeredRoutes = computed(() => {
     .sort((left, right) => left.path.localeCompare(right.path))
 })
 const columns = computed(() => [
-  { title: t('devtools.routePath'), key: 'path' },
-  { title: t('devtools.routeName'), dataIndex: 'name', key: 'name', width: 175 },
+  { title: t('core.devtools.routePath'), key: 'path' },
+  { title: t('core.devtools.routeName'), dataIndex: 'name', key: 'name', width: 175 },
 ])
 
 const navigate = async (path = targetPath.value) => {
   if (navigating.value) return
   const candidate = path.trim()
   if (!candidate.startsWith('/') || candidate.startsWith('//')) {
-    message.error(t('devtools.invalidRoute'))
+    message.error(t('core.devtools.invalidRoute'))
     return
   }
   const resolved = router.resolve(candidate)
   if (!resolved.matched.length || resolved.path.includes(':')) {
-    message.error(t('devtools.invalidRoute'))
+    message.error(t('core.devtools.invalidRoute'))
     return
   }
   navigating.value = true
   try {
     const failure = await router.push(resolved)
-    if (failure) message.info(t('devtools.navigationCancelled'))
+    if (failure) message.info(t('core.devtools.navigationCancelled'))
   } catch {
-    message.error(t('devtools.navigationFailed'))
+    message.error(t('core.devtools.navigationFailed'))
   } finally {
     navigating.value = false
   }
@@ -76,9 +76,9 @@ const navigate = async (path = targetPath.value) => {
 <template>
   <section class="devtools-section">
     <div class="devtools-toolbar">
-      <h3>{{ t('devtools.currentRoute') }}</h3>
+      <h3>{{ t('core.devtools.currentRoute') }}</h3>
       <a-button size="small" @click="copyDevtoolsText(route.fullPath)"
-        ><CopyOutlined />{{ t('devtools.copyPath') }}</a-button
+        ><CopyOutlined />{{ t('core.devtools.copyPath') }}</a-button
       >
     </div>
     <p class="devtools-code current-path">{{ route.fullPath }}</p>
@@ -86,14 +86,14 @@ const navigate = async (path = targetPath.value) => {
   </section>
   <a-input-search
     v-model:value="targetPath"
-    :placeholder="t('devtools.routeInput')"
-    :aria-label="t('devtools.routeInput')"
-    :enter-button="t('devtools.navigate')"
+    :placeholder="t('core.devtools.routeInput')"
+    :aria-label="t('core.devtools.routeInput')"
+    :enter-button="t('core.devtools.navigate')"
     :loading="navigating"
     @search="navigate"
   />
   <section class="devtools-section">
-    <h3>{{ t('devtools.routeHistory') }}</h3>
+    <h3>{{ t('core.devtools.routeHistory') }}</h3>
     <div class="route-history">
       <div
         v-for="(visit, index) in history.slice(0, 10)"
@@ -106,14 +106,14 @@ const navigate = async (path = targetPath.value) => {
         </button>
       </div>
     </div>
-    <p class="devtools-muted">{{ t('devtools.historyHint') }}</p>
+    <p class="devtools-muted">{{ t('core.devtools.historyHint') }}</p>
   </section>
   <div class="devtools-toolbar">
-    <h3>{{ t('devtools.registeredRoutes') }}</h3>
+    <h3>{{ t('core.devtools.registeredRoutes') }}</h3>
     <a-input
       v-model:value="search"
-      :placeholder="t('devtools.searchRoutes')"
-      :aria-label="t('devtools.searchRoutes')"
+      :placeholder="t('core.devtools.searchRoutes')"
+      :aria-label="t('core.devtools.searchRoutes')"
       class="route-search"
       allow-clear
     />
@@ -135,7 +135,7 @@ const navigate = async (path = targetPath.value) => {
       <code v-else class="devtools-code">{{ record.name }}</code>
     </template>
   </a-table>
-  <p class="devtools-muted">{{ t('devtools.routeHint') }}</p>
+  <p class="devtools-muted">{{ t('core.devtools.routeHint') }}</p>
 </template>
 
 <style scoped>

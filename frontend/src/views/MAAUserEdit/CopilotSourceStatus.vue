@@ -6,20 +6,20 @@
         <div class="source-title">
           <strong>{{
             state?.available
-              ? t('maaCopilot.cached', { count: state.count })
-              : t('maaCopilot.noData')
+              ? t('core.maaCopilot.cached', { count: state.count })
+              : t('core.maaCopilot.noData')
           }}</strong>
           <span v-if="state?.available" class="source-origin">
-            {{ t(`maaCopilot.origins.${state.dataSource ?? 'unknown'}`) }}
+            {{ t(`core.maaCopilot.origins.${state.dataSource ?? 'unknown'}`) }}
           </span>
         </div>
         <dl v-if="state?.available" class="source-dates">
           <div>
-            <dt>{{ t('maaCopilot.generatedAt') }}</dt>
+            <dt>{{ t('core.maaCopilot.generatedAt') }}</dt>
             <dd>{{ sourceTime }}</dd>
           </div>
           <div>
-            <dt>{{ t('maaCopilot.downloadedAt') }}</dt>
+            <dt>{{ t('core.maaCopilot.downloadedAt') }}</dt>
             <dd>{{ formatTime(state.downloadedAt) }}</dd>
           </div>
         </dl>
@@ -27,16 +27,20 @@
           <span>{{
             t(
               state?.dataSource === 'copilot'
-                ? 'maaCopilot.liveHint'
-                : 'maaCopilot.snapshotSchedule'
+                ? 'core.maaCopilot.liveHint'
+                : 'core.maaCopilot.snapshotSchedule'
             )
           }}</span>
-          <a-popover :title="t('maaCopilot.dataSource')" trigger="click" placement="bottomLeft">
+          <a-popover
+            :title="t('core.maaCopilot.dataSource')"
+            trigger="click"
+            placement="bottomLeft"
+          >
             <template #content
-              ><p class="source-detail">{{ t('maaCopilot.snapshotHint') }}</p></template
+              ><p class="source-detail">{{ t('core.maaCopilot.snapshotHint') }}</p></template
             >
             <a-button type="link" size="small"
-              >{{ t('maaCopilot.sourceDetails') }}<InfoCircleOutlined aria-hidden="true"
+              >{{ t('core.maaCopilot.sourceDetails') }}<InfoCircleOutlined aria-hidden="true"
             /></a-button>
           </a-popover>
         </div>
@@ -49,23 +53,23 @@
           @click="emit('sync', false)"
         >
           <template #icon><CloudDownloadOutlined aria-hidden="true" /></template>
-          {{ t('maaCopilot.load') }}
+          {{ t('core.maaCopilot.load') }}
         </a-button>
-        <a-tooltip :title="t('maaCopilot.refreshHint')">
+        <a-tooltip :title="t('core.maaCopilot.refreshHint')">
           <a-button
             type="link"
             size="small"
             :disabled="disabled || state?.running"
             @click="emit('sync', true)"
           >
-            {{ t('maaCopilot.refresh') }}
+            {{ t('core.maaCopilot.refresh') }}
           </a-button>
         </a-tooltip>
       </div>
     </div>
     <div v-if="state?.running" class="sync-progress">
       <a-progress :percent="syncPercent" :show-info="false" />
-      {{ t('maaCopilot.syncing', { loaded: state.loaded, total: state.total || '…' }) }}
+      {{ t('core.maaCopilot.syncing', { loaded: state.loaded, total: state.total || '…' }) }}
     </div>
     <a-alert v-if="state?.error" :message="state.error" type="warning" show-icon />
   </div>

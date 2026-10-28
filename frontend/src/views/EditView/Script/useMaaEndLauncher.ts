@@ -48,7 +48,7 @@ export function useMaaEndLauncher(options: {
       )
       if (request !== generation || disposed) return
       if (result.code !== 200 || !result.launcher_path) {
-        throw new Error(result.message || t('edit.maaEndLauncherDetectFailed'))
+        throw new Error(result.message || t('core.edit.maaEndLauncherDetectFailed'))
       }
       detectedPath.value = result.launcher_path
     } catch (reason) {
@@ -58,7 +58,7 @@ export function useMaaEndLauncher(options: {
           ? reason.body.message
           : reason instanceof Error
             ? reason.message
-            : t('edit.maaEndLauncherDetectFailed')
+            : t('core.edit.maaEndLauncherDetectFailed')
     } finally {
       if (request === generation && !disposed) detecting.value = false
     }
@@ -74,12 +74,13 @@ export function useMaaEndLauncher(options: {
         Object.assign(options.game, patch)
         error.value = ''
       } else {
-        error.value = t('edit.maaEndLauncherSaveFailed')
+        error.value = t('core.edit.maaEndLauncherSaveFailed')
       }
       return success
     } catch (reason) {
       if (!disposed) {
-        error.value = reason instanceof Error ? reason.message : t('edit.maaEndLauncherSaveFailed')
+        error.value =
+          reason instanceof Error ? reason.message : t('core.edit.maaEndLauncherSaveFailed')
       }
       return false
     } finally {
@@ -90,20 +91,21 @@ export function useMaaEndLauncher(options: {
   const selectFile = async () => {
     try {
       const paths = await window.electronAPI.selectFile([
-        { name: t('edit.maaEndLauncherPath'), extensions: ['exe'] },
+        { name: t('core.edit.maaEndLauncherPath'), extensions: ['exe'] },
       ])
       const selected = paths?.[0]
       if (!selected || disposed) return
       // 手动指定也必须指向官方启动器，与运行时（签名校验）同一口径。
       const fileName = selected.split(/[\\/]/).pop()?.toLowerCase()
       if (fileName !== 'launcher.exe' && fileName !== 'games.exe') {
-        error.value = t('edit.maaEndPickLauncherExeError')
+        error.value = t('core.edit.maaEndPickLauncherExeError')
         return
       }
       await save({ LauncherPath: selected })
     } catch (reason) {
       if (!disposed) {
-        error.value = reason instanceof Error ? reason.message : t('edit.maaEndLauncherSaveFailed')
+        error.value =
+          reason instanceof Error ? reason.message : t('core.edit.maaEndLauncherSaveFailed')
       }
     }
   }

@@ -17,8 +17,8 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
   routes: { suffix: 'm9a' },
   create: {
     card: {
-      titleKey: 'scripts.type.M9A',
-      descriptionKey: 'scripts.create.typeDesc.M9A',
+      titleKey: 'core.scripts.type.M9A',
+      descriptionKey: 'core.scripts.create.typeDesc.M9A',
       keywords: ['m9a', '1999', '重返未来'],
       group: 'specialized',
       after: 'MaaEnd',
@@ -26,10 +26,10 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
   },
   scriptPage: {
     text: {
-      titleKey: 'edit.m9aFlavorScriptTitle',
-      sourceDirectoryKey: 'edit.m9aFlavorSourceDirectory',
-      sourceHintKey: 'edit.m9aFlavorSourceHint',
-      sourcePlaceholderKey: 'edit.m9aFlavorSourcePlaceholder',
+      titleKey: 'core.edit.m9aFlavorScriptTitle',
+      sourceDirectoryKey: 'core.edit.m9aFlavorSourceDirectory',
+      sourceHintKey: 'core.edit.m9aFlavorSourceHint',
+      sourcePlaceholderKey: 'core.edit.m9aFlavorSourcePlaceholder',
     },
     // 游戏更新下拉：只有 M9A 的后端特调有游戏客户端更新钩子，与游戏包名并排
     slots: {
@@ -38,17 +38,17 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
   },
   userPage: {
     text: {
-      accountPlaceholderKey: 'edit.m9aFlavorAccountPlaceholder',
-      accountTooltipKey: 'edit.m9aFlavorAccountTooltip',
-      queueHintKey: 'edit.m9aFlavorQueueHint',
+      accountPlaceholderKey: 'core.edit.m9aFlavorAccountPlaceholder',
+      accountTooltipKey: 'core.edit.m9aFlavorAccountTooltip',
+      queueHintKey: 'core.edit.m9aFlavorQueueHint',
     },
     managed: {
       // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组
       entries: ['StartUp', 'SwitchAccount', 'Close1999'],
       // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户
       accountTask: { entry: 'SwitchAccount', resources: ['官服'] },
-      warningKey: 'edit.m9aFlavorManagedTaskWarning',
-      noticeKey: 'edit.m9aFlavorManagedTaskNotice',
+      warningKey: 'core.edit.m9aFlavorManagedTaskWarning',
+      noticeKey: 'core.edit.m9aFlavorManagedTaskNotice',
     },
   },
 })

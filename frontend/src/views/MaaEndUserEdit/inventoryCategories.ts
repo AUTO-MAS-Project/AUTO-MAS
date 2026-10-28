@@ -1,9 +1,9 @@
 export const INVENTORY_CATEGORIES = [
-  { key: 'experience', label: 'edit.maaEndImsExperience' },
-  { key: 'promotion', label: 'edit.maaEndImsPromotion' },
-  { key: 'skill', label: 'edit.maaEndImsSkill' },
-  { key: 'currency', label: 'edit.maaEndImsCurrency' },
-  { key: 'other', label: 'edit.maaEndImsOther' },
+  { key: 'experience', label: 'core.edit.maaEndImsExperience' },
+  { key: 'promotion', label: 'core.edit.maaEndImsPromotion' },
+  { key: 'skill', label: 'core.edit.maaEndImsSkill' },
+  { key: 'currency', label: 'core.edit.maaEndImsCurrency' },
+  { key: 'other', label: 'core.edit.maaEndImsOther' },
 ] as const
 
 type InventoryCategory = (typeof INVENTORY_CATEGORIES)[number]['key']

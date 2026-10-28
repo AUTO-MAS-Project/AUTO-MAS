@@ -64,7 +64,7 @@ const handleDetach = async () => {
     const result = await window.electronAPI.detachVirtualDisplayFromPrompt()
     if (!result) return
     if (result.code !== 200) {
-      errorText.value = t('setting.display.prompt.detachFailed', { reason: result.message })
+      errorText.value = t('core.setting.display.prompt.detachFailed', { reason: result.message })
       return
     }
     // 后端拆完会发 display.detach.prompt.closed 让主窗口收掉这个窗；这里不等它，直接关
@@ -72,7 +72,7 @@ const handleDetach = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拆除虚拟显示器失败: ${errorMsg}`)
-    errorText.value = t('setting.display.prompt.detachFailed', { reason: errorMsg })
+    errorText.value = t('core.setting.display.prompt.detachFailed', { reason: errorMsg })
   } finally {
     detaching.value = false
   }
@@ -83,16 +83,20 @@ const handleDetach = async () => {
   <div class="vdd-prompt">
     <div class="vdd-prompt-header">
       <DesktopOutlined class="vdd-prompt-icon" />
-      <span class="vdd-prompt-title">{{ t('setting.display.prompt.title') }}</span>
+      <span class="vdd-prompt-title">{{ t('core.setting.display.prompt.title') }}</span>
     </div>
-    <p class="vdd-prompt-body">{{ t('setting.display.prompt.body', { devices }) }}</p>
+    <p class="vdd-prompt-body">{{ t('core.setting.display.prompt.body', { devices }) }}</p>
     <p v-if="errorText" class="vdd-prompt-error">{{ errorText }}</p>
     <div class="vdd-prompt-actions">
       <a-button type="primary" :disabled="detaching" @click="handleKeep">
-        {{ t('setting.display.prompt.keep') }}
+        {{ t('core.setting.display.prompt.keep') }}
       </a-button>
       <a-button danger :loading="detaching" @click="handleDetach">
-        {{ detaching ? t('setting.display.prompt.detaching') : t('setting.display.prompt.detach') }}
+        {{
+          detaching
+            ? t('core.setting.display.prompt.detaching')
+            : t('core.setting.display.prompt.detach')
+        }}
       </a-button>
     </div>
   </div>

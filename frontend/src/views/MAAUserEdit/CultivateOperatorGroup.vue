@@ -6,13 +6,13 @@
         class="operator-select"
         :checked="selected"
         :disabled="busy"
-        :aria-label="t('edit.maaCultivateSelectOperator', { name: view.name })"
+        :aria-label="t('core.edit.maaCultivateSelectOperator', { name: view.name })"
         @change="emit('toggle-selection', view.operatorId, $event.target.checked)"
       />
       <button
         type="button"
         class="operator-toggle"
-        :aria-label="t('edit.maaCultivateToggleGoals')"
+        :aria-label="t('core.edit.maaCultivateToggleGoals')"
         :aria-expanded="!collapsed"
         @click="emit('toggle-collapse', view.operatorId)"
       >
@@ -29,9 +29,9 @@
         '★'.repeat(Math.min(view.rarity, 6))
       }}</span>
       <span class="operator-summary" :title="view.summary">{{ view.summary }}</span>
-      <a-tooltip v-if="view.overLimit" :title="t('edit.maaCultivateOverLimit')">
+      <a-tooltip v-if="view.overLimit" :title="t('core.edit.maaCultivateOverLimit')">
         <a-tag color="warning" class="operator-over-limit">
-          {{ t('edit.maaCultivateOverLimitShort') }}
+          {{ t('core.edit.maaCultivateOverLimitShort') }}
         </a-tag>
       </a-tooltip>
       <a-button
@@ -41,7 +41,7 @@
         :disabled="busy"
         @click="emit('remove', view.operatorId)"
       >
-        {{ t('edit.maaCultivateRemove') }}
+        {{ t('core.edit.maaCultivateRemove') }}
       </a-button>
     </div>
     <!-- 目标组：精英化/技能等级单行直出，专精/模组带组标题；达成行不给下拉
@@ -84,7 +84,7 @@
         </template>
       </template>
       <div v-if="!view.groups.length" class="goal-empty">
-        {{ t('maaCopilot.noPendingGoals') }}
+        {{ t('core.maaCopilot.noPendingGoals') }}
       </div>
     </div>
   </div>

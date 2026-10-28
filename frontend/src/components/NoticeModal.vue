@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="t('comp.announcement')"
+    :title="t('core.comp.announcement')"
     :width="800"
     :footer="null"
     :closable="false"
@@ -39,7 +39,7 @@
       <div class="notice-footer">
         <div class="notice-pagination">
           <span class="pagination-text">{{
-            t('comp.announcementCount', { n: notices.length })
+            t('core.comp.announcementCount', { n: notices.length })
           }}</span>
         </div>
 
@@ -50,7 +50,7 @@
             class="confirm-button"
             @click="confirmNotices"
           >
-            {{ t('comp.gotIt') }}
+            {{ t('core.comp.gotIt') }}
           </a-button>
         </div>
       </div>
@@ -127,7 +127,7 @@ const confirmNotices = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`确认公告失败: ${errorMsg}`)
-    message.error(t('comp.couldNotConfirmAnnouncement'))
+    message.error(t('core.comp.couldNotConfirmAnnouncement'))
   } finally {
     confirming.value = false
   }
@@ -146,7 +146,7 @@ const handleLinkClick = async (event: MouseEvent) => {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
             logger.error(`打开链接失败: ${String(result.error)}`)
-            message.error(t('comp.couldNotOpenLink'))
+            message.error(t('core.comp.couldNotOpenLink'))
           }
         } else {
           // 如果不在Electron环境中，使用普通的window.open
@@ -155,7 +155,7 @@ const handleLinkClick = async (event: MouseEvent) => {
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`打开链接失败: ${errorMsg}`)
-        message.error(t('comp.couldNotOpenLink'))
+        message.error(t('core.comp.couldNotOpenLink'))
       }
     }
   }

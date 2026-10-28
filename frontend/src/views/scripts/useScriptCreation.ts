@@ -69,7 +69,7 @@ export function useScriptCreation(options: CreationOptions) {
         } catch (error) {
           const reason = error instanceof Error ? error.message : String(error)
           logger.error(`复用已有脚本的项目失败: ${reason}`)
-          message.error(t('scripts.toast.reuseFailed', { reason }))
+          message.error(t('core.scripts.toast.reuseFailed', { reason }))
         }
         options.closeDialog()
         navigate(result.scriptId, type)
@@ -84,7 +84,7 @@ export function useScriptCreation(options: CreationOptions) {
         }
         outcome = 'success'
         message.success(
-          t('scripts.toast.createdFromTemplate', { name: request.template.displayName })
+          t('core.scripts.toast.createdFromTemplate', { name: request.template.displayName })
         )
         await options.reloadScripts()
         options.closeDialog()
@@ -112,7 +112,7 @@ export function useScriptCreation(options: CreationOptions) {
       if (result) {
         outcome = 'success'
         await options.reloadScripts()
-        message.success(t('scripts.toast.copied', { name: script.name }))
+        message.success(t('core.scripts.toast.copied', { name: script.name }))
       }
     } finally {
       operation.finish({

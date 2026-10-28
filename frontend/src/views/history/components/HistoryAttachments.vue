@@ -27,12 +27,12 @@ const finishReplay = (event: Event, outcome: 'success' | 'failure') => {
 const attachmentUrl = (id: string) => `${OpenAPI.BASE}/api/history/attachments/${id}`
 const unavailableReason = (reason?: string | null) => {
   const keys: Record<string, string> = {
-    missing: 'history.attachments.missing',
-    quota: 'history.attachments.quota',
-    directory_unavailable: 'history.attachments.directoryUnavailable',
-    archive_failed: 'history.attachments.archiveFailed',
+    missing: 'core.history.attachments.missing',
+    quota: 'core.history.attachments.quota',
+    directory_unavailable: 'core.history.attachments.directoryUnavailable',
+    archive_failed: 'core.history.attachments.archiveFailed',
   }
-  return t(keys[reason ?? ''] ?? 'history.attachments.unavailable')
+  return t(keys[reason ?? ''] ?? 'core.history.attachments.unavailable')
 }
 const markFailed = (id: string, event?: Event) => {
   if (event) finishReplay(event, 'failure')
@@ -44,7 +44,7 @@ const markFailed = (id: string, event?: Event) => {
   <a-collapse v-if="attachments.length" class="history-attachments">
     <a-collapse-panel
       key="attachments"
-      :header="t('history.attachments.title', { count: attachments.length })"
+      :header="t('core.history.attachments.title', { count: attachments.length })"
     >
       <div v-for="attachment in attachments" :key="attachment.id" class="history-attachment">
         <div class="attachment-heading">
@@ -56,7 +56,7 @@ const markFailed = (id: string, event?: Event) => {
             rel="noopener noreferrer"
             :download="attachment.display_name"
           >
-            {{ t('history.attachments.download') }}
+            {{ t('core.history.attachments.download') }}
           </a>
         </div>
         <a-alert

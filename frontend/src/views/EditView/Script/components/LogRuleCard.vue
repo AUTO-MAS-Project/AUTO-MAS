@@ -53,7 +53,7 @@ const onEnabledChange = (enabled: boolean) => {
   <div :class="['log-rule-card', { 'rule-disabled': !enabled }]">
     <div class="rule-header">
       <div class="rule-header-left">
-        <DragHandle :title="t('edit.dragRule')" />
+        <DragHandle :title="t('core.edit.dragRule')" />
         <slot name="type" />
       </div>
 
@@ -68,7 +68,7 @@ const onEnabledChange = (enabled: boolean) => {
           v-model:value="nameValue"
           class="rule-title-input"
           size="small"
-          :placeholder="t('edit.ruleTitle')"
+          :placeholder="t('core.edit.ruleTitle')"
           @click.stop
           @blur="finishEditName"
           @press-enter="finishEditName"
@@ -79,23 +79,23 @@ const onEnabledChange = (enabled: boolean) => {
         <slot name="header-extra" />
         <a-switch :checked="enabled" size="small" @change="onEnabledChange" />
 
-        <a-tooltip v-if="showDebug" :title="t('edit.debug')">
+        <a-tooltip v-if="showDebug" :title="t('core.edit.debug')">
           <a-button
             size="small"
             class="rule-op-btn"
-            :aria-label="t('edit.debug')"
+            :aria-label="t('core.edit.debug')"
             @click="emit('debug')"
           >
             <slot name="debug-icon" />
           </a-button>
         </a-tooltip>
 
-        <a-tooltip :title="t('edit.delete')">
+        <a-tooltip :title="t('core.edit.delete')">
           <a-button
             size="small"
             danger
             class="rule-op-btn"
-            :aria-label="t('edit.delete')"
+            :aria-label="t('core.edit.delete')"
             @click="emit('remove')"
           >
             <DeleteOutlined />

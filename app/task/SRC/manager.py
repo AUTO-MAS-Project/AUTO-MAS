@@ -71,6 +71,22 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 }
 
 
+def build_src_manager(
+    script_info: ScriptItem,
+    *,
+    root_paths: tuple[Path, ...],
+    reserve_root: Callable[[Path], bool],
+) -> "SrcManager":
+    """接收宿主已预约的根目录及追加预约能力。"""
+    if not root_paths:
+        raise RuntimeError("SRC 路径占用未初始化")
+    return SrcManager(
+        script_info,
+        reserved_src_root_path=root_paths[0],
+        reserve_src_root=reserve_root,
+    )
+
+
 class SrcManager(ScriptManagerBase):
     """SRC控制器"""
 

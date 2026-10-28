@@ -26,6 +26,7 @@ from .dispatch import router as dispatch_router
 from .emulator import router as emulator_router
 from .emulator2 import router as emulator2_router
 from .history import router as history_router
+from .i18n import router as i18n_router
 from .info import router as info_router
 from .ocr import router as ocr_router
 from .openclaw_qq import router as openclaw_qq_router
@@ -49,6 +50,7 @@ __all__ = [
     "queue_router",
     "dispatch_router",
     "history_router",
+    "i18n_router",
     "tools_router",
     "setting_router",
     "share_router",

@@ -1,8 +1,12 @@
 <template>
-  <ScriptEditHeader script-type="SRC" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="SRC" :title="t('core.edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.srcScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.srcScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="blue" class="type-tag"> SRC </a-tag>
       </template>
@@ -11,21 +15,21 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.scriptName')"
-                    :hint="t('edit.giveScriptNameYou')"
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.giveScriptNameYou')"
                     variant="form"
                   />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -36,16 +40,16 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.srcPath')"
-                    :hint="t('edit.pickFolderHoldingSrc2')"
+                    :text="t('core.edit.srcPath')"
+                    :hint="t('core.edit.pickFolderHoldingSrc2')"
                     variant="form"
                   />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
                   mode="folder"
-                  :placeholder="t('edit.pickFolderHoldingSrc')"
-                  :pick-label="t('edit.pickFolder')"
+                  :placeholder="t('core.edit.pickFolderHoldingSrc')"
+                  :pick-label="t('core.edit.pickFolder')"
                   @pick="selectSRCPath"
                 />
               </a-form-item>
@@ -56,7 +60,7 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
@@ -82,7 +86,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="srcConfig.Run.HardTimeLimit"
@@ -93,8 +97,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.accountSwitchingMethod')"
-                    :hint="t('edit.whatDoWhenSwitching')"
+                    :text="t('core.edit.accountSwitchingMethod')"
+                    :hint="t('core.edit.whatDoWhenSwitching')"
                     variant="form"
                   />
                 </template>
@@ -104,9 +108,11 @@
                   @change="handleChange('Run', 'TaskTransitionMethod', $event)"
                 >
                   <a-select-option value="ExitEmulator">{{
-                    t('edit.restartEmulator')
+                    t('core.edit.restartEmulator')
                   }}</a-select-option>
-                  <a-select-option value="ExitGame">{{ t('edit.restartGame') }}</a-select-option>
+                  <a-select-option value="ExitGame">{{
+                    t('core.edit.restartGame')
+                  }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -114,8 +120,8 @@
               <ScriptRunLimitField
                 v-model="srcConfig.Run.ProxyTimesLimit"
                 kind="daily"
-                :label="t('edit.runsPerDayThis')"
-                :hint="t('edit.skipRunOnceThis')"
+                :label="t('core.edit.runsPerDayThis')"
+                :hint="t('core.edit.skipRunOnceThis')"
                 enhanced
                 @save="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
               />
@@ -124,8 +130,8 @@
               <ScriptRunLimitField
                 v-model="srcConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('edit.retryLimit')"
-                :hint="t('edit.ifRunStillUnfinished')"
+                :label="t('core.edit.retryLimit')"
+                :hint="t('core.edit.ifRunStillUnfinished')"
                 enhanced
                 @save="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
               />
@@ -136,8 +142,8 @@
               <ScriptRunLimitField
                 v-model="srcConfig.Run.RunTimeLimit"
                 kind="timeout"
-                :label="t('edit.runTimeoutMinutes2')"
-                :hint="t('edit.treatRunAsTimed2')"
+                :label="t('core.edit.runTimeoutMinutes2')"
+                :hint="t('core.edit.treatRunAsTimed2')"
                 enhanced
                 @save="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
               />
@@ -148,15 +154,15 @@
         <!-- 游戏更新 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameUpdate') }}</h3>
+            <h3>{{ t('core.edit.gameUpdate') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.checkGameUpdateBefore')"
-                    :hint="t('edit.checkGameUpdateBeforeLogin')"
+                    :text="t('core.edit.checkGameUpdateBefore')"
+                    :hint="t('core.edit.checkGameUpdateBeforeLogin')"
                     variant="form"
                   />
                 </template>
@@ -166,8 +172,8 @@
                   style="width: 100%"
                   @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -175,8 +181,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.installGamePackageAutomatically')"
-                    :hint="t('edit.whenClientDetectedAs')"
+                    :text="t('core.edit.installGamePackageAutomatically')"
+                    :hint="t('core.edit.whenClientDetectedAs')"
                     variant="form"
                   />
                 </template>
@@ -187,8 +193,8 @@
                   :disabled="!srcConfig.Run.IfCheckGameUpdate"
                   @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -196,8 +202,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.gameUpdateTimeoutMinutes')"
-                    :hint="t('edit.timeoutDownloadingInstallingGame')"
+                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
+                    :hint="t('core.edit.timeoutDownloadingInstallingGame')"
                     variant="form"
                   />
                 </template>
@@ -290,9 +296,9 @@ const formData = reactive({
 const srcConfig = reactive(createSrcScriptDraft())
 
 const rules = {
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  type: [{ required: true, message: t('edit.pickScriptType'), trigger: 'change' }],
-  path: [{ required: true, message: t('edit.pickSrcPath'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  type: [{ required: true, message: t('core.edit.pickScriptType'), trigger: 'change' }],
+  path: [{ required: true, message: t('core.edit.pickSrcPath'), trigger: 'blur' }],
 }
 
 // 模拟器相关状态
@@ -347,7 +353,7 @@ const loadScript = async () => {
       const scriptDetail = await getScript(scriptId)
 
       if (!scriptDetail) {
-        if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+        if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -365,7 +371,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -410,7 +416,7 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
 const selectSRCPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error(t('edit.filePickingUnavailableRun'))
+      message.error(t('core.edit.filePickingUnavailableRun'))
       return
     }
 
@@ -422,12 +428,12 @@ const selectSRCPath = async () => {
       srcConfig.Info.Path = path
       // 选择路径后立即保存
       await handleChange('Info', 'Path', path)
-      message.success(t('edit.srcPathSelected'))
+      message.success(t('core.edit.srcPathSelected'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择SRC路径失败: ${errorMsg}`)
-    message.error(t('edit.couldNotPickFolder'))
+    message.error(t('core.edit.couldNotPickFolder'))
   }
 }
 </script>
