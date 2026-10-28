@@ -19,5 +19,9 @@ export type MaaConfig_UpdateInput = {
      * MAA 更新通道：正式版或公测版
      */
     Channel?: ('stable' | 'beta' | null);
+    /**
+     * 更新通道一次性迁移版本
+     */
+    ChannelMigrationVersion?: (number | null);
 };
 

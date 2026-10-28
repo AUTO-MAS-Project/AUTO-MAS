@@ -161,7 +161,7 @@ async def test_update_runs_before_maintenance_and_all_skip_bypasses_proxy(
 @pytest.mark.parametrize("enabled,cdk", [(False, ""), (True, "review-cdk")])
 @pytest.mark.skipif(not IS_WINDOWS, reason="secret storage uses Windows DPAPI")
 async def test_maa_resource_update_keeps_takeover_credentials(
-    monkeypatch, enabled, cdk
+    monkeypatch, tmp_path, enabled, cdk
 ):
     from app.task.MAA import manager as maa
 
@@ -181,12 +181,28 @@ async def test_maa_resource_update_keeps_takeover_credentials(
     script = ScriptItem(str(script_id), "test", "等待")
     info.script_list = [script]
     instance = maa.MaaManager(script)
-    instance.selected_user_configs = lambda: [(uuid.uuid4(), MaaUserConfig())]
+    instance.script_config = config
+    instance.maa_set_path = tmp_path / "config"
+    monkeypatch.setattr(maa, "use_maa_github_update", lambda *args, **kwargs: False)
+    monkeypatch.setattr(maa, "read_pending_update", lambda root: ("", ""))
+    monkeypatch.setattr(maa, "read_installed_release", lambda root: ("v6.1.0", "x64"))
+    monkeypatch.setattr(maa, "has_delegated_update_failure", lambda root: False)
+    monkeypatch.setattr(
+        maa, "prepare_maa_software_before_run", AsyncMock(return_value="v6.1.0")
+    )
+    monkeypatch.setattr(maa, "update_maa", AsyncMock())
     update = AsyncMock()
-    monkeypatch.setattr(maa, "prepare_queue_resources", update)
-    monkeypatch.setattr(base.ScriptManagerBase, "_run_main_task", AsyncMock())
-    await instance._run_main_task()
-    assert update.await_args.kwargs["cdk"] == (cdk if enabled else None)
+    monkeypatch.setattr(maa, "prepare_install_resources", update)
+    result = await instance._prepare_updates_once(
+        SimpleNamespace(update_config_dir=tmp_path / "config")
+    )
+    assert result is enabled
+    if enabled:
+        update.assert_awaited_once()
+        assert update.await_args.kwargs["cdk"] == cdk
+        assert update.await_args.kwargs["github"] is False
+    else:
+        update.assert_not_awaited()
 
 
 @pytest.mark.asyncio

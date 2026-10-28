@@ -614,6 +614,9 @@ class MaaConfig(DomainEntry):
         Channel: Literal["stable", "beta"] = Field(
             default_factory=lambda: "stable", description="MAA 更新通道：正式版或公测版"
         )
+        ChannelMigrationVersion: Annotated[int, Field(ge=0, le=1)] = Field(
+            default=1, description="更新通道一次性迁移版本"
+        )
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[MaaUserConfig] = collection(MaaUserConfig)
@@ -623,6 +626,8 @@ class MaaConfig(DomainEntry):
         data = super().normalize_payload(data)
         if data and "TakeoverMigrationVersion" not in data.get("Update", {}):
             data.setdefault("Update", {})["TakeoverMigrationVersion"] = 0
+        if data and "Channel" not in data.get("Update", {}):
+            data.setdefault("Update", {})["ChannelMigrationVersion"] = 0
         return data
 
     async def migrate_update_takeover(self, *, global_cdk: str) -> bool:

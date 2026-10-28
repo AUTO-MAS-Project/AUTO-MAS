@@ -84,6 +84,8 @@ describe('MAA script update channel', () => {
     expect(html).toContain('稳定版')
     expect(html).toContain('公测版')
     expect(draft.Update.Channel).toBe('stable')
+    expect(html).toMatch(/<option\b[^>]*value="stable"[^>]*\bselected(?:\s|>)/)
+    expect(html).not.toMatch(/<option\b[^>]*value="beta"[^>]*\bselected(?:\s|>)/)
   })
   it('saves the selected channel as a script update field', async () => {
     const { draft, saved } = await renderPanel()

@@ -96,6 +96,7 @@ _CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次网络操作上限（无下载总时限，停滞由操作超时兜底）
+_RESOURCE_LOCK_TIMEOUT = 60
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔（只作用于刷新检查）
 _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
@@ -954,7 +955,16 @@ async def prepare_install_resources(
     """
     if not github and cdk is None:
         return
-    async with _prepare_install_lock:
+    try:
+        async with asyncio.timeout(_RESOURCE_LOCK_TIMEOUT):
+            if _prepare_install_lock.locked():
+                await _report(progress, "正在等待其他 MAA 资源更新完成…")
+            await _prepare_install_lock.acquire()
+    except TimeoutError as error:
+        raise RuntimeError("等待 MAA 资源更新超时，请稍后重试") from error
+    try:
+        deadline = time.monotonic() + _RESOURCE_LOCK_TIMEOUT
+        waiting = False
         while True:
             machine = _MachineLock()
             access = machine.__enter__()
@@ -962,6 +972,11 @@ async def prepare_install_resources(
                 break
             if not machine.contended:
                 raise RuntimeError("无法取得 MAA 资源缓存锁，请稍后重试")
+            if not waiting:
+                await _report(progress, "正在等待其他 MAS 实例释放资源更新锁…")
+                waiting = True
+            if time.monotonic() >= deadline:
+                raise RuntimeError("等待 MAA 资源锁超时，请等待其他实例完成更新后重试")
             await asyncio.sleep(0.1)
         try:
             current = await asyncio.to_thread(read_resource_clock, install)
@@ -989,9 +1004,13 @@ async def prepare_install_resources(
                             else "builtin"
                         ),
                     )
-                    await _run_write_thread(
-                        _build_stage, _STAGE_ZIP, target, github=True
-                    )
+                    try:
+                        await _run_write_thread(
+                            _build_stage, _STAGE_ZIP, target, github=True
+                        )
+                    finally:
+                        # _run_write_thread 在取消时也会等写盘结束，之后才可删除归档。
+                        _STAGE_ZIP.unlink(missing_ok=True)
                 else:
                     _WORK_DIR.mkdir(parents=True, exist_ok=True)
                     stage = await _refresh_resource_stage(
@@ -1016,3 +1035,5 @@ async def prepare_install_resources(
                 raise RuntimeError("MAA 资源更新未完成，已停止启动")
         finally:
             machine.__exit__(None, None, None)
+    finally:
+        _prepare_install_lock.release()

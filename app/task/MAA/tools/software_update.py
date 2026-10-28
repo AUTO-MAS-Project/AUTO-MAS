@@ -80,6 +80,11 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaConfig
 from app.services.update_transport import request_mirror_resource
+from app.task.proxy_helpers import (
+    CONFIG_BASE_NATIVE,
+    CONFIG_BASE_SHARED,
+    read_config_base,
+)
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
@@ -341,6 +346,48 @@ def resolve_update_channel(
         if channel is not None:
             return channel
     return detect_channel(version_text)
+
+
+async def migrate_maa_update_channel(config: MaaConfig) -> None:
+    """旧脚本首次升级沿用原配置通道；持久化后只服从用户的新选择。"""
+    if config.Update.ChannelMigrationVersion:
+        return
+    install = config.Info.Path
+    root = Path.cwd() / "data" / str(config.uid)
+    directories = []
+    for user_id, user in config.UserData.items():
+        if not user.Info.Status or user.Info.RemainedDay == 0:
+            continue
+        base = read_config_base(user, CONFIG_BASE_SHARED)
+        if base == CONFIG_BASE_NATIVE:
+            if install is not None:
+                directories.append(install / "config")
+        elif base == CONFIG_BASE_SHARED:
+            directories.append(root / "Default" / "ConfigFile")
+        else:
+            directories.append(root / str(user_id) / "ConfigFile")
+    directories.append(root / "Default" / "ConfigFile")
+    if install is not None:
+        directories.append(install / "config")
+    channel = next(
+        (
+            value
+            for directory in directories
+            if (value := read_config_channel(directory))
+        ),
+        None,
+    )
+    if channel is None and install is not None:
+        release = read_installed_release(install)
+        channel = detect_channel(release[0]) if release else None
+    # 界面只开放正式版与公测版；旧 nightly 归入公测选项，安装仍受不降级守卫保护。
+    channel = "beta" if channel in ("beta", "alpha") else "stable"
+    await config.update(
+        type(config).model_validate(
+            {"Update": {"Channel": channel, "ChannelMigrationVersion": 1}}
+        ),
+        check_visibility=False,
+    )
 
 
 # --------------------------------------------------------------------------

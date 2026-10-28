@@ -283,6 +283,10 @@ def resource_install(installation, monkeypatch):
     )
 
     async def download(url, path, **kwargs):
+        assert (
+            url
+            == "https://github.com/MaaAssistantArknights/MaaResource/archive/refs/heads/main.zip"
+        )
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr(
                 "MaaResource-main/resource/version.json",
@@ -304,6 +308,7 @@ async def test_github_resources_are_installed_before_return(resource_install, fl
     install, target, downloader = resource_install
     update.Config.setting.Update.FluxdownTakeoverAll = fluxdown
     await resource.prepare_install_resources(install, cdk=None, github=True)
+    assert not resource._STAGE_ZIP.exists()
     assert resource.read_resource_clock(install) == target
     assert (install / "resource/tasks/test.json").read_text() == '{"opaque":"upstream"}'
     assert downloader.call_args.kwargs["downloader"] == (
@@ -328,6 +333,7 @@ async def test_corrupt_resource_download_blocks_launch(resource_install):
     downloader.side_effect = corrupt
     with pytest.raises(resource._DownloadError):
         await resource.prepare_install_resources(install, cdk=None, github=True)
+    assert not resource._STAGE_ZIP.exists()
     assert resource.read_resource_clock(install).day == 1
 
 
@@ -336,12 +342,12 @@ async def test_mirror_resource_budget_failure_blocks_launch(
     resource_install, monkeypatch
 ):
     install, _, downloader = resource_install
-    monkeypatch.setattr(
-        resource, "_refresh_resource_stage", AsyncMock(return_value=None)
-    )
+    refresh = AsyncMock(return_value=None)
+    monkeypatch.setattr(resource, "_refresh_resource_stage", refresh)
     with pytest.raises(RuntimeError, match="资源包未准备完成"):
         await resource.prepare_install_resources(install, cdk="cdk", github=False)
     downloader.assert_not_called()
+    refresh.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -444,8 +450,8 @@ async def test_final_gate_requeries_and_repeats_when_upstream_changes(
                 SimpleNamespace(update_config_dir=root / "config")
             )
         assert prepared.await_count == 3
-    assert query.call_args.kwargs["github"] is True
-    assert query.call_args.args[1] == "beta"
+    assert all(call.kwargs["github"] is True for call in query.call_args_list)
+    assert all(call.args[1] == "beta" for call in query.call_args_list)
 
 
 @pytest.mark.asyncio
@@ -537,3 +543,133 @@ def test_mirror_resource_stage_accepts_official_and_legacy_layout(
     resource._build_stage(resource._STAGE_ZIP, target)
     assert resource._apply_stage(install, target, "cdk") is True
     assert resource.read_resource_clock(install) == target
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("channel", ["stable", "beta"])
+async def test_existing_channel_is_migrated_once(tmp_path, monkeypatch, channel):
+    from tests.config_support import activate_config
+
+    config_root = tmp_path / "maa" / "config"
+    config_root.mkdir(parents=True)
+    (config_root / "gui.new.json").write_text(
+        json.dumps({"Update": {"VersionType": channel.title()}}), encoding="utf-8"
+    )
+    config = MaaConfig.build(
+        payload={
+            "Info": {"Path": str(config_root.parent)},
+            "Update": {"TakeoverEnabled": True, "TakeoverMigrationVersion": 1},
+        }
+    )
+    await activate_config(config)
+    assert config.Update.ChannelMigrationVersion == 0
+    await mirror.migrate_maa_update_channel(config)
+    assert config.Update.Channel == channel
+    assert config.Update.ChannelMigrationVersion == 1
+    # A later user choice is authoritative even if the native GUI still says Beta.
+    await config.update(type(config).model_validate({"Update": {"Channel": "stable"}}))
+    await mirror.migrate_maa_update_channel(config)
+    assert config.Update.Channel == "stable"
+
+
+@pytest.mark.asyncio
+async def test_explicit_channel_does_not_trigger_migration(tmp_path):
+    from tests.config_support import activate_config
+
+    config = MaaConfig.build(payload={"Update": {"Channel": "beta"}})
+    await activate_config(config)
+    assert config.Update.ChannelMigrationVersion == 1
+    await mirror.migrate_maa_update_channel(config)
+    assert config.Update.Channel == "beta"
+
+
+def test_global_cdk_keeps_mirror_priority(installation):
+    from app.task.MAA.tools import update_credentials
+
+    root, _, _ = installation
+    update.Config.setting.Update.MirrorChyanCDK = "global-review-cdk"
+    config = script_config()
+    assert update_credentials.resolve_takeover_credentials(config) == (
+        True,
+        "global-review-cdk",
+    )
+    assert not update_credentials.use_maa_github_update(
+        config, config_dirs=[root / "config"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_native_only_cdk_cannot_fall_back_to_runtime_updates(
+    installation, monkeypatch
+):
+    root, _, _ = installation
+    (root / "config/gui.new.json").write_text(
+        '{"Update":{"MirrorChyanCdk":"opaque-native-value"}}'
+    )
+    instance = object.__new__(manager.MaaManager)
+    instance.script_config = script_config()
+    instance.maa_set_path = root / "config"
+    install = AsyncMock()
+    monkeypatch.setattr(manager, "update_maa", install)
+    with pytest.raises(RuntimeError, match="脚本的更新配置中填写 CDK"):
+        await instance._prepare_updates_once(
+            SimpleNamespace(update_config_dir=root / "config")
+        )
+    install.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resource_lock_contention_has_deadline(resource_install, monkeypatch):
+    class BusyLock:
+        contended = True
+
+        def __enter__(self):
+            return None
+
+    install, _, downloader = resource_install
+    monkeypatch.setattr(resource, "_MachineLock", BusyLock)
+    monkeypatch.setattr(resource, "_RESOURCE_LOCK_TIMEOUT", 0)
+    progress = AsyncMock()
+    with pytest.raises(RuntimeError, match="资源锁超时"):
+        await resource.prepare_install_resources(
+            install, cdk=None, github=True, progress=progress
+        )
+    progress.assert_awaited()
+    downloader.assert_not_awaited()
+    assert not resource._prepare_install_lock.locked()
+
+
+@pytest.mark.asyncio
+async def test_local_resource_lock_contention_has_deadline(
+    resource_install, monkeypatch
+):
+    install, _, downloader = resource_install
+    lock = asyncio.Lock()
+    await lock.acquire()
+    monkeypatch.setattr(resource, "_prepare_install_lock", lock)
+    monkeypatch.setattr(resource, "_RESOURCE_LOCK_TIMEOUT", 0.001)
+    try:
+        with pytest.raises(RuntimeError, match="资源更新超时"):
+            await resource.prepare_install_resources(install, cdk=None, github=True)
+        assert lock.locked()  # The waiting caller cannot release another caller's lock.
+        downloader.assert_not_awaited()
+    finally:
+        lock.release()
+
+
+@pytest.mark.parametrize("limit", ["entries", "bytes"])
+def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch, limit):
+    from app.task.MAA.tools import resource_package
+
+    archive = tmp_path / "oversized.zip"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as package:
+        package.writestr("resource/version.json", "x" * 512)
+        package.writestr("resource/tasks/test.json", "y" * 512)
+    if limit == "entries":
+        monkeypatch.setattr(resource_package, "_MAX_ARCHIVE_ENTRIES", 1)
+    else:
+        monkeypatch.setattr(resource_package, "_MAX_EXTRACTED_BYTES", 256)
+    destination = tmp_path / "extracted"
+    with pytest.raises(ValueError):
+        resource_package.extract_zip(archive, destination)
+    assert not list(destination.rglob("*.json"))
