@@ -323,6 +323,7 @@ def main():
             transactions=config_manager,
             runtime=RuntimeTasks,
             command_executor=execute_ws_command,
+            retry_script=TaskManager.retry_script_by_name,
         )
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)

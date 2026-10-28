@@ -100,6 +100,9 @@ class ChannelRuntimeConfig(NotificationConfigReader, Protocol):
     def bind(self, name: str, callback: Callable[[Any], Any]) -> None: ...
 
 
+RetryScript = Callable[[str], Awaitable[str]]
+
+
 CommandExecutor = Callable[[str, dict[str, Any] | None], Awaitable[dict[str, Any]]]
 
 
@@ -128,6 +131,7 @@ class ChannelDependencies:
     system_icon: str
     logger: Any
     command_executor: CommandExecutor | None = None
+    retry_script: RetryScript | None = None
     transport: NotificationTransportSnapshot | None = field(default=None, repr=False)
 
 
@@ -174,6 +178,7 @@ class QQSessionDependencies:
     read_proxy: Callable[[], str | None]
     http_factory: Callable[..., Any]
     websocket_connect: Callable[..., Any]
+    retry_script: RetryScript | None = None
 
 
 @dataclass(frozen=True)

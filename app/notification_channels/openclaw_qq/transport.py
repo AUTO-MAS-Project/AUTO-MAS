@@ -35,6 +35,7 @@ import json
 import re
 import secrets
 import uuid
+from collections import OrderedDict
 from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -267,6 +268,7 @@ class Sender:
         self._secret_storage_available: bool | None = None
         self._access_token = ""
         self._access_token_expires_at = 0.0
+        self._command_ids: OrderedDict[str, None] = OrderedDict()
         self._msg_seq = 0
         self._gateway_task: asyncio.Task[None] | None = None
         self._gateway_ready = asyncio.Event()
@@ -309,6 +311,69 @@ class Sender:
                 raise ValueError("not_bound")
             await self.dependencies.config.update({"OpenClawQQTargetType": target_type})
             return self.groups()
+
+    async def _handle_private_command(self, data: dict[str, Any]) -> None:
+        """只处理绑定用户的私聊重试，消息重投和回复失败均不重复调度。"""
+
+        author = data.get("author")
+        content = data.get("content")
+        message_id = data.get("id")
+        if (
+            not isinstance(author, dict)
+            or not isinstance(content, str)
+            or not isinstance(message_id, str)
+            or not message_id
+        ):
+            return
+        command = content.strip().removeprefix("/")
+        if command != "重试" and not command.startswith("重试 "):
+            return
+        # 过期事件不可在重连或重启后再次触发任务。
+        try:
+            timestamp = datetime.fromisoformat(str(data.get("timestamp", "")))
+            age = (datetime.now(UTC) - timestamp).total_seconds()
+        except (ValueError, TypeError):
+            return
+        if not -30 <= age <= 300:
+            return
+        async with self._send_lock:
+            app_id, client_secret, user_openid = self._credentials()
+            if (
+                not self.dependencies.config.get("IfOpenClawQQ")
+                or not all((app_id, client_secret, user_openid))
+                or author.get("user_openid") != user_openid
+                or message_id in self._command_ids
+            ):
+                return
+            self._command_ids[message_id] = None
+            if len(self._command_ids) > 1024:
+                self._command_ids.popitem(last=False)
+            name = command.removeprefix("重试").strip()
+            reply = "请发送：重试 脚本名称（与 MAS 中的名称一致）。"
+            if name:
+                if self.dependencies.retry_script is None:
+                    reply = "当前无法重试，请检查 MAS 是否已完成启动。"
+                else:
+                    try:
+                        reply = await self.dependencies.retry_script(name)
+                    except Exception as exc:
+                        logger.warning(f"QQ 重试指令执行失败：{type(exc).__name__}")
+                        reply = "重试请求处理异常，请在 MAS 中检查任务状态。"
+            try:
+                await self._send_message_with_token(
+                    app_id=app_id,
+                    client_secret=client_secret,
+                    user_openid=user_openid,
+                    group_target=None,
+                    body={
+                        "msg_type": 0,
+                        "msg_id": message_id,
+                        "msg_seq": 1,
+                        "content": reply,
+                    },
+                )
+            except Exception as exc:
+                logger.warning(f"QQ 重试指令回复失败：{type(exc).__name__}")
 
     async def _handle_group_event(self, event: str, data: dict[str, Any]) -> None:
         """自动记录群；退群或拒收事件立即停止向该群推送。"""
@@ -788,8 +853,8 @@ class Sender:
                                 if not interval or interval < 1000:
                                     raise RuntimeError("QQ 网关心跳间隔无效")
                                 interval_ms = interval
-                                # 机器人缺少事件权限时 Identify 会被拒；本服务只通过
-                                # HTTP 主动发通知，降级为最小订阅以保持网关在线。
+                                # 机器人缺少事件权限时 Identify 会被拒；降级后
+                                # 保留 HTTP 通知，但无法接收私聊重试指令。
                                 intents = (
                                     GATEWAY_INTENTS
                                     if identify_fail_count
@@ -825,6 +890,8 @@ class Sender:
                                 self._gateway_ready.set()
                                 logger.info("QQ 官方机器人消息网关已连接")
                             elif op == 0 and isinstance(payload.get("d"), dict):
+                                if payload.get("t") == "C2C_MESSAGE_CREATE":
+                                    await self._handle_private_command(payload["d"])
                                 await self._handle_group_event(
                                     str(payload.get("t") or ""), payload["d"]
                                 )
@@ -836,7 +903,7 @@ class Sender:
                                     == GATEWAY_IDENTIFY_FALLBACK_AFTER
                                 ):
                                     logger.warning(
-                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅"
+                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅，无法接收重试指令"
                                     )
                                 self._invalidate_access_token()
                                 break

@@ -1793,6 +1793,32 @@ class _TaskManager:
             )
         return scope
 
+    async def retry_script_by_name(self, name: str) -> str:
+        """按唯一名称重新发起自动代理，供绑定用户的远程重试入口使用。"""
+
+        matches = [
+            uid
+            for uid, script in Config.ScriptConfig.items()
+            if script.Info.Name == name
+        ]
+        if not matches:
+            return "未找到该脚本，请使用 MAS 中显示的完整脚本名称。"
+        if len(matches) > 1:
+            return "存在同名脚本，请先在 MAS 中改为不同名称后重试。"
+        uid = matches[0]
+        # 队列中尚未运行的脚本也不重复加入；实际执行锁仍由 add_task 负责。
+        if any(
+            identity.scriptId == str(uid)
+            for handler in self.task_handler.values()
+            for identity in handler.script_identities
+        ):
+            return "该脚本已在运行或排队，请等待当前任务结束。"
+        try:
+            await self.add_task(mode="AutoProxy", id=str(uid))
+        except (ValueError, RuntimeError):
+            return "暂时无法重试，请在 MAS 中检查脚本状态或等待当前任务结束。"
+        return "已提交脚本重试，将按当前自动代理配置运行。"
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
