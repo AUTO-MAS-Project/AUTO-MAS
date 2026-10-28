@@ -6,8 +6,11 @@
 口径：
 - 时间线只列最后一次尝试，一个任务一行 ``HH:MM - <图标> <状态>：<任务>（原因）``；前面尝试里已经
   完成、这次被重试跳过的任务按当时完成的时刻并进来，前面尝试的失败一律不列。
-- 失败原因有 ``userMessage`` 用它（去掉节点名、框架事件这类片段），没有就按失败类别给一句固定的话。
-- 最后一次一个任务都没开始：不列时间线，只写一句「MaaFW 运行失败：<原因>」。
+- 失败原因有 ``userMessage`` 用它（去掉节点名、画面文字、框架事件、路径、异常类名这类片段），
+  没有就按失败类别给一句固定的话。还没投递任务就失败时，宿主自己那句话（如「当前 controller
+  需要 ADB，请在脚本管理页选择模拟器」）也当 ``userMessage`` 用，照样过一遍过滤。
+- 整次运行一个任务都没开始：不列时间线，只写一句「MaaFW 运行失败：<原因>」。最后一次没开始、
+  前面的尝试跑过任务时，时间线照列（前面完成的并进来，这次没轮到的记跳过），结果行写这次为什么没跑成。
 """
 
 from __future__ import annotations
@@ -91,7 +94,8 @@ STAGE_REASONS = {
     STAGE_AGENT: "Agent 没能启动",
     STAGE_START_GATE: "游戏启动后没等到可操作的画面",
     STAGE_PRETASK: "运行前设置失败",
-    STAGE_CLIENT: "游戏未能启动",
+    # 这一步包括拉起 / 接管游戏、开模拟器、解析设备，配置不全（没选模拟器、路径没配）也会停在这里
+    STAGE_CLIENT: "游戏或模拟器没能准备好",
     STAGE_ENVIRONMENT: "运行环境准备失败",
 }
 
@@ -126,8 +130,20 @@ _DIAGNOSTIC_MARKERS = (
     "MaaTaskerPostStop",
     "MaaFramework 未给出失败原因",
 )
+# 只给排障看、但靠字面标记认不出的：Windows 路径、异常类名、``键=值``（可能是凭据）
+_DIAGNOSTIC_RE = re.compile(
+    r"[A-Za-z]:[\\/]|\\\\|\b[A-Za-z_]\w*(?:Error|Exception)\b|[A-Za-z_]\w*=\S"
+)
+# 后面跟着节点名的片段：节点名里可能有逗号，从这里起到失败类型（或本句结束）都不要
+_LOCATION_PREFIXES = ("停在 ", "最后停在 ", "入口 ")
+# runner 跟在「停在 X」后面的失败类型（``runner._build_job_failure_message``）
+_FAILURE_TYPES = frozenset({"没认出接下来的画面", "操作没有完成"})
+# 整句都是画面上的字：里面有逗号也整句不要
+_SCREEN_TEXT_PREFIX = "画面文字"
 # 时间线里后面的任务行、单列的打转 / 超时行已经说了的话
 _REDUNDANT_MARKERS = ("本轮剩余任务已跳过", "本轮已结束", "此前另有", "另有 ")
+# 这两句后面冒号接的是项目给的人话（focus），去掉前半句、留下它
+_REDUNDANT_LEADS = ("本轮剩余任务已跳过", "本轮已结束")
 _REDUNDANT_SEGMENTS = frozenset({"任务失败", "任务执行失败"})
 _MULTI_FAILURE_RE = re.compile(r"^\d+ 个任务失败：")
 _CJK_RE = re.compile(r"[一-鿿]")
@@ -143,8 +159,8 @@ class MaaFWAttemptReport:
     failed_task: str | None = None
 
 
-def _split_top_level(text: str) -> list[str]:
-    """按顶层的「；」「，」切开，全角括号里的不切。"""
+def _split_top_level(text: str, separators: str) -> list[str]:
+    """按顶层的 ``separators`` 切开，全角括号里的不切。"""
 
     parts: list[str] = []
     depth = 0
@@ -154,7 +170,7 @@ def _split_top_level(text: str) -> list[str]:
             depth += 1
         elif char == _CLOSE and depth:
             depth -= 1
-        if depth == 0 and char in "；，":
+        if depth == 0 and char in separators:
             parts.append("".join(current))
             current = []
             continue
@@ -180,8 +196,41 @@ def _drop_diagnostic_groups(text: str) -> str:
     return "".join(result)
 
 
+def _is_diagnostic(segment: str) -> bool:
+    return any(marker in segment for marker in _DIAGNOSTIC_MARKERS) or bool(
+        _DIAGNOSTIC_RE.search(segment)
+    )
+
+
+def _human_segment(segment: str) -> str:
+    """一个片段里给人看的部分；整段都是排障细节或重复话时返回空串。"""
+
+    for lead in _REDUNDANT_LEADS:
+        if segment.startswith(lead):
+            segment = segment[len(lead) :].lstrip("：: ").strip()
+            break
+    if not segment or segment in _REDUNDANT_SEGMENTS:
+        return ""
+    if any(marker in segment for marker in _REDUNDANT_MARKERS):
+        return ""
+    if _is_diagnostic(segment):
+        # 「运行前设置「启动游戏」失败：Node.Action.Failed」这类：冒号前那半句是人话
+        head = re.split(r"：|: ", segment, maxsplit=1)[0].strip()
+        if head == segment or _is_diagnostic(head):
+            return ""
+        segment = head
+    # 没有一个汉字的多半是异常原文（英文报错、路径、错误码）
+    if not _CJK_RE.search(segment):
+        return ""
+    return segment
+
+
 def human_reason(text: str | None) -> str:
-    """把 runner 的 userMessage（或其中一段）收成只给人看的一句话；什么都不剩返回空串。"""
+    """把 runner 的 userMessage（或其中一段）收成只给人看的一句话；什么都不剩返回空串。
+
+    runner 的人话按「；」分句：项目 focus、「停在 <节点>，<失败类型>」、「画面文字：…」。
+    节点名和画面文字里都可能有逗号，所以先按句、再按逗号切：画面文字整句不要，
+    「停在」之后到失败类型之前的都算节点名。"""
 
     first = next(
         (line.strip() for line in str(text or "").splitlines() if line.strip()), ""
@@ -189,19 +238,25 @@ def human_reason(text: str | None) -> str:
     if not first:
         return ""
     kept: list[str] = []
-    for segment in _split_top_level(_drop_diagnostic_groups(first)):
-        segment = segment.strip().rstrip("：:").strip()
-        if not segment or segment in _REDUNDANT_SEGMENTS:
+    for clause in _split_top_level(_drop_diagnostic_groups(first), "；"):
+        clause = clause.strip()
+        if clause.startswith(_SCREEN_TEXT_PREFIX):
             continue
-        if any(marker in segment for marker in _DIAGNOSTIC_MARKERS):
-            continue
-        if any(marker in segment for marker in _REDUNDANT_MARKERS):
-            continue
-        # 没有一个汉字的多半是异常原文（英文报错、路径、错误码）
-        if not _CJK_RE.search(segment):
-            continue
-        if segment not in kept:
-            kept.append(segment)
+        in_location = False
+        for segment in _split_top_level(clause, "，"):
+            segment = segment.strip().rstrip("：:").strip()
+            if not segment:
+                continue
+            if segment.startswith(_LOCATION_PREFIXES):
+                in_location = True
+                continue
+            if in_location:
+                if segment not in _FAILURE_TYPES:
+                    continue
+                in_location = False
+            segment = _human_segment(segment)
+            if segment and segment not in kept:
+                kept.append(segment)
     return "，".join(kept)
 
 
@@ -311,18 +366,22 @@ def _timeline_rows(
         (task.endedAt or task.startedAt or fallback, task, last)
         for task in last.record.tasks
     ]
+    # 同名任务（队列里同一个任务排了两次、选项不同）按次数算：原计划里有几个、这次计划里
+    # 还剩几个，差额就是前面完成、这次被重试跳过的
     planned = Counter(task.name for task in last.record.tasks)
-    carried: set[str] = set()
+    original: Counter[str] = Counter()
+    for attempt in attempts:
+        original |= Counter(task.name for task in attempt.record.tasks)
+    carried: Counter[str] = Counter()
     # 倒着找：同一个任务在前面几次都完成过时取最近那次
     for earlier in reversed(attempts[:-1]):
         for task in earlier.record.tasks:
             if (
                 task.outcome != OUTCOME_SUCCEEDED
-                or planned[task.name]
-                or task.name in carried
+                or carried[task.name] + planned[task.name] >= original[task.name]
             ):
                 continue
-            carried.add(task.name)
+            carried[task.name] += 1
             time_key = task.endedAt or task.startedAt or earlier.record.startedAt
             rows.append((time_key, task, earlier))
     # 稳定排序：同一时刻的保持计划顺序
@@ -331,9 +390,14 @@ def _timeline_rows(
 
 
 def format_timeline(attempts: Sequence[MaaFWAttemptReport]) -> str:
-    """逐任务时间线；最后一次一个任务都没开始时返回空串。"""
+    """逐任务时间线；整次运行一个任务都没开始时返回空串。
 
-    if not attempts or not _any_task_started(attempts[-1].record):
+    最后一次没开始、前面的尝试跑过任务时照列：前面完成的并进来，这次没轮到的记跳过，
+    免得用户看不出哪些任务其实已经做完。"""
+
+    if not attempts or not any(
+        _any_task_started(attempt.record) for attempt in attempts
+    ):
         return ""
     lines = []
     for time_key, task, attempt in _timeline_rows(attempts):

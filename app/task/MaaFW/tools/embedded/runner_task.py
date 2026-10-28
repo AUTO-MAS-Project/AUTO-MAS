@@ -149,7 +149,13 @@ from .run_record import (
     MaaFWRunRecorder,
     format_incident_lines,
 )
-from .run_report import MaaFWAttemptReport, failure_summary, format_timeline
+from .run_report import (
+    CATEGORY_REASONS,
+    MaaFWAttemptReport,
+    failure_summary,
+    format_timeline,
+    human_reason,
+)
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -559,10 +565,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
         self.user_start_time: datetime | None = None
         self.cur_user_log_started_at: datetime | None = None
-        # 每次尝试的结构化结果，供用户级统计的「任务详情」用。MaaFW 不像
-        # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
-        # 失败摘要，直接记下来即可。
+        # 每次尝试的结构化结果：worker 回报的人话摘要、失败任务名（推送的时间线与结果行用，
+        # 见 run_report）、完成清单（运行记录不可用时的退路）与失败截图。
         self._attempt_reports: list[dict[str, Any]] = []
+        # on_crash 记下的异常原文：还没进第一次尝试就崩了时，推送靠它说原因
+        self._crash_message: str | None = None
         # 当前这次尝试给用户看的称呼（「第 2 次尝试」「清理残留后的重新运行」），与日志开头
         # 那行同口径：通知的任务详情和失败截图标签用它，不用 _record_attempt 的内部序号——
         # 清理后的重跑不计入尝试次数，内部序号会比日志多 1。
@@ -942,6 +949,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     index + 1,
                     [],
                     message,
+                    # 宿主自己抛的多是 MAS 写的人话（「当前 controller 需要 ADB，请在脚本管理页
+                    # 选择模拟器」「Path未配置」），推送照它说；带的排障片段由 run_report 滤掉。
+                    # 整次运行超时有固定说法，不用异常原文
+                    user_message=(
+                        None if isinstance(exc, _MaaFWRunTimeoutError) else str(exc)
+                    ),
                     category=(
                         CATEGORY_PRETASK_FAILED
                         if isinstance(exc, MaaFWPretaskError)
@@ -1169,6 +1182,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "异常"
         self.cur_user_item.progress = None
         logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
+        # 还没进第一次尝试就崩了（prepare、脚本前任务出错）时推送靠它说原因
+        self._crash_message = str(e)
         if self.cur_user_log is not None:
             self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
             if self.cur_user_log_started_at is not None:
@@ -3761,7 +3776,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _collect_failure_screenshots(self) -> list[tuple[str, Path]]:
         """本用户要随通知发出去的失败截图（标签, 路径），按时间顺序。
 
-        最终成功的运行不带图：任务详情那边成功时也只留合并后的完成清单，
+        最终成功的运行不带图：任务详情那边成功时也不提前面尝试的失败，
         早先尝试的失败画面对已经跑通的一轮没有意义。张数上限由消费方裁。
         """
 
@@ -3785,7 +3800,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         """用户级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
         最后没成功时另起一段列各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
-        失效任务时末尾再附一行。最后一次一个任务都没开始时没有时间线，原因在运行结果那行。
+        失效任务时末尾再附一行。整次运行一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 
         details = self._run_record_call(self._task_timeline)
@@ -3858,7 +3873,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         summary = self._run_record_call(
             lambda: failure_summary(self._attempt_outcomes())
         )
-        return summary or "代理任务未完成"
+        if summary:
+            return summary
+        crash = getattr(self, "_crash_message", None)
+        if crash is not None:
+            # 还没进第一次尝试就崩了：没有运行记录，按崩溃原因说一句
+            reason = human_reason(crash) or CATEGORY_REASONS[CATEGORY_HOST_ERROR]
+            return f"MaaFW 运行失败：{reason}"
+        return "代理任务未完成"
 
     def proxy_report_line(self) -> str | None:
         """脚本级「代理结果」里本用户的那一行；运行前检查没过、也没记日志的返回 None，
