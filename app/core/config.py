@@ -1534,6 +1534,22 @@ class AppConfig:
             return ScriptTaskResources()
         return handler.task_resources(script)
 
+    def get_script_emulator_binding(
+        self, script: ConfigEntry, *, patch: dict[str, Any] | None = None
+    ) -> tuple[Any, Any] | None:
+        """读取持久绑定；传入补丁时只返回本次提交设备号所形成的候选。"""
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.emulator_binding is None:
+            return None
+        if patch is not None:
+            return handler.emulator_binding.read_patch(script, patch)
+        return handler.emulator_binding.read(script)
+
+    def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
+        """读取专项声明的设备能力；MaaFW 特调沿用基类处理器。"""
+        handler = self._get_script_config_handler(script)
+        return handler is not None and handler.supports_mod_avd
+
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)
         if handler is not None and handler.initialize is not None:
@@ -1744,26 +1760,19 @@ class AppConfig:
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                if script.Emulator.Id == emulator_uid:
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-            elif isinstance(script, GeneralConfig):
-                if (
-                    script.Game.Type == "Emulator"
-                    and script.Game.EmulatorId == emulator_uid
-                ):
+        async with config_manager.transaction():
+            for script in self.ScriptConfig.values():
+                binding = self.get_script_emulator_binding(script)
+                # 持久引用与运行占用不同：General 禁用游戏时也不能绕过被锁定的引用。
+                if binding is not None and str(binding[0]) == str(emulator_uid):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
 
-        # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
-        self.EmulatorConfig.remove(emulator_uid)
-        await self.EmulatorConfig.commit()
+            # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
+            self.EmulatorConfig.remove(emulator_uid)
+            await self.EmulatorConfig.commit()
 
     async def add_queue(
         self, *, payload: dict[str, Any] | None = None
