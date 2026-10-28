@@ -73,7 +73,9 @@ def test_backend_errors_do_not_select_common_implementation():
         """
 import sys
 from types import ModuleType
+import ctypes
 sys.platform = "win32"
+ctypes.WinDLL = lambda *args, **kwargs: object()
 backend = ModuleType("windows_toasts")
 class Toast:
     pass

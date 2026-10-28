@@ -51,7 +51,7 @@ Use these skills as needed:
 10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
 11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
 12. `mas-game-sign`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
-13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
+13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
 14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
 
 ## Global Constraints
