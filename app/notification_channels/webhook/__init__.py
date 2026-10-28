@@ -148,7 +148,7 @@ def register() -> NotifyChannel:
         kind="custom",
         custom_block="webhook_list",
         enable_field=None,
-        summary_key="setting.notify.summary.webhook",
+        summary_key="core.setting.notify.summary.webhook",
         summary_fields=(),
         fields={},
         target_builder=_webhook_targets,

@@ -106,6 +106,15 @@ async function retryLanguageResources() {
   else await retryAppEntry()
 }
 
+async function closeStandaloneWindow() {
+  try {
+    await window.electronAPI.closeVirtualDisplayPrompt?.()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`关闭虚拟显示器询问弹窗失败: ${errorMsg}`)
+  }
+}
+
 async function recoverInitialization() {
   cancelAppEntry()
   languageResources.cancelEntry()
@@ -154,7 +163,13 @@ onMounted(async () => {
     <!-- 独立页面（如日志窗口）使用全屏布局，不包含 AppLayout -->
     <div v-else-if="isStandalonePage" class="standalone-container">
       <router-view v-if="route.name === 'Logs' || languageResources.ready" />
-      <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
+      <!-- 辅助窗口不能进入主应用初始化，否则会建立第二条主 WebSocket。 -->
+      <I18nResourceGate
+        v-else
+        standalone
+        @retry="retryLanguageResources"
+        @close="closeStandaloneWindow"
+      />
     </div>
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
     <div v-else-if="isAppReady || languageResources.requested" class="app-container">
