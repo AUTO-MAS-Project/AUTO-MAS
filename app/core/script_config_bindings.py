@@ -16,6 +16,7 @@
 """宿主装配专项配置能力与用户类；沿用 ScriptConfigHandler 的唯一登记入口。"""
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from app.config import ConfigEntry
 from app.core.script_config import ScriptConfigHandler
@@ -78,6 +79,15 @@ from app.task.MaaFW.tools.embedded.resources import (
 from app.task.MaaFW.tools.embedded.resources import (
     declare_task_resources as maafw_task_resources,
 )
+from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    after_script_removal as after_maafw_script_removal,
+)
+from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    cleanup_script_files as cleanup_maafw_script_files,
+)
+from app.task.MaaFW.tools.embedded.script_lifecycle import (
+    clone_script as clone_maafw_script,
+)
 from app.task.MaaFW.tools.embedded.user_update import (
     prepare_user_update as prepare_maafw_user_update,
 )
@@ -129,11 +139,14 @@ def bind_script_config_handlers(
         ),
         ZzzOdConfig: ScriptConfigHandler(
             user_config_class=ZzzOdUserConfig,
+            prepare_script_removal=zzzod.prepare_script_removal,
             prepare_user_update=prepare_zzzod_user_update,
             prepare_user_removal=zzzod.prepare_user_removal,
         ),
         MaaFWConfig: ScriptConfigHandler(
             user_config_class=MaaFWUserConfig,
+            clone_script=clone_maafw_script,
+            after_script_removal=after_maafw_script_removal,
             prepare_user_update=prepare_maafw_user_update,
             prepare_user_read=prepare_maafw_user_read,
             initialize_user=initialize_maafw_user,
@@ -161,4 +174,9 @@ def bind_script_config_handlers(
         WhimboxConfig: ScriptConfigHandler(user_config_class=WhimboxUserConfig),
     }
     for entry_type, handler in handlers.items():
-        bind(entry_type, handler)
+        # 沿用旧删除行为：所有脚本 UUID 都清理可能残留的 MFW 视图，只有
+        # MaaFW 类型删除后触发运行池对账。具体目录和删除规则仍由 MFW 持有。
+        bind(
+            entry_type,
+            replace(handler, cleanup_script_files=cleanup_maafw_script_files),
+        )
