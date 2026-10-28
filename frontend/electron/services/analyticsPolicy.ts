@@ -57,7 +57,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     runtime_mode: runtime,
     duration_bucket: duration,
   },
-  initialization_stage_finished: {
+  initialization_stage_finished_v2: {
     stage: [
       'runtime_binary',
       'bootstrap',
@@ -69,7 +69,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
       'unknown',
     ],
     runtime_mode: runtime,
-    outcome: ['success', 'failure'],
+    outcome: ['success', 'failure', 'cancelled'],
     known_code: [
       'none',
       'unknown',
@@ -135,12 +135,13 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     runtime_mode: runtime,
     duration_bucket: duration,
   },
-  initialization_finished: {
-    outcome: ['success', 'failure', 'skipped', 'unconfirmed'],
+  initialization_finished_v2: {
+    outcome: ['success', 'failure', 'cancelled', 'skipped', 'unconfirmed'],
     flow_kind: ['first-run', 'update', 'startup', 'skip'],
     runtime_mode: runtime,
     failed_stage: [
       'none',
+      'runtime_binary',
       'python',
       'pip',
       'git',
@@ -243,6 +244,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     mode: ['AutoProxy', 'CycleRun'],
     script_type: script,
     outcome: ['success', 'failed', 'skipped', 'no_user', 'incomplete', 'error', 'cancelled'],
+    partial_failure: ['yes', 'no', 'unknown'],
     duration_bucket: duration,
   },
   native_config_action_finished: {
@@ -328,7 +330,7 @@ export function validateAnalyticsEvent(value: unknown, renderer: boolean): Analy
     [
       'app_started',
       'backend_start_finished',
-      'initialization_stage_finished',
+      'initialization_stage_finished_v2',
       ...mainOnlyFeatureEvents,
     ].includes(value.name)
   )

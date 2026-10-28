@@ -46,6 +46,18 @@ class MaaFWMaintenanceService:
             if isinstance(config, MaaFWConfig)
         ]
 
+    async def migrate_embedded_copies_to_payloads(self) -> None:
+        """在依赖终态布局的资源维护之前，把老副本采纳为载荷与视图。"""
+
+        from .migration import migrate_embedded_copies_to_payloads
+
+        if not self._scripts_loaded_intact():
+            logger.warning("脚本配置未完整加载，跳过 MFW 副本迁移")
+            return
+        await migrate_embedded_copies_to_payloads(
+            script_configs=self._scripts, process_started_at=self._process_started_at
+        )
+
     async def clean_agent_venvs(self) -> None:
         """清掉已无脚本引用的 MFW agent 隔离 venv。
 
