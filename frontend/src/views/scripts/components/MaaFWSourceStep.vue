@@ -41,7 +41,16 @@
         :disabled="choice.busy"
       >
         <template #icon>
-          <span class="selectable-option-icon"><CopyOutlined /></span>
+          <span class="selectable-option-icon">
+            <img
+              v-if="showProjectIcon(choice)"
+              :src="buildMaaFWScriptIconUrl(choice.scriptId)"
+              alt=""
+              class="choice-project-icon"
+              @error="failedIcons.add(choice.scriptId)"
+            />
+            <CopyOutlined v-else />
+          </span>
         </template>
       </SelectableOptionCard>
     </template>
@@ -52,9 +61,11 @@
 </template>
 
 <script setup lang="ts">
+import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
-import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { resolveMaaFWFlavor, usesMaaFWProjectIcon } from '@/composables/useMaaFWFlavor'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import type {
@@ -66,7 +77,13 @@ import type { MfwReuseChoice } from './scriptCreateFlow'
 const { t } = useI18n()
 
 // props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
-defineProps<MaaFWCreateSourceSectionProps>()
+const props = defineProps<MaaFWCreateSourceSectionProps>()
+
+// 通用 MaaFW 的每一行是不同的项目，用项目自己的图标认；没有图标（后端 404）就换回复制图标。
+// 特调的行都是同一个项目类型，图标一样认不出来，保持复制图标
+const failedIcons = reactive(new Set<string>())
+const showProjectIcon = (choice: MfwReuseChoice) =>
+  usesMaaFWProjectIcon(resolveMaaFWFlavor(props.type)) && !failedIcons.has(choice.scriptId)
 
 const emit = defineEmits<MaaFWCreateSourceSectionEmits>()
 
@@ -119,5 +136,11 @@ const reuseMeta = (choice: MfwReuseChoice) => {
 
 .template-alert {
   margin-bottom: 12px;
+}
+
+.choice-project-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 </style>
