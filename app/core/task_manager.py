@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
 import app.task as task
+from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
 from app.core.history import history_store
 from app.models.config import CLASS_BOOK
@@ -62,7 +63,6 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.task.general.tools import execute_script_task
 from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
