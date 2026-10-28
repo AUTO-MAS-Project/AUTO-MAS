@@ -70,73 +70,71 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
 </script>
 
 <template>
-  <a-row :gutter="12">
-    <a-col v-if="showResolution" :span="12">
-      <a-form-item :label="t('core.emulator2.fieldResolution')">
-        <a-select
-          :value="model.resolution ?? undefined"
-          :options="resolutionOptions"
-          :disabled="isAvd"
-          :allow-clear="clearable"
-          :placeholder="t('core.emulator2.keepCurrent')"
-          size="large"
-          style="width: 100%"
-          @update:value="(value: TierForm['resolution']) => update('resolution', value)"
-        />
-        <div v-if="resolutionNote" class="tier-actual">{{ resolutionNote }}</div>
-      </a-form-item>
-    </a-col>
-    <a-col :span="12">
-      <a-form-item :label="t('core.emulator2.fieldFps')">
-        <a-select
-          :value="model.fps ?? undefined"
-          :options="fpsOptions"
-          :allow-clear="clearable"
-          :placeholder="t('core.emulator2.keepCurrent')"
-          size="large"
-          style="width: 100%"
-          @update:value="(value: number) => update('fps', value)"
-        />
-        <div v-if="note(snapped?.fps)" class="tier-actual">{{ note(snapped?.fps) }}</div>
-      </a-form-item>
-    </a-col>
-    <a-col :span="12">
-      <a-form-item :label="t('core.emulator2.fieldCpu')">
-        <a-select
-          :value="model.cpu ?? undefined"
-          :options="cpuOptions"
-          :allow-clear="clearable"
-          :placeholder="t('core.emulator2.keepCurrent')"
-          size="large"
-          style="width: 100%"
-          @update:value="(value: number) => update('cpu', value)"
-        />
-        <div v-if="note(snapped?.cpu)" class="tier-actual">{{ note(snapped?.cpu) }}</div>
-      </a-form-item>
-    </a-col>
-    <a-col :span="12">
-      <a-form-item
-        :label="t('core.emulator2.fieldMemory')"
-        :extra="isAvd ? t('core.emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
-      >
-        <a-select
-          :value="model.memoryMb ?? undefined"
-          :options="memoryOptions"
-          :allow-clear="clearable"
-          :placeholder="t('core.emulator2.keepCurrent')"
-          size="large"
-          style="width: 100%"
-          @update:value="(value: number) => update('memoryMb', value)"
-        />
-        <div v-if="note(snapped?.memoryMb, memoryText)" class="tier-actual">
-          {{ note(snapped?.memoryMb, memoryText) }}
-        </div>
-      </a-form-item>
-    </a-col>
-  </a-row>
+  <div class="settings-tier-fields">
+    <a-form-item v-if="showResolution" :label="t('core.emulator2.fieldResolution')">
+      <a-select
+        :value="model.resolution ?? undefined"
+        :options="resolutionOptions"
+        :disabled="isAvd"
+        :allow-clear="clearable"
+        :placeholder="t('core.emulator2.keepCurrent')"
+        size="large"
+        style="width: 100%"
+        @update:value="(value: TierForm['resolution']) => update('resolution', value)"
+      />
+      <div v-if="resolutionNote" class="tier-actual">{{ resolutionNote }}</div>
+    </a-form-item>
+    <a-form-item :label="t('core.emulator2.fieldFps')">
+      <a-select
+        :value="model.fps ?? undefined"
+        :options="fpsOptions"
+        :allow-clear="clearable"
+        :placeholder="t('core.emulator2.keepCurrent')"
+        size="large"
+        style="width: 100%"
+        @update:value="(value: number) => update('fps', value)"
+      />
+      <div v-if="note(snapped?.fps)" class="tier-actual">{{ note(snapped?.fps) }}</div>
+    </a-form-item>
+    <a-form-item :label="t('core.emulator2.fieldCpu')">
+      <a-select
+        :value="model.cpu ?? undefined"
+        :options="cpuOptions"
+        :allow-clear="clearable"
+        :placeholder="t('core.emulator2.keepCurrent')"
+        size="large"
+        style="width: 100%"
+        @update:value="(value: number) => update('cpu', value)"
+      />
+      <div v-if="note(snapped?.cpu)" class="tier-actual">{{ note(snapped?.cpu) }}</div>
+    </a-form-item>
+    <a-form-item
+      :label="t('core.emulator2.fieldMemory')"
+      :extra="isAvd ? t('core.emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
+    >
+      <a-select
+        :value="model.memoryMb ?? undefined"
+        :options="memoryOptions"
+        :allow-clear="clearable"
+        :placeholder="t('core.emulator2.keepCurrent')"
+        size="large"
+        style="width: 100%"
+        @update:value="(value: number) => update('memoryMb', value)"
+      />
+      <div v-if="note(snapped?.memoryMb, memoryText)" class="tier-actual">
+        {{ note(snapped?.memoryMb, memoryText) }}
+      </div>
+    </a-form-item>
+  </div>
 </template>
 
 <style scoped>
+.settings-tier-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 12px;
+}
+
 .tier-actual {
   margin-top: 4px;
   font-size: 12px;

@@ -1,186 +1,33 @@
-import {
-  requestTaskStart,
-  stopNativeConfig,
-  type NativeConfigStopAction,
-} from '@/composables/useTaskApi'
-// BetterGI 原生设置会话（原生 GUI 直控）
-import { ref } from 'vue'
-import { message } from 'ant-design-vue'
-import { useI18n } from 'vue-i18n'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { useWebSocket } from '@/composables/useWebSocket'
-import { WS_TASK_COMPLETED, WS_TASK_NOTICE } from '@/services/websocket/types'
+// BetterGI 原生设置会话：生命周期由 useNativeGuiSession 统一管理。
+import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
+import type { NativeConfigStopAction } from '@/composables/useTaskApi'
 
-const logger = window.electronAPI.getLogger('BetterGI配置会话')
-
-/**
- * BetterGI 原生设置会话：打开 BetterGI 原生界面并遮罩等待，保存快照后结束会话。
- *
- * 配置会话（viewOnly=false）：30 分钟超时前 30 秒提醒并自动保存；
- * 查看会话（viewOnly=true）：只读预览（如「查看历史备份」），超时静默关闭、
- * 不自动保存、无保存按钮。
- */
 export function useBettergiGuiSession() {
-  const { t } = useI18n()
-  const { subscribe, unsubscribe } = useWebSocket()
-
-  const bettergiConfigLoading = ref(false)
-  const bettergiSubscriptionIds = ref<string[]>([])
-  const bettergiWebsocketId = ref<string | null>(null)
-  const showBettergiConfigMask = ref(false)
-  const showBettergiViewMask = ref(false)
-  // 当前会话类型（查看会话超时静默关闭、无保存入口）
-  const currentSessionViewOnly = ref(false)
-  const stoppingBettergiConfig = ref(false)
-
-  // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
-  const SESSION_TIMEOUT_MS = 30 * 60 * 1000
-  const SESSION_WARNING_ADVANCE_MS = 30 * 1000
-
-  let bettergiConfigTimeout: number | null = null
-  let bettergiConfigWarningTimeout: number | null = null
-
-  const clearSession = () => {
-    bettergiSubscriptionIds.value.forEach(unsubscribe)
-    bettergiSubscriptionIds.value = []
-    bettergiWebsocketId.value = null
-    showBettergiConfigMask.value = false
-    showBettergiViewMask.value = false
-    if (bettergiConfigTimeout) {
-      window.clearTimeout(bettergiConfigTimeout)
-      bettergiConfigTimeout = null
-    }
-    if (bettergiConfigWarningTimeout) {
-      window.clearTimeout(bettergiConfigWarningTimeout)
-      bettergiConfigWarningTimeout = null
-    }
-  }
-
-  const stopSession = async (
-    keepOnFailure = false,
-    action: NativeConfigStopAction = 'close'
-  ): Promise<boolean> => {
-    const taskId = bettergiWebsocketId.value
-    if (!taskId) {
-      clearSession()
-      return true
-    }
-    if (stoppingBettergiConfig.value) return false
-
-    stoppingBettergiConfig.value = true
-    try {
-      const response = await stopNativeConfig(taskId, action)
-      if (response.code !== 200) {
-        throw new Error(response.message || t('core.edit.bettergiStopFailed'))
-      }
-      clearSession()
-      return true
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-      if (keepOnFailure) return false
-      clearSession()
-      return false
-    } finally {
-      stoppingBettergiConfig.value = false
-    }
-  }
-
-  const startSession = async (userId: string, viewOnly = false): Promise<void> => {
-    try {
-      bettergiConfigLoading.value = true
-      currentSessionViewOnly.value = viewOnly
-      const response = await requestTaskStart(
-        {
-          taskId: userId,
-          mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-          viewOnly,
-        },
-        { source: 'script_config' }
-      )
-      if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('core.edit.bettergiStartFailed'))
-      }
-
-      if (viewOnly) {
-        showBettergiViewMask.value = true
-      } else {
-        showBettergiConfigMask.value = true
-      }
-      bettergiWebsocketId.value = response.taskId
-      bettergiSubscriptionIds.value = [
-        subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
-          if (wsMessage.data.level !== 'error') return
-
-          message.error(t('core.edit.bettergiSessionFailed', { p0: wsMessage.data.message }))
-          void stopSession()
-        }),
-        subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-          clearSession()
-        }),
-      ]
-      message.success(
-        viewOnly ? t('core.edit.bettergiViewOpened') : t('core.edit.bettergiSessionOpened')
-      )
-      if (viewOnly) {
-        // 查看会话：超时静默关闭，不提示也不触发「保存」
-        bettergiConfigTimeout = window.setTimeout(
-          () => void stopSession(false, 'timeout'),
-          SESSION_TIMEOUT_MS
-        )
-        return
-      }
-      bettergiConfigWarningTimeout = window.setTimeout(() => {
-        message.warning(t('core.edit.bettergiSessionTimeoutWarn'))
-      }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
-      bettergiConfigTimeout = window.setTimeout(
-        () => void saveSession('timeout'),
-        SESSION_TIMEOUT_MS
-      )
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-      message.error(
-        e instanceof Error
-          ? e.message
-          : viewOnly
-            ? t('core.edit.bettergiViewStartFailed')
-            : t('core.edit.bettergiStartFailed')
-      )
-      clearSession()
-    } finally {
-      bettergiConfigLoading.value = false
-    }
-  }
-
-  const saveSession = async (action: 'save' | 'timeout' = 'save') => {
-    if (!bettergiWebsocketId.value) return
-    if (currentSessionViewOnly.value) {
-      // 查看会话：无保存语义，直接关闭
-      await stopSession()
-      return
-    }
-    if (await stopSession(true, action)) {
-      message.success(t('core.edit.bettergiSettingsSaved'))
-    } else {
-      message.error(t('core.edit.bettergiSettingsSaveFailed'))
-    }
-  }
-
-  const dispose = async () => {
-    // 真正等待会话停止：调用方（onUnmounted）依赖「先停会话再归档」的
-    // 时序，同步 void stopSession() 会让归档与会话收尾并行撞车
-    await stopSession()
-  }
-
+  const session = useNativeGuiSession({
+    loggerName: 'BetterGI配置会话',
+    keys: {
+      stopFailed: 'core.edit.bettergiStopFailed',
+      startFailed: 'core.edit.bettergiStartFailed',
+      setupFailed: 'core.edit.bettergiSessionFailed',
+      opened: 'core.edit.bettergiSessionOpened',
+      viewOpened: 'core.edit.bettergiViewOpened',
+      timeoutWarn: 'core.edit.bettergiSessionTimeoutWarn',
+      saved: 'core.edit.bettergiSettingsSaved',
+      saveFailed: 'core.edit.bettergiSettingsSaveFailed',
+      viewStartFailed: 'core.edit.bettergiViewStartFailed',
+    },
+  })
   return {
-    bettergiConfigLoading,
-    bettergiWebsocketId,
-    showBettergiConfigMask,
-    showBettergiViewMask,
-    currentSessionViewOnly,
-    stoppingBettergiConfig,
-    startSession,
-    saveSession,
-    stopSession,
-    dispose,
+    bettergiConfigLoading: session.configLoading,
+    bettergiWebsocketId: session.taskId,
+    showBettergiConfigMask: session.showConfigMask,
+    showBettergiViewMask: session.showViewMask,
+    stoppingBettergiConfig: session.stopping,
+    currentSessionViewOnly: session.currentSessionViewOnly,
+    startSession: session.startSession,
+    saveSession: session.saveSession,
+    stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
+      session.stopSession(keepOnFailure, false, action),
+    dispose: session.dispose,
   }
 }
