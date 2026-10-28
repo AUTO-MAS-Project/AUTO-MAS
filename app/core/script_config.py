@@ -74,6 +74,12 @@ class ScriptConfigHandler:
     """专项只声明实际具备的能力，公共入口保持锁和提交边界。"""
 
     initialize: Callable[[ConfigEntry], Awaitable[None]] | None = None
+    # 复制事务成功后、通用数据复制前执行；失败与取消由专项维持既有语义。
+    clone_script: Callable[[ConfigEntry, ConfigEntry], Awaitable[None]] | None = None
+    # 删除前准备可等待；删除提交后的同步通知先于通用目录清理，额外文件随后清理。
+    prepare_script_removal: Callable[[ConfigEntry], Awaitable[None]] | None = None
+    after_script_removal: Callable[[], None] | None = None
+    cleanup_script_files: Callable[[str], Awaitable[None]] | None = None
     validate_update: Callable[[dict[str, Any]], None] | None = None
     import_config: ScriptConfigImporter | None = None
     prepare_user_update: UserUpdatePreparer | None = None
