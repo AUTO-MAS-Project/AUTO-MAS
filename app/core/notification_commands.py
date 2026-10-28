@@ -24,27 +24,47 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from app.models.notification_channel import NotificationCommandAction
 
 if TYPE_CHECKING:
     from app.core.config import AppConfig
     from app.core.task_manager import _TaskManager
 
 
-async def retry_script_by_name(
-    name: str, *, config: AppConfig, task_manager: _TaskManager
+async def execute_notification_command(
+    action: NotificationCommandAction,
+    name: str,
+    *,
+    config: AppConfig,
+    task_manager: _TaskManager,
 ) -> str:
-    """将绑定用户提供的脚本名称解析为 ID，复用普通自动代理入口。"""
+    """将渠道传入的名称解析为 ID，复用现有脚本和队列启动入口。"""
 
-    matches = [
-        uid for uid, script in config.ScriptConfig.items() if script.Info.Name == name
-    ]
+    if action == "retry_script":
+        targets = config.ScriptConfig
+        label = "脚本"
+    elif action == "start_queue":
+        targets = config.QueueConfig
+        label = "队列"
+    else:
+        return "不支持该指令。"
+    matches = [uid for uid, target in targets.items() if target.Info.Name == name]
     if not matches:
-        return "未找到该脚本，请使用 MAS 中显示的完整脚本名称。"
+        return f"未找到该{label}，请使用 MAS 中显示的完整{label}名称。"
     if len(matches) > 1:
-        return "存在同名脚本，请先在 MAS 中改为不同名称后重试。"
+        return f"存在同名{label}，请先在 MAS 中改为不同名称后重试。"
+    uid = matches[0]
+    mode: Literal["AutoProxy", "CycleRun"] = "AutoProxy"
+    if action == "start_queue" and config.QueueConfig[uid].Info.CycleEnabled:
+        mode = "CycleRun"
     try:
-        await task_manager.add_task(mode="AutoProxy", id=str(matches[0]))
+        await task_manager.add_task(mode=mode, id=str(uid))
     except (ValueError, RuntimeError):
-        return "暂时无法重试，请在 MAS 中检查脚本状态或等待当前任务结束。"
-    return "已提交脚本重试，将按当前自动代理配置运行。"
+        return f"暂时无法启动，请在 MAS 中检查{label}状态或等待当前任务结束。"
+    if action == "retry_script":
+        return "已提交脚本重试，将按当前自动代理配置运行。"
+    if mode == "CycleRun":
+        return "已提交循环队列启动，将按当前循环配置运行。"
+    return "已提交队列启动，将按当前队列配置运行一次。"

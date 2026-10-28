@@ -249,7 +249,7 @@ ClickHouse 在后台处理 TTL，不保证过期时刻立即物理删除。本�
 这不等于 84 个真实业务场景逐一通过：真实游戏、扫码、升级、虚拟屏硬件及真实混合队列/循环逐轮
 运行仍缺作者环境的执行证据。没有完成信号的原生保存和安装仍只报告请求受理。
 
-QQ 官方机器人私聊重试复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
+QQ 官方机器人私聊重试脚本、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
 由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
 `script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
 不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。

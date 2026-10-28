@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 
 from app.models.notification import NotificationImage
 from app.models.notification_channel import (
+    NotificationCommandAction,
     NotificationDeliveryError,
     QQSessionDependencies,
 )
@@ -70,6 +71,10 @@ MAX_IMAGE_UPLOAD_BYTES = 30 * 1024 * 1024
 TEXT_CHUNK_LIMIT = 3800
 MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
+_COMMAND_ACTIONS: dict[str, NotificationCommandAction] = {
+    "重试": "retry_script",
+    "启动队列": "start_queue",
+}
 GATEWAY_READY_TIMEOUT_SECONDS = 30
 GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
 GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
@@ -313,7 +318,7 @@ class Sender:
             return self.groups()
 
     async def _handle_private_command(self, data: dict[str, Any]) -> None:
-        """只处理绑定用户的私聊重试，消息重投和回复失败均不重复调度。"""
+        """只处理绑定用户的私聊命令，消息重投和回复失败均不重复调度。"""
 
         author = data.get("author")
         content = data.get("content")
@@ -325,9 +330,11 @@ class Sender:
             or not message_id
         ):
             return
-        command = content.strip().removeprefix("/")
-        if command != "重试" and not command.startswith("重试 "):
+        parts = content.strip().removeprefix("/").split(maxsplit=1)
+        if not parts or parts[0] not in _COMMAND_ACTIONS:
             return
+        action = _COMMAND_ACTIONS[parts[0]]
+        name = parts[1].strip() if len(parts) == 2 else ""
         # 过期事件不可在重连或重启后再次触发任务。
         try:
             timestamp = datetime.fromisoformat(str(data.get("timestamp", "")))
@@ -348,17 +355,21 @@ class Sender:
             self._command_ids[message_id] = None
             if len(self._command_ids) > 1024:
                 self._command_ids.popitem(last=False)
-            name = command.removeprefix("重试").strip()
-            reply = "请发送：重试 脚本名称（与 MAS 中的名称一致）。"
+            reply = (
+                "请发送：重试 脚本名称，或：启动队列 队列名称。"
+                "名称须与 MAS 中一致，循环队列将按循环配置运行。"
+            )
             if name:
-                if self.dependencies.retry_script is None:
-                    reply = "当前无法重试，请检查 MAS 是否已完成启动。"
+                if self.dependencies.notification_command_executor is None:
+                    reply = "当前无法执行指令，请检查 MAS 是否已完成启动。"
                 else:
                     try:
-                        reply = await self.dependencies.retry_script(name)
+                        reply = await self.dependencies.notification_command_executor(
+                            action, name
+                        )
                     except Exception as exc:
-                        logger.warning(f"QQ 重试指令执行失败：{type(exc).__name__}")
-                        reply = "重试请求处理异常，请在 MAS 中检查任务状态。"
+                        logger.warning(f"QQ 指令执行失败：{type(exc).__name__}")
+                        reply = "指令处理异常，请在 MAS 中检查任务状态。"
             try:
                 await self._send_message_with_token(
                     app_id=app_id,
@@ -373,7 +384,7 @@ class Sender:
                     },
                 )
             except Exception as exc:
-                logger.warning(f"QQ 重试指令回复失败：{type(exc).__name__}")
+                logger.warning(f"QQ 指令回复失败：{type(exc).__name__}")
 
     async def _handle_group_event(self, event: str, data: dict[str, Any]) -> None:
         """自动记录群；退群或拒收事件立即停止向该群推送。"""
@@ -854,7 +865,7 @@ class Sender:
                                     raise RuntimeError("QQ 网关心跳间隔无效")
                                 interval_ms = interval
                                 # 机器人缺少事件权限时 Identify 会被拒；降级后
-                                # 保留 HTTP 通知，但无法接收私聊重试指令。
+                                # 保留 HTTP 通知，但无法接收私聊控制指令。
                                 intents = (
                                     GATEWAY_INTENTS
                                     if identify_fail_count
@@ -903,7 +914,7 @@ class Sender:
                                     == GATEWAY_IDENTIFY_FALLBACK_AFTER
                                 ):
                                     logger.warning(
-                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅，无法接收重试指令"
+                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅，无法接收控制指令"
                                     )
                                 self._invalidate_access_token()
                                 break
