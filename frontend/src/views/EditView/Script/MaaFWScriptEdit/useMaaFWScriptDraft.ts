@@ -44,13 +44,13 @@ export function useMaaFWScriptDraft(scriptId: string) {
   })
 
   const rules = {
-    name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+    name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
     path: [
       {
         validator: () =>
           maafwConfig.Info.Path
             ? Promise.resolve()
-            : Promise.reject(new Error(t('edit.pickActualMfwProject'))),
+            : Promise.reject(new Error(t('core.edit.pickActualMfwProject'))),
         trigger: 'blur',
       },
     ],

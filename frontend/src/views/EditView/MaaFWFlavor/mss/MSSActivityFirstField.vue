@@ -4,8 +4,8 @@
        不必给 MaaFW 用户塞一个它没有的字段 -->
   <a-form-item
     class="flavor-activity-first"
-    :label="t('edit.mssFlavorActivityFirst')"
-    :extra="t('edit.mssFlavorActivityFirstHint')"
+    :label="t('core.edit.mssFlavorActivityFirst')"
+    :extra="t('core.edit.mssFlavorActivityFirstHint')"
   >
     <a-switch
       :checked="context.formData.Info.IfActivityFirst !== false"

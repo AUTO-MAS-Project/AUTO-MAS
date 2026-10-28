@@ -2,7 +2,7 @@
   <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
-      <a-spin size="large" :tip="t('plan.loading')" />
+      <a-spin size="large" :tip="t('core.plan.loading')" />
     </div>
 
     <!-- 主要内容 -->
@@ -19,8 +19,8 @@
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
         <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
           <template #description>
-            <div class="empty-title">{{ t('plan.emptyTitle') }}</div>
-            <div class="empty-description">{{ t('plan.emptyDesc') }}</div>
+            <div class="empty-title">{{ t('core.plan.emptyTitle') }}</div>
+            <div class="empty-description">{{ t('core.plan.emptyDesc') }}</div>
           </template>
         </a-empty>
       </div>
@@ -76,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -230,7 +230,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
-        t('plan.toast.createdHint', {
+        t('core.plan.toast.createdHint', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         }),
@@ -238,7 +238,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
       )
     } else {
       message.success(
-        t('plan.toast.created', {
+        t('core.plan.toast.created', {
           type: t(getPlanTypeLabelKey(planType)),
           name: uniqueName,
         })
@@ -415,7 +415,9 @@ const renamePlan = async (planId: string, newName: string): Promise<boolean> => 
   const validation = validatePlanName(newName, existingNames, plan.name)
 
   if (!validation.isValid) {
-    message.error(validation.messageKey ? t(validation.messageKey) : t('plan.toast.nameInvalid'))
+    message.error(
+      validation.messageKey ? t(validation.messageKey) : t('core.plan.toast.nameInvalid')
+    )
     return false
   }
 
@@ -526,7 +528,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.code !== 200) {
-      throw new Error(response.message || t('plan.toast.fetchFailed'))
+      throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
 
     const nextPlanDataMap: Record<string, PlanConfigData> = {}

@@ -60,7 +60,7 @@ export function useMaaFWAddTaskMenu({
     return new Map<string, MaaFWGroupInfo>(entries)
   })
   const getGroupDisplayName = (groupName: string) => {
-    if (groupName === ADD_TASK_UNGROUPED_KEY) return t('edit.ungrouped')
+    if (groupName === ADD_TASK_UNGROUPED_KEY) return t('core.edit.ungrouped')
     const group = groupByName.value.get(groupName)
     return group?.label || groupName
   }

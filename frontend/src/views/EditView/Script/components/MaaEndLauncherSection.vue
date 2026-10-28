@@ -4,8 +4,8 @@
       <a-form-item :help="launchHint">
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.launchType')"
-            :hint="t('edit.maaEndLaunchTypeHint')"
+            :text="t('core.edit.launchType')"
+            :hint="t('core.edit.maaEndLaunchTypeHint')"
             variant="form"
           />
         </template>
@@ -27,7 +27,7 @@
         "
       >
         <template #label>
-          <span class="form-label">{{ t('edit.maaEndLauncherPath') }}</span>
+          <span class="form-label">{{ t('core.edit.maaEndLauncherPath') }}</span>
         </template>
         <a-space-compact v-if="usesMasLauncher || source === 'manual'" block size="large">
           <a-input
@@ -36,11 +36,11 @@
             :placeholder="
               t(
                 usesMasLauncher
-                  ? 'edit.maaEndPickClientBeforeLauncher'
-                  : 'edit.maaEndLauncherSourceNative'
+                  ? 'core.edit.maaEndPickClientBeforeLauncher'
+                  : 'core.edit.maaEndLauncherSourceNative'
               )
             "
-            :aria-label="t('edit.maaEndLauncherPath')"
+            :aria-label="t('core.edit.maaEndLauncherPath')"
             size="large"
             readonly
             :disabled="disabled || !canConfigureLauncher"
@@ -63,8 +63,8 @@
             {{
               t(
                 usesMasLauncher && source === 'auto'
-                  ? 'edit.maaEndRefreshLauncher'
-                  : 'edit.maaEndChangeLauncher'
+                  ? 'core.edit.maaEndRefreshLauncher'
+                  : 'core.edit.maaEndChangeLauncher'
               )
             }}
           </a-button>
@@ -73,7 +73,7 @@
           <a-radio-group
             :value="source"
             :options="sourceOptions"
-            :aria-label="t('edit.maaEndLauncherPathSource')"
+            :aria-label="t('core.edit.maaEndLauncherPathSource')"
             :disabled="disabled || detecting || !canConfigureLauncher"
             @change="emit('changeSource', $event.target.value)"
           />
@@ -83,8 +83,8 @@
                 ? nativeLauncherHint
                 : t(
                     source === 'auto'
-                      ? 'edit.maaEndLauncherAutoHint'
-                      : 'edit.maaEndLauncherManualHint'
+                      ? 'core.edit.maaEndLauncherAutoHint'
+                      : 'core.edit.maaEndLauncherManualHint'
                   )
             "
           >
@@ -127,10 +127,10 @@ const usesMasLauncher = computed(() => props.launchMode !== 'MaaEnd')
 const nativeLauncherHint = computed(() =>
   t(
     !props.capabilitiesReady
-      ? 'edit.maaEndLaunchCapabilitiesUnknown'
+      ? 'core.edit.maaEndLaunchCapabilitiesUnknown'
       : props.maaEndLaunchSupported
-        ? 'edit.maaEndNativeManualLauncherHint'
-        : 'edit.maaEndNativeLauncherHint'
+        ? 'core.edit.maaEndNativeManualLauncherHint'
+        : 'core.edit.maaEndNativeLauncherHint'
   )
 )
 const nativeLauncherHelp = computed(() =>
@@ -138,8 +138,8 @@ const nativeLauncherHelp = computed(() =>
     ? nativeLauncherHint.value
     : t(
         props.source === 'manual'
-          ? 'edit.maaEndManualLauncherHelp'
-          : 'edit.maaEndNativeLauncherHelp'
+          ? 'core.edit.maaEndManualLauncherHelp'
+          : 'core.edit.maaEndNativeLauncherHelp'
       )
 )
 const canConfigureLauncher = computed(
@@ -147,15 +147,15 @@ const canConfigureLauncher = computed(
 )
 const recommendedLabel = (name: string, native: boolean) =>
   props.capabilitiesReady && props.maaEndLaunchSupported === native
-    ? t('edit.maaEndRecommendedLaunch', { name })
+    ? t('core.edit.maaEndRecommendedLaunch', { name })
     : name
 const launchModeOptions = computed(() => {
   const options = [
-    { value: 'Launcher', label: t('edit.launchViaLauncher') },
-    { value: 'MAS', label: recommendedLabel(t('edit.maaEndLaunchViaMas'), false) },
+    { value: 'Launcher', label: t('core.edit.launchViaLauncher') },
+    { value: 'MAS', label: recommendedLabel(t('core.edit.maaEndLaunchViaMas'), false) },
     {
       value: 'MaaEnd',
-      label: recommendedLabel(t('edit.maaEndLaunchViaMaaEnd'), true),
+      label: recommendedLabel(t('core.edit.maaEndLaunchViaMaaEnd'), true),
       disabled: !props.capabilitiesReady || !props.maaEndLaunchSupported,
     },
   ]
@@ -168,15 +168,15 @@ const launchModeOptions = computed(() => {
 const launchHint = computed(() => {
   const description = t(
     props.launchMode === 'MaaEnd'
-      ? 'edit.maaEndNativeModeHint'
+      ? 'core.edit.maaEndNativeModeHint'
       : props.launchMode === 'MAS'
-        ? 'edit.maaEndMasModeHint'
-        : 'edit.maaEndLauncherModeHint'
+        ? 'core.edit.maaEndMasModeHint'
+        : 'core.edit.maaEndLauncherModeHint'
   )
   const limitation = !props.capabilitiesReady
-    ? t('edit.maaEndLaunchCapabilitiesUnknown')
+    ? t('core.edit.maaEndLaunchCapabilitiesUnknown')
     : !props.maaEndLaunchSupported
-      ? t('edit.maaEndNativeLaunchUnsupported')
+      ? t('core.edit.maaEndNativeLaunchUnsupported')
       : ''
   return [description, limitation].filter(Boolean).join(' ')
 })
@@ -184,10 +184,12 @@ const sourceOptions = computed(() => [
   {
     value: 'auto',
     label: t(
-      usesMasLauncher.value ? 'edit.maaEndLauncherSourceAuto' : 'edit.maaEndLauncherSourceNative'
+      usesMasLauncher.value
+        ? 'core.edit.maaEndLauncherSourceAuto'
+        : 'core.edit.maaEndLauncherSourceNative'
     ),
   },
-  { value: 'manual', label: t('edit.maaEndLauncherSourceManual') },
+  { value: 'manual', label: t('core.edit.maaEndLauncherSourceManual') },
 ])
 </script>
 

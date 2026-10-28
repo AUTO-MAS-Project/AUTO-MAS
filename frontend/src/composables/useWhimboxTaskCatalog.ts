@@ -25,7 +25,7 @@ export function useWhimboxTaskCatalog() {
         await WhimboxService.getWhimboxTaskCatalogApiApiScriptsWhimboxTaskCatalogGet(scriptId)
       if (seq !== fetchSeq) return false
       if (response.code !== 200) {
-        const errorMsg = response.message || t('edit.whimboxCatalogFetchFailed')
+        const errorMsg = response.message || t('core.edit.whimboxCatalogFetchFailed')
         error.value = errorMsg
         message.error(errorMsg)
         return false
@@ -34,7 +34,7 @@ export function useWhimboxTaskCatalog() {
       return true
     } catch (err) {
       if (seq !== fetchSeq) return false
-      const errorMsg = getApiErrorMessage(err, t('edit.whimboxCatalogFetchFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.edit.whimboxCatalogFetchFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false

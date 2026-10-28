@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('edit.projectUpdate')">
+  <MaaFWFormSection :title="t('core.edit.projectUpdate')">
     <a-alert
       v-if="isAutoUpdateDisabled"
       class="update-alert"
@@ -12,9 +12,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.autoUpdateModeTip')">
+            <a-tooltip :title="t('core.edit.autoUpdateModeTip')">
               <span class="form-label">
-                {{ t('edit.autoUpdateMode') }}
+                {{ t('core.edit.autoUpdateMode') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -31,9 +31,9 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.updateSourceTip')">
+            <a-tooltip :title="t('core.edit.updateSourceTip')">
               <span class="form-label">
-                {{ t('edit.updateSource') }}
+                {{ t('core.edit.updateSource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -47,7 +47,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item :label="t('edit.updateChannel')">
+        <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
             size="large"
@@ -65,17 +65,17 @@
                  只在「选了 Mirror 酱却没填」时冒一行警告 -->
             <a-tooltip>
               <template #title>
-                {{ t('edit.cdkTip') }}
+                {{ t('core.edit.cdkTip') }}
                 <a :href="MIRRORCHYAN_CDK_URL" class="tooltip-link" @click="handleExternalLink">{{
-                  t('edit.cdkGetLink')
+                  t('core.edit.cdkGetLink')
                 }}</a>
               </template>
               <span class="form-label">
-                {{ t('edit.mirrorchyanCdk') }}
+                {{ t('core.edit.mirrorchyanCdk') }}
                 <a
                   :href="MIRRORCHYAN_CDK_URL"
                   class="help-link"
-                  :aria-label="t('edit.cdkGetLink')"
+                  :aria-label="t('core.edit.cdkGetLink')"
                   @click.stop="handleExternalLink"
                 >
                   <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
@@ -85,14 +85,14 @@
           </template>
           <a-input-password
             v-model:value="maafwConfig.Update.MirrorChyanCDK"
-            :placeholder="t('edit.cdkPlaceholder')"
+            :placeholder="t('core.edit.cdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"
             @blur="handleCdkBlur"
           />
           <div v-if="isCdkMissingForMirror" class="form-hint form-hint--warning">
-            {{ t('edit.cdkMissingForMirror') }}
+            {{ t('core.edit.cdkMissingForMirror') }}
           </div>
           <!-- CDK 还剩多久到期，或者 CDK 有什么问题；查询中、查不到、没有到期时间时整行不显示 -->
           <div
@@ -102,22 +102,24 @@
           >
             {{ cdkHintText }}
           </div>
-          <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
+          <div v-if="cdkPrefilled" class="form-hint">
+            {{ t('core.edit.cdkPrefilledFromGlobal') }}
+          </div>
         </a-form-item>
       </a-col>
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.proxyAddressTip')">
+            <a-tooltip :title="t('core.edit.proxyAddressTip')">
               <span class="form-label">
-                {{ t('edit.proxyAddress') }}
+                {{ t('core.edit.proxyAddress') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
           <a-input
             v-model:value="maafwConfig.Update.ProxyAddress"
-            :placeholder="t('edit.proxyAddressPlaceholder')"
+            :placeholder="t('core.edit.proxyAddressPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"
@@ -141,21 +143,21 @@
     <div v-if="previewData" class="update-info-grid">
       <div class="update-info-column">
         <div class="update-info-item">
-          <div class="update-info-label">{{ t('edit.currentVersion') }}</div>
+          <div class="update-info-label">{{ t('core.edit.currentVersion') }}</div>
           <div class="update-info-value">
-            {{ previewData.project.version || t('edit.notDeclared') }}
+            {{ previewData.project.version || t('core.edit.notDeclared') }}
           </div>
         </div>
         <div class="update-info-item">
           <div class="update-info-label">GitHub</div>
           <div class="update-info-value">
-            {{ previewData.project.github || t('edit.notDeclared') }}
+            {{ previewData.project.github || t('core.edit.notDeclared') }}
           </div>
         </div>
       </div>
       <div class="update-process">
         <div class="update-process-header">
-          <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
+          <span class="update-process-title">{{ t('core.edit.updateProcess') }}</span>
           <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
           <!-- 检查 / 更新的入口就放在过程面板标题行右侧：点完按钮，结果就在下面这个日志框里，
                与「运行环境」面板把「准备运行环境」放标题行右侧同一口径 -->
@@ -167,7 +169,7 @@
               :loading="updateChecking"
               :disabled="updateApplying"
               @click="emit('check-update')"
-              >{{ t('edit.checkUpdates2') }}</a-button
+              >{{ t('core.edit.checkUpdates2') }}</a-button
             >
             <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏。
                  打开页面时接回的后台更新没有检查结果，进行中照样显示（转圈） -->
@@ -182,7 +184,7 @@
               :disabled="updateChecking"
               @click="emit('apply-update')"
             >
-              {{ t('edit.update') }}
+              {{ t('core.edit.update') }}
             </a-button>
           </div>
         </div>
@@ -192,7 +194,7 @@
             v-if="updateProgress.phase === 'idle'"
             class="update-log-line maafw-log-line maafw-log-line--empty"
           >
-            {{ t('edit.updateProcessPlaceholder') }}
+            {{ t('core.edit.updateProcessPlaceholder') }}
           </div>
           <div
             v-for="(line, index) in updateProgress.logs"
@@ -262,24 +264,24 @@ const props = defineProps<MaaFWScriptUpdateSectionProps>()
 const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
 
 const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
-  { label: t('edit.autoUpdateModeOff'), value: 'Off' },
-  { label: t('edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
-  { label: t('edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
+  { label: t('core.edit.autoUpdateModeOff'), value: 'Off' },
+  { label: t('core.edit.autoUpdateModeBeforeRun'), value: 'BeforeRun' },
+  { label: t('core.edit.autoUpdateModeAfterRun'), value: 'AfterRun' },
 ])
 
 // 自动更新为什么用不了：没声明版本，或没有接入 Mirror 酱、又不能只看 GitHub
 // （下载源不是 GitHub，或 interface 没声明 github 仓库）
 const autoUpdateDisabledMessage = computed(() =>
   props.previewData?.project.version
-    ? t('edit.maafwNoMirrorchyanRid')
-    : t('edit.thisScriptDeclaresNo')
+    ? t('core.edit.maafwNoMirrorchyanRid')
+    : t('core.edit.thisScriptDeclaresNo')
 )
 
 const sourceLabel = (source: string | null | undefined) => {
   const normalized = (source ?? '').trim().toLowerCase()
   if (!normalized) return ''
-  if (normalized === 'mirrorchyan') return t('edit.sourceMirrorChyan')
-  if (normalized === 'github') return t('edit.sourceGithub')
+  if (normalized === 'mirrorchyan') return t('core.edit.sourceMirrorChyan')
+  if (normalized === 'github') return t('core.edit.sourceGithub')
   return source ?? ''
 }
 
@@ -289,9 +291,9 @@ const updateResultDetail = computed(() => {
   if (!result) return ''
   const parts: string[] = []
   const versionName = result.versionName?.trim() || result.latestVersion?.trim() || ''
-  if (versionName) parts.push(`${t('edit.updateResultVersion')}: ${versionName}`)
+  if (versionName) parts.push(`${t('core.edit.updateResultVersion')}: ${versionName}`)
   const source = sourceLabel(result.source)
-  if (source) parts.push(`${t('edit.updateResultSource')}: ${source}`)
+  if (source) parts.push(`${t('core.edit.updateResultSource')}: ${source}`)
   return parts.join('  ·  ')
 })
 
@@ -309,7 +311,7 @@ const cdkWarningMessage = computed(() => {
   if (!warning) return ''
   if (warning.message) return warning.message
   if (warning.status === 'absent') return ''
-  return t('edit.cdkStatusIssue', { status: warning.status })
+  return t('core.edit.cdkStatusIssue', { status: warning.status })
 })
 
 // ---- CDK 输入框下的剩余时间 / CDK 状态 ----
@@ -374,21 +376,23 @@ const cdkHintText = computed(() => {
     hint.daysLeft === null || !date
       ? ''
       : hint.daysLeft < 1
-        ? t('edit.cdkHintLessThanDay', { date })
-        : t('edit.cdkHintRemaining', { days: hint.daysLeft, date })
+        ? t('core.edit.cdkHintLessThanDay', { date })
+        : t('core.edit.cdkHintRemaining', { days: hint.daysLeft, date })
   switch (hint.kind) {
     case 'remaining':
       return remaining
     case 'expired':
-      return date ? t('edit.cdkHintExpiredOn', { date }) : t('edit.cdkHintExpired')
+      return date ? t('core.edit.cdkHintExpiredOn', { date }) : t('core.edit.cdkHintExpired')
     case 'invalid':
-      return t('edit.cdkHintInvalid')
+      return t('core.edit.cdkHintInvalid')
     case 'quota':
-      return remaining ? t('edit.cdkHintQuotaRemaining', { remaining }) : t('edit.cdkHintQuota')
+      return remaining
+        ? t('core.edit.cdkHintQuotaRemaining', { remaining })
+        : t('core.edit.cdkHintQuota')
     case 'mismatched':
-      return t('edit.cdkHintMismatched')
+      return t('core.edit.cdkHintMismatched')
     case 'blocked':
-      return t('edit.cdkHintBlocked')
+      return t('core.edit.cdkHintBlocked')
   }
   return ''
 })
@@ -396,15 +400,15 @@ const cdkHintText = computed(() => {
 // ---- 更新过程面板 ----
 
 const PHASE_LABEL_KEYS: Record<Exclude<MaaFWUpdateProgressPhase, 'idle'>, string> = {
-  checking: 'edit.updatePhaseChecking',
-  downloading: 'edit.updatePhaseDownloading',
-  extracting: 'edit.updatePhaseExtracting',
-  preparing: 'edit.updatePhasePreparing',
-  applying: 'edit.updatePhaseApplying',
-  validating: 'edit.updatePhaseValidating',
-  completed: 'edit.updatePhaseCompleted',
-  rolled_back: 'edit.updatePhaseRolledBack',
-  failed: 'edit.updatePhaseFailed',
+  checking: 'core.edit.updatePhaseChecking',
+  downloading: 'core.edit.updatePhaseDownloading',
+  extracting: 'core.edit.updatePhaseExtracting',
+  preparing: 'core.edit.updatePhasePreparing',
+  applying: 'core.edit.updatePhaseApplying',
+  validating: 'core.edit.updatePhaseValidating',
+  completed: 'core.edit.updatePhaseCompleted',
+  rolled_back: 'core.edit.updatePhaseRolledBack',
+  failed: 'core.edit.updatePhaseFailed',
 }
 
 const phaseLabel = computed(() => {
@@ -433,14 +437,14 @@ const summaryDetail = computed(() => {
   if (state.phase === 'extracting') {
     const files = formatExtractedFiles(state)
     const parts = [
-      files ? t('edit.updateFilesApplied', { files }) : '',
+      files ? t('core.edit.updateFilesApplied', { files }) : '',
       formatExtractedSize(state),
     ].filter(Boolean)
     return parts.length ? parts.join('  ·  ') : state.message
   }
   if (state.phase === 'applying') {
     const files = formatAppliedFiles(state)
-    return files ? t('edit.updateFilesApplied', { files }) : state.message
+    return files ? t('core.edit.updateFilesApplied', { files }) : state.message
   }
   return state.message
 })
@@ -459,8 +463,8 @@ const statusText = computed(() => {
 
 const packageKindLabel = computed(() => {
   const kind = props.updateProgress.packageKind
-  if (kind === 'full') return t('edit.updatePackageFull')
-  if (kind === 'incremental') return t('edit.updatePackageIncremental')
+  if (kind === 'full') return t('core.edit.updatePackageFull')
+  if (kind === 'incremental') return t('core.edit.updatePackageIncremental')
   return ''
 })
 

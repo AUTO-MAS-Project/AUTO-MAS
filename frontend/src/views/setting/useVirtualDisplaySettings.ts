@@ -40,8 +40,8 @@ export function useVirtualDisplaySettings(settings: () => GlobalConfig) {
   const vddWarning = computed(() => {
     if (vddDriverReady.value !== false) return ''
     return settings().Display?.IfEnableVirtualDisplay
-      ? t('setting.display.enabledButUnavailable', { reason: vddDriverMessage.value })
-      : t('setting.display.driverUnavailable', { reason: vddDriverMessage.value })
+      ? t('core.setting.display.enabledButUnavailable', { reason: vddDriverMessage.value })
+      : t('core.setting.display.driverUnavailable', { reason: vddDriverMessage.value })
   })
 
   const vddChecking = ref(false)
@@ -69,7 +69,7 @@ export function useVirtualDisplaySettings(settings: () => GlobalConfig) {
       await refreshVirtualDisplayStatus()
     } catch {
       vddResult.value = null
-      message.error(t('setting.display.checkFailed'))
+      message.error(t('core.setting.display.checkFailed'))
     } finally {
       vddChecking.value = false
     }
@@ -90,17 +90,17 @@ export function useVirtualDisplaySettings(settings: () => GlobalConfig) {
           result.code !== 200 ? apiOutcome(result) : result.detached ? 'success' : 'skipped'
       )
       if (res.code !== 200) {
-        message.error(`${t('setting.display.detachFailed')}: ${res.message}`)
+        message.error(`${t('core.setting.display.detachFailed')}: ${res.message}`)
         return
       }
       if (res.detached) {
-        message.success(t('setting.display.detachDone'))
+        message.success(t('core.setting.display.detachDone'))
       } else {
-        message.info(t('setting.display.detachNothing'))
+        message.info(t('core.setting.display.detachNothing'))
       }
       await refreshVirtualDisplayStatus()
     } catch {
-      message.error(t('setting.display.detachFailed'))
+      message.error(t('core.setting.display.detachFailed'))
     } finally {
       vddDetaching.value = false
     }

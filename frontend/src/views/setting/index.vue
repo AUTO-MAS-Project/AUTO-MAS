@@ -74,7 +74,7 @@ const {
 // 活动标签
 const route = useRoute()
 const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
-const version = computed(() => import.meta.env.VITE_APP_VERSION || t('setting.versionFailed'))
+const version = computed(() => import.meta.env.VITE_APP_VERSION || t('core.setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
@@ -82,37 +82,37 @@ const settings = reactive<GlobalConfig>({})
 
 // 下拉选项
 const historyRetentionOptions = computed(() => [
-  { label: t('setting.retention.d7'), value: 7 },
-  { label: t('setting.retention.d15'), value: 15 },
-  { label: t('setting.retention.d30'), value: 30 },
-  { label: t('setting.retention.d60'), value: 60 },
-  { label: t('setting.retention.d90'), value: 90 },
-  { label: t('setting.retention.d180'), value: 180 },
-  { label: t('setting.retention.d365'), value: 365 },
-  { label: t('setting.retention.forever'), value: 0 },
+  { label: t('core.setting.retention.d7'), value: 7 },
+  { label: t('core.setting.retention.d15'), value: 15 },
+  { label: t('core.setting.retention.d30'), value: 30 },
+  { label: t('core.setting.retention.d60'), value: 60 },
+  { label: t('core.setting.retention.d90'), value: 90 },
+  { label: t('core.setting.retention.d180'), value: 180 },
+  { label: t('core.setting.retention.d365'), value: 365 },
+  { label: t('core.setting.retention.forever'), value: 0 },
 ])
 
 const updateSourceOptions = computed(() => [
   { label: 'GitHub', value: 'GitHub' },
-  { label: t('setting.source.MirrorChyan'), value: 'MirrorChyan' },
-  { label: t('setting.source.AutoSite'), value: 'AutoSite' },
-  { label: t('setting.source.CNB'), value: 'CNB' },
+  { label: t('core.setting.source.MirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.setting.source.AutoSite'), value: 'AutoSite' },
+  { label: t('core.setting.source.CNB'), value: 'CNB' },
 ])
 
 const updateChannelOptions = computed(() => [
-  { label: t('setting.channel.stable'), value: 'stable' },
-  { label: t('setting.channel.beta'), value: 'beta' },
+  { label: t('core.setting.channel.stable'), value: 'stable' },
+  { label: t('core.setting.channel.beta'), value: 'beta' },
 ])
 
 const voiceTypeOptions = computed(() => [
-  { label: t('setting.voice.simple'), value: 'simple' },
-  { label: t('setting.voice.noisy'), value: 'noisy' },
+  { label: t('core.setting.voice.simple'), value: 'simple' },
+  { label: t('core.setting.voice.noisy'), value: 'noisy' },
 ])
 
 const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>(() => [
-  { label: t('setting.cursor.none'), value: 'none' },
-  { label: t('setting.cursor.sleekLine'), value: 'sleek-line' },
-  { label: t('setting.cursor.fluid'), value: 'fluid' },
+  { label: t('core.setting.cursor.none'), value: 'none' },
+  { label: t('core.setting.cursor.sleekLine'), value: 'sleek-line' },
+  { label: t('core.setting.cursor.fluid'), value: 'fluid' },
 ])
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去；
@@ -125,10 +125,10 @@ const { loading, handleSettingChange, refreshSettings } = useSettingPersistence(
 const confirmFluidCursor = () =>
   new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: t('setting.toast.fluidTitle'),
-      content: t('setting.toast.fluidContent'),
-      okText: t('setting.toast.fluidOk'),
-      cancelText: t('common.cancel'),
+      title: t('core.setting.toast.fluidTitle'),
+      content: t('core.setting.toast.fluidContent'),
+      okText: t('core.setting.toast.fluidOk'),
+      cancelText: t('core.common.cancel'),
       onOk: () => resolve(true),
       onCancel: () => resolve(false),
     })
@@ -153,7 +153,7 @@ const handleCursorEffectChange = async (value: SelectValue) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存光标效果失败: ${errorMsg}`)
-    message.error(t('setting.toast.cursorSaveFailed'))
+    message.error(t('core.setting.toast.cursorSaveFailed'))
   }
 }
 
@@ -163,7 +163,7 @@ const handleLowPerformanceModeChange = async (enabled: boolean) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存低性能模式失败: ${errorMsg}`)
-    message.error(t('setting.toast.lowPerfSaveFailed'))
+    message.error(t('core.setting.toast.lowPerfSaveFailed'))
   }
 }
 
@@ -173,7 +173,7 @@ const handlePauseHomeEffectsWhenRunningChange = async (enabled: boolean) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存脚本运行暂停主页动效失败: ${errorMsg}`)
-    message.error(t('setting.toast.pauseHomeEffectsSaveFailed'))
+    message.error(t('core.setting.toast.pauseHomeEffectsSaveFailed'))
   }
 }
 
@@ -183,14 +183,14 @@ const handleHomeSatelliteStyleChange = async (style: HomeSatelliteStyle) => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存主页卫星样式失败: ${errorMsg}`)
-    message.error(t('setting.toast.homeSatelliteSaveFailed'))
+    message.error(t('core.setting.toast.homeSatelliteSaveFailed'))
   }
 }
 
 const reportPressSoundError = (action: string, error: unknown): void => {
   const errorMsg = error instanceof Error ? error.message : String(error)
   logger.error(`${action}失败: ${errorMsg}`)
-  message.error(t('setting.toast.pressSoundSaveFailed'))
+  message.error(t('core.setting.toast.pressSoundSaveFailed'))
 }
 
 const handlePressSoundEnabledChange = async (enabled: boolean) => {
@@ -239,11 +239,11 @@ const handlePressSoundImport = async (kind: 'single' | 'press' | 'release' = 'si
       MAX_PRESS_SOUND_BYTES
     )
     if (size > MAX_PRESS_SOUND_BYTES) {
-      message.error(t('setting.toast.pressSoundTooLarge'))
+      message.error(t('core.setting.toast.pressSoundTooLarge'))
       return
     }
     if (!base64) {
-      message.error(t('setting.toast.pressSoundReadFailed'))
+      message.error(t('core.setting.toast.pressSoundReadFailed'))
       return
     }
     // 同一个路径的文件可能被换过内容，缓存里的旧音频要作废
@@ -269,7 +269,7 @@ const handlePressSoundImport = async (kind: 'single' | 'press' | 'release' = 'si
         ...(ready ? { preset: 'customPair' as const, enabled: true } : {}),
       })
     }
-    message.success(t('setting.toast.pressSoundImported'))
+    message.success(t('core.setting.toast.pressSoundImported'))
   } catch (error) {
     reportPressSoundError('导入按压音效', error)
   }
@@ -357,11 +357,11 @@ onMounted(() => {
   <div class="settings-container">
     <component :is="modalContextHolder" />
     <div class="settings-header">
-      <h1 class="page-title app-page-title">{{ t('setting.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.setting.title') }}</h1>
     </div>
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="basic" :tab="t('setting.tab.basic')">
+        <a-tab-pane key="basic" :tab="t('core.setting.tab.basic')">
           <TabBasic
             :settings="settings"
             :theme-mode="themeMode"
@@ -407,7 +407,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="function" :tab="t('setting.tab.function')">
+        <a-tab-pane key="function" :tab="t('core.setting.tab.function')">
           <TabFunction
             :settings="settings"
             :history-retention-options="historyRetentionOptions"
@@ -415,7 +415,7 @@ onMounted(() => {
             :handle-setting-change="handleSettingChange"
           />
         </a-tab-pane>
-        <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
+        <a-tab-pane key="notify" :tab="t('core.setting.tab.notify')">
           <TabNotify
             :settings="settings"
             :handle-setting-change="handleSettingChange"
@@ -423,10 +423,10 @@ onMounted(() => {
             :testing-notify="testingNotify"
           />
         </a-tab-pane>
-        <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
+        <a-tab-pane key="advanced" :tab="t('core.setting.tab.advanced')">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
-        <a-tab-pane key="others" :tab="t('setting.tab.others')">
+        <a-tab-pane key="others" :tab="t('core.setting.tab.others')">
           <TabOthers
             :version="version"
             :backend-update-info="backendUpdateInfo"

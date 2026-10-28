@@ -11,11 +11,11 @@
           <div class="preset-title-row">
             <h3 class="preset-name">{{ title }}</h3>
             <span v-if="invalidCount" class="queue-invalid-tag">
-              {{ t('edit.queueInvalidCount', { count: invalidCount }) }}
+              {{ t('core.edit.queueInvalidCount', { count: invalidCount }) }}
             </span>
           </div>
           <div v-if="taskCount !== undefined" class="preset-task-count">
-            {{ t('edit.queueTaskCount', { count: taskCount }) }}
+            {{ t('core.edit.queueTaskCount', { count: taskCount }) }}
           </div>
           <MaaFWDescriptionView
             v-if="description && basePath !== undefined"

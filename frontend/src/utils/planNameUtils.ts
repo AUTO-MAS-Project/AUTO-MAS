@@ -50,21 +50,21 @@ export function validatePlanName(
 ): PlanNameValidationResult {
   // 检查名称是否为空
   if (!newName || !newName.trim()) {
-    return { isValid: false, messageKey: 'plan.toast.nameEmpty' }
+    return { isValid: false, messageKey: 'core.plan.toast.nameEmpty' }
   }
 
   const trimmedName = newName.trim()
 
   // 检查名称长度
   if (trimmedName.length > 50) {
-    return { isValid: false, messageKey: 'plan.toast.nameTooLong' }
+    return { isValid: false, messageKey: 'core.plan.toast.nameTooLong' }
   }
 
   // 检查是否与其他计划表重名（排除当前名称）
   const isDuplicate = existingNames.some(name => name === trimmedName && name !== currentName)
 
   if (isDuplicate) {
-    return { isValid: false, messageKey: 'plan.toast.nameDuplicate' }
+    return { isValid: false, messageKey: 'core.plan.toast.nameDuplicate' }
   }
 
   return { isValid: true }
@@ -76,5 +76,5 @@ export function validatePlanName(
  * @returns 词表 key
  */
 export function getPlanTypeLabelKey(planType: string): string {
-  return getPlanTypeDescriptor(planType)?.displayNameKey || 'plan.typeFallback'
+  return getPlanTypeDescriptor(planType)?.displayNameKey || 'core.plan.typeFallback'
 }

@@ -2,8 +2,8 @@
   <div v-if="showManagedTaskConfig" class="task-config-section">
     <div class="task-editor-layout">
       <div class="task-list-column">
-        <div class="column-header">{{ t('edit.maaEndTaskGroups') }}</div>
-        <div class="task-group-list" :aria-label="t('edit.maaEndTaskGroups')" role="group">
+        <div class="column-header">{{ t('core.edit.maaEndTaskGroups') }}</div>
+        <div class="task-group-list" :aria-label="t('core.edit.maaEndTaskGroups')" role="group">
           <button
             v-for="group in visibleTaskGroups"
             :key="group.key"
@@ -23,13 +23,13 @@
       <div class="task-option-column">
         <div class="column-header">
           <span>{{ selectedGroup.label }}</span>
-          <a-tooltip :title="t('edit.maaEndEnableGroup')">
+          <a-tooltip :title="t('core.edit.maaEndEnableGroup')">
             <a-switch
               v-if="selectedGroup.tasks.length > 1"
               size="small"
               :checked="isGroupEnabled(selectedGroup)"
               :disabled="controlsDisabled"
-              :aria-label="`${taskLabel(selectedGroup.label)} ${t('edit.maaEndEnableGroup')}`"
+              :aria-label="`${taskLabel(selectedGroup.label)} ${t('core.edit.maaEndEnableGroup')}`"
               @change="handleGroupSwitchChange(selectedGroup, $event)"
             />
           </a-tooltip>
@@ -46,7 +46,13 @@
           >
             <span class="task-title">{{ task.label }}</span>
             <a-tooltip
-              :title="t(isTaskEnabled(task.name) ? 'edit.queueTaskRuns' : 'edit.queueTaskSkipped')"
+              :title="
+                t(
+                  isTaskEnabled(task.name)
+                    ? 'core.edit.queueTaskRuns'
+                    : 'core.edit.queueTaskSkipped'
+                )
+              "
             >
               <a-switch
                 size="small"

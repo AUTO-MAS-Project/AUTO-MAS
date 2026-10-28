@@ -31,13 +31,13 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.settingsLoadFailed')
+        const errorMsg = response.message || t('bootstrap.apiErrors.settingsLoadFailed')
         throw new Error(errorMsg)
       }
 
       return response.data
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.settingsLoadFailed'))
+      const errorMsg = getApiErrorMessage(err, t('bootstrap.apiErrors.settingsLoadFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
@@ -71,7 +71,7 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.settingsSaveFailed')
+        const errorMsg = response.message || t('core.apiErrors.settingsSaveFailed')
         throw new Error(errorMsg)
       }
 
@@ -83,7 +83,7 @@ export function useSettingsApi() {
       operation?.finish({ ...dimensions, outcome: 'failure' })
       channelChanges.forEach(finish => finish('failure'))
       settingChanges.forEach(finish => finish('failure'))
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.settingsSaveFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.settingsSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false

@@ -140,11 +140,11 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   }))
 
   const interfaceStats = computed(() => [
-    { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
-    { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
-    { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
-    { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
-    { label: t('edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
+    { label: t('core.edit.task'), value: previewData.value?.tasks.length ?? 0 },
+    { label: t('core.edit.preset'), value: previewData.value?.presets.length ?? 0 },
+    { label: t('core.edit.controller'), value: previewData.value?.controllers.length ?? 0 },
+    { label: t('core.edit.resource'), value: previewData.value?.resources.length ?? 0 },
+    { label: t('core.edit.maafwImportFiles'), value: previewData.value?.importCount ?? 0 },
     { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
   ])
 
@@ -168,7 +168,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         previewData.value = null
         // 后端没给原因就不记：卡片标题已经是「读取项目失败」，不再重复一行
         previewError.value = response?.message || scriptApiError.value || ''
-        message.error(previewError.value || t('edit.maafwPreviewFailed'))
+        message.error(previewError.value || t('core.edit.maafwPreviewFailed'))
         return
       }
       previewData.value = response.data as MaaFWInterfacePreviewData
@@ -183,7 +183,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     } catch (error) {
       previewData.value = null
       previewError.value = error instanceof Error ? error.message : String(error)
-      message.error(previewError.value || t('edit.maafwPreviewFailed'))
+      message.error(previewError.value || t('core.edit.maafwPreviewFailed'))
     } finally {
       previewLoading.value = false
     }
@@ -263,7 +263,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       ])
       if (!scriptDetail) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
-          message.error(t('edit.scriptDoesNotExist'))
+          message.error(t('core.edit.scriptDoesNotExist'))
         router.push('/scripts')
         return
       }
@@ -291,7 +291,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       }
     } catch (error) {
       logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('edit.couldNotLoadScript'))
+      message.error(t('core.edit.couldNotLoadScript'))
       router.push('/scripts')
     } finally {
       pageLoading.value = false

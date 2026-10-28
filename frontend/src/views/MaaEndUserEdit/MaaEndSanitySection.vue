@@ -1,7 +1,7 @@
 <template>
   <div class="sanity-section">
     <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
-      <template #title>{{ t('edit.maaEndSanitySection') }}</template>
+      <template #title>{{ t('core.edit.maaEndSanitySection') }}</template>
       <SanityConfigSection
         :form-data="formData"
         :loading="loading"
@@ -28,7 +28,7 @@
         @click="handleGoToPlans"
       >
         <template #icon><CalendarOutlined /></template>
-        {{ t('edit.goPlan') }}
+        {{ t('core.edit.goPlan') }}
       </a-button>
     </a-card>
 
@@ -41,7 +41,7 @@
       id="section-ims"
       class="section-card"
     >
-      <template #title>{{ t('edit.maaEndImsTitle') }}</template>
+      <template #title>{{ t('core.edit.maaEndImsTitle') }}</template>
       <InventoryConfigSection
         :form-data="formData"
         :inventory="inventory"
@@ -98,7 +98,7 @@ const { getPlans } = usePlanApi()
 const logger = window.electronAPI.getLogger('MaaEnd理智配置')
 const formData = props.formData
 const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
+  { label: t('core.edit.fixed'), value: 'Fixed' },
 ])
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 // 计划表切换版本号：loadSanityPlan 每次调用自增，用于丢弃过期的异步响应

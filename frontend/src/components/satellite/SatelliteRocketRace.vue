@@ -76,9 +76,9 @@ const PUFF_INTERVAL = 70
 const MAX_PUFFS = 90
 /** 拉榜单期间、拉不到、本周没人提交时显示的话 */
 const MESSAGE_KEYS = {
-  fueling: 'home.satelliteEgg.rocketFueling',
-  failed: 'home.satelliteEgg.rocketNoFuel',
-  empty: 'home.satelliteEgg.rocketEmpty',
+  fueling: 'core.home.satelliteEgg.rocketFueling',
+  failed: 'core.home.satelliteEgg.rocketNoFuel',
+  empty: 'core.home.satelliteEgg.rocketEmpty',
 } as const
 
 interface RaceState {
@@ -94,7 +94,7 @@ const logger = window.electronAPI.getLogger('卫星动画')
 const state = ref<RaceState | null>(null)
 const stage = ref<HTMLDivElement | null>(null)
 const puffLayer = ref<HTMLDivElement | null>(null)
-const countdownSteps = computed(() => ['3', '2', '1', t('home.satelliteEgg.rocketLaunch')])
+const countdownSteps = computed(() => ['3', '2', '1', t('core.home.satelliteEgg.rocketLaunch')])
 const racers = computed(() => state.value?.list.slice(0, MAX_ROCKETS) ?? [])
 
 let racerElements: (HTMLElement | null)[] = []

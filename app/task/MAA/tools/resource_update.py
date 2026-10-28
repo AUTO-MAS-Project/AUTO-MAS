@@ -71,8 +71,8 @@ from typing import cast
 import psutil
 
 from app.core import Config
+from app.core.update import download_file
 from app.models.config import MaaConfig
-from app.services.update_fluxdown import download_file
 from app.services.update_transport import request_mirror_resource
 from app.utils import get_logger
 from app.utils import io as _utils_io

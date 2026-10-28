@@ -11,7 +11,7 @@
       :scroll="{ x: 'max-content' }"
     >
       <template #bodyCell="{ column, record }">
-        <a-tooltip v-if="column.key === 'fieldName'" :title="t('plan.baah.rowStateHint')">
+        <a-tooltip v-if="column.key === 'fieldName'" :title="t('core.plan.baah.rowStateHint')">
           {{ record.fieldName }}
         </a-tooltip>
         <a-popover
@@ -123,9 +123,9 @@ const columnKeys = computed(() => {
   )
 })
 const columnTitle = (key: string) =>
-  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+  key === 'ALL' ? t('core.plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 const columns = computed(() => [
-  { title: t('plan.table.field'), key: 'fieldName', width: 140, fixed: 'left' },
+  { title: t('core.plan.table.field'), key: 'fieldName', width: 140, fixed: 'left' },
   ...columnKeys.value.map(key => ({ title: columnTitle(key), key, width: 160 })),
 ])
 const dayFields = computed(() =>
@@ -170,7 +170,7 @@ const closeEditor = (restoreFocus = true) => {
 /** 自动保存未完成或失败时保留输入，避免切格、切模式或离开页面丢失修改。 */
 const beforeLeave = () => {
   if (saving.value || isDirty.value) {
-    message.warning(t(saving.value ? 'plan.baah.savingHint' : 'plan.baah.unsavedHint'))
+    message.warning(t(saving.value ? 'core.plan.baah.savingHint' : 'core.plan.baah.unsavedHint'))
     return false
   }
   closeEditor(false)
@@ -178,7 +178,7 @@ const beforeLeave = () => {
 }
 const requestClose = () => {
   if (saving.value || isDirty.value) {
-    message.warning(t(saving.value ? 'plan.baah.savingHint' : 'plan.baah.unsavedHint'))
+    message.warning(t(saving.value ? 'core.plan.baah.savingHint' : 'core.plan.baah.unsavedHint'))
     return
   }
   closeEditor()

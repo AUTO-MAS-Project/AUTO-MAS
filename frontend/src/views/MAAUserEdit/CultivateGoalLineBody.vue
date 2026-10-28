@@ -1,10 +1,12 @@
 <template>
   <span
     class="goal-current"
-    :title="line.currentUnknown ? t('edit.maaCultivateCurrentUnknownHint') : undefined"
+    :title="line.currentUnknown ? t('core.edit.maaCultivateCurrentUnknownHint') : undefined"
     >{{ line.current }}</span
   >
-  <a-tag v-if="line.overLimit" color="warning">{{ t('edit.maaCultivateOverLimitShort') }}</a-tag>
+  <a-tag v-if="line.overLimit" color="warning">{{
+    t('core.edit.maaCultivateOverLimitShort')
+  }}</a-tag>
   <a-tag v-if="line.state" :color="line.state.color">{{ t(line.state.i18n) }}</a-tag>
   <!-- 达成行不给下拉：静态显示达成档位（占位宽度与下拉一致，保持列对齐） -->
   <span v-if="line.achieved" class="goal-achieved-level">{{ line.levelLabel }}</span>
@@ -12,7 +14,7 @@
     v-else
     :value="line.savedLevel || undefined"
     :options="line.options"
-    :placeholder="t('edit.maaCultivateGoalNone')"
+    :placeholder="t('core.edit.maaCultivateGoalNone')"
     allow-clear
     :disabled="disabled"
     :get-popup-container="getPopupContainer"

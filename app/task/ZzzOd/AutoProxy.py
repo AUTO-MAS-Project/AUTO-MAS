@@ -62,7 +62,7 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
@@ -1628,38 +1628,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
 
         if not self._multi_ran or self.cur_user_item.user_id in self._history_users:
             if history_records:
-                try:
-                    attachments = await self.task_info.collect_user_history_attachments(
-                        self.script_info, self.cur_user_item
-                    )
-                    history_records[-1].attachments.extend(attachments)
-                except Exception:
-                    logger.opt(exception=True).warning(
-                        "收集用户历史附件失败，继续保存日志与执行结果"
-                    )
-                try:
-                    for record in history_records:
-                        try:
-                            await history_store.record(record)
-                        except Exception as error:
-                            logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                            try:
-                                await Publisher.send(
-                                    id=self.task_info.task_id,
-                                    type=protocol.TASK_NOTICE,
-                                    data=WSTaskNoticeData(
-                                        level="warning",
-                                        message=f"历史记录保存失败：{error}",
-                                    ),
-                                )
-                            except Exception:
-                                logger.opt(exception=True).warning(
-                                    "发送历史保存失败提示时出现异常"
-                                )
-                finally:
-                    await self.task_info.discard_user_history_capture(
-                        self.script_info, self.cur_user_item
-                    )
+                await self.task_info.save_user_history(
+                    history_records,
+                    script=self.script_info,
+                    user=self.cur_user_item,
+                    log_warning=logger.opt(exception=True).warning,
+                )
         # 一次上游运行可同时执行多个实例，各用户沿用自己已确认的每轮结论。
         for user in self._history_users.values():
             if user is self.cur_user_item:
@@ -1676,38 +1650,12 @@ class AutoProxyTask(ScriptAutoProxyBase[ZzzOdConfig, ZzzOdUserConfig]):
                 for started_at, item in user.iter_history_logs()
             ]
             if records:
-                try:
-                    attachments = await self.task_info.collect_user_history_attachments(
-                        self.script_info, user
-                    )
-                    records[-1].attachments.extend(attachments)
-                except Exception:
-                    logger.opt(exception=True).warning(
-                        "收集用户历史附件失败，继续保存日志与执行结果"
-                    )
-                try:
-                    for record in records:
-                        try:
-                            await history_store.record(record)
-                        except Exception as error:
-                            logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                            try:
-                                await Publisher.send(
-                                    id=self.task_info.task_id,
-                                    type=protocol.TASK_NOTICE,
-                                    data=WSTaskNoticeData(
-                                        level="warning",
-                                        message=f"历史记录保存失败：{error}",
-                                    ),
-                                )
-                            except Exception:
-                                logger.opt(exception=True).warning(
-                                    "发送历史保存失败提示时出现异常"
-                                )
-                finally:
-                    await self.task_info.discard_user_history_capture(
-                        self.script_info, user
-                    )
+                await self.task_info.save_user_history(
+                    records,
+                    script=self.script_info,
+                    user=user,
+                    log_warning=logger.opt(exception=True).warning,
+                )
 
         if history_records:
             try:

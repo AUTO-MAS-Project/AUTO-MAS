@@ -40,9 +40,11 @@ const stateColor = computed(() =>
       ? 'processing'
       : 'default'
 )
-const hostLabel = computed(() => (browserHost ? t('devtools.browserHost') : 'Electron'))
+const hostLabel = computed(() => (browserHost ? t('core.devtools.browserHost') : 'Electron'))
 const modeLabel = computed(() =>
-  browserHost ? t('devtools.externalBackend') : (runtimeMode.value?.mode ?? t('devtools.unknown'))
+  browserHost
+    ? t('core.devtools.externalBackend')
+    : (runtimeMode.value?.mode ?? t('core.devtools.unknown'))
 )
 
 // 只在概览可见时采样连接层内存状态，不产生额外订阅或 HTTP 请求。
@@ -63,7 +65,7 @@ const refreshStatus = async () => {
   processStatus.value = results[0].status === 'fulfilled' ? results[0].value : null
   runtimeMode.value = results[1].status === 'fulfilled' ? results[1].value : null
   if (results.some(result => result.status === 'rejected'))
-    statusError.value = t('devtools.statusFailed')
+    statusError.value = t('core.devtools.statusFailed')
   refreshing.value = false
 }
 onMounted(refreshStatus)
@@ -75,10 +77,10 @@ const reconnect = async () => {
     const connected = await manualReconnect()
     if (!disposed)
       message[connected ? 'success' : 'error'](
-        t(connected ? 'devtools.reconnected' : 'devtools.reconnectFailed')
+        t(connected ? 'core.devtools.reconnected' : 'core.devtools.reconnectFailed')
       )
   } catch {
-    if (!disposed) message.error(t('devtools.reconnectFailed'))
+    if (!disposed) message.error(t('core.devtools.reconnectFailed'))
   } finally {
     if (!disposed) reconnecting.value = false
   }
@@ -125,92 +127,100 @@ const copySummary = () =>
       <a-badge :status="stateColor" :text="state" />
     </div>
     <div class="summary-cell">
-      <span class="devtools-muted">{{ t('devtools.host') }}</span>
+      <span class="devtools-muted">{{ t('core.devtools.host') }}</span>
       <strong>{{ hostLabel }}</strong>
     </div>
     <div class="summary-cell">
-      <span class="devtools-muted">{{ t('devtools.subscriptions') }}</span>
+      <span class="devtools-muted">{{ t('core.devtools.subscriptions') }}</span>
       <strong>{{ subscribers }}</strong>
     </div>
   </div>
   <section class="devtools-section">
     <div class="devtools-toolbar">
-      <h3>{{ t('devtools.endpoints') }}</h3>
+      <h3>{{ t('core.devtools.endpoints') }}</h3>
       <a-button size="small" :loading="reconnecting" @click="reconnect">{{
-        t('devtools.reconnect')
+        t('core.devtools.reconnect')
       }}</a-button>
     </div>
     <a-descriptions :column="1" size="small">
       <a-descriptions-item label="HTTP"
         ><code class="devtools-code">{{
-          OpenAPI.BASE || t('devtools.unknown')
+          OpenAPI.BASE || t('core.devtools.unknown')
         }}</code></a-descriptions-item
       >
       <a-descriptions-item label="WebSocket"
         ><code class="devtools-code">{{ connection.url || '—' }}</code></a-descriptions-item
       >
-      <a-descriptions-item :label="t('devtools.reconnectAttempts')">{{
+      <a-descriptions-item :label="t('core.devtools.reconnectAttempts')">{{
         connection.reconnectAttempts
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.autoReconnect')">{{
-        t(connection.automaticReconnectEnabled ? 'devtools.enabled' : 'devtools.disabled')
+      <a-descriptions-item :label="t('core.devtools.autoReconnect')">{{
+        t(connection.automaticReconnectEnabled ? 'core.devtools.enabled' : 'core.devtools.disabled')
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.reconnectScheduled')">{{
-        t(connection.hasReconnectTimer ? 'devtools.yes' : 'devtools.no')
+      <a-descriptions-item :label="t('core.devtools.reconnectScheduled')">{{
+        t(connection.hasReconnectTimer ? 'core.devtools.yes' : 'core.devtools.no')
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.preserveBackend')">{{
-        t(connection.backendDevMode ? 'devtools.yes' : 'devtools.no')
+      <a-descriptions-item :label="t('core.devtools.preserveBackend')">{{
+        t(connection.backendDevMode ? 'core.devtools.yes' : 'core.devtools.no')
       }}</a-descriptions-item>
     </a-descriptions>
   </section>
   <section class="devtools-section">
     <div class="devtools-toolbar">
-      <h3>{{ t('devtools.runtime') }}</h3>
+      <h3>{{ t('core.devtools.runtime') }}</h3>
       <a-button v-if="!browserHost" size="small" :loading="refreshing" @click="refreshStatus"
-        ><ReloadOutlined />{{ t('devtools.refresh') }}</a-button
+        ><ReloadOutlined />{{ t('core.devtools.refresh') }}</a-button
       >
     </div>
     <a-alert v-if="statusError" type="warning" :message="statusError" show-icon />
     <a-descriptions :column="2" size="small">
-      <a-descriptions-item :label="t('devtools.appVersion')">{{ appVersion }}</a-descriptions-item>
+      <a-descriptions-item :label="t('core.devtools.appVersion')">{{
+        appVersion
+      }}</a-descriptions-item>
       <a-descriptions-item label="Vue">{{ version }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.applicationEnvironment')">{{
+      <a-descriptions-item :label="t('core.devtools.applicationEnvironment')">{{
         applicationEnvironment
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.launchMode')">{{ modeLabel }}</a-descriptions-item>
+      <a-descriptions-item :label="t('core.devtools.launchMode')">{{
+        modeLabel
+      }}</a-descriptions-item>
       <a-descriptions-item
         v-if="processStatus?.pid"
-        :label="processStatus.runtimeSupervised ? t('devtools.supervisorPid') : 'PID'"
+        :label="processStatus.runtimeSupervised ? t('core.devtools.supervisorPid') : 'PID'"
         >{{ processStatus.pid }}</a-descriptions-item
       >
     </a-descriptions>
-    <p class="devtools-muted">{{ t('devtools.processHint') }}</p>
+    <p class="devtools-muted">{{ t('core.devtools.processHint') }}</p>
   </section>
   <section class="devtools-section">
     <div class="devtools-toolbar">
-      <h3>{{ t('devtools.health') }}</h3>
-      <a-button size="small" :loading="loading" @click="probe">{{ t('devtools.probe') }}</a-button>
+      <h3>{{ t('core.devtools.health') }}</h3>
+      <a-button size="small" :loading="loading" @click="probe">{{
+        t('core.devtools.probe')
+      }}</a-button>
     </div>
     <a-alert v-if="error" type="error" :message="error" show-icon />
     <a-descriptions v-else-if="health" :column="2" size="small">
-      <a-descriptions-item :label="t('devtools.readiness')"
+      <a-descriptions-item :label="t('core.devtools.readiness')"
         ><a-badge
           :status="health.ready ? 'success' : 'warning'"
-          :text="t(health.ready ? 'devtools.ready' : 'devtools.notReady')"
+          :text="t(health.ready ? 'core.devtools.ready' : 'core.devtools.notReady')"
       /></a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.latency')">{{ latency }} ms</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.backendVersion')">{{
+      <a-descriptions-item :label="t('core.devtools.latency')"
+        >{{ latency }} ms</a-descriptions-item
+      >
+      <a-descriptions-item :label="t('core.devtools.backendVersion')">{{
         health.version
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.backgroundStatus')">{{
+      <a-descriptions-item :label="t('core.devtools.backgroundStatus')">{{
         health.backgroundStatus
       }}</a-descriptions-item>
     </a-descriptions>
-    <p v-else class="devtools-muted">{{ t('devtools.probeHint') }}</p>
+    <p v-else class="devtools-muted">{{ t('core.devtools.probeHint') }}</p>
   </section>
   <div class="devtools-toolbar">
-    <span class="devtools-muted">{{ t('devtools.summaryHint') }}</span>
-    <a-button @click="copySummary"><CopyOutlined />{{ t('devtools.copySummary') }}</a-button>
+    <span class="devtools-muted">{{ t('core.devtools.summaryHint') }}</span>
+    <a-button @click="copySummary"><CopyOutlined />{{ t('core.devtools.copySummary') }}</a-button>
   </div>
 </template>
 

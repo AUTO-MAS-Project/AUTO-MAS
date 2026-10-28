@@ -243,9 +243,9 @@ const fetchTimeline = async (
 export const useBlueArchiveActivitySource = () => {
   const { t } = useI18n()
 
-  const serverLabel = (server: BlueArchiveServerKey) => t(`home.bluearchive.server.${server}`)
+  const serverLabel = (server: BlueArchiveServerKey) => t(`core.home.bluearchive.server.${server}`)
   const serverVersionName = (server: BlueArchiveServerKey) =>
-    t('home.bluearchive.versionName', { server: serverLabel(server) })
+    t('core.home.bluearchive.versionName', { server: serverLabel(server) })
 
   const overviewByServer: Record<BlueArchiveServerKey, Ref<BlueArchiveActivityOverview>> = {
     jp: ref(createEmptySraActivityOverview()),
@@ -267,7 +267,7 @@ export const useBlueArchiveActivitySource = () => {
       return true
     } catch (error) {
       logger.warn(`保存碧蓝档案服务器选择失败: ${String(error)}`)
-      if (reportError) message.error(t('edit.couldNotSaveConfiguration'))
+      if (reportError) message.error(t('core.edit.couldNotSaveConfiguration'))
       return false
     }
   }
@@ -311,7 +311,7 @@ export const useBlueArchiveActivitySource = () => {
             ...createEmptySraActivityOverview(),
             ...cached,
             Stale: true,
-            Message: t('home.bluearchive.staleMessage'),
+            Message: t('core.home.bluearchive.staleMessage'),
             // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
             versionName: serverVersionName(key),
           }
@@ -343,13 +343,13 @@ export const useBlueArchiveActivitySource = () => {
         overviewByServer[key].value = {
           ...overviewByServer[key].value,
           Stale: true,
-          Message: t('home.bluearchive.staleMessage'),
+          Message: t('core.home.bluearchive.staleMessage'),
         }
       },
       markUnavailable: label => {
         overviewByServer[key].value = {
           ...createEmptySraActivityOverview(),
-          Message: t('home.bluearchive.unavailable', { server: label }),
+          Message: t('core.home.bluearchive.unavailable', { server: label }),
         }
       },
     })

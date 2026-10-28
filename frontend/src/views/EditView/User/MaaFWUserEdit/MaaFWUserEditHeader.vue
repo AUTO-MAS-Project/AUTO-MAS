@@ -18,15 +18,15 @@
         >
           <LoadingOutlined v-if="saveStatus === 'saving'" spin />
           <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
+          <a-tooltip v-else :title="saveErrorMessage || t('core.edit.saveFailedRetry')">
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
             saveStatus === 'saving'
-              ? t('edit.savingNow')
+              ? t('core.edit.savingNow')
               : saveStatus === 'saved'
-                ? t('edit.autoSaved')
-                : t('edit.saveFailedShort')
+                ? t('core.edit.autoSaved')
+                : t('core.edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>

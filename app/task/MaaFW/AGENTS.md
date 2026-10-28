@@ -7,6 +7,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 布局与边界
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
+- `tools/embedded/maintenance.py`：宿主资源维护；公共 Config 注入脚本快照、完整加载状态与保留天数，main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
   `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
@@ -246,12 +247,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，M9A 的 bootstrap 就往 `python/*.lock` 里
   追加写）；链接失败就退回复制。可写的东西靠四层挡住：尺寸、排除表、运行期新建即新 inode、运行
   收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
-  隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`clean_maafw_embedded_copies`
+  隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`MaaFWMaintenanceService.clean_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
   谱系还有视图时再加它的 latest（私有渠道的 latest 只在开着开发者模式时算，见「跟随来源目录」）；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
   本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
   状态再判一次，否则判定之后刚登记的载荷会被一起删掉；整谱系收走时放锁后还会删锁文件和空目录，
-  所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
+  所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `MaaFWMaintenanceService.clean_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
   删不掉的是它的最后一个链接，与进程经由哪个名字加载无关——视图里的名字（含正被经由加载的
   那个）都能删，只要库里的 blob 还在（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
@@ -264,7 +265,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   源挂的是开发者载荷时不复用它，见「跟随来源目录」里的「复制 / 克隆不继承」。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
-  `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `Config.clean_maafw_update_cache`
+  `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
 - **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老

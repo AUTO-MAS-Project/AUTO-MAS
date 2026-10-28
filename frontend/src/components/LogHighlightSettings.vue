@@ -37,87 +37,115 @@ const colorGroups: {
   items: { key: keyof LogHighlightColors; label: string; description: string }[]
 }[] = [
   {
-    title: t('comp.time'),
+    title: t('core.comp.time'),
     items: [
-      { key: 'timestamp', label: t('comp.timestamp'), description: t('comp.fullDateTime') },
-      { key: 'date', label: t('comp.date'), description: t('comp.standaloneDate') },
+      {
+        key: 'timestamp',
+        label: t('core.comp.timestamp'),
+        description: t('core.comp.fullDateTime'),
+      },
+      { key: 'date', label: t('core.comp.date'), description: t('core.comp.standaloneDate') },
     ],
   },
   {
-    title: t('comp.logLevel'),
+    title: t('core.comp.logLevel'),
     items: [
-      { key: 'error', label: t('comp.error'), description: t('comp.errorFatalCriticalLevel') },
-      { key: 'warning', label: t('comp.warning'), description: t('comp.warnWarningLevel') },
-      { key: 'info', label: t('comp.info'), description: t('comp.infoNoticeLevel') },
-      { key: 'debug', label: t('comp.debug'), description: t('comp.debugLevel') },
-      { key: 'trace', label: t('comp.trace'), description: t('comp.traceVerboseLevel') },
+      {
+        key: 'error',
+        label: t('core.comp.error'),
+        description: t('core.comp.errorFatalCriticalLevel'),
+      },
+      {
+        key: 'warning',
+        label: t('core.comp.warning'),
+        description: t('core.comp.warnWarningLevel'),
+      },
+      { key: 'info', label: t('core.comp.info'), description: t('core.comp.infoNoticeLevel') },
+      { key: 'debug', label: t('core.comp.debug'), description: t('core.comp.debugLevel') },
+      { key: 'trace', label: t('core.comp.trace'), description: t('core.comp.traceVerboseLevel') },
     ],
   },
   {
-    title: t('comp.structure'),
+    title: t('core.comp.structure'),
     items: [
-      { key: 'module', label: t('comp.moduleName'), description: t('comp.moduleThreadNameSquare') },
+      {
+        key: 'module',
+        label: t('core.comp.moduleName'),
+        description: t('core.comp.moduleThreadNameSquare'),
+      },
       {
         key: 'bracket',
-        label: t('comp.bracketedContent'),
-        description: t('comp.textInsideParentheses'),
+        label: t('core.comp.bracketedContent'),
+        description: t('core.comp.textInsideParentheses'),
       },
     ],
   },
   {
-    title: t('comp.network'),
+    title: t('core.comp.network'),
     items: [
-      { key: 'ip', label: t('comp.ipAddress'), description: t('comp.ipv4Address') },
-      { key: 'url', label: 'URL', description: t('comp.httpHttpsLinks') },
-      { key: 'port', label: t('comp.port'), description: t('comp.portNumber') },
+      { key: 'ip', label: t('core.comp.ipAddress'), description: t('core.comp.ipv4Address') },
+      { key: 'url', label: 'URL', description: t('core.comp.httpHttpsLinks') },
+      { key: 'port', label: t('core.comp.port'), description: t('core.comp.portNumber') },
     ],
   },
   {
-    title: t('comp.fileSystem'),
+    title: t('core.comp.fileSystem'),
     items: [
-      { key: 'path', label: t('comp.filePath'), description: t('comp.fullFilePath') },
-      { key: 'filename', label: t('comp.fileName'), description: t('comp.fileNameExtension') },
+      { key: 'path', label: t('core.comp.filePath'), description: t('core.comp.fullFilePath') },
+      {
+        key: 'filename',
+        label: t('core.comp.fileName'),
+        description: t('core.comp.fileNameExtension'),
+      },
     ],
   },
   {
-    title: t('comp.dataType'),
+    title: t('core.comp.dataType'),
     items: [
       {
         key: 'number',
-        label: t('comp.number'),
-        description: t('comp.integersDecimalsScientificNotation'),
+        label: t('core.comp.number'),
+        description: t('core.comp.integersDecimalsScientificNotation'),
       },
-      { key: 'string', label: t('comp.string'), description: t('comp.quotedString') },
-      { key: 'boolean', label: t('comp.boolean'), description: 'true/false/null' },
-      { key: 'uuid', label: 'UUID', description: t('comp.uuidFormattedIdentifiers') },
+      { key: 'string', label: t('core.comp.string'), description: t('core.comp.quotedString') },
+      { key: 'boolean', label: t('core.comp.boolean'), description: 'true/false/null' },
+      { key: 'uuid', label: 'UUID', description: t('core.comp.uuidFormattedIdentifiers') },
     ],
   },
   {
-    title: t('comp.keyword'),
+    title: t('core.comp.keyword'),
     items: [
       {
         key: 'errorKeyword',
-        label: t('comp.errorKeyword'),
-        description: t('comp.exceptionErrorFailedSimilar'),
+        label: t('core.comp.errorKeyword'),
+        description: t('core.comp.exceptionErrorFailedSimilar'),
       },
       {
         key: 'success',
-        label: t('comp.successKeyword'),
-        description: t('comp.successCompleteDoneSimilar'),
+        label: t('core.comp.successKeyword'),
+        description: t('core.comp.successCompleteDoneSimilar'),
       },
     ],
   },
   {
-    title: t('comp.specialContent'),
+    title: t('core.comp.specialContent'),
     items: [
       {
         key: 'stackTrace',
-        label: t('comp.stackTrace'),
-        description: t('comp.javaPythonStackTraces'),
+        label: t('core.comp.stackTrace'),
+        description: t('core.comp.javaPythonStackTraces'),
       },
-      { key: 'json', label: 'JSON', description: t('comp.jsonObjectsArrays') },
-      { key: 'variable', label: t('comp.variable'), description: t('comp.keyValueVariableNames') },
-      { key: 'operator', label: t('comp.operator'), description: t('comp.otherOperators') },
+      { key: 'json', label: 'JSON', description: t('core.comp.jsonObjectsArrays') },
+      {
+        key: 'variable',
+        label: t('core.comp.variable'),
+        description: t('core.comp.keyValueVariableNames'),
+      },
+      {
+        key: 'operator',
+        label: t('core.comp.operator'),
+        description: t('core.comp.otherOperators'),
+      },
     ],
   },
 ]
@@ -135,7 +163,7 @@ const updateColor = (key: keyof LogHighlightColors, value: string) => {
 // 重置为默认
 const handleReset = () => {
   resetToDefaults()
-  message.success(t('comp.resetDefaults'))
+  message.success(t('core.comp.resetDefaults'))
 }
 
 // 重置单个颜色
@@ -161,7 +189,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.fontSize') }}</span>
+            <span class="form-label">{{ t('core.comp.fontSize') }}</span>
           </div>
           <a-select
             :value="editorConfig.fontSize"
@@ -178,7 +206,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.lineHeight') }}</span>
+            <span class="form-label">{{ t('core.comp.lineHeight') }}</span>
           </div>
           <a-select
             :value="editorConfig.lineHeight"
@@ -195,32 +223,32 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-col :span="24">
         <div class="form-item-vertical text-style-item">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('comp.boldText') }}</span>
+            <span class="form-label">{{ t('core.comp.boldText') }}</span>
           </div>
           <div class="checkbox-row">
             <a-checkbox
               :checked="styles.timestampBold"
               @change="(e: any) => setStyles({ timestampBold: e.target.checked })"
             >
-              {{ t('comp.boldTimestamps') }}
+              {{ t('core.comp.boldTimestamps') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.levelBold"
               @change="(e: any) => setStyles({ levelBold: e.target.checked })"
             >
-              {{ t('comp.boldLogLevels') }}
+              {{ t('core.comp.boldLogLevels') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.keywordBold"
               @change="(e: any) => setStyles({ keywordBold: e.target.checked })"
             >
-              {{ t('comp.boldKeywords') }}
+              {{ t('core.comp.boldKeywords') }}
             </a-checkbox>
             <a-checkbox
               :checked="styles.urlUnderline"
               @change="(e: any) => setStyles({ urlUnderline: e.target.checked })"
             >
-              {{ t('comp.urlUnderline') }}
+              {{ t('core.comp.urlUnderline') }}
             </a-checkbox>
           </div>
         </div>
@@ -231,24 +259,24 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
       <a-collapse-panel key="highlight">
         <template #header>
           <div class="advanced-settings-header">
-            <span class="advanced-settings-title">{{ t('comp.highlightColorsPreview') }}</span>
+            <span class="advanced-settings-title">{{ t('core.comp.highlightColorsPreview') }}</span>
           </div>
         </template>
 
         <!-- 颜色配置 -->
         <div class="config-section">
           <div class="log-section-header">
-            <div class="section-title">{{ t('comp.colors') }}</div>
+            <div class="section-title">{{ t('core.comp.colors') }}</div>
             <div class="section-actions">
               <a-radio-group v-model:value="editingTheme" button-style="solid" size="small">
-                <a-radio-button value="light">{{ t('comp.lightTheme') }}</a-radio-button>
-                <a-radio-button value="dark">{{ t('comp.darkTheme') }}</a-radio-button>
+                <a-radio-button value="light">{{ t('core.comp.lightTheme') }}</a-radio-button>
+                <a-radio-button value="dark">{{ t('core.comp.darkTheme') }}</a-radio-button>
               </a-radio-group>
               <a-button size="small" @click="handleReset">
                 <template #icon>
                   <ReloadOutlined />
                 </template>
-                {{ t('comp.resetEverything') }}
+                {{ t('core.comp.resetEverything') }}
               </a-button>
             </div>
           </div>
@@ -276,7 +304,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                   <a-button
                     size="small"
                     type="text"
-                    :title="t('comp.resetThisColor')"
+                    :title="t('core.comp.resetThisColor')"
                     @click="resetSingleColor(item.key)"
                   >
                     <template #icon>
@@ -291,7 +319,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
 
         <!-- 预览 -->
         <div class="config-section">
-          <div class="section-title">{{ t('comp.preview') }}</div>
+          <div class="section-title">{{ t('core.comp.preview') }}</div>
           <div
             class="preview-content"
             :class="editingTheme === 'dark' ? 'preview-dark' : 'preview-light'"
@@ -317,7 +345,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 INFO
               </span>
               <span :style="{ color: '#' + currentColors.module }">[MainModule]</span>
-              <span>{{ t('comp.appStartedPort') }}</span>
+              <span>{{ t('core.comp.appStartedPort') }}</span>
               <span :style="{ color: '#' + currentColors.port }">:8080</span>
             </div>
             <div class="preview-line">
@@ -337,7 +365,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
                 WARN
               </span>
               <span :style="{ color: '#' + currentColors.module }">[Network]</span>
-              <span>{{ t('comp.connectionTimedOutIp') }}</span>
+              <span>{{ t('core.comp.connectionTimedOutIp') }}</span>
               <span :style="{ color: '#' + currentColors.ip }">192.168.1.100</span>
               <span :style="{ color: '#' + currentColors.variable }"> retries</span>
               <span :style="{ color: '#' + currentColors.operator }">=</span>
@@ -368,7 +396,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
                 Exception</span
               >
-              <span>{{ t('comp.connectionFailed') }}</span>
+              <span>{{ t('core.comp.connectionFailed') }}</span>
               <span :style="{ color: '#' + currentColors.string }">"Connection refused"</span>
             </div>
             <div class="preview-line">
@@ -401,7 +429,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
               >
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
               <span :style="{ color: '#' + currentColors.module }">[HTTP]</span>
-              <span>{{ t('comp.request') }}</span>
+              <span>{{ t('core.comp.request') }}</span>
               <span
                 :style="{
                   color: '#' + currentColors.url,
@@ -420,7 +448,7 @@ const lineHeightOptions = [1.2, 1.4, 1.5, 1.6, 1.8, 2.0]
             </div>
             <div class="preview-line">
               <span :style="{ color: '#' + currentColors.trace }"> TRACE </span>
-              <span>{{ t('comp.response') }}</span>
+              <span>{{ t('core.comp.response') }}</span>
               <span :style="{ color: '#' + currentColors.json }"
                 >{"status": "ok", "count": 42}</span
               >

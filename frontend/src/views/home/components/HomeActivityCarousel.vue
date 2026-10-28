@@ -7,7 +7,7 @@
     @focusout="onFocusOut"
   >
     <a-card v-if="!items.length" class="carousel-empty">
-      <a-empty :description="t('home.carousel.allHidden')" />
+      <a-empty :description="t('core.home.carousel.allHidden')" />
     </a-card>
 
     <template v-else>
@@ -35,7 +35,7 @@
             class="activity-all-link"
             @click="navigateTo('/taskboard')"
           >
-            {{ t('taskboard.viewAll') }}
+            {{ t('core.taskboard.viewAll') }}
             <ArrowRightOutlined />
           </a-button>
         </div>
@@ -55,7 +55,7 @@
             v-if="items.length > 1"
             type="button"
             class="banner-arrow is-prev"
-            :aria-label="t('home.carousel.prev')"
+            :aria-label="t('core.home.carousel.prev')"
             @click="select(activeIndex - 1)"
           >
             <LeftOutlined />
@@ -64,7 +64,7 @@
             v-if="items.length > 1"
             type="button"
             class="banner-arrow is-next"
-            :aria-label="t('home.carousel.next')"
+            :aria-label="t('core.home.carousel.next')"
             @click="select(activeIndex + 1)"
           >
             <RightOutlined />

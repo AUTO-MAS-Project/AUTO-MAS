@@ -64,15 +64,15 @@ const handleEnabled = (enabled: boolean) => {
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.updateTakeover') }}</h3>
+      <h3>{{ t('core.edit.updateTakeover') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.updateTakeoverSwitch')"
-              :hint="t('edit.updateTakeoverTip')"
+              :text="t('core.edit.updateTakeoverSwitch')"
+              :hint="t('core.edit.updateTakeoverTip')"
               variant="form"
             />
           </template>
@@ -88,14 +88,14 @@ const handleEnabled = (enabled: boolean) => {
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.updateTakeoverCdk')"
-              :hint="t('edit.updateTakeoverCdkTip')"
+              :text="t('core.edit.updateTakeoverCdk')"
+              :hint="t('core.edit.updateTakeoverCdkTip')"
               variant="form"
             />
           </template>
           <a-input-password
             :value="update.MirrorChyanCDK"
-            :placeholder="t('edit.updateTakeoverCdkPlaceholder')"
+            :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
             size="large"
             class="modern-input"
             autocomplete="off"

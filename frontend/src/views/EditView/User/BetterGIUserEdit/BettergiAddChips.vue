@@ -199,7 +199,7 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
         kindTagClass(chip.kind),
         { 'add-dragon-tag-chip-selected': isChipSelected(chip.chipUid) },
       ]"
-      :title="t('edit.bettergiChipSelectHint')"
+      :title="t('core.edit.bettergiChipSelectHint')"
       @mousedown="handleChipMouseDown(chip, $event)"
       @mouseenter="handleChipMouseEnter(chip)"
       @click.stop="handleChipClick(chip, $event)"
@@ -215,7 +215,7 @@ defineExpose({ focus: focusAddDraftInput, clearSelection: clearChipSelection })
       ref="addDraftInputRef"
       v-model="draft"
       class="add-dragon-tag-draft-input"
-      :placeholder="items.length ? '' : t('edit.bettergiInputGroupNames')"
+      :placeholder="items.length ? '' : t('core.edit.bettergiInputGroupNames')"
       @focus="addDraftFocused = true"
       @blur="addDraftFocused = false"
       @keydown="handleAddDraftKeydown"

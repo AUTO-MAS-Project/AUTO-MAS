@@ -97,7 +97,7 @@ export const useAzurlaneActivitySource = () => {
    * 不可用分支把卡片清空，后端刚给的那份缓存就白给了（首次进首页就是这种情形）。
    */
   let hasData: Ref<boolean> | null = null
-  const staleMessage = () => t('home.sra.staleMessage')
+  const staleMessage = () => t('core.home.sra.staleMessage')
 
   const source = useHomeActivitySource<AzurlanePayload>({
     // 日志里沿用原本的中文名字，不随界面语言变
@@ -152,7 +152,7 @@ export const useAzurlaneActivitySource = () => {
       stalePayload = null
       // 不能只清空：展示器只看 Message 决定要不要出错误提示，空着一句话都不给
       overview.value = createEmptySraActivityOverview(
-        t('home.sra.unavailable', { name: '碧蓝航线' })
+        t('core.home.sra.unavailable', { name: '碧蓝航线' })
       )
     },
   })
