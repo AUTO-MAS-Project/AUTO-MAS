@@ -46,7 +46,9 @@ export function useMaaFWAddTaskMenu({
   // PI v2：任务写了几个分组就出现在几个分组里（分组是归属关系，不是路径）
   const addTaskMenuGroups = computed(() =>
     buildMaaFWAddTaskMenuGroups(availableTasks.value, previewData.value?.groups || []).map(group =>
-      group.key === MAAFW_ADD_TASK_UNGROUPED_KEY ? { ...group, label: t('core.edit.ungrouped') } : group
+      group.key === MAAFW_ADD_TASK_UNGROUPED_KEY
+        ? { ...group, label: t('core.edit.ungrouped') }
+        : group
     )
   )
   // 用户没见过的任务（项目更新新增或改了 name）：在「添加任务」里标 NEW，只标这一次（加进队列的当场消掉）

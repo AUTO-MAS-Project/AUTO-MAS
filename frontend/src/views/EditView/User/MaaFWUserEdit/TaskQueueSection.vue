@@ -80,11 +80,11 @@
               :overlay-style="{ maxWidth: '360px' }"
             >
               <template #title>
-                <div>{{ t('edit.maafwHiddenTaskTooltip') }}</div>
+                <div>{{ t('core.edit.maafwHiddenTaskTooltip') }}</div>
                 <div v-for="name in hiddenQueueTaskNames" :key="name">{{ name }}</div>
               </template>
               <span class="queue-context-hidden">
-                {{ t('edit.maafwHiddenTaskCount', { count: hiddenQueueTasks.length }) }}
+                {{ t('core.edit.maafwHiddenTaskCount', { count: hiddenQueueTasks.length }) }}
               </span>
             </a-tooltip>
           </div>
@@ -644,13 +644,13 @@ const queueContextText = computed(() => {
   const resource = data?.resources.find(item => item.name === props.effectiveResourceName)
   return [
     controller &&
-      t('edit.maafwQueueContextItem', {
-        label: t('edit.controlMode'),
+      t('core.edit.maafwQueueContextItem', {
+        label: t('core.edit.controlMode'),
         value: getDisplayName(controller),
       }),
     resource &&
-      t('edit.maafwQueueContextItem', {
-        label: t('edit.gameResource'),
+      t('core.edit.maafwQueueContextItem', {
+        label: t('core.edit.gameResource'),
         value: getDisplayName(resource),
       }),
   ]
