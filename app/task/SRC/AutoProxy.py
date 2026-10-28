@@ -27,7 +27,7 @@ from app.core import Config
 from app.core.history import aggregate_data, history_store
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
@@ -238,6 +238,10 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 not await self.handle_game_update(emulator_info)
             ):
                 break
+
+            # 在线时先初始化宿主，初始化异常继续上抛，不归入登录失败重试。
+            if emulator_info.status == DeviceStatus.ONLINE:
+                _ = core.MaaFWManager
 
             if await login(
                 emulator_info=emulator_info,
