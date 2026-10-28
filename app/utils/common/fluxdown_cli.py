@@ -48,7 +48,9 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -64,6 +66,48 @@ from app.utils import get_logger, process_platform, resource_path, update_native
 logger = get_logger("FluxDown")
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
+
+
+# 下载共享使用权，安装独占使用权；不串行化并行下载。
+_usage_lock = threading.Lock()
+_active_downloads = 0
+_installing = False
+
+
+def _using_fluxdown(function):
+    @wraps(function)
+    async def guarded(*args, **kwargs):
+        global _active_downloads
+        with _usage_lock:
+            if _installing:
+                raise RuntimeError("FluxDown 正在安装，请稍后重试下载")
+            _active_downloads += 1
+        try:
+            return await function(*args, **kwargs)
+        finally:
+            with _usage_lock:
+                _active_downloads -= 1
+
+    return guarded
+
+
+@contextmanager
+def fluxdown_install_guard():
+    """拒绝打断下载或结束不属于本进程的 Agent。"""
+    global _installing
+    with _usage_lock:
+        if _active_downloads or _installing:
+            raise RuntimeError("FluxDown 正在下载或安装，请完成后重试")
+        _installing = True
+    try:
+        with _server.lock:
+            if _server.handle is not None and not _server.spawned_by_us:
+                raise RuntimeError("FluxDown Agent 由其他进程管理，请先手动停止后重试")
+        fluxdown_server_shutdown()
+        yield
+    finally:
+        with _usage_lock:
+            _installing = False
 
 
 @dataclass
@@ -158,6 +202,7 @@ def fluxdown_check_portable(cli_exe: Path) -> bool:
 # ---------------------------------------------------------------------------
 
 
+@_using_fluxdown
 async def fluxdown_download(
     url: str,
     destination: Path,
@@ -1210,6 +1255,7 @@ class FluxdownCancelUnconfirmed(RuntimeError):
     """
 
 
+@_using_fluxdown
 async def fluxdown_server_download(
     url: str,
     destination: Path,

@@ -3,9 +3,10 @@ import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
-import { ApiError, GetService, Service } from '@/api'
+import { ApiError, GetService } from '@/api'
 import type { GlobalConfig, FluxdownRecord, FluxdownReleaseOut } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { useFluxdownInstallApi } from '@/composables/useFluxdownInstallApi'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const logger = window.electronAPI.getLogger('设置-FluxDown')
@@ -13,6 +14,8 @@ const logger = window.electronAPI.getLogger('设置-FluxDown')
 const { t } = useI18n()
 
 const { getSettings } = useSettingsApi()
+const { fetchRelease, installFluxdown } = useFluxdownInstallApi()
+const emit = defineEmits<{ installed: [] }>()
 
 const props = defineProps<{
   settings: GlobalConfig
@@ -143,7 +146,7 @@ const fluxdownReleasePage = computed(
 
 const loadFluxdownRelease = async () => {
   try {
-    const result = await GetService.getFluxdownReleaseApiUpdateFluxdownReleaseGet()
+    const result = await fetchRelease()
     if (isDetectSuccess(result)) release.value = result
     else logger.warn(`获取 FluxDown Release 信息失败: ${result.message ?? ''}`)
   } catch (error) {
@@ -174,13 +177,11 @@ const handleMasInstall = async () => {
     text: t('core.setting.others.fluxdownInstallDownloading'),
   }
   try {
-    const result = await Service.installFluxdownApiUpdateFluxdownInstallPost({
-      mirror: installMirror.value,
-    })
+    const result = await installFluxdown(installMirror.value)
     if (!isDetectSuccess(result) || !result.path) {
       throw new Error(result.message || t('core.setting.others.fluxdownInstallFailed'))
     }
-    await props.handleSettingChange('Update', 'FluxdownPath', result.path)
+    emit('installed')
     fluxdownOnlyFull.value = false
     const text = t('core.setting.others.fluxdownInstallSuccess', {
       version: result.version ?? '',

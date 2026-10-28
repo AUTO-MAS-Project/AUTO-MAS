@@ -22,13 +22,15 @@
 
 
 import asyncio
+from ipaddress import ip_address
 from typing import (
     Dict,
     List,
     Optional,
 )
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from pydantic import (
     BaseModel,
     Field,
@@ -321,8 +323,37 @@ async def get_fluxdown_release() -> FluxdownReleaseOut:
         )
 
 
+def _require_local_install(request: Request) -> None:
+    """限制本机安装及具名网页来源；兼容 Electron 文件页面的 null Origin。"""
+
+    def is_local(host: str | None) -> bool:
+        if host == "localhost":
+            return True
+        try:
+            return ip_address(host or "").is_loopback
+        except ValueError:
+            return False
+
+    origin = request.headers.get("origin")
+    try:
+        source = urlsplit(origin) if origin not in (None, "null") else None
+        local_origin = source is None or (
+            source.scheme in ("http", "https") and is_local(source.hostname)
+        )
+    except ValueError:
+        local_origin = False
+    if (
+        request.client is None
+        or not is_local(request.client.host)
+        or not is_local(request.url.hostname)
+        or not local_origin
+    ):
+        raise HTTPException(status_code=403, detail="FluxDown 安装仅允许本机客户端")
+
+
 @router.post(
     "/fluxdown/install",
+    dependencies=[Depends(_require_local_install)],
     tags=["Get"],
     summary="由 MAS 下载并安装 FluxDown CLI 与 Server",
     response_model=FluxdownInstallOut,

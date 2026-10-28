@@ -36,16 +36,19 @@ import asyncio
 import hashlib
 import os
 import platform
+import re
 import shutil
+import stat
 import sys
 import time
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any, Iterable
 
 import httpx
 
+from app.config import config_manager
 from app.core import Config
 from app.services.update_transport import download_file
 from app.utils import fluxdown_cli as _fluxdown_cli
@@ -80,6 +83,10 @@ SUPPORTED_MIRRORS: tuple[str, ...] = (
 
 _REQUIRED_BINARIES = ("fluxdown.exe", "fluxdown-agent.exe", "fluxdownd.exe")
 _RELEASE_CACHE_TTL = 600.0
+_MAX_ARCHIVE_BYTES = 256 * 1024**2
+_MAX_MEMBER_BYTES = 512 * 1024**2
+_MAX_EXTRACTED_BYTES = 1024**3
+_MAX_MEMBERS = 4096
 
 
 @dataclass(frozen=True)
@@ -115,7 +122,7 @@ def _asset_sha256(asset: dict[str, Any]) -> str | None:
     digest = asset.get("digest")
     if isinstance(digest, str) and digest.lower().startswith("sha256:"):
         value = digest.split(":", 1)[1].strip().lower()
-        return value or None
+        return value if re.fullmatch(r"[0-9a-f]{64}", value) else None
     return None
 
 
@@ -134,33 +141,33 @@ async def fetch_latest_release(*, proxy: httpx.Proxy | None = None) -> FluxdownR
 
 
 async def _fetch_release_payload(proxy: httpx.Proxy | None) -> dict[str, Any]:
-    """GitHub API 元数据：先走 gh-proxy，再直连；两者都失败才报错。"""
-
-    last_error: Exception | None = None
-    for url in (f"{_GHPROXY}{_GITHUB_API_LATEST}", _GITHUB_API_LATEST):
-        try:
-            async with httpx.AsyncClient(
-                proxy=proxy, follow_redirects=True, timeout=20
-            ) as client:
-                response = await client.get(
-                    url,
-                    headers={
-                        "Accept": "application/vnd.github+json",
-                        "User-Agent": "AUTO-MAS",
-                    },
-                )
-                response.raise_for_status()
-                return response.json()
-        except Exception as error:  # noqa: BLE001 - 换下一个来源
-            last_error = error
-            logger.warning(f"获取 FluxDown Release 信息失败({url}): {error}")
-    raise RuntimeError(f"无法获取 FluxDown 最新版本信息: {last_error}")
+    """摘要只信任 GitHub HTTPS API；下载镜像不能为自身软件包背书。"""
+    try:
+        async with httpx.AsyncClient(
+            proxy=proxy, follow_redirects=False, timeout=20
+        ) as client:
+            response = await client.get(
+                _GITHUB_API_LATEST,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "AUTO-MAS",
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise RuntimeError("Release 响应不是对象")
+            return payload
+    except Exception as error:
+        raise RuntimeError(
+            f"无法从 GitHub 获取可信 FluxDown 版本信息: {error}"
+        ) from error
 
 
 def _parse_release(payload: dict[str, Any]) -> FluxdownRelease:
     tag = str(payload.get("tag_name") or "").strip()
     version = tag.lstrip("vV")
-    if not version:
+    if not re.fullmatch(r"[vV]?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?", tag):
         raise RuntimeError("FluxDown Release 信息缺少版本号")
 
     arch = _arch()
@@ -234,15 +241,18 @@ async def _download_asset(
 ) -> int:
     """按镜像顺序下载单个资产并校验 sha256，全部失败时抛出汇总错误。"""
 
+    if not sha256 or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise RuntimeError(f"{name} 缺少可信的 SHA-256 摘要，拒绝安装")
     errors: list[str] = []
     destination = work / name
     for url in _download_urls(name, release.tag, mirror):
         try:
-            await download_file(url, destination, timeout=60, proxy=proxy)
-            if sha256:
-                actual = await asyncio.to_thread(_sha256_of, destination)
-                if actual != sha256:
-                    raise RuntimeError("sha256 校验失败")
+            await download_file(
+                url, destination, timeout=60, proxy=proxy, max_bytes=_MAX_ARCHIVE_BYTES
+            )
+            actual = await asyncio.to_thread(_sha256_of, destination)
+            if actual != sha256:
+                raise RuntimeError("sha256 校验失败")
             logger.info(f"已下载 {name}: {url}")
             return destination.stat().st_size
         except Exception as error:  # noqa: BLE001 - 换下一个镜像
@@ -257,10 +267,16 @@ def _safe_parts(name: str) -> tuple[str, ...]:
     """zip 成员路径 → 安全的分段元组；绝对路径与 .. 直接拒绝。"""
 
     path = PurePosixPath(name.replace("\\", "/"))
-    if path.is_absolute():
+    if path.is_absolute() or PureWindowsPath(name).anchor:
         raise RuntimeError(f"安装包包含非法路径: {name}")
     parts = tuple(part for part in path.parts if part not in ("", "."))
-    if any(part == ".." for part in parts):
+    if any(
+        part == ".."
+        or ":" in part
+        or part.endswith((".", " "))
+        or PureWindowsPath(part).is_reserved()
+        for part in parts
+    ):
         raise RuntimeError(f"安装包包含非法路径: {name}")
     return parts
 
@@ -280,7 +296,17 @@ def _extract_zip(archive: Path, target: Path) -> None:
 
     with zipfile.ZipFile(archive) as bundle:
         entries: list[tuple[zipfile.ZipInfo, tuple[str, ...]]] = []
-        for info in bundle.infolist():
+        infos = bundle.infolist()
+        if (
+            len(infos) > _MAX_MEMBERS
+            or sum(i.file_size for i in infos) > _MAX_EXTRACTED_BYTES
+        ):
+            raise RuntimeError("安装包解压大小或文件数量超过上限")
+        for info in infos:
+            if info.file_size > _MAX_MEMBER_BYTES or stat.S_ISLNK(
+                info.external_attr >> 16
+            ):
+                raise RuntimeError("安装包包含过大文件或符号链接")
             parts = _safe_parts(info.filename)
             if parts:
                 entries.append((info, parts))
@@ -290,6 +316,8 @@ def _extract_zip(archive: Path, target: Path) -> None:
             if not relative:
                 continue
             output = target.joinpath(*relative)
+            if not output.resolve().is_relative_to(target.resolve()):
+                raise RuntimeError(f"安装包路径越界: {info.filename}")
             if info.is_dir():
                 output.mkdir(parents=True, exist_ok=True)
                 continue
@@ -301,7 +329,12 @@ def _extract_zip(archive: Path, target: Path) -> None:
 def _install_from(extracted: Path) -> Path:
     """把解压结果整理成可用的安装目录并原子替换旧版本。"""
 
-    new_dir = Path.cwd() / "data" / "fluxdown-cli.new"
+    target = _install_dir()
+    old_dir = target.with_name(target.name + ".old")
+    # 上次回滚也失败时，先恢复唯一备份，绝不在重试中删掉它。
+    if old_dir.exists() and not target.exists():
+        os.replace(old_dir, target)
+    new_dir = target.with_name(target.name + ".new")
     shutil.rmtree(new_dir, ignore_errors=True)
     shutil.copytree(extracted, new_dir)
 
@@ -316,14 +349,25 @@ def _install_from(extracted: Path) -> Path:
     # 便携标记：CLI 与 server 都只认 exe 同目录的这个文件，缺了会写进用户本体
     (new_dir / "portable").touch()
 
-    target = _install_dir()
-    old_dir = target.with_name(target.name + ".old")
+    portable_data = target / "portable_data"
+    if portable_data.exists():
+        shutil.rmtree(new_dir / "portable_data", ignore_errors=True)
+        shutil.copytree(portable_data, new_dir / "portable_data")
     shutil.rmtree(old_dir, ignore_errors=True)
+    moved_old = False
     try:
         if target.exists():
             os.replace(target, old_dir)
+            moved_old = True
         os.replace(new_dir, target)
     except OSError as error:
+        if moved_old:
+            try:
+                os.replace(old_dir, target)
+            except OSError as rollback_error:
+                raise RuntimeError(
+                    f"替换与恢复 FluxDown 均失败，旧版本保留在 {old_dir}: {rollback_error}"
+                ) from error
         raise RuntimeError(
             f"替换 FluxDown 安装目录失败: {error}；请先停止正在进行的更新下载"
         ) from error
@@ -345,11 +389,28 @@ async def install_fluxdown(
         raise RuntimeError("正在安装 FluxDown，请等待当前任务完成")
 
     async with _install_lock:
-        return await _install_locked(selected, proxy)
+        # to_thread 不会随请求取消而退出；等待整个安装收尾后才释放锁。
+        task = asyncio.create_task(_install_locked(selected, proxy))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            while not task.done():
+                try:
+                    await asyncio.shield(task)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not task.cancelled():
+                task.exception()
+            raise
 
 
 async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, Any]:
+    initial_path = Config.setting.Update.FluxdownPath
     release = await fetch_latest_release(proxy=proxy)
+    if not release.cli_sha256 or not release.server_sha256:
+        raise RuntimeError("CLI/Server 缺少可信的 SHA-256 摘要，拒绝安装")
     tmp_root = Path.cwd() / "data" / "fluxdown_install_tmp"
     work = tmp_root / "download"
     extracted = tmp_root / "extract"
@@ -371,23 +432,30 @@ async def _install_locked(mirror: str, proxy: httpx.Proxy | None) -> dict[str, A
         )
         await asyncio.to_thread(_extract_zip, work / release.cli_name, extracted)
         await asyncio.to_thread(_extract_zip, work / release.server_name, extracted)
-        # 即将替换 exe：先释放 MAS 自己 spawn 的 server 套件，避免 Windows 文件占用
-        await asyncio.to_thread(_fluxdown_cli.fluxdown_server_shutdown)
-        target = await asyncio.to_thread(_install_from, extracted)
+
+        # 与所有 FluxDown 下载共用占用边界；替换期间不能启动新下载。
+        def replace_installation() -> Path:
+            with _fluxdown_cli.fluxdown_install_guard():
+                return _install_from(extracted)
+
+        target = await asyncio.to_thread(replace_installation)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
-    # 文件已就位，配置写入失败不能反过来报「安装失败」：前端安装成功后会经
-    # 设置接口再写一次 FluxdownPath，这里只作为无前端场景的补充。
+    # 配置失败不能报告全流程成功；比较与提交共用事务，保留下载期间的新选择。
     try:
-        await Config.setting.update(
-            type(Config.setting).model_validate(
-                {"Update": {"FluxdownPath": str(target)}}
-            ),
-            check_visibility=False,
-        )
-    except Exception as error:  # noqa: BLE001 - 配置未激活等场景不应中断安装
-        logger.warning(f"写入 Update.FluxdownPath 失败: {error}")
+        async with config_manager.transaction():
+            if Config.setting.Update.FluxdownPath != initial_path:
+                raise RuntimeError("安装期间路径设置已变化，已保留新选择")
+            await Config.setting.update(
+                type(Config.setting).model_validate(
+                    {"Update": {"FluxdownPath": str(target)}}
+                ),
+                check_visibility=False,
+            )
+        await Config.flush()
+    except Exception as error:
+        raise RuntimeError(f"文件已安装到 {target}，但路径未保存: {error}") from error
     logger.info(f"FluxDown {release.version} 已安装到 {target}")
     return {
         "version": release.version,
