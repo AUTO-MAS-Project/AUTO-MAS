@@ -3513,7 +3513,6 @@ class MaaFWRunner:
             self.send_log(_format_task_config_log(task))
             self.send_log(_format_task_config_detail_log(task))
             self.send_log(f"正在运行任务: {display_name}")
-            self._record_task_started(index, task)
             self._task_failure_summaries.clear()
             self._node_success_seq.clear()
             with self._focus_lock:
@@ -3534,6 +3533,10 @@ class MaaFWRunner:
             try:
                 with self._post_lock:
                     self._raise_if_deadline_hit()
+                    # 运行记录的「任务开始」放在投递前这次截止检查之后：两个任务之间整轮
+                    # 时限到点时，下一个任务从没投递，应保持「没轮到」，不能记成开始后超时。
+                    # 投递本身失败仍算开始过（按失败收尾）。
+                    self._record_task_started(index, task)
                     # 在投递之前置位（仍在锁内，定时器看不到中间态）：投递返回前就可能
                     # 有节点通知送达，信号判定要认得出它属于这个任务。
                     self._set_task_in_flight(task.name)
