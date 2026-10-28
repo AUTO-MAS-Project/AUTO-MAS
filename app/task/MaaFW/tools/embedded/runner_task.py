@@ -263,6 +263,8 @@ _PRETASK_OUTPUT_DRAIN_SECONDS = 2.0
 # 等 pretask 进程退出时查一次退出码的间隔：asyncio 的 ``Process.wait()`` 要等管道全部
 # 关闭才返回，会被继承了管道的游戏卡住，只能看 ``returncode``。
 _PRETASK_EXIT_POLL_SECONDS = 0.2
+# 运行前设置输出的行尾：与 ``str.splitlines()`` 对这三种写法同口径，\r\n 算一次换行
+_PRETASK_LINE_END_RE = re.compile(rb"\r\n|\r|\n")
 # 超时或停止时，跟 pretask 进程一起结束的后代：只认这些脚本解释器，且一路往下只穿过
 # 脚本解释器。游戏、启动器以及它们再起的任何进程都不碰（游戏的生命周期交给客户端）。
 _PRETASK_SCRIPT_HOST_NAMES = frozenset(
@@ -2592,11 +2594,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"读取运行前设置 {display_name} 的输出失败: {reader.exception()}"
                     )
             else:
-                pump.detach(display_name)
+                # 还没换行的半行不在这里写出（可能是被拆开的密码前半段），留着和之后的
+                # 输出拼成整行、打码后写后端日志
+                held = pump.detach(display_name)
                 _keep_pretask_drain(reader)
                 self._append_log(
                     f"运行前设置 {display_name} 已退出，但输出管道仍被它启动的程序"
                     "（多半是游戏或启动器）占用，不再等待之后的输出"
+                    + (
+                        "；最后一行还没换行，输出完整后连同之后的输出写进后端日志"
+                        if held
+                        else ""
+                    )
                 )
             detail = "\n".join(tail).strip()
             if timed_out:
@@ -4071,11 +4080,18 @@ async def _kill_pretask_process(
 class _PretaskOutputPump:
     """把运行前设置的输出按行交给 ``sink``（stdout 与 stderr 已合并）。
 
-    按块读、自己按换行切：``readline()`` 遇到超过 64 KB 的一行会抛错。每行单独解码
-    （与原来整段解码同一套编码顺序），先过 ``redact`` 打码再交出去。空白行与原来整段
-    ``strip()`` 后逐行写的口径一致：开头和结尾的空白行不写，夹在中间的照写。进程退出后
-    管道还被别的程序占着时，``detach`` 把还没换行的半行先交给当前 sink，之后的输出
-    （同样打码）改写后端日志，读到 EOF 为止。
+    按块读、自己分帧：``readline()`` 遇到超过 64 KB 的一行会抛错。行尾与原来整段
+    ``splitlines()`` 同口径：``\\n``、单独的 ``\\r``（进度条原地刷新）、``\\r\\n`` 各算一次
+    换行；``\\r`` 一到就把这一段交出去（进度实时可见），紧跟着的 ``\\n``（哪怕在下一块里）
+    并进同一个换行。每行单独解码（与原来整段解码同一套编码顺序），先过 ``redact`` 打码
+    再交出去。空白行与原来整段 ``strip()`` 后逐行写的口径一致：开头和结尾的空白行不写，
+    夹在中间的照写。
+
+    **打码边界**：只有遇到行尾（或 EOF，此时剩下的就是完整的最后一行）的段落才算完整
+    片段，打码后交出；还没到行尾的部分一直留在缓冲里，不单独发布——密码可能正好被拆在
+    两次读之间，两段各自做整串替换都匹配不上，拼起来就是明文。进程退出后管道还被别的
+    程序占着时，``detach`` 只切换 sink：缓冲里的半行留着，和之后的输出拼成完整一行、
+    打码后改写后端日志，读到 EOF 为止。
     """
 
     def __init__(
@@ -4087,6 +4103,8 @@ class _PretaskOutputPump:
         self._sink = sink
         self._redact = redact
         self._pending = b""
+        # 上一块以 \r 结尾、那一段已经交出：下一块开头的 \n 是同一个 \r\n，吞掉
+        self._after_cr = False
         self._seen_text = False
         self._blank_lines = 0
 
@@ -4097,29 +4115,33 @@ class _PretaskOutputPump:
             chunk = await stream.read(65536)
             if not chunk:
                 break
-            self._pending += chunk
-            *lines, self._pending = self._pending.split(b"\n")
-            for raw in lines:
-                self._emit(raw)
-        self.flush()
-
-    def flush(self) -> None:
+            self._feed(chunk)
+        # EOF：之后不会再有输出，剩下的就是完整的最后一行
         pending, self._pending = self._pending, b""
         if pending:
-            self._emit(pending)
+            self._emit_line(pending)
 
-    def detach(self, display_name: str) -> None:
-        self.flush()
+    def _feed(self, chunk: bytes) -> None:
+        if self._after_cr and chunk.startswith(b"\n"):
+            chunk = chunk[1:]
+        self._after_cr = False
+        # 缓冲里没有行尾（有就已经交出了），只需在新块里找
+        start = 0
+        for match in _PRETASK_LINE_END_RE.finditer(chunk):
+            self._emit_line(self._pending + chunk[start : match.start()])
+            self._pending = b""
+            start = match.end()
+        self._after_cr = start == len(chunk) and chunk.endswith(b"\r")
+        self._pending += chunk[start:]
+
+    def detach(self, display_name: str) -> bool:
+        """之后的输出改写后端日志；返回缓冲里是否有还没到行尾、留待拼接的半行。"""
 
         def to_backend_log(line: str) -> None:
             logger.info(f"[运行前设置 {display_name} 退出后的输出] {line}")
 
         self._sink = to_backend_log
-
-    def _emit(self, raw: bytes) -> None:
-        # 与原来整段 splitlines() 同口径：单独的 \r（进度条原地刷新）也算换行
-        for part in raw.rstrip(b"\r").split(b"\r"):
-            self._emit_line(part)
+        return bool(self._pending)
 
     def _emit_line(self, raw: bytes) -> None:
         text = _decode_subprocess_output(raw)

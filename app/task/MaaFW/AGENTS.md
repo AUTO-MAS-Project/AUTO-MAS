@@ -396,6 +396,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
     `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
     打码在 `_PretaskOutputPump` 里做，转去后端日志的那段输出也过同一套打码，别挪回 sink 里。
+    只有到了行尾（`\n`、单独的 `\r`、`\r\n` 算一次）或 EOF 的段落才打码交出，`\r` 一到就交（进度
+    实时可见）；没到行尾的半行留在缓冲里，`detach` 只换 sink、不把它写出——密码被拆在切换前后两段
+    时，两段各自整串替换都匹配不上（PR #1710 审查）。
   - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
     「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
     任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`pretask_cleanup`）：超时清理途中
