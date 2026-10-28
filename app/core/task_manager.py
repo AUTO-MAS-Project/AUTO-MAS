@@ -25,18 +25,23 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
 import app.task as task
+from app.config import ConfigEntry
+from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
+from app.core.history import history_store
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
     HistoryAttachmentInput,
+    HistoryWrite,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -59,7 +64,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.task.general.tools import execute_script_task
+from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
@@ -145,33 +150,10 @@ _RECENT_RESULTS_TTL_SECONDS = 1800
 
 @dataclass(frozen=True)
 class _ManagerBuildContext:
-    """构造脚本调度器所需的额外输入（占用归属与互斥资源）。"""
+    """沿用工厂构造接缝，只传资源值与追加预约能力。"""
 
-    script_uid: uuid.UUID
-    reservation_owner: str
     root_paths: tuple[Path, ...]
-    emulator_key: str | None
-    reservations: "_ScriptTaskReservations"
-
-
-def _build_src_manager(
-    script_item: ScriptItem, ctx: _ManagerBuildContext
-) -> TaskExecuteBase:
-    """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
-
-    if not ctx.root_paths:
-        raise RuntimeError("SRC 路径占用未初始化")
-    return task.SrcManager(
-        script_item,
-        reserved_src_root_path=ctx.root_paths[0],
-        # 追加历史根目录时要带上模拟器键，别在 re-acquire 时把它丢掉。
-        reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
-            ctx.script_uid,
-            ctx.reservation_owner,
-            root_paths=(root_path,),
-            emulator_key=ctx.emulator_key,
-        ),
-    )
+    reserve_root: Callable[[Path], bool]
 
 
 # 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigEntry），
@@ -194,7 +176,9 @@ _MANAGER_BOOK: dict[
     BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
     MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
     WhimboxConfig: lambda script_item, _ctx: task.WhimboxManager(script_item),
-    SrcConfig: _build_src_manager,
+    SrcConfig: lambda script_item, ctx: task.build_src_manager(
+        script_item, root_paths=ctx.root_paths, reserve_root=ctx.reserve_root
+    ),
 }
 
 logger = get_logger("业务调度")
@@ -304,47 +288,16 @@ def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
 
 
 def _exclusive_resources(
-    script_config: object,
+    script_config: ConfigEntry,
 ) -> tuple[tuple[Path, ...], str | None]:
-    """返回跨配置互斥所需的安装根目录与模拟器实例键。
-
-    安装目录只取运行期真的会写入的来源目录（MAA / MaaEnd / SRC）；MaaFW 跑的是
-    data 下的独立副本，来源目录不进安装目录互斥，否则会把合法的并发压成串行。
-    """
-
-    roots: tuple[Path, ...] = ()
-    if isinstance(script_config, (MaaConfig, SrcConfig, MaaEndConfig)):
-        raw = str(script_config.Info.Path or "").strip()
-        roots = (Path(raw),) if raw else ()
-    return roots, _emulator_key(script_config)
-
-
-def _emulator_key(script_config: object) -> str | None:
-    """返回「模拟器配置 Id:实例序号」互斥键；未绑定模拟器时返回 None。"""
-
-    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
-        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
-        emulator_id = script_config.Emulator.Id
-        index = script_config.Emulator.Index
-    elif isinstance(script_config, MaaEndConfig):
-        # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
-        # 控制器配置才知道，调度层不为此去碰文件。Win32 原生来源的配置留空 "-" 就自
-        # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
-        emulator_id = script_config.Game.EmulatorId
-        index = script_config.Game.EmulatorIndex
-    elif isinstance(script_config, GeneralConfig):
-        # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
-        # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
-        # 也不占实例键，免得把合法并发压成串行。
-        if not script_config.Game.Enabled or script_config.Game.Type != "Emulator":
-            return None
-        emulator_id = script_config.Game.EmulatorId
-        index = script_config.Game.EmulatorIndex
-    else:
-        return None
+    """规范化专项声明；不解释专项字段或读取上游资源文件。"""
+    resources = Config.get_script_task_resources(script_config)
+    if resources.emulator is None:
+        return resources.root_paths, None
+    emulator_id, index = resources.emulator
     if str(emulator_id or "") in ("", "-") or str(index or "") in ("", "-"):
-        return None
-    return f"{emulator_id}:{index}"
+        return resources.root_paths, None
+    return resources.root_paths, f"{emulator_id}:{index}"
 
 
 @dataclass(eq=False)
@@ -437,6 +390,40 @@ class TaskInfo(TaskItem):
         )
         if capture is not None:
             self._history_capture_tasks[key] = capture
+
+    async def save_user_history(
+        self,
+        records: Sequence[HistoryWrite],
+        *,
+        script: ScriptItem,
+        user: UserItem,
+        log_warning: Callable[[str], None] | None = None,
+    ) -> None:
+        """为本次用户历史装配能力，专项只交出已判定的条目与诊断入口。"""
+
+        await save_user_history(
+            records,
+            dependencies=UserHistoryDependencies(
+                record=history_store.record,
+                collect_attachments=partial(
+                    self.collect_user_history_attachments, script=script, user=user
+                ),
+                discard_capture=partial(
+                    self.discard_user_history_capture, script=script, user=user
+                ),
+                report_failure=self._report_history_save_failure,
+                log_warning=log_warning
+                if log_warning is not None
+                else logger.opt(exception=True).warning,
+            ),
+        )
+
+    async def _report_history_save_failure(self, message: str) -> None:
+        await Publisher.send(
+            id=self.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
 
     async def collect_user_history_attachments(
         self, script: ScriptItem, user: UserItem
@@ -824,11 +811,14 @@ class Task(TaskExecuteBase):
         return build(
             script_item,
             _ManagerBuildContext(
-                script_uid=script_uid,
-                reservation_owner=reservation_owner,
                 root_paths=root_paths,
-                emulator_key=emulator_key,
-                reservations=self.script_reservations,
+                # 追加目录与初始预约使用同一归属及模拟器键。
+                reserve_root=lambda root_path: self.script_reservations.try_acquire(
+                    script_uid,
+                    reservation_owner,
+                    root_paths=(root_path,),
+                    emulator_key=emulator_key,
+                ),
             ),
         )
 

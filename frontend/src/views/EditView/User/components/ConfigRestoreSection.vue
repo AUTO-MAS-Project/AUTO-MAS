@@ -2,7 +2,7 @@
   <!-- ══ 配置恢复（历史备份浏览 / 预览 / 查看详细 / 一键恢复；MAS 在前脚本在后）══ -->
   <a-modal
     :open="open"
-    :title="t('edit.configRestoreTitle')"
+    :title="t('core.edit.configRestoreTitle')"
     :footer="null"
     width="520px"
     @update:open="onOpenChange"
@@ -12,7 +12,7 @@
       class="restore-lock-alert"
       type="warning"
       show-icon
-      :message="t('edit.configLocked')"
+      :message="t('core.edit.configLocked')"
     />
     <a-segmented
       v-model:value="restoreTarget"
@@ -23,16 +23,16 @@
     <p class="restore-desc">
       {{
         currentTarget?.kind === 'user'
-          ? (userDesc ?? t('edit.configRestoreMasDesc', { script: scriptName }))
-          : (scriptDesc ?? t('edit.configRestoreScriptDesc', { script: scriptName }))
+          ? (userDesc ?? t('core.edit.configRestoreMasDesc', { script: scriptName }))
+          : (scriptDesc ?? t('core.edit.configRestoreScriptDesc', { script: scriptName }))
       }}
       <!-- 当前配置来源（三态专项才有；用户靠它与备份标签对比是否需要跨来源恢复） -->
       <span v-if="currentSource" class="restore-current-source">
-        {{ t('edit.configRestoreCurrentSource', { mode: t(sourceLabelKey(currentSource)) }) }}
+        {{ t('core.edit.configRestoreCurrentSource', { mode: t(sourceLabelKey(currentSource)) }) }}
       </span>
     </p>
     <a-spin :spinning="backupsLoading">
-      <a-empty v-if="!backups.length" :description="t('edit.configRestoreEmpty')" />
+      <a-empty v-if="!backups.length" :description="t('core.edit.configRestoreEmpty')" />
       <a-list v-else :data-source="backups" size="small" row-key="time">
         <template #renderItem="{ item }">
           <a-list-item>
@@ -45,14 +45,14 @@
             </div>
             <a-space>
               <a-button type="link" size="small" @click="handlePreview(item)">
-                {{ t('edit.configRestorePreview') }}
+                {{ t('core.edit.configRestorePreview') }}
               </a-button>
               <a-button
                 size="small"
                 :disabled="disabled || isRestoreBlocked(item)"
                 @click="confirmRestore(item)"
               >
-                {{ t('edit.configRestoreAction') }}
+                {{ t('core.edit.configRestoreAction') }}
               </a-button>
             </a-space>
           </a-list-item>
@@ -71,7 +71,7 @@
     <template #title>
       <!-- 预览标题区：专项可用 #preview-title 插槽自定义，缺省用「配置预览 · 时间」 -->
       <slot name="preview-title" :time="previewTime">
-        {{ `${t('edit.configRestorePreviewTitle')} · ${previewTime}` }}
+        {{ `${t('core.edit.configRestorePreviewTitle')} · ${previewTime}` }}
       </slot>
     </template>
     <a-spin :spinning="previewLoading">
@@ -81,10 +81,10 @@
         class="preview-warning"
         type="warning"
         show-icon
-        :message="t('edit.configRestoreUnrestorableTitle')"
+        :message="t('core.edit.configRestoreUnrestorableTitle')"
       >
         <template #description>
-          <div>{{ t('edit.configRestoreUnrestorableDesc') }}</div>
+          <div>{{ t('core.edit.configRestoreUnrestorableDesc') }}</div>
           <div v-for="warning in previewWarnings" :key="warning">{{ warning }}</div>
         </template>
       </a-alert>
@@ -104,13 +104,13 @@
              但保留「无可展示摘要」提示（与脚本级一致的基座默认兜底） -->
         <template v-if="currentTarget?.kind === 'user'">
           <template v-if="previewRows.length || previewData.tasks.length">
-            <h4 class="preview-section-title">{{ t('edit.basicInfo') }}</h4>
+            <h4 class="preview-section-title">{{ t('core.edit.basicInfo') }}</h4>
             <a-descriptions :column="1" size="small" bordered class="preview-box">
               <a-descriptions-item v-for="row in previewRows" :key="row.label" :label="row.label">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
-            <h4 class="preview-section-title">{{ t('edit.configRestorePreviewTasks') }}</h4>
+            <h4 class="preview-section-title">{{ t('core.edit.configRestorePreviewTasks') }}</h4>
             <div v-if="previewData.tasks.length" class="preview-task-list">
               <span
                 v-for="task in previewData.tasks"
@@ -121,15 +121,15 @@
                 {{ task.app_name }}
               </span>
             </div>
-            <a-empty v-else :description="t('edit.configRestorePreviewNoTasks')" />
+            <a-empty v-else :description="t('core.edit.configRestorePreviewNoTasks')" />
           </template>
-          <a-empty v-else :description="t('edit.configRestorePreviewEmpty')" />
+          <a-empty v-else :description="t('core.edit.configRestorePreviewEmpty')" />
         </template>
         <!-- 脚本级：实例列表可展开查看账号/任务明细 -->
         <template v-else>
           <a-empty
             v-if="!previewData.instances.length"
-            :description="t('edit.configRestorePreviewEmpty')"
+            :description="t('core.edit.configRestorePreviewEmpty')"
           />
           <a-collapse v-else class="preview-instance-list" :bordered="false">
             <a-collapse-panel v-for="inst in previewData.instances" :key="inst.idx">
@@ -138,7 +138,7 @@
                   {{ `${String(inst.idx).padStart(2, '0')} - ${inst.name}` }}
                 </span>
                 <a-tag v-if="inst.active" color="blue">
-                  {{ t('edit.configRestorePreviewActive') }}
+                  {{ t('core.edit.configRestorePreviewActive') }}
                 </a-tag>
               </template>
               <a-descriptions :column="1" size="small" bordered class="preview-box">
@@ -172,7 +172,7 @@
         <a-collapse-panel>
           <template #header>
             <span class="preview-files-title">
-              {{ `${t('edit.configRestoreBackupFiles')} (${previewFiles.length})` }}
+              {{ `${t('core.edit.configRestoreBackupFiles')} (${previewFiles.length})` }}
             </span>
           </template>
           <div class="preview-file-list">
@@ -197,14 +197,14 @@
       <div class="preview-actions">
         <a-tooltip
           v-if="onDetail"
-          :title="t('edit.configRestoreDetailHint', { script: scriptName })"
+          :title="t('core.edit.configRestoreDetailHint', { script: scriptName })"
         >
           <a-button :disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail">
-            {{ t('edit.configRestoreDetailView') }}
+            {{ t('core.edit.configRestoreDetailView') }}
           </a-button>
         </a-tooltip>
         <a-button @click="previewOpen = false">
-          {{ t('edit.close') }}
+          {{ t('core.edit.close') }}
         </a-button>
       </div>
     </template>
@@ -222,7 +222,7 @@
       <div class="file-modal-title">
         <span class="file-modal-path">{{ fileItem?.path }}</span>
         <a-button type="text" size="small" @click="copyFileContent">
-          {{ t('edit.configRestoreCopy') }}
+          {{ t('core.edit.configRestoreCopy') }}
         </a-button>
       </div>
     </template>
@@ -349,8 +349,8 @@ const targetOptions = computed(() =>
   props.targets.map(tgt => ({
     label:
       tgt.kind === 'user'
-        ? t('edit.configRestoreTargetMas')
-        : t('edit.configRestoreTargetScript', { script: props.scriptName }),
+        ? t('core.edit.configRestoreTargetMas')
+        : t('core.edit.configRestoreTargetScript', { script: props.scriptName }),
     value: tgt.key,
   }))
 )
@@ -385,7 +385,7 @@ const loadBackups = async () => {
   try {
     const resp = await props.api.list(restoreTarget.value)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.configRestoreListFailed'))
+      throw new Error(resp.message || t('core.edit.configRestoreListFailed'))
     }
     backups.value = resp.data ?? []
     currentSource.value = resp.base ?? null
@@ -394,7 +394,7 @@ const loadBackups = async () => {
     // 会诱导用户对着过期列表做恢复判断
     backups.value = []
     currentSource.value = null
-    message.error(e instanceof Error ? e.message : t('edit.configRestoreListFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.configRestoreListFailed'))
   } finally {
     backupsLoading.value = false
   }
@@ -451,33 +451,33 @@ const previewRows = computed(() => {
   const account = new Map(previewData.account.map(f => [f.key, f.value]))
   const rows: { label: string; value: string }[] = []
   const order: Array<{ key: string; label: string; src: 'info' | 'account' }> = [
-    { key: 'name', label: t('edit.username'), src: 'info' },
-    { key: 'status', label: t('edit.enabled'), src: 'info' },
-    { key: 'base', label: t('edit.configRestorePreviewMode'), src: 'info' },
-    { key: 'launcher_mode', label: t('edit.configRestorePreviewLauncher'), src: 'info' },
-    { key: 'game_region', label: t('edit.configRestorePreviewRegion'), src: 'account' },
-    { key: 'game_path', label: t('edit.configRestorePreviewGamePath'), src: 'account' },
-    { key: 'game_language', label: t('edit.configRestorePreviewLanguage'), src: 'account' },
-    { key: 'account', label: t('edit.configRestorePreviewAccount'), src: 'account' },
-    { key: 'password', label: t('edit.configRestorePreviewPassword'), src: 'account' },
+    { key: 'name', label: t('core.edit.username'), src: 'info' },
+    { key: 'status', label: t('core.edit.enabled'), src: 'info' },
+    { key: 'base', label: t('core.edit.configRestorePreviewMode'), src: 'info' },
+    { key: 'launcher_mode', label: t('core.edit.configRestorePreviewLauncher'), src: 'info' },
+    { key: 'game_region', label: t('core.edit.configRestorePreviewRegion'), src: 'account' },
+    { key: 'game_path', label: t('core.edit.configRestorePreviewGamePath'), src: 'account' },
+    { key: 'game_language', label: t('core.edit.configRestorePreviewLanguage'), src: 'account' },
+    { key: 'account', label: t('core.edit.configRestorePreviewAccount'), src: 'account' },
+    { key: 'password', label: t('core.edit.configRestorePreviewPassword'), src: 'account' },
     {
       key: 'bilibili_account_name',
-      label: t('edit.configRestorePreviewBilibili'),
+      label: t('core.edit.configRestorePreviewBilibili'),
       src: 'account',
     },
     {
       key: 'use_custom_win_title',
-      label: t('edit.configRestorePreviewUseCustomWinTitle'),
+      label: t('core.edit.configRestorePreviewUseCustomWinTitle'),
       src: 'account',
     },
     {
       key: 'custom_win_title',
-      label: t('edit.configRestorePreviewCustomWinTitle'),
+      label: t('core.edit.configRestorePreviewCustomWinTitle'),
       src: 'account',
     },
-    { key: 'remained_day', label: t('edit.daysLeft'), src: 'info' },
-    { key: 'notes', label: t('edit.note'), src: 'info' },
-    { key: 'push_log_mode', label: t('edit.collectNodeDetails'), src: 'info' },
+    { key: 'remained_day', label: t('core.edit.daysLeft'), src: 'info' },
+    { key: 'notes', label: t('core.edit.note'), src: 'info' },
+    { key: 'push_log_mode', label: t('core.edit.collectNodeDetails'), src: 'info' },
   ]
   for (const spec of order) {
     const raw = spec.src === 'info' ? info.get(spec.key) : account.get(spec.key)
@@ -498,7 +498,7 @@ const handlePreview = async (item: BackupItem) => {
   try {
     const resp = await props.api.preview(restoreTarget.value, item.time)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.configRestorePreviewFailed'))
+      throw new Error(resp.message || t('core.edit.configRestorePreviewFailed'))
     }
     // 通用端点把专项载荷包在 data 里；缺省回落到顶层平铺结构（向后兼容）
     const payload = (resp.data ?? resp) as typeof resp & {
@@ -520,7 +520,7 @@ const handlePreview = async (item: BackupItem) => {
     else blockedRestoreTimes.value.add(item.time)
     previewRaw.value = payload
   } catch (e) {
-    previewError.value = e instanceof Error ? e.message : t('edit.configRestorePreviewFailed')
+    previewError.value = e instanceof Error ? e.message : t('core.edit.configRestorePreviewFailed')
     previewData.info = []
     previewData.account = []
     previewData.tasks = []
@@ -584,15 +584,15 @@ const openBackupFile = async (item: BackupFileItem) => {
   fileContent.value = ''
   try {
     if (!props.api.readFile) {
-      throw new Error(t('edit.configRestoreFileUnsupported'))
+      throw new Error(t('core.edit.configRestoreFileUnsupported'))
     }
     const resp = await props.api.readFile(restoreTarget.value, previewItem.value.time, item.path)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.configRestoreFileFailed'))
+      throw new Error(resp.message || t('core.edit.configRestoreFileFailed'))
     }
     fileContent.value = resp.content ?? ''
   } catch (e) {
-    fileError.value = e instanceof Error ? e.message : t('edit.configRestoreFileFailed')
+    fileError.value = e instanceof Error ? e.message : t('core.edit.configRestoreFileFailed')
   } finally {
     fileLoading.value = false
   }
@@ -602,9 +602,9 @@ const copyFileContent = async () => {
   if (!fileContent.value) return
   try {
     await navigator.clipboard.writeText(fileContent.value)
-    message.success(t('edit.configRestoreCopied'))
+    message.success(t('core.edit.configRestoreCopied'))
   } catch {
-    message.error(t('edit.configRestoreFileFailed'))
+    message.error(t('core.edit.configRestoreFileFailed'))
   }
 }
 
@@ -612,10 +612,10 @@ const copyFileContent = async () => {
 /** 执行恢复；源配置损坏（后端 409）时转入强制恢复二次确认并返回 null */
 const runRestore = async (item: BackupItem, force = false) => {
   if (props.disabled) {
-    throw new Error(t('edit.configLocked'))
+    throw new Error(t('core.edit.configLocked'))
   }
   if (isRestoreBlocked(item)) {
-    throw new Error(t('edit.configRestoreUnrestorableDesc'))
+    throw new Error(t('core.edit.configRestoreUnrestorableDesc'))
   }
   const resp = await props.api.restore(restoreTarget.value, item.time, force)
   if (resp.code === 200) {
@@ -624,12 +624,12 @@ const runRestore = async (item: BackupItem, force = false) => {
   if (resp.code === 409) {
     if (force) {
       // force 仍被拦（如后端另有守卫）：不再重复弹确认，直接把原因报给用户
-      throw new Error(resp.message || t('edit.configRestoreFailed'))
+      throw new Error(resp.message || t('core.edit.configRestoreFailed'))
     }
     confirmForceRestore(item, resp.message || '')
     return null
   }
-  throw new Error(resp.message || t('edit.configRestoreFailed'))
+  throw new Error(resp.message || t('core.edit.configRestoreFailed'))
 }
 
 /** 损坏强制恢复二次确认：写明损坏位置与风险，确认后携带 force 重试 */
@@ -640,20 +640,20 @@ const confirmForceRestore = (item: BackupItem, detail: string) => {
     content: corruptedForceConfirmContent(copy.detail, copy.desc),
     okText: copy.okText,
     okType: 'danger',
-    cancelText: t('edit.cancel'),
+    cancelText: t('core.edit.cancel'),
     onOk: async () => {
       try {
         const resp = await runRestore(item, true)
         if (resp) await finishRestore(item)
       } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
       }
     },
   })
 }
 
 const finishRestore = async (item: BackupItem) => {
-  message.success(t('edit.configRestoreSuccess'))
+  message.success(t('core.edit.configRestoreSuccess'))
   props.onRestored?.(restoreTarget.value, item)
   await loadBackups()
 }
@@ -664,7 +664,10 @@ const confirmRestore = (item: BackupItem) => {
   if (isRestoreBlocked(item)) return
   const { title, paragraphs } = buildRestoreConfirm(
     t,
-    { title: t('edit.configRestoreConfirmTitle'), desc: t('edit.configRestoreConfirmDesc') },
+    {
+      title: t('core.edit.configRestoreConfirmTitle'),
+      desc: t('core.edit.configRestoreConfirmDesc'),
+    },
     item.base,
     currentSource.value
   )
@@ -676,14 +679,14 @@ const confirmRestore = (item: BackupItem) => {
         h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
       )
     ),
-    okText: t('edit.configRestoreAction'),
+    okText: t('core.edit.configRestoreAction'),
     okType: 'danger',
     onOk: async () => {
       try {
         const resp = await runRestore(item)
         if (resp) await finishRestore(item)
       } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
       }
     },
   })

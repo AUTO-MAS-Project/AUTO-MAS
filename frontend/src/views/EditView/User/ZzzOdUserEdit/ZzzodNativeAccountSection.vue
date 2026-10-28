@@ -46,7 +46,7 @@ const selectDirectGamePath = async () => {
                 {{ f.title }}
                 <a-tooltip
                   v-if="isRequiredAccountKey(f.key)"
-                  :title="t('edit.zzzodAccountRequiredTip')"
+                  :title="t('core.edit.zzzodAccountRequiredTip')"
                 >
                   <QuestionCircleOutlined class="help-icon" />
                 </a-tooltip>
@@ -56,14 +56,14 @@ const selectDirectGamePath = async () => {
               v-if="f.key === 'game_path'"
               v-model="nativeAccountValues[f.key]"
               mode="file"
-              :placeholder="t('edit.zzzodGamePathPlaceholder')"
-              :pick-label="t('edit.pickFile')"
+              :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
+              :pick-label="t('core.edit.pickFile')"
               @pick="selectDirectGamePath"
             />
             <a-input-password
               v-else-if="f.key === 'password'"
               v-model:value="nativeAccountValues[f.key]"
-              :placeholder="t('edit.zzzodDirectPasswordPlaceholder')"
+              :placeholder="t('core.edit.zzzodDirectPasswordPlaceholder')"
               size="large"
               class="modern-input"
             />
@@ -85,11 +85,11 @@ const selectDirectGamePath = async () => {
       </a-row>
       <div class="native-save-row">
         <a-button type="primary" size="large" :loading="nativeSaving" @click="saveNativeAccount">
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </div>
     </template>
-    <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
+    <a-empty v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
   </a-spin>
 </template>
 <style scoped>

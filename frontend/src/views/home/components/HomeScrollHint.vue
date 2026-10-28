@@ -3,10 +3,10 @@
     <button
       v-if="visible"
       class="scroll-hint"
-      :aria-label="t('home.scrollHint.aria')"
+      :aria-label="t('core.home.scrollHint.aria')"
       @click="scrollDown"
     >
-      <span class="scroll-hint-text">{{ t('home.scrollHint.text') }}</span>
+      <span class="scroll-hint-text">{{ t('core.home.scrollHint.text') }}</span>
       <DownOutlined class="scroll-hint-arrow" />
     </button>
   </Transition>

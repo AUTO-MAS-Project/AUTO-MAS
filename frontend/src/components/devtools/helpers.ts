@@ -5,9 +5,9 @@ import type { StorageEntry } from './types'
 export const copyDevtoolsText = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text)
-    message.success(t('devtools.copied'))
+    message.success(t('core.devtools.copied'))
   } catch {
-    message.error(t('devtools.copyFailed'))
+    message.error(t('core.devtools.copyFailed'))
   }
 }
 
@@ -16,8 +16,8 @@ export const confirmDevtoolsAction = (title: string, content: string): Promise<b
     Modal.confirm({
       title,
       content,
-      okText: t('devtools.confirm'),
-      cancelText: t('devtools.cancel'),
+      okText: t('core.devtools.confirm'),
+      cancelText: t('core.devtools.cancel'),
       okType: 'danger',
       onOk: () => {
         resolve(true)

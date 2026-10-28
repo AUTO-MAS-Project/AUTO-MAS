@@ -1,16 +1,16 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('edit.controlModeGameResource')">
+  <MaaFWFormSection :title="t('core.edit.controlModeGameResource')">
     <a-row :gutter="24" class="controller-resource-row">
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.controlMode') }}</span>
+            <span class="form-label">{{ t('core.edit.controlMode') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Controller"
             size="large"
-            :placeholder="t('edit.automatic')"
+            :placeholder="t('core.edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('controller-change')"
@@ -23,7 +23,7 @@
             >
               {{ item.label || item.name }} · {{ item.type }}
               <span v-if="!isDirectControllerType(item.type)">{{
-                t('edit.originalUiRecommended')
+                t('core.edit.originalUiRecommended')
               }}</span>
             </a-select-option>
           </a-select>
@@ -32,9 +32,9 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwResourceLeave')">
+            <a-tooltip :title="t('core.edit.pickMfwResourceLeave')">
               <span class="form-label">
-                {{ t('edit.gameResource') }}
+                {{ t('core.edit.gameResource') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
@@ -42,7 +42,7 @@
           <a-select
             v-model:value="maafwConfig.Info.Resource"
             size="large"
-            :placeholder="t('edit.automatic')"
+            :placeholder="t('core.edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
             @change="emit('resource-change')"
@@ -61,12 +61,12 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.emulator') }}</span>
+                <span class="form-label">{{ t('core.edit.emulator') }}</span>
               </template>
               <a-select
                 v-model:value="emulatorIdValue"
                 size="large"
-                :placeholder="t('edit.pickEmulator')"
+                :placeholder="t('core.edit.pickEmulator')"
                 :loading="emulatorLoading"
                 :disabled="!emulatorOptionsReady"
                 @change="(value: string | number) => emit('emulator-select-change', String(value))"
@@ -84,7 +84,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.emulatorInstance') }}</span>
+                <span class="form-label">{{ t('core.edit.emulatorInstance') }}</span>
               </template>
               <a-input
                 v-if="
@@ -95,7 +95,7 @@
                 "
                 v-model:value="emulatorIndexValue"
                 size="large"
-                :placeholder="t('edit.enterEmulatorInstanceIndex')"
+                :placeholder="t('core.edit.enterEmulatorInstanceIndex')"
                 class="modern-input"
                 :disabled="!emulatorOptionsReady"
                 @blur="emit('change', 'Emulator', 'Index', maafwConfig.Emulator.Index)"
@@ -104,7 +104,7 @@
                 v-else
                 v-model:value="emulatorIndexValue"
                 size="large"
-                :placeholder="t('edit.pickEmulatorFirst')"
+                :placeholder="t('core.edit.pickEmulatorFirst')"
                 :loading="emulatorDeviceLoading"
                 :disabled="
                   !emulatorOptionsReady ||
@@ -136,16 +136,16 @@
               <a-col :xs="24" :xl="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                    <a-tooltip :title="t('core.edit.mfwGamePackageNamePassed')">
                       <span class="form-label">
-                        {{ t('edit.mfwGamePackageName') }}
+                        {{ t('core.edit.mfwGamePackageName') }}
                         <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                       </span>
                     </a-tooltip>
                   </template>
                   <a-input
                     v-model:value="maafwConfig.Game.PackageName"
-                    :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    :placeholder="t('core.edit.mfwGamePackageNamePlaceholder')"
                     size="large"
                     allow-clear
                     @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
@@ -158,9 +158,9 @@
               <a-col :xs="24" :xl="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                    <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
                       <span class="form-label">
-                        {{ t('edit.waitTimeSeconds') }}
+                        {{ t('core.edit.waitTimeSeconds') }}
                         <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                       </span>
                     </a-tooltip>
@@ -198,7 +198,7 @@
           <a-col :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.howPcGameLaunched') }}</span>
+                <span class="form-label">{{ t('core.edit.howPcGameLaunched') }}</span>
               </template>
               <!-- 收起时只显示标题（option-label-prop），说明只在展开的选项里出现 -->
               <a-select
@@ -208,16 +208,16 @@
                 option-label-prop="label"
                 @change="emit('change', 'Game', 'LaunchMode', maafwConfig.Game.LaunchMode)"
               >
-                <a-select-option value="DirectExe" :label="t('edit.letMasLaunchGame')">
+                <a-select-option value="DirectExe" :label="t('core.edit.letMasLaunchGame')">
                   <div class="launch-option">
-                    <span class="launch-option-title">{{ t('edit.letMasLaunchGame') }}</span>
-                    <span class="launch-option-hint">{{ t('edit.pickGameSOwn') }}</span>
+                    <span class="launch-option-title">{{ t('core.edit.letMasLaunchGame') }}</span>
+                    <span class="launch-option-hint">{{ t('core.edit.pickGameSOwn') }}</span>
                   </div>
                 </a-select-option>
-                <a-select-option value="AttachOnly" :label="t('edit.launchGameOtherWay')">
+                <a-select-option value="AttachOnly" :label="t('core.edit.launchGameOtherWay')">
                   <div class="launch-option">
-                    <span class="launch-option-title">{{ t('edit.launchGameOtherWay') }}</span>
-                    <span class="launch-option-hint">{{ t('edit.masOnlyTakesOver') }}</span>
+                    <span class="launch-option-title">{{ t('core.edit.launchGameOtherWay') }}</span>
+                    <span class="launch-option-hint">{{ t('core.edit.masOnlyTakesOver') }}</span>
                   </div>
                 </a-select-option>
               </a-select>
@@ -226,13 +226,13 @@
           <a-col v-if="launchMode === 'DirectExe'" :span="12">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.gameExecutable') }}</span>
+                <span class="form-label">{{ t('core.edit.gameExecutable') }}</span>
               </template>
               <PathPickerField
                 v-model="maafwConfig.Game.LaunchPath"
                 mode="file"
-                :placeholder="t('edit.pickGameExeThat')"
-                :pick-label="t('edit.pickExe')"
+                :placeholder="t('core.edit.pickGameExeThat')"
+                :pick-label="t('core.edit.pickExe')"
                 @pick="emit('select-launch-path')"
               />
             </a-form-item>
@@ -253,9 +253,9 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
+                <a-tooltip :title="t('core.edit.mfwUnityResolutionTip')">
                   <span class="form-label">
-                    {{ t('edit.mfwUnityResolution') }}
+                    {{ t('core.edit.mfwUnityResolution') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -274,11 +274,11 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.launchArguments') }}</span>
+                <span class="form-label">{{ t('core.edit.launchArguments') }}</span>
               </template>
               <a-input
                 v-model:value="maafwConfig.Game.Arguments"
-                :placeholder="t('edit.optional')"
+                :placeholder="t('core.edit.optional')"
                 size="large"
                 class="modern-input"
                 @blur="emit('change', 'Game', 'Arguments', maafwConfig.Game.Arguments)"
@@ -288,9 +288,9 @@
           <a-col :span="directExeColSpan">
             <a-form-item>
               <template #label>
-                <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
                   <span class="form-label">
-                    {{ t('edit.waitTimeSeconds') }}
+                    {{ t('core.edit.waitTimeSeconds') }}
                     <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
                   </span>
                 </a-tooltip>
@@ -385,7 +385,7 @@ const handleHotkeysSave = (value: string) => {
 // 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
 const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
   () => [
-    { label: t('edit.mfwUnityResolutionOff'), value: 'Off' },
+    { label: t('core.edit.mfwUnityResolutionOff'), value: 'Off' },
     { label: '1920×1080', value: '1920x1080' },
     { label: '1280×720', value: '1280x720' },
   ]

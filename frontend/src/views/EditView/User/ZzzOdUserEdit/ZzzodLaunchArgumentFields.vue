@@ -3,7 +3,7 @@
     <a-col :span="12">
       <a-form-item>
         <template #label>
-          <FieldLabelWithHint :text="t('edit.zzzodScreenSize')" variant="form" />
+          <FieldLabelWithHint :text="t('core.edit.zzzodScreenSize')" variant="form" />
         </template>
         <a-select
           v-model:value="screenSize"
@@ -18,7 +18,7 @@
     <a-col :span="12">
       <a-form-item>
         <template #label>
-          <FieldLabelWithHint :text="t('edit.zzzodFullScreen')" variant="form" />
+          <FieldLabelWithHint :text="t('core.edit.zzzodFullScreen')" variant="form" />
         </template>
         <a-select
           v-model:value="fullScreen"
@@ -35,7 +35,7 @@
     <a-col :span="12">
       <a-form-item>
         <template #label>
-          <FieldLabelWithHint :text="t('edit.zzzodPopupWindow')" variant="form" />
+          <FieldLabelWithHint :text="t('core.edit.zzzodPopupWindow')" variant="form" />
         </template>
         <a-switch
           v-model:checked="popupWindow"
@@ -48,8 +48,8 @@
       <a-form-item>
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.zzzodDx12')"
-            :hint="t('edit.zzzodDx12Hint')"
+            :text="t('core.edit.zzzodDx12')"
+            :hint="t('core.edit.zzzodDx12Hint')"
             variant="form"
           />
         </template>
@@ -65,7 +65,7 @@
     <a-col :span="12">
       <a-form-item>
         <template #label>
-          <FieldLabelWithHint :text="t('edit.zzzodMonitor')" variant="form" />
+          <FieldLabelWithHint :text="t('core.edit.zzzodMonitor')" variant="form" />
         </template>
         <a-select
           v-model:value="monitor"
@@ -82,11 +82,11 @@
     <a-col :span="24">
       <a-form-item>
         <template #label>
-          <FieldLabelWithHint :text="t('edit.zzzodAdvanceArgs')" variant="form" />
+          <FieldLabelWithHint :text="t('core.edit.zzzodAdvanceArgs')" variant="form" />
         </template>
         <a-input
           v-model:value="advancedArguments"
-          :placeholder="t('edit.zzzodAdvanceArgsPlaceholder')"
+          :placeholder="t('core.edit.zzzodAdvanceArgsPlaceholder')"
           size="large"
           class="modern-input"
           :disabled="disabled"
@@ -130,8 +130,8 @@ const screenSizeOptions = [
   { label: '3840x2160', value: '3840x2160' },
 ]
 const fullScreenOptions = [
-  { label: t('edit.zzzodFullScreenWindowed'), value: '0' },
-  { label: t('edit.zzzodFullScreenFullscreen'), value: '1' },
+  { label: t('core.edit.zzzodFullScreenWindowed'), value: '0' },
+  { label: t('core.edit.zzzodFullScreenFullscreen'), value: '1' },
 ]
 const monitorOptions = [
   { label: '1', value: '1' },

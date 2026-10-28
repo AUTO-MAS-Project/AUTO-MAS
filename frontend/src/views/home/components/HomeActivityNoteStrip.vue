@@ -44,8 +44,8 @@ const formatTime = (value: string) => {
 }
 
 const platformLabel = (platform: string) => {
-  if (platform === '森空岛') return t('gamesign.activity.platform.skland')
-  if (platform === '米游社') return t('gamesign.activity.platform.miyoushe')
+  if (platform === '森空岛') return t('core.gamesign.activity.platform.skland')
+  if (platform === '米游社') return t('core.gamesign.activity.platform.miyoushe')
   return platform
 }
 
@@ -58,7 +58,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const statusMeta = (snapshot: ActivitySnapshot) => ({
-  label: t(`gamesign.activity.status.${snapshot.status}`),
+  label: t(`core.gamesign.activity.status.${snapshot.status}`),
   color: STATUS_COLORS[snapshot.status] ?? 'default',
 })
 
@@ -87,7 +87,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       </span>
       <div class="note-strip-title">
         <strong>{{ snapshot.game }}</strong>
-        <span>{{ t('home.activityNotes.title') }}</span>
+        <span>{{ t('core.home.activityNotes.title') }}</span>
       </div>
       <span class="note-strip-identity">
         <slot name="identity">
@@ -98,13 +98,13 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       <a-tag :color="statusMeta(snapshot).color">
         {{ statusMeta(snapshot).label }}
       </a-tag>
-      <a-tooltip :title="t('gamesign.activity.refresh')">
+      <a-tooltip :title="t('core.gamesign.activity.refresh')">
         <a-button
           type="text"
           size="small"
           shape="circle"
           :loading="loading"
-          :aria-label="t('gamesign.activity.refresh')"
+          :aria-label="t('core.gamesign.activity.refresh')"
           @click="$emit('refresh')"
         >
           <ReloadOutlined />
@@ -145,7 +145,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       class="note-strip-reason"
     />
     <footer v-if="formatTime(snapshot.updatedAt)" class="note-strip-footer">
-      {{ t('gamesign.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
+      {{ t('core.gamesign.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
     </footer>
   </article>
 </template>

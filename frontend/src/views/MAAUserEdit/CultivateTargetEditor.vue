@@ -9,15 +9,19 @@
     />
     <!-- 识别口径一行摘要，完整说明收进行尾 ?（对齐 PipelineRow 的 row-help） -->
     <div class="cultivate-hint cultivate-hint-inline">
-      {{ t('maaCopilot.recognitionHintShort') }}
-      <a-tooltip :title="t('edit.maaCultivateRecognitionHint')" :trigger="['hover', 'focus']">
-        <button type="button" class="hint-help" :aria-label="t('edit.maaCultivateRecognitionHint')">
+      {{ t('core.maaCopilot.recognitionHintShort') }}
+      <a-tooltip :title="t('core.edit.maaCultivateRecognitionHint')" :trigger="['hover', 'focus']">
+        <button
+          type="button"
+          class="hint-help"
+          :aria-label="t('core.edit.maaCultivateRecognitionHint')"
+        >
           <QuestionCircleOutlined aria-hidden="true" />
         </button>
       </a-tooltip>
     </div>
     <div v-if="!sklandBound" class="cultivate-hint cultivate-hint-inline">
-      {{ t('edit.maaCultivateSklandUnboundHint') }}
+      {{ t('core.edit.maaCultivateSklandUnboundHint') }}
     </div>
 
     <!-- 添加干员：目录选择器 + 剪贴板导入 -->
@@ -35,7 +39,7 @@
         :get-popup-container="getPopupContainer"
         :list-height="listHeight"
         class="operator-picker"
-        :aria-label="t('edit.maaCultivatePickOperators')"
+        :aria-label="t('core.edit.maaCultivatePickOperators')"
         @search="handleOperatorSearch"
         @change="handleAddOperator"
       />
@@ -52,8 +56,8 @@
       <a-input
         v-model:value="operatorFilter"
         class="cultivate-search"
-        :placeholder="t('edit.maaCultivateSearchOperators')"
-        :aria-label="t('edit.maaCultivateSearchOperators')"
+        :placeholder="t('core.edit.maaCultivateSearchOperators')"
+        :aria-label="t('core.edit.maaCultivateSearchOperators')"
         allow-clear
       >
         <template #prefix><SearchOutlined aria-hidden="true" /></template>
@@ -65,7 +69,11 @@
         @change="selectAllOperators($event.target.checked)"
       >
         {{
-          t(operatorFilter.trim() ? 'edit.maaCultivateSelectMatches' : 'edit.maaCultivateSelectAll')
+          t(
+            operatorFilter.trim()
+              ? 'core.edit.maaCultivateSelectMatches'
+              : 'core.edit.maaCultivateSelectAll'
+          )
         }}
       </a-checkbox>
       <a-button
@@ -73,15 +81,15 @@
         :disabled="editorLoading || !operatorSelection.size"
         @click="removeSelectedOperators"
       >
-        {{ t('edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
+        {{ t('core.edit.maaCultivateDeleteSelected', { count: operatorSelection.size }) }}
       </a-button>
       <a-space class="cultivate-module-toggle">
         <a-switch
           v-model:checked="showModules"
           :disabled="editorLoading"
-          :aria-label="t('edit.maaCultivateShowModules')"
+          :aria-label="t('core.edit.maaCultivateShowModules')"
         />
-        <span>{{ t('edit.maaCultivateShowModules') }}</span>
+        <span>{{ t('core.edit.maaCultivateShowModules') }}</span>
       </a-space>
     </div>
 
@@ -114,13 +122,17 @@
           />
           <!-- 已绑定但快照缺专精/模组观测：目标保留、暂停刷取，须明确提示 -->
           <div v-if="sklandDegraded" class="cultivate-hint cultivate-hint-block">
-            {{ t('edit.maaCultivateSklandDegradedHint') }}
+            {{ t('core.edit.maaCultivateSklandDegradedHint') }}
           </div>
         </div>
         <a-empty
           v-else
           :description="
-            t(operatorFilter.trim() ? 'edit.maaCultivateSearchEmpty' : 'edit.maaCultivateEmpty')
+            t(
+              operatorFilter.trim()
+                ? 'core.edit.maaCultivateSearchEmpty'
+                : 'core.edit.maaCultivateEmpty'
+            )
           "
           :image-style="{ height: '48px' }"
         />
@@ -142,7 +154,7 @@
       rel="noreferrer"
       @click="handleExternalLink"
     >
-      {{ t('edit.maaDataSourceYituliu') }}
+      {{ t('core.edit.maaDataSourceYituliu') }}
     </a-typography-link>
   </div>
 </template>
@@ -312,10 +324,10 @@ const selectAllOperators = (checked: boolean) => {
 const removeSelectedOperators = () => {
   const selected = new Set(operatorSelection.value)
   Modal.confirm({
-    title: t('edit.maaCultivateDeleteSelected', { count: selected.size }),
-    content: t('edit.maaCultivateDeleteSelectedConfirm', { count: selected.size }),
-    okText: t('common.confirm'),
-    cancelText: t('common.cancel'),
+    title: t('core.edit.maaCultivateDeleteSelected', { count: selected.size }),
+    content: t('core.edit.maaCultivateDeleteSelectedConfirm', { count: selected.size }),
+    okText: t('core.common.confirm'),
+    cancelText: t('core.common.cancel'),
     okType: 'danger',
     onOk: () => persist(rows.value.filter(row => !selected.has(row.operatorId))),
   })
@@ -350,7 +362,11 @@ const pickerPinyinIndex = computed(() => {
 // 直接隐藏会让用户以为目录缺人（决策 40）
 const selectedOperatorIds = computed(() => new Set(rows.value.map(row => row.operatorId)))
 const noGoalReason = (entry: OperatorCatalogEntry): string =>
-  t(entry.dataMissing ? 'edit.maaCultivateNoGoalDataMissing' : 'edit.maaCultivateNoGoalTier')
+  t(
+    entry.dataMissing
+      ? 'core.edit.maaCultivateNoGoalDataMissing'
+      : 'core.edit.maaCultivateNoGoalTier'
+  )
 const availableOperatorOptions = computed(() =>
   props.operatorCatalog
     .filter(option => !selectedOperatorIds.value.has(option.value))
@@ -381,12 +397,14 @@ const pickerOptions = computed(() => {
 })
 const operatorPlaceholder = computed(() =>
   availableOperatorOptions.value.length
-    ? t('maaCopilot.pickerSearchHint')
-    : t('edit.maaCultivateNoOperators')
+    ? t('core.maaCopilot.pickerSearchHint')
+    : t('core.edit.maaCultivateNoOperators')
 )
 // 空输入引导输入，输入后无匹配才报"没有匹配的干员"
 const pickerEmptyText = computed(() =>
-  operatorSearch.value.trim() ? t('edit.maaCultivateSearchEmpty') : t('maaCopilot.pickerSearchHint')
+  operatorSearch.value.trim()
+    ? t('core.edit.maaCultivateSearchEmpty')
+    : t('core.maaCopilot.pickerSearchHint')
 )
 
 // ── 折叠与定位（导入后展开并翻到对应页） ──

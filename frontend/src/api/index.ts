@@ -9,6 +9,7 @@ export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { ADBScreenshotIn } from './models/ADBScreenshotIn';
 export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
+export { AppLocale } from './models/AppLocale';
 export type { BAAHConfig } from './models/BAAHConfig';
 export type { BAAHConfig_Emulator } from './models/BAAHConfig_Emulator';
 export type { BAAHConfig_EmulatorInput } from './models/BAAHConfig_EmulatorInput';
@@ -374,6 +375,10 @@ export type { HSRUserConfig_TaskSwitch } from './models/HSRUserConfig_TaskSwitch
 export type { HSRUserConfig_TaskSwitchInput } from './models/HSRUserConfig_TaskSwitchInput';
 export type { HSRUserConfigInput } from './models/HSRUserConfigInput';
 export type { HTTPValidationError } from './models/HTTPValidationError';
+export type { I18nLocalesData } from './models/I18nLocalesData';
+export type { I18nLocalesOut } from './models/I18nLocalesOut';
+export type { I18nMessagesData } from './models/I18nMessagesData';
+export type { I18nMessagesOut } from './models/I18nMessagesOut';
 export type { InfoOut } from './models/InfoOut';
 export type { JsonValue } from './models/JsonValue';
 export type { M9AConfig } from './models/M9AConfig';

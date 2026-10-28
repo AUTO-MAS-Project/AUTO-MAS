@@ -25,16 +25,20 @@
 
 三条不变量：
 
-1. **设备号在本配置内单调递增分配**，移除路径写墓碑，号码**永不复用**。
+1. **设备号在本配置内单调递增分配**，移除路径、删除实例都写墓碑，号码**永不复用**。
    否则移除雷电路径后再加 MuMu，MuMu 会拿到雷电用过的号，已绑好的脚本静默指向别的设备。
-2. **设备号只按「路径 + 原生索引」认设备，不做身份指纹**。实例删掉后在同一原生索引
-   重建，仍然是同一个设备号——这与用户心智一致（「我的 3 号模拟器」指的就是 3 号），
-   且换成另一台设备时脚本会明显跑错，不是静默的数据损坏。
+2. **设备号只按「路径 + 原生索引」认设备，不做身份指纹**。在模拟器自己的多开器里删掉
+   实例、又在同一原生索引重建，仍然是同一个设备号——这与用户心智一致（「我的 3 号模拟器」
+   指的就是 3 号），且换成另一台设备时脚本会明显跑错，不是静默的数据损坏。
+   在 MAS 里显式删除的实例不同：号码退役，之后占这个原生索引的新实例拿新号。
 3. **一次枚举失败不等于实例被删除**。槽位是否可用由「当次枚举结果」决定，
    不写进持久化状态；持久化状态只有 ``active`` 与 ``tombstone``，后者只在
-   用户显式移除路径时写入。
+   用户显式移除路径或删除实例时写入。
 
-``pathId`` 由规范化安装路径派生，所以「移除路径后重新添加同一路径」会自动沿用原设备号。
+两种墓碑：移除路径的墓碑**保留** ``pathId`` 与原生索引，重新添加同一路径时据此沿用原号
+（``pathId`` 由规范化安装路径派生，所以会自动对上）；删除实例退役的号 ``pathId`` 与原生索引
+都清空，不属于任何路径、不认领任何索引，也不随路径复活——清空 ``pathId`` 还能让回退到
+旧版本时，旧代码同样不会把它当成那条路径的墓碑复活。
 """
 
 import hashlib
@@ -215,14 +219,19 @@ class SlotTable:
     def sync_path(
         self, path_id: str, native_indexes: Iterable[str]
     ) -> list[SlotRecord]:
-        """把一条路径当次枚举到的原生索引并进表，返回新分配的记录。
+        """把一条**在用**路径当次枚举到的原生索引并进表，返回新分配的记录。
 
-        - 已有记录（含墓碑）的原生索引：**不动**。墓碑要靠 :meth:`revive_path` 显式复活，
-          免得移除过的路径因为一次枚举又自己回来。
+        只对在用的路径调用：已移除路径的墓碑要一直留着原生索引，重新添加时由
+        :meth:`revive_path` 复活、沿用原号。先把这条路径上的存量墓碑退役（见
+        :meth:`retire_tombstones`），不然模拟器把墓碑占着的索引分给新实例时，
+        新实例拿不到号，设备表里看不见。
+
+        - 已有记录的原生索引：**不动**。
         - 没有记录的原生索引：追加新设备号。
         - 表里有、这次没枚举到的：**不做任何持久化改动**——一次枚举失败不等于实例被删除，
           可用性由调用方按当次枚举结果判断。
         """
+        self.retire_tombstones(path_id)
         added: list[SlotRecord] = []
         for native_index in native_indexes:
             text = str(native_index)
@@ -256,16 +265,38 @@ class SlotTable:
         与 :meth:`tombstone_path` 一样**不删记录、不回收号码**——号码回收了，
         以后新建的实例就可能拿到同一个号，而某个脚本还绑着它，于是悄悄连到另一台设备上。
 
+        但要和路径、原生索引脱钩：模拟器多半会把这个索引分给下一台新建的实例（雷电总是复用
+        最小的空闲索引），那是另一台设备，要拿新号；墓碑占着索引，新实例就被挡在设备表外。
+        移除再添加这条路径时，这个号也不该跟着复活。
+
         墓碑记录不进设备列表，所以删掉的实例不会继续在表里占一行「未找到」。
         """
         for position, record in enumerate(self._records):
             if record.slot == str(slot) and record.state == "active":
-                self._records[position] = replace(record, state="tombstone")
+                self._records[position] = replace(
+                    record, state="tombstone", path_id="", native_index=""
+                )
                 return True
         return False
 
+    def retire_tombstones(self, path_id: str) -> list[str]:
+        """把一条**在用**路径上的墓碑退役，返回退役的设备号。
+
+        在用路径上的墓碑只可能来自删除实例（移除路径的墓碑在重新添加时已先复活）。
+        早先版本删除实例时只写墓碑、没和路径脱钩，这里给存量补上，效果同 :meth:`tombstone_slot`。
+        """
+        retired: list[str] = []
+        for position, record in enumerate(self._records):
+            if record.path_id == path_id and record.state == "tombstone":
+                self._records[position] = replace(record, path_id="", native_index="")
+                retired.append(record.slot)
+        return retired
+
     def revive_path(self, path_id: str) -> list[str]:
-        """重新添加同一条路径：复活它的墓碑，沿用原设备号。"""
+        """重新添加同一条路径：复活它的墓碑，沿用原设备号。
+
+        删除实例退役的号已和路径脱钩，不在其列：那台实例已经不在了。
+        """
         revived: list[str] = []
         for position, record in enumerate(self._records):
             if record.path_id == path_id and record.state == "tombstone":

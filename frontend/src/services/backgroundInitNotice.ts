@@ -80,12 +80,21 @@ const showOutcome = (outcome: BackgroundInitOutcome): void => {
   const failed = outcome.kind === 'failed'
   logger.error(`后端后台初始化${failed ? '失败' : '部分失败'}: ${outcome.detail || '无详情'}`)
   const lines = [
-    t(failed ? 'misc.backgroundInitTimerNotStarted' : 'misc.backgroundInitTimerStarted'),
+    t(
+      failed
+        ? 'bootstrap.misc.backgroundInitTimerNotStarted'
+        : 'bootstrap.misc.backgroundInitTimerStarted'
+    ),
   ]
-  if (outcome.detail) lines.push(t('misc.backgroundInitFailedSteps', { steps: outcome.detail }))
+  if (outcome.detail)
+    lines.push(t('bootstrap.misc.backgroundInitFailedSteps', { steps: outcome.detail }))
   const args = {
     key: NOTICE_KEY,
-    message: t(failed ? 'misc.backgroundInitFailedTitle' : 'misc.backgroundInitDegradedTitle'),
+    message: t(
+      failed
+        ? 'bootstrap.misc.backgroundInitFailedTitle'
+        : 'bootstrap.misc.backgroundInitDegradedTitle'
+    ),
     description: () =>
       h(
         'div',

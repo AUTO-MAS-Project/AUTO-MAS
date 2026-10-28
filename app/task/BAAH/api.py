@@ -16,14 +16,24 @@
 #   Contact: DLmaster_361@163.com
 """脚本管理：BAAH 路由与端点专用模型。"""
 
-from fastapi import APIRouter
+from typing import Annotated
 
-from app.core import Config
+from fastapi import APIRouter, Depends, Request
+
 from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
 )
 from app.utils import get_logger
+
+from .api_service import BAAHConfigService
+
+
+def get_baah_config_service(request: Request) -> BAAHConfigService:
+    return request.app.state.baah_config_service
+
+
+BAAHService = Annotated[BAAHConfigService, Depends(get_baah_config_service)]
 
 router = APIRouter()
 logger = get_logger("脚本管理 API")
@@ -36,13 +46,13 @@ logger = get_logger("脚本管理 API")
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
+async def get_baah_config_names_api(scriptId: str, service: BAAHService) -> ComboBoxOut:
     """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。"""
 
     try:
         data = [
             ComboBoxItem(label=name, value=name)
-            for name in Config.get_baah_config_names(scriptId)
+            for name in service.get_config_names(scriptId)
         ]
         return ComboBoxOut(
             code=200,

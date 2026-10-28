@@ -11,7 +11,7 @@
           {{ version }}
           <span v-if="isBootstrapping" class="startup-status">
             <LoadingOutlined />
-            {{ t('comp.backendStarting') }}
+            {{ t('bootstrap.comp.backendStarting') }}
           </span>
           <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
             {{ downloadHint }}
@@ -21,14 +21,14 @@
             class="update-hint clickable"
             @click="handleAppUpdateClick"
           >
-            {{ t('comp.updateAvailableHint', { version: updateInfo.latest_version }) }}
+            {{ t('bootstrap.comp.updateAvailableHint', { version: updateInfo.latest_version }) }}
           </span>
           <span
             v-if="backendUpdateInfo?.if_need_update && isRuntimeDevelopment"
             class="update-hint disabled"
-            :title="t('comp.backendUpdateDevUnsupported')"
+            :title="t('bootstrap.comp.backendUpdateDevUnsupported')"
           >
-            {{ t('comp.backendUpdateDevUnsupported') }}
+            {{ t('bootstrap.comp.backendUpdateDevUnsupported') }}
           </span>
           <span
             v-else-if="
@@ -41,8 +41,8 @@
             {{
               t(
                 runtimeBackendUpdateAvailable
-                  ? 'comp.backendUpdateReady'
-                  : 'comp.backendUpdateAvailableClick'
+                  ? 'bootstrap.comp.backendUpdateReady'
+                  : 'bootstrap.comp.backendUpdateAvailableClick'
               )
             }}
           </span>
@@ -58,14 +58,16 @@
       <div class="window-controls">
         <button
           class="control-button minimize-button"
-          :title="t('comp.minimize')"
+          :title="t('bootstrap.comp.minimize')"
           @click="minimizeWindow"
         >
           <MinusOutlined />
         </button>
         <button
           class="control-button maximize-button"
-          :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
+          :title="
+            isMaximized ? t('bootstrap.comp.restoreWindow') : t('bootstrap.comp.maximizeWindow')
+          "
           @click="toggleMaximize"
         >
           <SwitcherOutlined v-if="isMaximized" />
@@ -74,7 +76,7 @@
         <button
           v-if="!hideCloseButton"
           class="control-button close-button"
-          :title="t('comp.close')"
+          :title="t('bootstrap.comp.close')"
           @click="closeWindow"
         >
           <CloseOutlined />
@@ -85,7 +87,7 @@
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
       v-model:open="updateModalVisible"
-      :title="t('comp.backendUpdateTitle', { version: updateTargetVersion })"
+      :title="t('bootstrap.comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
       :footer="null"
       :mask-closable="false"
@@ -103,7 +105,7 @@
           </p>
           <div class="backend-update-actions">
             <a-button danger :loading="updateCancelling" @click="cancelUpdate">
-              {{ t('comp.backendUpdateCancelAction') }}
+              {{ t('bootstrap.comp.backendUpdateCancelAction') }}
             </a-button>
           </div>
         </template>
@@ -116,14 +118,14 @@
             show-icon
           />
           <p v-if="updateOutcome.code" class="backend-update-meta">
-            {{ t('comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
+            {{ t('bootstrap.comp.backendUpdateErrorCode') }}: {{ updateOutcome.code }}
           </p>
           <p v-if="updateOutcome.logPath" class="backend-update-meta">
-            {{ t('comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
+            {{ t('bootstrap.comp.backendUpdateLogPath') }}: {{ updateOutcome.logPath }}
           </p>
           <pre v-if="updateOutcome.logs" class="backend-update-logs">{{ updateOutcome.logs }}</pre>
           <p v-if="updateActions.showContactSupport" class="backend-update-meta">
-            {{ t('comp.backendUpdateContactSupport') }}
+            {{ t('bootstrap.comp.backendUpdateContactSupport') }}
           </p>
 
           <div class="backend-update-actions">
@@ -141,9 +143,9 @@
               :loading="updateRestartingBackend"
               @click="restartBackendAfterUpdate"
             >
-              {{ t('comp.backendUpdateRestartBackend') }}
+              {{ t('bootstrap.comp.backendUpdateRestartBackend') }}
             </a-button>
-            <a-button @click="closeUpdateModal">{{ t('comp.close') }}</a-button>
+            <a-button @click="closeUpdateModal">{{ t('bootstrap.comp.close') }}</a-button>
           </div>
         </template>
       </div>
@@ -235,13 +237,13 @@ const updateAlertType = computed(() => {
 const updateAlertMessage = computed(() => {
   const result = updateOutcome.value
   if (!result) return ''
-  if (result.success) return t('comp.backendUpdateSucceeded')
-  if (result.cancelled) return t('comp.backendUpdateCancelled')
-  if (result.unsupported) return t('comp.backendUpdateUnsupportedMode')
+  if (result.success) return t('bootstrap.comp.backendUpdateSucceeded')
+  if (result.cancelled) return t('bootstrap.comp.backendUpdateCancelled')
+  if (result.unsupported) return t('bootstrap.comp.backendUpdateUnsupportedMode')
 
-  if (result.phase === 'shutdown') return t('comp.backendUpdateFailedShutdown')
-  if (result.phase === 'restart') return t('comp.backendUpdateFailedRestart')
-  return t('comp.backendUpdateFailedBootstrap')
+  if (result.phase === 'shutdown') return t('bootstrap.comp.backendUpdateFailedShutdown')
+  if (result.phase === 'restart') return t('bootstrap.comp.backendUpdateFailedRestart')
+  return t('bootstrap.comp.backendUpdateFailedBootstrap')
 })
 
 // 不可重试（retryable=false / INTERNAL_ERROR / contact-support）时一个重试按钮都不给。
@@ -249,11 +251,11 @@ const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.v
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
-  bootstrap: t('comp.backendUpdateRetryBootstrap'),
-  'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
-  'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
-  'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
-  repair: t('comp.backendUpdateRetryRepair'),
+  bootstrap: t('bootstrap.comp.backendUpdateRetryBootstrap'),
+  'workspace-sync': t('bootstrap.comp.backendUpdateRetryWorkspaceSync'),
+  'dependencies-sync': t('bootstrap.comp.backendUpdateRetryDependenciesSync'),
+  'dependencies-rebuild': t('bootstrap.comp.backendUpdateRetryDependenciesRebuild'),
+  repair: t('bootstrap.comp.backendUpdateRetryRepair'),
 }))
 
 const retryActionLabel = (action: RuntimeUpdateRetryAction): string =>
@@ -295,12 +297,12 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
   Modal.confirm({
-    title: t('comp.restartBackendUpdate'),
+    title: t('bootstrap.comp.restartBackendUpdate'),
     content:
       runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
         ? h('div', [
-            h('p', t('comp.backendUpdateReadyConfirm')),
-            h('strong', t('comp.backendUpdateLatestCommit')),
+            h('p', t('bootstrap.comp.backendUpdateReadyConfirm')),
+            h('strong', t('bootstrap.comp.backendUpdateLatestCommit')),
             h(
               'div',
               {
@@ -316,11 +318,11 @@ const handleBackendUpdateClick = () => {
           ])
         : t(
             runtimeBackendUpdateAvailable.value
-              ? 'comp.backendUpdateReadyConfirm'
-              : 'comp.backendAboutUpdateWhich'
+              ? 'bootstrap.comp.backendUpdateReadyConfirm'
+              : 'bootstrap.comp.backendAboutUpdateWhich'
           ),
-    okText: t('comp.confirm'),
-    cancelText: t('comp.cancel'),
+    okText: t('bootstrap.comp.confirm'),
+    cancelText: t('bootstrap.comp.cancel'),
     centered: true,
     onOk: async () => {
       // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
@@ -425,10 +427,10 @@ const handleTrayRestart = () => {
   // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
   window.electronAPI?.windowFocus?.()
   Modal.confirm({
-    title: t('comp.confirmRestart'),
-    content: t('comp.restartingAutoMasStops'),
-    okText: t('comp.confirmRestart'),
-    cancelText: t('comp.cancel'),
+    title: t('bootstrap.comp.confirmRestart'),
+    content: t('bootstrap.comp.restartingAutoMasStops'),
+    okText: t('bootstrap.comp.confirmRestart'),
+    cancelText: t('bootstrap.comp.cancel'),
     okType: 'danger',
     centered: true,
     onOk: async () => {

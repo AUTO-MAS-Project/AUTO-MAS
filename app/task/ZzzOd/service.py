@@ -19,11 +19,9 @@
 """ZZZ-OD 实例、槽位与编辑业务；HTTP 层只负责契约映射。"""
 
 import asyncio
-import uuid
 from pathlib import Path
 from typing import Any
 
-from app.utils import constants as _utils_constants
 from app.utils import logger as _utils_logger
 
 from .config_context import ZzzOdContext
@@ -50,37 +48,6 @@ class ZzzOdService:
     def __init__(self, context: ZzzOdContext) -> None:
         self.context = context
         self.recovery = ZzzOdRecovery(context)
-
-    def prepare_user_update(self, script_id: str, user_id: str, data: dict) -> None:
-        """原生来源只保留一个用户，并关闭不参与原生运行的注入配置。"""
-        script_config = self.context.script_config(script_id)
-        uid = uuid.UUID(user_id)
-        user_config = script_config.UserData[uid]
-        new_base = _utils_constants.normalize_base_source(
-            data.get("Info", {}).get("Base")
-        )
-        if new_base == _utils_constants.BASE_NATIVE:
-            data.setdefault("OneDragon", {})["AppList"] = "[]"
-            # 直控恒为纯原生裸跑，旧快速配置开关归关。
-            data.setdefault("Info", {})["IfQuickConfig"] = False
-        if (
-            new_base == _utils_constants.BASE_NATIVE
-            and _utils_constants.normalize_base_source(
-                user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
-            )
-            != _utils_constants.BASE_NATIVE
-            and any(
-                _utils_constants.normalize_base_source(
-                    cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
-                )
-                == _utils_constants.BASE_NATIVE
-                for other_uid, cfg in script_config.UserData.items()
-                if other_uid != uid
-            )
-        ):
-            raise ValueError(
-                "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
-            )
 
     def get_root(self, script_id: str) -> Path:
         """zzz-od 安装根目录（哨兵校验后返回；供 API 层统一复用）。"""

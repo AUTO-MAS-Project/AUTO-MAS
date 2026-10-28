@@ -21,6 +21,8 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_I18N = 'I18n'
+export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
 export const WS_ID_GAME_SIGN = 'GameSign'
@@ -325,6 +327,7 @@ type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData
   [WS_TASK_LOG_UPDATED]: WSTaskLogUpdatedData
   [WS_TASK_NOTICE]: WSTaskNoticeData

@@ -13,7 +13,7 @@
               <CaretRightOutlined v-else class="expand-icon" />
               <span class="script-name">{{ script.name }}</span>
               <span v-if="script.user_list && script.user_list.length > 0" class="user-count">
-                {{ t('comp.scriptUserCount', { n: script.user_list.length }) }}
+                {{ t('core.comp.scriptUserCount', { n: script.user_list.length }) }}
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
@@ -26,15 +26,15 @@
         <div v-show="expandedScripts.has(script.script_id)" class="user-list">
           <div v-if="isWaitingWithoutUsers(script)" class="user-item last-item">
             <div class="user-content">
-              <span class="user-name">{{ t('scheduler.overview.userNotLoaded') }}</span>
+              <span class="user-name">{{ t('core.scheduler.overview.userNotLoaded') }}</span>
               <a-tag :color="getStatusColor('等待')" size="small" class="status-tag">
-                {{ t('status.waiting') }}
+                {{ t('core.status.waiting') }}
               </a-tag>
             </div>
           </div>
           <div v-else-if="!script.user_list || script.user_list.length === 0" class="no-users">
             <div class="no-users-content">
-              <span class="no-users-text">{{ t('comp.noUsersYet') }}</span>
+              <span class="no-users-text">{{ t('core.comp.noUsersYet') }}</span>
             </div>
           </div>
           <div
@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { CaretDownOutlined, CaretRightOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'

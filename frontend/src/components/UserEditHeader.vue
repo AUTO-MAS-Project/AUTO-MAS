@@ -4,7 +4,9 @@
       <div class="breadcrumb-row">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
+            <router-link to="/scripts" class="breadcrumb-link">{{
+              t('core.comp.scripts')
+            }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="scriptTarget" class="breadcrumb-link">
@@ -14,7 +16,7 @@
           <a-breadcrumb-item>
             <span class="breadcrumb-current">
               <img v-if="logoSrc" :src="logoSrc" :alt="scriptEditSegment" class="breadcrumb-logo" />
-              {{ currentLabel ?? (isEdit ? t('comp.editUser') : t('comp.addUser2')) }}
+              {{ currentLabel ?? (isEdit ? t('core.comp.editUser') : t('core.comp.addUser2')) }}
             </span>
           </a-breadcrumb-item>
         </a-breadcrumb>
@@ -50,7 +52,7 @@
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
 
       <a-button
@@ -62,7 +64,7 @@
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        {{ t('comp.openConfigFolder') }}
+        {{ t('core.comp.openConfigFolder') }}
       </a-button>
 
       <a-button
@@ -74,7 +76,7 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('comp.back') }}
+        {{ t('core.comp.back') }}
       </a-button>
     </a-space>
   </div>

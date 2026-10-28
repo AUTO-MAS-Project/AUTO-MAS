@@ -54,7 +54,7 @@ export const formatBackendDateTime = (value: string): string => {
   const date = parseBackendDateTime(value)
   if (!date) return value
 
-  return t('misc.dateTime', {
+  return t('core.misc.dateTime', {
     y: date.getFullYear(),
     mo: pad2(date.getMonth() + 1),
     d: pad2(date.getDate()),
@@ -69,18 +69,18 @@ export const formatHistoryGroupLabel = (value: string): string => {
 
   if (ISO_DATE_RE.test(value)) {
     const [year, month, day] = value.split('-')
-    return t('misc.dateGroup', { y: year, mo: month, d: day })
+    return t('core.misc.dateGroup', { y: year, mo: month, d: day })
   }
 
   if (ISO_MONTH_RE.test(value)) {
     const [year, month] = value.split('-')
-    return t('misc.monthGroup', { y: year, mo: month })
+    return t('core.misc.monthGroup', { y: year, mo: month })
   }
 
   const weekMatch = value.match(ISO_WEEK_RE)
   if (weekMatch) {
     const [, year, week] = weekMatch
-    return t('misc.weekGroup', { y: year, w: week })
+    return t('core.misc.weekGroup', { y: year, w: week })
   }
 
   return value

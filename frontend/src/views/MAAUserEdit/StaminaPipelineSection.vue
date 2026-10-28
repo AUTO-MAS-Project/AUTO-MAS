@@ -1,8 +1,8 @@
 <template>
   <div class="stamina-pipeline">
-    <p class="pipeline-overview">{{ t('maaStaminaPipeline.orderHint') }}</p>
+    <p class="pipeline-overview">{{ t('core.maaStaminaPipeline.orderHint') }}</p>
     <PipelineRow
-      :name="t('eventDepotPreview.name')"
+      :name="t('core.eventDepotPreview.name')"
       :step="1"
       :summary="eventDepotSummary"
       :checked="formData.Task.IfEventDepotMaintain"
@@ -31,40 +31,40 @@
     <!-- 库存保持与养成界面按独立任务并列展示；两者共同启用时后端合成一份
          联合计划执行（先备养成材料，再补足库存，最后培养），口径见行尾 ? -->
     <PipelineRow
-      :name="t('edit.maaCultivate')"
+      :name="t('core.edit.maaCultivate')"
       :step="2"
       :summary="cultivateSummary"
       :checked="formData.Task.IfCultivate"
       :disabled="loading"
       :has-detail="false"
-      :hint="t('maaStaminaPipeline.executionHint')"
+      :hint="t('core.maaStaminaPipeline.executionHint')"
       @change="emitSave('Task.IfCultivate', $event)"
     >
       <template #actions>
         <a-button :disabled="loading || !route.params.userId" @click="openCultivation">
-          {{ t('maaCopilot.openPage') }}
+          {{ t('core.maaCopilot.openPage') }}
         </a-button>
       </template>
     </PipelineRow>
     <PipelineRow
-      :name="t('edit.maaDepot')"
+      :name="t('core.edit.maaDepot')"
       :step="3"
       :summary="depotSummary"
       :checked="formData.Task.IfDepotMaintain"
       :disabled="loading"
       :has-detail="false"
-      :hint="t('maaStaminaPipeline.inventoryHint')"
+      :hint="t('core.maaStaminaPipeline.inventoryHint')"
       @change="emitSave('Task.IfDepotMaintain', $event)"
     >
       <template #actions>
         <a-button :disabled="loading" aria-haspopup="dialog" @click="depotSettingsOpen = true">
-          {{ t('edit.maaDepotSettings') }}
+          {{ t('core.edit.maaDepotSettings') }}
         </a-button>
       </template>
     </PipelineRow>
     <a-modal
       v-model:open="depotSettingsOpen"
-      :title="t('edit.maaDepotSettings')"
+      :title="t('core.edit.maaDepotSettings')"
       :width="1100"
       wrap-class-name="maa-plan-settings-modal"
       centered
@@ -88,16 +88,16 @@
       />
       <template #footer>
         <a-button :disabled="loading" @click="depotSettingsOpen = false">
-          {{ t('common.close') }}
+          {{ t('core.common.close') }}
         </a-button>
       </template>
     </a-modal>
 
     <!-- 理智作战 -->
     <PipelineRow
-      :name="t('maaStaminaPipeline.sanityFallback')"
+      :name="t('core.maaStaminaPipeline.sanityFallback')"
       :step="4"
-      :hint="t('maaStaminaPipeline.sanityHint')"
+      :hint="t('core.maaStaminaPipeline.sanityHint')"
       :summary="fightSummary"
       :checked="formData.Task.IfFight"
       :disabled="loading"
@@ -160,7 +160,7 @@ const depotSettingsOpen = ref(false)
 const emitSave = (key: string, value: any) => emit('save', key, value)
 /* 长说明只留一行摘要，细读内容收进行尾 ? 的 tooltip（见 PipelineRow） */
 const eventDepotHint = computed(() =>
-  [t('eventDepotPreview.hint'), t('eventDepotPreview.scopeHint')].join(' ')
+  [t('core.eventDepotPreview.hint'), t('core.eventDepotPreview.scopeHint')].join(' ')
 )
 const cultivateSummary = computed(() =>
   summarizeCultivate(
@@ -177,11 +177,11 @@ const depotSummary = computed(() =>
 )
 const eventDepotSummary = computed(() => {
   if (!formData.value.Task.IfEventDepotMaintain) return ''
-  if (props.activityStageLoading) return t('eventDepotPreview.loading')
-  if (props.activityStageError) return t('eventDepotPreview.dataUnavailable')
+  if (props.activityStageLoading) return t('core.eventDepotPreview.loading')
+  if (props.activityStageError) return t('core.eventDepotPreview.dataUnavailable')
   const material = getEventDepotStages(props.activityStages)
   const orundum = getEventOrundumStages(props.activityStages)
-  if (!material.length && !orundum.length) return t('eventDepotPreview.noActivity')
+  if (!material.length && !orundum.length) return t('core.eventDepotPreview.noActivity')
   // 勾选状态才是实际刷取范围：未勾选的关卡不计入摘要。
   const skipped = new Set(
     props.eventDepotPlanEditor.plans.value.filter(plan => plan.Skip).map(eventDepotPlanIdentity)
@@ -191,7 +191,7 @@ const eventDepotSummary = computed(() => {
     ...orundum.filter((_, index) => !skipped.has(eventStageIdentity('orundum', index + 1))),
   ]
   const count = new Set(farmed.map(stage => `${stage.Value}:${stage.Drop}`)).size
-  return t('eventDepotPreview.summary', { n: count })
+  return t('core.eventDepotPreview.summary', { n: count })
 })
 </script>
 

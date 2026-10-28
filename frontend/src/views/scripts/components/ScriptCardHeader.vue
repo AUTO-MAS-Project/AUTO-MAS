@@ -62,8 +62,8 @@ export type ScriptCardAction =
     <div class="script-info">
       <span
         class="script-drag-handle"
-        :title="t('comp.dragReorder')"
-        :aria-label="t('comp.dragReorder')"
+        :title="t('core.comp.dragReorder')"
+        :aria-label="t('core.comp.dragReorder')"
       >
         <span class="script-drag-dots" aria-hidden="true"></span>
       </span>
@@ -99,7 +99,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configureMaa') }}
+        {{ t('core.comp.configureMaa') }}
       </a-button>
       <a-button
         v-if="script.type === 'MAA' && props.configuring"
@@ -111,7 +111,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
       <a-button
         v-if="script.type === 'SRC' && !props.configuring"
@@ -123,7 +123,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configureSrc') }}
+        {{ t('core.comp.configureSrc') }}
       </a-button>
       <a-button
         v-if="script.type === 'SRC' && props.configuring"
@@ -135,7 +135,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
       <a-button
         v-if="isMaaEndPresetSupported(script) && !props.configuring"
@@ -147,7 +147,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configureMaaend') }}
+        {{ t('core.comp.configureMaaend') }}
       </a-button>
       <a-button
         v-if="isMaaEndPresetSupported(script) && props.configuring"
@@ -159,7 +159,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
       <a-button
         v-if="script.type === 'Okww' && !props.configuring"
@@ -171,7 +171,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configureOkWw') }}
+        {{ t('core.comp.configureOkWw') }}
       </a-button>
       <a-button
         v-if="script.type === 'Okww' && props.configuring"
@@ -183,7 +183,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
       <a-button
         v-if="script.type === 'Whimbox' && !props.configuring"
@@ -195,7 +195,7 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configureWhimbox') }}
+        {{ t('core.comp.configureWhimbox') }}
       </a-button>
       <a-button
         v-if="script.type === 'Whimbox' && props.configuring"
@@ -207,13 +207,13 @@ export type ScriptCardAction =
         <template #icon>
           <SettingOutlined />
         </template>
-        {{ t('comp.configuring') }}
+        {{ t('core.comp.configuring') }}
       </a-button>
       <a-button type="default" size="middle" @click="handleEdit(script)">
         <template #icon>
           <EditOutlined />
         </template>
-        {{ t('comp.editScript') }}
+        {{ t('core.comp.editScript') }}
       </a-button>
       <a-button
         type="default"
@@ -224,7 +224,7 @@ export type ScriptCardAction =
         <template #icon>
           <UserAddOutlined />
         </template>
-        {{ t('comp.addUser') }}
+        {{ t('core.comp.addUser') }}
       </a-button>
       <a-dropdown :trigger="['click']">
         <a-button
@@ -236,18 +236,18 @@ export type ScriptCardAction =
           <template #icon>
             <EllipsisOutlined />
           </template>
-          {{ t('comp.more') }}
+          {{ t('core.comp.more') }}
         </a-button>
         <template #overlay>
           <a-menu>
             <a-menu-item key="copy" @click="handleCopy(script)">
               <CopyOutlined />
-              {{ t('comp.copyScript') }}
+              {{ t('core.comp.copyScript') }}
             </a-menu-item>
             <a-menu-divider />
             <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
               <DeleteOutlined />
-              {{ t('comp.deleteScript') }}
+              {{ t('core.comp.deleteScript') }}
             </a-menu-item>
           </a-menu>
         </template>
@@ -255,17 +255,17 @@ export type ScriptCardAction =
       <a-tooltip
         :title="
           props.searching
-            ? t('comp.expandUsersWhileSearching')
+            ? t('core.comp.expandUsersWhileSearching')
             : props.collapsed
-              ? t('comp.expandUsers')
-              : t('comp.collapseUsers')
+              ? t('core.comp.expandUsers')
+              : t('core.comp.collapseUsers')
         "
       >
         <a-button
           size="middle"
           class="action-button"
           :disabled="props.searching"
-          :aria-label="props.collapsed ? t('comp.expandUsers') : t('comp.collapseUsers')"
+          :aria-label="props.collapsed ? t('core.comp.expandUsers') : t('core.comp.collapseUsers')"
           @click="emit('toggleUsers', script.id)"
         >
           <template #icon>

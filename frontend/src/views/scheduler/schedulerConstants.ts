@@ -19,6 +19,7 @@ export interface Script {
   script_id: string
   status: string
   name: string
+  nameKey?: string
   user_list: User[]
 }
 
@@ -32,25 +33,27 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
 
 // 运行模式标签（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
-  { labelKey: 'scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
+  { labelKey: 'core.scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
+  { labelKey: 'core.scheduler.mode.cycleRun', value: TaskCreateIn.mode.CYCLE_RUN },
 ]
 
 // 电源操作 -> 词表 key（信号值本身是后端枚举，不动）
 export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
-  [PowerIn.signal.NO_ACTION]: 'scheduler.power.noAction',
-  [PowerIn.signal.SHUTDOWN]: 'scheduler.power.shutdown',
-  [PowerIn.signal.SHUTDOWN_FORCE]: 'scheduler.power.shutdownForce',
-  [PowerIn.signal.REBOOT]: 'scheduler.power.reboot',
-  [PowerIn.signal.HIBERNATE]: 'scheduler.power.hibernate',
-  [PowerIn.signal.SLEEP]: 'scheduler.power.sleep',
-  [PowerIn.signal.KILL_SELF]: 'scheduler.power.killSelf',
-  [PowerIn.signal.RESTART_SELF]: 'scheduler.power.restartSelf',
-  [PowerIn.signal.LOGOFF]: 'scheduler.power.logoff',
+  [PowerIn.signal.NO_ACTION]: 'core.scheduler.power.noAction',
+  [PowerIn.signal.SHUTDOWN]: 'core.scheduler.power.shutdown',
+  [PowerIn.signal.SHUTDOWN_FORCE]: 'core.scheduler.power.shutdownForce',
+  [PowerIn.signal.REBOOT]: 'core.scheduler.power.reboot',
+  [PowerIn.signal.HIBERNATE]: 'core.scheduler.power.hibernate',
+  [PowerIn.signal.SLEEP]: 'core.scheduler.power.sleep',
+  [PowerIn.signal.KILL_SELF]: 'core.scheduler.power.killSelf',
+  [PowerIn.signal.RESTART_SELF]: 'core.scheduler.power.restartSelf',
+  [PowerIn.signal.LOGOFF]: 'core.scheduler.power.logoff',
 }
 export interface SchedulerTab {
   key: string
   title: string
+  /** 自动标题保留编号，词表就绪或切语后再生成文案。 */
+  titleNumber?: number
   closable: boolean
   status: SchedulerStatus
   selectedTaskId: string | null
@@ -76,6 +79,8 @@ export interface SchedulerTab {
   displayLogFirstLine?: number
   // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
+  /** 词表变化时仅重绘运行日志，不能覆盖已显示的最终结果。 */
+  logContentIsBuffer?: boolean
   // 新增：任务总览快照（用于路由返回时快速恢复显示）
   overviewData?: Script[]
   // 新增：消息去重相关字段
@@ -84,6 +89,8 @@ export interface SchedulerTab {
   // 新增：运行时任务/模式文本快照（用于持久化显示）
   runningTaskLabel?: string
   runningModeLabel?: string
+  /** 后端未给任务类型文案时，保存本地模式的语义 key。 */
+  runningModeLabelKey?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
   // 所选任务是否为循环队列，循环队列固定按「循环运行」启动

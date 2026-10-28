@@ -1,5 +1,5 @@
 <template>
-  <a-card :title="t('queue.time.cardTitle')" class="queue-manager-card time-set-card">
+  <a-card :title="t('core.queue.time.cardTitle')" class="queue-manager-card time-set-card">
     <template #extra>
       <a-space>
         <a-button
@@ -11,7 +11,7 @@
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('queue.time.add') }}
+          {{ t('core.queue.time.add') }}
         </a-button>
       </a-space>
     </template>
@@ -26,16 +26,16 @@
     >
       <template #header>
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
-        <div class="header-cell status-cell">{{ t('queue.time.colStatus') }}</div>
-        <div class="header-cell days-cell">{{ t('queue.time.colDays') }}</div>
-        <div class="header-cell time-cell">{{ t('queue.time.colTime') }}</div>
-        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
+        <div class="header-cell index-cell">{{ t('core.queue.item.colIndex') }}</div>
+        <div class="header-cell status-cell">{{ t('core.queue.time.colStatus') }}</div>
+        <div class="header-cell days-cell">{{ t('core.queue.time.colDays') }}</div>
+        <div class="header-cell time-cell">{{ t('core.queue.time.colTime') }}</div>
+        <div class="header-cell actions-cell">{{ t('core.queue.item.colActions') }}</div>
       </template>
 
       <template #row="{ element: record, index }">
         <div class="row-cell drag-cell">
-          <DragHandle :title="t('queue.item.dragSort')" />
+          <DragHandle :title="t('core.queue.item.dragSort')" />
         </div>
         <div class="row-cell index-cell">{{ index + 1 }}</div>
         <div class="row-cell status-cell">
@@ -46,8 +46,8 @@
             class="status-select"
             @change="updateTimeSetStatus(record)"
           >
-            <a-select-option :value="true">{{ t('queue.time.enabled') }}</a-select-option>
-            <a-select-option :value="false">{{ t('queue.time.disabled') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.queue.time.enabled') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.queue.time.disabled') }}</a-select-option>
           </a-select>
         </div>
         <div class="row-cell days-cell">
@@ -56,27 +56,29 @@
             mode="multiple"
             size="small"
             style="width: 100%"
-            :placeholder="t('queue.time.selectDays')"
+            :placeholder="t('core.queue.time.selectDays')"
             :disabled="loading"
             :max-tag-count="7"
             :bordered="false"
             class="days-select"
             @change="updateTimeSetDays(record)"
           >
-            <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
+            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
+            <a-select-option value="Wednesday">{{
+              t('core.queue.time.Wednesday')
+            }}</a-select-option>
+            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
+            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
+            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
+            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
           </a-select>
         </div>
         <div class="row-cell time-cell">
           <a-time-picker
             :value="record.timeValue"
             format="HH:mm"
-            :placeholder="t('queue.time.selectTime')"
+            :placeholder="t('core.queue.time.selectTime')"
             size="small"
             :disabled="loading"
             @change="updateTimeSetTime(record, $event)"
@@ -85,14 +87,14 @@
         <div class="row-cell actions-cell">
           <a-space>
             <a-popconfirm
-              :title="t('queue.time.deleteConfirm')"
-              :ok-text="t('queue.ok')"
-              :cancel-text="t('queue.cancel')"
+              :title="t('core.queue.time.deleteConfirm')"
+              :ok-text="t('core.queue.ok')"
+              :cancel-text="t('core.queue.cancel')"
               @confirm="deleteTimeSet(record.id)"
             >
               <a-button size="middle" danger>
                 <DeleteOutlined />
-                {{ t('queue.del') }}
+                {{ t('core.queue.del') }}
               </a-button>
             </a-popconfirm>
           </a-space>
@@ -183,7 +185,7 @@ const addTimeSet = async () => {
   try {
     // 验证queueId是否存在
     if (!props.queueId || props.queueId.trim() === '') {
-      message.error(t('queue.toast.queueIdEmpty'))
+      message.error(t('core.queue.toast.queueIdEmpty'))
       return
     }
 
@@ -198,15 +200,15 @@ const addTimeSet = async () => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.createTimeFailed', {
-          error: createResponse.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.createTimeFailed', {
+          error: createResponse.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加定时项失败: ${errorMsg}`)
-    message.error(t('queue.toast.addTimeFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.addTimeFailed', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -225,7 +227,7 @@ const updateTimeSetTime = async (
         : typeof value === 'string'
           ? parseTimeString(value)
           : value
-    if (!timeValue?.isValid()) throw new Error(t('queue.time.selectTime'))
+    if (!timeValue?.isValid()) throw new Error(t('core.queue.time.selectTime'))
 
     // 普通编辑保留原小数秒，清空时归零；提交携带控件的显示偏移。
     const originalTime = value === null ? timeSet.time.replace(/\.\d+/, '') : timeSet.time
@@ -247,8 +249,8 @@ const updateTimeSetTime = async (
       timeSet.time = timeString
     } else {
       message.error(
-        t('queue.toast.timeUpdateFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.timeUpdateFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
       // 回滚时间值
@@ -257,7 +259,7 @@ const updateTimeSetTime = async (
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新时间失败: ${errorMsg}`)
-    message.error(t('queue.toast.updateTimeFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.updateTimeFailed', { error: errorMsg }))
     // 回滚时间值
     timeSet.timeValue = parseTimeString(timeSet.time)
   }
@@ -280,8 +282,8 @@ const updateTimeSetStatus = async (timeSet: any) => {
       // 状态更新成功，无需通知
     } else {
       message.error(
-        t('queue.toast.statusUpdateFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.statusUpdateFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
       // 回滚状态
@@ -290,7 +292,7 @@ const updateTimeSetStatus = async (timeSet: any) => {
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新状态失败: ${errorMsg}`)
-    message.error(t('queue.toast.updateStatusFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.updateStatusFailed', { error: errorMsg }))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
   }
@@ -317,15 +319,15 @@ const updateTimeSetDays = async (timeSet: any) => {
       // 周期更新成功，无需通知
     } else {
       message.error(
-        t('queue.toast.daysUpdateFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.daysUpdateFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新执行周期失败: ${errorMsg}`)
-    message.error(t('queue.toast.updateDaysFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.updateDaysFailed', { error: errorMsg }))
   }
 }
 
@@ -342,15 +344,15 @@ const deleteTimeSet = async (timeSetId: string) => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.deleteTimeFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.deleteTimeFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除定时项失败: ${errorMsg}`)
-    message.error(t('queue.toast.deleteTimeFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.deleteTimeFailed', { error: errorMsg }))
   }
 }
 
@@ -380,8 +382,8 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.reorderTimeFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.reorderTimeFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
       // 如果失败，刷新数据恢复原状态
@@ -390,7 +392,7 @@ const onDragEnd = async (evt: any) => {
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
-    message.error(t('queue.toast.reorderTimeFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.reorderTimeFailed', { error: errorMsg }))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {
