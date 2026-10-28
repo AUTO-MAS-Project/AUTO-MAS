@@ -1081,21 +1081,10 @@ class AppConfig:
                 )
             }
 
-            # 复制内嵌副本：来源目录允许被删，只复制配置的话新脚本可能无处可跑。
-            if isinstance(new_config, MaaFWConfig):
-                # 开发者模式（跟随来源目录）不随复制带过去：复制出来的是普通脚本，挂源脚本原
-                # 渠道组的版本（见 _clone_embedded_copy_for_script）。
-                await new_config.update(
-                    type(new_config).model_validate(
-                        {"Embedded": {"FollowSource": False}}
-                    ),
-                    check_visibility=False,
-                )
-                await self._clone_embedded_copy_for_script(
-                    str(script_id),
-                    str(new_uid),
-                    source_config=self.ScriptConfig[script_uid],
-                )
+            # 专项副本在配置事务成功后、通用用户数据复制前准备。
+            handler = self._get_script_config_handler(new_config)
+            if handler is not None and handler.clone_script is not None:
+                await handler.clone_script(self.ScriptConfig[script_uid], new_config)
 
             # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
@@ -1111,52 +1100,6 @@ class AppConfig:
                         )
 
             return new_uid, new_config
-
-    async def _clone_embedded_copy_for_script(
-        self, source_script_id: str, target_script_id: str, *, source_config: Any
-    ) -> None:
-        """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
-        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。
-
-        源开着开发者模式时取它原渠道（源的 ``Update.Channel``）组的 latest；组里还没有载荷
-        （或源是源码形态）就先不建视图，复制出来的脚本第一次运行前按来源目录导入（来源也不在时
-        按同来源兄弟 / 已登记的版本重建，与视图丢了是同一条路）。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            FollowSourceCloneUnavailable,
-            clone_embedded_copy,
-            embedded_project_dir,
-            is_source_form,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-
-        group_channel = str(source_config.Update.Channel or "stable")
-        source_form = is_source_form(source_config)
-
-        target_key = await try_reserve_project_path(
-            embedded_project_dir(target_script_id)
-        )
-        if target_key is None:
-            return
-        try:
-            await asyncio.to_thread(
-                lambda: clone_embedded_copy(
-                    source_script_id,
-                    target_script_id,
-                    group_channel=group_channel,
-                    source_form=source_form,
-                )
-            )
-        except FollowSourceCloneUnavailable as exc:
-            logger.info(f"复制脚本时先不建视图，第一次运行前按来源目录导入: {exc}")
-        except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
-            logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
-        finally:
-            await release_project_path(target_key)
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
@@ -1221,21 +1164,14 @@ class AppConfig:
                     await queue.QueueItem.commit()
 
         script_config = self.ScriptConfig[uid]
-        was_maafw = isinstance(script_config, MaaFWConfig)
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.api_service import get_service
-
-            await get_service(self).recovery.recycle_script_slots(script_id)
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_script_removal is not None:
+            await handler.prepare_script_removal(script_config)
 
         self.ScriptConfig.remove(uid)
         await self.ScriptConfig.commit()
-        if was_maafw:
-            # 它的共享 runtime 可能就此无人引用；后台对账一轮，不拖慢删除响应。
-            from app.task.MaaFW.tools.embedded.pool_reconcile import (
-                reconcile_in_background,
-            )
-
-            reconcile_in_background("script-deleted")
+        if handler is not None and handler.after_script_removal is not None:
+            handler.after_script_removal()
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
         # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
         # 再点这个脚本还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
@@ -1243,13 +1179,8 @@ class AppConfig:
         script_data_dir = Path.cwd() / f"data/{uid}"
         if script_data_dir.exists():
             await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
-        # MFW 内嵌副本跟着脚本 ID 走，不放在 data/<uid>/ 下（那里会被配置备份整目录
-        # 快照），所以这里单独删。
-        from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
-
-        embedded_copy = embedded_project_dir(str(uid))
-        if embedded_copy.exists():
-            await asyncio.to_thread(_utils_io.force_rmtree, embedded_copy)
+        if handler is not None and handler.cleanup_script_files is not None:
+            await handler.cleanup_script_files(str(uid))
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序脚本"""
@@ -1534,6 +1465,22 @@ class AppConfig:
             return ScriptTaskResources()
         return handler.task_resources(script)
 
+    def get_script_emulator_binding(
+        self, script: ConfigEntry, *, patch: dict[str, Any] | None = None
+    ) -> tuple[Any, Any] | None:
+        """读取持久绑定；传入补丁时只返回本次提交设备号所形成的候选。"""
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.emulator_binding is None:
+            return None
+        if patch is not None:
+            return handler.emulator_binding.read_patch(script, patch)
+        return handler.emulator_binding.read(script)
+
+    def script_supports_mod_avd(self, script: ConfigEntry) -> bool:
+        """读取专项声明的设备能力；MaaFW 特调沿用基类处理器。"""
+        handler = self._get_script_config_handler(script)
+        return handler is not None and handler.supports_mod_avd
+
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)
         if handler is not None and handler.initialize is not None:
@@ -1744,26 +1691,19 @@ class AppConfig:
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                if script.Emulator.Id == emulator_uid:
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-            elif isinstance(script, GeneralConfig):
-                if (
-                    script.Game.Type == "Emulator"
-                    and script.Game.EmulatorId == emulator_uid
-                ):
+        async with config_manager.transaction():
+            for script in self.ScriptConfig.values():
+                binding = self.get_script_emulator_binding(script)
+                # 持久引用与运行占用不同：General 禁用游戏时也不能绕过被锁定的引用。
+                if binding is not None and str(binding[0]) == str(emulator_uid):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.Info.Name} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
 
-        # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
-        self.EmulatorConfig.remove(emulator_uid)
-        await self.EmulatorConfig.commit()
+            # 关联绑定由删除信号统一清理，任一运行锁拒绝时随删除一起回退。
+            self.EmulatorConfig.remove(emulator_uid)
+            await self.EmulatorConfig.commit()
 
     async def add_queue(
         self, *, payload: dict[str, Any] | None = None

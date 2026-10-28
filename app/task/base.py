@@ -6,7 +6,6 @@ from contextlib import suppress
 from datetime import datetime
 
 from app.core.custom_script import execute_script_task
-from app.core.ws import Publisher, protocol
 from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
@@ -20,7 +19,6 @@ from app.models.config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
-from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
@@ -188,11 +186,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         try:
             await push_dispatch_log(self.script_info, reason)
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="info", message=reason),
-            )
+            await self.task_info.send_notice(level="info", message=reason)
         except Exception:
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
 

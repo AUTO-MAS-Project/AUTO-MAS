@@ -14,6 +14,7 @@ from typing import Protocol
 
 import httpx
 
+from app.models.game_maintenance import MaintenanceWindow as MaintenanceWindow
 from app.utils import get_logger
 
 logger = get_logger("游戏维护")
@@ -46,24 +47,6 @@ class MaintenanceCacheWriter(Protocol):
     ) -> Awaitable[None]: ...
 
 
-@dataclass(frozen=True)
-class MaintenanceWindow:
-    start: datetime
-    end: datetime
-
-    def contains(self, now: datetime) -> bool:
-        return self.start <= now < self.end
-
-    @property
-    def reason(self) -> str:
-        # 保留文件时区，避免用户电脑的时区改变公告时间的含义。
-        return (
-            "游戏维护中，本次跳过（"
-            f"{self.start.isoformat(sep=' ', timespec='minutes')} 至 "
-            f"{self.end.isoformat(sep=' ', timespec='minutes')}）"
-        )
-
-
 def parse_maintenance(data: object) -> dict[str, MaintenanceWindow]:
     """解析版本 1 的维护文件；无效内容由请求边界记录并放行。"""
     if not isinstance(data, dict) or type(data.get("schema_version")) is not int:
@@ -74,7 +57,7 @@ def parse_maintenance(data: object) -> dict[str, MaintenanceWindow]:
     windows: dict[str, MaintenanceWindow] = {}
     for game, item in data["games"].items():
         # 只消费已接入公告的游戏，其他游戏不影响已支持的记录。
-        # 异环（nte）待数据侧接入维护公告后挂载（挂载点见 app/task/maintenance.py）：
+        # 异环（nte）待数据侧接入维护公告后挂载（挂载点见 app/task/OkNte/manager.py）：
         # if game not in ("arknights", "endfield", "nte"):
         if game not in ("arknights", "endfield"):
             continue
