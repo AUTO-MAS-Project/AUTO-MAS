@@ -20,7 +20,7 @@ from typing import Any
 
 from app.config import ConfigEntry
 
-from .flavor import sanitize_user_task_update
+from .flavor import resolve_snapshot_sanitizer, sanitize_user_task_update
 from .option_secrets import prepare_user_task_snapshot
 
 
@@ -31,6 +31,9 @@ async def prepare_user_update(
     task_data = data.get("Task")
     if not isinstance(task_data, dict) or "TaskSnapshot" not in task_data:
         return
+
+    # 特调的动态导入先在事件循环完成；整理器随后只读取已缓存的特调，避免在线程里冷导入。
+    resolve_snapshot_sanitizer(script)
 
     # 先收归特调管理的任务及账号，再双写全局选项，最后加密任务和全局表里的密码。
     await asyncio.to_thread(
