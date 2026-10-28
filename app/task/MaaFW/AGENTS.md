@@ -19,7 +19,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`）。
+  `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -686,6 +686,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+  `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
+  `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
+  代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
+  后台确认）一律走 `tools/embedded/env_confirm`，不要再延迟导入 manager 调
+  `_prepare_project_environment_sync`。`env_confirm` 的 `resolve_*` / `build_update_precheck`
+  与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
+  `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
+  `core/project_update/progress.UpdateProgressEvent.of` 转成类型化模型再读。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的
   载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包；清单里还留着
