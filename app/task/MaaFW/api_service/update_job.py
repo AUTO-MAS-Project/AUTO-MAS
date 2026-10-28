@@ -26,7 +26,8 @@
 
 - 同一脚本同时只有一份：进行中再发起 ``apply`` 直接接上那一份，拿到的是同一个结果。
 - 登记只在进程内、不落盘：保留到这个脚本下一次手动更新开始或后端重启。
-- 进度事件沿用 ``maafw.project-update.progress``（字段不变），推送前顺手记一份；同阶段连续的
+- 进度事件沿用 ``maafw.project-update.progress``（字段不变），推送前顺手记一份（只记这次应用
+  自己的事件，应用期间别处发起的检查更新不记）；同阶段连续的
   进度只留最新一条，日志行只留最近 ``MAX_LOG_EVENTS`` 条，前端按顺序重放即可还原面板。
 - 「检查更新」（``check``）照旧同步做完、不登记。
 - 不提供停止：与之前一样，开始了就跑到结束。
@@ -36,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -75,17 +77,36 @@ def _now() -> datetime:
     return datetime.now()
 
 
-def record_update_progress(
-    script_id: str, data: WSMaaFWProjectUpdateProgressData
-) -> None:
-    """推送一条更新进度前调用：该脚本有进行中的手动更新时记进它的过程。
+# 当前上下文属于哪一次后台手动更新：只在 _run_apply 里设。同一脚本应用期间别的客户端发起的
+# 「检查更新」也推同一种进度事件，不能按脚本 ID 认领，否则检查的终态被存进应用的过程、重放时
+# 让后面应用的进度全被忽略。
+_current_job: ContextVar[_ManualUpdateJob | None] = ContextVar(
+    "maafw_manual_update_job", default=None
+)
 
-    没有进行中的手动更新（只是检查更新）时什么都不做。可从任意线程调用。
+
+def current_update_job() -> _ManualUpdateJob | None:
+    """本上下文所属的后台手动更新；不在其中（检查更新等）为 ``None``。
+
+    进度出口在事件循环上建好时取一次并自己留着：核心包可能从自己起的线程回调，那里没有
+    这份上下文。
     """
 
+    return _current_job.get()
+
+
+def record_update_progress(
+    job: _ManualUpdateJob | None, data: WSMaaFWProjectUpdateProgressData
+) -> None:
+    """推送一条更新进度前调用：记进 ``job``（这条事件所属的那次手动更新）的过程。
+
+    ``job`` 为 ``None``（只是检查更新）或已结束时什么都不做。可从任意线程调用。
+    """
+
+    if job is None:
+        return
     with _jobs_lock:
-        job = _jobs.get(script_id)
-        if job is None or job.finished_at is not None:
+        if job.finished_at is not None:
             return
         _append_event(job, data.model_copy())
 
@@ -122,6 +143,8 @@ async def _run_apply(job: _ManualUpdateJob) -> MaaFWApiReply:
     from app.task.MaaFW.api_service.update import update_project
 
     reply: MaaFWApiReply | None = None
+    # 任务有自己的上下文副本，这里设的只在这次更新里可见
+    _current_job.set(job)
     try:
         reply = await update_project(job.script_id, "apply")
         return reply
