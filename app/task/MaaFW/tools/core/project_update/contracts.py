@@ -167,6 +167,9 @@ def safe_relative_path(raw_path: str) -> str:
         or candidate.is_absolute()
         or candidate.drive
         or candidate.root
+        # "." 归一后没有任何分段（项目根本身），不是一个可写的相对路径；放过去下面取
+        # parts[0] 就是 IndexError（interface 的 resource[].path 写成 "." 时全量更新整次失败）。
+        or not candidate.parts
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
         raise ValueError(f"update package contains unsafe path: {raw_path}")
