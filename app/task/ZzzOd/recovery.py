@@ -41,9 +41,10 @@ class ZzzOdRecovery:
     def __init__(self, context: ZzzOdContext) -> None:
         self.context = context
 
-    async def recycle_script_slots(self, script_id: str) -> None:
+    async def prepare_script_removal(self, script: ConfigEntry) -> None:
         """删脚本前回收全部槽及其恢复历史，同脚本用户互不阻挡。"""
-        script_config = self.context.script_config(script_id)
+        script_id = str(script.uid)
+        script_config = cast(ZzzOdConfig, script)
         for uid in list(script_config.UserData.keys()):
             await self._recycle_user_slot(
                 script_id=script_id,
