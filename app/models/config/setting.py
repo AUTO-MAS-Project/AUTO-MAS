@@ -347,6 +347,11 @@ class GlobalConfig(DomainEntry):
             default=None, description="OBS 密码是否已配置，只读"
         )
 
+        FrameReplay: bool = Field(
+            default_factory=lambda: False,
+            description="MaaFW 任务失败时用脚本自己的截图合成失败前的回放（实验性），不需要 OBS。",
+        )
+
     Replay: ReplayFields = Field(default_factory=ReplayFields)
 
     @virtual_field("Replay.PasswordConfigured")

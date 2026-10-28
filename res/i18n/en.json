@@ -4415,6 +4415,8 @@
   "core.setting.replay.durationGuide": "A replay buffer of 5–30 minutes is recommended. MAS connects to OBS on this computer only.",
   "core.setting.replay.enable": "Enable failure replays",
   "core.setting.replay.enableTip": "When disabled, MAS does not connect to OBS or save a replay after a failed task.",
+  "core.setting.replay.frameEnable": "MaaFW screenshot replay (experimental)",
+  "core.setting.replay.frameEnableTip": "When a MaaFW task fails, builds a replay of the last minute or two from the screenshots the script itself took and saves it to history. Does not need OBS; uses the video storage limit above.",
   "core.setting.replay.inactive": "Inactive",
   "core.setting.replay.intro": "When a task finally fails, MAS saves a copy from the running OBS replay buffer for troubleshooting.",
   "core.setting.replay.obsGuide": "Configure the capture source and encoder in OBS, then enable Replay Buffer and its automatic startup.",

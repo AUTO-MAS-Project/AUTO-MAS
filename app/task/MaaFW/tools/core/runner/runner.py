@@ -92,6 +92,7 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 # 结果，两边字段一旦分叉，多出来的字段会被 pydantic 静默丢掉（adbReadyTimeout
 # 就这么丢过一次，见下方注释）。
 try:
+    from .frame_replay import FRAME_REPLAY_KILL_FLUSH_SECONDS, FrameReplayRecorder
     from .loop_guard import (
         WINDOW_ITERATIONS,
         LoopGuardVerdict,
@@ -141,6 +142,10 @@ try:
         signal_enable_override,
     )
 except ImportError:
+    from frame_replay import (  # type: ignore[no-redef]
+        FRAME_REPLAY_KILL_FLUSH_SECONDS,
+        FrameReplayRecorder,
+    )
     from loop_guard import (  # type: ignore[no-redef]
         WINDOW_ITERATIONS,
         LoopGuardVerdict,
@@ -1037,6 +1042,7 @@ class MaaFWRunner:
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
         loop_guard_enabled: bool = False,
+        frame_replay_enabled: bool = False,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -1146,6 +1152,15 @@ class MaaFWRunner:
         self._loop_guard_hit: tuple[str, LoopGuardVerdict] | None = None
         self._loop_guard_stop_thread: threading.Thread | None = None
         self._loop_guard_error_logged: bool = False
+        # 失败回放（全局 Replay.FrameReplay，实验性）：内存环随失败截图一起写进同一目录，
+        # 不截图（没给目录）就不录。见 frame_replay.py。
+        self._frame_replay: FrameReplayRecorder | None = (
+            FrameReplayRecorder(_encode_image_png)
+            if frame_replay_enabled and failure_screenshot_dir is not None
+            else None
+        )
+        self._frame_replay_error_logged: bool = False
+        self._frame_replay_kill_timer: threading.Timer | None = None
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
@@ -1295,6 +1310,7 @@ class MaaFWRunner:
             self._loop_guard_hit = None
             self._loop_guard_stop_thread = None
         self._start_deadline_timer()
+        self._start_frame_replay_kill_timer()
         try:
             self._ensure_initialized(device_config)
             if self._task_start_not_before is not None:
@@ -1396,8 +1412,37 @@ class MaaFWRunner:
             self._close_task_record()
             self._cancel_task_deadline_timer()
             self._cancel_deadline_timer()
+            self._cancel_frame_replay_kill_timer()
             self._join_signal_stop()
             self._join_loop_guard_stop()
+
+    def _start_frame_replay_kill_timer(self) -> None:
+        """截止时刻过后 ``FRAME_REPLAY_KILL_FLUSH_SECONDS`` 还没跑完，先把回放写出。
+
+        到点 worker 自己会停、截超时图（回放随它写出）；停不下来时宿主宽限期满就
+        TerminateProcess，内存环跟着没了。抢在强杀前写出，宿主收尾时照样捡得到。
+        """
+
+        self._cancel_frame_replay_kill_timer()
+        if self._frame_replay is None or self._run_deadline_at is None:
+            return
+        delay = self._run_deadline_at + FRAME_REPLAY_KILL_FLUSH_SECONDS - time.time()
+        timer = threading.Timer(
+            max(0.0, delay),
+            lambda: self._save_frame_replay(
+                self._current_task_name or "run", kind="timeout"
+            ),
+        )
+        timer.name = "maafw-frame-replay-kill"
+        timer.daemon = True
+        self._frame_replay_kill_timer = timer
+        timer.start()
+
+    def _cancel_frame_replay_kill_timer(self) -> None:
+        timer = self._frame_replay_kill_timer
+        self._frame_replay_kill_timer = None
+        if timer is not None:
+            timer.cancel()
 
     def _emit_record(
         self, event: MaaFWStageEvent | MaaFWTaskStartEvent | MaaFWTaskEndEvent
@@ -2035,6 +2080,9 @@ class MaaFWRunner:
     def shutdown(self) -> None:
         self._stop_requested.set()
         self._cancel_deadline_timer()
+        self._cancel_frame_replay_kill_timer()
+        if self._frame_replay is not None:
+            self._frame_replay.close()
         try:
             _ensure_maafw_client_library_mode()
             self.cleanup()
@@ -3156,11 +3204,40 @@ class MaaFWRunner:
     def _record_controller_action_failure(self, action: str) -> None:
         self._failed_controller_actions.add(action)
 
+    def _cached_frame(self) -> Any:
+        """失败回放取帧：只在节点 / 截图回调里调，此刻缓存就是刚用过的那一帧。"""
+
+        controller = self.controller
+        if controller is None:
+            return None
+        return controller.cached_image
+
+    def _note_frame_replay_error(self, exc: Exception) -> None:
+        if self._frame_replay_error_logged:
+            return
+        self._frame_replay_error_logged = True
+        with suppress(Exception):
+            self.send_log(f"{DETAIL_LOG_PREFIX}失败回放取帧出错: {exc}")
+
+    def _on_controller_action(self, noti_type: NotificationType, action: str) -> None:
+        recorder = self._frame_replay
+        if recorder is None or noti_type == NotificationType.Starting:
+            return
+        try:
+            recorder.on_controller(
+                action,
+                succeeded=noti_type == NotificationType.Succeeded,
+                grab=self._cached_frame,
+            )
+        except Exception as exc:  # pragma: no cover - 回调线程上不能抛
+            self._note_frame_replay_error(exc)
+
     def _install_controller_sink(self, controller: Controller) -> None:
         try:
             sink = _MaaFWControllerLogSink(
                 self.send_log,
                 self._record_controller_action_failure,
+                self._on_controller_action,
             )
             if controller.add_sink(sink) is not None:
                 self.event_sinks.append(sink)
@@ -3618,6 +3695,8 @@ class MaaFWRunner:
                 with self._loop_guard_lock:
                     self._loop_guard.reset()
                     self._loop_guard_hit = None
+            if self._frame_replay is not None:
+                self._frame_replay.set_task(display_name)
             pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
@@ -3910,39 +3989,69 @@ class MaaFWRunner:
         取消（stop_requested）不算失败，不截；controller 已经没了也截不到。
         截图失败只记一行日志，绝不能反过来影响任务结果。
         ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``，信号节点
-        命中的证据图是 ``maintenance`` / ``clientupdate``。
+        命中的证据图是 ``maintenance`` / ``clientupdate``。失败回放开着时，除信号节点
+        的证据图外，同一时刻把内存环写出（``_save_frame_replay``），截图接在回放最后。
         """
 
         directory = self._failure_screenshot_dir
         controller = self.controller
         if directory is None or controller is None or self._stop_requested.is_set():
             return
+        signal_evidence = kind in SIGNAL_SCREENSHOT_KINDS.values()
+        data: bytes | None = None
         try:
             data = _encode_current_screen_png(controller)
             directory.mkdir(parents=True, exist_ok=True)
-            stamp = time.strftime("%H%M%S")
-            name = _FAILURE_SCREENSHOT_NAME_RE.sub("_", task_name).strip("._")
-            name = name[:FAILURE_SCREENSHOT_NAME_LIMIT] or "task"
-            prefix = (
-                f"{self._failure_screenshot_prefix}."
-                if self._failure_screenshot_prefix
-                else ""
-            )
-            path = directory / f"{prefix}{kind}-{stamp}-{name}.png"
+            path = directory / f"{self._failure_file_stem(task_name, kind)}.png"
             path.write_bytes(data)
         except Exception as exc:
             self.send_log(f"任务失败截图未能保存: {exc}")
+        else:
+            self._failure_screenshots.append(
+                MaaFWFailureScreenshot(task=task_name, path=str(path))
+            )
+            # 信号节点的证据图不是失败截图（维护是跳过）
+            label = "截图已保存" if signal_evidence else "任务失败截图已保存"
+            self.send_log(f"{label}: {path}")
+        if not signal_evidence:
+            self._save_frame_replay(task_name, kind=kind, final_png=data)
+
+    def _failure_file_stem(self, task_name: str, kind: str) -> str:
+        """失败截图与回放共用的文件名主干：``<前缀>.<kind>-<HHMMSS>-<任务名>``。"""
+
+        stamp = time.strftime("%H%M%S")
+        name = _FAILURE_SCREENSHOT_NAME_RE.sub("_", task_name).strip("._")
+        name = name[:FAILURE_SCREENSHOT_NAME_LIMIT] or "task"
+        prefix = (
+            f"{self._failure_screenshot_prefix}."
+            if self._failure_screenshot_prefix
+            else ""
+        )
+        return f"{prefix}{kind}-{stamp}-{name}"
+
+    def _save_frame_replay(
+        self, task_name: str, *, kind: str, final_png: bytes | None = None
+    ) -> None:
+        """把失败回放的内存环写成一段帧序列（``<主干>.replay/``），宿主合成视频。
+
+        和失败截图一样，用户取消不写、出错只记一行。截止计时器线程也会调它。
+        """
+
+        recorder = self._frame_replay
+        directory = self._failure_screenshot_dir
+        if recorder is None or directory is None or self._stop_requested.is_set():
             return
-        self._failure_screenshots.append(
-            MaaFWFailureScreenshot(task=task_name, path=str(path))
-        )
-        # 信号节点的证据图不是失败截图（维护是跳过）
-        label = (
-            "截图已保存"
-            if kind in SIGNAL_SCREENSHOT_KINDS.values()
-            else "任务失败截图已保存"
-        )
-        self.send_log(f"{label}: {path}")
+        try:
+            path = recorder.flush(
+                directory,
+                self._failure_file_stem(task_name, kind),
+                final_png=final_png,
+            )
+        except Exception as exc:
+            self.send_log(f"失败回放未能保存: {exc}")
+            return
+        if path is not None:
+            self.send_log(f"{DETAIL_LOG_PREFIX}失败回放帧已写出: {path}")
 
     def _completed_task_names(self) -> list[str]:
         completed_tasks = getattr(self, "_completed_tasks", [])
@@ -4009,6 +4118,11 @@ class MaaFWRunner:
                         self.send_log(
                             f"{DETAIL_LOG_PREFIX}处理原地打转检测通知失败: {exc}"
                         )
+        if self._frame_replay is not None:
+            try:
+                self._frame_replay.on_node(message, details, self._cached_frame)
+            except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
+                self._note_frame_replay_error(exc)
         try:
             focus_texts = self._resolve_focus_texts(message, details)
             for text in focus_texts:
@@ -4369,6 +4483,23 @@ def _encode_current_screen_png(controller: Any) -> bytes:
     job.wait()
     if job.failed:
         raise RuntimeError("controller 截图失败")
+    buffer = ImageBuffer()
+    if not Library.framework().MaaControllerCachedImage(
+        controller._handle, buffer._handle
+    ):
+        raise RuntimeError("读取截图缓存失败")
+    return _encoded_png_bytes(buffer)
+
+
+def _encode_image_png(image: Any) -> bytes:
+    """把一帧（BGR ndarray）交给 MaaFramework 编成 PNG，失败回放的后台编码线程用。"""
+
+    buffer = ImageBuffer()
+    buffer.set(image)
+    return _encoded_png_bytes(buffer)
+
+
+def _encoded_png_bytes(buffer: ImageBuffer) -> bytes:
     framework = Library.framework()
     get_encoded = framework.MaaImageBufferGetEncoded
     get_encoded.restype = ctypes.c_void_p
@@ -4377,9 +4508,6 @@ def _encode_current_screen_png(controller: Any) -> bytes:
     get_encoded_size.restype = MaaSize
     get_encoded_size.argtypes = [MaaImageBufferHandle]
 
-    buffer = ImageBuffer()
-    if not framework.MaaControllerCachedImage(controller._handle, buffer._handle):
-        raise RuntimeError("读取截图缓存失败")
     size = int(get_encoded_size(buffer._handle))
     address = get_encoded(buffer._handle)
     if not size or not address:
@@ -4408,10 +4536,12 @@ class _MaaFWControllerLogSink(ControllerEventSink):
         self,
         send_log: Callable[[str], None],
         record_action_failure: Callable[[str], None],
+        on_action: Callable[[NotificationType, str], None] | None = None,
     ) -> None:
         super().__init__()
         self.send_log = send_log
         self.record_action_failure = record_action_failure
+        self.on_action = on_action
 
     def on_controller_action(
         self,
@@ -4419,6 +4549,8 @@ class _MaaFWControllerLogSink(ControllerEventSink):
         noti_type: NotificationType,
         detail: ControllerEventSink.ControllerActionDetail,
     ) -> None:
+        if self.on_action is not None:
+            self.on_action(noti_type, str(detail.action or ""))
         if noti_type == NotificationType.Failed:
             self.record_action_failure(str(detail.action or ""))
             self.send_log(
