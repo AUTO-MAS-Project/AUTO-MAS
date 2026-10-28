@@ -6,16 +6,26 @@ RmEndSession）按文件查打开它的进程。**一律 best effort**：非 Win
 
 Restart Manager 只认文件，不认目录，也看不到「当前工作目录在里面」的进程：目录 rename 被拒时
 在目录里挑一批最可能被占着的文件（可执行文件、动态库、扩展模块、日志）去查，查不到也不代表
-没人占。只依赖标准库（psutil 有就用来取进程名），不碰宿主模块。
+没人占。只依赖标准库与 psutil（取进程名），不碰宿主模块。
+
+查询在线程池里跑（:func:`describe_lockers_async`），所以用到的模块都在这里顶层导入，线程里
+只调用已经导入好的对象：几个工作线程同时冷导入同一个包会卡在 CPython 的模块导入锁上，或者
+看到初始化到一半的模块。
 """
 
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import os
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+
+import psutil
+
+if sys.platform == "win32":
+    from ctypes import wintypes
 
 #: 目录里挑去查的文件后缀：运行中的进程最常一直开着的那几类。
 _CANDIDATE_SUFFIXES = frozenset({".exe", ".dll", ".pyd", ".log", ".db", ".sqlite"})
@@ -135,9 +145,7 @@ async def describe_lockers_async(
 
 
 def _restart_manager_lockers(names: Sequence[str]) -> list[tuple[str, int]]:
-    import ctypes
-    from ctypes import wintypes
-
+    # 只在 Windows 上调用（find_file_lockers 先判了平台），wintypes 在顶层按平台导入
     class _FileTime(ctypes.Structure):
         _fields_ = [
             ("dwLowDateTime", wintypes.DWORD),
@@ -239,8 +247,6 @@ def _restart_manager_lockers(names: Sequence[str]) -> list[tuple[str, int]]:
 
 def _process_name(pid: int) -> str:
     try:
-        import psutil
-
         return str(psutil.Process(pid).name())
-    except Exception:  # noqa: BLE001 - 进程已退出、没权限、没装 psutil
+    except Exception:  # noqa: BLE001 - 进程已退出、没权限
         return ""
