@@ -167,7 +167,9 @@
     "couldNotStartInstaller": "启动安装失败",
     "downloadCancelled": "下载已取消",
     "installerStarted": "安装程序已启动",
-    "downloadHasBeenUnder": "下载速度已连续 10 秒低于 50 KB/s，是否切换至 CNB 源并重新下载？"
+    "downloadHasBeenUnder": "下载速度已连续 10 秒低于 50 KB/s，是否切换至 CNB 源并重新下载？",
+    "audioPlaybackFailedCheck": "音频播放失败，请检查网络连接",
+    "audioPlaybackFailedP0": "音频播放失败: {p0}"
   },
   "i18n": {
     "loading": "正在加载界面语言资源",
@@ -177,5 +179,8 @@
     "unavailable": "无法加载所选语言，请重试。",
     "changed": "语言资源已更新，请重试加载。",
     "recover": "返回初始化"
+  },
+  "apiErrors": {
+    "settingsLoadFailed": "获取设置失败"
   }
 }

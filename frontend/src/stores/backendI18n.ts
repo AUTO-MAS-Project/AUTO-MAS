@@ -173,8 +173,13 @@ export const useBackendI18nStore = defineStore('backend-i18n', () => {
   const ensure = (locale: AppLocale = i18n.global.locale.value) => load(locale, false)
   function refreshResources(updatedRevision?: string): Promise<boolean> {
     checkEndpoint()
-    if (updatedRevision && updatedRevision === revision.value) {
-      return active?.promise ?? Promise.resolve(true)
+    if (
+      !active &&
+      cacheEpoch === resourceEpoch &&
+      updatedRevision &&
+      updatedRevision === revision.value
+    ) {
+      return Promise.resolve(true)
     }
     resourceEpoch++
     return load(active?.locale ?? i18n.global.locale.value, true)

@@ -1523,6 +1523,7 @@ export function useSchedulerLogic() {
 
   // 任务选项加载
   const loadTaskOptions = async () => {
+    const feedbackGeneration = taskFeedbackGeneration
     const request = {}
     latestTaskOptionsRequest = request
     try {
@@ -1550,7 +1551,10 @@ export function useSchedulerLogic() {
           const scripts = await Service.getScriptComboxApiInfoComboxScriptPost()
           if (latestTaskOptionsRequest !== request) return false
           if (scripts.code !== 200) {
-            message.error(t('core.scheduler.toast.fetchTaskListFailed'))
+            showWhenReady(
+              () => message.error(t('core.scheduler.toast.fetchTaskListFailed')),
+              feedbackGeneration
+            )
             return false
           }
           existingScriptIds = new Set(
@@ -1590,13 +1594,19 @@ export function useSchedulerLogic() {
         }
         return true
       } else {
-        message.error(t('core.scheduler.toast.fetchTaskListFailed'))
+        showWhenReady(
+          () => message.error(t('core.scheduler.toast.fetchTaskListFailed')),
+          feedbackGeneration
+        )
       }
     } catch (error) {
       if (latestTaskOptionsRequest !== request) return false
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取任务列表失败: ${errorMsg}`)
-      message.error(t('core.scheduler.toast.fetchTaskListFailed'))
+      showWhenReady(
+        () => message.error(t('core.scheduler.toast.fetchTaskListFailed')),
+        feedbackGeneration
+      )
     } finally {
       if (latestTaskOptionsRequest === request) taskOptionsLoading.value = false
     }

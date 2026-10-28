@@ -167,7 +167,9 @@
     "couldNotStartInstaller": "Could not start the installer",
     "downloadCancelled": "Download cancelled",
     "installerStarted": "The installer started",
-    "downloadHasBeenUnder": "The download has been under 50 KB/s for 10 seconds. Switch to the CNB source and start over?"
+    "downloadHasBeenUnder": "The download has been under 50 KB/s for 10 seconds. Switch to the CNB source and start over?",
+    "audioPlaybackFailedCheck": "Audio playback failed — check your connection",
+    "audioPlaybackFailedP0": "Audio playback failed: {p0}"
   },
   "i18n": {
     "loading": "Loading interface translations",
@@ -177,5 +179,8 @@
     "unavailable": "Could not load the selected language. Please retry.",
     "changed": "Translations have changed. Please retry loading.",
     "recover": "Back to initialization"
+  },
+  "apiErrors": {
+    "settingsLoadFailed": "Failed to load settings"
   }
 }

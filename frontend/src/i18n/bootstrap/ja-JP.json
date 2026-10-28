@@ -167,7 +167,9 @@
     "couldNotStartInstaller": "インストーラーを起動できませんでした",
     "downloadCancelled": "ダウンロードをキャンセルしました",
     "installerStarted": "インストーラーを起動しました",
-    "downloadHasBeenUnder": "10 秒間ダウンロード速度が 50 KB/s を下回りました。CNB ソースに切り替えてやり直しますか？"
+    "downloadHasBeenUnder": "10 秒間ダウンロード速度が 50 KB/s を下回りました。CNB ソースに切り替えてやり直しますか？",
+    "audioPlaybackFailedCheck": "音声の再生に失敗しました。ネットワーク接続を確認してください",
+    "audioPlaybackFailedP0": "音声の再生に失敗しました: {p0}"
   },
   "i18n": {
     "loading": "表示言語のリソースを読み込み中",
@@ -177,5 +179,8 @@
     "unavailable": "選択した言語を読み込めませんでした。再試行してください。",
     "changed": "言語リソースが更新されました。もう一度読み込んでください。",
     "recover": "初期化に戻る"
+  },
+  "apiErrors": {
+    "settingsLoadFailed": "設定の取得に失敗しました"
   }
 }

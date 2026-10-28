@@ -31,13 +31,13 @@ export function useSettingsApi() {
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
-        const errorMsg = response.message || t('core.apiErrors.settingsLoadFailed')
+        const errorMsg = response.message || t('bootstrap.apiErrors.settingsLoadFailed')
         throw new Error(errorMsg)
       }
 
       return response.data
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.settingsLoadFailed'))
+      const errorMsg = getApiErrorMessage(err, t('bootstrap.apiErrors.settingsLoadFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
