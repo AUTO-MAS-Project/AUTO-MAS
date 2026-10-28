@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 选择私聊、全部群聊或两者。
+ * 选择通知位置并可选更新群控制成员白名单。
  */
 export type OpenClawQQTargetIn = {
     /**

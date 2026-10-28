@@ -27,7 +27,7 @@ export class QqService {
     }
     /**
      * 选择 QQ 通知接收位置
-     * 验证绑定版本后保存通知模式，无需选择群。
+     * 验证绑定版本后保存通知模式与可选的群控制白名单。
      * @param requestBody
      * @returns OpenClawQQGroupsOut Successful Response
      * @throws ApiError
