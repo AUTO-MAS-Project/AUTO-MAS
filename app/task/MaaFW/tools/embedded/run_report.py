@@ -81,7 +81,8 @@ CATEGORY_REASONS = {
     CATEGORY_ENVIRONMENT: "运行环境不可用",
     CATEGORY_PRETASK_FAILED: "运行前设置失败",
     CATEGORY_GAME_UPDATE_REQUIRED: "需要更新游戏客户端",
-    CATEGORY_HOST_ERROR: "MAS 运行出错",
+    # 宿主收到的异常多半是 worker / 框架进程崩了，不一定是 MAS 本身的问题
+    CATEGORY_HOST_ERROR: "运行意外中断",
     CATEGORY_INIT_FAILED: "初始化失败",
 }
 
@@ -129,6 +130,11 @@ _DIAGNOSTIC_MARKERS = (
     "task_id",
     "MaaTaskerPostStop",
     "MaaFramework 未给出失败原因",
+    # worker 没回结果就退出（``runner_task`` 拼的英文原文，后面可能接一行原生 stderr）
+    "exited without result",
+    # 运行前设置的输出还没收全时的说明，只对看日志的人有用
+    "最后一行输出",
+    "后端日志",
 )
 # 只给排障看、但靠字面标记认不出的：Windows 路径、异常类名、``键=值``（可能是凭据）
 _DIAGNOSTIC_RE = re.compile(
@@ -202,13 +208,17 @@ def _is_diagnostic(segment: str) -> bool:
     )
 
 
+def _strip_redundant_lead(segment: str) -> str:
+    for lead in _REDUNDANT_LEADS:
+        if segment.startswith(lead):
+            return segment[len(lead) :].lstrip("：: ").strip()
+    return segment
+
+
 def _human_segment(segment: str) -> str:
     """一个片段里给人看的部分；整段都是排障细节或重复话时返回空串。"""
 
-    for lead in _REDUNDANT_LEADS:
-        if segment.startswith(lead):
-            segment = segment[len(lead) :].lstrip("：: ").strip()
-            break
+    segment = _strip_redundant_lead(segment)
     if not segment or segment in _REDUNDANT_SEGMENTS:
         return ""
     if any(marker in segment for marker in _REDUNDANT_MARKERS):
@@ -222,6 +232,10 @@ def _human_segment(segment: str) -> str:
     # 没有一个汉字的多半是异常原文（英文报错、路径、错误码）
     if not _CJK_RE.search(segment):
         return ""
+    # 「ADB 连接失败: error: device … not found」：英文冒号后面整段没有汉字的是异常原文
+    head, sep, tail = segment.partition(": ")
+    if sep and not _CJK_RE.search(tail) and _CJK_RE.search(head):
+        segment = head.strip()
     return segment
 
 
@@ -229,8 +243,8 @@ def human_reason(text: str | None) -> str:
     """把 runner 的 userMessage（或其中一段）收成只给人看的一句话；什么都不剩返回空串。
 
     runner 的人话按「；」分句：项目 focus、「停在 <节点>，<失败类型>」、「画面文字：…」。
-    节点名和画面文字里都可能有逗号，所以先按句、再按逗号切：画面文字整句不要，
-    「停在」之后到失败类型之前的都算节点名。"""
+    节点名和画面文字里都可能有逗号、分号，所以先按句、再按逗号切：画面文字整句不要，
+    「停在」之后到失败类型之前的都算节点名（跨过分号也算，runner 在它后面只会接画面文字）。"""
 
     first = next(
         (line.strip() for line in str(text or "").splitlines() if line.strip()), ""
@@ -238,16 +252,18 @@ def human_reason(text: str | None) -> str:
     if not first:
         return ""
     kept: list[str] = []
+    in_location = False
     for clause in _split_top_level(_drop_diagnostic_groups(first), "；"):
         clause = clause.strip()
         if clause.startswith(_SCREEN_TEXT_PREFIX):
+            in_location = False
             continue
-        in_location = False
         for segment in _split_top_level(clause, "，"):
             segment = segment.strip().rstrip("：:").strip()
             if not segment:
                 continue
-            if segment.startswith(_LOCATION_PREFIXES):
+            # 「本轮剩余任务已跳过：停在 确认」：前缀后面才是节点位置
+            if _strip_redundant_lead(segment).startswith(_LOCATION_PREFIXES):
                 in_location = True
                 continue
             if in_location:
@@ -302,6 +318,11 @@ def task_reason(task: MaaFWTaskRecord, attempt: MaaFWAttemptReport) -> str:
     category = task.category
     if category == CATEGORY_SIGNAL:
         return SIGNAL_REASONS.get(str(attempt.record.signal or ""), "")
+    if category == CATEGORY_HOST_ERROR:
+        # 宿主异常是整次尝试的，异常原话是人话就用它（如「MaaFW worker 意外退出」）
+        reason = human_reason(attempt.user_message)
+        if reason:
+            return reason
     if category and category != _OUTCOME_DEFAULT_CATEGORY.get(outcome):
         reason = CATEGORY_REASONS.get(category, "")
         if reason:
