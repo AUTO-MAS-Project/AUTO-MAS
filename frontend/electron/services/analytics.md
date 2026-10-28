@@ -61,7 +61,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
 | `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
 | `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
-| `tray_action_requested` | 托盘入口是否有实际使用 | `action_kind` |
+| `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
 | `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |

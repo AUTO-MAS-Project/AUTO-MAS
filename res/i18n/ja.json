@@ -4493,7 +4493,7 @@
   "core.setting.tray.resetContent": "カスタマイズした項目は既定の項目（ウィンドウを表示 / ウィンドウを隠す / 終了）に置き換わります。",
   "core.setting.tray.resetTitle": "トレイメニューを既定に戻す",
   "core.setting.tray.section": "トレイメニューのカスタマイズ",
-  "core.setting.tray.sectionTip": "トレイアイコンを右クリックしたときのメニュー項目です。追加・削除・並び替えができます。「タスクを開始」は指定したキューやマネージドスクリプトを起動し、「アプリを再起動」は実行中のタスクを停止してから再起動します",
+  "core.setting.tray.sectionTip": "トレイアイコンを右クリックしたときのメニュー項目です。追加・削除・並び替えができます。「タスクを開始」は指定したキューやマネージドスクリプトを起動します",
   "core.setting.tray.taskPlaceholder": "起動するタスクを選択",
   "core.setting.versionFailed": "バージョンを取得できませんでした",
   "core.setting.voice.noisy": "にぎやか",

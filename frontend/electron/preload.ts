@@ -182,18 +182,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 托盘自定义菜单项
   updateTrayConfig: (trayItems: unknown) => ipcRenderer.invoke('update-tray-config', trayItems),
 
-  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出 / 重启）
+  // 托盘动作请求（由渲染进程统一处理：启动任务 / 退出）
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
       request: {
-        action: 'quit' | 'restart' | 'startTask'
+        action: 'quit' | 'startTask'
         taskId?: string
         label?: string
       }

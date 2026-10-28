@@ -353,7 +353,7 @@ const doCloseWindow = async () => {
   }
 }
 
-// 托盘触发退出：与窗口关闭按钮走同一套确认流程
+// 托盘触发退出：按任务运行状态确认。
 const handleTrayQuit = () => {
   if (hasRunningTasks()) {
     // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
@@ -364,38 +364,19 @@ const handleTrayQuit = () => {
   })
 }
 
-// 托盘触发重启：统一确认窗风格（与关闭确认一致）
-const handleTrayRestart = () => {
-  // 窗口可能隐藏在托盘，先恢复窗口确保确认窗可见
-  window.electronAPI?.windowFocus?.()
-  Modal.confirm({
-    title: t('bootstrap.comp.confirmRestart'),
-    content: t('bootstrap.comp.restartingAutoMasStops'),
-    okText: t('bootstrap.comp.confirmRestart'),
-    cancelText: t('bootstrap.comp.cancel'),
-    okType: 'danger',
-    centered: true,
-    onOk: async () => {
-      await window.electronAPI?.appRestart()
-    },
-  })
-}
-
-// 退出和重启需要标题栏的确认流程；任务启动由应用作用域接收。
+// 退出需要标题栏的确认流程；任务启动由应用作用域接收。
 const handleTrayActionRequest = (request: {
-  action: 'quit' | 'restart' | 'startTask'
+  action: 'quit' | 'startTask'
   taskId?: string
   label?: string
 }) => {
-  if (request.action === 'restart') {
-    handleTrayRestart()
-  } else if (request.action === 'quit') {
+  if (request.action === 'quit') {
     handleTrayQuit()
   }
 }
 
 onMounted(async () => {
-  // 监听托盘退出和重启请求
+  // 监听托盘退出请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次

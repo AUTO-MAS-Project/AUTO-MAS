@@ -4493,7 +4493,7 @@
   "core.setting.tray.resetContent": "Your custom items will be replaced by the defaults (Show window / Hide window / Quit).",
   "core.setting.tray.resetTitle": "Restore the default tray menu",
   "core.setting.tray.section": "Custom tray menu",
-  "core.setting.tray.sectionTip": "Items shown when you right-click the tray icon; you can add, remove, and reorder them. Start task launches a specific queue or managed script, and Restart app stops whatever is running first.",
+  "core.setting.tray.sectionTip": "Items shown when you right-click the tray icon; you can add, remove, and reorder them. Start task launches a specific queue or managed script.",
   "core.setting.tray.taskPlaceholder": "Pick the task to start",
   "core.setting.versionFailed": "Could not read the version!",
   "core.setting.voice.noisy": "Chatty",

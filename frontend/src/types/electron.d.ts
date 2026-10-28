@@ -321,11 +321,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
   updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => () => void
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 

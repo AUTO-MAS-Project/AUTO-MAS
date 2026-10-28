@@ -51,9 +51,10 @@ const taskLabelOf = (taskId?: string) =>
 const isTrayAction = (action: unknown): action is TrayAction =>
   typeof action === 'string' && actionOptions.some(option => option.value === action)
 
-const normalizeTrayItem = (item: unknown): TrayMenuItem => {
+const normalizeTrayItem = (item: unknown): TrayMenuItem | null => {
   const savedItem = item && typeof item === 'object' ? (item as Record<string, unknown>) : {}
-  const action = isTrayAction(savedItem.action) ? savedItem.action : 'show'
+  if (!isTrayAction(savedItem.action)) return null
+  const action = savedItem.action
   const taskId =
     typeof savedItem.taskId === 'string' && savedItem.taskId.trim()
       ? savedItem.taskId.trim()
@@ -96,8 +97,10 @@ const load = async () => {
   try {
     const config = await window.electronAPI?.loadConfig()
     const saved = config?.UI?.TrayItems
-    items.value =
-      Array.isArray(saved) && saved.length ? saved.map(normalizeTrayItem) : [...DEFAULT_TRAY_ITEMS]
+    const savedItems = Array.isArray(saved)
+      ? saved.map(normalizeTrayItem).filter(item => item !== null)
+      : []
+    items.value = savedItems.length ? savedItems : [...DEFAULT_TRAY_ITEMS]
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger?.warn(`读取托盘菜单配置失败: ${errorMsg}`)

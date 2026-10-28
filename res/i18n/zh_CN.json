@@ -4493,7 +4493,7 @@
   "core.setting.tray.resetContent": "将用默认菜单项（显示窗口 / 隐藏窗口 / 退出）替换当前自定义配置。",
   "core.setting.tray.resetTitle": "恢复默认托盘菜单",
   "core.setting.tray.section": "托盘菜单自定义",
-  "core.setting.tray.sectionTip": "右键托盘图标时的菜单项，可增删与排序；「启动任务」可一键启动指定队列/托管，「重启应用」会停止当前正在运行的任务",
+  "core.setting.tray.sectionTip": "右键托盘图标时的菜单项，可增删与排序；「启动任务」可一键启动指定队列/托管",
   "core.setting.tray.taskPlaceholder": "选择要启动的任务",
   "core.setting.versionFailed": "获取版本失败！",
   "core.setting.voice.noisy": "聒噪",

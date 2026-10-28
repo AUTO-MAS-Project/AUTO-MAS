@@ -117,7 +117,8 @@ interface ApiResult {
 }
 
 // 托盘菜单项类型
-type TrayAction = 'show' | 'hide' | 'startTask' | 'stopAll' | 'restartApp' | 'quit'
+const TRAY_ACTIONS = ['show', 'hide', 'startTask', 'stopAll', 'quit'] as const
+type TrayAction = (typeof TRAY_ACTIONS)[number]
 
 interface TrayItem {
   id: string
@@ -133,6 +134,12 @@ const DEFAULT_TRAY_ITEMS: TrayItem[] = [
   { id: 'hide', label: '隐藏窗口', action: 'hide' },
   { id: 'quit', label: '退出', action: 'quit' },
 ]
+
+// 旧配置中已移除的动作不再显示；全部失效时恢复默认菜单。
+function normalizeTrayItems(items: TrayItem[]): TrayItem[] {
+  const supportedItems = items.filter(item => TRAY_ACTIONS.includes(item.action))
+  return supportedItems.length ? supportedItems : DEFAULT_TRAY_ITEMS
+}
 
 function showShortcutNotification(title: string, body: string): void {
   if (Notification.isSupported()) {
@@ -335,6 +342,10 @@ function loadConfig(): AppConfig {
       config = { ...config, ...JSON.parse(configData) }
     }
 
+    if (Array.isArray(config.UI?.TrayItems)) {
+      config.UI.TrayItems = normalizeTrayItems(config.UI.TrayItems)
+    }
+
     {
       const backendConfig = readBackendDocument(appRoot, 'setting.yaml', 'Config.json') as
         | { Function?: { IfEnableTelemetry?: boolean } }
@@ -486,8 +497,7 @@ function hideMainWindowToTray(): boolean {
 function rebuildTrayMenu(items: TrayItem[]): void {
   if (!tray) return
 
-  // 空列表时回落到默认菜单，避免托盘右键菜单为空
-  const effectiveItems = items.length ? items : DEFAULT_TRAY_ITEMS
+  const effectiveItems = normalizeTrayItems(items)
 
   const menuItems: MenuItemConstructorOptions[] = []
   effectiveItems.forEach((item, index) => {
@@ -528,30 +538,22 @@ function handleTrayAction(item: TrayItem): void {
         logger.warn('托盘启动任务缺少 taskId，忽略')
       }
       break
-    case 'restartApp':
     case 'quit':
-      // 退出/重启转发给渲染进程，与窗口关闭按钮走同一套确认流程
-      requestTrayAction(item.action === 'restartApp' ? 'restart' : 'quit')
+      // 退出转发给渲染进程，按任务运行状态确认。
+      requestTrayAction('quit')
       break
   }
 }
 
-// 请求渲染进程处理托盘动作：启动需读取任务 ID 新建调度台，退出/重启由渲染进程按运行状态弹统一确认窗
-function requestTrayAction(
-  action: 'quit' | 'restart' | 'startTask',
-  taskId?: string,
-  label?: string
-): void {
+// 请求渲染进程处理托盘动作：启动任务或按运行状态确认退出。
+function requestTrayAction(action: 'quit' | 'startTask', taskId?: string, label?: string): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('tray-action-request', { action, taskId, label })
   } else {
-    // 无主窗口时无法弹确认窗/新建调度台，仅退出与重启可直接执行；
+    // 无主窗口时无法弹确认窗/新建调度台，仅退出可直接执行；
     // renderer 不可用时 requestRendererClose 自动落入最终强杀兜底
-    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出/重启')
-    if (action === 'restart') {
-      relaunchAfterQuit = true
-      requestRendererClose('托盘重启（无主窗口）')
-    } else if (action === 'quit') {
+    logger.warn('无主窗口，无法处理托盘动作，仅可执行退出')
+    if (action === 'quit') {
       requestRendererClose('托盘退出（无主窗口）')
     }
     // startTask 依赖渲染进程新建调度台，无窗口时忽略
@@ -2307,7 +2309,7 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
 ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
   try {
     const currentConfig = loadConfig()
-    currentConfig.UI = { ...currentConfig.UI, TrayItems: trayItems }
+    currentConfig.UI = { ...currentConfig.UI, TrayItems: normalizeTrayItems(trayItems) }
     saveConfig(currentConfig)
 
     // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
