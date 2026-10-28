@@ -269,6 +269,7 @@ def main():
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+    from app.task.BAAH.api_service import BAAHConfigService
     from app.task.MaaEnd.api_service import MaaEndConfigService
     from app.task.MaaFW.tools.embedded.game_resolution import (
         read_unity_display_type,
@@ -276,6 +277,9 @@ def main():
     )
 
     Config.set_restore_pool_resolver(resolve_restore_pools)
+    baah_config_service = BAAHConfigService(
+        get_script=lambda script_id: Config.ScriptConfig[script_id],
+    )
     maaend_config_service = MaaEndConfigService(
         scripts=Config.ScriptConfig,
         read_resolution=read_unity_resolution,
@@ -583,6 +587,7 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
+    app.state.baah_config_service = baah_config_service
     app.state.maaend_config_service = maaend_config_service
 
     app.add_middleware(
