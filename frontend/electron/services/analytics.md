@@ -26,7 +26,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
-| `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功固定 1/10 采样 |
+| `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功独立随机 1/10 采样 |
 | `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
 | `task_stop_result` | 共享单任务停止请求的受理结果 | `source`、`mode`、`request_outcome`、耗时桶 | 每次实际请求 |
@@ -192,10 +192,11 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
 
 主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
-共享配置写入事件 `config_write_finished` 的成功样本按进程内成功序号固定抽取每 10 次中的第 1 次，
-其他事件族不沿用该采样序号；失败不参与此采样，输出
-`sample_rate=10/1`；限频、断网、关闭、并发上限仍会丢弃，不能把乘以采样倍率的数量当精确总数。
-采样序号不落盘，导航采用相邻去重和同一频率预算。没有后台心跳、进度或逐日志事件。
+共享配置写入事件 `config_write_finished` 的成功结果分别以 1/10 概率独立随机抽样；失败不参与此采样，输出
+`sample_rate=10/1`。未入样的成功结果不占事件族调用预算；入样后仍受限频、断网、关闭、并发上限影响，
+不能把乘以采样倍率的数量当精确总数。旧版本按进程内成功序号固定抽取，每个进程的第一次保存必定入样，
+短会话会产生偏差，分析历史数据时不能直接当作随机样本。导航采用相邻去重和同一频率预算。
+没有后台心跳、进度或逐日志事件。
 
 ## 开关与传输
 
