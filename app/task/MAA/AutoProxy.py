@@ -29,6 +29,7 @@ from pathlib import Path
 from app.config import ConfigCollection
 from app.core import Config
 from app.core.history import aggregate_data, history_store
+from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
 from app.models.config import (
     MaaConfig,
@@ -137,7 +138,6 @@ from .tools.software_update import (
     read_installed_release,
     start_maa_software_update_precheck,
 )
-from .tools.stage_service import maa_stage_service
 from .tools.task_templates import (
     MAA_ANNIHILATION_FIGHT_BASE,
     MAA_GREEN_TICKET_STORE_TASK,
