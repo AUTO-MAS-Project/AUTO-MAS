@@ -76,7 +76,7 @@ class WeeklyKeyPlan(PlanDaysConfig):
         key = getattr(
             self, self.current_group(datetime.now(tz=_utils_constants.UTC4))
         ).Key
-        return key.model_dump(exclude_none=True, exclude={"Event"})
+        return key.model_dump(exclude_none=True)
 
 
 class MaaPlanConfig(PlanDaysConfig):
@@ -410,6 +410,12 @@ class MaaEndPlanConfig(WeeklyKeyPlan):
 
 class BAAHPlanConfig(WeeklyKeyPlan):
     "BAAH 计划表配置。"
+
+    def get_current_key(self) -> dict[str, list[int]]:
+        """活动关卡由 BAAH 自身配置维护，不从计划表下发。"""
+        key = super().get_current_key()
+        key.pop("Event", None)
+        return key
 
     class ALLFields(ConfigGroup):
         Key: schema_model.BAAHPlanKey = Field(

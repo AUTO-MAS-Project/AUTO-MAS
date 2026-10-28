@@ -31,7 +31,7 @@
 </template>
 
 <script setup lang="ts" generic="T extends object">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { computed } from 'vue'
 import draggable from 'vuedraggable'
 

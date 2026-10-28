@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { UserOutlined } from '@ant-design/icons-vue'
 import { formatStoredDateTime } from '@/utils/dateDisplay'

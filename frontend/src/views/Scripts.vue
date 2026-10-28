@@ -91,7 +91,7 @@
   >
     <div class="empty-content">
       <div class="empty-image-container">
-        <img src="@/assets/NoData.png" :alt="t('scripts.empty.alt')" class="empty-image" />
+        <img src="@/assets/NoData.svg" :alt="t('scripts.empty.alt')" class="empty-image" />
       </div>
       <div class="empty-text-content">
         <h3 class="empty-title">{{ t('scripts.empty.title') }}</h3>

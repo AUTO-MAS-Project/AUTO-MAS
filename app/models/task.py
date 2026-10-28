@@ -25,14 +25,18 @@ import asyncio
 import time
 import weakref
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 
 from app.models.notification_ports import LocalNotifier, TaskNotifications
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.models.schema import HistoryWrite
 
 logger = get_logger("任务执行")
 
@@ -206,6 +210,17 @@ class TaskItem(ABC):
     @property
     def local_notifier(self) -> LocalNotifier:
         return self.notifications
+
+    async def save_user_history(
+        self,
+        records: Sequence[HistoryWrite],
+        *,
+        script: ScriptItem,
+        user: UserItem,
+        log_warning: Callable[[str], None] | None = None,
+    ) -> None:
+        """保存专项已判定的用户历史；具体能力由宿主实现。"""
+        raise NotImplementedError
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
