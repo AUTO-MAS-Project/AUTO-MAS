@@ -1935,7 +1935,11 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         *,
         runtime_policy: EmulatorRuntimePolicy,
     ) -> None:
-        super().__init__(manager_exe, max_wait_time, force_kill_on_close)
+        super().__init__(
+            manager_exe=manager_exe,
+            max_wait_time=max_wait_time,
+            force_kill_on_close=force_kill_on_close,
+        )
         self.runtime_policy = runtime_policy
 
     def host_adb(self, idx: str) -> AvdHostAdb:
