@@ -102,7 +102,8 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
 
   const restoreConfiguration = (
     restore: () => Promise<boolean>,
-    viewTaskId?: string
+    viewTaskId?: string,
+    targetKind: TaskTargetKind = 'unknown'
   ): Promise<boolean> => {
     if (!active || editorBusy.value || !options.canStart()) return Promise.resolve(false)
     restoringConfig.value = true
@@ -112,7 +113,7 @@ export function useMAAEditorLifecycle(options: EditorLifecycleOptions) {
         // 必须在恢复请求前保存旧编辑；恢复以后绝不能再冲刷旧队列。
         if (!(await flushPendingEdits()) || !isCurrent(version)) return false
         if (!(await restore())) return false
-        if (viewTaskId) return await startPreparedSession(viewTaskId, true, version)
+        if (viewTaskId) return await startPreparedSession(viewTaskId, true, version, targetKind)
         return true
       } finally {
         restoringConfig.value = false

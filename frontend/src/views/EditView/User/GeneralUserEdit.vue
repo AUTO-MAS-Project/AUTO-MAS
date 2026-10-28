@@ -510,7 +510,7 @@ const loadUserData = async () => {
   }
 }
 
-const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
+const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
   if (configLocked.value) return
   try {
     generalConfigLoading.value = true
@@ -537,7 +537,11 @@ const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
     // 查看会话（viewOnly）：mas 备份传 userId（目录副本型下发），native
     // 备份传 scriptId（脚本级，原生配置即备份）
-    const response = await requestScriptConfigStart(targetId ?? userId, viewOnly)
+    const response = await requestScriptConfigStart(
+      target === 'mas' ? userId : scriptId,
+      viewOnly,
+      target === 'mas' ? 'user' : target === 'native' ? 'script' : 'unknown'
+    )
 
     logger.debug(`通用配置 start 接口返回: ${response}`)
     if (response && response.taskId) {
@@ -744,11 +748,7 @@ const handleRestoreView = (target: string, item: { time: string }) => {
             throw new Error(resp.message || t('edit.configRestoreFailed'))
           }
           restoreOpen.value = false
-          if (target === 'mas') {
-            await handleGeneralConfig(true, userId)
-          } else {
-            await handleGeneralConfig(true, scriptId)
-          }
+          await handleGeneralConfig(true, target)
           resolve(true)
         } catch (e) {
           message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
