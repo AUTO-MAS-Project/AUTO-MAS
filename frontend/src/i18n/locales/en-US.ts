@@ -5389,6 +5389,15 @@ export default {
       openclawQqNoGroupsHint:
         'Waiting for groups: add the bot to a group or mention it in an existing group while MAS is online.',
       openclawQqRefreshGroups: 'Refresh group status',
+      openclawQqWhitelistSave: 'Save allowlist',
+      openclawQqCommandWhitelist: 'Group command member allowlist',
+      openclawQqGroupCommandHint:
+        'Mention the bot and send “重试 script name” or “启动队列 queue name”. Enter one member ID per line. Mention the bot with “我的ID” to get your ID; this is not your QQ number. Saved changes apply to all discovered groups.',
+      openclawQqWhitelistPlaceholder: 'One member ID per line, up to 100 IDs',
+      openclawQqWhitelistEmpty:
+        'Saving an empty list allows every member of all discovered groups to retry scripts and start queues by mentioning the bot.',
+      openclawQqWhitelistInvalid:
+        'Enter up to 100 member IDs, each at most 128 characters without whitespace.',
       openclawQqGroupHint:
         'Private chat sends to the bound user; Groups sends to every discovered group; All sends to both. In the latest QQ, the group owner can add their own bot and allow proactive messages. Keep MAS online when adding or mentioning the bot to discover groups. Leaving a group or disabling reception removes it. QQ permissions and rate limits apply.',
       openclawQqGroupsError: 'Could not load group status. Refresh to try again.',

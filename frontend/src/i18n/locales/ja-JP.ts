@@ -5428,6 +5428,15 @@ export default {
       openclawQqNoGroupsHint:
         'グループを待機中です。MAS がオンラインの間にボットをグループに追加するか、既存グループでメンションしてください。',
       openclawQqRefreshGroups: 'グループ状態を更新',
+      openclawQqWhitelistSave: '許可リストを保存',
+      openclawQqCommandWhitelist: 'グループ操作メンバー許可リスト',
+      openclawQqGroupCommandHint:
+        'ボットにメンションして「重试 スクリプト名」または「启动队列 キュー名」を送信します。メンバー ID は1行に1つ入力してください。「我的ID」で取得できます。QQ 番号とは異なります。保存すると、認識済みの全グループに適用されます。',
+      openclawQqWhitelistPlaceholder: 'メンバー ID を1行に1つ入力（最大100件）',
+      openclawQqWhitelistEmpty:
+        '空欄で保存すると、認識済みの全グループの全メンバーがメンションでスクリプトの再試行とキューの開始を行えます。',
+      openclawQqWhitelistInvalid:
+        'メンバー ID は最大100件、各128文字以内で空白を含めずに入力してください。',
       openclawQqGroupHint:
         '個別チャットは紐付けたユーザーへ、グループは検出した全グループへ、すべては両方へ送信します。最新版 QQ でグループ管理者が自分のボットを追加し、能動的な発言を許可してください。MAS がオンラインの状態で追加またはメンションするとグループを記録し、退出や受信拒否で削除します。QQ の権限と送信頻度制限が適用されます。',
       openclawQqGroupsError: 'グループ状態を取得できませんでした。更新して再試行してください。',

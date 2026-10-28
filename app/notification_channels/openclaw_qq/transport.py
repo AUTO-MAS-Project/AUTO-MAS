@@ -162,6 +162,7 @@ class QQGroups:
     binding_id: str
     target_type: Literal["c2c", "group", "all"]
     groups: tuple[QQGroup, ...]
+    group_command_whitelist: tuple[str, ...] = ()
 
 
 def _as_int(value: Any) -> int | None:
@@ -299,6 +300,9 @@ class Sender:
             binding_id=self._binding_id,
             target_type=self._config_value("OpenClawQQTargetType"),
             groups=groups,
+            group_command_whitelist=tuple(
+                self._config_value("OpenClawQQGroupCommandWhitelist", [])
+            ),
         )
 
     async def set_target(
@@ -306,19 +310,27 @@ class Sender:
         *,
         binding_id: str,
         target_type: Literal["c2c", "group", "all"],
+        group_command_whitelist: list[str] | None = None,
     ) -> QQGroups:
-        """切换私聊、全部群聊或两者，旧页面不能覆盖新的绑定。"""
+        """保存通知位置与可选的群控制白名单，拒绝旧绑定页面。"""
 
         async with self._send_lock, self._credential_lock, self._config_lock:
             if binding_id != self._binding_id:
                 raise ValueError("binding_changed")
             if not all(self._credentials()):
                 raise ValueError("not_bound")
-            await self.dependencies.config.update({"OpenClawQQTargetType": target_type})
+            values: dict[str, Any] = {"OpenClawQQTargetType": target_type}
+            if group_command_whitelist is not None:
+                values["OpenClawQQGroupCommandWhitelist"] = list(
+                    dict.fromkeys(group_command_whitelist)
+                )
+            await self.dependencies.config.update(values)
             return self.groups()
 
-    async def _handle_private_command(self, data: dict[str, Any]) -> None:
-        """只处理绑定用户的私聊命令，消息重投和回复失败均不重复调度。"""
+    async def _handle_command(
+        self, data: dict[str, Any], *, group: bool = False
+    ) -> None:
+        """按私聊绑定身份或群成员白名单处理命令，不重复调度消息重投。"""
 
         author = data.get("author")
         content = data.get("content")
@@ -330,10 +342,14 @@ class Sender:
             or not message_id
         ):
             return
+        if group:
+            # GROUP_AT_MESSAGE_CREATE 已由平台确认 @机器人；兼容正文保留的提及段。
+            content = re.sub(r"^\s*<@!?[^>]+>\s*", "", content)
         parts = content.strip().removeprefix("/").split(maxsplit=1)
-        if not parts or parts[0] not in _COMMAND_ACTIONS:
+        identity_query = group and parts == ["我的ID"]
+        if not parts or (parts[0] not in _COMMAND_ACTIONS and not identity_query):
             return
-        action = _COMMAND_ACTIONS[parts[0]]
+        action = _COMMAND_ACTIONS.get(parts[0])
         name = parts[1].strip() if len(parts) == 2 else ""
         # 过期事件不可在重连或重启后再次触发任务。
         try:
@@ -348,9 +364,35 @@ class Sender:
             if (
                 not self.dependencies.config.get("IfOpenClawQQ")
                 or not all((app_id, client_secret, user_openid))
-                or author.get("user_openid") != user_openid
                 or message_id in self._command_ids
             ):
+                return
+            group_target = None
+            member_openid = ""
+            if group:
+                group_openid = data.get("group_openid")
+                member_openid = author.get("member_openid")
+                if (
+                    not isinstance(group_openid, str)
+                    or not group_openid
+                    or not isinstance(member_openid, str)
+                    or not member_openid
+                ):
+                    return
+                group_target = QQTarget(
+                    app_id=app_id, target_type="group", openid=group_openid
+                )
+                try:
+                    user_openid = self._validate_target(group_target)
+                except (ValueError, RuntimeError):
+                    return
+                whitelist = self._config_value("OpenClawQQGroupCommandWhitelist", [])
+                if not identity_query and whitelist and member_openid not in whitelist:
+                    return
+            elif author.get("user_openid") != user_openid:
+                return
+            # 等待发送锁期间可能经过长时间通知投递，执行前再次检查时效。
+            if not -30 <= (datetime.now(UTC) - timestamp).total_seconds() <= 300:
                 return
             self._command_ids[message_id] = None
             if len(self._command_ids) > 1024:
@@ -359,7 +401,9 @@ class Sender:
                 "请发送：重试 脚本名称，或：启动队列 队列名称。"
                 "名称须与 MAS 中一致，循环队列将按循环配置运行。"
             )
-            if name:
+            if identity_query:
+                reply = f"你的群控制 ID：{member_openid}\n请将此 ID 填入 MAS 的群控制成员白名单。"
+            elif name and action is not None:
                 if self.dependencies.notification_command_executor is None:
                     reply = "当前无法执行指令，请检查 MAS 是否已完成启动。"
                 else:
@@ -375,7 +419,7 @@ class Sender:
                     app_id=app_id,
                     client_secret=client_secret,
                     user_openid=user_openid,
-                    group_target=None,
+                    group_target=group_target,
                     body={
                         "msg_type": 0,
                         "msg_id": message_id,
@@ -771,6 +815,7 @@ class Sender:
                 "OpenClawQQTargetOpenId": "",
                 "OpenClawQQTargetType": "c2c",
                 "OpenClawQQGroupOpenIds": [],
+                "OpenClawQQGroupCommandWhitelist": [],
                 "OpenClawQQRejectedGroupOpenIds": [],
             }
             if self._can_persist_secrets():
@@ -902,10 +947,12 @@ class Sender:
                                 logger.info("QQ 官方机器人消息网关已连接")
                             elif op == 0 and isinstance(payload.get("d"), dict):
                                 if payload.get("t") == "C2C_MESSAGE_CREATE":
-                                    await self._handle_private_command(payload["d"])
+                                    await self._handle_command(payload["d"])
                                 await self._handle_group_event(
                                     str(payload.get("t") or ""), payload["d"]
                                 )
+                                if payload.get("t") == "GROUP_AT_MESSAGE_CREATE":
+                                    await self._handle_command(payload["d"], group=True)
                             elif op == 9:
                                 identify_fail_count += 1
                                 rejected = True
@@ -1270,6 +1317,7 @@ class Sender:
             values.update(
                 OpenClawQQTargetType="c2c",
                 OpenClawQQGroupOpenIds=[],
+                OpenClawQQGroupCommandWhitelist=[],
                 OpenClawQQRejectedGroupOpenIds=[],
             )
         async with self._config_lock:

@@ -14,6 +14,10 @@ export type OpenClawQQTargetIn = {
      * 通知接收位置
      */
     targetType: OpenClawQQTargetIn.targetType;
+    /**
+     * 群控制成员 OpenID 白名单；省略保持现值，空列表允许所有成员
+     */
+    groupCommandWhitelist?: (Array<string> | null);
 };
 export namespace OpenClawQQTargetIn {
     /**
