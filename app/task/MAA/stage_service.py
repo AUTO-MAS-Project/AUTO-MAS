@@ -24,7 +24,7 @@ logger = get_logger("MAA 关卡")
 
 @dataclass(frozen=True)
 class MaaStageCache:
-    """宿主提供的共享关卡缓存快照。"""
+    """宿主提供的共享缓存；content 已由宿主校验为 JSON 对象字符串。"""
 
     content: str
     etag: str
@@ -32,7 +32,7 @@ class MaaStageCache:
 
 
 class MaaStageCacheWriter(Protocol):
-    """一起提交缓存字段；未提供的正文和 ETag 保持不变。"""
+    """校验并一起提交缓存字段；未提供的正文和 ETag 保持不变。"""
 
     def __call__(
         self,
