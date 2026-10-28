@@ -1388,6 +1388,15 @@ class MaaFWRunner:
         )
         self._record_outcome = (outcome, category, True, at)
 
+    def _count_task_outcome(self) -> None:
+        """收尾任务停止没生效、从放过升级成结束本轮时：结局、类别和时刻不变，改为计入
+        本轮失败。不调的话记录仍写「不计入失败」，尝试类别也会落成泛化的任务失败。"""
+
+        if self._record_task is None or self._record_outcome is None:
+            return
+        outcome, category, _, at = self._record_outcome
+        self._record_outcome = (outcome, category, True, at)
+
     def _close_task_record(self, error: BaseException | None = None) -> None:
         """发出当前任务的 task_end。收尾分支没判定过的，按穿出的异常归类。"""
 
@@ -1600,6 +1609,8 @@ class MaaFWRunner:
             # 免得停不下来反把本轮判成失败
             has_next = index + 1 < len(self.plan.tasks)
             if has_next and not self._wait_task_deadline_stop():
+                # 停不下来就不再放过、结束本轮，记录跟着计入失败
+                self._count_task_outcome()
                 raise not_settled
             if has_next and self._nonfatal_script_stopped(
                 task, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
@@ -1751,6 +1762,8 @@ class MaaFWRunner:
             if has_next and not self._wait_self_stop_settled(
                 lambda: self._loop_guard_stop_thread
             ):
+                # 停不下来就不再放过、结束本轮，记录跟着计入失败
+                self._count_task_outcome()
                 raise not_settled
             if has_next and self._nonfatal_script_stopped(task, reason):
                 return "skip_rest"
