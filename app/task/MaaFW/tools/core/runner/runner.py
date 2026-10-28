@@ -30,10 +30,10 @@ import sysconfig
 import threading
 import time
 import uuid
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO, Callable, Literal, TextIO
+from typing import Any, BinaryIO, Callable, Iterator, Literal, TextIO
 
 import maa as maa_package
 import numpy as np
@@ -105,6 +105,31 @@ try:
         MaaFWRunResult,
     )
     from .pipeline_override import deep_merge_pipeline_override
+    from .run_events import (
+        CATEGORY_AGENT_EXITED,
+        CATEGORY_GAME_LAUNCH_FAILED,
+        CATEGORY_LOOP_GUARD,
+        CATEGORY_RUN_TIMEOUT,
+        CATEGORY_SCRIPT_STOPPED,
+        CATEGORY_SIGNAL,
+        CATEGORY_TASK_FAILED,
+        CATEGORY_TASK_TIMEOUT,
+        CATEGORY_USER_STOPPED,
+        OUTCOME_FAILED,
+        OUTCOME_LOOP,
+        OUTCOME_STOPPED,
+        OUTCOME_SUCCEEDED,
+        OUTCOME_TIMEOUT,
+        STAGE_AGENT,
+        STAGE_CONTROLLER,
+        STAGE_DEVICE,
+        STAGE_RESOURCE,
+        STAGE_RUNTIME,
+        STAGE_START_GATE,
+        MaaFWStageEvent,
+        MaaFWTaskEndEvent,
+        MaaFWTaskStartEvent,
+    )
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
     from .run_signal import (
         CLIENT_UPDATE_REQUIRED,
@@ -130,6 +155,31 @@ except ImportError:
     )
     from pipeline_override import (  # type: ignore[no-redef]
         deep_merge_pipeline_override,
+    )
+    from run_events import (  # type: ignore[no-redef]
+        CATEGORY_AGENT_EXITED,
+        CATEGORY_GAME_LAUNCH_FAILED,
+        CATEGORY_LOOP_GUARD,
+        CATEGORY_RUN_TIMEOUT,
+        CATEGORY_SCRIPT_STOPPED,
+        CATEGORY_SIGNAL,
+        CATEGORY_TASK_FAILED,
+        CATEGORY_TASK_TIMEOUT,
+        CATEGORY_USER_STOPPED,
+        OUTCOME_FAILED,
+        OUTCOME_LOOP,
+        OUTCOME_STOPPED,
+        OUTCOME_SUCCEEDED,
+        OUTCOME_TIMEOUT,
+        STAGE_AGENT,
+        STAGE_CONTROLLER,
+        STAGE_DEVICE,
+        STAGE_RESOURCE,
+        STAGE_RUNTIME,
+        STAGE_START_GATE,
+        MaaFWStageEvent,
+        MaaFWTaskEndEvent,
+        MaaFWTaskStartEvent,
     )
     from run_plan import (  # type: ignore[no-redef]
         MaaFWRunPlan,
@@ -978,6 +1028,7 @@ class MaaFWRunner:
         plan: MaaFWRunPlan,
         *,
         send_log: Callable[[str], None] | None = None,
+        send_record: Callable[[dict[str, Any]], None] | None = None,
         failure_screenshot_dir: Path | None = None,
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
@@ -1003,6 +1054,14 @@ class MaaFWRunner:
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
+        # 结构化运行记录（run_events.py）：阶段与任务起止推给宿主，旁路，发不出去不影响运行。
+        self.send_record: Callable[[dict[str, Any]], None] = send_record or (
+            lambda _: None
+        )
+        # 正在记录的任务（计划下标, 任务名）与各收尾分支判定的结局
+        # （结局, 类别, 是否计入本轮失败, 判定时刻）；下一个任务开始或本轮结束时发出 task_end。
+        self._record_task: tuple[int, str] | None = None
+        self._record_outcome: tuple[str, str | None, bool, float] | None = None
         self._initialized: bool = False
         self._python_env_checked: dict[str, bool] = {}
         self._stop_requested: threading.Event = threading.Event()
@@ -1099,20 +1158,25 @@ class MaaFWRunner:
         if self._initialized:
             return
 
-        _ensure_maafw_global_init(Path(self.plan.path), self.send_log)
+        with self._record_stage(STAGE_RUNTIME):
+            _ensure_maafw_global_init(Path(self.plan.path), self.send_log)
         # 先确认设备真的连得上，再去加载原生插件与资源。
         # 这两步对 M9A 这类项目要几秒并会载入 DLL，设备没起来时全是白做的功，
         # 失败还要再逐个拆掉。冷启动的模拟器可能要等几分钟，更不该让它压在
         # 已经初始化了一半的 MaaFramework 上。
-        self._preflight_device(device_config)
-        self._load_native_plugins()
-        self.resource = Resource()
-        self.tasker = Tasker()
-        self._install_resource_sink()
-        self._load_resources()
-        self._scan_signal_nodes()
-        self._connect_device(device_config)
-        self._start_agents()
+        with self._record_stage(STAGE_DEVICE):
+            self._preflight_device(device_config)
+        with self._record_stage(STAGE_RESOURCE):
+            self._load_native_plugins()
+            self.resource = Resource()
+            self.tasker = Tasker()
+            self._install_resource_sink()
+            self._load_resources()
+            self._scan_signal_nodes()
+        with self._record_stage(STAGE_CONTROLLER):
+            self._connect_device(device_config)
+        with self._record_stage(STAGE_AGENT):
+            self._start_agents()
         self._initialized = True
 
     def _load_native_plugins(self) -> None:
@@ -1233,7 +1297,12 @@ class MaaFWRunner:
         self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
-            self._wait_task_start_gate()
+            if self._task_start_not_before is not None:
+                # 只在宿主给了最早下发时刻（游戏本轮刚起来）时才有这一段
+                with self._record_stage(STAGE_START_GATE):
+                    self._wait_task_start_gate()
+            else:
+                self._wait_task_start_gate()
             completed_tasks = self._run_tasks()
             signal_hit = self._signal_hit
             if signal_hit is not None:
@@ -1284,6 +1353,7 @@ class MaaFWRunner:
                 completedTasks=completed_tasks,
             )
         except Exception as exc:
+            self._close_task_record(exc)
             # 用「正在处理的任务」而不是「已完成数」当下标：前面有任务失败后继续过、
             # 或收尾任务被放过时，已完成数会比实际位置少，指到前面的任务上。
             # 初始化阶段失败时还没有任务，为 None。
@@ -1323,10 +1393,106 @@ class MaaFWRunner:
                 ),
             )
         finally:
+            self._close_task_record()
             self._cancel_task_deadline_timer()
             self._cancel_deadline_timer()
             self._join_signal_stop()
             self._join_loop_guard_stop()
+
+    def _emit_record(
+        self, event: MaaFWStageEvent | MaaFWTaskStartEvent | MaaFWTaskEndEvent
+    ) -> None:
+        """推一条结构化运行记录事件（旁路：出错只吞掉，不影响运行）。"""
+
+        with suppress(Exception):
+            self.send_record(event.model_dump(mode="json"))
+
+    @contextmanager
+    def _record_stage(self, stage: str) -> Iterator[None]:
+        """包住一个初始化阶段：开始、结束各推一条，异常穿出时记这一步失败。"""
+
+        self._emit_record(MaaFWStageEvent(stage=stage, state="begin", at=time.time()))
+        ok = False
+        try:
+            yield
+            ok = True
+        finally:
+            self._emit_record(
+                MaaFWStageEvent(stage=stage, state="end", ok=ok, at=time.time())
+            )
+
+    def _record_task_started(self, index: int, task: MaaFWTaskRunPlan) -> None:
+        self._close_task_record()
+        self._record_task = (index, task.name)
+        self._record_outcome = None
+        self._emit_record(
+            MaaFWTaskStartEvent(
+                index=index,
+                total=len(self.plan.tasks),
+                name=task.name,
+                label=_task_display_name(task),
+                at=time.time(),
+            )
+        )
+
+    def _mark_task_outcome(
+        self, outcome: str, category: str | None = None, *, counted: bool = True
+    ) -> None:
+        """当前任务的结局由收尾分支判定后记下；task_end 等任务真正收尾时再发。"""
+
+        if self._record_task is not None:
+            self._record_outcome = (outcome, category, counted, time.time())
+
+    def _refine_task_category(self, category: str) -> None:
+        """已判定的结局不变，只把类别换成更具体的（游戏没起来、agent 已退出）；
+        这两种都会结束本轮，所以一律计入本轮失败。"""
+
+        if self._record_task is None:
+            return
+        outcome, _, _, at = self._record_outcome or (
+            OUTCOME_FAILED,
+            None,
+            True,
+            time.time(),
+        )
+        self._record_outcome = (outcome, category, True, at)
+
+    def _count_task_outcome(self) -> None:
+        """收尾任务停止没生效、从放过升级成结束本轮时：结局、类别和时刻不变，改为计入
+        本轮失败。不调的话记录仍写「不计入失败」，尝试类别也会落成泛化的任务失败。"""
+
+        if self._record_task is None or self._record_outcome is None:
+            return
+        outcome, category, _, at = self._record_outcome
+        self._record_outcome = (outcome, category, True, at)
+
+    def _close_task_record(self, error: BaseException | None = None) -> None:
+        """发出当前任务的 task_end。收尾分支没判定过的，按穿出的异常归类。"""
+
+        if self._record_task is None:
+            return
+        index, name = self._record_task
+        self._record_task = None
+        recorded, self._record_outcome = self._record_outcome, None
+        if recorded is None:
+            now = time.time()
+            if self._stop_requested.is_set():
+                recorded = (OUTCOME_STOPPED, CATEGORY_USER_STOPPED, True, now)
+            elif isinstance(error, MaaFWRunTimeoutError):
+                recorded = (OUTCOME_TIMEOUT, CATEGORY_RUN_TIMEOUT, True, now)
+            else:
+                recorded = (OUTCOME_FAILED, CATEGORY_TASK_FAILED, True, now)
+        outcome, category, counted, at = recorded
+        self._emit_record(
+            MaaFWTaskEndEvent(
+                index=index,
+                name=name,
+                outcome=outcome,
+                category=category,
+                counted=counted,
+                at=at,
+            )
+        )
 
     def _start_deadline_timer(self) -> None:
         """到宿主给的截止时刻就停掉当前任务。
@@ -1480,7 +1646,9 @@ class MaaFWRunner:
         特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
         报它声明的那句话。特调声明的收尾任务（``nonFatalMessage``，如 M9A 的关闭游戏）
         超时只截图、记一行，不计入本轮失败；停下时恰好又被脚本侧强停，就跳过本轮剩余
-        任务（``_nonfatal_script_stopped``），同样不计入失败。
+        任务（``_nonfatal_script_stopped``），同样不计入失败。例外：收尾任务排在中间时
+        要先等停止生效才能投下一个任务，等满 ``TASK_STOP_SETTLE_SECONDS`` 仍停不下来
+        就不再放过，结束本轮并计入失败；排在队尾时不等。
 
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
@@ -1488,6 +1656,9 @@ class MaaFWRunner:
 
         if not self._task_deadline_hit.is_set():
             return None
+        self._mark_task_outcome(
+            OUTCOME_TIMEOUT, CATEGORY_TASK_TIMEOUT, counted=not task.nonFatalMessage
+        )
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
@@ -1509,6 +1680,8 @@ class MaaFWRunner:
             # 免得停不下来反把本轮判成失败
             has_next = index + 1 < len(self.plan.tasks)
             if has_next and not self._wait_task_deadline_stop():
+                # 停不下来就不再放过、结束本轮，记录跟着计入失败
+                self._count_task_outcome()
                 raise not_settled
             if has_next and self._nonfatal_script_stopped(
                 task, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
@@ -1625,7 +1798,8 @@ class MaaFWRunner:
 
         口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
-        又被脚本侧强停时跳过剩余任务），其余记一条任务失败再继续。必须早于
+        又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
+        其余记一条任务失败再继续。必须早于
         ``_external_stop_active``：停止是我们自己 post_stop 的，tasker 的 stopping 会置位，
         晚了就被当成脚本侧强停、跳过本轮剩余任务。
         """
@@ -1637,6 +1811,9 @@ class MaaFWRunner:
             return None
         self._join_loop_guard_stop()
         _, verdict = hit
+        self._mark_task_outcome(
+            OUTCOME_LOOP, CATEGORY_LOOP_GUARD, counted=not task.nonFatalMessage
+        )
         self._capture_failure_screenshot(task.name, kind=LOOP_GUARD_SCREENSHOT_KIND)
         reason = _format_loop_guard_reason(verdict)
         display_name = _task_display_name(task)
@@ -1657,6 +1834,8 @@ class MaaFWRunner:
             if has_next and not self._wait_self_stop_settled(
                 lambda: self._loop_guard_stop_thread
             ):
+                # 停不下来就不再放过、结束本轮，记录跟着计入失败
+                self._count_task_outcome()
                 raise not_settled
             if has_next and self._nonfatal_script_stopped(task, reason):
                 return "skip_rest"
@@ -1702,6 +1881,7 @@ class MaaFWRunner:
         fatal = sorted(self._failed_controller_actions & FATAL_CONTROLLER_ACTIONS)
         if not fatal:
             return
+        self._refine_task_category(CATEGORY_GAME_LAUNCH_FAILED)
         error = MaaFWTaskError(
             f"游戏未能启动（{'、'.join(fatal)} 失败），本轮剩余任务已跳过: "
             f"{display_name}: {message}",
@@ -1740,6 +1920,7 @@ class MaaFWRunner:
         exited = self._exited_agent()
         if exited is None:
             return
+        self._refine_task_category(CATEGORY_AGENT_EXITED)
         label, exit_code = exited
         error = MaaFWTaskError(
             f"Agent 进程已退出（{label}, exit={exit_code}），本轮剩余任务已跳过: "
@@ -3441,6 +3622,10 @@ class MaaFWRunner:
             try:
                 with self._post_lock:
                     self._raise_if_deadline_hit()
+                    # 运行记录的「任务开始」放在投递前这次截止检查之后：两个任务之间整轮
+                    # 时限到点时，下一个任务从没投递，应保持「没轮到」，不能记成开始后超时。
+                    # 投递本身失败仍算开始过（按失败收尾）。
+                    self._record_task_started(index, task)
                     # 在投递之前置位（仍在锁内，定时器看不到中间态）：投递返回前就可能
                     # 有节点通知送达，信号判定要认得出它属于这个任务。
                     self._set_task_in_flight(task.name)
@@ -3502,6 +3687,11 @@ class MaaFWRunner:
                     self._failed_task_errors.append(
                         _FailedTask(name=task.name, diagnostic=message, reason=reason)
                     )
+                self._mark_task_outcome(
+                    OUTCOME_FAILED,
+                    CATEGORY_TASK_FAILED,
+                    counted=not task.nonFatalMessage,
+                )
                 self._capture_failure_screenshot(task.name)
                 self._raise_if_game_launch_failed(display_name, message, cause=exc)
                 if not task.nonFatalMessage:
@@ -3510,6 +3700,9 @@ class MaaFWRunner:
                     # 特调声明的收尾任务（如 M9A 的关闭游戏）：截图、记一行，不算本轮失败。
                     # 被脚本侧强停时照旧跳过本轮剩余任务，同样不算失败。
                     if self._external_stop_active(tasker):
+                        self._mark_task_outcome(
+                            OUTCOME_STOPPED, CATEGORY_SCRIPT_STOPPED, counted=False
+                        )
                         self.send_log(
                             f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
                             f"{display_name}；{task.nonFatalMessage}"
@@ -3530,6 +3723,7 @@ class MaaFWRunner:
                         ),
                     ) from exc
                 if self._external_stop_active(tasker):
+                    self._mark_task_outcome(OUTCOME_STOPPED, CATEGORY_SCRIPT_STOPPED)
                     self.send_log(
                         f"任务被脚本侧强制停止，本轮剩余任务已跳过: "
                         f"{display_name}: {reason}"
@@ -3568,6 +3762,9 @@ class MaaFWRunner:
             # 全部成功。这里必须独立判一次。
             if task.nonFatalMessage and self._external_stop_active(tasker):
                 # 特调声明的收尾任务：截图、跳过本轮剩余任务，但不算本轮失败
+                self._mark_task_outcome(
+                    OUTCOME_STOPPED, CATEGORY_SCRIPT_STOPPED, counted=False
+                )
                 self._capture_failure_screenshot(task.name)
                 self._raise_if_game_launch_failed(
                     display_name, "任务被脚本侧强制停止（MaaTaskerPostStop）"
@@ -3582,14 +3779,17 @@ class MaaFWRunner:
                 self._failed_task_errors.append(
                     _FailedTask(name=task.name, diagnostic=message, reason=message)
                 )
+                self._mark_task_outcome(OUTCOME_STOPPED, CATEGORY_SCRIPT_STOPPED)
                 self._capture_failure_screenshot(task.name)
                 self.send_log(
                     f"任务未完成，本轮剩余任务已跳过: {display_name}: {message}"
                 )
                 break
             completed_tasks.append(task.name)
+            self._mark_task_outcome(OUTCOME_SUCCEEDED)
             self.send_log(f"任务完成: {display_name}")
             time.sleep(0.1)
+        self._close_task_record()
         return completed_tasks
 
     def _set_task_in_flight(self, task_name: str | None) -> None:
@@ -3611,6 +3811,7 @@ class MaaFWRunner:
             return False
         self._join_signal_stop()
         signal, _ = hit
+        self._mark_task_outcome(OUTCOME_STOPPED, CATEGORY_SIGNAL)
         task_name = signal_task or task.name
         if task_name != task.name:
             display_name = next(

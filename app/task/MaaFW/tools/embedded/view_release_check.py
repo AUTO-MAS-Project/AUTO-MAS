@@ -19,7 +19,7 @@
 """资源包加载失败后与官方发行包核对、清掉旧版本残留：宿主侧编排（``runner_task`` 触发）。
 
 核对、清理、登记都在核心包 ``project_update/release_check``；这里与投影补齐（``view_heal``）
-一样挂到 ``view_update.run_view_update`` 上：谱系锁 → 组同步 → 核对 / 建清理后的载荷 / 登记 →
+一样经 ``update_session.UpdateSession`` 挂到 ``view_update.run_view_update`` 上：谱系锁 → 组同步 → 核对 / 建清理后的载荷 / 登记 →
 切触发脚本 → 同组空闲脚本立即切并确认运行环境（运行中的跑完再切）。
 
 放在这里而不是 ``embedded_manager``：触发点是某个用户某次尝试的资源加载失败，在
@@ -59,7 +59,8 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     read_view_marker,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import resolve_update_proxy_url
-from app.task.MaaFW.tools.embedded.view_update import latest_entry, run_view_update
+from app.task.MaaFW.tools.embedded.update_session import UpdateProxy, UpdateSession
+from app.task.MaaFW.tools.embedded.view_update import latest_entry
 from app.utils import get_logger
 
 logger = get_logger("MFW 发行包核对")
@@ -315,6 +316,18 @@ async def _check_view_release(
 
     view = embedded_project_dir(script_id, base)
     before = await asyncio.to_thread(read_view_marker, view)
+    session = UpdateSession(
+        script_id,
+        channel=channel,
+        members=members,
+        send_log=send_log,
+        reservation_held=True,
+        script_name=script_name,
+        lock_timeout=lock_timeout,
+        cancel_event=cancel_event,
+        proxy=UpdateProxy(client=proxy),
+        base=base,
+    )
 
     async def core_call(_view: Path, target: Any, after_register: Any) -> Any:
         try:
@@ -328,25 +341,13 @@ async def _check_view_release(
             target,
             after_register,
             interface=interface,
-            proxy=proxy,
+            proxy=session.proxy.client,
             shell_hint=shell_hint,
             cache_root=cache_root,
         )
 
     try:
-        updated = await run_view_update(
-            script_id,
-            channel=channel,
-            members=members,
-            reservation_held=True,
-            send_log=send_log,
-            core_call=core_call,
-            script_name=script_name,
-            lock_timeout=lock_timeout,
-            base=base,
-            switch_label="清理后的版本",
-            cancel_event=cancel_event,
-        )
+        updated = await session.run(core_call, switch_label="清理后的版本")
     except MaaFWProjectUpdateError as exc:
         if exc.project_lock_busy:
             # 等谱系锁超时：同项目另一个脚本正在更新 / 清理，这次没查也没切。

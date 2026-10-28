@@ -45,6 +45,7 @@ if __package__ in (None, ""):
     # 桌面插件目录也可能安装 MaaFW。先把项目 Runner venv 放到 sys.path 最前，
     # 避免共享插件依赖覆盖项目 requirements 声明的 MaaFW 版本。
     prefer_active_venv_site_packages()
+    from run_events import RUN_RECORD_EVENT_TYPE  # type: ignore[no-redef]
     from run_plan import MaaFWRunPlan  # type: ignore[no-redef]
     from runner import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
@@ -55,6 +56,7 @@ else:
     from .environment import prefer_active_venv_site_packages
 
     prefer_active_venv_site_packages()
+    from .run_events import RUN_RECORD_EVENT_TYPE
     from .run_plan import MaaFWRunPlan
     from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
 
@@ -74,6 +76,11 @@ def _emit(payload: dict[str, Any]) -> None:
 
 def _emit_log(message: str) -> None:
     _emit({"type": "log", "message": message})
+
+
+def _emit_record(data: dict[str, Any]) -> None:
+    # 结构化运行记录（阶段与任务起止），形状见 run_events.py
+    _emit({"type": RUN_RECORD_EVENT_TYPE, "data": data})
 
 
 # --- 以下四个函数并入自 mfwa（tools/worker.py）--------------------------------
@@ -162,6 +169,7 @@ def main() -> int:
         runner = MaaFWRunner(
             plan,
             send_log=_emit_log,
+            send_record=_emit_record,
             failure_screenshot_dir=Path(screenshot_dir) if screenshot_dir else None,
             failure_screenshot_prefix=str(payload.get("failureScreenshotPrefix") or ""),
             task_start_not_before=float(not_before) if not_before is not None else None,

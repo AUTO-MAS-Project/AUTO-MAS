@@ -1103,6 +1103,7 @@ export type { WSTaskCyclePreviewData } from './models/WSTaskCyclePreviewData';
 export type { WSTaskScriptIdentityData } from './models/WSTaskScriptIdentityData';
 export type { WSTaskScriptInfoData } from './models/WSTaskScriptInfoData';
 export type { WSTaskUserInfoData } from './models/WSTaskUserInfoData';
+export type { WSTaskUserProgressData } from './models/WSTaskUserProgressData';
 export type { ZzzOdAppConfigFieldOut } from './models/ZzzOdAppConfigFieldOut';
 export type { ZzzOdAppConfigOut } from './models/ZzzOdAppConfigOut';
 export type { ZzzOdAppConfigSaveIn } from './models/ZzzOdAppConfigSaveIn';
