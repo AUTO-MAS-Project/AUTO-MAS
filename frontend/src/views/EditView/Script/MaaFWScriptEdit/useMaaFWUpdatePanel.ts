@@ -168,10 +168,27 @@ export function useMaaFWUpdatePanel({
     }
   }
 
+  // 页面打开时接回手动更新要先问一次后端。问清之前，别的流程（读到 interface 后自动准备运行环境）
+  // 先等它：更新还占着项目时去准备环境，后端必然拒绝，平白弹一条失败。没接回过就是已问清。
+  let resumeChecked: Promise<void> = Promise.resolve()
+  const whenResumeChecked = () => resumeChecked
+
   // 手动更新在后端后台跑，切走页面、刷新、关掉前端都不打断。页面打开时接回这个脚本当前或
   // 最近一次手动更新：先挂订阅（推送先攒着）再取快照，重放出面板后接上攒下的推送；
   // 还在跑就等它结束取结果，与自己点「更新」时收尾一样。
   const resumeManualUpdate = async () => {
+    let markChecked: () => void = () => {}
+    resumeChecked = new Promise<void>(resolve => {
+      markChecked = resolve
+    })
+    try {
+      await resumeManualUpdateInner(markChecked)
+    } finally {
+      markChecked()
+    }
+  }
+
+  const resumeManualUpdateInner = async (markChecked: () => void) => {
     if (updateChecking.value || updateApplying.value) return
     const session = ++progressSession
     const isStale = () => disposed || session !== progressSession
@@ -202,6 +219,7 @@ export function useMaaFWUpdatePanel({
     if (waited) {
       updateApplying.value = true
       updateError.value = ''
+      markChecked()
       try {
         snapshot = await getMaaFWUpdateJob(scriptId, true)
       } catch (error) {
@@ -261,6 +279,7 @@ export function useMaaFWUpdatePanel({
     runUpdateCheck,
     runUpdateApply,
     resumeManualUpdate,
+    whenResumeChecked,
     cdkPrefilled,
     prefillMirrorChyanCdk,
   }

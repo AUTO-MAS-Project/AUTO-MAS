@@ -178,8 +178,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
       // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
       // 脚本正在跑时不准备：运行占着项目目录，后端一定回 409，面板会平白报一次失败；
-      // 跑完后由下面的 watch 补上。
-      if (!configLocked.value) void runAgentEnvPrepare(path, options.forceEnv === true)
+      // 跑完后由下面的 watch 补上。手动更新还在后台跑时同理。
+      if (!configLocked.value) void prepareEnvUnlessUpdating(path, options.forceEnv === true)
     } catch (error) {
       previewData.value = null
       previewError.value = error instanceof Error ? error.message : String(error)
@@ -223,7 +223,21 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     handleChange,
     runPreview: () => runPreview(),
   })
-  const { prefillMirrorChyanCdk, resumeManualUpdate } = update
+  const { prefillMirrorChyanCdk, resumeManualUpdate, whenResumeChecked, updateApplying } = update
+
+  // 手动更新在后台跑（刚接回的，或本页点的）时不自动准备运行环境：更新占着项目，后端必然
+  // 拒绝。更新结束后补一次；更新换了文件的，收尾时重读 interface 也会走到这里，重复的那次
+  // 由 runAgentEnvPrepare 自己挡掉。
+  const prepareEnvUnlessUpdating = async (path: string, force: boolean) => {
+    await whenResumeChecked()
+    if (updateApplying.value) return
+    await runAgentEnvPrepare(path, force)
+  }
+  watch(updateApplying, applying => {
+    if (applying || configLocked.value || !previewData.value) return
+    if (env.envReady.value || env.envPreparing.value || env.envFailed.value) return
+    void runAgentEnvPrepare()
+  })
 
   const { syncGamePackageName, handleResourceChangeWithPackage } = useMaaFWGamePackage({
     scriptId,
