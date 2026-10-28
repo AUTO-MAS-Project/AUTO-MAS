@@ -274,7 +274,8 @@ def build_agent_env_manifest(
     共用的 venv 只按它与 ``requirementsHash`` 判定是否还能用；``projectPath`` /
     ``interfaceHash`` 在共用的 venv 里只记录建它的那个视图，不参与判定——否则同一项目的
     另一个视图、或依赖没变的新版本会把别人正在用的 venv 删了重建。升级前按项目路径建的
-    老目录仍按这两项加 ``requirementsHash`` 判定（``_isolated_venv_mismatch``）。
+    老目录、以及清单含本地依赖而退回按视图隔离的目录（此时多记 ``isolatedProject``，与键里
+    那一项相同）仍按这两项加 ``requirementsHash`` 判定（``_isolated_venv_mismatch``）。
     """
 
     resolved_project_path = Path(project_path).resolve()
@@ -282,6 +283,9 @@ def build_agent_env_manifest(
         resolved_project_path, runner_maafw_version=runner_maafw_version
     )
     requirements = list(inputs["requirements"])
+    extra: dict[str, object] = {}
+    if inputs.get("isolatedProject"):
+        extra["isolatedProject"] = inputs["isolatedProject"]
     return {
         "schemaVersion": 2,
         "projectPath": str(resolved_project_path),
@@ -291,6 +295,7 @@ def build_agent_env_manifest(
         "venvKey": shared_venv_name(inputs),
         "maafwRequirement": inputs["maafw"],
         "host": inputs["host"],
+        **extra,
     }
 
 
@@ -1052,8 +1057,9 @@ def _isolated_venv_mismatch(
 
     共用目录（``maafw_venv_<16hex>``）只看键与依赖清单：项目路径、interface 是建它的那个
     视图的，别的视图、依赖没变的新版本照样能用，按它们重建会删掉别人正在用的 venv。
-    其余（升级前按项目路径建的老目录、调用方直接指定的目录）照旧按项目路径 + interface +
-    依赖清单判定。
+    本地依赖退回按视图隔离的目录（键含 ``isolatedProject``，名字同样是 16 位）比完键之后
+    再按老规则判。其余（升级前按项目路径建的老目录、调用方直接指定的目录）与它一样，
+    按项目路径 + interface + 依赖清单判定，与改动前相同。
     """
 
     if not isinstance(manifest, dict):
@@ -1061,9 +1067,14 @@ def _isolated_venv_mismatch(
     if is_shared_venv_name(venv_path.name):
         if manifest.get("venvKey") != expected["venvKey"]:
             return "[Python环境] 隔离 venv 的共用键与依赖清单不符，将重建"
-        if manifest.get("requirementsHash") != expected["requirementsHash"]:
-            return "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
-        return None
+        if not (expected.get("isolatedProject") or manifest.get("isolatedProject")):
+            if manifest.get("requirementsHash") != expected["requirementsHash"]:
+                return "[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv"
+            return None
+        # 本地依赖退回按视图隔离的目录：键里有视图路径，只有本视图用，照老规则往下比。
+        # 视图路径换版本也不变，requirements 文本不变时本地包内容可能已经变了，只比键
+        # 会跳过安装、跑上一版的包。键相同已说明是本视图的，旧 manifest（0a48f960b 写的、
+        # 没有 isolatedProject 字段）靠 expected 那一侧认出来，照样按老规则判。
     if manifest.get("projectPath") != expected["projectPath"]:
         return "[Python环境] 隔离 venv 项目路径已变化，将重建"
     if manifest.get("interfaceHash") != expected["interfaceHash"]:

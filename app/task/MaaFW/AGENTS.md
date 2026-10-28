@@ -337,7 +337,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **本地依赖退回按视图隔离**（`venv_share.is_local_requirement`，PR #1711 审查 P2）：pip 以各自项目
     目录为 cwd 安装，`./wheels/foo-1.0-py3-none-any.whl` 这一行在两个项目里可能是两份不同的 wheel；
     按文本共用时后准备的视图命中前一个的 manifest、跳过安装，用的是别人的包。清单（含 `-r` 展开后的
-    子清单）里只要有一条本地依赖，键里就加视图路径（`isolatedProject`），等同改动前的按路径隔离。
+    子清单）里只要有一条本地依赖，键里就加视图路径（`isolatedProject`，manifest 里也记这一项），
+    重建判据也照改动前的按路径隔离：目录名虽仍是 16 位，比完键还比项目路径 + interface + 依赖清单
+    ——视图路径换版本不变，`requirements` 文本不变而本地包内容变了时，只比键会跳过安装、跑上一版的包。
     认作本地：含 `/` 或 `\`、以 `.` 开头、Windows 盘符、不带路径的本地归档名（`.whl` / `.zip` /
     `.tar.gz` 等，照 pip）、`file:` 与 `git+file:` 一类链接、`名字 @ file:...` / `名字 @ ./...`；
     远程 URL（`https://`、`git+https://`、`名字 @ https://...`）照旧按文本；`-e` / `--editable` 读清单时
@@ -356,13 +358,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     是改写后的。新增读计划里 venv 路径的地方要在准备之后读，或者走 `compute_isolated_venv_path`。
   - **重建判据**：共用目录只比 manifest 的 `venvKey` 与 `requirementsHash`；`projectPath` /
     `interfaceHash` 只记建它的视图，不参与——否则另一个视图、依赖没变的新版本会把别人正在用的
-    删了重建。目录名与本项目的键对不上直接拒绝（`_prepare_isolated_venv_env`），不按本项目判据动它。
+    删了重建（本地依赖退回隔离的目录例外，见上，它只有本视图用）。目录名与本项目的键对不上直接拒绝（`_prepare_isolated_venv_env`），不按本项目判据动它。
     重建先把旧目录改名成 `<名>.trash-<随机>` 再删（改名是原子的，不再像 `rmtree(ignore_errors)` 那样
     删一半）；改名只在有人以不带共享删除的方式开着里面的文件时失败，这时报「正被占用」、不动它。
   - **运行中的 venv 没有锁保护**：agent 跑着时不持锁，改名也挡不住它（10-27 实测：Windows 上运行中的
     `Scripts\python.exe`、已由 ctypes 加载的 DLL 都不挡整个 venv 目录改名，删完存活进程再 import 就
     `ModuleNotFoundError`）。共用 venv 不被别的视图删掉，靠的是「键相同就不重建」：共用目录只在基解释器
-    没了、结构不完整、依赖清单缺失或损坏时重建，那时它对同键的所有视图都已不能用。要放宽重建判据，
+    没了、结构不完整、依赖清单缺失或损坏时重建，那时它对同键的所有视图都已不能用（本地依赖退回隔离的
+    目录另在 interface 变化时重建，键含视图路径、只有本视图用，与改动前相同）。要放宽重建判据，
     先补运行期的租约（如 worker 起 agent 前持共享锁）。
   - **并发**：准备期间持 `isolated_venv_guard`（本进程线程锁 + `.locks/<名>.lock` 字节锁，宿主与
     worker 跨进程也串行），等线程锁、等锁文件都在日志写「正由另一处准备」，两段合计 30 分钟超时；
