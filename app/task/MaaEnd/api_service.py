@@ -14,46 +14,153 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
-"""MaaEnd 编辑业务入口：安装路径识别与日志包查询、保存。"""
+"""MaaEnd 配置与资源操作，依赖由宿主提供的配置集合和游戏设置读取能力。"""
 
+import asyncio
+import shutil
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
-from app.config import ConfigEntry
-from app.core import Config
+from app.config import ConfigCollection, ConfigEntry
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
-from app.services.endfield_launcher import discover_launcher_exe
+from app.services.endfield_launcher import discover_launcher_exe, is_launcher_exe
+from app.utils import io as _utils_io
+
+from .resource_loader import get_loaded_maaend_options, try_load_maaend_options
 
 if TYPE_CHECKING:
     from .tools.log_bundle import LogBundleSelection
 
 
-def resolve_launcher_path(script_id: str) -> Path:
-    script_uid = uuid.UUID(script_id)
-    script_config = Config.ScriptConfig[script_uid]
-    if not isinstance(script_config, RuntimeMaaEndConfig):
-        raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
-    client_exe = Path(str(script_config.Game.Path or "").strip())
-    if not client_exe.is_file():
-        raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
-    launcher_path = discover_launcher_exe(client_exe)
-    if launcher_path is None:
-        raise ValueError(
-            "未能从游戏客户端路径识别到终末地官方启动器, "
-            "请手动选择终末地启动器的可执行文件（.exe）"
+class DisplayTypeReader(Protocol):
+    def __call__(self, exe_path: Path, *, preferred_value_name: str) -> str | None: ...
+
+
+class MaaEndConfigService:
+    """持有专项配置策略；模型只接收已解析的展示数据，不负责资源 IO。"""
+
+    def __init__(
+        self,
+        *,
+        scripts: ConfigCollection[ConfigEntry],
+        read_resolution: Callable[[Path], tuple[int, int] | None],
+        read_display_type: DisplayTypeReader,
+    ) -> None:
+        self._scripts = scripts
+        self._read_resolution = read_resolution
+        self._read_display_type = read_display_type
+
+    def _get_script(self, script_id: str) -> RuntimeMaaEndConfig:
+        script = self._scripts[uuid.UUID(script_id)]
+        if not isinstance(script, RuntimeMaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        return script
+
+    async def initialize(self, script: ConfigEntry) -> None:
+        """激活完成后迁移历史 Client 值，由宿主保持同一 Task 和提交边界。"""
+        if not isinstance(script, RuntimeMaaEndConfig):
+            return
+        if script.Game.LaunchMode != "Client" or script.Info.Path is None:
+            return
+        root = script.Info.Path
+        if not (root / "interface.json").is_file():
+            return
+        options = await asyncio.to_thread(try_load_maaend_options, root)
+        if options is not None:
+            script.Game.LaunchMode = (
+                "MaaEnd"
+                if script.Game.ControllerType in options["launchGameControllers"]
+                else "MAS"
+            )
+            await script.commit()
+
+    async def preload_resources(self) -> None:
+        """由宿主在激活完成后调度预加载，资源失败不改变已有配置。"""
+        await asyncio.gather(
+            *(
+                self._preload_resource(script)
+                for script in self._scripts.values()
+                if isinstance(script, RuntimeMaaEndConfig) and script.Info.Path
+            )
         )
-    return launcher_path
 
+    async def _preload_resource(self, script: RuntimeMaaEndConfig) -> None:
+        resource = await asyncio.to_thread(try_load_maaend_options, script.Info.Path)
+        if resource is not None:
+            for user in script.UserData.values():
+                user.cache_maaend_resource(resource)
 
-async def resolve_log_bundle(
-    scripts: Iterable[ConfigEntry], *, output_directory: Path | None = None
-) -> "LogBundleSelection":
-    """筛选 MaaEnd 安装配置，再查询已有归档或保存当前日志。"""
-    from .tools.log_bundle import resolve_log_bundles
+    async def get_options(self, script_id: str) -> dict[str, Any]:
+        """读取安装资源，并补充游戏保存的分辨率与显示模式。"""
+        script = self._get_script(script_id)
+        root_path = str(script.Info.Path or "").strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+        options = await asyncio.to_thread(get_loaded_maaend_options, Path(root_path))
+        for user in script.UserData.values():
+            user.cache_maaend_resource(options)
+        game_path = str(script.Game.Path or "").strip()
+        if game_path:
+            exe_path = Path(game_path)
+            original = await asyncio.to_thread(self._read_resolution, exe_path)
+            if original is not None:
+                options["originalResolution"] = f"{original[0]}x{original[1]}"
+            options["originalDisplayType"] = await asyncio.to_thread(
+                self._read_display_type,
+                exe_path,
+                preferred_value_name="video_full_screen_h1998742411",
+            )
+        return options
 
-    maaend_scripts = [
-        script for script in scripts if isinstance(script, RuntimeMaaEndConfig)
-    ]
-    return await resolve_log_bundles(maaend_scripts, output_directory)
+    @staticmethod
+    def validate_update(data: dict[str, Any]) -> None:
+        launcher_path = (data.get("Game") or {}).get("LauncherPath")
+        if launcher_path and not is_launcher_exe(Path(launcher_path)):
+            raise ValueError(
+                "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
+            )
+
+    @staticmethod
+    def import_config(script: ConfigEntry, target_directory: Path) -> None:
+        """按原目录完整透传上游配置，不解释私有格式。"""
+        if not isinstance(script, RuntimeMaaEndConfig):
+            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
+        if script.Info.Path is None:
+            raise ValueError("Path未配置，请检查路径设置")
+        source_directory = script.Info.Path / "config"
+        if not (source_directory / "mxu-MaaEnd.json").exists():
+            raise FileNotFoundError(
+                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
+            )
+        # 只读文件也须清理，避免残留内容导致覆盖失败。
+        _utils_io.force_rmtree(target_directory)
+        target_directory.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_directory, target_directory, dirs_exist_ok=True)
+
+    def resolve_launcher_path(self, script_id: str) -> Path:
+        script = self._get_script(script_id)
+        client_exe = Path(str(script.Game.Path or "").strip())
+        if not client_exe.is_file():
+            raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
+        launcher_path = discover_launcher_exe(client_exe)
+        if launcher_path is None:
+            raise ValueError(
+                "未能从游戏客户端路径识别到终末地官方启动器, "
+                "请手动选择终末地启动器的可执行文件（.exe）"
+            )
+        return launcher_path
+
+    async def resolve_log_bundle(
+        self, *, output_directory: Path | None = None
+    ) -> "LogBundleSelection":
+        """筛选 MaaEnd 安装配置，再查询已有归档或保存当前日志。"""
+        from .tools.log_bundle import resolve_log_bundles
+
+        scripts = [
+            script
+            for script in self._scripts.values()
+            if isinstance(script, RuntimeMaaEndConfig)
+        ]
+        return await resolve_log_bundles(scripts, output_directory)

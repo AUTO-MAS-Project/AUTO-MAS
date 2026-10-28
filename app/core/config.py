@@ -55,6 +55,7 @@ from app.core.config_upgrade import (
     preserve_pre_upgrade,
     upgrade_json_configs,
 )
+from app.core.script_config import ScriptConfigHandler
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
@@ -216,6 +217,7 @@ class AppConfig:
 
     def __init__(self) -> None:
 
+        self._script_config_handlers: dict[type[ConfigEntry], ScriptConfigHandler] = {}
         self._restore_pool_resolver: (
             Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
             | None
@@ -544,12 +546,7 @@ class AppConfig:
             if node.activation_state == NodeState.INACTIVE:
                 await node.activate(fast_init=True)
         for script in self.ScriptConfig.values():
-            if (
-                isinstance(script, MaaEndConfig)
-                and script.Info.Path
-                and script._preload_task is None
-            ):
-                script._preload_task = asyncio.create_task(script.preload_resource())
+            await self._initialize_script_config(script)
         await config_manager.flush()
         if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
@@ -1027,9 +1024,11 @@ class AppConfig:
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         if script_id is None:
-            _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
-            await self.ScriptConfig.commit()
-            _config_entry = self.ScriptConfig[_config_uid]
+            async with config_manager.transaction():
+                _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
+                await self.ScriptConfig.commit()
+                _config_entry = self.ScriptConfig[_config_uid]
+                await self._initialize_script_config(_config_entry)
             return _config_uid, _config_entry
         else:
             script_uid = uuid.UUID(script_id)
@@ -1040,11 +1039,13 @@ class AppConfig:
             document = self.ScriptConfig[script_uid].model_dump(
                 context={"audience": "persist"}
             )
-            new_uid = self.ScriptConfig.add(
-                CLASS_BOOK[script], payload=document, regenerate_uuids=True
-            )
-            await self.ScriptConfig.commit()
-            new_config = self.ScriptConfig[new_uid]
+            async with config_manager.transaction():
+                new_uid = self.ScriptConfig.add(
+                    CLASS_BOOK[script], payload=document, regenerate_uuids=True
+                )
+                await self.ScriptConfig.commit()
+                new_config = self.ScriptConfig[new_uid]
+                await self._initialize_script_config(new_config)
             user_ids = {
                 item["uid"]: uid
                 for item, uid in zip(
@@ -1148,35 +1149,6 @@ class AppConfig:
         index = data["order"]
         return list(index), data["data"]
 
-    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
-        """读取指定 MaaEnd 安装目录中的动态选项。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, MaaEndConfig):
-            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
-        root_path = str(script_config.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-
-        options = script_config.get_loaded_resource()
-        game_path = str(script_config.Game.Path or "").strip()
-        if game_path:
-            from app.task.MaaFW.tools.embedded.game_resolution import (
-                read_unity_display_type,
-                read_unity_resolution,
-            )
-
-            exe_path = Path(game_path)
-            original = await asyncio.to_thread(read_unity_resolution, exe_path)
-            if original is not None:
-                options["originalResolution"] = f"{original[0]}x{original[1]}"
-            options["originalDisplayType"] = await asyncio.to_thread(
-                read_unity_display_type,
-                exe_path,
-                preferred_value_name="video_full_screen_h1998742411",
-            )
-        return options
-
     def get_baah_config_names(self, script_id: str) -> list[str]:
         """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
 
@@ -1203,14 +1175,9 @@ class AppConfig:
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        if isinstance(self.ScriptConfig[uid], MaaEndConfig):
-            from app.services.endfield_launcher import is_launcher_exe
-
-            launcher_path = (data.get("Game") or {}).get("LauncherPath")
-            if launcher_path and not is_launcher_exe(Path(launcher_path)):
-                raise ValueError(
-                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
-                )
+        handler = self._get_script_config_handler(self.ScriptConfig[uid])
+        if handler is not None:
+            handler.validate_update(data)
 
         await self.ScriptConfig[uid].update(
             type(self.ScriptConfig[uid]).model_validate(data)
@@ -1849,25 +1816,32 @@ class AppConfig:
             await import_script_config_dir(script_id, user_id)
             return
 
-        if not isinstance(script_config, MaaEndConfig):
+        handler = self._get_script_config_handler(script_config)
+        if handler is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
-
-        script_root = script_config.Info.Path
-        if script_root is None:
-            raise ValueError("Path未配置，请检查路径设置")
-        source_config_dir = script_root / "config"
-        if not (source_config_dir / "mxu-MaaEnd.json").exists():
-            raise FileNotFoundError(
-                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
-            )
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
-        # 静默残留会让随后的覆盖写入抛 PermissionError。
-        _utils_io.force_rmtree(target_config_dir)
-        target_config_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
+        handler.import_config(script_config, target_config_dir)
+
+    def bind_script_config_handler(
+        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
+    ) -> None:
+        """由宿主将专项操作绑定到当前配置实例。"""
+        self._script_config_handlers[entry_type] = handler
+
+    def _get_script_config_handler(
+        self, script: ConfigEntry
+    ) -> ScriptConfigHandler | None:
+        for entry_type, handler in self._script_config_handlers.items():
+            if isinstance(script, entry_type):
+                return handler
+        return None
+
+    async def _initialize_script_config(self, script: ConfigEntry) -> None:
+        handler = self._get_script_config_handler(script)
+        if handler is not None:
+            await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
