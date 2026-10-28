@@ -125,6 +125,8 @@ const handleLocaleChange = (value: unknown): void => {
 
 <template>
   <div class="tab-content">
+    <StartupWindowSettings :settings="settings" :handle-setting-change="handleSettingChange" />
+
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('core.setting.basic.appearance') }}</h3>
@@ -360,7 +362,6 @@ const handleLocaleChange = (value: unknown): void => {
       </a-row>
     </div>
 
-    <StartupWindowSettings :settings="settings" :handle-setting-change="handleSettingChange" />
     <div class="form-section">
       <div class="section-header">
         <h3>{{ t('core.setting.basic.logStyle') }}</h3>
