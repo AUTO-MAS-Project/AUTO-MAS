@@ -102,7 +102,7 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
       if (local) {
         options.spawnText(
           local,
-          t('home.satelliteEgg.star'),
+          t('core.home.satelliteEgg.star'),
           scene.isCenterRainbow ? 'rainbow' : 'star'
         )
       }

@@ -8,7 +8,7 @@ export const buildReverse1999ActivityPresentation = (
 ): ActivityPresentation => {
   const presentation = buildSraActivityPresentation(context)
   presentation.activities.source = {
-    label: context.t('home.sra.poweredByM9A'),
+    label: context.t('core.home.sra.poweredByM9A'),
     url: 'https://api.1999.fan',
   }
   presentation.activities.accent = '#e0484f'

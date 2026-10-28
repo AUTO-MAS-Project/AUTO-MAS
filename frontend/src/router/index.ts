@@ -362,7 +362,7 @@ const routes = [
         path: 'tokens',
         name: 'MysteryTokens',
         component: () => import('../views/mystery/tokens/index.vue'),
-        meta: { title: 'Token 获取', mysteryTitleKey: 'mystery.tokens.title' },
+        meta: { title: 'Token 获取', mysteryTitleKey: 'core.mystery.tokens.title' },
       },
     ],
   },
@@ -430,8 +430,9 @@ router.beforeEach(async (to, from, next) => {
           const errorMsg = error instanceof Error ? error.message : String(error)
           logger.error(`开发模式直达内页启动失败: ${errorMsg}`)
         } finally {
-          // 开发模式容错：连接失败也进入应用，由生命周期协调器继续重连
-          markAsInitialized()
+          // 开发模式仍须准备界面词表；失败时由本地资源恢复界面承接。
+          const { useBackendI18nStore } = await import('@/stores/backendI18n')
+          if (await useBackendI18nStore().ensure()) markAsInitialized()
           finishBootstrap()
         }
       })()

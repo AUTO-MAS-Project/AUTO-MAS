@@ -5,8 +5,8 @@
         <a-form-item name="IfAutoCollect">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.maaEndAutoCollectEnabled')"
-              :hint="t('edit.maaEndAutoCollectEnabledHint')"
+              :text="t('core.edit.maaEndAutoCollectEnabled')"
+              :hint="t('core.edit.maaEndAutoCollectEnabledHint')"
               variant="form"
             />
           </template>
@@ -17,7 +17,7 @@
         <a-form-item name="AutoCollectMode">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.maaEndAutoCollectMode')"
+              :text="t('core.edit.maaEndAutoCollectMode')"
               :hint="modeHint"
               variant="form"
             />
@@ -33,7 +33,7 @@
     </a-row>
 
     <a-form-item v-if="enabled">
-      <a-alert type="info" show-icon :message="t('edit.maaEndCollectInventoryHint')" />
+      <a-alert type="info" show-icon :message="t('core.edit.maaEndCollectInventoryHint')" />
     </a-form-item>
 
     <a-spin v-if="enabled" :spinning="optionsLoading" class="collect-options">
@@ -41,7 +41,7 @@
         v-if="!optionsLoading && !groups.length"
         type="warning"
         show-icon
-        :message="t('edit.maaEndAutoCollectOptionsUnavailable')"
+        :message="t('core.edit.maaEndAutoCollectOptionsUnavailable')"
       />
       <div class="route-panel-list">
         <div v-for="panel in groups" :key="panel.value" class="route-panel">
@@ -50,7 +50,7 @@
               [panel.regionLabel, panel.label].filter(Boolean).join(' · ')
             }}</span>
             <span class="route-panel-count">{{
-              t('edit.maaEndRouteSelectedCount', {
+              t('core.edit.maaEndRouteSelectedCount', {
                 n: panelValues(panel).length,
                 m: panel.options.length,
               })
@@ -66,14 +66,14 @@
                     panel.options.map(option => String(option.value))
                   )
                 "
-                >{{ t('edit.maaEndRouteSelectAll') }}</a-button
+                >{{ t('core.edit.maaEndRouteSelectAll') }}</a-button
               >
               <a-button
                 type="link"
                 size="small"
                 :disabled="controlsDisabled"
                 @click="applyValues(panel, [])"
-                >{{ t('edit.maaEndRouteClear') }}</a-button
+                >{{ t('core.edit.maaEndRouteClear') }}</a-button
               >
             </span>
           </div>
@@ -129,8 +129,8 @@ const modeOptions = computed(() =>
 )
 const modeHint = computed(() =>
   mode.value === 'Concentrated'
-    ? t('edit.maaEndAutoCollectModeConcentratedHint')
-    : t('edit.maaEndAutoCollectModeDistributedHint')
+    ? t('core.edit.maaEndAutoCollectModeConcentratedHint')
+    : t('core.edit.maaEndAutoCollectModeDistributedHint')
 )
 
 const selectedValues = (panel: MaaEndAutoCollectGroup): string[] =>

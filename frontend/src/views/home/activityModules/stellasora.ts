@@ -23,7 +23,7 @@ export const buildStellaActivityPresentation = (
     ...stellaActivityBanner(overview),
   }
   presentation.activities.source = {
-    label: t('home.sra.poweredBy', { name: t('home.stella.sourceName') }),
+    label: t('core.home.sra.poweredBy', { name: t('core.home.stella.sourceName') }),
     url: 'https://stellasora.yostar.cn/news',
   }
   presentation.activities.items = runningActivities(overview.activities, now)
@@ -36,7 +36,7 @@ export const buildStellaActivityPresentation = (
     ? [
         {
           id: 'permanent',
-          title: t('home.stella.permanent'),
+          title: t('core.home.stella.permanent'),
           layout: 'activity',
           completable: true,
           loading: false,

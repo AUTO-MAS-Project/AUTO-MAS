@@ -25,18 +25,22 @@ import os
 import time
 import uuid
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Dict, Iterable, Literal
 
 import app.task as task
+from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
+from app.core.history import history_store
 from app.models.config import CLASS_BOOK
 from app.models.schema import (
     HistoryAttachmentInput,
+    HistoryWrite,
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
     TaskStatusOut,
@@ -59,7 +63,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.task.general.tools import execute_script_task
+from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
@@ -437,6 +441,40 @@ class TaskInfo(TaskItem):
         )
         if capture is not None:
             self._history_capture_tasks[key] = capture
+
+    async def save_user_history(
+        self,
+        records: Sequence[HistoryWrite],
+        *,
+        script: ScriptItem,
+        user: UserItem,
+        log_warning: Callable[[str], None] | None = None,
+    ) -> None:
+        """为本次用户历史装配能力，专项只交出已判定的条目与诊断入口。"""
+
+        await save_user_history(
+            records,
+            dependencies=UserHistoryDependencies(
+                record=history_store.record,
+                collect_attachments=partial(
+                    self.collect_user_history_attachments, script=script, user=user
+                ),
+                discard_capture=partial(
+                    self.discard_user_history_capture, script=script, user=user
+                ),
+                report_failure=self._report_history_save_failure,
+                log_warning=log_warning
+                if log_warning is not None
+                else logger.opt(exception=True).warning,
+            ),
+        )
+
+    async def _report_history_save_failure(self, message: str) -> None:
+        await Publisher.send(
+            id=self.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
 
     async def collect_user_history_attachments(
         self, script: ScriptItem, user: UserItem

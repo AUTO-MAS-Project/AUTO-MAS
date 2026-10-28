@@ -41,17 +41,17 @@ const handleFpsChange = (next: SelectValue): void => {
   <div class="form-section mascot-settings">
     <component :is="modalContextHolder" />
     <div class="section-header">
-      <h3>{{ t('setting.basic.mascotSection') }}</h3>
+      <h3>{{ t('core.setting.basic.mascotSection') }}</h3>
     </div>
     <a-alert
       v-if="loadFailed"
       type="error"
-      :message="t('setting.basic.mascotLoadFailed')"
+      :message="t('core.setting.basic.mascotLoadFailed')"
       show-icon
     >
       <template #action
         ><a-button size="small" @click="refresh">{{
-          t('setting.basic.mascotRetry')
+          t('core.setting.basic.mascotRetry')
         }}</a-button></template
       >
     </a-alert>
@@ -59,8 +59,8 @@ const handleFpsChange = (next: SelectValue): void => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.mascotSelect') }}</span>
-            <a-tooltip :title="t('setting.basic.mascotImportTip')">
+            <span class="form-label">{{ t('core.setting.basic.mascotSelect') }}</span>
+            <a-tooltip :title="t('core.setting.basic.mascotImportTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -72,20 +72,22 @@ const handleFpsChange = (next: SelectValue): void => {
               :loading="loading || selecting"
               :disabled="busy || selecting || loadFailed"
               size="large"
-              :aria-label="t('setting.basic.mascotSelect')"
+              :aria-label="t('core.setting.basic.mascotSelect')"
               @change="select"
             />
             <a-button :loading="saving" :disabled="busy || selecting" @click="importMascot">
-              <template #icon><UploadOutlined /></template>{{ t('setting.basic.importMascot') }}
+              <template #icon><UploadOutlined /></template
+              >{{ t('core.setting.basic.importMascot') }}
             </a-button>
             <a-button
               v-if="selectedId"
               danger
               :disabled="busy || selecting"
-              :aria-label="t('setting.basic.removeMascot')"
+              :aria-label="t('core.setting.basic.removeMascot')"
               @click="removeMascot"
             >
-              <template #icon><DeleteOutlined /></template>{{ t('setting.basic.removeMascot') }}
+              <template #icon><DeleteOutlined /></template
+              >{{ t('core.setting.basic.removeMascot') }}
             </a-button>
           </div>
         </div>
@@ -93,12 +95,12 @@ const handleFpsChange = (next: SelectValue): void => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.desktopMascot') }}</span>
+            <span class="form-label">{{ t('core.setting.basic.desktopMascot') }}</span>
             <a-tooltip>
               <template #title>
-                <div>{{ t('setting.basic.desktopMascotTip') }}</div>
+                <div>{{ t('core.setting.basic.desktopMascotTip') }}</div>
                 <div v-if="!available && !loading && !loadFailed">
-                  {{ t('setting.basic.mascotUnavailable') }}
+                  {{ t('core.setting.basic.mascotUnavailable') }}
                 </div>
               </template>
               <QuestionCircleOutlined class="help-icon" />
@@ -110,11 +112,11 @@ const handleFpsChange = (next: SelectValue): void => {
             :disabled="busy || toggling || !available || loadFailed"
             size="large"
             style="width: 100%"
-            :aria-label="t('setting.basic.desktopMascot')"
+            :aria-label="t('core.setting.basic.desktopMascot')"
             @change="(next: unknown) => setEnabled(next === true)"
           >
-            <a-select-option :value="true">{{ t('common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.off') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.common.on') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.common.off') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
@@ -123,8 +125,8 @@ const handleFpsChange = (next: SelectValue): void => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.mascotFps') }}</span>
-            <a-tooltip :title="t('setting.basic.mascotFpsTip')">
+            <span class="form-label">{{ t('core.setting.basic.mascotFps') }}</span>
+            <a-tooltip :title="t('core.setting.basic.mascotFpsTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -133,12 +135,12 @@ const handleFpsChange = (next: SelectValue): void => {
               class="mascot-select"
               :value="fpsMode"
               :options="[
-                { label: t('setting.basic.mascotFpsPackage'), value: 'package' },
-                { label: t('setting.basic.mascotFpsCustom'), value: 'custom' },
+                { label: t('core.setting.basic.mascotFpsPackage'), value: 'package' },
+                { label: t('core.setting.basic.mascotFpsCustom'), value: 'custom' },
               ]"
               :disabled="busy || loadFailed"
               size="large"
-              :aria-label="t('setting.basic.mascotFps')"
+              :aria-label="t('core.setting.basic.mascotFps')"
               @change="setFpsMode"
             />
             <a-select
@@ -148,7 +150,7 @@ const handleFpsChange = (next: SelectValue): void => {
               :options="[8, 16, 24, 30, 60, 120].map(value => ({ label: `${value} FPS`, value }))"
               :disabled="busy || loadFailed"
               size="large"
-              :aria-label="t('setting.basic.mascotFpsCustom')"
+              :aria-label="t('core.setting.basic.mascotFpsCustom')"
               @change="handleFpsChange"
             />
           </a-space-compact>

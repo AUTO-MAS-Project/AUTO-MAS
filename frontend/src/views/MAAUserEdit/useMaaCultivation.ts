@@ -96,7 +96,8 @@ export function useMaaCultivation(options: CultivationOptions) {
   ): Promise<CultivateImportResult> =>
     options.trackEdit(async () => {
       const userId = options.getUserId()
-      if (!userId || options.isLocked()) throw new Error(t('edit.maaCultivateImportUnavailable'))
+      if (!userId || options.isLocked())
+        throw new Error(t('core.edit.maaCultivateImportUnavailable'))
       const imported =
         format === 'clipboard'
           ? await parseImport(scriptId, content)
@@ -108,7 +109,7 @@ export function useMaaCultivation(options: CultivationOptions) {
       const result = { ...merged.result, skipped: imported.skippedMessages }
       if (!result.operatorIds.length) return result
       const saved = await options.saveTargets(serializeCultivateTargets(merged.rows))
-      if (!saved) throw new Error(t('edit.couldNotSaveUser'))
+      if (!saved) throw new Error(t('core.edit.couldNotSaveUser'))
       // 导入可包含已满级、被选择器过滤的干员，补回其名称和技能目录。
       const additions = normalizeCultivateCatalog(imported.data ?? [])
       const importedIds = new Set(additions.map(item => item.value))

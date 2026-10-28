@@ -30,9 +30,9 @@ const taskOptions = ref<TaskOption[]>([])
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
 
 const columns = computed<TableColumnsType>(() => [
-  { title: t('setting.tray.colLabel'), key: 'label', width: '35%' },
-  { title: t('setting.tray.colAction'), key: 'action' },
-  { title: t('setting.tray.colOps'), key: 'ops', width: 140, align: 'center' },
+  { title: t('core.setting.tray.colLabel'), key: 'label', width: '35%' },
+  { title: t('core.setting.tray.colAction'), key: 'action' },
+  { title: t('core.setting.tray.colOps'), key: 'ops', width: 140, align: 'center' },
 ])
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
@@ -131,12 +131,12 @@ const save = async () => {
     }))
     const ok = await window.electronAPI?.updateTrayConfig(payload)
     if (!ok) {
-      message.error(t('setting.toast.trayMenuSaveFailed'))
+      message.error(t('core.setting.toast.trayMenuSaveFailed'))
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger?.error(`托盘菜单保存失败: ${errorMsg}`)
-    message.error(t('setting.toast.trayMenuSaveFailed'))
+    message.error(t('core.setting.toast.trayMenuSaveFailed'))
   }
 }
 
@@ -173,13 +173,13 @@ const reset = () => {
 
 const confirmReset = () => {
   Modal.confirm({
-    title: t('setting.tray.resetTitle'),
-    content: t('setting.tray.resetContent'),
-    okText: t('setting.tray.reset'),
-    cancelText: t('common.cancel'),
+    title: t('core.setting.tray.resetTitle'),
+    content: t('core.setting.tray.resetContent'),
+    okText: t('core.setting.tray.reset'),
+    cancelText: t('core.common.cancel'),
     onOk: () => {
       reset()
-      message.success(t('setting.toast.trayMenuReset'))
+      message.success(t('core.setting.toast.trayMenuReset'))
     },
   })
 }
@@ -197,14 +197,14 @@ onBeforeUnmount(() => {
   <div class="tray-menu-editor">
     <div class="tray-menu-section-head">
       <div class="tray-menu-section-title">
-        <span class="tray-menu-label">{{ t('setting.tray.section') }}</span>
-        <a-tooltip :title="t('setting.tray.sectionTip')">
+        <span class="tray-menu-label">{{ t('core.setting.tray.section') }}</span>
+        <a-tooltip :title="t('core.setting.tray.sectionTip')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </div>
       <a-space :size="8">
-        <a-button size="middle" @click="add">{{ t('setting.tray.add') }}</a-button>
-        <a-button size="middle" @click="confirmReset">{{ t('setting.tray.reset') }}</a-button>
+        <a-button size="middle" @click="add">{{ t('core.setting.tray.add') }}</a-button>
+        <a-button size="middle" @click="confirmReset">{{ t('core.setting.tray.reset') }}</a-button>
       </a-space>
     </div>
 
@@ -222,7 +222,7 @@ onBeforeUnmount(() => {
             v-if="column.key === 'label'"
             v-model:value="record.label"
             size="middle"
-            :placeholder="t('setting.tray.colLabel')"
+            :placeholder="t('core.setting.tray.colLabel')"
             :maxlength="30"
             style="width: 100%"
             @change="schedulePersist"
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
               v-model:value="record.taskId"
               size="middle"
               style="width: 100%"
-              :placeholder="t('setting.tray.taskPlaceholder')"
+              :placeholder="t('core.setting.tray.taskPlaceholder')"
               show-search
               option-filter-prop="label"
               :options="taskOptions"
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               :disabled="index === 0"
-              :aria-label="t('setting.tray.moveUp')"
+              :aria-label="t('core.setting.tray.moveUp')"
               @click="move(index, -1)"
             >
               <UpOutlined />
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               :disabled="index === items.length - 1"
-              :aria-label="t('setting.tray.moveDown')"
+              :aria-label="t('core.setting.tray.moveDown')"
               @click="move(index, 1)"
             >
               <DownOutlined />
@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
               size="middle"
               type="text"
               danger
-              :aria-label="t('setting.tray.remove')"
+              :aria-label="t('core.setting.tray.remove')"
               @click="remove(index)"
             >
               <DeleteOutlined />

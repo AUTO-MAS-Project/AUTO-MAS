@@ -5,8 +5,8 @@
         <div class="closing-spinner">
           <a-spin size="large" />
         </div>
-        <div class="closing-text">{{ t('comp.closingBackend') }}</div>
-        <div class="closing-subtitle">{{ t('comp.pleaseWaitAppClosing') }}</div>
+        <div class="closing-text">{{ t('bootstrap.comp.closingBackend') }}</div>
+        <div class="closing-subtitle">{{ t('bootstrap.comp.pleaseWaitAppClosing') }}</div>
       </div>
     </div>
   </Teleport>

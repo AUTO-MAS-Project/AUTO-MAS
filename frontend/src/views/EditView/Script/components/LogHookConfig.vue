@@ -56,8 +56,12 @@ const onEnabledChange = (value: boolean) => {
 }
 
 const addMenuItems = [
-  { key: 'drop', label: t('edit.dropLine'), title: t('edit.dropWholeLineWhen') },
-  { key: 'replace', label: t('edit.rewriteLine'), title: t('edit.rewriteLineMatchPattern') },
+  { key: 'drop', label: t('core.edit.dropLine'), title: t('core.edit.dropWholeLineWhen') },
+  {
+    key: 'replace',
+    label: t('core.edit.rewriteLine'),
+    title: t('core.edit.rewriteLineMatchPattern'),
+  },
 ]
 
 const onAddMenuClick = ({ key }: { key: string }) => {
@@ -83,21 +87,23 @@ const onDragEnd = () => {
   <div class="log-rule-config" :class="{ collapsed }">
     <div class="log-rule-config-header sub-section-header">
       <h3>
-        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+        <a-tooltip
+          :title="collapsed ? t('core.edit.expandRulesArea') : t('core.edit.collapseRulesArea')"
+        >
           <span class="log-rule-config-title" @click="toggleCollapsed">
-            {{ t('edit.logHooks') }}
+            {{ t('core.edit.logHooks') }}
             <DownOutlined class="log-rule-config-title-arrow" :class="{ collapsed }" />
           </span>
         </a-tooltip>
-        <a-tooltip :title="t('edit.whenScriptLogPreprocessed')">
+        <a-tooltip :title="t('core.edit.whenScriptLogPreprocessed')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
       <div class="log-rule-config-actions">
         <span v-if="collapsed && hookRules.length > 0" class="hook-config-summary">
-          {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
+          {{ t('core.edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
-        <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
+        <a-tooltip :title="t('core.edit.rulesApplyOnlyWhen')">
           <a-switch
             :checked="enabled"
             :checked-children="'启用'"
@@ -110,7 +116,7 @@ const onDragEnd = () => {
 
     <div v-show="!collapsed" class="log-rule-config-body">
       <div v-if="!enabled" class="log-rule-config-disabled-tip">
-        {{ t('edit.logHooksOffRules') }}
+        {{ t('core.edit.logHooksOffRules') }}
       </div>
 
       <draggable
@@ -141,7 +147,7 @@ const onDragEnd = () => {
         <a-dropdown :trigger="['click']">
           <a-button type="dashed" class="add-log-rule-btn">
             <PlusOutlined />
-            {{ t('edit.addRule') }}
+            {{ t('core.edit.addRule') }}
             <DownOutlined />
           </a-button>
           <template #overlay>
@@ -154,7 +160,7 @@ const onDragEnd = () => {
         </a-dropdown>
 
         <span class="log-rule-count">
-          {{ t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
+          {{ t('core.edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
       </div>
     </div>

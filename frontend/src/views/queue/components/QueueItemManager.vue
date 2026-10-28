@@ -1,12 +1,12 @@
 <template>
-  <a-card :title="t('queue.item.cardTitle')" class="queue-manager-card queue-item-card">
+  <a-card :title="t('core.queue.item.cardTitle')" class="queue-manager-card queue-item-card">
     <template #extra>
       <a-space>
         <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('queue.item.add') }}
+          {{ t('core.queue.item.add') }}
         </a-button>
       </a-space>
     </template>
@@ -21,20 +21,20 @@
     >
       <template #header>
         <div class="header-cell drag-cell"></div>
-        <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
-        <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
+        <div class="header-cell index-cell">{{ t('core.queue.item.colIndex') }}</div>
+        <div class="header-cell script-cell">{{ t('core.queue.item.colScript') }}</div>
         <div v-if="!showCycleConfig" class="header-cell days-cell">
-          {{ t('queue.item.colDays') }}
+          {{ t('core.queue.item.colDays') }}
         </div>
         <div v-if="showCycleConfig" class="header-cell cycle-cell">
-          {{ t('queue.cycle.colConfig') }}
+          {{ t('core.queue.cycle.colConfig') }}
         </div>
-        <div class="header-cell actions-cell">{{ t('queue.item.colActions') }}</div>
+        <div class="header-cell actions-cell">{{ t('core.queue.item.colActions') }}</div>
       </template>
 
       <template #row="{ element: record, index }">
         <div class="row-cell drag-cell">
-          <DragHandle :title="t('queue.item.dragSort')" />
+          <DragHandle :title="t('core.queue.item.dragSort')" />
         </div>
         <div class="row-cell index-cell">{{ index + 1 }}</div>
         <div class="row-cell script-cell">
@@ -43,7 +43,7 @@
             size="small"
             style="width: 200px"
             class="script-select"
-            :placeholder="t('queue.item.selectScript')"
+            :placeholder="t('core.queue.item.selectScript')"
             :options="scriptOptions"
             :disabled="locked"
             allow-clear
@@ -57,19 +57,21 @@
             size="small"
             style="width: 100%"
             class="days-select"
-            :placeholder="t('queue.time.selectDays')"
+            :placeholder="t('core.queue.time.selectDays')"
             :disabled="locked"
             :max-tag-count="7"
             :bordered="false"
             @change="saveDays(record)"
           >
-            <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-            <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
-            <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
-            <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
-            <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-            <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
-            <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+            <a-select-option value="Monday">{{ t('core.queue.time.Monday') }}</a-select-option>
+            <a-select-option value="Tuesday">{{ t('core.queue.time.Tuesday') }}</a-select-option>
+            <a-select-option value="Wednesday">{{
+              t('core.queue.time.Wednesday')
+            }}</a-select-option>
+            <a-select-option value="Thursday">{{ t('core.queue.time.Thursday') }}</a-select-option>
+            <a-select-option value="Friday">{{ t('core.queue.time.Friday') }}</a-select-option>
+            <a-select-option value="Saturday">{{ t('core.queue.time.Saturday') }}</a-select-option>
+            <a-select-option value="Sunday">{{ t('core.queue.time.Sunday') }}</a-select-option>
           </a-select>
         </div>
         <div v-if="showCycleConfig" class="row-cell cycle-cell">
@@ -88,10 +90,10 @@
                 @change="saveSchedule(record, { Mode: record.schedule.Mode })"
               >
                 <a-select-option value="fixed_time">
-                  {{ t('queue.cycle.modeFixed') }}
+                  {{ t('core.queue.cycle.modeFixed') }}
                 </a-select-option>
                 <a-select-option value="interval">
-                  {{ t('queue.cycle.modeInterval') }}
+                  {{ t('core.queue.cycle.modeInterval') }}
                 </a-select-option>
               </a-select>
 
@@ -103,7 +105,7 @@
                   :min="1"
                   :max="10080"
                   :disabled="!record.schedule.Enabled"
-                  :addon-after="t('queue.cycle.minuteUnit')"
+                  :addon-after="t('core.queue.cycle.minuteUnit')"
                   @blur="saveInterval(record)"
                   @press-enter="saveInterval(record)"
                 />
@@ -115,10 +117,10 @@
                   @change="saveSchedule(record, { IntervalAnchor: record.schedule.IntervalAnchor })"
                 >
                   <a-select-option value="start">
-                    {{ t('queue.cycle.anchorStart') }}
+                    {{ t('core.queue.cycle.anchorStart') }}
                   </a-select-option>
                   <a-select-option value="finish">
-                    {{ t('queue.cycle.anchorFinish') }}
+                    {{ t('core.queue.cycle.anchorFinish') }}
                   </a-select-option>
                 </a-select>
               </template>
@@ -128,7 +130,7 @@
                   format="HH:mm"
                   size="small"
                   style="width: 104px"
-                  :placeholder="t('queue.time.selectTime')"
+                  :placeholder="t('core.queue.time.selectTime')"
                   :disabled="!record.schedule.Enabled"
                   :allow-clear="false"
                   @change="saveScheduleTime(record)"
@@ -138,33 +140,39 @@
                   mode="multiple"
                   size="small"
                   style="min-width: 168px"
-                  :placeholder="t('queue.time.selectDays')"
+                  :placeholder="t('core.queue.time.selectDays')"
                   :disabled="!record.schedule.Enabled"
                   :max-tag-count="3"
                   @change="saveDays(record)"
                 >
-                  <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                  <a-select-option value="Monday">{{
+                    t('core.queue.time.Monday')
+                  }}</a-select-option>
                   <a-select-option value="Tuesday">
-                    {{ t('queue.time.Tuesday') }}
+                    {{ t('core.queue.time.Tuesday') }}
                   </a-select-option>
                   <a-select-option value="Wednesday">
-                    {{ t('queue.time.Wednesday') }}
+                    {{ t('core.queue.time.Wednesday') }}
                   </a-select-option>
                   <a-select-option value="Thursday">
-                    {{ t('queue.time.Thursday') }}
+                    {{ t('core.queue.time.Thursday') }}
                   </a-select-option>
-                  <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                  <a-select-option value="Friday">{{
+                    t('core.queue.time.Friday')
+                  }}</a-select-option>
                   <a-select-option value="Saturday">
-                    {{ t('queue.time.Saturday') }}
+                    {{ t('core.queue.time.Saturday') }}
                   </a-select-option>
-                  <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+                  <a-select-option value="Sunday">{{
+                    t('core.queue.time.Sunday')
+                  }}</a-select-option>
                 </a-select>
               </template>
             </div>
 
             <div class="cycle-line cycle-next-line">
               <span class="cycle-next-text">
-                {{ t('queue.cycle.nextRun') }}
+                {{ t('core.queue.cycle.nextRun') }}
                 {{ formatNextRun(record.schedule.NextRunAt) }}
               </span>
               <a-button
@@ -173,7 +181,7 @@
                 :disabled="!record.schedule.Enabled"
                 @click="runOnce(record)"
               >
-                {{ t('queue.cycle.runOnce') }}
+                {{ t('core.queue.cycle.runOnce') }}
               </a-button>
             </div>
           </div>
@@ -181,14 +189,14 @@
         <div class="row-cell actions-cell">
           <a-space>
             <a-popconfirm
-              :title="t('queue.item.deleteConfirm')"
-              :ok-text="t('queue.ok')"
-              :cancel-text="t('queue.cancel')"
+              :title="t('core.queue.item.deleteConfirm')"
+              :ok-text="t('core.queue.ok')"
+              :cancel-text="t('core.queue.cancel')"
               @confirm="deleteQueueItem(record.id)"
             >
               <a-button size="middle" danger :disabled="locked">
                 <DeleteOutlined />
-                {{ t('queue.del') }}
+                {{ t('core.queue.del') }}
               </a-button>
             </a-popconfirm>
           </a-space>
@@ -291,7 +299,7 @@ watch(
 // 空值哨兵表示还没推算过，展示成「待排期」而不是 2000 年
 const formatNextRun = (nextRunAt: string) =>
   !nextRunAt || parseTimeString(nextRunAt)?.format('YYYY-MM-DD HH:mm:ss') === CYCLE_EMPTY_TIME
-    ? t('queue.cycle.notScheduled')
+    ? t('core.queue.cycle.notScheduled')
     : formatBackendDateTime(nextRunAt)
 
 // 保存循环调度配置。这里不 emit refresh：本地 record 已是最新值，
@@ -303,8 +311,8 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
 
     if (response.code !== 200) {
       message.error(
-        t('queue.toast.scheduleUpdateFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.scheduleUpdateFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
       emit('refresh')
@@ -314,7 +322,7 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新循环调度失败: ${errorMsg}`)
-    message.error(t('queue.toast.scheduleUpdateFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.scheduleUpdateFailed', { error: errorMsg }))
     emit('refresh')
     return false
   }
@@ -409,15 +417,15 @@ const updateQueueItemScript = async (record: any) => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.scriptUpdateFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.scriptUpdateFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新脚本失败: ${errorMsg}`)
-    message.error(t('queue.toast.updateScriptFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.updateScriptFailed', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -437,15 +445,15 @@ const addQueueItem = async () => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.addTaskFailed', {
-          error: createResponse.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.addTaskFailed', {
+          error: createResponse.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加任务失败: ${errorMsg}`)
-    message.error(t('queue.toast.addTaskFailed2', { error: errorMsg }))
+    message.error(t('core.queue.toast.addTaskFailed2', { error: errorMsg }))
   } finally {
     loading.value = false
   }
@@ -464,15 +472,15 @@ const deleteQueueItem = async (itemId: string) => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.deleteItemFailed', {
-          error: response.message || t('queue.toast.unknownError'),
+        t('core.queue.toast.deleteItemFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
         })
       )
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除队列项失败: ${errorMsg}`)
-    message.error(t('queue.toast.deleteItemFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.deleteItemFailed', { error: errorMsg }))
   }
 }
 
@@ -502,7 +510,9 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     } else {
       message.error(
-        t('queue.toast.reorderFailed', { error: response.message || t('queue.toast.unknownError') })
+        t('core.queue.toast.reorderFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
+        })
       )
       // 如果失败，刷新数据恢复原状态
       emit('refresh')
@@ -510,7 +520,7 @@ const onDragEnd = async (evt: any) => {
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`拖拽排序失败: ${errorMsg}`)
-    message.error(t('queue.toast.reorderFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.reorderFailed', { error: errorMsg }))
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {

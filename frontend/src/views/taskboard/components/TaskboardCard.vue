@@ -30,10 +30,10 @@
         </span>
       </div>
       <div class="tb-card-time">
-        <span>{{ t('taskboard.startsAt') }} {{ startText }}</span>
-        <span>{{ t('taskboard.endsAt') }} {{ endText }}</span>
+        <span>{{ t('core.taskboard.startsAt') }} {{ startText }}</span>
+        <span>{{ t('core.taskboard.endsAt') }} {{ endText }}</span>
         <span v-if="state === 'done' && doneText" class="tb-card-done">
-          {{ t('taskboard.doneAt', { p0: doneText }) }}
+          {{ t('core.taskboard.doneAt', { p0: doneText }) }}
         </span>
       </div>
       <a-progress
@@ -54,10 +54,10 @@
           :disabled="!ready"
           @click="emit('complete')"
         >
-          {{ t('taskboard.complete') }}
+          {{ t('core.taskboard.complete') }}
         </a-button>
         <a-button v-else-if="state === 'done'" size="small" :loading="saving" @click="emit('undo')">
-          {{ t('taskboard.undo') }}
+          {{ t('core.taskboard.undo') }}
         </a-button>
       </div>
     </div>

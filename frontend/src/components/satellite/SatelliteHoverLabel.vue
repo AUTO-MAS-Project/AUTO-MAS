@@ -24,10 +24,14 @@ const statusText = computed(() => {
   const status = props.status
   if (!status) return ''
   if (status.lastFailed) {
-    return t(status.running ? 'home.satelliteStatus.failedRunning' : 'home.satelliteStatus.failed')
+    return t(
+      status.running
+        ? 'core.home.satelliteStatus.failedRunning'
+        : 'core.home.satelliteStatus.failed'
+    )
   }
-  if (status.running) return t('home.satelliteStatus.running')
-  if (status.queued) return t('home.satelliteStatus.queued')
+  if (status.running) return t('core.home.satelliteStatus.running')
+  if (status.queued) return t('core.home.satelliteStatus.queued')
   return ''
 })
 

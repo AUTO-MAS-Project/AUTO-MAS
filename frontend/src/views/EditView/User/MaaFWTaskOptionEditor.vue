@@ -4,7 +4,7 @@
       <a-input
         v-model:value="optionSearchQuery"
         allow-clear
-        :placeholder="t('edit.searchSettings')"
+        :placeholder="t('core.edit.searchSettings')"
         class="option-search"
       />
     </div>
@@ -13,7 +13,9 @@
       v-if="filteredOptions.length === 0"
       class="option-empty"
       :description="
-        optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')
+        optionSearchQuery
+          ? t('core.edit.maafwNoMatchingSettings')
+          : t('core.edit.maafwNoConfigurableOptions')
       "
     />
 
@@ -58,7 +60,7 @@
           :value="getStringValue(option)"
           :disabled="props.disabled"
           class="option-control"
-          :placeholder="t('edit.pleaseChoose')"
+          :placeholder="t('core.edit.pleaseChoose')"
           @change="handleSelectChange(option.name, $event)"
         >
           <a-select-option
@@ -129,7 +131,7 @@
                 :disabled="props.disabled"
                 @click="clearPassword(option.name, inputItem)"
               >
-                {{ t('edit.maafwPasswordClear') }}
+                {{ t('core.edit.maafwPasswordClear') }}
               </a-button>
             </div>
             <!-- 数字与文本字段都先改草稿，失焦 / 回车时校验通过才提交（不是每敲一个字存一次）；
@@ -157,8 +159,8 @@
               v-else-if="isBooleanInput(inputItem)"
               :checked="getBooleanInputValue(option, inputItem)"
               :disabled="props.disabled"
-              :checked-children="t('edit.yes')"
-              :un-checked-children="t('edit.no')"
+              :checked-children="t('core.edit.yes')"
+              :un-checked-children="t('core.edit.no')"
               @change="handleInputBooleanChange(option.name, inputItem, $event)"
             />
             <a-input
@@ -185,7 +187,9 @@
           type="warning"
           show-icon
           :message="
-            t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })
+            t('core.edit.maafwUnsupportedOptionType', {
+              type: option.type || t('core.edit.unknownType'),
+            })
           "
         />
 
@@ -441,13 +445,15 @@ const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
   const problem = checkMaaFWInputValue(inputItem, value)
   if (problem === null) return true
   if (problem === 'wholeNumber') {
-    message.error(t('edit.enterWholeNumber'))
+    message.error(t('core.edit.enterWholeNumber'))
   } else if (problem === 'number') {
-    message.error(t('edit.enterNumber'))
+    message.error(t('core.edit.enterNumber'))
   } else if (problem === 'patternInvalid') {
-    message.error(t('edit.validationPatternInvalidP0', { p0: inputItem.name }))
+    message.error(t('core.edit.validationPatternInvalidP0', { p0: inputItem.name }))
   } else {
-    message.error(inputItem.verifyError || inputItem.patternMsg || t('edit.maafwInputVerifyFailed'))
+    message.error(
+      inputItem.verifyError || inputItem.patternMsg || t('core.edit.maafwInputVerifyFailed')
+    )
   }
   return false
 }
@@ -555,7 +561,7 @@ const dropPasswordDraft = (key: string) => {
 
 const getPasswordPlaceholder = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) =>
   hasStoredSecret(getStoredInputText(option, inputItem.name))
-    ? t('edit.maafwPasswordSaved')
+    ? t('core.edit.maafwPasswordSaved')
     : inputItem.description || inputItem.name
 
 // 只在失焦 / 回车时提交：留空表示不改（已保存的值只有密文，不能拿来回填）；
@@ -614,16 +620,16 @@ const getCheckboxCountHint = (option: MaaFWOptionInfo) => {
   if (!state) return null
   let text: string
   if (state.max === null) {
-    text = t('edit.maafwCheckboxCountMin', { min: state.min })
+    text = t('core.edit.maafwCheckboxCountMin', { min: state.min })
   } else if (state.min === 0) {
-    text = t('edit.maafwCheckboxCountMax', { max: state.max })
+    text = t('core.edit.maafwCheckboxCountMax', { max: state.max })
   } else if (state.min === state.max) {
-    text = t('edit.maafwCheckboxCountExact', { count: state.min })
+    text = t('core.edit.maafwCheckboxCountExact', { count: state.min })
   } else {
-    text = t('edit.maafwCheckboxCountRange', { min: state.min, max: state.max })
+    text = t('core.edit.maafwCheckboxCountRange', { min: state.min, max: state.max })
   }
   if (state.violation) {
-    text += t('edit.maafwCheckboxCountCurrent', { count: state.count })
+    text += t('core.edit.maafwCheckboxCountCurrent', { count: state.count })
   }
   return { text, warning: state.violation !== null }
 }

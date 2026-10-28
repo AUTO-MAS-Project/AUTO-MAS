@@ -8,7 +8,9 @@ export function useMaaEndIssueReport(logger: ReportLogger) {
     fallbackName: 'MaaEnd-logs-*.zip',
     exportFn: async () => {
       const result = await window.electronAPI?.exportMaaEndIssueReport?.()
-      return result?.success ? { ...result, message: t('misc.maaendLogFoldersOpened') } : result
+      return result?.success
+        ? { ...result, message: t('core.misc.maaendLogFoldersOpened') }
+        : result
     },
   })
   return { exporting, exportMaaEndIssueReport: exportIssueReport }

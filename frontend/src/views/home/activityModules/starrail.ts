@@ -37,7 +37,7 @@ export const buildStarRailActivityPresentation = (
     ? [
         {
           id: 'permanent-gameplay',
-          title: t('home.activity.permanentGameplay'),
+          title: t('core.home.activity.permanentGameplay'),
           layout: 'activity',
           completable: true,
           loading: false,
@@ -55,7 +55,7 @@ export const createStarRailActivityModule: ActivityModuleBuilder = context =>
     {
       game: GameCalendarActivityCompletionIn.game.STARRAIL,
       accent: '#62c4e7',
-      source: useSraActivitySource('sr', 'home.game.starrail'),
+      source: useSraActivitySource('sr', 'core.home.game.starrail'),
       buildPresentation: buildStarRailActivityPresentation,
     },
     context
