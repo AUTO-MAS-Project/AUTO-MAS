@@ -4,7 +4,7 @@
     class="flavor-controller-hint"
     type="warning"
     show-icon
-    :message="t('edit.mssFlavorControllerHint')"
+    :message="t('core.edit.mssFlavorControllerHint')"
   />
 </template>
 

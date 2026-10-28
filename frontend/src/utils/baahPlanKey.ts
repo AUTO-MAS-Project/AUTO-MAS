@@ -26,57 +26,57 @@ export interface BAAHKeyField {
 export const BAAH_PLAN_KEY_FIELDS: BAAHKeyField[] = [
   {
     field: 'Wanted',
-    labelKey: 'plan.baah.wanted',
+    labelKey: 'core.plan.baah.wanted',
     defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
-      { hintKey: 'plan.baah.partRegion', min: 1 },
-      { hintKey: 'plan.baah.partLevelHighest', min: -1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
+      { hintKey: 'core.plan.baah.partRegion', min: 1 },
+      { hintKey: 'core.plan.baah.partLevelHighest', min: -1 },
+      { hintKey: 'core.plan.baah.partTimes', min: -1 },
     ],
   },
   {
     field: 'Special',
-    labelKey: 'plan.baah.special',
+    labelKey: 'core.plan.baah.special',
     defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
-      { hintKey: 'plan.baah.partRegion', min: 1 },
-      { hintKey: 'plan.baah.partLevelHighest', min: -1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
+      { hintKey: 'core.plan.baah.partRegion', min: 1 },
+      { hintKey: 'core.plan.baah.partLevelHighest', min: -1 },
+      { hintKey: 'core.plan.baah.partTimes', min: -1 },
     ],
   },
   {
     field: 'Exchange',
-    labelKey: 'plan.baah.exchange',
+    labelKey: 'core.plan.baah.exchange',
     defaultValue: [1, -1, -1],
     maxLength: 4,
     parts: [
-      { hintKey: 'plan.baah.partAcademy', min: 1 },
-      { hintKey: 'plan.baah.partLevelHighest', min: -1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
+      { hintKey: 'core.plan.baah.partAcademy', min: 1 },
+      { hintKey: 'core.plan.baah.partLevelHighest', min: -1 },
+      { hintKey: 'core.plan.baah.partTimes', min: -1 },
     ],
   },
   {
     field: 'Hard',
-    labelKey: 'plan.baah.hard',
+    labelKey: 'core.plan.baah.hard',
     defaultValue: [1, 1, -1],
     maxLength: 4,
     parts: [
-      { hintKey: 'plan.baah.partChapter', min: 1 },
-      { hintKey: 'plan.baah.partLevel', min: 1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
+      { hintKey: 'core.plan.baah.partChapter', min: 1 },
+      { hintKey: 'core.plan.baah.partLevel', min: 1 },
+      { hintKey: 'core.plan.baah.partTimes', min: -1 },
     ],
   },
   {
     field: 'Normal',
-    labelKey: 'plan.baah.normal',
+    labelKey: 'core.plan.baah.normal',
     defaultValue: [1, 1, -1],
     maxLength: 4,
     parts: [
-      { hintKey: 'plan.baah.partChapter', min: 1 },
-      { hintKey: 'plan.baah.partLevel', min: 1 },
-      { hintKey: 'plan.baah.partTimes', min: -1 },
+      { hintKey: 'core.plan.baah.partChapter', min: 1 },
+      { hintKey: 'core.plan.baah.partLevel', min: 1 },
+      { hintKey: 'core.plan.baah.partTimes', min: -1 },
     ],
   },
 ]
@@ -96,10 +96,10 @@ export type BAAHDayFields = Partial<Record<BAAHKeyFieldName, number[]>>
  * -1（倒数第一个可扫荡关卡 / 最大次数）不在这里，由各位自己的 min 决定要不要列。
  */
 export const partOptionMax = (hintKey: string, field?: BAAHKeyFieldName): number => {
-  if (hintKey === 'plan.baah.partTimes') return 10
-  if (hintKey === 'plan.baah.partRegion') return field === 'Special' ? 2 : 3
-  if (hintKey === 'plan.baah.partAcademy') return 3
-  if (hintKey === 'plan.baah.partChapter') return 30
+  if (hintKey === 'core.plan.baah.partTimes') return 10
+  if (hintKey === 'core.plan.baah.partRegion') return field === 'Special' ? 2 : 3
+  if (hintKey === 'core.plan.baah.partAcademy') return 3
+  if (hintKey === 'core.plan.baah.partChapter') return 30
   return 15
 }
 

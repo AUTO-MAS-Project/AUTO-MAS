@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import httpx
 from PIL import Image, ImageOps
 
+from app.services.config_center_errors import ConfigCenterError as ConfigCenterError
 from app.utils import LazyProxy, get_logger
 
 logger = get_logger("配置中心")
@@ -102,22 +103,6 @@ MY_FILES_PAGE_SIZE = 100
 MY_FILES_MAX_PAGES = 50
 
 
-class ConfigCenterError(RuntimeError):
-    """配置中心交互失败，message 可直接展示给用户。
-
-    status_code 沿用配置中心的 HTTP 状态；本地校验失败为 400，网络失败为 503，
-    其余未细分的失败为 500。reason 是配置中心拒绝的类别（pendingLimit / conflict / tooLarge），
-    供前端按类别给出本地化提示，其余情况为空。
-    """
-
-    def __init__(
-        self, message: str, *, status_code: int = 500, reason: Optional[str] = None
-    ) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-        self.reason = reason
-
-
 class ConfigCenterClient:
     """新版 AUTO-MAS 配置中心的客户端，兼管桌面端授权状态。
 
@@ -183,18 +168,18 @@ class ConfigCenterClient:
 
     async def download_template(
         self, config_key: str, version_no: Optional[int]
-    ) -> Dict[str, Any]:
-        """下载指定配置的已发布版本并解析为通用脚本配置字典。
+    ) -> Any:
+        """下载指定模板的已发布版本并解析 JSON，业务校验由调用方负责。
 
         Args:
             config_key: 配置中心的配置标识。
             version_no: 版本号, 为空表示已发布的最新版本。
 
         Returns:
-            解析后的配置字典。
+            解析后的 JSON 内容。
 
         Raises:
-            ConfigCenterError: 下载失败、体积超限或内容不是通用脚本配置。
+            ConfigCenterError: 下载失败、体积超限或内容不是有效的 JSON。
         """
 
         params = {"version_no": version_no} if version_no else None
@@ -228,15 +213,6 @@ class ConfigCenterClient:
             data = json.loads(b"".join(chunks).decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
             raise ConfigCenterError("配置文件不是有效的 JSON, 无法导入") from e
-
-        if not isinstance(data, dict) or not isinstance(data.get("Script"), dict):
-            raise ConfigCenterError("配置文件不是通用脚本配置, 无法导入")
-
-        # 分享站上的文件可能是从网页端手工上传的，里面还带着用户数据，导入时一律丢掉
-        data.pop("SubConfigsInfo", None)
-        data.pop("UserData", None)
-        data.pop("Notify_CustomWebhooks", None)
-        data.pop("ui", None)
 
         return data
 

@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('edit.mfwHotkey')"
+    :title="t('core.edit.mfwHotkey')"
     :width="560"
     :keyboard="!recording"
     :mask-closable="!recording"
@@ -44,9 +44,9 @@
                 }}</span>
               </span>
               <span v-if="isChanged(option.name, field)" class="hotkey-hint">
-                {{ t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
+                {{ t('core.edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
                 <a class="hotkey-link" @click="resetField(option.name, field)">
-                  {{ t('edit.mfwHotkeyRestore') }}
+                  {{ t('core.edit.mfwHotkeyRestore') }}
                 </a>
               </span>
               <MaaFWHotkeyInput
@@ -69,20 +69,20 @@
       <div class="hotkey-footer">
         <div class="hotkey-footer-left">
           <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
-            {{ t('edit.mfwHotkeyRestoreAll') }}
+            {{ t('core.edit.mfwHotkeyRestoreAll') }}
           </a-button>
           <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
                来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
           <a-dropdown :trigger="['click']">
             <a-button type="link" class="hotkey-reset-all">
-              {{ t('edit.mfwHotkeyImport') }}
+              {{ t('core.edit.mfwHotkeyImport') }}
               <DownOutlined />
             </a-button>
             <template #overlay>
               <a-menu>
                 <a-menu-item-group
                   v-if="shownCandidates.length > 0"
-                  :title="t('edit.mfwHotkeyImportFrom', { dir: shownDir })"
+                  :title="t('core.edit.mfwHotkeyImportFrom', { dir: shownDir })"
                 >
                   <a-menu-item
                     v-for="candidate in shownCandidates"
@@ -91,23 +91,23 @@
                   >
                     {{ candidate.source }} · {{ candidate.name }}
                     <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
-                      {{ t('edit.mfwHotkeyImportLastUsed') }}
+                      {{ t('core.edit.mfwHotkeyImportLastUsed') }}
                     </a-tag>
                   </a-menu-item>
                 </a-menu-item-group>
                 <a-menu-divider v-if="shownCandidates.length > 0" />
                 <a-menu-item key="__pick-dir" @click="pickImportDirectory">
                   <FolderOpenOutlined />
-                  {{ t('edit.mfwHotkeyImportPickDir') }}
+                  {{ t('core.edit.mfwHotkeyImportPickDir') }}
                 </a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
         </div>
         <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
+          <a-button @click="emit('update:open', false)">{{ t('core.common.cancel') }}</a-button>
           <a-button type="primary" :disabled="invalidCount > 0" @click="handleSave">
-            {{ t('edit.mfwHotkeySave') }}
+            {{ t('core.edit.mfwHotkeySave') }}
           </a-button>
         </a-space>
       </div>
@@ -203,8 +203,8 @@ const displayCombo = (value: string | null | undefined) =>
 
 const gateText = (gate: MaaFWHotkeyGate) =>
   gate.switchOn
-    ? t('edit.mfwHotkeyNeedsSwitch', { option: gate.option })
-    : t('edit.mfwHotkeyNeedsCase', { option: gate.option, case: gate.caseLabel })
+    ? t('core.edit.mfwHotkeyNeedsSwitch', { option: gate.option })
+    : t('core.edit.mfwHotkeyNeedsCase', { option: gate.option, case: gate.caseLabel })
 
 const isChanged = (optionName: string, field: HotkeyField) =>
   !sameHotkey(draft[optionName]?.[field.name] ?? '', field.default ?? '')
@@ -255,18 +255,18 @@ const handleRecording = (optionName: string, fieldName: string, value: boolean) 
 const comboSummary = computed(() => hotkeyComboSummary(props.options))
 const comboNote = computed(() => {
   const summary = comboSummary.value
-  if (summary.kind === 'none') return t('edit.mfwHotkeyNoCombo')
+  if (summary.kind === 'none') return t('core.edit.mfwHotkeyNoCombo')
   if (summary.kind === 'all') {
-    return t('edit.mfwHotkeyAllCombo', {
+    return t('core.edit.mfwHotkeyAllCombo', {
       n: summary.count,
       example: MODIFIER_EXAMPLES[summary.count] ?? MODIFIER_EXAMPLES[2],
     })
   }
-  return t('edit.mfwHotkeySomeCombo')
+  return t('core.edit.mfwHotkeySomeCombo')
 })
 const rowComboTag = (field: HotkeyField) =>
   comboSummary.value.kind === 'mixed' && (field.modifierCount ?? 0) > 0
-    ? t('edit.mfwHotkeyComboTag', { n: field.modifierCount })
+    ? t('core.edit.mfwHotkeyComboTag', { n: field.modifierCount })
     : ''
 
 const handleRecord = (
@@ -284,8 +284,8 @@ const handleRecord = (
   // 录不出键（不支持的键、超过两个修饰键）：值不变，框变红 + 行下提示
   errors[key] =
     result.kind === 'too-many-modifiers'
-      ? t('edit.mfwHotkeyTooManyModifiers')
-      : t('edit.mfwHotkeyUnsupported')
+      ? t('core.edit.mfwHotkeyTooManyModifiers')
+      : t('core.edit.mfwHotkeyUnsupported')
 }
 
 // 「选择其他目录」读到的候选：这次弹窗里有效，关掉再开回到默认目录
@@ -312,13 +312,13 @@ const pickImportDirectory = async () => {
   const { dir } = picked
   const candidates = collectHotkeyImportCandidates(picked.instances, props.options)
   if (candidates.length === 0) {
-    message.warning(t('edit.mfwHotkeyImportNoConfig'))
+    message.warning(t('core.edit.mfwHotkeyImportNoConfig'))
     return
   }
   pickedImport.value = { dir, candidates }
   // 只有一份就直接填；几份不同的留在「从项目导入」下拉里让用户挑
   if (candidates.length === 1) applyImport(candidates[0])
-  else message.info(t('edit.mfwHotkeyImportPickOne', { n: candidates.length }))
+  else message.info(t('core.edit.mfwHotkeyImportPickOne', { n: candidates.length }))
 }
 
 // 从项目导入：只填草稿，点「保存」才写；与默认相同 / 不同 / 修饰键个数不符照常显示
@@ -330,8 +330,8 @@ const applyImport = (candidate: MaaFWHotkeyImportCandidate) => {
       delete errors[fieldKey(optionName, fieldName)]
     }
   }
-  const text = t('edit.mfwHotkeyImported', { n: applied })
-  if (skipped > 0) message.warning(text + t('edit.mfwHotkeyImportSkipped', { m: skipped }))
+  const text = t('core.edit.mfwHotkeyImported', { n: applied })
+  if (skipped > 0) message.warning(text + t('core.edit.mfwHotkeyImportSkipped', { m: skipped }))
   else message.success(text)
 }
 

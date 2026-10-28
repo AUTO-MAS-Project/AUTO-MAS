@@ -23,7 +23,7 @@ export const resourceActivitySection = ({
     ? [
         {
           id: 'resources',
-          title: t('home.arknights.resourceToday'),
+          title: t('core.home.arknights.resourceToday'),
           layout: 'resource',
           loading: false,
           available: true,
@@ -49,10 +49,10 @@ export const buildArknightsActivityPresentation = (
   const { overview, now, t } = context
   const presentation = buildSraActivityPresentation(context)
   presentation.activities.source = {
-    label: t('home.arknights.source'),
+    label: t('core.home.arknights.source'),
     url: 'https://prts.wiki/w/%E6%B4%BB%E5%8A%A8%E4%B8%80%E8%A7%88',
   }
-  presentation.activities.emptyText = t('home.arknights.noActivity')
+  presentation.activities.emptyText = t('core.home.arknights.noActivity')
   // 生息演算、集成战略等长期玩法排在当期活动后，仍展示尚未开始的活动。
   presentation.activities.items = overview.activities
     .filter(item => activityTimestamp(item.endTime) > now)

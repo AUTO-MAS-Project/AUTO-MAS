@@ -188,7 +188,7 @@ export function useUpdateChecker() {
           // 播放无新版本音频
           if (!silent) {
             await playSound('no_new_version')
-            message.success(t('misc.noUpdates'))
+            message.success(t('core.misc.noUpdates'))
           }
         }
       } else {
@@ -200,7 +200,7 @@ export function useUpdateChecker() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
-        message.error(t('misc.couldNotCheckUpdates'))
+        message.error(t('core.misc.couldNotCheckUpdates'))
       }
     }
   }

@@ -98,7 +98,7 @@ export function useDesktopMascotTaskActions(
     action,
     taskId,
   }: DesktopMascotTaskAction): Promise<DesktopMascotMenuResult> => {
-    const unavailable = { success: false, message: t('setting.basic.mascotTasksUnavailable') }
+    const unavailable = { success: false, message: t('core.setting.basic.mascotTasksUnavailable') }
     if (!canOperate() || pending.value) return unavailable
     const selected = startItems.find(item => item.taskId === taskId)
     if (
@@ -111,7 +111,7 @@ export function useDesktopMascotTaskActions(
     // 中止已有运行实例的进度和结果共用 key；开始请求尚未取得运行实例 ID。
     const noticeKey = action === 'stop' ? taskId : undefined
     showNotice(
-      t(`setting.basic.${action === 'start' ? 'mascotStartingTask' : 'mascotStoppingTask'}`),
+      t(`core.setting.basic.${action === 'start' ? 'mascotStartingTask' : 'mascotStoppingTask'}`),
       noticeKey
     )
     try {
@@ -132,7 +132,7 @@ export function useDesktopMascotTaskActions(
       if (disposed) return unavailable
       const text =
         (error instanceof Error ? error.message : String(error)) ||
-        t(`scheduler.toast.${action === 'start' ? 'startTaskFailed' : 'stopTaskFailed'}`)
+        t(`core.scheduler.toast.${action === 'start' ? 'startTaskFailed' : 'stopTaskFailed'}`)
       showError(text)
       // 请求被拒绝不代表任务失败；终态反应只由共享任务事件触发。
       showNotice(text, noticeKey)

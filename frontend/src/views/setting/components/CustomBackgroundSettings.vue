@@ -38,7 +38,7 @@ const {
   readValue: () => customSurfaceOpacity.value,
   previewValue: previewCustomSurfaceOpacity,
   saveValue: setCustomSurfaceOpacity,
-  onSaveError: () => message.error(t('setting.basic.customSurfaceOpacitySaveFailed')),
+  onSaveError: () => message.error(t('core.setting.basic.customSurfaceOpacitySaveFailed')),
 })
 
 const customBackgroundFileName = computed(() => {
@@ -51,7 +51,7 @@ const handleImport = async (): Promise<void> => {
   try {
     const paths = await window.electronAPI.selectFile([
       {
-        name: t('setting.basic.customBackgroundFileTypeName'),
+        name: t('core.setting.basic.customBackgroundFileTypeName'),
         extensions: ['bmp', 'gif', 'jpg', 'jpeg', 'png', 'webp'],
       },
     ])
@@ -59,7 +59,7 @@ const handleImport = async (): Promise<void> => {
 
     const filePath = paths[0]
     if (!hasCustomBackgroundExtension(filePath)) {
-      message.error(t('setting.basic.customBackgroundUnsupported'))
+      message.error(t('core.setting.basic.customBackgroundUnsupported'))
       return
     }
 
@@ -69,21 +69,21 @@ const handleImport = async (): Promise<void> => {
       CUSTOM_BACKGROUND_MAX_BYTES
     )
     if (size > CUSTOM_BACKGROUND_MAX_BYTES) {
-      message.error(t('setting.basic.customBackgroundTooLarge'))
+      message.error(t('core.setting.basic.customBackgroundTooLarge'))
       return
     }
     if (!base64) {
-      message.error(t('setting.basic.customBackgroundReadFailed'))
+      message.error(t('core.setting.basic.customBackgroundReadFailed'))
       return
     }
 
     await setCustomBackground(filePath, base64)
-    message.success(t('setting.basic.customBackgroundImported'))
+    message.success(t('core.setting.basic.customBackgroundImported'))
   } catch (error) {
     message.error(
       error instanceof Error && error.message === '自定义背景尺寸过大或图片无效'
-        ? t('setting.basic.customBackgroundDimensionsUnsupported')
-        : t('setting.basic.customBackgroundImportFailed')
+        ? t('core.setting.basic.customBackgroundDimensionsUnsupported')
+        : t('core.setting.basic.customBackgroundImportFailed')
     )
   } finally {
     importing.value = false
@@ -94,9 +94,9 @@ const handleClear = async (): Promise<void> => {
   clearing.value = true
   try {
     await clearCustomBackground()
-    message.success(t('setting.basic.customBackgroundRemoved'))
+    message.success(t('core.setting.basic.customBackgroundRemoved'))
   } catch {
-    message.error(t('setting.basic.customBackgroundRemoveFailed'))
+    message.error(t('core.setting.basic.customBackgroundRemoveFailed'))
   } finally {
     clearing.value = false
   }
@@ -115,39 +115,39 @@ const handleRetry = async (): Promise<void> => {
 <template>
   <div class="form-section custom-background-settings">
     <div class="section-header">
-      <h3>{{ t('setting.basic.customBackgroundSection') }}</h3>
+      <h3>{{ t('core.setting.basic.customBackgroundSection') }}</h3>
     </div>
     <a-alert
       v-if="hasAppearanceBackground"
       class="package-background-alert"
       type="info"
-      :message="t('setting.basic.customBackgroundPackageActive')"
+      :message="t('core.setting.basic.customBackgroundPackageActive')"
       show-icon
     />
     <a-row :gutter="24">
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.customBackground') }}</span>
-            <a-tooltip :title="t('setting.basic.customBackgroundTip')">
+            <span class="form-label">{{ t('core.setting.basic.customBackground') }}</span>
+            <a-tooltip :title="t('core.setting.basic.customBackgroundTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
           <div class="background-controls">
             <a-button :loading="importing" :disabled="importing || clearing" @click="handleImport">
               <template #icon><UploadOutlined /></template>
-              {{ t('setting.basic.customBackgroundSelect') }}
+              {{ t('core.setting.basic.customBackgroundSelect') }}
             </a-button>
             <a-button
               v-if="customBackgroundPath"
               danger
               :loading="clearing"
               :disabled="importing || clearing"
-              :aria-label="t('setting.basic.customBackgroundClear')"
+              :aria-label="t('core.setting.basic.customBackgroundClear')"
               @click="handleClear"
             >
               <template #icon><DeleteOutlined /></template>
-              {{ t('setting.basic.customBackgroundClear') }}
+              {{ t('core.setting.basic.customBackgroundClear') }}
             </a-button>
           </div>
           <div class="background-state">
@@ -155,12 +155,12 @@ const handleRetry = async (): Promise<void> => {
             <span v-if="customBackgroundPath" :title="customBackgroundPath">
               {{ customBackgroundFileName }}
             </span>
-            <span v-else>{{ t('setting.basic.customBackgroundEmpty') }}</span>
+            <span v-else>{{ t('core.setting.basic.customBackgroundEmpty') }}</span>
           </div>
           <div v-if="customBackgroundLoadFailed" class="background-load-error">
-            <span>{{ t('setting.basic.customBackgroundLoadFailed') }}</span>
+            <span>{{ t('core.setting.basic.customBackgroundLoadFailed') }}</span>
             <a-button size="small" :loading="retrying" @click="handleRetry">
-              {{ t('setting.basic.customBackgroundRetry') }}
+              {{ t('core.setting.basic.customBackgroundRetry') }}
             </a-button>
           </div>
         </div>
@@ -168,8 +168,8 @@ const handleRetry = async (): Promise<void> => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.basic.customSurfaceOpacity') }}</span>
-            <a-tooltip :title="t('setting.basic.customSurfaceOpacityTip')">
+            <span class="form-label">{{ t('core.setting.basic.customSurfaceOpacity') }}</span>
+            <a-tooltip :title="t('core.setting.basic.customSurfaceOpacityTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -181,7 +181,7 @@ const handleRetry = async (): Promise<void> => {
               :max="1"
               :step="0.05"
               :disabled="!customBackgroundUrl || hasAppearanceBackground"
-              :aria-label="t('setting.basic.customSurfaceOpacity')"
+              :aria-label="t('core.setting.basic.customSurfaceOpacity')"
               @change="handleOpacityChange"
               @afterChange="handleOpacityAfterChange"
             />

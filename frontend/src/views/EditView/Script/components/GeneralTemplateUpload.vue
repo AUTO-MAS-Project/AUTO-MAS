@@ -34,8 +34,10 @@ const shareRisks = ref<ShareRiskItem[]>([])
 const riskAcknowledged = ref(false)
 const uploadForm = reactive({ config_name: '', description: '' })
 const uploadRules = {
-  config_name: [{ required: true, message: t('edit.enterConfigurationName'), trigger: 'blur' }],
-  description: [{ required: true, message: t('edit.enterDescription'), trigger: 'blur' }],
+  config_name: [
+    { required: true, message: t('core.edit.enterConfigurationName'), trigger: 'blur' },
+  ],
+  description: [{ required: true, message: t('core.edit.enterDescription'), trigger: 'blur' }],
 }
 let alive = true
 let dialogOpen = false
@@ -67,7 +69,9 @@ const startSharePolling = (interval: number, dialog: number, authorization: numb
       if (status.status === 'pending')
         startSharePolling(status.interval || interval, dialog, authorization)
       else if (status.status === 'authorized')
-        message.success(t('edit.share.authorized', { name: status.displayName || status.username }))
+        message.success(
+          t('core.edit.share.authorized', { name: status.displayName || status.username })
+        )
     },
     Math.max(interval, 1) * 1000
   )
@@ -144,7 +148,7 @@ const handleStartShareAuth = async () => {
     const status = await startShareAuth()
     if (!current()) return
     if (!status) {
-      message.error(shareError.value ?? t('edit.share.startFailed'))
+      message.error(shareError.value ?? t('core.edit.share.startFailed'))
       return
     }
     shareAuth.value = status
@@ -190,16 +194,16 @@ const handleUpload = async () => {
     }
     if (!current()) return
     if (shareAuth.value.status !== 'authorized') {
-      message.warning(t('edit.share.loginRequired'))
+      message.warning(t('core.edit.share.loginRequired'))
       return
     }
     if (!(await refreshShareRisks(snapshot.configName, dialog))) {
-      if (current()) message.error(shareError.value ?? t('edit.uploadFailedCheckYour'))
+      if (current()) message.error(shareError.value ?? t('core.edit.uploadFailedCheckYour'))
       return
     }
     if (!current()) return
     if (shareRisks.value.length > 0 && !riskAcknowledged.value) {
-      message.warning(t('edit.share.riskConfirm'))
+      message.warning(t('core.edit.share.riskConfirm'))
       return
     }
     const uploaded = await uploadShare({
@@ -209,7 +213,7 @@ const handleUpload = async () => {
     })
     if (!currentDialog(dialog)) return
     if (!uploaded) {
-      const errorMsg = shareError.value ?? t('edit.uploadFailedCheckYour')
+      const errorMsg = shareError.value ?? t('core.edit.uploadFailedCheckYour')
       logger.error(`上传失败: ${errorMsg}`)
       message.error(errorMsg)
       const authorization = authVersion
@@ -217,7 +221,7 @@ const handleUpload = async () => {
       if (currentDialog(dialog) && authorization === authVersion && status) shareAuth.value = status
       return
     }
-    message.success(t('edit.configurationUploadedItWill'))
+    message.success(t('core.edit.configurationUploadedItWill'))
     if (current()) {
       dialogOpen = false
       uploadModalVisible.value = false
@@ -242,12 +246,12 @@ onUnmounted(() => {
     <template #icon>
       <CloudUploadOutlined />
     </template>
-    {{ t('edit.shareThisConfigurationConfig') }}
+    {{ t('core.edit.shareThisConfigurationConfig') }}
   </a-button>
   <!-- 上传脚本弹窗 -->
   <a-modal
     v-model:open="uploadModalVisible"
-    :title="t('edit.uploadThisScriptConfiguration')"
+    :title="t('core.edit.uploadThisScriptConfiguration')"
     :confirm-loading="uploadLoading || dialogLoading || shareAuthLoading"
     width="600px"
     :mask-closable="false"
@@ -261,10 +265,10 @@ onUnmounted(() => {
       layout="vertical"
       class="upload-form"
     >
-      <a-form-item name="config_name" :label="t('edit.configurationName')">
+      <a-form-item name="config_name" :label="t('core.edit.configurationName')">
         <a-input
           v-model:value="uploadForm.config_name"
-          :placeholder="t('edit.giveYourScriptConfiguration')"
+          :placeholder="t('core.edit.giveYourScriptConfiguration')"
           size="large"
           :maxlength="50"
           show-count
@@ -272,10 +276,10 @@ onUnmounted(() => {
         />
       </a-form-item>
 
-      <a-form-item name="description" :label="t('edit.description')">
+      <a-form-item name="description" :label="t('core.edit.description')">
         <a-textarea
           v-model:value="uploadForm.description"
-          :placeholder="t('edit.brieflyDescribeWhatThis')"
+          :placeholder="t('core.edit.brieflyDescribeWhatThis')"
           size="large"
           :rows="4"
           :maxlength="200"
@@ -289,13 +293,15 @@ onUnmounted(() => {
         type="success"
         show-icon
         class="share-auth-alert"
-        :message="t('edit.share.signedInAs', { name: shareAuth.displayName || shareAuth.username })"
+        :message="
+          t('core.edit.share.signedInAs', { name: shareAuth.displayName || shareAuth.username })
+        "
       >
         <template #description>
           <div class="share-auth-idle">
-            <p>{{ t('edit.share.signedInDesc') }}</p>
+            <p>{{ t('core.edit.share.signedInDesc') }}</p>
             <a-button size="small" :loading="shareAuthLoading" @click="handleStartShareAuth">{{
-              t('edit.share.switchAccount')
+              t('core.edit.share.switchAccount')
             }}</a-button>
           </div>
         </template>
@@ -305,29 +311,29 @@ onUnmounted(() => {
         type="warning"
         show-icon
         class="share-auth-alert"
-        :message="t('edit.share.loginRequired')"
+        :message="t('core.edit.share.loginRequired')"
       >
         <template #description>
           <div v-if="shareAuth.status === 'pending'" class="share-auth-pending">
-            <p>{{ t('edit.share.pendingDesc') }}</p>
+            <p>{{ t('core.edit.share.pendingDesc') }}</p>
             <p class="share-user-code">{{ shareAuth.userCode }}</p>
             <a-space>
               <a-button size="small" @click="openShareVerificationPage">{{
-                t('edit.share.reopenBrowser')
+                t('core.edit.share.reopenBrowser')
               }}</a-button>
               <a-button size="small" @click="handleCancelShareAuth">{{
-                t('edit.share.cancelAuth')
+                t('core.edit.share.cancelAuth')
               }}</a-button>
             </a-space>
           </div>
           <div v-else class="share-auth-idle">
-            <p>{{ shareAuth.message || t('edit.share.loginRequiredDesc') }}</p>
+            <p>{{ shareAuth.message || t('core.edit.share.loginRequiredDesc') }}</p>
             <a-button
               type="primary"
               size="small"
               :loading="shareAuthLoading"
               @click="handleStartShareAuth"
-              >{{ t('edit.share.startLogin') }}</a-button
+              >{{ t('core.edit.share.startLogin') }}</a-button
             >
           </div>
         </template>
@@ -338,7 +344,7 @@ onUnmounted(() => {
         type="warning"
         show-icon
         class="share-risk-alert"
-        :message="t('edit.share.riskTitle')"
+        :message="t('core.edit.share.riskTitle')"
       >
         <template #description>
           <ul class="share-risk-list">
@@ -347,14 +353,14 @@ onUnmounted(() => {
             </li>
           </ul>
           <a-checkbox v-model:checked="riskAcknowledged">{{
-            t('edit.share.riskConfirm')
+            t('core.edit.share.riskConfirm')
           }}</a-checkbox>
         </template>
       </a-alert>
 
-      <a-alert :message="t('edit.aboutSharing')" type="info">
+      <a-alert :message="t('core.edit.aboutSharing')" type="info">
         <template #description>
-          <p>{{ t('edit.share.privacyNotice') }}</p>
+          <p>{{ t('core.edit.share.privacyNotice') }}</p>
         </template>
       </a-alert>
     </a-form>

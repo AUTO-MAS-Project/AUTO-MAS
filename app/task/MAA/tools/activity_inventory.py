@@ -33,7 +33,7 @@ def resolve_activity_inventory_plans(
         return [], (
             [
                 (
-                    "eventDepotPreview.expiredHint",
+                    "core.eventDepotPreview.expiredHint",
                     "当前没有可用活动关卡，已保留保存的选关与目标",
                 )
             ]
@@ -73,7 +73,7 @@ def resolve_activity_inventory_plans(
         ):
             notices.append(
                 (
-                    "eventDepotPreview.runtimeUnresolved",
+                    "core.eventDepotPreview.runtimeUnresolved",
                     f"活动关 {stage['Value']} 的材料或目标不可用，本轮跳过并保留配置",
                 )
             )
@@ -120,7 +120,7 @@ def resolve_activity_inventory_plans(
         ):
             notices.append(
                 (
-                    "eventDepotPreview.runtimeUnresolved",
+                    "core.eventDepotPreview.runtimeUnresolved",
                     f"第 {position + 1} 个活动选择暂时不可用，已保留原选择",
                 )
             )
@@ -129,7 +129,7 @@ def resolve_activity_inventory_plans(
             if row.get("LegacyIndex") or row.get("LegacyActivityFirst"):
                 notices.append(
                     (
-                        "eventDepotPreview.legacyFallback",
+                        "core.eventDepotPreview.legacyFallback",
                         f"第 {position + 1} 个旧活动序号暂时越界，本轮沿用旧版第一关回退",
                     )
                 )
@@ -137,7 +137,7 @@ def resolve_activity_inventory_plans(
             else:
                 notices.append(
                     (
-                        "eventDepotPreview.runtimeUnresolved",
+                        "core.eventDepotPreview.runtimeUnresolved",
                         f"第 {position + 1} 个活动序号暂时越界，已保留原选择",
                     )
                 )

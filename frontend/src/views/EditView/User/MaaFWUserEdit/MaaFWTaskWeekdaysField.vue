@@ -1,7 +1,7 @@
 <template>
   <!-- 样子照 MaaFWTaskOptionEditor 里的 checkbox 类型选项，看起来是项目选项的第一行 -->
   <div class="option-item task-weekdays-field">
-    <div class="option-label">{{ t('edit.queueTaskWeekdays') }}</div>
+    <div class="option-label">{{ t('core.edit.queueTaskWeekdays') }}</div>
     <div class="weekday-row">
       <!-- 全选放在组外：放进 a-checkbox-group 里会被组的取值接管 -->
       <a-checkbox
@@ -10,7 +10,7 @@
         :disabled="disabled"
         @change="handleToggleAll"
       >
-        {{ t('edit.shellImportSelectAll') }}
+        {{ t('core.edit.shellImportSelectAll') }}
       </a-checkbox>
       <a-checkbox-group
         :value="weekdays"
@@ -50,13 +50,13 @@ const { t } = useI18n()
 
 // 星期叫法复用队列「执行周期」的词条，顺序是周一到周日
 const WEEKDAY_KEYS = [
-  'queue.time.Monday',
-  'queue.time.Tuesday',
-  'queue.time.Wednesday',
-  'queue.time.Thursday',
-  'queue.time.Friday',
-  'queue.time.Saturday',
-  'queue.time.Sunday',
+  'core.queue.time.Monday',
+  'core.queue.time.Tuesday',
+  'core.queue.time.Wednesday',
+  'core.queue.time.Thursday',
+  'core.queue.time.Friday',
+  'core.queue.time.Saturday',
+  'core.queue.time.Sunday',
 ] as const
 
 const weekdayOptions = computed(() =>

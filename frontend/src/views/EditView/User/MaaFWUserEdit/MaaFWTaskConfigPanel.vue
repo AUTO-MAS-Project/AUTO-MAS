@@ -44,14 +44,14 @@
     />
     <div v-if="selectedTask.description" class="selected-task-description">
       <div class="selected-task-description-label">
-        {{ t('edit.taskDescriptionLabel') }}
+        {{ t('core.edit.taskDescriptionLabel') }}
       </div>
       <MaaFWDescriptionView :content="selectedTask.description" :base-path="previewData.path" />
     </div>
     <a-popconfirm
-      :title="t('edit.deleteThisTask2')"
-      :ok-text="t('edit.ok')"
-      :cancel-text="t('edit.cancel')"
+      :title="t('core.edit.deleteThisTask2')"
+      :ok-text="t('core.edit.ok')"
+      :cancel-text="t('core.edit.cancel')"
       :disabled="disabled"
       @confirm="emit('deleteSelectedTask')"
     >
@@ -59,7 +59,7 @@
         <template #icon>
           <DeleteOutlined />
         </template>
-        {{ t('edit.deleteThisTask') }}
+        {{ t('core.edit.deleteThisTask') }}
       </a-button>
     </a-popconfirm>
   </div>
@@ -72,20 +72,20 @@
             #{{ selectedTaskTitle.index }}
           </span>
         </div>
-        <div class="selected-task-meta">{{ t('edit.missingTaskHint') }}</div>
+        <div class="selected-task-meta">{{ t('core.edit.missingTaskHint') }}</div>
       </div>
     </div>
     <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
-      <div class="missing-task-settings-title">{{ t('edit.missingTaskSettings') }}</div>
+      <div class="missing-task-settings-title">{{ t('core.edit.missingTaskSettings') }}</div>
       <div v-for="row in missingTaskSettings" :key="row.key" class="missing-task-setting">
         <span class="missing-task-setting-label">{{ row.label }}</span>
         <span class="missing-task-setting-value">{{ row.value }}</span>
       </div>
     </div>
     <a-popconfirm
-      :title="t('edit.deleteThisTask2')"
-      :ok-text="t('edit.ok')"
-      :cancel-text="t('edit.cancel')"
+      :title="t('core.edit.deleteThisTask2')"
+      :ok-text="t('core.edit.ok')"
+      :cancel-text="t('core.edit.cancel')"
       :disabled="disabled"
       @confirm="emit('deleteSelectedTask')"
     >
@@ -93,12 +93,12 @@
         <template #icon>
           <DeleteOutlined />
         </template>
-        {{ t('edit.deleteThisTask') }}
+        {{ t('core.edit.deleteThisTask') }}
       </a-button>
     </a-popconfirm>
   </div>
   <div v-else class="task-option-empty">
-    <a-empty :description="t('edit.pickTaskLeftConfigure')" />
+    <a-empty :description="t('core.edit.pickTaskLeftConfigure')" />
   </div>
 </template>
 

@@ -16,10 +16,10 @@ const TAG_COLORS: Record<HistoryStatusClass, string> = {
 }
 
 const LABEL_KEYS: Record<HistoryStatusClass, string> = {
-  success: 'history.done',
-  skip: 'history.skipped',
-  cancelled: 'history.cancelled',
-  error: 'history.failed',
+  success: 'core.history.done',
+  skip: 'core.history.skipped',
+  cancelled: 'core.history.cancelled',
+  error: 'core.history.failed',
 }
 
 export const statusTagColor = (status: string) => TAG_COLORS[statusClass(status)]

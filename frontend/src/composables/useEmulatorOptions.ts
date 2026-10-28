@@ -18,7 +18,7 @@ const emulatorOptionsQuery = queryOptions({
       Service.getEmulatorComboxApiInfoComboxEmulatorPost()
     )
     if (response.code !== 200) {
-      throw new Error(response.message || t('edit.couldNotLoadEmulator'))
+      throw new Error(response.message || t('core.edit.couldNotLoadEmulator'))
     }
     return response.data ?? []
   },
@@ -31,7 +31,7 @@ const emulatorTypesQuery = queryOptions({
   queryFn: async ({ signal }) => {
     const response = await queryRequest(signal, () => Service.getEmulatorApiEmulatorGetPost({}))
     if (response.code !== 200) {
-      throw new Error(response.message || t('edit.couldNotLoadEmulator'))
+      throw new Error(response.message || t('core.edit.couldNotLoadEmulator'))
     }
     const types: Record<string, EmulatorType> = {}
     for (const [id, config] of Object.entries(response.data)) {

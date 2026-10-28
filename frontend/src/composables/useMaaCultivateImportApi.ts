@@ -3,15 +3,15 @@ import { type MaaCultivateImportOut } from '@/api'
 import { useI18n } from 'vue-i18n'
 
 const ERROR_KEYS: Record<string, string> = {
-  format: 'edit.maaCultivateImportFormatError',
-  empty: 'edit.maaCultivateImportEmpty',
-  operator: 'edit.maaCultivateImportOperatorError',
-  ambiguous: 'edit.maaCultivateImportAmbiguous',
-  elite: 'edit.maaCultivateImportEliteError',
-  skill: 'edit.maaCultivateImportSkillError',
-  mastery: 'edit.maaCultivateImportMasteryError',
-  unsupported: 'edit.maaCultivateImportUnsupported',
-  catalog: 'edit.maaCultivateImportCatalogError',
+  format: 'core.edit.maaCultivateImportFormatError',
+  empty: 'core.edit.maaCultivateImportEmpty',
+  operator: 'core.edit.maaCultivateImportOperatorError',
+  ambiguous: 'core.edit.maaCultivateImportAmbiguous',
+  elite: 'core.edit.maaCultivateImportEliteError',
+  skill: 'core.edit.maaCultivateImportSkillError',
+  mastery: 'core.edit.maaCultivateImportMasteryError',
+  unsupported: 'core.edit.maaCultivateImportUnsupported',
+  catalog: 'core.edit.maaCultivateImportCatalogError',
 }
 
 /** 剪贴板只传公开目标文本，转换接口不写配置；保存由编辑页的队列负责。 */
@@ -19,11 +19,11 @@ export function useMaaCultivateImportApi() {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MAA养成导入')
   const formatImportError = (error: Pick<MaaCultivateImportOut, 'error' | 'index' | 'name'>) => {
-    const reason = t(ERROR_KEYS[error.error ?? ''] ?? 'edit.maaCultivateImportFailed')
+    const reason = t(ERROR_KEYS[error.error ?? ''] ?? 'core.edit.maaCultivateImportFailed')
     return error.index
-      ? t('edit.maaCultivateImportRowError', {
+      ? t('core.edit.maaCultivateImportRowError', {
           index: error.index,
-          name: error.name || t('edit.maaCultivateImportUnnamed'),
+          name: error.name || t('core.edit.maaCultivateImportUnnamed'),
           reason,
         })
       : reason
@@ -40,7 +40,7 @@ export function useMaaCultivateImportApi() {
       })
     } catch (error) {
       logger.error(`养成导入请求失败: ${error instanceof Error ? error.message : String(error)}`)
-      throw new Error(t('edit.maaCultivateImportFailed'))
+      throw new Error(t('core.edit.maaCultivateImportFailed'))
     }
     if (response.code !== 200) {
       throw new Error(formatImportError(response))

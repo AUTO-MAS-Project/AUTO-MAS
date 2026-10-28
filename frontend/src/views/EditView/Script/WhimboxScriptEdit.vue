@@ -1,14 +1,14 @@
 <template>
   <ScriptEditHeader
     script-type="Whimbox"
-    :title="t('edit.editScript')"
+    :title="t('core.edit.editScript')"
     :doc-url="MAS_DOC_URLS.scripts"
     @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.whimboxScriptConfiguration')"
+      :title="t('core.edit.whimboxScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -24,21 +24,21 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.scriptName')"
-                    :hint="t('edit.whimboxInstanceNameHint')"
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.whimboxInstanceNameHint')"
                     variant="form"
                   />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -49,16 +49,16 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.whimboxPath')"
-                    :hint="t('edit.whimboxPickExeDir')"
+                    :text="t('core.edit.whimboxPath')"
+                    :hint="t('core.edit.whimboxPickExeDir')"
                     variant="form"
                   />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
                   mode="folder"
-                  :placeholder="t('edit.whimboxPickExeDirPlaceholder')"
-                  :pick-label="t('edit.pickDirectory')"
+                  :placeholder="t('core.edit.whimboxPickExeDirPlaceholder')"
+                  :pick-label="t('core.edit.pickDirectory')"
                   :disabled="isSaving"
                   @pick="selectRootPath"
                 />
@@ -69,7 +69,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="whimboxConfig.Run.HardTimeLimit"
@@ -80,8 +80,8 @@
               <ScriptRunLimitField
                 v-model="whimboxConfig.Run.ProxyTimesLimit"
                 kind="daily"
-                :label="t('edit.runsPerDay')"
-                :hint="t('edit.k0MeansNoLimit')"
+                :label="t('core.edit.runsPerDay')"
+                :hint="t('core.edit.k0MeansNoLimit')"
                 @save="handleChange('Run', 'ProxyTimesLimit', whimboxConfig.Run.ProxyTimesLimit)"
               />
             </a-col>
@@ -89,8 +89,8 @@
               <ScriptRunLimitField
                 v-model="whimboxConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('edit.retryLimit2')"
-                :hint="t('edit.whimboxRetryLimitHint')"
+                :label="t('core.edit.retryLimit2')"
+                :hint="t('core.edit.whimboxRetryLimitHint')"
                 @save="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
               />
             </a-col>
@@ -98,8 +98,8 @@
               <ScriptRunLimitField
                 v-model="whimboxConfig.Run.RunTimeLimit"
                 kind="timeout"
-                :label="t('edit.runTimeoutMinutes')"
-                :hint="t('edit.whimboxRunTimeoutHint')"
+                :label="t('core.edit.runTimeoutMinutes')"
+                :hint="t('core.edit.whimboxRunTimeoutHint')"
                 @save="handleChange('Run', 'RunTimeLimit', whimboxConfig.Run.RunTimeLimit)"
               />
             </a-col>
@@ -107,8 +107,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.whimboxUseAdmin')"
-                    :hint="t('edit.whimboxUseAdminHint')"
+                    :text="t('core.edit.whimboxUseAdmin')"
+                    :hint="t('core.edit.whimboxUseAdminHint')"
                     variant="form"
                   />
                 </template>
@@ -118,8 +118,8 @@
                   style="width: 100%"
                   @change="handleChange('Run', 'UseAdmin', whimboxConfig.Run.UseAdmin)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -208,8 +208,8 @@ const whimboxConfig = reactive<WhimboxScriptConfigForm>({
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [{ required: true, message: t('edit.whimboxPathRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('core.edit.whimboxPathRequired'), trigger: 'blur' }],
 }))
 
 const handleCancel = () => router.push('/scripts')
@@ -224,7 +224,7 @@ const refreshUpstreamVersion = async () => {
 
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
-    message.warning(t('edit.pickScriptRootDirectory'))
+    message.warning(t('core.edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -237,7 +237,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
         Info: { RootPath: norm },
       })
       if (success) {
-        message.success(t('edit.whimboxRootPathSaved'))
+        message.success(t('core.edit.whimboxRootPathSaved'))
         void refreshUpstreamVersion()
         return true
       }
@@ -257,12 +257,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'Whimbox') {
-      message.error(t('edit.whimboxNotWhimboxScript'))
+      message.error(t('core.edit.whimboxNotWhimboxScript'))
       handleCancel()
       return
     }
@@ -273,7 +273,7 @@ const loadScript = async () => {
     // 目录已配置时顺带拉一次目录接口，展示上游版本（refreshUpstreamVersion 自带空目录守卫）
     void refreshUpstreamVersion()
   } catch {
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -288,9 +288,9 @@ const selectRootPath = async () => {
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
     Modal.error({
-      title: t('edit.whimboxInvalidDirectory'),
-      content: t('edit.whimboxExeNotFound', { p0: WHIMBOX_EXE_NAME }),
-      okText: t('edit.gotIt'),
+      title: t('core.edit.whimboxInvalidDirectory'),
+      content: t('core.edit.whimboxExeNotFound', { p0: WHIMBOX_EXE_NAME }),
+      okText: t('core.edit.gotIt'),
     })
     return
   }
