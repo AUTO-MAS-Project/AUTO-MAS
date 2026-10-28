@@ -120,6 +120,30 @@ export const pickPresetPretasks = (
 const cloneOptions = (options: Record<string, MaaFWTaskOptionValue> | undefined) =>
   JSON.parse(JSON.stringify(options ?? {})) as Record<string, MaaFWTaskOptionValue>
 
+/** input / hotkey 的取值是字段表（字段名 → 字符串），select / switch 是字符串，checkbox 是列表 */
+const isOptionFieldMap = (
+  value: MaaFWTaskOptionValue | undefined
+): value is Record<string, string> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * 预设给一个前置任务写的选项值叠到用户自己的值上（都拷一份，不改入参）。与后端
+ * `_apply_preset_option_value` 同一口径：input / hotkey 按字段合并——预设写了的字段覆盖，没写的
+ * 留用户原值（预览不补默认值，预设只写了 `mode` 时 `path` 不能丢）；标量与列表整体覆盖。
+ */
+const overlayPresetOptions = (
+  current: Record<string, MaaFWTaskOptionValue> | undefined,
+  preset: Record<string, MaaFWTaskOptionValue> | undefined
+) => {
+  const merged = cloneOptions(current)
+  for (const [optionName, value] of Object.entries(cloneOptions(preset))) {
+    const existing = merged[optionName]
+    merged[optionName] =
+      isOptionFieldMap(value) && isOptionFieldMap(existing) ? { ...existing, ...value } : value
+  }
+  return merged
+}
+
 /**
  * 应用项目预设后的队列快照：普通任务换成预设的各个实例（一律绿灯，带预设的选项，项目预设
  * 没有显示名与运行日）。前置任务分两种情况：
@@ -127,7 +151,8 @@ const cloneOptions = (options: Record<string, MaaFWTaskOptionValue> | undefined)
  * - 预设没声明 `pretask`（`pretasks` 为 null）：当前队列里的前置任务原样保留——勾选、选项、
  *   显示名、运行日都不动，与从别的用户导入队列（`buildMaaFWQueueReplacement`）同一口径；
  * - 声明了：当前队列里的前置任务按预设设勾选（未列出的设为跳过），选项在用户自己的值上叠
- *   预设写了的项（启动器路径这类用户自己填的不被冲掉），显示名与运行日照留；预设启用、队列里
+ *   预设写了的项（启动器路径这类用户自己填的不被冲掉；input / hotkey 按字段叠，见
+ *   overlayPresetOptions），显示名与运行日照留；预设启用、队列里
  *   还没有这个前置任务的，把 `pretaskEntries` 里的补进来（带预设的选项）。预设没启用、队列里
  *   也没有的不补——不在队列里本来就不跑。
  *
@@ -154,10 +179,7 @@ export const buildProjectPresetAppliedSnapshot = (
   const pretaskOptions: TaskOptionMap = Object.fromEntries([
     ...currentPretaskIds.map(taskId => [
       taskId,
-      {
-        ...cloneOptions(current.taskOptions[taskId]),
-        ...cloneOptions(pretasks?.options[resolveTaskName(taskId)]),
-      },
+      overlayPresetOptions(current.taskOptions[taskId], pretasks?.options[resolveTaskName(taskId)]),
     ]),
     ...addedEntries.map(entry => [entry.id, cloneOptions(pretasks?.options[entry.task.name])]),
   ])
