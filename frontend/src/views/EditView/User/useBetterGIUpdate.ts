@@ -160,7 +160,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
           taskId: userId,
           mode: TaskCreateIn.mode.UPDATE,
         },
-        { source: 'script_update' }
+        { source: 'script_update', target_kind: 'user' }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.bettergiUpdateStartFailed'))

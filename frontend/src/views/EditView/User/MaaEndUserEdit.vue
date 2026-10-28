@@ -507,7 +507,7 @@ const handleMaaEndConfig = async () => {
   if (!userId) return
   // 先完成自动保存，确保配置会话沿用界面当前选择的来源。
   if (!(await handleFieldSave('Info.Base', formData.Info.Base))) return
-  await startSession(userId)
+  await startSession(userId, false, 'user')
 }
 
 const handleSaveMaaEndConfig = () => {
@@ -640,9 +640,9 @@ const handleRestoreView = (
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUserData()
-            await startSession(userId, true)
+            await startSession(userId, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {

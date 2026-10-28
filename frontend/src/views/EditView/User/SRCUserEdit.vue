@@ -584,7 +584,7 @@ const startConfigSession = async (viewOnly: boolean) => {
     }
 
     // 调用后端启动任务接口，传入 userId 作为 taskId 与设置模式
-    const response = await requestScriptConfigStart(userId, viewOnly)
+    const response = await requestScriptConfigStart(userId, viewOnly, 'user')
 
     if (response && response.taskId) {
       const wsId = response.taskId

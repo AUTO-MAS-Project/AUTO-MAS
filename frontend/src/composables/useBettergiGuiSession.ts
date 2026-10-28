@@ -2,6 +2,7 @@ import {
   requestTaskStart,
   stopNativeConfig,
   type NativeConfigStopAction,
+  type TaskTargetKind,
 } from '@/composables/useTaskApi'
 // BetterGI 原生设置会话（原生 GUI 直控）
 import { ref } from 'vue'
@@ -85,7 +86,11 @@ export function useBettergiGuiSession() {
     }
   }
 
-  const startSession = async (userId: string, viewOnly = false): Promise<void> => {
+  const startSession = async (
+    userId: string,
+    viewOnly = false,
+    targetKind: TaskTargetKind = 'unknown'
+  ): Promise<void> => {
     try {
       bettergiConfigLoading.value = true
       currentSessionViewOnly.value = viewOnly
@@ -95,7 +100,7 @@ export function useBettergiGuiSession() {
           mode: TaskCreateIn.mode.SCRIPT_CONFIG,
           viewOnly,
         },
-        { source: 'script_config' }
+        { source: 'script_config', target_kind: targetKind }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.bettergiStartFailed'))

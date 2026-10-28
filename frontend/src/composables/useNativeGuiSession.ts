@@ -2,6 +2,7 @@ import {
   requestTaskStart,
   stopNativeConfig,
   type NativeConfigStopAction,
+  type TaskTargetKind,
 } from '@/composables/useTaskApi'
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
 import { ref } from 'vue'
@@ -125,7 +126,11 @@ export function useNativeGuiSession(options: {
     return stoppingPromise
   }
 
-  const startSession = async (startTaskId: string, viewOnly = false): Promise<boolean> => {
+  const startSession = async (
+    startTaskId: string,
+    viewOnly = false,
+    targetKind: TaskTargetKind = 'unknown'
+  ): Promise<boolean> => {
     try {
       configLoading.value = true
       discardedReason = null
@@ -135,7 +140,7 @@ export function useNativeGuiSession(options: {
           mode: TaskCreateIn.mode.SCRIPT_CONFIG,
           viewOnly,
         },
-        { source: 'script_config' }
+        { source: 'script_config', target_kind: targetKind }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t(keys.startFailed))

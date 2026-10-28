@@ -24,6 +24,8 @@ function taskRequestError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error))
 }
 
+export type TaskTargetKind = AnalyticsEventProps['task_start_result']['target_kind']
+
 type TaskStartMetadata = Partial<
   Pick<AnalyticsEventProps['task_start_result'], 'source' | 'target_kind'>
 >
@@ -125,7 +127,8 @@ export async function requestTaskStart(
 /** 配置会话明确使用独立任务模式，保留后端原始响应。 */
 export function requestScriptConfigStart(
   taskId: string,
-  viewOnly?: boolean
+  viewOnly?: boolean,
+  targetKind: TaskTargetKind = 'unknown'
 ): Promise<TaskCreateOut> {
   return requestTaskStart(
     {
@@ -133,12 +136,12 @@ export function requestScriptConfigStart(
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
       ...(viewOnly === undefined ? {} : { viewOnly }),
     },
-    { source: 'script_config' }
+    { source: 'script_config', target_kind: targetKind }
   )
 }
 
-export function requestScriptUpdateStart(
-  taskId: string,
+export function requestUserUpdateStart(
+  userId: string,
   scriptType: AnalyticsEventProps['adapter_setup_finished']['script_type']
 ): Promise<TaskCreateOut> {
   return observeFeature(
@@ -148,7 +151,11 @@ export function requestScriptUpdateStart(
       operation_kind: 'update',
       engine_kind: 'unknown',
     },
-    () => requestTaskStart({ taskId, mode: TaskCreateIn.mode.UPDATE }, { source: 'script_update' }),
+    () =>
+      requestTaskStart(
+        { taskId: userId, mode: TaskCreateIn.mode.UPDATE },
+        { source: 'script_update', target_kind: 'user' }
+      ),
     result => (result.code === 200 && result.taskId ? 'accepted' : 'rejected')
   )
 }

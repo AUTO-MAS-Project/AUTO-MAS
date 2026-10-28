@@ -639,7 +639,7 @@ const startConfigSession = async (
       taskId: targetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     },
-    { source: 'script_config' }
+    { source: 'script_config', target_kind: 'script' }
   )
   if (response.code !== 200 || !response.taskId) {
     throw new Error(response.message || t('scripts.toast.startFailedRaw', { label }))

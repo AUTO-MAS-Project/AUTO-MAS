@@ -581,7 +581,7 @@ const handleOkNteConfig = async () => {
     return
   }
   if (configEditor.value && !(await configEditor.value.saveAll())) return
-  await startSession(userId)
+  await startSession(userId, false, 'user')
 }
 
 const handleSaveOkNteConfig = () => {
@@ -713,9 +713,9 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           }
           restoreOpen.value = false
           if (target === 'mas') {
-            await startSession(userId, true)
+            await startSession(userId, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {

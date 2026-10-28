@@ -2,6 +2,7 @@ import {
   requestTaskStart,
   stopNativeConfig,
   type NativeConfigStopAction,
+  type TaskTargetKind,
 } from '@/composables/useTaskApi'
 // ZZZ-OD 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
@@ -88,7 +89,8 @@ export function useZzzodGuiSession() {
   const startSession = async (
     taskId: string,
     viewOnly = false,
-    instanceIdx?: number | null
+    instanceIdx?: number | null,
+    targetKind: TaskTargetKind = 'unknown'
   ): Promise<void> => {
     try {
       zzzodConfigLoading.value = true
@@ -99,7 +101,7 @@ export function useZzzodGuiSession() {
           viewOnly,
           instanceIdx: instanceIdx ?? undefined,
         },
-        { source: 'script_config' }
+        { source: 'script_config', target_kind: targetKind }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.zzzodStartFailed'))

@@ -2,6 +2,7 @@ import {
   requestTaskStart,
   stopNativeConfig,
   type NativeConfigStopAction,
+  type TaskTargetKind,
 } from '@/composables/useTaskApi'
 // OK-NTE 原生设置会话（原生 GUI 直控 / 只读查看）
 import { ref } from 'vue'
@@ -85,7 +86,11 @@ export function useOknteGuiSession() {
     }
   }
 
-  const startSession = async (taskId: string, viewOnly = false): Promise<void> => {
+  const startSession = async (
+    taskId: string,
+    viewOnly = false,
+    targetKind: TaskTargetKind = 'unknown'
+  ): Promise<void> => {
     try {
       oknteConfigLoading.value = true
       const response = await requestTaskStart(
@@ -94,7 +99,7 @@ export function useOknteGuiSession() {
           mode: TaskCreateIn.mode.SCRIPT_CONFIG,
           viewOnly,
         },
-        { source: 'script_config' }
+        { source: 'script_config', target_kind: targetKind }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.oknteSessionStartFailed'))

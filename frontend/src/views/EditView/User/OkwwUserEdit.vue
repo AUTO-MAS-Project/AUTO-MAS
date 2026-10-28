@@ -628,7 +628,7 @@ const saveTaskConfig = async () => {
 
 const handleOkwwConfig = async () => {
   if (configActionsDisabled.value) return
-  await startSession(userId.value)
+  await startSession(userId.value, false, 'user')
 }
 
 const handleImportOkwwConfig = async () => {
@@ -805,9 +805,9 @@ const handleRestoreView = (
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUser()
-            await startSession(userId.value, true)
+            await startSession(userId.value, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {

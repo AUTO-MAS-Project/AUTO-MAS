@@ -1452,7 +1452,7 @@ const {
 const handleBettergiConfig = () => {
   if (configLocked.value) return
   if (!userId.value) return
-  void startSession(userId.value)
+  void startSession(userId.value, false, 'user')
 }
 
 const handleSaveBettergiConfig = async () => {
@@ -1552,9 +1552,9 @@ const handleRestoreView = (target: string, item: { time: string }) => {
             // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
             // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
             await loadUser()
-            await startSession(userId.value, true)
+            await startSession(userId.value, true, 'user')
           } else {
-            await startSession(scriptId, true)
+            await startSession(scriptId, true, 'script')
           }
           resolve(true)
         } catch (e) {

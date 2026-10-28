@@ -431,7 +431,7 @@
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import { requestScriptUpdateStart } from '@/composables/useTaskApi'
+import { requestUserUpdateStart } from '@/composables/useTaskApi'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -697,7 +697,7 @@ const startUpdate = async () => {
   if (!updateModal.selectedUserId) return
   updateModal.starting = true
   try {
-    const response = await requestScriptUpdateStart(updateModal.selectedUserId, 'Okww')
+    const response = await requestUserUpdateStart(updateModal.selectedUserId, 'Okww')
     if (response.code !== 200 || !response.taskId) {
       throw new Error(response.message || '启动鸣潮更新失败')
     }

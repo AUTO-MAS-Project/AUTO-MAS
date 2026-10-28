@@ -233,7 +233,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
           taskId: scriptId,
           mode: TaskCreateIn.mode.UPDATE,
         },
-        { source: 'script_update' }
+        { source: 'script_update', target_kind: 'script' }
       )
       if (response.code !== 200 || !response.taskId) {
         throw new Error(response.message || t('edit.endfieldUpdateStartFailed'))

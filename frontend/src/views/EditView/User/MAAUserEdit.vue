@@ -1280,7 +1280,7 @@ const {
 })
 
 const handleMAAConfig = async () => {
-  await startConfiguration(userId)
+  await startConfiguration(userId, 'user')
 }
 
 // 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
