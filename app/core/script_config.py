@@ -15,23 +15,37 @@
 
 """专项配置操作契约；具体实现由宿主按配置类型注入。"""
 
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from app.config import ConfigEntry
 
 
-class ScriptConfigHandler(Protocol):
-    """公共配置入口在业务锁检查后调用的专项操作。"""
-
-    async def initialize(self, script: ConfigEntry) -> None: ...
-
-    def validate_update(self, data: dict[str, Any]) -> None: ...
-
-    def import_config(
+class ScriptConfigImporter(Protocol):
+    def __call__(
         self,
         script: ConfigEntry,
         target_directory: Path,
         *,
         user_id: str | None = None,
     ) -> None: ...
+
+
+class UserUpdatePreparer(Protocol):
+    def __call__(
+        self, script: ConfigEntry, user: ConfigEntry, *, data: dict[str, Any]
+    ) -> Awaitable[None] | None:
+        """原地准备本次补丁，不提交配置；异步步骤由写入方在同一 Task 等待。"""
+        ...
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScriptConfigHandler:
+    """专项只声明实际具备的能力，公共入口保持锁和提交边界。"""
+
+    initialize: Callable[[ConfigEntry], Awaitable[None]] | None = None
+    validate_update: Callable[[dict[str, Any]], None] | None = None
+    import_config: ScriptConfigImporter | None = None
+    prepare_user_update: UserUpdatePreparer | None = None
