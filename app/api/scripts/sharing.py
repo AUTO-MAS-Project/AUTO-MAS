@@ -28,7 +28,7 @@ from pydantic import (
     Field,
 )
 
-from app.core import Config
+from app.core.general_share import general_share_service
 from app.models.schema import (
     OutBase,
 )
@@ -83,7 +83,7 @@ logger = get_logger("脚本管理 API")
 async def import_script_from_web(script: ScriptTemplateImportIn = Body(...)) -> OutBase:
 
     try:
-        await Config.import_script_from_share(
+        await general_share_service.import_script_from_share(
             script.scriptId, config_key=script.configKey, version_no=script.versionNo
         )
     except ConfigCenterError as e:
@@ -110,7 +110,7 @@ async def inspect_script_share(
 ) -> ShareInspectOut:
 
     try:
-        _, risks = await Config.build_share_config(
+        _, risks = await general_share_service.build_share_config(
             script.scriptId, config_name=script.config_name
         )
     except Exception as e:
@@ -130,7 +130,7 @@ async def inspect_script_share(
 async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 
     try:
-        await Config.upload_script_to_share(
+        await general_share_service.upload_script_to_share(
             script.scriptId,
             config_name=script.config_name,
             description=script.description,
