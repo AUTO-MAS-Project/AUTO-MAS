@@ -19,6 +19,7 @@ import {
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeRunControl,
+  RuntimeLogEvent,
   RuntimeSuperviseHandle,
   RuntimeSupervisedLaunchConfig,
   createRuntimeClient,
@@ -402,27 +403,36 @@ export class BackendService {
       const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
       if (failure) return failure
     } else {
+      const stdoutLines: string[] = []
+      const stderrLines: string[] = []
+      const captureLog = (event: RuntimeLogEvent) => {
+        const lines = event.stream === 'stderr' ? stderrLines : stdoutLines
+        pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+      }
       try {
-        const current = await this.runRuntimePreparation(client, ['workspace', 'check'])
-        if (!current.success) return this.buildRuntimeStartFailure(current, [], [])
+        const current = await this.runRuntimePreparation(client, ['workspace', 'check'], captureLog)
+        if (!current.success)
+          return this.buildRuntimeStartFailure(current, stdoutLines, stderrLines)
+        stdoutLines.length = 0
+        stderrLines.length = 0
         const details = current.result.details
         const version =
           details.healthy === true && typeof details.version === 'string'
             ? details.version
             : resolveRuntimeTargetVersion()
-        const prepared = await this.runRuntimePreparation(client, [
-          'bootstrap',
-          '--version',
-          version,
-          '--if-needed',
-        ])
-        if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
+        const prepared = await this.runRuntimePreparation(
+          client,
+          ['bootstrap', '--version', version, '--if-needed'],
+          captureLog
+        )
+        if (!prepared.success)
+          return this.buildRuntimeStartFailure(prepared, stdoutLines, stderrLines)
         this.runtimeUpdateReady = null
         // 日常启动不检查、不更新 Runtime：版本对齐只发生在完整初始化链路（第 0 步）里，
         // 这条路只把现有 exe 拿来监督后端。exe 被杀软还原、上次替换半途而废等情形由定位
         // exe 的 `resolveRuntimeExecutable()` / `recoverRuntimeBackup()` 在本函数开头处理。
       } catch (error) {
-        return this.buildRuntimeStartFailure(error, [], [])
+        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
       }
     }
     if (this.runtimeStopping) {
@@ -1299,11 +1309,13 @@ export class BackendService {
   /** 跟踪一次性准备命令，使退出时的取消覆盖握手和下载两个阶段。 */
   private async runRuntimePreparation(
     client: RuntimeClient,
-    args: string[]
+    args: string[],
+    onLog?: (event: RuntimeLogEvent) => void
   ): Promise<RuntimeRunResult> {
     if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
     let control: RuntimeRunControl | undefined
     const operation = client.run(args, {
+      onLog,
       onStarted: started => {
         control = started
         this.runtimeCommands.add(started)
