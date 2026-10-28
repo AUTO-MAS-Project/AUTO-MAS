@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.config import (
     ConfigCollection,
@@ -48,6 +48,18 @@ from app.config.types import (
 from .base import DomainEntry
 from .queue import Webhook
 from .shared import local_timezone
+
+QQGroupCommandWhitelist = Annotated[
+    list[
+        Annotated[
+            str,
+            StringConstraints(
+                strip_whitespace=True, min_length=1, max_length=128, pattern=r"^\S+$"
+            ),
+        ]
+    ],
+    Field(max_length=100),
+]
 
 
 class FluxdownRecord(BaseModel):
@@ -285,6 +297,12 @@ class GlobalConfig(DomainEntry):
                 convert=lambda value: [value] if value else [],
             ),
         ] = Field(default_factory=list, description="QQ 官方机器人自动发现的群 OpenID")
+        OpenClawQQGroupCommandWhitelist: Annotated[
+            QQGroupCommandWhitelist, ui(visibility=UiVisibility.HIDE)
+        ] = Field(
+            default_factory=list,
+            description="QQ 群控制成员 OpenID 白名单，留空允许所有群成员",
+        )
         OpenClawQQRejectedGroupOpenIds: Annotated[
             list[str], ui(visibility=UiVisibility.HIDE)
         ] = Field(

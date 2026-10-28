@@ -5145,6 +5145,14 @@ export default {
       openclawQqDiscoveredGroups: '已自动识别 {count} 个群',
       openclawQqNoGroupsHint: '等待发现群聊：请在 MAS 在线时将机器人加群，或在已有群里提及机器人。',
       openclawQqRefreshGroups: '刷新群状态',
+      openclawQqWhitelistSave: '保存白名单',
+      openclawQqCommandWhitelist: '群控制成员白名单',
+      openclawQqGroupCommandHint:
+        '群内 @机器人后发送“重试 脚本名称”或“启动队列 队列名称”。白名单填写成员 ID，每行一个；可通过 @机器人发送“我的ID”获取，这不是 QQ 号。保存后生效，对所有已识别群生效。',
+      openclawQqWhitelistPlaceholder: '每行填写一个成员 ID，最多 100 个',
+      openclawQqWhitelistEmpty:
+        '留空并保存后，所有已识别群的所有成员都可以通过 @机器人重试脚本和启动队列。',
+      openclawQqWhitelistInvalid: '最多填写 100 个成员 ID，每个不超过 128 个字符，且不能包含空白。',
       openclawQqGroupHint:
         '私聊发送给绑定人，群聊发送到所有已识别群，全部同时发送。使用最新版 QQ，由群主添加自己创建的机器人并允许主动发言。MAS 在线时通过加群或群内提及机器人自动记录群，退群或关闭接收时自动移除。推送受 QQ 权限和频率限制。',
       openclawQqGroupsError: '读取群状态失败，请刷新后重试。',
