@@ -133,8 +133,8 @@
           </a-select>
         </a-form-item>
 
-        <a-row :gutter="16">
-          <a-col :span="12">
+        <a-flex :gap="16">
+          <div style="flex: 1; min-width: 0">
             <a-form-item
               :label="t('comp.webhookName')"
               name="name"
@@ -142,16 +142,16 @@
             >
               <a-input v-model:value="formData.name" :placeholder="t('comp.enterWebhookName')" />
             </a-form-item>
-          </a-col>
-          <a-col :span="12">
+          </div>
+          <div style="flex: 1; min-width: 0">
             <a-form-item :label="t('comp.method')" name="method">
               <a-select v-model:value="formData.method">
                 <a-select-option value="POST">POST</a-select-option>
                 <a-select-option value="GET">GET</a-select-option>
               </a-select>
             </a-form-item>
-          </a-col>
-        </a-row>
+          </div>
+        </a-flex>
 
         <a-form-item
           label="Webhook URL"
