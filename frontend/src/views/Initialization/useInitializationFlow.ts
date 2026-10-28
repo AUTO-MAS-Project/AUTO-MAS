@@ -618,7 +618,10 @@ export function useInitializationFlow() {
       markStepFailed('dependency', errorMessage, failure)
       await loadMirrorConfigs()
     }
-    failAnalyticsAttempt('backend')
+    failAnalyticsAttempt(
+      'backend',
+      failure.code === 'OPERATION_CANCELLED' ? 'cancelled' : 'failure'
+    )
   }
 
   async function handleFailureAction(kind: FailureActionKind) {

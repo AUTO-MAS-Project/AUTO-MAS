@@ -111,6 +111,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 初始化统计使用版本化事件：旧事件的 failure 包含取消，旧整体事件的 python 也可能是 Runtime 对齐失败；
 从 v2 起取消独立记为 cancelled，对齐失败记为 runtime_binary，不能直接合并新旧分类。
+后端启动明确返回 OPERATION_CANCELLED 时，完整初始化和跳过初始化路径均记录 cancelled；其他异常仍记 failure。
 界面仍使用原有失败步骤，不采集原始错误文本。
 
 阶段统计在主进程执行边界记录：Runtime 自身校验/更新为 `runtime_binary`，完整准备命令为

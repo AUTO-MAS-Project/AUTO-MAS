@@ -22,6 +22,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
   startupPromise = (async () => {
     const api = window.electronAPI
+    let failureOutcome: 'failure' | 'cancelled' = 'failure'
 
     try {
       if (!isDev) {
@@ -31,6 +32,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
           logger.info('检测到后端未运行，开始后台启动')
           const result = await api.backendStart?.()
           if (!result?.success) {
+            if (result?.code === 'OPERATION_CANCELLED') failureOutcome = 'cancelled'
             throw new Error(result?.error || '后端启动失败')
           }
         } else {
@@ -53,7 +55,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
         flow_kind: 'skip',
         runtime_mode: 'unknown',
         failed_stage: 'backend',
-        outcome: 'failure',
+        outcome: failureOutcome,
       })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
