@@ -689,7 +689,10 @@ export function useSchedulerLogic() {
     return scripts
   }
 
-  const loadResumeScriptOptions = async (tab: SchedulerTab) => {
+  const loadResumeScriptOptions = async (
+    tab: SchedulerTab,
+    feedbackGeneration = taskFeedbackGeneration
+  ) => {
     if (!tab.selectedTaskId || !isQueueTask(tab)) {
       // 作废在途请求，并在这里收掉 loading：被作废的请求不会再去清它
       latestResumeOptionsRequest.delete(tab)
@@ -732,7 +735,10 @@ export function useSchedulerLogic() {
       logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
       tab.resumeScriptOptions = []
       tab.resumeFromScriptId = null
-      message.error(t('core.scheduler.toast.loadQueueScriptsFailed'))
+      showWhenReady(
+        () => message.error(t('core.scheduler.toast.loadQueueScriptsFailed')),
+        feedbackGeneration
+      )
     } finally {
       if (!isStale()) {
         tab.resumeScriptLoading = false
@@ -818,7 +824,10 @@ export function useSchedulerLogic() {
   }
 
   // 列表用于展示与校正显式子集；全选始终由后端执行时筛选可运行用户。
-  const loadUserOptions = async (tab: SchedulerTab) => {
+  const loadUserOptions = async (
+    tab: SchedulerTab,
+    feedbackGeneration = taskFeedbackGeneration
+  ) => {
     // 任务下拉还没加载完时判断不出任务类型，此时保留当前选择，等选项可用后再刷新。
     if (!taskOptions.value.length) return
 
@@ -848,7 +857,10 @@ export function useSchedulerLogic() {
       })
       if (isStale()) return
       if (response.code !== 200) {
-        message.error(t('core.scheduler.toast.loadScriptUsersFailed'))
+        showWhenReady(
+          () => message.error(t('core.scheduler.toast.loadScriptUsersFailed')),
+          feedbackGeneration
+        )
         return
       }
 
@@ -861,7 +873,10 @@ export function useSchedulerLogic() {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
-      message.error(t('core.scheduler.toast.loadScriptUsersFailed'))
+      showWhenReady(
+        () => message.error(t('core.scheduler.toast.loadScriptUsersFailed')),
+        feedbackGeneration
+      )
     } finally {
       if (!isStale()) {
         tab.userOptionsLoading = false
@@ -1586,10 +1601,10 @@ export function useSchedulerLogic() {
             continue
           void loadCycleQueueFlag(tab)
           if (isQueueTask(tab)) {
-            void loadResumeScriptOptions(tab)
+            void loadResumeScriptOptions(tab, feedbackGeneration)
             void loadQueueScope(tab)
           } else if (isScriptTask(tab)) {
-            void loadUserOptions(tab)
+            void loadUserOptions(tab, feedbackGeneration)
           }
         }
         return true
