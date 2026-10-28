@@ -24,10 +24,9 @@ from importlib import import_module
 
 _EXPORTS = {
     "ConfigCenter": ".config_center",
-    "ConfigCenterError": ".config_center",
+    "ConfigCenterError": ".config_center_errors",
     "Matomo": ".matomo",
     "System": ".system",
-    "Updater": ".update",
 }
 
 
@@ -39,4 +38,4 @@ def __getattr__(name: str):
     return value
 
 
-__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "System", "Updater"]
+__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "System"]

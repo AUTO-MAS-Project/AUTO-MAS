@@ -12,7 +12,7 @@ export const pickZzzGameExe = async (): Promise<string | null> => {
   if (!path) return null
   const fileName = path.split(/[\\/]/).pop()
   if (fileName?.toLowerCase() !== 'zenlesszonezero.exe') {
-    message.error(t('edit.zzzodPickGameExe'))
+    message.error(t('core.edit.zzzodPickGameExe'))
     return null
   }
   return path

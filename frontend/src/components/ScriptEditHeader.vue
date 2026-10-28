@@ -3,7 +3,9 @@
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">{{ t('comp.scripts') }}</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">{{
+            t('core.comp.scripts')
+          }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
@@ -33,7 +35,7 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        {{ t('comp.back') }}
+        {{ t('core.comp.back') }}
       </a-button>
     </a-space>
   </div>
@@ -68,7 +70,7 @@ const props = defineProps<{
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
 // 引用不到 useI18n() 返回的 t，编译期直接报错。改在这里兜底。
-const headerTitle = computed(() => props.title ?? t('comp.editScript'))
+const headerTitle = computed(() => props.title ?? t('core.comp.editScript'))
 
 const emit = defineEmits<{ cancel: [] }>()
 

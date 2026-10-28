@@ -48,10 +48,10 @@ export const endfieldActivitySections = ({
     )
   const activities: HomeActivitySection = {
     id: 'activities',
-    title: t('home.activity.schedule'),
+    title: t('core.home.activity.schedule'),
     completable: true,
     source: {
-      label: t('home.sra.poweredBy', { name: 'SRA&AKEData' }),
+      label: t('core.home.sra.poweredBy', { name: 'SRA&AKEData' }),
       url: overview.SourceUrl,
     },
     loading,
@@ -59,7 +59,7 @@ export const endfieldActivitySections = ({
     stale: overview.Stale,
     timeZone: 'Asia/Shanghai',
     timeZoneLabel: 'UTC+8',
-    emptyText: t('home.endfield.noActivity'),
+    emptyText: t('core.home.endfield.noActivity'),
     items,
     alerts: [],
   }
@@ -72,14 +72,14 @@ export const endfieldActivitySections = ({
   }
   const pools: HomeActivitySection = {
     id: 'pools',
-    title: t('home.endfield.pools'),
+    title: t('core.home.endfield.pools'),
     layout: 'horizontal',
     loading: Boolean(overview.PoolLoading && !overview.Pools.length),
     available: !overview.PoolMessage,
     stale: overview.PoolStale,
     timeZone: 'Asia/Shanghai',
     timeZoneLabel: 'UTC+8',
-    emptyText: t('home.endfield.noPools'),
+    emptyText: t('core.home.endfield.noPools'),
     alerts: overview.PoolMessage
       ? [{ id: 'source', message: overview.PoolMessage, type: 'warning' }]
       : [],
@@ -92,7 +92,7 @@ export const endfieldActivitySections = ({
         image: item.ImageUrl,
         imageFit: 'contain',
         description: item.UpCharacters.length
-          ? t('home.endfield.upCharacters', { names: item.UpCharacters.join('、') })
+          ? t('core.home.endfield.upCharacters', { names: item.UpCharacters.join('、') })
           : '',
         startTime: item.StartTime,
         endTime: item.EndTime,

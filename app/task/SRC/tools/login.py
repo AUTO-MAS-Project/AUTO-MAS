@@ -20,7 +20,9 @@
 
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from typing import Protocol
 
 from app.models.emulator import DeviceInfo, DeviceStatus
 from app.utils import get_logger
@@ -28,8 +30,40 @@ from app.utils import get_logger
 logger = get_logger("星穹铁道模拟器登录")
 
 
-async def login(
-    emulator_info: DeviceInfo, package_name: str, id: str, password: str
+class LoginTasker[JobT](Protocol):
+    """登录只需提交管线和停止任务，job 由宿主负责等待和检查。"""
+
+    def post_task(self, entry: str, pipeline_override: dict) -> JobT: ...
+
+    def post_stop(self) -> JobT: ...
+
+
+def _sanitize_login_error(error: Exception, *, id: str, password: str) -> str:
+    error_msg = str(error)
+    # B 服会分别使用显示名和登录账号；先替换长值，避免凭据相互包含时漏出片段。
+    replacements = [
+        (value, "id***")
+        for value in [id, *(part.strip() for part in id.split("|"))]
+        if value
+    ]
+    if password:
+        replacements.append((password, "password***"))
+    for value, replacement in sorted(
+        replacements, key=lambda item: len(item[0]), reverse=True
+    ):
+        error_msg = error_msg.replace(value, replacement)
+    return error_msg
+
+
+async def login[JobT](
+    emulator_info: DeviceInfo,
+    package_name: str,
+    id: str,
+    password: str,
+    *,
+    get_agree_bilibili: Callable[[], bool],
+    get_adb_tasker: Callable[[DeviceInfo], Awaitable[LoginTasker[JobT]]],
+    do_job: Callable[[JobT], Awaitable[object]],
 ) -> bool:
     """
     模拟器登录星穹铁道
@@ -39,6 +73,9 @@ async def login(
         package_name: 星穹铁道包名
         id: 账号ID
         password: 账号密码
+        get_agree_bilibili: 按需读取是否同意 Bilibili 隐私政策
+        get_adb_tasker: 获取已连接设备的登录任务执行器
+        do_job: 等待管线或停止 job 完成并检查结果
 
     Returns:
         bool: 登录是否成功
@@ -49,8 +86,6 @@ async def login(
         return False
 
     logger.info(f"开始登录: {emulator_info.title} - {package_name}")
-
-    from app.core import Config, MaaFWManager
 
     if id == "":
         logger.info("未输入账号，将跳过账号切换，等待游戏加载")
@@ -68,9 +103,7 @@ async def login(
             "启动游戏[StarRailEmulator]": {
                 "action": {"param": {"package": package_name}}
             },
-            "Bilibili隐私政策[StarRailEmulator]": {
-                "enabled": Config.setting.Function.IfAgreeBilibili
-            },
+            "Bilibili隐私政策[StarRailEmulator]": {"enabled": get_agree_bilibili()},
             "下滑账号列表[StarRailEmulator]": {"on_error": []},
             "下滑账号列表-B服[StarRailEmulator]": {"on_error": []},
             "识别登录下拉框禁用[StarRailEmulator]": {"on_error": []},
@@ -101,9 +134,7 @@ async def login(
             "启动游戏[StarRailEmulator]": {
                 "action": {"param": {"package": package_name}}
             },
-            "Bilibili隐私政策[StarRailEmulator]": {
-                "enabled": Config.setting.Function.IfAgreeBilibili
-            },
+            "Bilibili隐私政策[StarRailEmulator]": {"enabled": get_agree_bilibili()},
             "选中账号[StarRailEmulator]": {
                 "recognition": {
                     "param": {"expected": [f"{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}"]}
@@ -139,13 +170,16 @@ async def login(
         }
 
     try:
-        tasker = await MaaFWManager.get_adb_tasker(emulator_info)
+        tasker = await get_adb_tasker(emulator_info)
     except Exception as e:
-        logger.warning(f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {e}")
+        error_msg = _sanitize_login_error(e, id=id, password=password)
+        logger.warning(
+            f"获取模拟器{emulator_info.title}的ADB控制器时出现异常: {error_msg}"
+        )
         return False
 
     try:
-        await MaaFWManager.do_job(
+        await do_job(
             tasker.post_task(
                 (
                     "切换账号[StarRailEmulator]"
@@ -159,14 +193,10 @@ async def login(
         await asyncio.sleep(10)  # 等待资源释放
         return True
     except Exception as e:
-        error_msg = str(e)
-        if id:
-            error_msg = error_msg.replace(id, "id***")
-        if password:
-            error_msg = error_msg.replace(password, "password***")
+        error_msg = _sanitize_login_error(e, id=id, password=password)
         logger.warning(f"模拟器{emulator_info.title}切换账号时出现异常: {error_msg}")
         return False
     except asyncio.CancelledError:
         with suppress(Exception):
-            await MaaFWManager.do_job(tasker.post_stop())
+            await do_job(tasker.post_stop())
         raise

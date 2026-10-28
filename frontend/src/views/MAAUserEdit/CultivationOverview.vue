@@ -3,26 +3,26 @@
     <!-- 设置区：一行一事（标签 / 说明 / 控件），不再横向挤一行 -->
     <div class="overview-settings">
       <div class="setting-row">
-        <span class="setting-label">{{ t('maaCopilot.enableTitle') }}</span>
-        <span class="setting-desc">{{ t('maaCopilot.enableDesc') }}</span>
+        <span class="setting-label">{{ t('core.maaCopilot.enableTitle') }}</span>
+        <span class="setting-desc">{{ t('core.maaCopilot.enableDesc') }}</span>
         <a-switch
           class="setting-control"
-          :aria-label="t('maaCopilot.enableTitle')"
+          :aria-label="t('core.maaCopilot.enableTitle')"
           :checked="enabled"
           :disabled="loading"
           @change="emit('save', 'Task.IfCultivate', $event)"
         />
       </div>
       <div class="setting-row">
-        <span class="setting-label">{{ t('edit.maaCultivateSklandTitle') }}</span>
-        <span class="setting-desc">{{ t('maaCopilot.bindingDesc') }}</span>
+        <span class="setting-label">{{ t('core.edit.maaCultivateSklandTitle') }}</span>
+        <span class="setting-desc">{{ t('core.maaCopilot.bindingDesc') }}</span>
         <div class="setting-control binding-control">
           <a-select
-            :aria-label="t('edit.maaCultivateSklandTitle')"
+            :aria-label="t('core.edit.maaCultivateSklandTitle')"
             :value="sklandBoundComposite"
             :options="sklandRoleOptionsWithBound"
             :loading="sklandRoleLoading"
-            :placeholder="t('edit.maaCultivateSklandRole')"
+            :placeholder="t('core.edit.maaCultivateSklandRole')"
             :disabled="loading"
             allow-clear
             @dropdown-visible-change="onRoleDropdownVisible"
@@ -33,19 +33,19 @@
       <div v-if="sklandRoleError" class="setting-error">{{ sklandRoleError }}</div>
       <!-- 执行设置直接平铺；自动培养的版本与口径说明收在行尾 ? -->
       <div class="setting-row">
-        <span class="setting-label">{{ t('maaCopilot.executionSettings') }}</span>
+        <span class="setting-label">{{ t('core.maaCopilot.executionSettings') }}</span>
         <div class="setting-control execution-checks">
           <a-checkbox
             :checked="formData?.Task?.CultivateAutoRaise ?? false"
             :disabled="loading"
             @change="emit('save', 'Task.CultivateAutoRaise', $event.target.checked)"
-            >{{ t('edit.maaCultivateAutoRaise') }}</a-checkbox
+            >{{ t('core.edit.maaCultivateAutoRaise') }}</a-checkbox
           >
           <a-checkbox
             :checked="formData?.Task?.CultivateSkipDuringActivity ?? false"
             :disabled="loading"
             @change="emit('save', 'Task.CultivateSkipDuringActivity', $event.target.checked)"
-            >{{ t('edit.maaCultivateSkipActivity') }}</a-checkbox
+            >{{ t('core.edit.maaCultivateSkipActivity') }}</a-checkbox
           >
           <a-checkbox
             :checked="formData?.Task?.CultivateSkipDuringResourceCollection ?? false"
@@ -53,7 +53,7 @@
             @change="
               emit('save', 'Task.CultivateSkipDuringResourceCollection', $event.target.checked)
             "
-            >{{ t('edit.maaCultivateSkipResource') }}</a-checkbox
+            >{{ t('core.edit.maaCultivateSkipResource') }}</a-checkbox
           >
           <a-tooltip :title="executionHint" :trigger="['hover', 'focus']">
             <button type="button" class="setting-help" :aria-label="executionHint">
@@ -65,24 +65,24 @@
     </div>
     <div class="overview-stats" :class="{ 'overview-stats-paused': !enabled }">
       <a-statistic
-        :title="t('maaCopilot.statOperators')"
+        :title="t('core.maaCopilot.statOperators')"
         :value="statOperators"
-        :suffix="t('maaCopilot.statOperatorsUnit')"
+        :suffix="t('core.maaCopilot.statOperatorsUnit')"
       />
       <a-statistic
-        :title="t('maaCopilot.statGoals')"
+        :title="t('core.maaCopilot.statGoals')"
         :value="statGoals"
-        :suffix="t('maaCopilot.statGoalsUnit')"
+        :suffix="t('core.maaCopilot.statGoalsUnit')"
       />
       <a-statistic
-        :title="t('maaCopilot.statMaterials')"
+        :title="t('core.maaCopilot.statMaterials')"
         :value="statMaterials"
-        :suffix="t('maaCopilot.statMaterialsUnit')"
+        :suffix="t('core.maaCopilot.statMaterialsUnit')"
       />
       <a-statistic
-        :title="t('maaCopilot.statSanity')"
+        :title="t('core.maaCopilot.statSanity')"
         :value="statSanity"
-        :suffix="statSanity === '—' ? undefined : t('edit.maaCultivateSanityUnit')"
+        :suffix="statSanity === '—' ? undefined : t('core.edit.maaCultivateSanityUnit')"
       />
     </div>
   </section>
@@ -120,7 +120,9 @@ const emit = defineEmits<{ save: [key: string, value: unknown] }>()
 const { t } = useI18n()
 
 const executionHint = computed(() =>
-  [t('edit.maaCultivateAutoRaiseHint'), t('edit.maaCultivateAutoRaiseVersionHint')].join('\n')
+  [t('core.edit.maaCultivateAutoRaiseHint'), t('core.edit.maaCultivateAutoRaiseVersionHint')].join(
+    '\n'
+  )
 )
 
 // ── 森空岛绑定 ──
@@ -131,7 +133,7 @@ const sklandRoleOptionsWithBound = computed(() => {
   }
   // 选项未加载时的兜底项：只标「已绑定角色」，不暴露 uid
   return [
-    { label: t('edit.maaCultivateSklandBoundRole'), value: bound },
+    { label: t('core.edit.maaCultivateSklandBoundRole'), value: bound },
     ...props.sklandRoleOptions,
   ]
 })

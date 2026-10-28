@@ -24,7 +24,7 @@
       <div class="banner-badge">
         <span class="banner-dot" :style="{ background: item.accent }" />
         <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
-        <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+        <a-tag v-if="item.stale" color="orange">{{ t('core.home.sra.stale') }}</a-tag>
       </div>
       <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
     </div>
@@ -117,14 +117,14 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
     return item.subtitle
   }
   if (item.loading) {
-    return t('home.carousel.loading')
+    return t('core.home.carousel.loading')
   }
-  return item.available ? t('home.carousel.noActivity') : t('home.carousel.unavailable')
+  return item.available ? t('core.home.carousel.noActivity') : t('core.home.carousel.unavailable')
 }
 
 /** 徽章：有版本号就报版本，没有的游戏退回游戏名 */
 const bannerBadge = (item: ActivityBannerItem) =>
-  item.version ? t('home.carousel.versionBadge', { version: item.version }) : item.title
+  item.version ? t('core.home.carousel.versionBadge', { version: item.version }) : item.title
 
 const countdownValue = (time: string) => {
   const timestamp = new Date(time).getTime()
@@ -141,12 +141,12 @@ const countdownTarget = (item: ActivityBannerItem) =>
   isUpcoming(item) ? item.startTime : item.endTime
 
 const countdownLabel = (item: ActivityBannerItem) =>
-  isUpcoming(item) ? t('home.carousel.startsIn') : t('home.carousel.remaining')
+  isUpcoming(item) ? t('core.home.carousel.startsIn') : t('core.home.carousel.remaining')
 
 const countdownFormat = (item: ActivityBannerItem) => {
   return countdownValue(countdownTarget(item)) - Date.now() <= 0
-    ? t('home.countdown.ended')
-    : t('home.countdown.dh')
+    ? t('core.home.countdown.ended')
+    : t('core.home.countdown.dh')
 }
 </script>
 

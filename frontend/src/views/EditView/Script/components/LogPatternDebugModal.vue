@@ -80,7 +80,7 @@ const configPreview = computed(() => {
         </div>
 
         <div class="debug-toolbar">
-          <span class="debug-section-label">{{ t('edit.logDebug') }}</span>
+          <span class="debug-section-label">{{ t('core.edit.logDebug') }}</span>
           <div class="debug-toolbar-actions">
             <a-input-number
               v-model:value="debug.logLines"
@@ -89,7 +89,7 @@ const configPreview = computed(() => {
               :step="100"
               style="width: 80px"
             />
-            <span class="debug-toolbar-hint">{{ t('edit.lines') }}</span>
+            <span class="debug-toolbar-hint">{{ t('core.edit.lines') }}</span>
             <a-button
               type="primary"
               size="small"
@@ -97,7 +97,7 @@ const configPreview = computed(() => {
               :disabled="!logPath || logPath === '.'"
               @click="debug.loadLog"
             >
-              {{ t('edit.loadLog') }}
+              {{ t('core.edit.loadLog') }}
             </a-button>
           </div>
         </div>
@@ -105,7 +105,7 @@ const configPreview = computed(() => {
         <a-textarea
           v-model:value="debug.input"
           :rows="14"
-          :placeholder="t('edit.pasteLogLinesTest')"
+          :placeholder="t('core.edit.pasteLogLinesTest')"
           class="debug-textarea"
         />
 
@@ -119,9 +119,9 @@ const configPreview = computed(() => {
             <template #icon>
               <BugOutlined />
             </template>
-            {{ t('edit.debug') }}
+            {{ t('core.edit.debug') }}
           </a-button>
-          <a-button @click="debug.clear">{{ t('edit.clear') }}</a-button>
+          <a-button @click="debug.clear">{{ t('core.edit.clear') }}</a-button>
         </div>
       </div>
 
@@ -129,10 +129,10 @@ const configPreview = computed(() => {
       <div class="debug-result-pane">
         <div class="debug-result-header">
           <span class="debug-section-label">
-            {{ t('edit.debugResultCount', { n: debug.hitCount, m: debug.results.length }) }}
+            {{ t('core.edit.debugResultCount', { n: debug.hitCount, m: debug.results.length }) }}
           </span>
           <a-checkbox v-model:checked="debug.onlyHit" size="small">{{
-            t('edit.matchesOnly')
+            t('core.edit.matchesOnly')
           }}</a-checkbox>
         </div>
 
@@ -156,24 +156,26 @@ const configPreview = computed(() => {
               <span class="debug-result-line-num">{{ item.idx + 1 }}</span>
               <span v-if="!debug.isMultiline" class="debug-result-line-text">{{ item.line }}</span>
               <span v-else class="debug-result-line-text">
-                {{ t('edit.debugWindow', { n: item.idx + 1 }) }}
+                {{ t('core.edit.debugWindow', { n: item.idx + 1 }) }}
               </span>
             </div>
             <div class="debug-result-out">
               <a-tag v-if="item.hit" color="green" class="debug-result-tag">{{
-                t('edit.match')
+                t('core.edit.match')
               }}</a-tag>
-              <a-tag v-else color="default" class="debug-result-tag">{{ t('edit.noMatch') }}</a-tag>
+              <a-tag v-else color="default" class="debug-result-tag">{{
+                t('core.edit.noMatch')
+              }}</a-tag>
               <span v-if="item.hit" class="debug-result-extracted">{{ item.extracted }}</span>
               <span v-else-if="item.error" class="debug-result-error">{{ item.error }}</span>
             </div>
           </div>
           <div v-if="debug.filteredResults.length === 0" class="debug-results-empty">
-            {{ t('edit.noMatchingLines') }}
+            {{ t('core.edit.noMatchingLines') }}
           </div>
         </div>
 
-        <div v-else class="debug-results-empty">{{ t('edit.clickDebugSeeMatches') }}</div>
+        <div v-else class="debug-results-empty">{{ t('core.edit.clickDebugSeeMatches') }}</div>
       </div>
     </div>
   </a-modal>

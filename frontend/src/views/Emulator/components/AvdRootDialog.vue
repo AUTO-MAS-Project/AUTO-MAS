@@ -56,7 +56,7 @@ const check = async (refresh = false) => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`读取魔改 AVD 状态失败 (${target}): ${detail}`)
-    message.error(detail || t('emulator2.avd.toast.statusFailed'))
+    message.error(detail || t('core.emulator2.avd.toast.statusFailed'))
   } finally {
     checking.value = false
   }
@@ -75,17 +75,17 @@ const addRoot = async () => {
   try {
     const response = await api.addRoot(props.emulatorId, root.value.trim())
     if (!response.ok) {
-      const key = `emulator2.reason.${response.reason}`
+      const key = `core.emulator2.reason.${response.reason}`
       message.warning(response.reason && t(key) !== key ? t(key) : response.message)
       return
     }
-    message.success(t('emulator2.toast.addOk', { count: 1 }))
+    message.success(t('core.emulator2.toast.addOk', { count: 1 }))
     emit('added')
     open.value = false
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`添加魔改 AVD 失败: ${detail}`)
-    message.error(detail || t('emulator2.avd.toast.addFailed'))
+    message.error(detail || t('core.emulator2.avd.toast.addFailed'))
   } finally {
     adding.value = false
   }
@@ -99,14 +99,14 @@ watch(open, value => {
 </script>
 
 <template>
-  <a-modal v-model:open="open" :title="t('emulator2.avd.title')" width="760px" :footer="null">
+  <a-modal v-model:open="open" :title="t('core.emulator2.avd.title')" width="760px" :footer="null">
     <div class="avd-root-dialog">
       <a-form layout="vertical">
-        <a-form-item :label="t('emulator2.avd.root')">
+        <a-form-item :label="t('core.emulator2.avd.root')">
           <div class="root-row">
             <a-input
               v-model:value="root"
-              :placeholder="t('emulator2.avd.rootPlaceholder')"
+              :placeholder="t('core.emulator2.avd.rootPlaceholder')"
               @press-enter="check(true)"
             >
               <template #suffix>
@@ -114,7 +114,7 @@ watch(open, value => {
               </template>
             </a-input>
             <a-button :loading="checking" :disabled="!root.trim()" @click="check(true)">
-              {{ t('emulator2.avd.check') }}
+              {{ t('core.emulator2.avd.check') }}
             </a-button>
           </div>
         </a-form-item>
@@ -130,7 +130,7 @@ watch(open, value => {
 
       <div class="dialog-footer">
         <a-button @click="open = false">
-          {{ alreadyAdded ? t('emulator2.avd.close') : t('emulator.cancel') }}
+          {{ alreadyAdded ? t('core.emulator2.avd.close') : t('core.emulator.cancel') }}
         </a-button>
         <a-button
           v-if="!alreadyAdded"
@@ -139,7 +139,7 @@ watch(open, value => {
           :disabled="!ready"
           @click="addRoot"
         >
-          {{ t('emulator2.add') }}
+          {{ t('core.emulator2.add') }}
         </a-button>
       </div>
     </div>

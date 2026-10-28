@@ -190,12 +190,12 @@ export function useMaaFWApi() {
       )
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || t('apiErrors.maafwPreviewFailed'))
+        throw new Error(response.message || t('core.apiErrors.maafwPreviewFailed'))
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.maafwPreviewFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maafwPreviewFailed'))
       error.value = errorMsg
       logger.error(`读取项目 interface 失败: ${errorMsg}`)
       message.error(errorMsg)

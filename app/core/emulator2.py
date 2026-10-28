@@ -426,6 +426,12 @@ async def remove_path(emulator_id: str, path_id: str) -> dict:
     """
     manager = await build_manager(emulator_id)
     affected = find_affected_scripts(emulator_id, manager.slots.slots_of(path_id))
+    # 先把早先删除实例留下、还挂在这条路径上的墓碑退役，
+    # 否则写完路径墓碑就分不出来了，重新添加时会把已删除实例的号一起复活。
+    # 只对在用路径做：路径已移除（上次移除成功但响应丢了、用户重试）时，
+    # 这条路径上的墓碑都是路径墓碑，清掉就没法在重新添加时沿用原号。
+    if manager.path_of(path_id) is not None:
+        manager.slots.retire_tombstones(path_id)
     tombstoned = manager.slots.tombstone_path(path_id)
     paths = [record for record in manager.paths if record.path_id != path_id]
 
@@ -523,6 +529,9 @@ async def delete_instance(emulator_id: str, slot: str) -> dict:
     改成写墓碑：该行从设备表消失，但**号码仍然不回收**——回收了的话，
     以后新建的实例可能拿到同一个号，而某个脚本还绑着它，就会悄悄连到另一台设备上。
     绑定了该号的脚本下次执行直接失败，不会回退到别的设备。
+
+    退役的号同时和路径、原生索引脱钩：雷电新建实例总是复用最小的空闲索引，墓碑占着它，
+    新实例就分不到号、在设备表里看不见。脱钩后新实例拿一个新号。
     """
     manager = await build_manager(emulator_id)
     record = manager.slots.resolve(str(slot))
@@ -579,6 +588,9 @@ async def list_devices(emulator_id: str, *, with_settings: bool = True) -> dict:
                 )
             continue
 
+        # sync_path 里也会退役，这里先单独退一次：只退役、没新增设备号时也要落盘
+        if manager.slots.retire_tombstones(path.path_id):
+            dirty = True
         if manager.slots.sync_path(path.path_id, list(info)):
             dirty = True
 

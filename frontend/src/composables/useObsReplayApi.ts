@@ -53,9 +53,9 @@ export function useObsReplayApi() {
                   ? 'success'
                   : 'failure'
           ),
-          translate('setting.replay.checkFailed')
+          translate('core.setting.replay.checkFailed')
         ),
-      translate('setting.replay.checkFailed')
+      translate('core.setting.replay.checkFailed')
     )
 
   const saveObsReplay = () =>
@@ -69,9 +69,9 @@ export function useObsReplayApi() {
             result =>
               result.code !== 200 ? 'failure' : result.capture_path ? 'success' : 'skipped'
           ),
-          translate('setting.replay.saveFailed')
+          translate('core.setting.replay.saveFailed')
         ),
-      translate('setting.replay.saveFailed')
+      translate('core.setting.replay.saveFailed')
     )
 
   return {

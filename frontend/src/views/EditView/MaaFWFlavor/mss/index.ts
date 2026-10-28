@@ -17,8 +17,8 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
   routes: { suffix: 'mss' },
   create: {
     card: {
-      titleKey: 'scripts.type.MSS',
-      descriptionKey: 'scripts.create.typeDesc.MSS',
+      titleKey: 'core.scripts.type.MSS',
+      descriptionKey: 'core.scripts.create.typeDesc.MSS',
       keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
       group: 'specialized',
       after: null,
@@ -26,17 +26,17 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
   },
   scriptPage: {
     text: {
-      titleKey: 'edit.mssFlavorScriptTitle',
-      sourceDirectoryKey: 'edit.mssFlavorSourceDirectory',
-      sourceHintKey: 'edit.mssFlavorSourceHint',
-      sourcePlaceholderKey: 'edit.mssFlavorSourcePlaceholder',
+      titleKey: 'core.edit.mssFlavorScriptTitle',
+      sourceDirectoryKey: 'core.edit.mssFlavorSourceDirectory',
+      sourceHintKey: 'core.edit.mssFlavorSourceHint',
+      sourcePlaceholderKey: 'core.edit.mssFlavorSourcePlaceholder',
     },
     slots: {
       beforeControl: [defineMaaFWLazyComponent(() => import('./MSSControllerHint.vue'))],
     },
   },
   userPage: {
-    text: { queueHintKey: 'edit.mssFlavorQueueHint' },
+    text: { queueHintKey: 'core.edit.mssFlavorQueueHint' },
     slots: {
       beforeTaskQueue: [
         defineMaaFWLazyComponent(() => import('./MSSPlanModeField.vue')),

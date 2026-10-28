@@ -1,7 +1,7 @@
 <template>
   <!-- 加载状态 -->
   <div v-if="loading" class="loading-container">
-    <a-spin size="large" :tip="t('queue.loading')" />
+    <a-spin size="large" :tip="t('core.queue.loading')" />
   </div>
 
   <!-- 主要内容 -->
@@ -9,7 +9,7 @@
     <!-- 页面头部 -->
     <div class="queue-header">
       <div class="header-left">
-        <h1 class="page-title app-page-title">{{ t('queue.title') }}</h1>
+        <h1 class="page-title app-page-title">{{ t('core.queue.title') }}</h1>
       </div>
       <div class="header-actions">
         <a-space size="middle">
@@ -17,21 +17,21 @@
             <template #icon>
               <PlusOutlined />
             </template>
-            {{ t('queue.create') }}
+            {{ t('core.queue.create') }}
           </a-button>
 
           <a-popconfirm
             v-if="queueList.length > 0"
-            :title="t('queue.deleteConfirm')"
-            :ok-text="t('queue.ok')"
-            :cancel-text="t('queue.cancel')"
+            :title="t('core.queue.deleteConfirm')"
+            :ok-text="t('core.queue.ok')"
+            :cancel-text="t('core.queue.cancel')"
             @confirm="handleRemoveQueue(activeQueueId)"
           >
             <a-button danger size="large" :disabled="!activeQueueId || cycleRunning">
               <template #icon>
                 <DeleteOutlined />
               </template>
-              {{ t('queue.deleteCurrent') }}
+              {{ t('core.queue.deleteCurrent') }}
             </a-button>
           </a-popconfirm>
         </a-space>
@@ -42,8 +42,8 @@
     <div v-if="!queueList.length || !currentQueueData" class="empty-state">
       <a-empty :image="noDataImage" :image-style="{ height: '200px' }">
         <template #description>
-          <div class="empty-title">{{ t('queue.emptyTitle') }}</div>
-          <div class="empty-description">{{ t('queue.emptyDesc') }}</div>
+          <div class="empty-title">{{ t('core.queue.emptyTitle') }}</div>
+          <div class="empty-description">{{ t('core.queue.emptyDesc') }}</div>
         </template>
       </a-empty>
     </div>
@@ -54,9 +54,9 @@
       <a-card class="queue-selector-card" :bordered="false">
         <template #title>
           <div class="card-title">
-            <span>{{ t('queue.selectLabel') }}</span>
+            <span>{{ t('core.queue.selectLabel') }}</span>
             <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
-              {{ t('queue.count', { count: queueList.length }, queueList.length) }}
+              {{ t('core.queue.count', { count: queueList.length }, queueList.length) }}
             </a-tag>
           </div>
         </template>
@@ -85,7 +85,9 @@
         <template #title>
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
-              <span class="queue-title-text">{{ currentQueueName || t('queue.configTitle') }}</span>
+              <span class="queue-title-text">{{
+                currentQueueName || t('core.queue.configTitle')
+              }}</span>
               <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
                 <template #icon>
                   <EditOutlined />
@@ -96,7 +98,7 @@
               <a-input
                 ref="queueNameInputRef"
                 v-model:value="currentQueueName"
-                :placeholder="t('queue.namePlaceholder')"
+                :placeholder="t('core.queue.namePlaceholder')"
                 class="queue-title-input"
                 :maxlength="50"
                 @blur="finishEditQueueName"
@@ -112,9 +114,11 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.cycleType') }}</span>
+                  <span class="form-label">{{ t('core.queue.cycleType') }}</span>
                   <a-tooltip
-                    :title="cycleRunning ? t('queue.cycleLocked') : t('queue.cycleTypeTip')"
+                    :title="
+                      cycleRunning ? t('core.queue.cycleLocked') : t('core.queue.cycleTypeTip')
+                    "
                   >
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
@@ -126,16 +130,16 @@
                   :disabled="cycleRunning"
                   @change="(value: any) => handleConfigChange('CycleEnabled', value)"
                 >
-                  <a-select-option :value="false">{{ t('queue.typeTimed') }}</a-select-option>
-                  <a-select-option :value="true">{{ t('queue.typeCycle') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.queue.typeTimed') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.queue.typeCycle') }}</a-select-option>
                 </a-select>
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.runOnStart') }}</span>
-                  <a-tooltip :title="t('queue.runOnStartTip')">
+                  <span class="form-label">{{ t('core.queue.runOnStart') }}</span>
+                  <a-tooltip :title="t('core.queue.runOnStartTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -145,10 +149,10 @@
                   size="large"
                   @change="(value: any) => handleConfigChange('StartUpMode', value)"
                 >
-                  <a-select-option :value="'Always'">{{ t('queue.always') }}</a-select-option>
-                  <a-select-option :value="'Never'">{{ t('queue.never') }}</a-select-option>
+                  <a-select-option :value="'Always'">{{ t('core.queue.always') }}</a-select-option>
+                  <a-select-option :value="'Never'">{{ t('core.queue.never') }}</a-select-option>
                   <a-select-option :value="'DailyFirst'">{{
-                    t('queue.dailyFirst')
+                    t('core.queue.dailyFirst')
                   }}</a-select-option>
                 </a-select>
               </div>
@@ -156,8 +160,8 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.scheduled') }}</span>
-                  <a-tooltip :title="t('queue.scheduledTip')">
+                  <span class="form-label">{{ t('core.queue.scheduled') }}</span>
+                  <a-tooltip :title="t('core.queue.scheduledTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -168,16 +172,16 @@
                   :disabled="currentCycleEnabled"
                   @change="(value: any) => handleConfigChange('TimeEnabled', value)"
                 >
-                  <a-select-option :value="true">{{ t('queue.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('queue.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.queue.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.queue.no') }}</a-select-option>
                 </a-select>
               </div>
             </a-col>
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.afterDone') }}</span>
-                  <a-tooltip :title="t('queue.afterDoneTip')">
+                  <span class="form-label">{{ t('core.queue.afterDone') }}</span>
+                  <a-tooltip :title="t('core.queue.afterDoneTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -185,7 +189,7 @@
                   v-model:value="currentAfterAccomplish"
                   style="width: 100%"
                   :options="afterAccomplishOptions"
-                  :placeholder="t('queue.actionPlaceholder')"
+                  :placeholder="t('core.queue.actionPlaceholder')"
                   size="large"
                   @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
                 />
@@ -194,8 +198,8 @@
             <a-col :xs="24" :md="8">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
-                  <span class="form-label">{{ t('queue.afterDoneDelay') }}</span>
-                  <a-tooltip :title="t('queue.afterDoneDelayTip')">
+                  <span class="form-label">{{ t('core.queue.afterDoneDelay') }}</span>
+                  <a-tooltip :title="t('core.queue.afterDoneDelayTip')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
@@ -205,7 +209,7 @@
                   :max="1440"
                   :precision="0"
                   :disabled="currentAfterAccomplish === 'NoAction'"
-                  :addon-after="t('queue.afterDoneDelayUnit')"
+                  :addon-after="t('core.queue.afterDoneDelayUnit')"
                   size="large"
                   style="width: 100%"
                   @blur="handleAfterAccomplishDelayBlur"
@@ -258,7 +262,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { Service, type QueueConfig_Info } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
@@ -324,15 +328,15 @@ const isEditingQueueName = ref<boolean>(false)
 
 // 完成后操作选项。label 随语言变，必须是 computed
 const afterAccomplishOptions = computed(() => [
-  { label: t('queue.action.NoAction'), value: 'NoAction' },
-  { label: t('queue.action.Shutdown'), value: 'Shutdown' },
-  { label: t('queue.action.ShutdownForce'), value: 'ShutdownForce' },
-  { label: t('queue.action.Reboot'), value: 'Reboot' },
-  { label: t('queue.action.Hibernate'), value: 'Hibernate' },
-  { label: t('queue.action.Sleep'), value: 'Sleep' },
-  { label: t('queue.action.KillSelf'), value: 'KillSelf' },
-  { label: t('queue.action.RestartSelf'), value: 'RestartSelf' },
-  { label: t('queue.action.Logoff'), value: 'Logoff' },
+  { label: t('core.queue.action.NoAction'), value: 'NoAction' },
+  { label: t('core.queue.action.Shutdown'), value: 'Shutdown' },
+  { label: t('core.queue.action.ShutdownForce'), value: 'ShutdownForce' },
+  { label: t('core.queue.action.Reboot'), value: 'Reboot' },
+  { label: t('core.queue.action.Hibernate'), value: 'Hibernate' },
+  { label: t('core.queue.action.Sleep'), value: 'Sleep' },
+  { label: t('core.queue.action.KillSelf'), value: 'KillSelf' },
+  { label: t('core.queue.action.RestartSelf'), value: 'RestartSelf' },
+  { label: t('core.queue.action.Logoff'), value: 'Logoff' },
 ])
 
 // 当前队列的定时项和队列项
@@ -355,7 +359,7 @@ const fetchQueues = async () => {
         // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
         queueList.value = response.index.map((item: any) => ({
           id: item.uid,
-          name: response.data[item.uid]?.Info?.Name || t('queue.newQueueName'),
+          name: response.data[item.uid]?.Info?.Name || t('core.queue.newQueueName'),
         }))
 
         // 如果有队列且没有选中的队列，默认选中第一个
@@ -438,7 +442,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载队列数据失败: ${errorMsg}`)
-    if (isMounted) message.error(t('queue.toast.loadQueueFailed'))
+    if (isMounted) message.error(t('core.queue.toast.loadQueueFailed'))
   } finally {
     if (queueId === activeQueueId.value) queueConfigLoading.value = false
   }
@@ -567,7 +571,7 @@ const onQueueNameBlur = async () => {
     if (currentQueue) {
       currentQueue.name =
         currentQueueName.value ||
-        t('queue.unnamedIndexed', { index: queueList.value.indexOf(currentQueue) + 1 })
+        t('core.queue.unnamedIndexed', { index: queueList.value.indexOf(currentQueue) + 1 })
     }
     // 保存到后端
     await handleSaveChange('Name', currentQueueName.value)
@@ -637,7 +641,7 @@ const handleAddQueue = async () => {
       const { playSound } = useAudioPlayer()
       await playSound('add_queue')
 
-      const defaultName = t('queue.defaultName')
+      const defaultName = t('core.queue.defaultName')
       const newQueue = {
         id: response.queueId,
         name: defaultName,
@@ -652,16 +656,18 @@ const handleAddQueue = async () => {
       await loadQueueData(newQueue.id)
 
       // 显示名称修改提示
-      message.info(t('queue.toast.created'), 3)
+      message.info(t('core.queue.toast.created'), 3)
     } else {
       message.error(
-        t('queue.toast.createFailed', { error: response.message || t('queue.toast.unknownError') })
+        t('core.queue.toast.createFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
+        })
       )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加队列失败: ${errorMsg}`)
-    message.error(t('queue.toast.addQueueFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.addQueueFailed', { error: errorMsg }))
   }
 }
 
@@ -688,16 +694,18 @@ const handleRemoveQueue = async (queueId: string) => {
           }
         }
       }
-      message.success(t('queue.toast.deleted'))
+      message.success(t('core.queue.toast.deleted'))
     } else {
       message.error(
-        t('queue.toast.deleteFailed', { error: response.message || t('queue.toast.unknownError') })
+        t('core.queue.toast.deleteFailed', {
+          error: response.message || t('core.queue.toast.unknownError'),
+        })
       )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`删除队列失败: ${errorMsg}`)
-    message.error(t('queue.toast.deleteFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.deleteFailed', { error: errorMsg }))
   }
 }
 
@@ -778,7 +786,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     const response = await queueApi.updateQueue({ queueId, data: queueData })
 
     if (response.code !== 200) {
-      message.error(response.message || t('queue.toast.saveFailed'))
+      message.error(response.message || t('core.queue.toast.saveFailed'))
       // 保存失败时界面控件仍停在用户刚选的值，回读真实配置以纠正显示
       await refreshQueueConfig(queueId)
       return false
@@ -790,7 +798,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存队列数据失败: ${errorMsg}`)
-    message.error(t('queue.toast.saveQueueFailed', { error: errorMsg }))
+    message.error(t('core.queue.toast.saveQueueFailed', { error: errorMsg }))
     // 同上：网络异常等情况也要回读，避免界面与后端配置不一致
     await refreshQueueConfig(queueId)
     return false

@@ -2,7 +2,7 @@
   <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
        任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
   <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-    <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+    <h3>{{ t('core.edit.taskQueueConfiguration') }}</h3>
     <a-space>
       <!-- 从本脚本的其他用户、或外壳（MFAAvalonia / MXU / MFW-PyQt6）把配好的队列搬过来：
            引导最后一步只在新建脚本时走一次，脚本建好之后再同步就走这里 -->
@@ -17,7 +17,7 @@
         <template #icon>
           <HistoryOutlined />
         </template>
-        {{ t('edit.configRestoreTitle') }}
+        {{ t('core.edit.configRestoreTitle') }}
       </a-button>
     </a-space>
   </a-flex>

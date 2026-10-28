@@ -3,10 +3,10 @@
     <!-- 全局选项每个用户只设一次，队列里的所有任务共用；任务配置里不再列它们 -->
     <div v-if="!interfaceLoading && previewData && showGlobalOptions" class="global-option-section">
       <div class="column-header">
-        <span class="column-title">{{ t('edit.maafwGlobalOptions') }}</span>
+        <span class="column-title">{{ t('core.edit.maafwGlobalOptions') }}</span>
       </div>
       <div class="global-option-panel">
-        <div class="global-option-hint">{{ t('edit.maafwGlobalOptionsHint') }}</div>
+        <div class="global-option-hint">{{ t('core.edit.maafwGlobalOptionsHint') }}</div>
         <MaaFWTaskOptionEditor
           :option-names="previewData.globalOption"
           :options="previewData.options"
@@ -20,25 +20,25 @@
       </div>
     </div>
     <div v-if="interfaceLoading" class="task-loading">
-      <a-spin :tip="t('edit.readingInterfaceJson')">
+      <a-spin :tip="t('core.edit.readingInterfaceJson')">
         <a-alert
           type="info"
           show-icon
-          :message="t('edit.loadingMaafwProjectInterface')"
-          :description="t('edit.readingTaskOptionPreset')"
+          :message="t('core.edit.loadingMaafwProjectInterface')"
+          :description="t('core.edit.readingTaskOptionPreset')"
         />
       </a-spin>
     </div>
     <a-empty
       v-else-if="!previewData"
-      :description="t('edit.interfaceJsonHasNot')"
+      :description="t('core.edit.interfaceJsonHasNot')"
       class="task-empty"
     />
     <a-row v-else :gutter="24" class="task-editor-layout">
       <!-- 队列行只剩标题，左窄右宽：9 / 15 -->
       <a-col :xs="24" :lg="9" class="task-list-column">
         <div class="column-header">
-          <span class="column-title">{{ t('edit.taskQueue') }}</span>
+          <span class="column-title">{{ t('core.edit.taskQueue') }}</span>
           <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
           <div class="column-actions">
             <!-- 队列为空时空态里已列出模板与预设；但有自定义模板时仍要能进弹窗改名、删除
@@ -49,7 +49,7 @@
               size="small"
               @click="showPresetModalModel = true"
             >
-              {{ t('edit.queueTemplate') }}
+              {{ t('core.edit.queueTemplate') }}
             </a-button>
             <!-- 下拉宽度不跟输入框走（搜索时默认会跟）：每栏给够宽，任务名别被截断 -->
             <a-cascader
@@ -57,7 +57,7 @@
               :options="addTaskCascaderOptions"
               :show-search="{ filter: filterAddTaskOption, matchInputWidth: false }"
               :dropdown-menu-column-style="ADD_TASK_MENU_COLUMN_STYLE"
-              :placeholder="t('edit.addTask')"
+              :placeholder="t('core.edit.addTask')"
               expand-trigger="hover"
               class="add-task-cascader"
               :disabled="interfaceDependentDisabled || availableTasks.length === 0"
@@ -96,7 +96,7 @@
             class="preset-section"
           >
             <template v-if="queueTemplates.length > 0">
-              <div class="preset-group-title">{{ t('edit.queueTemplateMine') }}</div>
+              <div class="preset-group-title">{{ t('core.edit.queueTemplateMine') }}</div>
               <MaaFWQueueCard
                 v-for="template in queueTemplates"
                 :key="template.name"
@@ -112,13 +112,13 @@
                     :disabled="template.entries.length === 0"
                     @click="emit('applyQueueTemplate', template.name)"
                   >
-                    {{ t('edit.queueTemplateApply') }}
+                    {{ t('core.edit.queueTemplateApply') }}
                   </a-button>
                 </template>
               </MaaFWQueueCard>
             </template>
             <template v-if="presetTemplates.length > 0">
-              <div class="preset-group-title">{{ t('edit.queueTemplatePresets') }}</div>
+              <div class="preset-group-title">{{ t('core.edit.queueTemplatePresets') }}</div>
               <MaaFWQueueCard
                 v-for="template in presetTemplates"
                 :key="template.preset.name"
@@ -134,7 +134,7 @@
                     :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
-                    {{ t('edit.applyPreset2') }}
+                    {{ t('core.edit.applyPreset2') }}
                   </a-button>
                 </template>
               </MaaFWQueueCard>
@@ -142,7 +142,7 @@
           </div>
           <a-empty
             v-else-if="orderedTasks.length === 0"
-            :description="t('edit.addTaskAbove')"
+            :description="t('core.edit.addTaskAbove')"
             class="task-queue-empty"
           />
           <!-- 右键菜单整列共用一个：行上右键时先记下是哪一行，空白处右键不弹 -->
@@ -189,12 +189,12 @@
                           #{{ maafwQueueEntryTitle(queuedTask).index }}
                         </span>
                       </span>
-                      <span class="task-missing-tag">{{ t('edit.missingTaskTag') }}</span>
+                      <span class="task-missing-tag">{{ t('core.edit.missingTaskTag') }}</span>
                     </div>
                     <a-popconfirm
-                      :title="t('edit.deleteThisTask2')"
-                      :ok-text="t('edit.ok')"
-                      :cancel-text="t('edit.cancel')"
+                      :title="t('core.edit.deleteThisTask2')"
+                      :ok-text="t('core.edit.ok')"
+                      :cancel-text="t('core.edit.cancel')"
                       :disabled="interfaceDependentDisabled"
                       @confirm="emit('deleteTask', queuedTask.id)"
                     >
@@ -202,7 +202,7 @@
                         type="text"
                         size="small"
                         :disabled="interfaceDependentDisabled"
-                        :aria-label="t('edit.deleteThisTask')"
+                        :aria-label="t('core.edit.deleteThisTask')"
                         @click.stop
                       >
                         <template #icon>
@@ -246,7 +246,7 @@
                       <!-- 多选项勾选数不满足 min_count / max_count：运行器会让整个用户的计划构建失败 -->
                       <a-tooltip
                         v-if="checkboxIssueTaskIds.has(queuedTask.id)"
-                        :title="t('edit.maafwQueueTaskCheckboxCountInvalid')"
+                        :title="t('core.edit.maafwQueueTaskCheckboxCountInvalid')"
                       >
                         <ExclamationCircleOutlined class="task-option-issue" />
                       </a-tooltip>
@@ -270,7 +270,7 @@
                         <button
                           type="button"
                           :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, -1)"
-                          :aria-label="t('edit.moveTaskUp')"
+                          :aria-label="t('core.edit.moveTaskUp')"
                           @click.stop="emit('moveTask', queuedTask.id, -1)"
                         >
                           <UpOutlined />
@@ -278,7 +278,7 @@
                         <button
                           type="button"
                           :disabled="interfaceDependentDisabled || !canMoveTaskByOffset(index, 1)"
-                          :aria-label="t('edit.moveTaskDown')"
+                          :aria-label="t('core.edit.moveTaskDown')"
                           @click.stop="emit('moveTask', queuedTask.id, 1)"
                         >
                           <DownOutlined />
@@ -293,14 +293,14 @@
               <a-menu @click="handleContextMenuClick">
                 <template v-if="contextTask && !contextTask.missing">
                   <a-menu-item key="duplicate" :disabled="!canDuplicateContextTask">
-                    {{ t('edit.queueTaskDuplicate') }}
+                    {{ t('core.edit.queueTaskDuplicate') }}
                   </a-menu-item>
                   <a-menu-item key="rename" :disabled="interfaceDependentDisabled">
-                    {{ t('edit.queueTaskRename') }}
+                    {{ t('core.edit.queueTaskRename') }}
                   </a-menu-item>
                 </template>
                 <a-menu-item key="delete" danger :disabled="interfaceDependentDisabled">
-                  {{ t('edit.queueTaskDelete') }}
+                  {{ t('core.edit.queueTaskDelete') }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -309,7 +309,7 @@
       </a-col>
       <a-col :xs="24" :lg="15" class="task-option-column">
         <div class="column-header">
-          <span>{{ t('edit.taskConfiguration') }}</span>
+          <span>{{ t('core.edit.taskConfiguration') }}</span>
         </div>
         <MaaFWTaskConfigPanel
           :preview-data="previewData"
@@ -344,17 +344,17 @@
 
     <a-modal
       v-model:open="renameOpen"
-      :title="t('edit.queueTaskRenameTitle')"
+      :title="t('core.edit.queueTaskRenameTitle')"
       width="480px"
-      :ok-text="t('edit.ok')"
-      :cancel-text="t('edit.cancel')"
+      :ok-text="t('core.edit.ok')"
+      :cancel-text="t('core.edit.cancel')"
       destroy-on-close
       @ok="confirmRename"
     >
       <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
       <a-input
         v-model:value="renameDraft"
-        :placeholder="t('edit.queueTaskDisplayName')"
+        :placeholder="t('core.edit.queueTaskDisplayName')"
         :maxlength="MAAFW_TASK_LABEL_MAX_LENGTH"
         autofocus
         @press-enter="confirmRename"
@@ -450,8 +450,8 @@ const getDisplayName = (item: DisplayItem) => item.label || item.name
 const taskCheckedLabel = (taskId: string) =>
   t(
     props.taskSnapshot.taskChecked[taskId] === false
-      ? 'edit.queueTaskSkipped'
-      : 'edit.queueTaskRuns'
+      ? 'core.edit.queueTaskSkipped'
+      : 'core.edit.queueTaskRuns'
   )
 
 // ── 队列行右键菜单：复制任务 / 重命名 / 删除任务 ──
@@ -511,10 +511,10 @@ const handleContextMenuClick = ({ key }: { key: string | number }) => {
     // 菜单项里挂不了气泡确认，改用确认弹窗，文案与删除按钮的气泡相同
     const taskId = item.id
     Modal.confirm({
-      title: t('edit.deleteThisTask2'),
-      okText: t('edit.ok'),
+      title: t('core.edit.deleteThisTask2'),
+      okText: t('core.edit.ok'),
       okButtonProps: { danger: true },
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: () => emit('deleteTask', taskId),
     })
   }

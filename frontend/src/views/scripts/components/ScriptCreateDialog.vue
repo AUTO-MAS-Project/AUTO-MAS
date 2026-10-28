@@ -9,21 +9,21 @@
     :z-index="900"
     :body-style="{ height: '500px', minHeight: 0, overflowY: 'auto' }"
     class="script-create-dialog"
-    :title="t('scripts.create.title')"
+    :title="t('core.scripts.create.title')"
     @cancel="handleCancel"
   >
     <div class="create-layout">
       <section class="step-content">
         <template v-if="currentStep === 'type'">
           <StepHeading
-            :title="t('scripts.create.typeHeading')"
-            :description="t('scripts.create.typeHeadingDesc')"
+            :title="t('core.scripts.create.typeHeading')"
+            :description="t('core.scripts.create.typeHeadingDesc')"
           />
           <div class="list-toolbar single">
             <a-input
               v-model:value="typeKeyword"
               allow-clear
-              :placeholder="t('scripts.create.typeSearch')"
+              :placeholder="t('core.scripts.create.typeSearch')"
             >
               <template #prefix><SearchOutlined /></template>
             </a-input>
@@ -31,7 +31,7 @@
           <SelectableOptionList v-if="filteredTypes.length" v-model="selectedType">
             <section v-if="typeSections.general.length" class="type-section">
               <div class="type-section-heading">
-                <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
+                <span class="type-section-title">{{ t('core.scripts.create.groupGeneral') }}</span>
               </div>
               <div class="type-grid">
                 <SelectableOptionCard
@@ -54,7 +54,9 @@
               class="type-section specialized-section"
             >
               <div class="type-section-heading">
-                <span class="type-section-title">{{ t('scripts.create.groupSpecialized') }}</span>
+                <span class="type-section-title">{{
+                  t('core.scripts.create.groupSpecialized')
+                }}</span>
               </div>
               <div class="type-grid">
                 <SelectableOptionCard
@@ -73,8 +75,8 @@
               </div>
             </section>
           </SelectableOptionList>
-          <a-empty v-else :description="t('scripts.create.noTypeMatch')">
-            <a-button @click="clearTypeFilters">{{ t('scripts.clearSearch') }}</a-button>
+          <a-empty v-else :description="t('core.scripts.create.noTypeMatch')">
+            <a-button @click="clearTypeFilters">{{ t('core.scripts.clearSearch') }}</a-button>
           </a-empty>
         </template>
 
@@ -83,8 +85,8 @@
              之后是特调的插入点 create.afterSourceStep -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
           <StepHeading
-            :title="t('scripts.create.mfwSourceHeading')"
-            :description="t('scripts.create.mfwSourceHeadingDesc')"
+            :title="t('core.scripts.create.mfwSourceHeading')"
+            :description="t('core.scripts.create.mfwSourceHeadingDesc')"
           />
           <component
             :is="createSections.source"
@@ -106,14 +108,14 @@
         <template v-else-if="currentStep === 'config'">
           <template v-if="configView === 'choice'">
             <StepHeading
-              :title="t('scripts.create.sourceHeading')"
-              :description="t('scripts.create.sourceHeadingDesc')"
+              :title="t('core.scripts.create.sourceHeading')"
+              :description="t('core.scripts.create.sourceHeadingDesc')"
             />
             <SelectableOptionList v-model="selectedConfigMode">
               <SelectableOptionCard
                 value="template"
-                :title="t('scripts.create.fromTemplate')"
-                :description="t('scripts.create.fromTemplateDesc')"
+                :title="t('core.scripts.create.fromTemplate')"
+                :description="t('core.scripts.create.fromTemplateDesc')"
                 :selected="selectedConfigMode === 'template'"
               >
                 <template #icon>
@@ -122,8 +124,8 @@
               </SelectableOptionCard>
               <SelectableOptionCard
                 value="custom"
-                :title="t('scripts.create.custom')"
-                :description="t('scripts.create.customDesc')"
+                :title="t('core.scripts.create.custom')"
+                :description="t('core.scripts.create.customDesc')"
                 :selected="selectedConfigMode === 'custom'"
               >
                 <template #icon>
@@ -135,21 +137,21 @@
 
           <template v-else>
             <StepHeading
-              :title="t('scripts.create.templateHeading')"
-              :description="t('scripts.create.templateHeadingDesc')"
+              :title="t('core.scripts.create.templateHeading')"
+              :description="t('core.scripts.create.templateHeadingDesc')"
             />
             <div class="list-toolbar single">
               <a-input
                 v-model:value="templateKeyword"
                 allow-clear
-                :placeholder="t('scripts.create.templateSearch')"
+                :placeholder="t('core.scripts.create.templateSearch')"
                 @update:value="scheduleTemplateSearch"
                 @press-enter="requestTemplates(1)"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
               <a-button :loading="templateLoading" @click="requestTemplates(templatePage)">{{
-                t('scripts.create.reload')
+                t('core.scripts.create.reload')
               }}</a-button>
             </div>
             <a-alert
@@ -161,12 +163,12 @@
             >
               <template #action>
                 <a-button size="small" @click="requestTemplates(templatePage)">{{
-                  t('scripts.create.retry')
+                  t('core.scripts.create.retry')
                 }}</a-button>
               </template>
             </a-alert>
             <div v-if="templateLoading" class="template-loading-state">
-              <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
+              <a-spin size="large" :tip="t('core.scripts.create.templateLoading')" />
             </div>
             <template v-else-if="templates.length">
               <SelectableOptionList v-model="selectedTemplateKey">
@@ -183,7 +185,9 @@
                     <span class="template-meta">
                       <span
                         ><UserOutlined />
-                        {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}</span
+                        {{
+                          template.ownerUsername || t('core.scripts.template.unknownAuthor')
+                        }}</span
                       >
                       <span
                         ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
@@ -192,7 +196,7 @@
                   </template>
                   <template #description>
                     <span class="template-description">{{
-                      template.description || t('scripts.noDescription')
+                      template.description || t('core.scripts.noDescription')
                     }}</span>
                   </template>
                 </SelectableOptionCard>
@@ -213,15 +217,15 @@
               v-else
               :description="
                 templateKeyword
-                  ? t('scripts.create.noTemplateMatch')
-                  : t('scripts.create.noTemplates')
+                  ? t('core.scripts.create.noTemplateMatch')
+                  : t('core.scripts.create.noTemplates')
               "
             >
               <a-button v-if="templateKeyword" @click="clearTemplateKeyword">{{
-                t('scripts.clearSearch')
+                t('core.scripts.clearSearch')
               }}</a-button>
               <a-button v-else @click="chooseCustomConfig">{{
-                t('scripts.create.switchToCustom')
+                t('core.scripts.create.switchToCustom')
               }}</a-button>
             </a-empty>
           </template>
@@ -229,24 +233,24 @@
 
         <template v-else>
           <StepHeading
-            :title="t('scripts.create.confirmHeading')"
-            :description="t('scripts.create.confirmHeadingDesc')"
+            :title="t('core.scripts.create.confirmHeading')"
+            :description="t('core.scripts.create.confirmHeadingDesc')"
           />
           <a-descriptions bordered :column="1" class="confirm-summary">
-            <a-descriptions-item :label="t('scripts.create.labelMode')">
-              {{ t('scripts.create.modeNew') }}
+            <a-descriptions-item :label="t('core.scripts.create.labelMode')">
+              {{ t('core.scripts.create.modeNew') }}
             </a-descriptions-item>
-            <a-descriptions-item :label="t('scripts.create.labelType')">
+            <a-descriptions-item :label="t('core.scripts.create.labelType')">
               {{ t(getTypeOption(selectedType).titleKey) }}
             </a-descriptions-item>
             <a-descriptions-item
               v-if="selectedType === 'General'"
-              :label="t('scripts.create.labelSource')"
+              :label="t('core.scripts.create.labelSource')"
             >
               {{
                 selectedConfigMode === 'custom'
-                  ? t('scripts.create.custom')
-                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
+                  ? t('core.scripts.create.custom')
+                  : t('core.scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -258,10 +262,12 @@
       <div class="dialog-footer">
         <a-button :disabled="!canGoBack || submitting" @click="handleBack">
           <template #icon><ArrowLeftOutlined /></template>
-          {{ t('scripts.create.back') }}
+          {{ t('core.scripts.create.back') }}
         </a-button>
         <a-space>
-          <a-button :disabled="submitting" @click="handleCancel">{{ t('common.cancel') }}</a-button>
+          <a-button :disabled="submitting" @click="handleCancel">{{
+            t('core.common.cancel')
+          }}</a-button>
           <a-button
             type="primary"
             :loading="submitting"
@@ -426,21 +432,21 @@ const nextDisabled = computed(() => {
 const primaryButtonText = computed(() => {
   if (currentStep.value === 'type') {
     return steps.value.length > 1
-      ? t('scripts.create.next')
-      : t('scripts.create.createAndConfigure')
+      ? t('core.scripts.create.next')
+      : t('core.scripts.create.createAndConfigure')
   }
   if (isMfwStep.value) {
     return selectedMfwChoice.value !== 'new'
-      ? t('scripts.create.createAndReuse')
-      : t('scripts.create.createAndConfigure')
+      ? t('core.scripts.create.createAndReuse')
+      : t('core.scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && selectedConfigMode.value === 'custom') {
-    return t('scripts.create.createAndConfigure')
+    return t('core.scripts.create.createAndConfigure')
   }
   if (currentStep.value === 'config' && configView.value === 'templates') {
-    return t('scripts.create.createFromTemplate')
+    return t('core.scripts.create.createFromTemplate')
   }
-  return t('scripts.create.next')
+  return t('core.scripts.create.next')
 })
 
 watch(
@@ -487,7 +493,7 @@ const clearTemplateKeyword = () => {
 
 // 发布时间来自配置中心，按本机时区展示
 const formatPublishedAt = (publishedAt: string | undefined) =>
-  publishedAt ? formatBackendDateTime(publishedAt) : t('scripts.template.unknownTime')
+  publishedAt ? formatBackendDateTime(publishedAt) : t('core.scripts.template.unknownTime')
 
 onBeforeUnmount(cancelScheduledSearch)
 

@@ -26,8 +26,8 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   create: {
     card: {
       // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。
-      titleKey: 'scripts.type.MaaFW',
-      descriptionKey: 'scripts.create.typeDesc.MaaFW',
+      titleKey: 'core.scripts.type.MaaFW',
+      descriptionKey: 'core.scripts.create.typeDesc.MaaFW',
       keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
       group: 'general',
       after: 'General',
@@ -38,9 +38,9 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   scriptPage: {
     text: {
       titleKey: null,
-      sourceDirectoryKey: 'edit.localProjectDirectory',
-      sourceHintKey: 'edit.pickMfwProjectDirectory',
-      sourcePlaceholderKey: 'edit.pickActualMfwProject',
+      sourceDirectoryKey: 'core.edit.localProjectDirectory',
+      sourceHintKey: 'core.edit.pickMfwProjectDirectory',
+      sourcePlaceholderKey: 'core.edit.pickActualMfwProject',
     },
     page: null,
     sections: {},
@@ -49,8 +49,8 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   },
   userPage: {
     text: {
-      accountPlaceholderKey: 'edit.localNoteOnly',
-      accountTooltipKey: 'edit.maafwAccountRecordTooltip',
+      accountPlaceholderKey: 'core.edit.localNoteOnly',
+      accountTooltipKey: 'core.edit.maafwAccountRecordTooltip',
       queueHintKey: null,
     },
     managed: {

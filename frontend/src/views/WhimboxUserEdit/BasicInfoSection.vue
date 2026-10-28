@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
@@ -9,8 +9,8 @@
           name="userName"
           required
           v-model="formData.userName"
-          :hint="t('edit.displayNameUsedIdentify')"
-          :placeholder="t('edit.enterUsername')"
+          :hint="t('core.edit.displayNameUsedIdentify')"
+          :placeholder="t('core.edit.enterUsername')"
           :disabled="loading"
           enhanced
           @save="emit('save', 'userName', formData.userName)"
@@ -20,7 +20,7 @@
         <UserStatusField
           name="status"
           v-model="formData.Info.Status"
-          :hint="t('edit.whetherThisUserEnabled')"
+          :hint="t('core.edit.whetherThisUserEnabled')"
           :disabled="loading"
           @save="emit('save', 'Info.Status', formData.Info.Status)"
         />
@@ -29,7 +29,7 @@
         <UserRemainedDayField
           name="remainedDay"
           v-model="formData.Info.RemainedDay"
-          :hint="t('edit.daysLeftAccount1')"
+          :hint="t('core.edit.daysLeftAccount1')"
           placeholder="-1"
           :disabled="loading"
           @save="emit('save', 'Info.RemainedDay', formData.Info.RemainedDay)"
@@ -42,8 +42,8 @@
         <UserNotesField
           name="notes"
           v-model="formData.Info.Notes"
-          :hint="t('edit.addNoteAboutThis')"
-          :placeholder="t('edit.enterNote3')"
+          :hint="t('core.edit.addNoteAboutThis')"
+          :placeholder="t('core.edit.enterNote3')"
           :disabled="loading"
           :rows="3"
           enhanced
@@ -54,8 +54,8 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.whimboxUserTag')"
-              :hint="t('edit.whimboxUserTagHint')"
+              :text="t('core.edit.whimboxUserTag')"
+              :hint="t('core.edit.whimboxUserTagHint')"
               variant="form"
             />
           </template>
@@ -83,7 +83,7 @@
           :options="whimboxConfigModeOptions"
           :disabled="loading"
           :quick-config="formData.Info.IfQuickConfig"
-          :alert-message="t('edit.whimboxConfigSourceHint')"
+          :alert-message="t('core.edit.whimboxConfigSourceHint')"
           @change="(value: boolean | string) => emit('modeChange', value)"
           @quick-config-change="(value: boolean) => emit('quickConfigChange', value)"
         />
@@ -142,18 +142,18 @@ const modeMeta: Record<
   { title: string; description: string; icon: 'database' | 'file' | 'setting' }
 > = {
   shared: {
-    title: t('edit.script'),
-    description: t('edit.whimboxModeScriptDesc'),
+    title: t('core.edit.script'),
+    description: t('core.edit.whimboxModeScriptDesc'),
     icon: 'database',
   },
   independent: {
-    title: t('edit.user'),
-    description: t('edit.whimboxModeUserDesc'),
+    title: t('core.edit.user'),
+    description: t('core.edit.whimboxModeUserDesc'),
     icon: 'file',
   },
   native: {
-    title: t('edit.directControl'),
-    description: t('edit.whimboxModeDirectDesc'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.whimboxModeDirectDesc'),
     icon: 'setting',
   },
 }

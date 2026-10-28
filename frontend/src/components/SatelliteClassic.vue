@@ -370,7 +370,7 @@ function spawnStarBurst(clientX: number, clientY: number): void {
   const bounds = container.value.getBoundingClientRect()
   const element = document.createElement('span')
   element.className = scene?.isCenterRainbow ? 'star-burst star-burst-rainbow' : 'star-burst'
-  element.textContent = t('home.satelliteEgg.star')
+  element.textContent = t('core.home.satelliteEgg.star')
   element.style.left = `${clientX - bounds.left}px`
   element.style.top = `${clientY - bounds.top}px`
   container.value.appendChild(element)

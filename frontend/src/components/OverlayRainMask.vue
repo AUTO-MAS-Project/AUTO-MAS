@@ -7,7 +7,7 @@
       @click="handleMaskClick"
     >
       <canvas ref="canvasRef" class="overlay-rain-mask__canvas"></canvas>
-      <div class="overlay-rain-mask__exit-hint">{{ t('comp.clickAnywhereDismiss') }}</div>
+      <div class="overlay-rain-mask__exit-hint">{{ t('core.comp.clickAnywhereDismiss') }}</div>
       <div class="overlay-rain-mask__float-layer">
         <span
           v-for="item in floatingTexts"

@@ -20,9 +20,9 @@ export const getScriptLogoAlt = (type: ScriptListItem['type']) =>
   type === 'OkNte' ? 'ok-nte' : SCRIPT_LABELS[type]
 
 const CONFIG_SOURCE_KEYS: Record<string, string> = {
-  shared: 'comp.configSourceShared',
-  independent: 'comp.configSourceIndependent',
-  native: 'comp.configSourceNative',
+  shared: 'core.comp.configSourceShared',
+  independent: 'core.comp.configSourceIndependent',
+  native: 'core.comp.configSourceNative',
 }
 
 const OVERLAY_SCRIPT_TYPES = new Set([
@@ -189,12 +189,12 @@ const getZzzOdRegion = (user: ScriptListUser): string => user.Game?.GameRegion |
 export const getZzzOdRegionLabel = (user: ScriptListUser): string => {
   // 区服文案复用编辑页的 i18n 键，避免英文界面下标签显示中文
   const labels: Record<string, string> = {
-    cn: t('edit.zzzodRegionCn'),
-    cn_b: t('edit.zzzodRegionCnB'),
-    us: t('edit.zzzodRegionUs'),
-    eu: t('edit.zzzodRegionEu'),
-    asia: t('edit.zzzodRegionAsia'),
-    twhkmo: t('edit.zzzodRegionTwHkMo'),
+    cn: t('core.edit.zzzodRegionCn'),
+    cn_b: t('core.edit.zzzodRegionCnB'),
+    us: t('core.edit.zzzodRegionUs'),
+    eu: t('core.edit.zzzodRegionEu'),
+    asia: t('core.edit.zzzodRegionAsia'),
+    twhkmo: t('core.edit.zzzodRegionTwHkMo'),
   }
   return labels[getZzzOdRegion(user)] ?? labels.cn
 }

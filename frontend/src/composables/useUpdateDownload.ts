@@ -190,9 +190,9 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
       title: `${sourceLabel.value || '当前来源'}下载速度较慢`,
-      content: t('misc.downloadHasBeenUnder'),
-      okText: t('misc.switchCnbSource'),
-      cancelText: t('misc.continueDownload'),
+      content: t('bootstrap.misc.downloadHasBeenUnder'),
+      okText: t('bootstrap.misc.switchCnbSource'),
+      cancelText: t('bootstrap.misc.continueDownload'),
       zIndex: 10001,
       centered: true,
       onOk: () => switchDownloadSource('low_speed'),
@@ -360,7 +360,7 @@ const cancel = async () => {
     const response = await updateDownloadApi.cancel()
     if (!isCurrentOperation(operationGeneration)) return
     if (response.code === 200) {
-      message.success(t('misc.downloadCancelled'))
+      message.success(t('bootstrap.misc.downloadCancelled'))
       receiveCancelled()
     } else {
       message.error(response.message || '取消下载失败')
@@ -441,7 +441,7 @@ const install = async () => {
       request_outcome: response.code === 200 ? 'accepted' : 'rejected',
     })
     if (response.code === 200) {
-      message.success(t('misc.installerStarted'))
+      message.success(t('bootstrap.misc.installerStarted'))
       resetState()
       modalVisible.value = false
     } else {
@@ -451,7 +451,7 @@ const install = async () => {
     operation.finish({ choice: 'install_now', request_outcome: 'unknown' })
     const errorMessage = error instanceof Error ? error.message : String(error)
     logger.error(`安装失败: ${errorMessage}`)
-    message.error(t('misc.couldNotStartInstaller'))
+    message.error(t('bootstrap.misc.couldNotStartInstaller'))
   }
 }
 

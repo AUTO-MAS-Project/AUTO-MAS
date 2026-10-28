@@ -3,13 +3,15 @@
     <div class="panel-header">
       <div class="header-left">
         <UnorderedListOutlined />
-        <span>{{ t('history.recordList') }}</span>
+        <span>{{ t('core.history.recordList') }}</span>
       </div>
       <div class="header-right">
-        <span class="record-count">{{ t('history.recordCount', { count: records.length }) }}</span>
+        <span class="record-count">{{
+          t('core.history.recordCount', { count: records.length })
+        }}</span>
         <a-popover placement="bottomRight">
           <template #content>
-            <p style="margin: 0">{{ t('history.timeRule') }}</p>
+            <p style="margin: 0">{{ t('core.history.timeRule') }}</p>
           </template>
           <HistoryOutlined class="info-icon" />
         </a-popover>
@@ -21,7 +23,7 @@
         <a-empty
           :image="noDataImage"
           :image-style="{ height: '80px' }"
-          :description="t('history.emptyRecords')"
+          :description="t('core.history.emptyRecords')"
         />
       </div>
 
@@ -55,7 +57,9 @@
               {{ record.script_name }} · #{{ record.id }}
               <span v-if="record.storage_error_count">
                 ·
-                {{ t('history.storageWarningCount', { count: record.storage_error_count }) }}</span
+                {{
+                  t('core.history.storageWarningCount', { count: record.storage_error_count })
+                }}</span
               >
             </div>
           </div>
@@ -67,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import {
   CheckCircleOutlined,

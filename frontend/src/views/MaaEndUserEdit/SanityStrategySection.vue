@@ -1,16 +1,16 @@
 <template>
   <div>
     <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showDetail }">
-      <span>{{ t('edit.maaEndEnableSanity') }}</span>
+      <span>{{ t('core.edit.maaEndEnableSanity') }}</span>
       <a-switch
         :checked="enabled"
         :disabled="disabled"
-        :aria-label="t('edit.maaEndEnableSanity')"
+        :aria-label="t('core.edit.maaEndEnableSanity')"
         @change="(value: boolean) => emit('enable', value)"
       />
     </div>
     <template v-if="showDetail">
-      <a-form-item :label="t('edit.maaEndSanityStrategy')">
+      <a-form-item :label="t('core.edit.maaEndSanityStrategy')">
         <a-radio-group
           :value="strategy"
           :disabled="disabled"
@@ -28,22 +28,22 @@
       </a-form-item>
       <a-form-item v-if="strategy === 'Native'">
         <a-space direction="vertical" size="middle" style="width: 100%">
-          <a-alert type="info" show-icon :message="t('edit.maaEndNativeSanityHint')" />
+          <a-alert type="info" show-icon :message="t('core.edit.maaEndNativeSanityHint')" />
           <a-button
             :loading="configLoading"
             :disabled="disabled || showConfigMask"
             @click="emit('configure')"
           >
             <template #icon><SettingOutlined /></template>
-            {{ t('edit.maaEndConfigureInventory') }}
+            {{ t('core.edit.maaEndConfigureInventory') }}
           </a-button>
-          <span>{{ t('edit.maaEndInventorySourceHint') }}</span>
+          <span>{{ t('core.edit.maaEndInventorySourceHint') }}</span>
         </a-space>
       </a-form-item>
     </template>
 
     <p v-if="showDetail && strategy === 'Inventory'" class="strategy-hint">
-      {{ t('edit.maaEndImsStrategyHint') }}
+      {{ t('core.edit.maaEndImsStrategyHint') }}
     </p>
   </div>
 </template>
@@ -64,9 +64,9 @@ const emit = defineEmits<{ enable: [value: boolean]; save: [value: string]; conf
 const { t } = useI18n()
 const handleStrategyChange = (event: RadioChangeEvent) => emit('save', event.target.value)
 const sanityStrategyOptions = computed(() => [
-  { label: t('edit.maaEndPlannedStrategy'), value: 'MAS' },
-  { label: t('edit.maaEndOriginalStrategy'), value: 'Native' },
-  { label: t('edit.maaEndImsTitle'), value: 'Inventory' },
+  { label: t('core.edit.maaEndPlannedStrategy'), value: 'MAS' },
+  { label: t('core.edit.maaEndOriginalStrategy'), value: 'Native' },
+  { label: t('core.edit.maaEndImsTitle'), value: 'Inventory' },
 ])
 </script>
 

@@ -36,10 +36,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from app.config import ConfigEntry
 from app.core import Config
 from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
 from app.task.MaaFW.tools.core.runner.run_plan import (
@@ -51,6 +52,23 @@ from app.utils import get_logger
 from .embedded_project import copy_is_healthy, resolve_maafw_project_root
 
 logger = get_logger("MaaFW 默认任务队列")
+
+
+async def prepare_user_read(script: ConfigEntry, *, user_ids: list[str] | None) -> None:
+    """建用户时项目可能还未导入，读用户时按相同条件补齐空快照。"""
+    await fill_default_task_snapshots(
+        script_id=str(script.uid), script_config=script, user_ids=user_ids
+    )
+
+
+async def initialize_user(
+    script: ConfigEntry,
+    user: ConfigEntry,
+    *,
+    rollback: Callable[[], Awaitable[None]],
+) -> None:
+    """空队列按项目默认写回；项目未就绪时留到读取、运行前再补。"""
+    await prepare_user_read(script, user_ids=[str(user.uid)])
 
 
 def is_empty_task_snapshot(raw: Any) -> bool:

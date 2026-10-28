@@ -1,17 +1,17 @@
 <template>
   <a-modal
     :open="open"
-    :title="t('edit.taskTimeLimitOverrides')"
+    :title="t('core.edit.taskTimeLimitOverrides')"
     :width="560"
     destroy-on-close
     @cancel="emit('update:open', false)"
   >
     <div class="task-limit-modal">
       <div class="task-limit-row loop-guard-row">
-        <span class="task-limit-label">{{ t('edit.loopGuard') }}</span>
+        <span class="task-limit-label">{{ t('core.edit.loopGuard') }}</span>
         <a-switch v-model:checked="loopGuardDraft" />
       </div>
-      <div class="task-limit-modal-sub">{{ t('edit.taskTimeLimitModalSub') }}</div>
+      <div class="task-limit-modal-sub">{{ t('core.edit.taskTimeLimitModalSub') }}</div>
       <!-- 任务列表随弹窗正文滚动，小窗口也能逐项设置。 -->
       <div class="task-limit-modal-list">
         <div
@@ -24,7 +24,7 @@
           <span v-if="isChanged(task.value)" class="task-limit-hint">
             {{ defaultText }}
             <a class="task-limit-link" @click="draft[task.value] = null">
-              {{ t('edit.taskTimeLimitRestore') }}
+              {{ t('core.edit.taskTimeLimitRestore') }}
             </a>
           </span>
           <a-input-number
@@ -47,12 +47,12 @@
           :disabled="!anyChanged"
           @click="resetAll"
         >
-          {{ t('edit.taskTimeLimitRestoreAll') }}
+          {{ t('core.edit.taskTimeLimitRestoreAll') }}
         </a-button>
         <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
+          <a-button @click="emit('update:open', false)">{{ t('core.common.cancel') }}</a-button>
           <a-button type="primary" @click="handleSave">
-            {{ t('edit.taskTimeLimitSave') }}
+            {{ t('core.edit.taskTimeLimitSave') }}
           </a-button>
         </a-space>
       </div>
@@ -111,8 +111,8 @@ watch(
 
 const defaultText = computed(() =>
   props.defaultMinutes > 0
-    ? t('edit.taskTimeLimitDefault', { n: props.defaultMinutes })
-    : t('edit.taskTimeLimitDefaultUnlimited')
+    ? t('core.edit.taskTimeLimitDefault', { n: props.defaultMinutes })
+    : t('core.edit.taskTimeLimitDefaultUnlimited')
 )
 
 // 留空 = 跟随默认；填了数字（含 0 = 不限、含等于默认值）就算单独设置
