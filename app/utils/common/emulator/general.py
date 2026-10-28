@@ -22,7 +22,12 @@ from typing import Dict
 import psutil
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import emulator as _utils_emulator
 from app.utils import process as _utils_process
@@ -35,7 +40,9 @@ class GeneralDeviceManager(DeviceBase):
     用于管理一般应用程序进程
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(
+        self, config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+    ) -> None:
 
         emulator_path = config.Info.Path
         if emulator_path is None or not emulator_path.exists():
@@ -45,6 +52,7 @@ class GeneralDeviceManager(DeviceBase):
             raise ValueError("配置的模拟器类型不是通用类型")
 
         self.config = config
+        self.runtime_policy = runtime_policy
         self.emulator_path = emulator_path
         self.process_managers: Dict[str, _utils_process.ProcessManager] = {}
         # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
@@ -76,6 +84,7 @@ class GeneralDeviceManager(DeviceBase):
             states_store=self._audio_mute_states,
             idx=idx,
             resolve_pids=lambda: asyncio.to_thread(self._resolve_audio_pids, idx),
+            silence_enabled=self.runtime_policy.silence_enabled,
         )
 
         return (await self.getInfo(idx))[idx]

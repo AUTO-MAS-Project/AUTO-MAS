@@ -317,7 +317,10 @@ def main():
         # 预热共享 SSL 上下文：truststore 全量加载证书库较慢，放线程执行避免首个请求卡死
         import ssl
 
-        from app.core import Config, MainTimer, TaskManager
+        from app.core import Config, EmulatorManager, MainTimer, TaskManager
+        from app.services import System
+
+        System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
 
