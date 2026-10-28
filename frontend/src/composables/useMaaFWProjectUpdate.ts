@@ -20,16 +20,15 @@ const isMaaFWAutoUpdateMode = (value: unknown): value is MaaFWAutoUpdateMode =>
 /**
  * 从后端返回的 Update 段解析自动更新时机。
  *
- * - 新字段 `AutoUpdateMode` 合法时直接采用；
- * - 旧配置只有 `IfAutoUpdate`：`false` → 不更新，`true` / 缺失 → 运行前（与后端默认一致）。
+ * `AutoUpdateMode` 合法时直接采用，否则回到运行前（与后端默认一致）。旧版的
+ * `IfAutoUpdate` 开关由后端加载配置时迁成 `AutoUpdateMode`，前端读不到它。
  *
- * 只做读取映射，不回写：旧配置在用户改动之前保持原样。
+ * 只做读取映射，不回写。
  */
 export const resolveAutoUpdateMode = (
-  update: { AutoUpdateMode?: unknown; IfAutoUpdate?: unknown } | null | undefined
+  update: { AutoUpdateMode?: unknown } | null | undefined
 ): MaaFWAutoUpdateMode => {
   if (isMaaFWAutoUpdateMode(update?.AutoUpdateMode)) return update.AutoUpdateMode
-  if (update?.IfAutoUpdate === false) return 'Off'
   return 'BeforeRun'
 }
 

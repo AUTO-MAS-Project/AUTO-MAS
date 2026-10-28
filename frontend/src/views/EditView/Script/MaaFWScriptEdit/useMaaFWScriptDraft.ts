@@ -78,7 +78,7 @@ export function useMaaFWScriptDraft(scriptId: string) {
         (config?.[section] as Record<string, unknown>) ?? {}
       )
     })
-    // 旧配置只有 IfAutoUpdate 时映射到新的自动更新时机；只改本地草稿，不回写后端。
+    // AutoUpdateMode 不是合法值时按默认的运行前显示；只改本地草稿，不回写后端。
     maafwConfig.Update.AutoUpdateMode = resolveAutoUpdateMode(config?.Update)
     // 旧配置里 Source / Channel 可能是空串（曾表示「自动」/「跟随全局」），现在都不是
     // 合法选项，下拉框会显示空白；同样只修正本地草稿，用户改动前不回写。

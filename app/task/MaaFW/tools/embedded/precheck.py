@@ -37,6 +37,8 @@ MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``
 
 from __future__ import annotations
 
+import hashlib
+import os
 import shutil
 import threading
 from collections.abc import Callable, MutableMapping
@@ -50,9 +52,6 @@ from app.task.MaaFW.tools.core.agent_env.import_check import (
     describe_missing_agent_modules,
     log_agent_import_reports,
 )
-from app.task.MaaFW.tools.core.agent_env.planner import (
-    compute_isolated_venv_path,
-)
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
@@ -65,6 +64,9 @@ logger = get_logger("MFW 更新预检")
 # ``prepare_agent_envs`` 对隔离 venv 是先 rmtree 再重装，直接建在正式根会把
 # 旧版本还能用的 venv 先删掉——预检失败后旧版本就没 agent 了。
 PRECHECK_AGENT_ROOT_NAME = "precheck_agent_venvs"
+# 预检根下每个 staging 一个子目录（见 ``precheck_staging_agent_root``）；名字取短，
+# venv 里的 site-packages 路径本来就深，别为它多吃 Windows 的路径长度。
+PRECHECK_STAGING_DIR_PREFIX = "s"
 
 
 class PrepareProjectEnvironment(Protocol):
@@ -83,11 +85,36 @@ def precheck_agent_root(pool_root: str | Path) -> Path:
     return Path(pool_root) / PRECHECK_AGENT_ROOT_NAME
 
 
-def cleanup_precheck_agent_venv(project_path: Path, agent_root: Path) -> None:
-    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。"""
+def precheck_staging_agent_root(
+    agent_root: str | Path, project_path: str | Path
+) -> Path:
+    """预检根下这一份 staging 专用的子目录，本次预检的隔离 venv 建在它里面。
 
-    venv_path = compute_isolated_venv_path(project_path, managed_env_root=agent_root)
-    shutil.rmtree(venv_path, ignore_errors=True)
+    正式根里的隔离 venv 按依赖清单 + maafw 版本 + 宿主身份跨视图共用（``venv_share``），
+    预检不参与共用：staging 路径每次都带新的 uuid，按它分子目录，预检 venv 就和以前按
+    staging 路径命名时一样每次都是新的——上次预检中途被杀、或没删干净留下的同依赖残留
+    碰不到这次（那份残留在正式根的规则下会被判「要重建」，而预检根下的拒绝重建会让预检
+    直接失败、这个版本的自动更新从此停住）；两个同依赖的预检同时跑，先结束的那个也删
+    不到另一个正在用的那份。
+    """
+
+    key = str(Path(project_path).resolve())
+    if os.name == "nt":
+        key = key.lower()
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:10]
+    return Path(agent_root) / f"{PRECHECK_STAGING_DIR_PREFIX}{digest}"
+
+
+def cleanup_precheck_agent_venv(project_path: Path, agent_root: Path) -> None:
+    """删掉预检根下本项目那份隔离 venv（成功失败都删）；根空了就顺手去掉。
+
+    本次预检的隔离 venv、引用记录、锁文件都在这份 staging 专用的子目录里
+    （``precheck_staging_agent_root``），整个删掉即可，不会碰到别的预检。
+    """
+
+    shutil.rmtree(
+        precheck_staging_agent_root(agent_root, project_path), ignore_errors=True
+    )
     try:
         agent_root.rmdir()
     except OSError:
@@ -165,19 +192,21 @@ def build_precheck_validator(
 
     def validate(root: Path) -> bool:
         send_log("正在检查新版本的运行环境（准备不出来就放弃这次更新，继续用当前版本）")
+        # 预检 venv 不参与跨视图共用：建在这份 staging 专用的子目录里
+        staging_agent_root = precheck_staging_agent_root(agent_env_root, root)
         try:
             prepare(
                 root,
                 cancel_event,
                 send_log,
-                agent_env_root=agent_env_root,
+                agent_env_root=staging_agent_root,
                 store_cache=False,
             )
             # 已取消就不必再查：核心包随后按取消收尾
             if not cancel_event.is_set():
                 check_staging_agent_imports(
                     root,
-                    agent_env_root,
+                    staging_agent_root,
                     send_log,
                     previous_version=previous_version,
                 )
@@ -219,4 +248,5 @@ __all__ = [
     "check_staging_agent_imports",
     "cleanup_precheck_agent_venv",
     "precheck_agent_root",
+    "precheck_staging_agent_root",
 ]

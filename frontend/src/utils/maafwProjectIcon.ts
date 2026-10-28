@@ -6,10 +6,15 @@ import { OpenAPI } from '@/api'
  * 按脚本取项目图标的 URL：调用方手上没有项目目录（脚本列表、新建对话框的复用列表），
  * 由后端 `/api/scripts/maafw/icon` 找该脚本已导入的副本。取不到时后端回 404，
  * 调用方在 `<img @error>` 里回退。
+ *
+ * `revision` 给停留在页面上、项目可能被导入 / 更新的调用方（脚本页面包屑）：换一个值地址就变，
+ * `<img>` 会重新取，之前 404 回退过的也会再试一次。后端不读这个参数。
  */
-export const buildMaaFWScriptIconUrl = (scriptId: string) => {
+export const buildMaaFWScriptIconUrl = (scriptId: string, revision?: number) => {
   const baseUrl = OpenAPI.BASE || 'http://localhost:36163'
-  return `${baseUrl}/api/scripts/maafw/icon?${new URLSearchParams({ scriptId }).toString()}`
+  const params = new URLSearchParams({ scriptId })
+  if (revision) params.set('rev', String(revision))
+  return `${baseUrl}/api/scripts/maafw/icon?${params.toString()}`
 }
 
 /** `<img @error>`：项目图标加载失败时换成类型图标；类型图标自己也加载失败就不再换，免得来回触发 */

@@ -421,8 +421,8 @@ function createTray(): boolean {
   const items = trayItems?.length ? trayItems : DEFAULT_TRAY_ITEMS
   rebuildTrayMenu(items)
 
-  // 双击托盘图标显示/隐藏窗口
-  tray.on('double-click', () => {
+  // 单击托盘图标显示/隐藏窗口
+  tray.on('click', () => {
     if (!mainWindow) return
     if (mainWindow.isVisible()) {
       hideMainWindow()

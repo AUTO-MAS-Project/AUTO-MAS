@@ -166,6 +166,8 @@ export interface RuntimeDoctorCheck {
  * 绝不解析 `error` 里的中文文案。
  */
 export interface RuntimeFailureFields {
+  /** Runtime 第 0 步失败的实际来源；界面仍沿用 failedStage。 */
+  failureOrigin?: 'runtime_binary'
   /** Runtime 结果码，如 `MIRROR_EXHAUSTED` / `INTERNAL_ERROR`。 */
   code?: string
   retryable?: boolean
