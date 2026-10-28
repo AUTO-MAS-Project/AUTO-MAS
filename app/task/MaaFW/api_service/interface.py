@@ -243,8 +243,11 @@ def _project_icon_file(root_path: Path) -> Path:
         interface = load_interface_model_cached(root_path)
     except (MaaFWInterfaceLoadError, OSError) as exc:
         raise FileNotFoundError(f"MFW interface 读取失败: {exc}") from exc
-    # 协议允许 icon 写成 $ 开头的 i18n 键，按项目简体中文语言文件翻过再用
-    icon = interface_text_translator(root_path, interface)(interface.icon)
+    # 协议允许 icon 写成 $ 开头的 i18n 键，按项目简体中文语言文件翻过再用。
+    # 只在真是 $ 键时才读语言文件：列表每张卡片每次渲染都来取，语言文件可能上百 KB。
+    icon = interface.icon
+    if isinstance(icon, str) and icon.startswith("$"):
+        icon = interface_text_translator(root_path, interface)(icon)
     icon = _declared_icon_path(icon or "")
     if not icon:
         raise FileNotFoundError("MFW 项目没有声明本地图标")
