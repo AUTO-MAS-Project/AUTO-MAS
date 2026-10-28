@@ -6,8 +6,13 @@ from pathlib import Path
 from typing import cast
 
 from app.config import ConfigEntry
+from app.core.script_config import ScriptEmulatorBinding
 from app.models.config import MaaEndConfig
 from app.models.task import ScriptTaskResources
+
+EMULATOR_BINDING = ScriptEmulatorBinding(
+    group="Game", id_field="EmulatorId", index_field="EmulatorIndex"
+)
 
 
 def declare_task_resources(script: ConfigEntry) -> ScriptTaskResources:
@@ -17,5 +22,5 @@ def declare_task_resources(script: ConfigEntry) -> ScriptTaskResources:
     raw_path = str(script.Info.Path or "").strip()
     return ScriptTaskResources(
         root_paths=(Path(raw_path),) if raw_path else (),
-        emulator=(script.Game.EmulatorId, script.Game.EmulatorIndex),
+        emulator=EMULATOR_BINDING.read(script),
     )

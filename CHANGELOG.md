@@ -30,6 +30,43 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 本次亮点
+
+- 【通知】支持通过 QQ 私聊或群内提及机器人重试脚本和启动队列，并可设置群成员白名单。 (#1686) by @HarcoChen
+
+### 新增
+
+- 【MFW】调度台显示当前跑到第几个任务，运行报告单列原地打转与单任务超时 (#1712) by @qiyinxi
+- 【MFW】依赖相同的脚本共用一份隔离 Python 环境，新建脚本不用再装一遍依赖 (#1711) by @qiyinxi
+- 【MFW】项目预设可带前置任务，脚本列表显示项目图标，用户页提示不兼容的隐藏任务，并修复通知截图丢失等问题 (#1709) by @qiyinxi
+
+### 变更
+
+- 【设置】优化空数据提示图，放大显示更清晰 by @DLmaster361
+- 【设置】初始化时可切换语言，语言资源加载失败可重试后进入主界面。 (#1693) by @jinghero
+- 【设置】托盘图标改为单击切换窗口显示和隐藏 (#1707) by @he0119
+
+### 修复
+
+- 【end】修复导入配置时未备份原有设置的问题 (#1685) by @jinghero
+- 【MFW】运行前设置的程序越出项目目录时不再让更新失败；运行前设置受时限约束，日志实时显示 (#1710) by @qiyinxi
+- 【MFW】修复旧副本迁移中断后版本未统一及占用状态未释放的问题 (#1706) by @jinghero
+- 【调度】修复原生配置会话重复关闭误报、丢弃改动后仍提示保存及离开页面时会话残留的问题 (#1688) by @jinghero
+- 【模拟器】修复实例设置、批量设置及 Webhook 弹窗的多余横向滚动条 (#1680) by @jinghero
+- 【模拟器】删除模拟器实例后再新建，新实例不在设备列表里显示 (#1678) by @qiyinxi
+- 【Runtime】修复后端启动失败时部分错误详情无法显示的问题 (#1696) by @ClozyA
+
+### 安全
+
+- 【MFW】运行配置改经管道交给运行进程，解密后的密码不再写入临时文件 (#1714) by @qiyinxi
+
+### 开发流程
+
+- 【MFW】载荷 latest 判定收成有序规则表，投影规则按声明类别拆开 (#1713) by @qiyinxi
+- 【MFW】更新与环境确认的流程收拢为公共部件，更新进度事件改为类型化模型 (#1716) by @qiyinxi
+
 ## [v5.8.0-beta.2] - 2026-10-27
 
 ### 破坏性变更
@@ -667,6 +704,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.2...dev
 [v5.8.0-beta.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0-beta.1...v5.8.0-beta.2
 [v5.8.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0-beta.1
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
