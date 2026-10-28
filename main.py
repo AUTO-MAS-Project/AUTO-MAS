@@ -263,17 +263,36 @@ def main():
 
     from app.core import Config
     from app.core.restore_bindings import resolve_restore_pools
-    from app.models.config import MaaEndConfig
+    from app.core.script_config import ScriptConfigHandler
+    from app.models.config import (
+        BetterGIConfig,
+        MaaConfig,
+        MaaEndConfig,
+        MaaFWConfig,
+        SrcConfig,
+        ZzzOdConfig,
+    )
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
     from app.task.BAAH.api_service import BAAHConfigService
+    from app.task.BetterGI.api_service import (
+        prepare_user_update as prepare_bettergi_user_update,
+    )
+    from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
     from app.task.MaaEnd.api_service import MaaEndConfigService
     from app.task.MaaFW.tools.embedded.game_resolution import (
         read_unity_display_type,
         read_unity_resolution,
+    )
+    from app.task.MaaFW.tools.embedded.user_update import (
+        prepare_user_update as prepare_maafw_user_update,
+    )
+    from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
+    from app.task.ZzzOd.user_update import (
+        prepare_user_update as prepare_zzzod_user_update,
     )
 
     Config.set_restore_pool_resolver(resolve_restore_pools)
@@ -285,7 +304,24 @@ def main():
         read_resolution=read_unity_resolution,
         read_display_type=read_unity_display_type,
     )
-    Config.bind_script_config_handler(MaaEndConfig, maaend_config_service)
+    Config.bind_script_config_handler(
+        MaaEndConfig,
+        ScriptConfigHandler(
+            initialize=maaend_config_service.initialize,
+            validate_update=maaend_config_service.validate_update,
+            import_config=maaend_config_service.import_config,
+        ),
+    )
+    for entry_type, prepare in (
+        (BetterGIConfig, prepare_bettergi_user_update),
+        (MaaConfig, prepare_maa_user_update),
+        (SrcConfig, prepare_src_user_update),
+        (ZzzOdConfig, prepare_zzzod_user_update),
+        (MaaFWConfig, prepare_maafw_user_update),
+    ):
+        Config.bind_script_config_handler(
+            entry_type, ScriptConfigHandler(prepare_user_update=prepare)
+        )
 
     # 开发环境不上报遥测数据
     init_sentry(

@@ -15,6 +15,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 import asyncio
+import inspect
 import json
 import os
 import shutil
@@ -1176,7 +1177,7 @@ class AppConfig:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         handler = self._get_script_config_handler(self.ScriptConfig[uid])
-        if handler is not None:
+        if handler is not None and handler.validate_update is not None:
             handler.validate_update(data)
 
         await self.ScriptConfig[uid].update(
@@ -1520,78 +1521,13 @@ class AppConfig:
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # 来源策略由专项持有；MAA/SRC 仍保留已有的单原生用户守卫。
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.api_service import get_service
-
-            get_service(self).prepare_user_update(
-                script_id=script_id, user_id=user_id, data=data
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_update is not None:
+            prepared = handler.prepare_user_update(
+                script_config, user_config, data=data
             )
-        elif isinstance(script_config, (MaaConfig, SrcConfig)):
-            new_base = _utils_constants.normalize_base_source(
-                data.get("Info", {}).get("Base", "")
-            )
-            if (
-                new_base == _utils_constants.BASE_NATIVE
-                and _utils_constants.normalize_base_source(
-                    user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
-                )
-                != _utils_constants.BASE_NATIVE
-                and any(
-                    (
-                        _utils_constants.normalize_base_source(
-                            cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
-                        )
-                        == _utils_constants.BASE_NATIVE
-                        for uid, cfg in script_config.UserData.items()
-                        if uid != user_uid
-                    )
-                )
-            ):
-                raise ValueError(
-                    "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
-                )
-
-        # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
-        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
-        task_data = data.get("Task")
-        if (
-            isinstance(script_config, MaaFWConfig)
-            and isinstance(task_data, dict)
-            and "TaskSnapshot" in task_data
-        ):
-            from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
-            from app.task.MaaFW.tools.embedded.option_secrets import (
-                prepare_user_task_snapshot,
-            )
-
-            # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
-            await asyncio.to_thread(
-                sanitize_user_task_update, script_id, script_config, user_config, data
-            )
-
-            task_data["TaskSnapshot"] = await asyncio.to_thread(
-                prepare_user_task_snapshot,
-                script_id,
-                script_config,
-                task_data["TaskSnapshot"],
-            )
-
-        # 养成接管提示只在运行注入准备时重写（AutoProxy._prepare_cultivate_injection）。
-        # 养成被关到不可能接管的状态后，上一轮写入的提示会残留到下次运行，前端把
-        # 它展示得像当前状态。判定口径归专项（与注入早退分支同源），这里只在
-        # 用户配置写入漏斗里应用其结论
-        if isinstance(script_config, MaaConfig) and isinstance(data.get("Task"), dict):
-            from app.task.MAA.tools.cultivate.service import takeover_notice_patch_value
-
-            task_patch = data["Task"]
-            notice = takeover_notice_patch_value(
-                task_patch.get("IfCultivate", user_config.Task.IfCultivate),
-                task_patch.get("CultivateTargets", user_config.Task.CultivateTargets),
-            )
-            if notice is not None:
-                data.setdefault("Data", {})["CultivateNotice"] = notice
+            if inspect.isawaitable(prepared):
+                await prepared
 
         if precondition is not None and not precondition():
             return False
@@ -1619,7 +1555,7 @@ class AppConfig:
             return
 
         handler = self._get_script_config_handler(script_config)
-        if handler is None:
+        if handler is None or handler.import_config is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 
         config_owner = user_id or "Default"
@@ -1642,7 +1578,7 @@ class AppConfig:
 
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)
-        if handler is not None:
+        if handler is not None and handler.initialize is not None:
             await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
