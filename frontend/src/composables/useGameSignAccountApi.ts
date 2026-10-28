@@ -35,7 +35,7 @@ export function useGameSignAccountApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`添加账号组失败: ${errorMsg}`)
-      message.error(t('misc.couldNotAddAccount'))
+      message.error(t('core.misc.couldNotAddAccount'))
       return null
     } finally {
       loading.value = false
@@ -92,11 +92,11 @@ export function useGameSignAccountApi() {
         throw new Error(response.message || '删除账号组失败')
       }
       logger.info('账号组删除成功')
-      message.success(t('misc.accountGroupDeleted'))
+      message.success(t('core.misc.accountGroupDeleted'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`删除账号组失败: ${errorMsg}`)
-      message.error(t('misc.couldNotDeleteAccount'))
+      message.error(t('core.misc.couldNotDeleteAccount'))
       throw error
     } finally {
       loading.value = false

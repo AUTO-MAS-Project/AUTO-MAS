@@ -40,6 +40,8 @@ logger = get_logger("WS协议")
 # ==================== 固定路由 ID ====================
 
 ID_MAIN = "Main"
+ID_I18N = "I18n"
+I18N_UPDATED = "i18n.updated"
 ID_TASK_MANAGER = "TaskManager"
 ID_UPDATE = "Update"
 ID_GAME_SIGN = "GameSign"

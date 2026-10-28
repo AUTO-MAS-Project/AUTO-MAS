@@ -1,15 +1,21 @@
 <template>
   <div class="form-section">
     <div v-if="!hideSectionHeader" class="section-header">
-      <h3>{{ t('comp.extraScripts') }}</h3>
+      <h3>{{ t('core.comp.extraScripts') }}</h3>
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
         <FieldLabelWithHint
           variant="form"
-          :text="t(scope === 'queue' ? 'queue.runScriptBefore' : 'comp.runScriptBeforeTask')"
+          :text="
+            t(scope === 'queue' ? 'core.queue.runScriptBefore' : 'core.comp.runScriptBeforeTask')
+          "
           :hint="
-            t(scope === 'queue' ? 'queue.runCustomScriptBefore' : 'comp.runCustomScriptBefore')
+            t(
+              scope === 'queue'
+                ? 'core.queue.runCustomScriptBefore'
+                : 'core.comp.runCustomScriptBefore'
+            )
           "
         />
       </template>
@@ -26,8 +32,8 @@
           <PathPickerField
             v-model="formData.Info.ScriptBeforeTask"
             mode="file"
-            :placeholder="t('comp.pickScriptFile')"
-            :pick-label="t('comp.pickFile')"
+            :placeholder="t('core.comp.pickScriptFile')"
+            :pick-label="t('core.comp.pickFile')"
             :disabled="loading || !formData.Info.IfScriptBeforeTask"
             @pick="selectScriptBeforeTask"
           />
@@ -38,8 +44,16 @@
       <template #label>
         <FieldLabelWithHint
           variant="form"
-          :text="t(scope === 'queue' ? 'queue.runScriptAfter' : 'comp.runScriptAfterTask')"
-          :hint="t(scope === 'queue' ? 'queue.runCustomScriptAfter' : 'comp.runCustomScriptAfter')"
+          :text="
+            t(scope === 'queue' ? 'core.queue.runScriptAfter' : 'core.comp.runScriptAfterTask')
+          "
+          :hint="
+            t(
+              scope === 'queue'
+                ? 'core.queue.runCustomScriptAfter'
+                : 'core.comp.runCustomScriptAfter'
+            )
+          "
         />
       </template>
       <a-row :gutter="24" align="middle">
@@ -55,8 +69,8 @@
           <PathPickerField
             v-model="formData.Info.ScriptAfterTask"
             mode="file"
-            :placeholder="t('comp.pickScriptFile')"
-            :pick-label="t('comp.pickFile')"
+            :placeholder="t('core.comp.pickScriptFile')"
+            :pick-label="t('core.comp.pickFile')"
             :disabled="loading || !formData.Info.IfScriptAfterTask"
             @pick="selectScriptAfterTask"
           />
@@ -95,44 +109,46 @@ const emitSave = (key: string, value: any) => {
 const selectScriptBeforeTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
-      { name: t('comp.allFiles'), extensions: ['*'] },
+      { name: t('core.comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('core.comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('core.comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptBeforeTask = path[0]
       message.success(
-        t(props.scope === 'queue' ? 'queue.preTaskScriptPath' : 'comp.preTaskScriptPath')
+        t(props.scope === 'queue' ? 'core.queue.preTaskScriptPath' : 'core.comp.preTaskScriptPath')
       )
       emitSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务前脚本失败: ${errorMsg}`)
-    message.error(t('comp.couldNotPickFile'))
+    message.error(t('core.comp.couldNotPickFile'))
   }
 }
 
 const selectScriptAfterTask = async () => {
   try {
     const path = await window.electronAPI?.selectFile([
-      { name: t('comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
-      { name: t('comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
-      { name: t('comp.allFiles'), extensions: ['*'] },
+      { name: t('core.comp.executables'), extensions: ['exe', 'bat', 'cmd', 'ps1'] },
+      { name: t('core.comp.scriptFiles'), extensions: ['py', 'js', 'sh'] },
+      { name: t('core.comp.allFiles'), extensions: ['*'] },
     ])
 
     if (path && path.length > 0) {
       formData.value.Info.ScriptAfterTask = path[0]
       message.success(
-        t(props.scope === 'queue' ? 'queue.postTaskScriptPath' : 'comp.postTaskScriptPath')
+        t(
+          props.scope === 'queue' ? 'core.queue.postTaskScriptPath' : 'core.comp.postTaskScriptPath'
+        )
       )
       emitSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择任务后脚本失败: ${errorMsg}`)
-    message.error(t('comp.couldNotPickFile'))
+    message.error(t('core.comp.couldNotPickFile'))
   }
 }
 </script>

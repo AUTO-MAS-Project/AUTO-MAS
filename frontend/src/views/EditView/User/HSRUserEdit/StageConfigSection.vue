@@ -14,7 +14,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.hsrStageType') }}</span>
+            <span class="form-label">{{ t('core.edit.hsrStageType') }}</span>
           </template>
           <a-select
             :value="activeChannel"
@@ -28,14 +28,14 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.hsrStage')"
+              :text="t('core.edit.hsrStage')"
               :hint="t(CHANNEL_TIP_KEYS[activeChannel])"
               variant="form"
             />
           </template>
           <a-select
             :value="activeStageValue"
-            :placeholder="t('edit.skip')"
+            :placeholder="t('core.edit.skip')"
             show-search
             :filter-option="filterOption"
             :disabled="loading || stageOptionsLoading || !activeCategory"
@@ -58,14 +58,14 @@
           <template #label>
             <!-- 遗器自动分解提醒放在悬停说明里 -->
             <FieldLabelWithHint
-              :text="t('edit.echoOfWar')"
-              :hint="t('edit.turnAutomaticRelicSalvage')"
+              :text="t('core.edit.echoOfWar')"
+              :hint="t('core.edit.turnAutomaticRelicSalvage')"
               variant="form"
             />
           </template>
           <a-select
             :value="eowSelectValue"
-            :placeholder="t('edit.skip')"
+            :placeholder="t('core.edit.skip')"
             show-search
             :disabled="loading || stageOptionsLoading || !dynamicEowCategory"
             :loading="stageOptionsLoading"
@@ -80,8 +80,8 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.echoOfWarStartDay')"
-              :hint="t('edit.startDayIfIt')"
+              :text="t('core.edit.echoOfWarStartDay')"
+              :hint="t('core.edit.startDayIfIt')"
               variant="form"
             />
           </template>
@@ -150,10 +150,10 @@ const emit = defineEmits<{
 
 // 各副本类型的说明（原先四个下拉的悬停说明）
 const CHANNEL_TIP_KEYS: Record<HSRStageChannel, string> = {
-  CalyxGolden: 'edit.calyxGoldenCharacterExp',
-  CalyxCrimson: 'edit.calyxCrimsonTraceMaterials',
-  Relic: 'edit.cavernsCorrosionRelicDomains',
-  Ornament: 'edit.ornamentExtractionPlanarOrnament',
+  CalyxGolden: 'core.edit.calyxGoldenCharacterExp',
+  CalyxCrimson: 'core.edit.calyxCrimsonTraceMaterials',
+  Relic: 'core.edit.cavernsCorrosionRelicDomains',
+  Ornament: 'core.edit.ornamentExtractionPlanarOrnament',
 }
 
 const eowWeekdayOptions = computed(() =>
@@ -222,12 +222,12 @@ const stageNotice = computed<{ type: 'error' | 'warning'; message: string } | nu
     return { type: 'error', message: props.stageOptionsError }
   }
   if (hasLegacyEngineMismatch(props.formData.Stage, props.dailyEngine)) {
-    return { type: 'warning', message: t('edit.sanityScriptChangedPick') }
+    return { type: 'warning', message: t('core.edit.sanityScriptChangedPick') }
   }
   if (isStageMissingForEngine(props.formData.Stage, props.dailyEngine)) {
     return {
       type: 'warning',
-      message: t('edit.hsrStageMissingForEngine', { engine: props.engineLabel }),
+      message: t('core.edit.hsrStageMissingForEngine', { engine: props.engineLabel }),
     }
   }
   return null
@@ -237,8 +237,8 @@ const stageNotice = computed<{ type: 'error' | 'warning'; message: string } | nu
 const buildTargetHint = computed(() => {
   if (!props.buildTargetLabel) return undefined
   return props.dailyEngine === 'SRA'
-    ? t('edit.hsrBuildTargetIgnoredSra', { label: props.buildTargetLabel })
-    : t('edit.hsrBuildTargetFallbackM7a', { label: props.buildTargetLabel })
+    ? t('core.edit.hsrBuildTargetIgnoredSra', { label: props.buildTargetLabel })
+    : t('core.edit.hsrBuildTargetFallbackM7a', { label: props.buildTargetLabel })
 })
 
 const buildNativeStagePayload = (option: HSRDynamicStageOption): HSRScriptStagePayload => ({

@@ -57,13 +57,10 @@ if (
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { initializeAppLifecycle } from '@/composables/useAppLifecycle'
 
-// 应用级常驻订阅与生命周期协调器必须早于首个主 WebSocket 连接注册（幂等）
-bootstrapRealtimeResidents()
-initializeAppLifecycle()
-
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
+let apiEndpointReady: Promise<void> = Promise.resolve()
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI
+  apiEndpointReady = window.electronAPI
     .getApiEndpoint('local')
     .then(endpoint => {
       OpenAPI.BASE = endpoint
@@ -90,8 +87,11 @@ const app = createApp(App)
 app.use(createPinia())
 app.use(VueQueryPlugin, { queryClient })
 app.use(Antd)
-app.use(router)
 app.use(i18n)
+
+// Pinia 先就绪，常驻订阅仍早于路由首次进入时建立的主 WebSocket 连接。
+bootstrapRealtimeResidents()
+initializeAppLifecycle()
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
@@ -100,6 +100,7 @@ app.config.errorHandler = (err, instance, info) => {
 }
 
 const bootstrap = async () => {
+  await apiEndpointReady
   const analyticsContext = captureAnalyticsContext()
   const frontendConfig = await getConfig()
 
@@ -109,6 +110,9 @@ const bootstrap = async () => {
   // 语言必须在挂载前定好，否则首帧会闪一次默认语言；复用上面已读的配置，避免重复 IPC
   await useLocale().initLocale(frontendConfig)
   configureSentry(app, router, frontendConfig.Function?.IfEnableTelemetry !== false)
+
+  // 首次路由进入前，端点与本地语言必须已确定，避免按默认语言提前请求业务词表。
+  app.use(router)
 
   // 挂载应用
   app.mount('#app')

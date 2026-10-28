@@ -17,7 +17,6 @@
 import asyncio
 import json
 import os
-import re
 import shutil
 import sqlite3
 import sys
@@ -55,6 +54,7 @@ from app.core.config_upgrade import (
     preserve_pre_upgrade,
     upgrade_json_configs,
 )
+from app.core.script_config import ScriptConfigHandler
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
@@ -104,9 +104,9 @@ from app.task.M9A.migration import (
     normalize_m9a_managed_entries,
     repair_m9a_migration_losses,
 )
-from app.utils import IS_WINDOWS, get_logger, is_supervised
 from app.utils import community as _utils_community
 from app.utils import constants as _utils_constants
+from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
 from app.utils import paths as _utils_paths
 
@@ -216,6 +216,7 @@ class AppConfig:
 
     def __init__(self) -> None:
 
+        self._script_config_handlers: dict[type[ConfigEntry], ScriptConfigHandler] = {}
         self._restore_pool_resolver: (
             Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
             | None
@@ -544,12 +545,7 @@ class AppConfig:
             if node.activation_state == NodeState.INACTIVE:
                 await node.activate(fast_init=True)
         for script in self.ScriptConfig.values():
-            if (
-                isinstance(script, MaaEndConfig)
-                and script.Info.Path
-                and script._preload_task is None
-            ):
-                script._preload_task = asyncio.create_task(script.preload_resource())
+            await self._initialize_script_config(script)
         await config_manager.flush()
         if version not in {"v2.0", "v2.1"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
@@ -1027,9 +1023,11 @@ class AppConfig:
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         if script_id is None:
-            _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
-            await self.ScriptConfig.commit()
-            _config_entry = self.ScriptConfig[_config_uid]
+            async with config_manager.transaction():
+                _config_uid = self.ScriptConfig.add(CLASS_BOOK[script], payload=payload)
+                await self.ScriptConfig.commit()
+                _config_entry = self.ScriptConfig[_config_uid]
+                await self._initialize_script_config(_config_entry)
             return _config_uid, _config_entry
         else:
             script_uid = uuid.UUID(script_id)
@@ -1040,11 +1038,13 @@ class AppConfig:
             document = self.ScriptConfig[script_uid].model_dump(
                 context={"audience": "persist"}
             )
-            new_uid = self.ScriptConfig.add(
-                CLASS_BOOK[script], payload=document, regenerate_uuids=True
-            )
-            await self.ScriptConfig.commit()
-            new_config = self.ScriptConfig[new_uid]
+            async with config_manager.transaction():
+                new_uid = self.ScriptConfig.add(
+                    CLASS_BOOK[script], payload=document, regenerate_uuids=True
+                )
+                await self.ScriptConfig.commit()
+                new_config = self.ScriptConfig[new_uid]
+                await self._initialize_script_config(new_config)
             user_ids = {
                 item["uid"]: uid
                 for item, uid in zip(
@@ -1148,49 +1148,6 @@ class AppConfig:
         index = data["order"]
         return list(index), data["data"]
 
-    async def get_maaend_options(self, script_id: str) -> dict[str, Any]:
-        """读取指定 MaaEnd 安装目录中的动态选项。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, MaaEndConfig):
-            raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
-        root_path = str(script_config.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-
-        options = script_config.get_loaded_resource()
-        game_path = str(script_config.Game.Path or "").strip()
-        if game_path:
-            from app.task.MaaFW.tools.embedded.game_resolution import (
-                read_unity_display_type,
-                read_unity_resolution,
-            )
-
-            exe_path = Path(game_path)
-            original = await asyncio.to_thread(read_unity_resolution, exe_path)
-            if original is not None:
-                options["originalResolution"] = f"{original[0]}x{original[1]}"
-            options["originalDisplayType"] = await asyncio.to_thread(
-                read_unity_display_type,
-                exe_path,
-                preferred_value_name="video_full_screen_h1998742411",
-            )
-        return options
-
-    def get_baah_config_names(self, script_id: str) -> list[str]:
-        """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
-
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, BAAHConfig):
-            raise TypeError("脚本配置类型错误, 不是 BAAH 类型")
-
-        from app.task.BAAH.tools import CONFIG_DIR_NAME, list_config_names
-
-        baah_path = script_config.Script.BAAHPath
-        if baah_path is None:
-            return []
-        return list_config_names(baah_path.parent / CONFIG_DIR_NAME)
-
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
@@ -1203,14 +1160,9 @@ class AppConfig:
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        if isinstance(self.ScriptConfig[uid], MaaEndConfig):
-            from app.services.endfield_launcher import is_launcher_exe
-
-            launcher_path = (data.get("Game") or {}).get("LauncherPath")
-            if launcher_path and not is_launcher_exe(Path(launcher_path)):
-                raise ValueError(
-                    "终末地启动器路径无效，请选择鹰角官方启动器 Launcher.exe 或 Games.exe"
-                )
+        handler = self._get_script_config_handler(self.ScriptConfig[uid])
+        if handler is not None:
+            handler.validate_update(data)
 
         await self.ScriptConfig[uid].update(
             type(self.ScriptConfig[uid]).model_validate(data)
@@ -1277,204 +1229,6 @@ class AppConfig:
 
         self.ScriptConfig.set_order([uuid.UUID(_) for _ in index_list])
         await self.ScriptConfig.commit()
-
-    async def import_script_from_share(
-        self, script_id: str, config_key: str, version_no: Optional[int]
-    ) -> None:
-        """从「AUTO-MAS 配置中心」导入通用脚本配置。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_key: 配置中心的配置标识。
-            version_no: 版本号, 为空表示已发布的最新版本。
-
-        Raises:
-            KeyError: 脚本不存在。
-            TypeError: 脚本不是通用脚本配置。
-            ConfigCenterError: 下载失败或内容不是通用脚本配置。
-        """
-
-        from app.services import ConfigCenter
-
-        logger.info(f"从配置中心加载脚本配置: {script_id} - {config_key}")
-        uid = uuid.UUID(script_id)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-
-        data = await ConfigCenter.download_template(config_key, version_no)
-        await self.ScriptConfig[uid].update(
-            GeneralConfig.model_validate(GeneralConfig.normalize_payload(data)),
-            check_visibility=False,
-        )
-
-        logger.success(f"{script_id} 配置加载成功")
-
-    async def build_share_config(
-        self, script_id: str, config_name: str
-    ) -> tuple[dict, List[Dict[str, str]]]:
-        """整理待分享的通用脚本配置。
-
-        用户数据（SubConfigsInfo）整体丢弃, 路径类配置项做占位替换, 剩下仍然可疑的内容
-        以风险项返回, 由用户确认后才允许上传。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_name: 分享时使用的配置名称。
-
-        Returns:
-            脱敏后的配置字典, 以及仍需用户确认的风险项列表。
-
-        Raises:
-            KeyError: 脚本不存在。
-            TypeError: 脚本不是通用脚本配置。
-        """
-
-        uid = uuid.UUID(script_id)
-
-        if uid not in self.ScriptConfig:
-            logger.error(f"{script_id} 不存在")
-            raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
-            logger.error(f"{script_id} 不是通用脚本配置")
-            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
-
-        temp = self.ScriptConfig[uid].model_dump(context={"audience": "persist"})
-        temp.pop("UserData", None)
-        temp.pop("Notify_CustomWebhooks", None)
-        temp.pop("ui", None)
-        temp = await self.remove_privacy_info(temp, config_name)
-
-        return temp, self.scan_privacy_risks(temp)
-
-    async def upload_script_to_share(
-        self, script_id: str, config_name: str, description: str, acknowledged: bool
-    ) -> None:
-        """以当前授权用户的身份把配置提交到「AUTO-MAS 配置中心」等待审核。
-
-        Args:
-            script_id: 目标通用脚本ID。
-            config_name: 配置名称。
-            description: 配置描述。
-            acknowledged: 用户是否已确认分享前检查出的风险项。
-
-        Raises:
-            ConfigCenterError: 未授权、存在未确认的风险项或上传被拒绝。
-        """
-
-        from app.services import ConfigCenter, ConfigCenterError
-
-        logger.info(f"上传配置到配置中心: {script_id} - {config_name}")
-
-        config, risks = await self.build_share_config(script_id, config_name)
-        if risks and not acknowledged:
-            logger.warning(f"分享前检查到 {len(risks)} 项待确认内容, 已阻止上传")
-            raise ConfigCenterError("配置中仍有可能泄露隐私的内容, 请确认后再分享")
-
-        await ConfigCenter.upload_config(config_name, description, config)
-
-    async def remove_privacy_info(self, config: dict, name: str) -> dict:
-        """移除配置中可能存在的隐私信息"""
-
-        config["Info"]["Name"] = name
-        root_value = config["Info"]["RootPath"]
-        root_path = Path(root_value) if root_value else None
-        for path in ["ScriptPath", "ConfigPath", "LogPath", "TrackProcessExe"]:
-            path_value = config["Script"][path]
-            if not path_value:
-                continue
-            script_path = Path(path_value)
-            if root_path is not None and script_path.is_relative_to(root_path):
-                config["Script"][path] = str(
-                    Path(r"C:/脚本根目录") / script_path.relative_to(root_path)
-                )
-            elif IS_WINDOWS and script_path.is_relative_to(Path(os.environ["APPDATA"])):
-                config["Script"][path] = (
-                    f"%APPDATA%/{script_path.relative_to(Path(os.environ['APPDATA']))}"
-                )
-        if root_path is not None:
-            config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
-
-        # 上面只覆盖脚本自身的路径项；游戏路径、命令行等自由文本同样会带出本机用户名，统一打码
-        for items in config.values():
-            if not isinstance(items, dict):
-                continue
-            for key, value in items.items():
-                if isinstance(value, str) and value:
-                    items[key] = self._mask_home_path(value)
-
-        return config
-
-    @staticmethod
-    def _mask_home_path(value: str) -> str:
-        """把值里出现的本机用户目录替换成占位符"""
-
-        home = str(Path.home())
-        if not home:
-            return value
-
-        masked = value
-        for candidate in {home, home.replace("\\", "/")}:
-            # 要求用户目录后面是分隔符或行尾, 否则 C:\Users\qiyin 会切掉 C:\Users\qiyinxi 的一截
-            masked = re.sub(
-                rf"{re.escape(candidate)}(?=[\\/]|$)",
-                "%USERPROFILE%",
-                masked,
-                flags=re.IGNORECASE,
-            )
-        return masked
-
-    def scan_privacy_risks(self, config: dict) -> List[Dict[str, str]]:
-        """检查脱敏后的配置里是否还残留不该分享的内容。
-
-        自动脱敏只能处理已知的路径项, 命令行参数、日志规则这类自由文本仍可能带出账号、
-        密码、令牌或本机绝对路径, 这里把它们挑出来交给用户确认。
-
-        Args:
-            config: 已经过 remove_privacy_info 处理的配置字典。
-
-        Returns:
-            风险项列表, 每项包含配置项名称与风险说明。
-        """
-
-        placeholders = ("C:\\脚本根目录", "C:/脚本根目录", "%APPDATA%", "%USERPROFILE%")
-        user_name = Path.home().name
-        risks: List[Dict[str, str]] = []
-
-        for group, items in config.items():
-            if not isinstance(items, dict):
-                continue
-            for key, value in items.items():
-                if not isinstance(value, str) or not value.strip():
-                    continue
-
-                field = f"{group}.{key}"
-                if re.search(
-                    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|cookie|session"
-                    r"|密码|密钥|口令)\s*[=:\s]\s*\S",
-                    value,
-                ):
-                    risks.append({"field": field, "reason": "疑似包含账号、密码或令牌"})
-                    continue
-                if re.search(r"://[^/\s:@]+:[^/\s@]+@", value):
-                    risks.append({"field": field, "reason": "链接中带有账号密码"})
-                    continue
-                if len(user_name) > 2 and user_name.lower() in value.lower():
-                    risks.append({"field": field, "reason": "包含本机用户名"})
-                    continue
-
-                probe = value
-                for placeholder in placeholders:
-                    probe = probe.replace(placeholder, "")
-                # 盘符前不能再跟字母, 否则 https:// 这类协议头会被当成 C:\ 一样的盘符路径
-                if re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", probe) or "\\\\" in probe:
-                    risks.append({"field": field, "reason": "包含本机绝对路径"})
-
-        return risks
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
@@ -1849,25 +1603,32 @@ class AppConfig:
             await import_script_config_dir(script_id, user_id)
             return
 
-        if not isinstance(script_config, MaaEndConfig):
+        handler = self._get_script_config_handler(script_config)
+        if handler is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
-
-        script_root = script_config.Info.Path
-        if script_root is None:
-            raise ValueError("Path未配置，请检查路径设置")
-        source_config_dir = script_root / "config"
-        if not (source_config_dir / "mxu-MaaEnd.json").exists():
-            raise FileNotFoundError(
-                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
-            )
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        # 目录里可能有只读文件（如脚本自带的 .git 对象），rmtree(ignore_errors)
-        # 静默残留会让随后的覆盖写入抛 PermissionError。
-        _utils_io.force_rmtree(target_config_dir)
-        target_config_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
+        handler.import_config(script_config, target_config_dir, user_id=user_id)
+
+    def bind_script_config_handler(
+        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
+    ) -> None:
+        """由宿主将专项操作绑定到当前配置实例。"""
+        self._script_config_handlers[entry_type] = handler
+
+    def _get_script_config_handler(
+        self, script: ConfigEntry
+    ) -> ScriptConfigHandler | None:
+        for entry_type, handler in self._script_config_handlers.items():
+            if isinstance(script, entry_type):
+                return handler
+        return None
+
+    async def _initialize_script_config(self, script: ConfigEntry) -> None:
+        handler = self._get_script_config_handler(script)
+        if handler is not None:
+            await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""

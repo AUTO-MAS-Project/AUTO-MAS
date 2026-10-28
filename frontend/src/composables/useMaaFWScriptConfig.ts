@@ -11,10 +11,10 @@ export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
 // 词表 key：显示时再取，界面语言变了跟着变
 const EMULATOR_TYPE_LABEL_KEYS: Record<EmulatorType, string> = {
-  general: 'edit.maafwEmulatorTypeGeneral',
-  mumu: 'edit.maafwEmulatorTypeMumu',
-  ldplayer: 'edit.maafwEmulatorTypeLdplayer',
-  emulator2: 'edit.maafwEmulatorTypeEmulator2',
+  general: 'core.edit.maafwEmulatorTypeGeneral',
+  mumu: 'core.edit.maafwEmulatorTypeMumu',
+  ldplayer: 'core.edit.maafwEmulatorTypeLdplayer',
+  emulator2: 'core.edit.maafwEmulatorTypeEmulator2',
 }
 
 // Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
@@ -48,13 +48,13 @@ const UPDATE_CHANNELS = ['stable', 'beta'] as const satisfies readonly MaaFWProj
 
 // 下拉选项的文案随界面语言变，所以是 computed
 export const updateSourceOptions = computed(() => [
-  { label: t('edit.sourceMirrorChyan'), value: 'MirrorChyan' },
-  { label: t('edit.sourceGithub'), value: 'GitHub' },
+  { label: t('core.edit.sourceMirrorChyan'), value: 'MirrorChyan' },
+  { label: t('core.edit.sourceGithub'), value: 'GitHub' },
 ])
 
 export const updateChannelOptions = computed(() => [
-  { label: t('edit.maafwUpdateChannelStable'), value: 'stable' },
-  { label: t('edit.maafwUpdateChannelBeta'), value: 'beta' },
+  { label: t('core.edit.maafwUpdateChannelStable'), value: 'stable' },
+  { label: t('core.edit.maafwUpdateChannelBeta'), value: 'beta' },
 ])
 
 export const isMaaFWUpdateSource = (value: unknown): value is MaaFWProjectUpdateSource =>
@@ -268,12 +268,12 @@ export function useMaaFWControlConfig(
 
   const selectedEmulatorLabel = computed(() => {
     if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
-      return t('edit.maafwEmulatorNotSelected')
+      return t('core.edit.maafwEmulatorNotSelected')
     }
     const emulatorType = selectedEmulatorType.value
     return emulatorType
       ? t(EMULATOR_TYPE_LABEL_KEYS[emulatorType])
-      : t('edit.maafwEmulatorTypeLoading')
+      : t('core.edit.maafwEmulatorTypeLoading')
   })
 
   // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
@@ -309,17 +309,17 @@ export function useMaaFWControlConfig(
     // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
     const extrasText =
       selectedCapabilityType.value === 'avd'
-        ? t('edit.adbStrategyAvdExtras')
-        : t('edit.adbStrategyEmulatorExtras')
+        ? t('core.edit.adbStrategyAvdExtras')
+        : t('core.edit.adbStrategyEmulatorExtras')
     const pick = (withExtras: boolean) =>
       perDevice
-        ? t('edit.adbStrategyPerDevice')
+        ? t('core.edit.adbStrategyPerDevice')
         : withExtras
           ? extrasText
-          : t('edit.adbStrategyDefault')
+          : t('core.edit.adbStrategyDefault')
     return [
-      { label: t('misc.screenshot'), value: pick(screencapWithExtras) },
-      { label: t('misc.input'), value: pick(inputWithExtras) },
+      { label: t('core.misc.screenshot'), value: pick(screencapWithExtras) },
+      { label: t('core.misc.input'), value: pick(inputWithExtras) },
     ]
   })
 
@@ -419,7 +419,7 @@ export function useMaaFWControlConfig(
 
       const fileName = path.split(/[\\/]/).pop() || ''
       if (!fileName.toLowerCase().endsWith('.exe')) {
-        message.error(t('misc.pickExeFile'))
+        message.error(t('core.misc.pickExeFile'))
         return
       }
 
@@ -428,7 +428,7 @@ export function useMaaFWControlConfig(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`选择启动 exe 失败: ${errorMsg}`)
-      message.error(t('misc.couldNotPickLaunch'))
+      message.error(t('core.misc.couldNotPickLaunch'))
     }
   }
 

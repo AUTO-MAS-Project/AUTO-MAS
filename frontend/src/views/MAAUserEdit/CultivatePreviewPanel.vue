@@ -2,15 +2,15 @@
   <div class="cultivate-preview" :aria-busy="loading">
     <!-- 面板头：理智合计是侧栏的关键数字（tooltip 说明估算口径） -->
     <div class="preview-head">
-      <span class="preview-title">{{ t('edit.maaCultivatePreviewTitle') }}</span>
+      <span class="preview-title">{{ t('core.edit.maaCultivatePreviewTitle') }}</span>
       <span
         class="preview-total"
-        :title="t('edit.maaCultivatePreviewSanityTotal')"
+        :title="t('core.edit.maaCultivatePreviewSanityTotal')"
         role="status"
-        :aria-label="loading ? t('edit.maaCultivatePreviewComputing') : undefined"
+        :aria-label="loading ? t('core.edit.maaCultivatePreviewComputing') : undefined"
       >
         <template v-if="preview?.totalExpectedSanity != null">
-          ≈ {{ preview.totalExpectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
+          ≈ {{ preview.totalExpectedSanity }} {{ t('core.edit.maaCultivateSanityUnit') }}
         </template>
         <template v-else>—</template>
       </span>
@@ -23,8 +23,8 @@
         :tab="
           t(
             tab === 'stages'
-              ? 'edit.maaCultivatePreviewStageHeading'
-              : 'edit.maaCultivatePreviewDemandHeading'
+              ? 'core.edit.maaCultivatePreviewStageHeading'
+              : 'core.edit.maaCultivatePreviewDemandHeading'
           )
         "
       >
@@ -37,7 +37,7 @@
           class="cultivate-alert"
         />
         <div v-if="unobtainableText" class="preview-unobtainable">
-          {{ t('edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
+          {{ t('core.edit.maaCultivatePreviewUnobtainable') }}：{{ unobtainableText }}
         </div>
         <template v-if="preview && tab === 'stages'">
           <!-- 刷取计划四列：材料名称 → 关卡 → 数量 → 理智（固定列宽对齐） -->
@@ -54,7 +54,7 @@
             <template v-if="entry.expectedSanity != null">
               <span class="preview-sanity-sym">≈</span>
               <span class="preview-sanity">
-                {{ entry.expectedSanity }} {{ t('edit.maaCultivateSanityUnit') }}
+                {{ entry.expectedSanity }} {{ t('core.edit.maaCultivateSanityUnit') }}
               </span>
             </template>
             <template v-else>
@@ -63,7 +63,7 @@
             </template>
           </div>
           <div v-if="!preview.stages.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewNone') }}
+            {{ t('core.edit.maaCultivatePreviewNone') }}
           </div>
         </template>
         <template v-else-if="preview">
@@ -74,7 +74,7 @@
             <span class="preview-count">× {{ item.count }}</span>
           </div>
           <div v-if="!preview.demands.length" class="preview-empty">
-            {{ t('edit.maaCultivatePreviewDemandNone') }}
+            {{ t('core.edit.maaCultivatePreviewDemandNone') }}
           </div>
         </template>
       </a-tab-pane>
@@ -111,12 +111,12 @@ const itemName = (itemId: string) => itemLabelById.value.get(itemId) ?? itemId
 const availabilityNotice = computed(() => {
   if (!props.preview) return ''
   const missing: string[] = []
-  if (!props.preview.hasProgression) missing.push(t('edit.maaCultivateMissingProgression'))
-  if (!props.preview.hasInventory) missing.push(t('edit.maaCultivateMissingInventory'))
+  if (!props.preview.hasProgression) missing.push(t('core.edit.maaCultivateMissingProgression'))
+  if (!props.preview.hasInventory) missing.push(t('core.edit.maaCultivateMissingInventory'))
   if (!missing.length) return ''
-  return `${t('edit.maaCultivateEstimatePrefix')}${missing.join(
-    t('edit.maaCultivateEstimateJoin')
-  )}${t('edit.maaCultivateEstimateSuffix')}`
+  return `${t('core.edit.maaCultivateEstimatePrefix')}${missing.join(
+    t('core.edit.maaCultivateEstimateJoin')
+  )}${t('core.edit.maaCultivateEstimateSuffix')}`
 })
 </script>
 

@@ -27,10 +27,10 @@ export const confirmCloseIfRunningTasks = (): Promise<boolean> => {
 
   return new Promise(resolve => {
     Modal.confirm({
-      title: t('comp.confirmExit'),
-      content: t('comp.queueStillRunningClose'),
-      okText: t('comp.confirmExit'),
-      cancelText: t('comp.cancel'),
+      title: t('bootstrap.comp.confirmExit'),
+      content: t('bootstrap.comp.queueStillRunningClose'),
+      okText: t('bootstrap.comp.confirmExit'),
+      cancelText: t('bootstrap.comp.cancel'),
       okType: 'danger',
       centered: true,
       onOk: () => resolve(true),

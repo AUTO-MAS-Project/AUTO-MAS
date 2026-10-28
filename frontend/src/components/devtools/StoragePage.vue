@@ -35,8 +35,8 @@ const totalSize = computed(() =>
   formatBytes(entries.value.reduce((total, entry) => total + entry.bytes, 0))
 )
 const columns = computed(() => [
-  { title: t('devtools.storageKey'), dataIndex: 'key', key: 'key' },
-  { title: t('devtools.type'), dataIndex: 'type', key: 'type', width: 84 },
+  { title: t('core.devtools.storageKey'), dataIndex: 'key', key: 'key' },
+  { title: t('core.devtools.type'), dataIndex: 'type', key: 'type', width: 84 },
 ])
 const scopeOptions = [
   { label: 'localStorage', value: 'local' },
@@ -49,8 +49,8 @@ const canLeave = (): Promise<boolean> => {
   if (saving.value) return Promise.resolve(false)
   if (!dirty.value) return Promise.resolve(true)
   leaveConfirmation ??= confirmDevtoolsAction(
-    t('devtools.unsavedTitle'),
-    t('devtools.unsavedHint')
+    t('core.devtools.unsavedTitle'),
+    t('core.devtools.unsavedHint')
   ).finally(() => {
     leaveConfirmation = null
   })
@@ -76,7 +76,7 @@ const loadEntries = () => {
       else selectedKey.value = null
     }
   } catch {
-    error.value = t('devtools.storageUnavailable')
+    error.value = t('core.devtools.storageUnavailable')
     entries.value = []
   }
 }
@@ -122,15 +122,20 @@ const saveEntry = async () => {
       (creating.value && current !== null) ||
       (!creating.value && current !== originalValue.value)
     ) {
-      if (!(await confirmDevtoolsAction(t('devtools.overwriteTitle'), t('devtools.overwriteHint'))))
+      if (
+        !(await confirmDevtoolsAction(
+          t('core.devtools.overwriteTitle'),
+          t('core.devtools.overwriteHint')
+        ))
+      )
         return
     }
     storage.setItem(editorKey.value, editorValue.value)
     showEntry({ key: editorKey.value, value: editorValue.value, type: 'text', bytes: 0 })
     loadEntries()
-    message.success(t('devtools.saved'))
+    message.success(t('core.devtools.saved'))
   } catch {
-    message.error(t('devtools.storageWriteFailed'))
+    message.error(t('core.devtools.storageWriteFailed'))
   } finally {
     saving.value = false
   }
@@ -143,8 +148,8 @@ const removeEntry = async () => {
     const storage = currentStorage()
     if (
       !(await confirmDevtoolsAction(
-        t('devtools.deleteTitle'),
-        t(dirty.value ? 'devtools.deleteUnsavedHint' : 'devtools.deleteHint', { key })
+        t('core.devtools.deleteTitle'),
+        t(dirty.value ? 'core.devtools.deleteUnsavedHint' : 'core.devtools.deleteHint', { key })
       ))
     )
       return
@@ -154,7 +159,7 @@ const removeEntry = async () => {
     originalValue.value = ''
     loadEntries()
   } catch {
-    message.error(t('devtools.storageWriteFailed'))
+    message.error(t('core.devtools.storageWriteFailed'))
   }
 }
 
@@ -164,8 +169,8 @@ const clearStorage = async () => {
     const storage = currentStorage()
     if (
       !(await confirmDevtoolsAction(
-        t('devtools.clearTitle'),
-        t('devtools.clearHint', {
+        t('core.devtools.clearTitle'),
+        t('core.devtools.clearHint', {
           scope: scope.value === 'local' ? 'localStorage' : 'sessionStorage',
           count: entries.value.length,
         })
@@ -177,7 +182,7 @@ const clearStorage = async () => {
     creating.value = false
     loadEntries()
   } catch {
-    message.error(t('devtools.storageWriteFailed'))
+    message.error(t('core.devtools.storageWriteFailed'))
   }
 }
 
@@ -185,7 +190,7 @@ const formatJson = () => {
   try {
     editorValue.value = JSON.stringify(JSON.parse(editorValue.value), null, 2)
   } catch {
-    message.error(t('devtools.invalidJson'))
+    message.error(t('core.devtools.invalidJson'))
   }
 }
 
@@ -204,22 +209,24 @@ useEventListener(window, 'beforeunload', event => {
   <div class="devtools-toolbar">
     <a-segmented :value="scope" :options="scopeOptions" @change="changeScope" />
     <a-space>
-      <a-button :aria-label="t('devtools.refresh')" @click="refresh"><ReloadOutlined /></a-button>
+      <a-button :aria-label="t('core.devtools.refresh')" @click="refresh"
+        ><ReloadOutlined
+      /></a-button>
       <a-button type="primary" @click="createEntry"
-        ><PlusOutlined />{{ t('devtools.newEntry') }}</a-button
+        ><PlusOutlined />{{ t('core.devtools.newEntry') }}</a-button
       >
     </a-space>
   </div>
   <a-alert v-if="error" type="error" :message="error" show-icon />
   <a-input
     v-model:value="search"
-    :placeholder="t('devtools.searchStorage')"
-    :aria-label="t('devtools.searchStorage')"
+    :placeholder="t('core.devtools.searchStorage')"
+    :aria-label="t('core.devtools.searchStorage')"
     allow-clear
   />
   <div class="devtools-toolbar">
     <span class="devtools-muted">{{
-      t('devtools.storageCount', { count: entries.length, size: totalSize })
+      t('core.devtools.storageCount', { count: entries.length, size: totalSize })
     }}</span>
     <a-button
       type="text"
@@ -227,7 +234,7 @@ useEventListener(window, 'beforeunload', event => {
       size="small"
       :disabled="entries.length === 0 || !!error"
       @click="clearStorage"
-      >{{ t('devtools.clearScope') }}</a-button
+      >{{ t('core.devtools.clearScope') }}</a-button
     >
   </div>
   <div class="storage-layout">
@@ -241,7 +248,9 @@ useEventListener(window, 'beforeunload', event => {
         :pagination="{ pageSize: 6, showSizeChanger: false, hideOnSinglePage: true }"
         :row-selection="{ type: 'radio', selectedRowKeys, onSelect: selectEntry, columnWidth: 32 }"
         :custom-row="(record: StorageEntry) => ({ onClick: () => selectEntry(record) })"
-        :locale="{ emptyText: t(search ? 'devtools.noMatches' : 'devtools.emptyStorage') }"
+        :locale="{
+          emptyText: t(search ? 'core.devtools.noMatches' : 'core.devtools.emptyStorage'),
+        }"
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'key'">
@@ -251,7 +260,7 @@ useEventListener(window, 'beforeunload', event => {
             <div class="storage-preview">{{ record.value.slice(0, 90) }}</div>
           </template>
           <div v-else-if="column.key === 'type'" class="storage-type">
-            <a-tag>{{ record.type === 'json' ? 'JSON' : t('devtools.text') }}</a-tag>
+            <a-tag>{{ record.type === 'json' ? 'JSON' : t('core.devtools.text') }}</a-tag>
             <span class="devtools-muted">{{ formatBytes(record.bytes) }}</span>
           </div>
         </template>
@@ -259,16 +268,22 @@ useEventListener(window, 'beforeunload', event => {
     </div>
     <section v-if="hasEditor" class="devtools-section storage-editor">
       <div class="devtools-toolbar">
-        <h3>{{ t(creating ? 'devtools.newEntry' : 'devtools.editValue') }}</h3>
-        <a-tag v-if="dirty" color="warning">{{ t('devtools.unsaved') }}</a-tag>
+        <h3>{{ t(creating ? 'core.devtools.newEntry' : 'core.devtools.editValue') }}</h3>
+        <a-tag v-if="dirty" color="warning">{{ t('core.devtools.unsaved') }}</a-tag>
       </div>
       <a-form :model="{ key: editorKey, value: editorValue }" layout="vertical" @finish="saveEntry">
         <a-form-item
           name="key"
-          :label="t('devtools.storageKey')"
+          :label="t('core.devtools.storageKey')"
           :rules="
             creating
-              ? [{ required: true, whitespace: true, message: t('devtools.storageKeyRequired') }]
+              ? [
+                  {
+                    required: true,
+                    whitespace: true,
+                    message: t('core.devtools.storageKeyRequired'),
+                  },
+                ]
               : []
           "
         >
@@ -276,16 +291,16 @@ useEventListener(window, 'beforeunload', event => {
             v-if="creating"
             v-model:value="editorKey"
             :disabled="saving"
-            :aria-label="t('devtools.storageKey')"
+            :aria-label="t('core.devtools.storageKey')"
           />
           <code v-else class="devtools-code">{{ editorKey || '""' }}</code>
         </a-form-item>
-        <a-form-item name="value" :label="t('devtools.storageValue')">
+        <a-form-item name="value" :label="t('core.devtools.storageValue')">
           <a-textarea
             v-model:value="editorValue"
             :disabled="saving"
             :auto-size="{ minRows: 6, maxRows: 18 }"
-            :aria-label="t('devtools.storageValue')"
+            :aria-label="t('core.devtools.storageValue')"
             class="value-input"
             spellcheck="false"
           />
@@ -293,22 +308,22 @@ useEventListener(window, 'beforeunload', event => {
         <div class="devtools-toolbar">
           <a-space wrap>
             <a-button :disabled="saving" @click="formatJson">{{
-              t('devtools.formatJson')
+              t('core.devtools.formatJson')
             }}</a-button>
             <a-button @click="copyDevtoolsText(editorValue)"
-              ><CopyOutlined />{{ t('devtools.copyValue') }}</a-button
+              ><CopyOutlined />{{ t('core.devtools.copyValue') }}</a-button
             >
           </a-space>
           <a-space>
             <a-button v-if="!creating" danger :disabled="saving" @click="removeEntry"
-              ><DeleteOutlined />{{ t('devtools.delete') }}</a-button
+              ><DeleteOutlined />{{ t('core.devtools.delete') }}</a-button
             >
             <a-button
               type="primary"
               html-type="submit"
               :loading="saving"
               :disabled="creating ? !editorKey.trim() : !dirty"
-              >{{ t('devtools.save') }}</a-button
+              >{{ t('core.devtools.save') }}</a-button
             >
           </a-space>
         </div>
@@ -317,11 +332,11 @@ useEventListener(window, 'beforeunload', event => {
     <a-empty
       v-else
       class="storage-empty"
-      :description="t('devtools.selectStorage')"
+      :description="t('core.devtools.selectStorage')"
       :image="false"
     />
   </div>
-  <p class="devtools-muted">{{ t('devtools.storageHint') }}</p>
+  <p class="devtools-muted">{{ t('core.devtools.storageHint') }}</p>
 </template>
 
 <style scoped>

@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="openModel"
-    :title="t('edit.queueTemplate')"
+    :title="t('core.edit.queueTemplate')"
     :footer="null"
     width="720px"
     class="preset-template-modal"
@@ -23,7 +23,7 @@
         <template #icon>
           <PlusOutlined />
         </template>
-        {{ t('edit.queueTemplateSaveCurrent') }}
+        {{ t('core.edit.queueTemplateSaveCurrent') }}
       </a-button>
     </div>
 
@@ -44,10 +44,10 @@
               :disabled="template.entries.length === 0"
               @click="emit('applyQueueTemplate', template.name)"
             >
-              {{ t('edit.queueTemplateApply') }}
+              {{ t('core.edit.queueTemplateApply') }}
             </a-button>
             <a-dropdown :trigger="['click']">
-              <a-button :aria-label="t('comp.more')">
+              <a-button :aria-label="t('core.comp.more')">
                 <template #icon>
                   <EllipsisOutlined />
                 </template>
@@ -55,10 +55,10 @@
               <template #overlay>
                 <a-menu>
                   <a-menu-item key="rename" @click="openRenameDialog(template.name)">
-                    {{ t('edit.queueTemplateRename') }}
+                    {{ t('core.edit.queueTemplateRename') }}
                   </a-menu-item>
                   <a-menu-item key="delete" danger @click="confirmDelete(template.name)">
-                    {{ t('edit.queueTemplateDelete') }}
+                    {{ t('core.edit.queueTemplateDelete') }}
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -66,7 +66,7 @@
           </template>
         </MaaFWQueueCard>
       </div>
-      <a-empty v-else :description="t('edit.queueTemplateEmpty')" />
+      <a-empty v-else :description="t('core.edit.queueTemplateEmpty')" />
     </template>
 
     <div v-else class="preset-section-modal">
@@ -85,7 +85,7 @@
             :disabled="template.entries.length === 0"
             @click="emit('applyPresetTemplate', template.preset.name)"
           >
-            {{ t('edit.applyPreset2') }}
+            {{ t('core.edit.applyPreset2') }}
           </a-button>
         </template>
       </MaaFWQueueCard>
@@ -96,15 +96,17 @@
   <a-modal
     v-model:open="nameDialogOpen"
     :title="
-      nameDialogMode === 'save' ? t('edit.queueTemplateSaveTitle') : t('edit.queueTemplateRename')
+      nameDialogMode === 'save'
+        ? t('core.edit.queueTemplateSaveTitle')
+        : t('core.edit.queueTemplateRename')
     "
     width="480px"
-    :ok-text="t('edit.queueTemplateSave')"
-    :cancel-text="t('common.cancel')"
+    :ok-text="t('core.edit.queueTemplateSave')"
+    :cancel-text="t('core.common.cancel')"
     :ok-button-props="{ disabled: !canSubmitName }"
     @ok="submitName"
   >
-    <div class="queue-template-name-label">{{ t('edit.queueTemplateName') }}</div>
+    <div class="queue-template-name-label">{{ t('core.edit.queueTemplateName') }}</div>
     <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
     <a-input
       v-model:value="nameDraft"
@@ -112,11 +114,11 @@
       @press-enter="submitName"
     />
     <div v-if="nameProblem === 'duplicate'" class="queue-template-name-error">
-      {{ t('edit.queueTemplateNameExists') }}
+      {{ t('core.edit.queueTemplateNameExists') }}
     </div>
     <template v-if="nameDialogMode === 'save'">
       <div class="queue-template-draft-title">
-        {{ t('edit.queueTemplateCurrentCount', { count: draft.length }) }}
+        {{ t('core.edit.queueTemplateCurrentCount', { count: draft.length }) }}
       </div>
       <MaaFWQueueChips :chips="draft" />
     </template>
@@ -169,8 +171,8 @@ const openModel = computed({
 
 const activeTab = ref<TemplateTab>('mine')
 const tabOptions = computed(() => [
-  { value: 'mine', label: t('edit.queueTemplateMine') },
-  { value: 'presets', label: t('edit.queueTemplatePresets') },
+  { value: 'mine', label: t('core.edit.queueTemplateMine') },
+  { value: 'presets', label: t('core.edit.queueTemplatePresets') },
 ])
 
 // 每次打开都回到「我的模板」；项目预设没了（换了 interface）也退回去
@@ -234,10 +236,10 @@ const submitName = () => {
 
 const confirmDelete = (name: string) => {
   Modal.confirm({
-    title: t('edit.queueTemplateDeleteConfirm', { name }),
-    okText: t('edit.queueTemplateDelete'),
+    title: t('core.edit.queueTemplateDeleteConfirm', { name }),
+    okText: t('core.edit.queueTemplateDelete'),
     okType: 'danger',
-    cancelText: t('common.cancel'),
+    cancelText: t('core.common.cancel'),
     onOk: () => emit('deleteQueueTemplate', name),
   })
 }

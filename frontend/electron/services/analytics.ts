@@ -46,7 +46,6 @@ export class AnalyticsService {
   private minuteCount = 0
   private readonly eventCounts = new Map<AnalyticsEventName, number>()
   private lastScreen = ''
-  private successfulWrites = 0
   private automaticUpdateCheckEmitted = false
 
   constructor(private readonly options: AnalyticsOptions) {}
@@ -125,11 +124,11 @@ export class AnalyticsService {
       this.minuteCount = 0
       this.eventCounts.clear()
     }
+    // 成功保存独立随机抽样；未入样的调用不占事件族预算。
+    const sampleRate = name === 'config_write_finished' && props.outcome === 'success' ? 10 : 1
+    if (sampleRate === 10 && randomInt(sampleRate) !== 0) return
     const count = (this.eventCounts.get(name) ?? 0) + 1
     this.eventCounts.set(name, count)
-    // 高频成功保存固定抽取每十个中的第一个；失败仍受同一总预算约束。
-    const sampleRate = name === 'config_write_finished' && props.outcome === 'success' ? 10 : 1
-    if (sampleRate === 10 && this.successfulWrites++ % sampleRate !== 0) return
     if (this.minuteCount >= 120 || count > 60 || this.requests.size >= 4) return
     if (name === 'screen_view') {
       const key = `${props.screen}:${props.script_type}`

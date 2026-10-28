@@ -9,8 +9,8 @@
   >
     <SelectableOptionCard
       value="new"
-      :title="t('scripts.create.mfwNewProject')"
-      :description="t('scripts.create.mfwNewProjectDesc')"
+      :title="t('core.scripts.create.mfwNewProject')"
+      :description="t('core.scripts.create.mfwNewProjectDesc')"
       :selected="value === 'new'"
     >
       <template #icon>
@@ -18,17 +18,19 @@
       </template>
     </SelectableOptionCard>
     <div class="choice-group-heading">
-      <span class="choice-group-title">{{ t('scripts.create.mfwReuse') }}</span>
-      <span class="choice-group-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
+      <span class="choice-group-title">{{ t('core.scripts.create.mfwReuse') }}</span>
+      <span class="choice-group-description">{{ t('core.scripts.create.mfwReuseDesc') }}</span>
     </div>
     <a-alert v-if="error" type="error" show-icon :message="error" class="template-alert">
       <template #action>
-        <a-button size="small" @click="emit('retry')">{{ t('scripts.create.retry') }}</a-button>
+        <a-button size="small" @click="emit('retry')">{{
+          t('core.scripts.create.retry')
+        }}</a-button>
       </template>
     </a-alert>
     <div v-if="loading" class="choice-placeholder">
       <a-spin size="small" />
-      <span>{{ t('scripts.create.mfwReuseLoading') }}</span>
+      <span>{{ t('core.scripts.create.mfwReuseLoading') }}</span>
     </div>
     <template v-else-if="choices.length">
       <SelectableOptionCard
@@ -46,7 +48,7 @@
       </SelectableOptionCard>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
-      {{ t('scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
+      {{ t('core.scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
     </div>
   </SelectableOptionList>
 </template>
@@ -78,10 +80,10 @@ const reuseMeta = (choice: MfwReuseChoice) => {
   const name = choice.scriptName || choice.scriptId.slice(0, 8)
   const from =
     choice.scriptCount > 1
-      ? t('scripts.create.mfwReuseFromMany', { name, count: choice.scriptCount })
-      : t('scripts.create.mfwReuseFrom', { name })
+      ? t('core.scripts.create.mfwReuseFromMany', { name, count: choice.scriptCount })
+      : t('core.scripts.create.mfwReuseFrom', { name })
   const parts = [from, choice.version]
-  if (choice.busy) parts.push(t('scripts.create.mfwReuseBusy'))
+  if (choice.busy) parts.push(t('core.scripts.create.mfwReuseBusy'))
   return parts.filter(Boolean).join(' · ')
 }
 </script>

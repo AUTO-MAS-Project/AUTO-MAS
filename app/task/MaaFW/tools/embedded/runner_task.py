@@ -16,13 +16,13 @@ from collections import Counter
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable, Mapping
 
 import psutil
 
 from app.core import Config
-from app.core.history import history_store
 from app.core.ws import Publisher, protocol
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification_ports import LocalNotice
@@ -3488,36 +3488,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             [id(log_item) for _, log_item in items], records
         )
         if records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                records[-1].attachments.extend(attachments)
-            except Exception as error:
-                self._append_log(f"收集用户历史附件失败：{error}", warning=True)
-            try:
-                for record in records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        self._append_log(f"保存历史失败：{error}", warning=True)
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=partial(self._append_log, warning=True),
+            )
 
     def _record_attempt(
         self,

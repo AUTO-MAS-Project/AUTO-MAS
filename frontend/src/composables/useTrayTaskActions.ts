@@ -32,7 +32,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
           selectedTaskId: taskId,
           taskLabel: label || taskId,
         })
-        message.success(t('scheduler.toast.taskBegun'))
+        message.success(t('core.scheduler.toast.taskBegun'))
         void playSound('task_started').catch(error => {
           logger.warn('播放任务启动音频失败:', error)
         })
@@ -41,7 +41,7 @@ export function useTrayTaskActions(options: TrayTaskActionsOptions): void {
         if (disposed) return
         const errorMsg =
           (error instanceof Error ? error.message : String(error)) ||
-          t('scheduler.toast.startTaskFailed')
+          t('core.scheduler.toast.startTaskFailed')
         logger.error('托盘启动任务失败:', errorMsg)
         message.error(errorMsg)
       })

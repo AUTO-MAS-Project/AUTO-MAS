@@ -5,8 +5,8 @@
       <a-empty :image-style="{ height: '56px' }">
         <template #image><UserSwitchOutlined class="empty-icon" /></template>
         <template #description>
-          <div>{{ t('history.selectUser') }}</div>
-          <div>{{ t('history.selectUserDesc') }}</div>
+          <div>{{ t('core.history.selectUser') }}</div>
+          <div>{{ t('core.history.selectUserDesc') }}</div>
         </template>
       </a-empty>
     </div>
@@ -18,7 +18,7 @@
         type="warning"
         show-icon
         class="aggregate-warning"
-        :message="t('history.aggregateWarning')"
+        :message="t('core.history.aggregateWarning')"
         :description="aggregateErrors.map(error => `${error.key}: ${error.message}`).join('; ')"
       />
       <!-- 统计信息卡片 -->

@@ -3,14 +3,14 @@
 // 顺序为 MAS 默认一条龙顺序（体力作战插在「自动幽境危战」之前，见 initDragonList）：
 // 领取邮件 → 领取尘歌壶奖励 → 合成树脂 → 自动幽境危战 → 自动地脉花 → 自动首领讨伐 → 自动秘境 → 领取每日奖励
 export const ONE_DRAGON_GROUPS = [
-  { value: '领取邮件', labelKey: 'edit.bettergiGroupMail' },
-  { value: '领取尘歌壶奖励', labelKey: 'edit.bettergiGroupTeapot' },
-  { value: '合成树脂', labelKey: 'edit.bettergiGroupResin' },
-  { value: '自动幽境危战', labelKey: 'edit.bettergiGroupStygian' },
-  { value: '自动地脉花', labelKey: 'edit.bettergiGroupLeyLine' },
-  { value: '自动首领讨伐', labelKey: 'edit.bettergiGroupBoss' },
-  { value: '自动秘境', labelKey: 'edit.bettergiGroupDomain' },
-  { value: '领取每日奖励', labelKey: 'edit.bettergiGroupDailyReward' },
+  { value: '领取邮件', labelKey: 'core.edit.bettergiGroupMail' },
+  { value: '领取尘歌壶奖励', labelKey: 'core.edit.bettergiGroupTeapot' },
+  { value: '合成树脂', labelKey: 'core.edit.bettergiGroupResin' },
+  { value: '自动幽境危战', labelKey: 'core.edit.bettergiGroupStygian' },
+  { value: '自动地脉花', labelKey: 'core.edit.bettergiGroupLeyLine' },
+  { value: '自动首领讨伐', labelKey: 'core.edit.bettergiGroupBoss' },
+  { value: '自动秘境', labelKey: 'core.edit.bettergiGroupDomain' },
+  { value: '领取每日奖励', labelKey: 'core.edit.bettergiGroupDailyReward' },
 ]
 
 // ============================================================

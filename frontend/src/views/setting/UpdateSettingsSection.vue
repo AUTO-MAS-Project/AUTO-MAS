@@ -22,8 +22,8 @@ const { settings, updateSourceOptions, updateChannelOptions, handleSettingChange
 // MFW 项目包的 GitHub 加速镜像：与后端 Update.GitHubMirror 的 OptionsValidator 一致，
 // 多给一项用户选了就会被静默纠回
 const githubMirrorOptions = computed(() => [
-  { label: t('setting.others.githubMirrorAuto'), value: 'Auto' },
-  { label: t('setting.others.githubMirrorOff'), value: 'Off' },
+  { label: t('core.setting.others.githubMirrorAuto'), value: 'Auto' },
+  { label: t('core.setting.others.githubMirrorOff'), value: 'Off' },
 ])
 
 // 暂停更新：暂停中只展示状态条，未暂停展示日期选择器（最短 1 天、最长 35 天）
@@ -44,7 +44,7 @@ const handlePauseUntilChange = (value: string | null) => {
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('setting.others.updateSection') }}</h3>
+      <h3>{{ t('core.setting.others.updateSection') }}</h3>
       <a-button type="primary" size="small" class="section-update-button" @click="checkUpdate">
         <template #icon>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -53,7 +53,7 @@ const handlePauseUntilChange = (value: string | null) => {
             />
           </svg>
         </template>
-        {{ t('setting.others.checkUpdate') }}
+        {{ t('core.setting.others.checkUpdate') }}
       </a-button>
     </div>
     <!-- 暂停中：显著状态条（含副标题提示）；日期选择器常驻，暂停期间也可改截止日期 -->
@@ -62,15 +62,15 @@ const handlePauseUntilChange = (value: string | null) => {
       type="info"
       show-icon
       class="pause-status-alert"
-      :message="t('setting.others.pauseStatus', { date: pauseUntilDisplay })"
-      :description="t('setting.others.pauseStatusHint')"
+      :message="t('core.setting.others.pauseStatus', { date: pauseUntilDisplay })"
+      :description="t('core.setting.others.pauseStatusHint')"
     />
     <a-row :gutter="24">
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.pauseUpdates') }}</span>
-            <a-tooltip :title="t('setting.others.pauseUpdatesTip')">
+            <span class="form-label">{{ t('core.setting.others.pauseUpdates') }}</span>
+            <a-tooltip :title="t('core.setting.others.pauseUpdatesTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -79,7 +79,7 @@ const handlePauseUntilChange = (value: string | null) => {
             format="YYYY-MM-DD"
             value-format="YYYY-MM-DD"
             :disabled-date="pauseDisabledDate"
-            :placeholder="t('setting.others.pausePlaceholder')"
+            :placeholder="t('core.setting.others.pausePlaceholder')"
             size="large"
             style="width: 100%"
             @change="handlePauseUntilChange"
@@ -91,8 +91,8 @@ const handlePauseUntilChange = (value: string | null) => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.updateBackend') }}</span>
-            <a-tooltip :title="t('setting.others.updateBackendTip')">
+            <span class="form-label">{{ t('core.setting.others.updateBackend') }}</span>
+            <a-tooltip :title="t('core.setting.others.updateBackendTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -102,16 +102,16 @@ const handlePauseUntilChange = (value: string | null) => {
             style="width: 100%"
             @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
           >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.updateSource') }}</span>
-            <a-tooltip :title="t('setting.others.updateSourceTip')">
+            <span class="form-label">{{ t('core.setting.others.updateSource') }}</span>
+            <a-tooltip :title="t('core.setting.others.updateSourceTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -127,8 +127,8 @@ const handlePauseUntilChange = (value: string | null) => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.updateChannel') }}</span>
-            <a-tooltip :title="t('setting.others.updateChannelTip')">
+            <span class="form-label">{{ t('core.setting.others.updateChannel') }}</span>
+            <a-tooltip :title="t('core.setting.others.updateChannelTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -146,14 +146,14 @@ const handlePauseUntilChange = (value: string | null) => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.proxy') }}</span>
-            <a-tooltip :title="t('setting.others.proxyTip')">
+            <span class="form-label">{{ t('core.setting.others.proxy') }}</span>
+            <a-tooltip :title="t('core.setting.others.proxyTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
           <a-input
             :value="settings.Update?.ProxyAddress"
-            :placeholder="t('setting.others.proxyPlaceholder')"
+            :placeholder="t('core.setting.others.proxyPlaceholder')"
             size="large"
             @blur="(e: any) => handleSettingChange('Update', 'ProxyAddress', e.target.value)"
           />
@@ -162,8 +162,8 @@ const handlePauseUntilChange = (value: string | null) => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.others.githubMirror') }}</span>
-            <a-tooltip :title="t('setting.others.githubMirrorTip')">
+            <span class="form-label">{{ t('core.setting.others.githubMirror') }}</span>
+            <a-tooltip :title="t('core.setting.others.githubMirrorTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>

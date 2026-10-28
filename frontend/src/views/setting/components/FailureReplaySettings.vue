@@ -78,7 +78,7 @@ const saveVideoStorageLimit = async () => {
 const savePassword = async () => {
   const value = password.value
   if (!value) {
-    message.warning(t('setting.replay.passwordEmpty'))
+    message.warning(t('core.setting.replay.passwordEmpty'))
     return
   }
 
@@ -87,7 +87,7 @@ const savePassword = async () => {
     if (!(await updateReplaySetting('Password', value))) return
     password.value = ''
     passwordConfiguredOverride.value = true
-    message.success(t('setting.replay.passwordSaved'))
+    message.success(t('core.setting.replay.passwordSaved'))
   } finally {
     savingPassword.value = false
   }
@@ -97,17 +97,17 @@ const clearPassword = () => {
   Modal.confirm({
     // 与 a-modal 的 :z-index="900" 同理：遮罩整体压在标题栏（1000）之下，窗口控制按钮不被挡住
     zIndex: 900,
-    title: t('setting.replay.clearPasswordTitle'),
-    content: t('setting.replay.clearPasswordContent'),
-    okText: t('setting.replay.clearPassword'),
-    cancelText: t('common.cancel'),
+    title: t('core.setting.replay.clearPasswordTitle'),
+    content: t('core.setting.replay.clearPasswordContent'),
+    okText: t('core.setting.replay.clearPassword'),
+    cancelText: t('core.common.cancel'),
     okButtonProps: { danger: true },
     onOk: async () => {
       if (!(await updateReplaySetting('Password', '')))
-        throw new Error(t('setting.toast.saveFailed'))
+        throw new Error(t('core.setting.toast.saveFailed'))
       password.value = ''
       passwordConfiguredOverride.value = false
-      message.success(t('setting.replay.passwordCleared'))
+      message.success(t('core.setting.replay.passwordCleared'))
     },
   })
 }
@@ -117,11 +117,11 @@ const runConnectionCheck = async () => {
   try {
     checkResult.value = await checkObsReplay()
     if (checkResult.value.connected && checkResult.value.replayActive) {
-      message.success(t('setting.replay.checkDone'))
+      message.success(t('core.setting.replay.checkDone'))
     }
   } catch (error) {
     checkResult.value = null
-    message.error(error instanceof Error ? error.message : t('setting.replay.checkFailed'))
+    message.error(error instanceof Error ? error.message : t('core.setting.replay.checkFailed'))
   } finally {
     checking.value = false
   }
@@ -134,12 +134,12 @@ const runSaveReplay = async () => {
     const response = await saveObsReplay()
     capturePath.value = response.capture_path ?? null
     if (response.capture_path) {
-      message.success(t('setting.replay.saveDone'))
+      message.success(t('core.setting.replay.saveDone'))
     } else {
-      message.warning(t('setting.replay.saveEmpty'))
+      message.warning(t('core.setting.replay.saveEmpty'))
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('setting.replay.saveFailed'))
+    message.error(error instanceof Error ? error.message : t('core.setting.replay.saveFailed'))
   } finally {
     savingReplay.value = false
   }
@@ -149,14 +149,14 @@ const runSaveReplay = async () => {
 <template>
   <div class="form-section replay-settings">
     <div class="section-header">
-      <h3>{{ t('setting.replay.section') }}</h3>
+      <h3>{{ t('core.setting.replay.section') }}</h3>
     </div>
 
     <a-alert type="info" show-icon class="replay-intro">
-      <template #message>{{ t('setting.replay.intro') }}</template>
+      <template #message>{{ t('core.setting.replay.intro') }}</template>
       <template #description>
-        <p>{{ t('setting.replay.obsGuide') }}</p>
-        <p>{{ t('setting.replay.durationGuide') }}</p>
+        <p>{{ t('core.setting.replay.obsGuide') }}</p>
+        <p>{{ t('core.setting.replay.durationGuide') }}</p>
       </template>
     </a-alert>
 
@@ -164,8 +164,8 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.enable') }}</span>
-            <a-tooltip :title="t('setting.replay.enableTip')">
+            <span class="form-label">{{ t('core.setting.replay.enable') }}</span>
+            <a-tooltip :title="t('core.setting.replay.enableTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -175,16 +175,16 @@ const runSaveReplay = async () => {
             style="width: 100%"
             @change="(value: any) => updateReplaySetting('Enabled', value)"
           >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.port') }}</span>
-            <a-tooltip :title="t('setting.replay.portTip')">
+            <span class="form-label">{{ t('core.setting.replay.port') }}</span>
+            <a-tooltip :title="t('core.setting.replay.portTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -203,8 +203,8 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.videoLimit') }}</span>
-            <a-tooltip :title="t('setting.replay.videoLimitTip')">
+            <span class="form-label">{{ t('core.setting.replay.videoLimit') }}</span>
+            <a-tooltip :title="t('core.setting.replay.videoLimitTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -222,7 +222,7 @@ const runSaveReplay = async () => {
               :loading="savingVideoStorageLimit"
               @click="saveVideoStorageLimit"
             >
-              {{ t('setting.replay.saveVideoLimit') }}
+              {{ t('core.setting.replay.saveVideoLimit') }}
             </a-button>
           </a-space-compact>
         </div>
@@ -233,8 +233,8 @@ const runSaveReplay = async () => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.password') }}</span>
-            <a-tooltip :title="t('setting.replay.passwordTip')">
+            <span class="form-label">{{ t('core.setting.replay.password') }}</span>
+            <a-tooltip :title="t('core.setting.replay.passwordTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
@@ -242,7 +242,7 @@ const runSaveReplay = async () => {
             <a-input-password
               v-model:value="password"
               :disabled="!replayEnabled"
-              :placeholder="t('setting.replay.passwordPlaceholder')"
+              :placeholder="t('core.setting.replay.passwordPlaceholder')"
               style="width: calc(100% - 160px)"
               @press-enter="savePassword"
             />
@@ -251,15 +251,15 @@ const runSaveReplay = async () => {
               :loading="savingPassword"
               @click="savePassword"
             >
-              {{ t('setting.replay.savePassword') }}
+              {{ t('core.setting.replay.savePassword') }}
             </a-button>
           </a-input-group>
           <div class="replay-password-status">
             <a-tag :color="passwordConfigured ? 'success' : 'default'">
               {{
                 passwordConfigured
-                  ? t('setting.replay.passwordConfigured')
-                  : t('setting.replay.passwordNotConfigured')
+                  ? t('core.setting.replay.passwordConfigured')
+                  : t('core.setting.replay.passwordNotConfigured')
               }}
             </a-tag>
             <a-button
@@ -270,7 +270,7 @@ const runSaveReplay = async () => {
               :disabled="!replayEnabled"
               @click="clearPassword"
             >
-              {{ t('setting.replay.clearPassword') }}
+              {{ t('core.setting.replay.clearPassword') }}
             </a-button>
           </div>
         </div>
@@ -278,14 +278,14 @@ const runSaveReplay = async () => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.actions') }}</span>
+            <span class="form-label">{{ t('core.setting.replay.actions') }}</span>
           </div>
           <a-space wrap>
             <a-button :disabled="!replayEnabled" :loading="checking" @click="runConnectionCheck">
-              {{ t('setting.replay.check') }}
+              {{ t('core.setting.replay.check') }}
             </a-button>
             <a-button :disabled="!replayEnabled" :loading="savingReplay" @click="runSaveReplay">
-              {{ t('setting.replay.saveTest') }}
+              {{ t('core.setting.replay.saveTest') }}
             </a-button>
           </a-space>
         </div>
@@ -297,7 +297,7 @@ const runSaveReplay = async () => {
       type="info"
       show-icon
       class="replay-check-result"
-      :message="t('setting.replay.capturePath')"
+      :message="t('core.setting.replay.capturePath')"
       :description="capturePath"
     />
     <a-alert
@@ -309,21 +309,25 @@ const runSaveReplay = async () => {
       <template #message>
         {{
           checkResult.connected && checkResult.replayActive
-            ? t('setting.replay.checkPassed')
-            : t('setting.replay.checkIssue')
+            ? t('core.setting.replay.checkPassed')
+            : t('core.setting.replay.checkIssue')
         }}
       </template>
       <template #description>
         <div>
-          {{ t('setting.replay.connection') }}:
-          {{ checkResult.connected ? t('common.yes') : t('common.no') }}
+          {{ t('core.setting.replay.connection') }}:
+          {{ checkResult.connected ? t('core.common.yes') : t('core.common.no') }}
         </div>
         <div>
-          {{ t('setting.replay.buffer') }}:
-          {{ checkResult.replayActive ? t('setting.replay.active') : t('setting.replay.inactive') }}
+          {{ t('core.setting.replay.buffer') }}:
+          {{
+            checkResult.replayActive
+              ? t('core.setting.replay.active')
+              : t('core.setting.replay.inactive')
+          }}
         </div>
         <div v-if="checkResult.version">
-          {{ t('setting.replay.version') }}: {{ checkResult.version }}
+          {{ t('core.setting.replay.version') }}: {{ checkResult.version }}
         </div>
         <div v-if="checkResult.directory" class="replay-path">{{ checkResult.directory }}</div>
       </template>

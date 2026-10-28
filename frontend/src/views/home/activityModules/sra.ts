@@ -21,7 +21,7 @@ export const buildSraActivityPresentation = (
       overview,
       loading,
       t,
-      emptyText: t(`home.empty.${game}`),
+      emptyText: t(`core.home.empty.${game}`),
       items: runningActivities(overview.activities, now).map(item =>
         sraActivityEntry(item, overview)
       ),
@@ -47,7 +47,7 @@ export const createSraActivityModule = (
   source,
   buildPanel: now => ({
     key: game,
-    title: t(`home.game.${game}`),
+    title: t(`core.home.game.${game}`),
     accent,
     ...buildPresentation({
       game,
@@ -72,6 +72,6 @@ export const sraActivityModuleBuilder =
   }): ActivityModuleBuilder =>
   context =>
     createSraActivityModule(
-      { game, accent, source: useSraActivitySource(sourceGame, `home.game.${game}`) },
+      { game, accent, source: useSraActivitySource(sourceGame, `core.home.game.${game}`) },
       context
     )

@@ -581,7 +581,8 @@ export function closeApp(): Promise<void> {
       if (preparationToken !== null) prepared = await prepareAppClose()
       if (prepared && preparationToken !== undefined && preparationToken !== null) {
         prepared = (await window.electronAPI?.appConfirmQuit?.(preparationToken)) === true
-        if (!prepared) notification.warning({ message: t('comp.closePreparationTimedOut') })
+        if (!prepared)
+          notification.warning({ message: t('bootstrap.comp.closePreparationTimedOut') })
       }
     } catch (error) {
       prepared = false
@@ -645,9 +646,9 @@ const showRestartFailureModal = (): void => {
   stopReconnect()
 
   const modal = Modal.error({
-    title: t('misc.couldNotRecoverBackend'),
-    content: t('misc.backendStillCannotConnect'),
-    okText: t('misc.restartApp'),
+    title: t('bootstrap.misc.couldNotRecoverBackend'),
+    content: t('bootstrap.misc.backendStillCannotConnect'),
+    okText: t('bootstrap.misc.restartApp'),
     onOk: () => {
       const { showClosingOverlay } = useAppClosing()
       showClosingOverlay()
@@ -819,11 +820,11 @@ const showDisconnectNotice = (event: WSDisconnectEvent): void => {
   logger.error(`主 WebSocket 异常断开: code=${event.code}, reason=${event.reason || '无'}`)
   notification.warning({
     key: DISCONNECT_NOTICE_KEY,
-    message: t('misc.lostConnectionBackend'),
+    message: t('bootstrap.misc.lostConnectionBackend'),
     description: t(
       shouldPreserveBackend()
-        ? 'misc.devBackendReconnecting'
-        : 'misc.checkingBackendRecoveringAutomatically'
+        ? 'bootstrap.misc.devBackendReconnecting'
+        : 'bootstrap.misc.checkingBackendRecoveringAutomatically'
     ),
     // 持续到重连成功或关闭流程开始时按 key 收起，不自动消失
     duration: null,
@@ -835,9 +836,9 @@ const escalateDisconnectIncident = (): void => {
   if (!disconnectIncidentShown || closeDisconnectModal || shouldPreserveBackend()) return
   notification.close(DISCONNECT_NOTICE_KEY)
   const modal = Modal.warning({
-    title: t('misc.lostConnectionBackend'),
-    content: t('misc.checkingBackendRecoveringAutomatically'),
-    okText: t('misc.gotIt'),
+    title: t('bootstrap.misc.lostConnectionBackend'),
+    content: t('bootstrap.misc.checkingBackendRecoveringAutomatically'),
+    okText: t('bootstrap.misc.gotIt'),
   })
   if (modal && typeof modal.destroy === 'function') {
     closeDisconnectModal = () => modal.destroy()
@@ -861,8 +862,8 @@ const showSupersededNotice = (event: WSDisconnectEvent): void => {
   dismissDisconnectIncident()
   notification.info({
     key: SUPERSEDED_NOTICE_KEY,
-    message: t('misc.anotherWindowTookOverBackend'),
-    description: t('misc.thisWindowStoppedReconnecting'),
+    message: t('bootstrap.misc.anotherWindowTookOverBackend'),
+    description: t('bootstrap.misc.thisWindowStoppedReconnecting'),
     // 本窗口不会自己恢复，提示保留到显式重连成功或关闭流程开始
     duration: null,
   })
