@@ -3985,6 +3985,7 @@
   "core.setting.basic.appearanceReplaceContent": "“{name}” already exists. Replace it?",
   "core.setting.basic.appearanceReplaceTitle": "Appearance already exists",
   "core.setting.basic.applyAppearance": "Apply appearance",
+  "core.setting.basic.closeConfirmation": "Ask before closing the app",
   "core.setting.basic.cursorAnim": "Cursor animation",
   "core.setting.basic.cursorSection": "Cursor effect",
   "core.setting.basic.cursorTip": "Trail effect that follows the cursor. Off by default; turning on the fluid effect asks for confirmation.",

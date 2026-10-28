@@ -3985,6 +3985,7 @@
   "core.setting.basic.appearanceReplaceContent": "外观“{name}”已经存在，要替换它吗？",
   "core.setting.basic.appearanceReplaceTitle": "外观已存在",
   "core.setting.basic.applyAppearance": "应用外观",
+  "core.setting.basic.closeConfirmation": "关闭应用的时候弹出二次确认",
   "core.setting.basic.cursorAnim": "光标动画",
   "core.setting.basic.cursorSection": "光标效果",
   "core.setting.basic.cursorTip": "选择全局光标尾迹效果；默认关闭，流体光标开启前需要二次确认",

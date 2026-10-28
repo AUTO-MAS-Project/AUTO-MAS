@@ -48,6 +48,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowMinimize: () => ipcRenderer.invoke('window-minimize'),
   windowMaximize: () => ipcRenderer.invoke('window-maximize'),
   windowClose: () => ipcRenderer.invoke('window-close'),
+  windowHideToTray: () => ipcRenderer.invoke('window-hide-to-tray'),
+  notifyNativeCloseHandlerReady: () => ipcRenderer.send('native-window-close-handler-ready'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized)
@@ -55,6 +57,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window-maximized-changed', listener)
   },
   windowFocus: () => ipcRenderer.invoke('window-focus'),
+  onNativeWindowCloseRequested: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('native-window-close-requested', listener)
+    return () => ipcRenderer.removeListener('native-window-close-requested', listener)
+  },
   setDesktopMascotReady: (
     ready: boolean,
     labels?: DesktopMascotMenuLabels,

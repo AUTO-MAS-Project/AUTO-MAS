@@ -53,36 +53,7 @@
     <!-- 中间：可拖拽区域 -->
     <div class="title-bar-center drag-region"></div>
 
-    <!-- 右侧：窗口控制按钮 -->
-    <div v-if="!isMacOS" class="title-bar-right">
-      <div class="window-controls">
-        <button
-          class="control-button minimize-button"
-          :title="t('bootstrap.comp.minimize')"
-          @click="minimizeWindow"
-        >
-          <MinusOutlined />
-        </button>
-        <button
-          class="control-button maximize-button"
-          :title="
-            isMaximized ? t('bootstrap.comp.restoreWindow') : t('bootstrap.comp.maximizeWindow')
-          "
-          @click="toggleMaximize"
-        >
-          <SwitcherOutlined v-if="isMaximized" />
-          <BorderOutlined v-else />
-        </button>
-        <button
-          v-if="!hideCloseButton"
-          class="control-button close-button"
-          :title="t('bootstrap.comp.close')"
-          @click="closeWindow"
-        >
-          <CloseOutlined />
-        </button>
-      </div>
-    </div>
+    <WindowControls :hide-close-button="hideCloseButton" :show-controls="!isMacOS" />
 
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
@@ -176,16 +147,11 @@ import {
   hasRunningTasks,
 } from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
-import {
-  BorderOutlined,
-  CloseOutlined,
-  LoadingOutlined,
-  MinusOutlined,
-  SwitcherOutlined,
-} from '@ant-design/icons-vue'
+import { LoadingOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import WindowControls from '@/components/WindowControls.vue'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
 
@@ -198,7 +164,6 @@ const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
 const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 let removeTrayActionListener: (() => void) | undefined
-let removeWindowMaximizedListener: (() => void) | undefined
 
 const {
   status: downloadStatus,
@@ -274,7 +239,6 @@ const downloadHint = computed(() => {
 })
 
 const { isDark } = useTheme()
-const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
 const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
@@ -378,24 +342,6 @@ const handleBackendUpdateClick = () => {
   })
 }
 
-const minimizeWindow = async () => {
-  try {
-    await window.electronAPI?.windowMinimize()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`最小化窗口失败: ${errorMsg}`)
-  }
-}
-
-const toggleMaximize = async () => {
-  try {
-    await window.electronAPI?.windowMaximize()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`切换最大化状态失败: ${errorMsg}`)
-  }
-}
-
 // 先由主进程隐藏窗口，再让生命周期协调器在后台执行关闭流程
 const doCloseWindow = async () => {
   try {
@@ -405,10 +351,6 @@ const doCloseWindow = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
   }
-}
-
-const closeWindow = async () => {
-  if (await confirmCloseIfRunningTasks()) await doCloseWindow()
 }
 
 // 托盘触发退出：与窗口关闭按钮走同一套确认流程
@@ -456,18 +398,6 @@ onMounted(async () => {
   // 监听托盘退出和重启请求
   removeTrayActionListener = window.electronAPI?.onTrayActionRequest?.(handleTrayActionRequest)
 
-  // 双击标题栏或系统快捷键也会改变窗口状态。
-  removeWindowMaximizedListener = window.electronAPI?.onWindowMaximizedChange(maximized => {
-    isMaximized.value = maximized
-  })
-
-  try {
-    isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`获取窗口状态失败: ${errorMsg}`)
-  }
-
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
 
@@ -483,8 +413,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   removeTrayActionListener?.()
   removeTrayActionListener = undefined
-  removeWindowMaximizedListener?.()
-  removeWindowMaximizedListener = undefined
 })
 </script>
 
@@ -601,59 +529,6 @@ onBeforeUnmount(() => {
 
 .drag-region {
   -webkit-app-region: drag;
-}
-
-.title-bar-right {
-  display: flex;
-  align-items: center;
-  height: 100%;
-}
-
-.window-controls {
-  display: flex;
-  height: 100%;
-}
-
-.control-button {
-  width: 46px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-dark .control-button {
-  color: var(--ant-color-text-secondary);
-}
-
-.control-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.title-bar-dark .control-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.close-button:hover {
-  background: #e81123 !important;
-  color: #fff !important;
-}
-
-.minimize-button:hover,
-.maximize-button:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.title-bar-dark .minimize-button:hover,
-.title-bar-dark .maximize-button:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 .update-hint {

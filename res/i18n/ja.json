@@ -3985,6 +3985,7 @@
   "core.setting.basic.appearanceReplaceContent": "「{name}」はすでに存在します。置き換えますか？",
   "core.setting.basic.appearanceReplaceTitle": "外観がすでに存在します",
   "core.setting.basic.applyAppearance": "外観を適用",
+  "core.setting.basic.closeConfirmation": "アプリ終了前に確認する",
   "core.setting.basic.cursorAnim": "カーソルのアニメーション",
   "core.setting.basic.cursorSection": "カーソル効果",
   "core.setting.basic.cursorTip": "カーソルに追従する軌跡の効果です。既定はオフで、フルイドを有効にする際は確認が入ります。",

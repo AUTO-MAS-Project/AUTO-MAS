@@ -60,7 +60,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
 | `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
 | `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
-| `app_close_finished` | 正常收尾、用户取消、强制关闭占比 | `close_kind` |
+| `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
 | `tray_action_requested` | 托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
@@ -80,7 +80,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind` |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关 |
 | `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |

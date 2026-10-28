@@ -147,6 +147,7 @@ export const featureAnalyticsSchemas = {
       'show_tray',
       'close_to_tray',
       'hide_close',
+      'close_confirmation',
       'history_retention',
       'allow_sleep',
       'block_ads',

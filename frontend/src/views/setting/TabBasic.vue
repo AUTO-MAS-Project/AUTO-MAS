@@ -22,6 +22,7 @@ import TrayMenuEditor from './components/TrayMenuEditor.vue'
 import MascotSettings from './components/MascotSettings.vue'
 import CustomBackgroundSettings from './components/CustomBackgroundSettings.vue'
 import PressSoundSettings from './components/PressSoundSettings.vue'
+import CloseConfirmationSettings from './components/CloseConfirmationSettings.vue'
 
 interface TabBasicProps {
   settings: GlobalConfig
@@ -429,6 +430,9 @@ const handleLocaleChange = (value: unknown): void => {
               <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
             </a-select>
           </div>
+        </a-col>
+        <a-col :span="12">
+          <CloseConfirmationSettings />
         </a-col>
       </a-row>
     </div>
