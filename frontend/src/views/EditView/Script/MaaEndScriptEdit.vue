@@ -1014,7 +1014,7 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const response = await requestScriptConfigStart(scriptId)
+    const response = await requestScriptConfigStart(scriptId, undefined, 'script')
 
     if (!response?.taskId) {
       throw new Error(response?.message || '启动 MaaEnd 配置失败')

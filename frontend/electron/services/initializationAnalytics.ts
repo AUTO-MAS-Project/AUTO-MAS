@@ -45,11 +45,15 @@ export async function observeInitializationStage<
   const startedAt = performance.now()
   const finish = (result?: T) =>
     analyticsService.recordMainEvent(context, {
-      name: 'initialization_stage_finished',
+      name: 'initialization_stage_finished_v2',
       props: {
         stage,
         runtime_mode: runtimeMode,
-        outcome: result?.success ? 'success' : 'failure',
+        outcome: result?.success
+          ? 'success'
+          : result?.code === 'OPERATION_CANCELLED'
+            ? 'cancelled'
+            : 'failure',
         known_code: result?.success
           ? 'none'
           : codes.has(result?.code as AnalyticsInitializationCode)
@@ -57,9 +61,11 @@ export async function observeInitializationStage<
             : 'unknown',
         failed_stage: result?.success
           ? 'none'
-          : stages.has(result?.failedStage ?? '')
-            ? (result!.failedStage as AnalyticsInitializationStage)
-            : 'unknown',
+          : stage === 'runtime_binary'
+            ? 'runtime_binary'
+            : stages.has(result?.failedStage ?? '')
+              ? (result!.failedStage as AnalyticsInitializationStage)
+              : 'unknown',
         duration_bucket: analyticsDuration(performance.now() - startedAt),
       },
     })

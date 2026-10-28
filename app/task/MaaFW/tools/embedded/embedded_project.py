@@ -115,6 +115,7 @@ PAYLOADS_DIR_NAME = EMBEDDED_PAYLOADS_DIR_NAME
 SWITCH_DIR_NAME = EMBEDDED_SWITCH_DIR_NAME
 VIEW_MARKER_NAME = VIEW_MARKER_FILE_NAME
 VIEW_SCHEMA_VERSION = 1
+ADOPTED_CHANNEL_FIELD = "adoptedChannel"
 DEFAULT_CHANNEL = "stable"
 # 副本里 Python 字节码缓存的落点（``PYTHONPYCACHEPREFIX``，见 host_environment）：agent 与
 # 环境准备写出的 pyc 全在这一个目录下，副本其余部分不再被运行期弄脏；随副本一起删。
@@ -971,6 +972,7 @@ def _realize_view(
     assume_marker: Mapping[str, Any] | None = None,
     seed_private: Mapping[str, Path] | None = None,
     follow_source: Mapping[str, Any] | None = None,
+    adopted_channel: str | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
     否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
@@ -978,6 +980,7 @@ def _realize_view(
     项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。
 
     ``follow_source``（开发者模式的导入用）：写进新标记的 ``followSource``。
+    ``adopted_channel``：成功采纳时的渠道事实，随标记原子换入；普通切换不继承。
 
     新旧载荷有一份是开发者载荷（:func:`is_follow_source_manifest`）时，不管是哪条路径切的（开发者
     导入、关掉开关回到组、克隆后的组同步、被兄弟的导入 / 同组传播切走），都不按「同版本合并两份
@@ -1100,6 +1103,8 @@ def _realize_view(
         }
         if follow_source is not None:
             marker[FOLLOW_SOURCE_FIELD] = dict(follow_source)
+        if adopted_channel is not None:
+            marker[ADOPTED_CHANNEL_FIELD] = adopted_channel
         if old_marker is not None and old_marker.get(ENV_CONFIRMED_FIELD):
             # 同谱系换版本：带上旧的确认记录。它 ≠ 新载荷，下次运行前据此补一次确认；
             # 同载荷重建则仍然相等，不必再确认。
@@ -3071,16 +3076,32 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
 
 
 def settle_adopted_latest(
-    base: Path | None = None, *, lineages: Iterable[str] | None = None
+    base: Path | None = None,
+    *,
+    lineages: Iterable[str] | None = None,
+    members: Iterable[GroupMember] | None = None,
 ) -> list[tuple[str, str, str]]:
     """全部采纳完之后，按确定的规则重定每个谱系每个渠道同版本的 latest（不看采纳顺序）。
 
     ``lineages`` 给了就只重定这些谱系（运行前就地采纳一份时只动它自己的谱系）。
+    ``members`` 给了就只采用标记中采纳渠道与本轮渠道一致的视图及组现有 latest，
+    不用当前配置给旧视图重新归组；旧标记没有渠道事实时仅沿用组现有 latest。
     返回 ``[(谱系, 渠道, 新 latest id)]``，只列变了的。之后的组同步据此把视图统一过去。
     """
 
     root = payloads_root(base)
     changed: list[tuple[str, str, str]] = []
+    grouped: dict[tuple[str, str], set[str]] | None = None
+    if members is not None:
+        grouped = {}
+        for member in members:
+            marker = read_view_marker(embedded_project_dir(member.script_id, base))
+            if marker is not None:
+                candidates = grouped.setdefault(
+                    (str(marker["lineage"]), member.channel), set()
+                )
+                if marker.get(ADOPTED_CHANNEL_FIELD) == member.channel:
+                    candidates.add(str(marker["payload"]))
     targets = (
         payloads.list_lineages(root)
         if lineages is None
@@ -3088,8 +3109,16 @@ def settle_adopted_latest(
     )
     for lineage in targets:
         for channel in list(payloads.read_lineage(root, lineage)["latest"]):
+            candidates = None if grouped is None else grouped.get((lineage, channel))
+            if grouped is not None and candidates is None:
+                continue
             try:
-                chosen = payloads.settle_same_version_latest(root, lineage, channel)
+                chosen = payloads.settle_same_version_latest(
+                    root=root,
+                    key=lineage,
+                    channel=channel,
+                    candidate_ids=candidates,
+                )
             except (OSError, payloads.PayloadError) as exc:
                 logger.warning(
                     f"[MFW 内嵌] 重定 {lineage}/{channel} 的 latest 失败: {exc}"
@@ -3251,6 +3280,12 @@ def adopt_view(
         base=base,
         carry=True,
         assume_marker={"lineage": lineage, "payload": registered.payload_id},
+        # 重建丢失载荷不等于改过渠道，不能用当前配置给既有视图重写归属。
+        adopted_channel=(
+            str(marker.get(ADOPTED_CHANNEL_FIELD) or "") or None
+            if marker is not None
+            else channel or DEFAULT_CHANNEL
+        ),
     )
 
 

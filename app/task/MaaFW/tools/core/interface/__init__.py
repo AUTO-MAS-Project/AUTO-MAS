@@ -15,7 +15,6 @@ from .models import (
     MaaFWSetting,
     MaaFWTask,
 )
-from .preview import build_task_alias_index
 from .service import MaaFWInterfaceService
 from .task_config import (
     MaaFWTaskConfig,
@@ -43,7 +42,6 @@ __all__ = [
     "build_interface_preset_snapshot",
     "load_interface_model",
     "load_interface_model_cached",
-    "build_task_alias_index",
     "normalize_snapshot",
     "normalize_task_config",
     "normalize_task_execution_payload",

@@ -20,9 +20,9 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket`、`visibility` | 每进程最多一次 |
 | `backend_start_finished` | 串行启动作业的真实结果 | `outcome`、`runtime_mode`、耗时桶 | 合并的启动请求不重复 |
 | `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
-| `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
+| `initialization_stage_finished_v2` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
 | `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
-| `initialization_finished` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
+| `initialization_finished_v2` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
@@ -35,7 +35,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `queue_schedule_changed` | 定时、循环及启动调度设置 | `schedule_kind`、`action`、`outcome`、耗时桶 | 实际写入结果，不记录日期时刻 |
 | `plan_manage_finished` | 计划基础记录创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket`、`outcome`、耗时桶 | 每次实际管理请求 |
 | `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
-| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、耗时桶 | 开始、结束都收到的样本 |
+| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、`partial_failure`、耗时桶 | 开始、结束都收到的样本 |
 | `native_config_action_finished` | 原生配置打开、查看、保存/关闭请求及丢弃通知 | `script_type`、`operation`、`outcome`、耗时桶 | 每次实际请求；重复丢弃帧去重 |
 | `config_restore_finished` | MAS/原生备份恢复与强制确认结果 | `script_type`、`target_kind`、`forced`、`outcome`、耗时桶 | 每次实际恢复请求 |
 | `community_login_finished` | 米游社、森空岛扫码会话的终态 | `provider`、`stage`、`outcome`、耗时桶 | 每次生成尝试一个终态，不逐次轮询 |
@@ -109,6 +109,11 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 初始化准备步骤完成不代表成功；确认主连接可用后才记成功，跳过步骤、强行进入但未确认连接、
 失败分别记录。启动时自动跳过已完成的安装步骤仍需确认连接，单独标记 `flow_kind=skip`。
 
+初始化统计使用版本化事件：旧事件的 failure 包含取消，旧整体事件的 python 也可能是 Runtime 对齐失败；
+从 v2 起取消独立记为 cancelled，对齐失败记为 runtime_binary，不能直接合并新旧分类。
+后端启动明确返回 OPERATION_CANCELLED 时，完整初始化和跳过初始化路径均记录 cancelled；其他异常仍记 failure。
+界面仍使用原有失败步骤，不采集原始错误文本。
+
 阶段统计在主进程执行边界记录：Runtime 自身校验/更新为 `runtime_binary`，完整准备命令为
 `bootstrap`，单项命令对应 `python`、`repository` 或 `dependency`；失败时另带有限枚举的
 `failed_stage`。不把界面补齐的阶段或接管的 pip/Git 算成成功。旧链路完整初始化与单步重试
@@ -139,9 +144,13 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 专项独有保存、导入与计划编辑使用下述显式事件边界，不把配置内容带入共享统计。
 
 四种任务模式独立标记；受理不代表执行成功，跨专项整体结果标为 `multi`，不复制为各专项成功。
+整任务 `success` 只表示任务执行器正常收尾，不保证各脚本或账号的执行均成功。
 任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
 进程重启或集合淘汰后不保证精确一次。没有完整收到创建和完成的任务不推断结局，
 不能以观察完成数除以全部请求数声称全量成功率。
+
+任务启动目标类别由已知脚本或账号入口显式传入，缺少可靠类型时保留 `unknown`；
+首页和桌宠任务列表仅提供名称与 ID，不能推断目标类别。
 
 主要页面白名单包含任务台。停止请求受理不表示任务清理完成，最终取消仍看任务观察结果；
 全局紧急停止单独记录固定入口与请求结果。续跑统计只描述指定脚本起点或用户范围，不推断这是失败重试；
@@ -161,6 +170,10 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 `script_run_started` 表示进入执行流程，可能随后预检失败、无用户或因维护全部跳过，
 不等于游戏内任务已执行或已成功。结束结果分别为 `success`、`failed`、`skipped`、`no_user`、
 `incomplete`、`error`、`cancelled`，复用现有 MAS 状态，不读取上游内部数据。
+`success` 沿用调度口径，包含 BetterGI 的「部分失败」；新增 `partial_failure=yes/no/unknown`
+分别表示 MAS 状态中出现部分失败、未出现部分失败及无法判断；`no` 不保证上游每一步均成功。
+非成功结果、旧后端与历史事件不推断该字段；
+缺少字段的历史 `success` 不能视作 `no`。
 轮次 ID 和任务 ID 仅用于本机 WS 关联与最多 128 项的内存去重，不发送至 Aptabase。
 重复边界不增加次数，恢复快照不补报；缺失开始、断线、退出或关闭遥测造成的样本不推测结局。
 后端逐轮消息通过运行时任务注册表后台发送，最多 32 项在途，拥塞时直接丢弃；
