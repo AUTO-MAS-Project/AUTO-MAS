@@ -1,8 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
   buildProjectPresetAppliedSnapshot,
-  pickPresetPretasks,
-  selectPresetQueueEntries,
+  selectPresetTemplateQueue,
   type MaaFWPresetQueueEntry,
 } from '../maafwPresetQueue'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
@@ -162,34 +161,27 @@ export function useMaaFWTaskQueue({
   const presetTemplates = computed(() => {
     // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
     const activeTaskByName = availableTaskByName.value
-    return presetOptions.value
-      .map(preset => {
-        const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-        // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用。
-        // 前置任务单独处理（预设声明了 pretask 才有，见 pickPresetPretasks），不算预设的任务项
-        const entries = selectPresetQueueEntries(
-          snapshot.taskOrder.filter(taskId => !isPretaskId(taskId)),
-          activeTaskByName,
-          validTaskNames.value
-        )
-        const pretasks = pickPresetPretasks(preset.snapshot, isPretaskId)
-        const pretaskEntries = pretasks
-          ? selectPresetQueueEntries(
-              Object.keys(pretasks.checked).filter(taskId => pretasks.checked[taskId]),
-              activeTaskByName,
-              validTaskNames.value
-            )
-          : []
-        return {
+    // 只有前置任务设置（`task` 为空、或普通任务当前全不可用）的预设也列出来，
+    // 什么都做不了的不列，规则见 selectPresetTemplateQueue
+    return presetOptions.value.flatMap(preset => {
+      const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
+      const queue = selectPresetTemplateQueue(
+        snapshot.taskOrder,
+        preset.snapshot,
+        activeTaskByName,
+        validTaskNames.value,
+        isPretaskId
+      )
+      if (!queue) return []
+      return [
+        {
           preset,
-          entries,
-          pretasks,
-          pretaskEntries,
+          ...queue,
           taskOptions: snapshot.taskOptions,
           globalOptions: snapshot.globalOptions || {},
-        }
-      })
-      .filter(template => template.entries.length > 0)
+        },
+      ]
+    })
   })
   const selectedQueuedTask = computed(
     () =>

@@ -117,6 +117,61 @@ export const pickPresetPretasks = (
   }
 }
 
+/** 用户页列出的一份项目预设：当前可用的普通任务项 + 它对前置任务的设置 */
+export type MaaFWPresetTemplateQueue = {
+  /** 普通任务里当前控制器 / 资源下可用的项（重复任务是各自的实例 id） */
+  entries: MaaFWPresetQueueEntry[]
+  /** 预设对前置任务的设置；没声明 `pretask` 时为 null */
+  pretasks: MaaFWPresetPretasks | null
+  /** 预设启用的前置任务里当前可用的项（应用时队列里没有的补进来） */
+  pretaskEntries: MaaFWPresetQueueEntry[]
+}
+
+/**
+ * 一份项目预设在当前控制器 / 资源下能做什么；什么都做不了返回 null，用户页不列它。
+ *
+ * 能做的有两样：有可用的普通任务；或者声明了 `pretask`（PI v2.10.3，`task` 可以为空）且当前
+ * 可用的前置任务里至少有一个——不管预设启没启用它，声明了就要按它设勾选：声明了空数组就是把
+ * 前置任务全部设为不勾选，是有效设置，不能当成没写。
+ *
+ * `taskOrder` 取规范化后的快照顺序；前置任务从 `/maafw/preview` 原样给的 `rawSnapshot` 里取
+ * （见 pickPresetPretasks）。
+ */
+export const selectPresetTemplateQueue = (
+  taskOrder: readonly string[],
+  rawSnapshot: Pick<MaaFWTaskSnapshot, 'taskOrder' | 'taskChecked' | 'taskOptions'>,
+  activeTaskByName: ReadonlyMap<string, MaaFWTaskInfo>,
+  validTaskNames: TaskNameLookup,
+  isPretaskId: (taskId: string) => boolean
+): MaaFWPresetTemplateQueue | null => {
+  // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
+  const entries = selectPresetQueueEntries(
+    taskOrder.filter(taskId => !isPretaskId(taskId)),
+    activeTaskByName,
+    validTaskNames
+  )
+  const pretasks = pickPresetPretasks(rawSnapshot, isPretaskId)
+  const usablePretasks = pretasks
+    ? selectPresetQueueEntries(Object.keys(pretasks.checked), activeTaskByName, validTaskNames)
+    : []
+  if (entries.length === 0 && usablePretasks.length === 0) return null
+  return {
+    entries,
+    pretasks,
+    pretaskEntries: usablePretasks.filter(entry => pretasks?.checked[entry.id] === true),
+  }
+}
+
+/** 预设卡片上的任务标签：先列预设启用的前置任务，再列普通任务（与应用后的队列顺序一致） */
+export const presetTemplateChips = (
+  template: Pick<MaaFWPresetTemplateQueue, 'entries'> &
+    Partial<Pick<MaaFWPresetTemplateQueue, 'pretaskEntries'>>
+) =>
+  [...(template.pretaskEntries ?? []), ...template.entries].map(entry => ({
+    id: entry.id,
+    label: entry.task.label || entry.task.name,
+  }))
+
 const cloneOptions = (options: Record<string, MaaFWTaskOptionValue> | undefined) =>
   JSON.parse(JSON.stringify(options ?? {})) as Record<string, MaaFWTaskOptionValue>
 

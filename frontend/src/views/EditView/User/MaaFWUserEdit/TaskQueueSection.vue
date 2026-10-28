@@ -126,12 +126,11 @@
                 :title="getDisplayName(template.preset)"
                 :description="template.preset.description"
                 :base-path="previewData.path"
-                :chips="presetChips(template)"
+                :chips="presetTemplateChips(template)"
               >
                 <template #actions>
                   <a-button
                     type="primary"
-                    :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
                     {{ t('core.edit.applyPreset2') }}
@@ -395,10 +394,10 @@ import {
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import { isSupportedMaaFWControllerType } from '@/types/script'
 import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
+import { presetTemplateChips } from '../maafwPresetQueue'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
-  PresetTemplate,
 } from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
@@ -525,9 +524,6 @@ const confirmRename = () => {
   renameOpen.value = false
   emit('renameTask', renameTaskId.value, renameDraft.value)
 }
-
-const presetChips = (template: PresetTemplate) =>
-  template.entries.map(entry => ({ id: entry.id, label: getDisplayName(entry.task) }))
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)

@@ -255,11 +255,16 @@ export type AddTaskCascaderOption = {
   children?: AddTaskCascaderOption[]
 }
 
-/** 预设模板：预设本身 + 其中当前可用的各项 */
+/**
+ * 预设模板：预设本身 + 其中当前可用的各项。列出来的都能应用；`entries` 可以为空
+ * （只有前置任务设置的预设）
+ */
 export type PresetTemplate = {
   preset: MaaFWPresetInfo
   /** 预设里当前可用的各项，重复任务是各自的实例 id */
   entries: MaaFWPresetQueueEntry[]
+  /** 预设启用的前置任务里当前可用的项（预设声明了 `pretask` 才有） */
+  pretaskEntries?: MaaFWPresetQueueEntry[]
 }
 
 /** 自定义模板（脚本级，同一脚本的用户共用）：名称 + 它在当前项目下的样子 */
