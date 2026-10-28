@@ -337,8 +337,8 @@ const runSaveReplay = async () => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('setting.replay.frameEnable') }}</span>
-            <a-tooltip :title="t('setting.replay.frameEnableTip')">
+            <span class="form-label">{{ t('core.setting.replay.frameEnable') }}</span>
+            <a-tooltip :title="t('core.setting.replay.frameEnableTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>

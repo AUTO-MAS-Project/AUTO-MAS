@@ -4410,6 +4410,8 @@
   "core.setting.replay.durationGuide": "リプレイバッファは 5～30 分を推奨します。MAS はこの PC の OBS にのみ接続します。",
   "core.setting.replay.enable": "失敗リプレイを有効化",
   "core.setting.replay.enableTip": "無効にすると OBS に接続せず、タスク失敗時にもリプレイを保存しません。",
+  "core.setting.replay.frameEnable": "MaaFW スクリーンショットリプレイ（実験的）",
+  "core.setting.replay.frameEnableTip": "MaaFW 系タスクが失敗したとき、スクリプト自身が撮ったスクリーンショットから失敗直前 1〜2 分のリプレイを作り、履歴に保存します。OBS は不要で、上の動画容量を使います。",
   "core.setting.replay.inactive": "無効",
   "core.setting.replay.intro": "タスクが最終的に失敗したとき、実行中の OBS リプレイバッファからトラブル確認用の動画を保存します。",
   "core.setting.replay.obsGuide": "OBS 側でキャプチャソースとエンコーダーを設定し、リプレイバッファと自動起動を有効にしてください。",

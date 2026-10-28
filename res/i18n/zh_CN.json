@@ -4410,6 +4410,8 @@
   "core.setting.replay.durationGuide": "建议把回放缓冲时长设置在 5–30 分钟；MAS 只连接本机 OBS WebSocket。",
   "core.setting.replay.enable": "启用失败回放",
   "core.setting.replay.enableTip": "关闭后不会连接 OBS，也不会在任务失败时保存回放。",
+  "core.setting.replay.frameEnable": "MaaFW 截图回放（实验性）",
+  "core.setting.replay.frameEnableTip": "MaaFW 系任务失败时，用脚本自己截的图合成失败前一两分钟的回放，存进历史记录。不需要 OBS，占用上面的视频容量。",
   "core.setting.replay.inactive": "未启动",
   "core.setting.replay.intro": "任务最终失败时，MAS 会从已运行的 OBS 回放缓冲中保存一份视频副本，方便复盘问题。",
   "core.setting.replay.obsGuide": "请在 OBS 中自行设置捕获来源、编码器，并打开回放缓冲和自动启动回放缓冲。",
