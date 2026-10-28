@@ -4347,7 +4347,7 @@
   "core.setting.others.fluxdownServerMode": "FluxDown レジュームサービス",
   "core.setting.others.fluxdownServerModeTip": "オンにすると常駐する FluxDown サービスがダウンロードを担当し、中断後も完了済みセグメントから再開します。オフの場合は毎回最初から再ダウンロードします。ユーザー自身の FluxDown 本体には影響しません",
   "core.setting.others.fluxdownTakeover": "全スクリプト更新を引き継ぐ",
-  "core.setting.others.fluxdownTakeoverTip": "すべてのスクリプト更新ダウンロードを引き継ぎます（未実装のため、スイッチは無効化された予約項目です）",
+  "core.setting.others.fluxdownTakeoverTip": "MAA に MirrorChyan CDK が設定されている場合は MirrorChyan を使用し、FluxDown を経由しません。それ以外は実行前に MirrorChyan でバージョンを確認し、FluxDown で GitHub の更新パッケージをダウンロードします。現在は MAA に対応。MaaEnd は MXU のインポート機能の公開待ちです。検証とインストールはスクリプトが行い、失敗時は元の更新処理を維持します。",
   "core.setting.others.githubMirror": "GitHub ダウンロードミラー",
   "core.setting.others.githubMirrorAuto": "自動（ミラー優先、失敗時は直接接続）",
   "core.setting.others.githubMirrorOff": "オフ（GitHub に直接接続）",

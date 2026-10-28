@@ -13,6 +13,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
+import time
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -61,6 +62,7 @@ from .tools.backup_archive import (
     collect_native_files,
     native_backup_root,
 )
+from .tools.fluxdown_update import prepare_maa_fluxdown_update
 from .tools.game_update import ensure_game_updated
 from .tools.notify import SIGNATURE_SEP
 from .tools.resource_update import (
@@ -71,6 +73,7 @@ from .tools.resource_update import (
 )
 from .tools.software_package import (
     clear_deferred_update,
+    has_delegated_update_failure,
     load_deferred_update,
     read_pending_update,
     save_deferred_update,
@@ -83,7 +86,10 @@ from .tools.software_update import (
     prepare_maa_software_update,
     read_installed_release,
 )
-from .tools.update_credentials import resolve_takeover_credentials
+from .tools.update_credentials import (
+    resolve_takeover_credentials,
+    use_maa_fluxdown_update,
+)
 from .tools.UpdateMAA import MaaUpdaterRunningError
 
 logger = get_logger("MAA 调度器")
@@ -541,8 +547,11 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 一次只安装一个版本，批尾沿用最后实际执行账号的通道；其他通道只缓存。
+                # 旧预下载沿用批尾通道；全局下载代理在本账号运行前完成更新。
                 self._update_config_dir = task.update_config_dir
+                task.software_update_prepared = await self._prepare_software_update(
+                    task
+                )
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -566,6 +575,59 @@ class MaaManager(ScriptManagerBase):
             except MaaUpdaterRunningError:
                 self._updater_running = True
                 raise
+
+    async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
+        """运行账号前下载更新，并等待官方安装链结束后才允许注入任务配置。"""
+        if not use_maa_fluxdown_update(
+            self.script_config,
+            config_dirs=[task.update_config_dir, self.maa_set_path],
+        ):
+            return False
+        # 上次下载后被中止或 MAA 原生下载留下的包先交还官方入口，不能让
+        # 账号配置注入清掉它。消费后再查最新版本，不覆盖既有登记。
+        _, pending = read_pending_update(self.maa_set_path.parent)
+        if pending and (self.maa_set_path.parent / pending).is_file():
+            await self._install_pending_software_update()
+        last_log = 0.0
+
+        async def report(downloaded: int, total: int, speed: float) -> None:
+            nonlocal last_log
+            amount = f"{downloaded / 1024**2:.1f} MB"
+            if total > 0:
+                amount = f"{downloaded * 100 / total:.1f}% ({amount}/{total / 1024**2:.1f} MB)"
+            line = f"MAA 更新下载: {amount}，{speed / 1024**2:.1f} MB/s"
+            self.script_info.log = line
+            if time.monotonic() - last_log >= 1 or downloaded == total:
+                logger.info(line)
+                last_log = time.monotonic()
+
+        target = await prepare_maa_fluxdown_update(
+            self.maa_set_path.parent,
+            config=self.script_config,
+            config_dir=task.update_config_dir,
+            progress=report,
+        )
+        if target is None:
+            return False
+        await self._install_pending_software_update()
+        installed = read_installed_release(self.maa_set_path.parent)
+        actual = parse_version(installed[0]) if installed else None
+        expected = parse_version(target)
+        ready = bool(actual and expected and compare_versions(actual, expected) >= 0)
+        if not ready:
+            logger.warning("未确认 MAA 已完成更新，本轮保留原生下载")
+        return ready
+
+    async def _install_pending_software_update(self) -> None:
+        """复用官方安装入口；进程未退出或上游报告失败时停止后续账号任务。"""
+        self.script_info.log = "正在等待 MAA 官方更新器处理本地更新包"
+        try:
+            await update_maa(self.maa_set_path.parent)
+        except MaaUpdaterRunningError:
+            self._updater_running = True
+            raise
+        if has_delegated_update_failure(self.maa_set_path.parent):
+            raise RuntimeError("MAA 官方更新器报告安装失败，请先在 MAA 内完成修复")
 
     async def final_task(self):
         """运行结束后的收尾工作"""

@@ -4347,7 +4347,7 @@
   "core.setting.others.fluxdownServerMode": "FluxDown 断点续传服务",
   "core.setting.others.fluxdownServerModeTip": "开启后由常驻的 FluxDown 服务下载，断网/失败后可从已下载分段续传；关闭则每次重新下载。与用户全量版 FluxDown 互不影响",
   "core.setting.others.fluxdownTakeover": "接管所有脚本更新",
-  "core.setting.others.fluxdownTakeoverTip": "接管所有脚本的更新下载（该功能暂未实现，开关已禁用，仅为预留项）",
+  "core.setting.others.fluxdownTakeoverTip": "MAA 已配置 Mirror 酱 CDK 时沿用 Mirror 酱，不使用 FluxDown；否则运行前通过 Mirror 酱查版本、使用 FluxDown 下载 GitHub 更新包。当前支持 MAA，MaaEnd 等待 MXU 导入接口发布。校验和安装由脚本负责，失败时保留原生更新。",
   "core.setting.others.githubMirror": "GitHub 加速镜像",
   "core.setting.others.githubMirrorAuto": "自动（镜像优先，失败回退直连）",
   "core.setting.others.githubMirrorOff": "关闭（只直连 GitHub）",

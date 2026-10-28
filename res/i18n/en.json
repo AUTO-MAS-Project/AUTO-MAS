@@ -4347,7 +4347,7 @@
   "core.setting.others.fluxdownServerMode": "FluxDown resume service",
   "core.setting.others.fluxdownServerModeTip": "When enabled a resident FluxDown service handles downloads so interrupted downloads resume from completed segments; disable to always re-download from scratch. Does not affect your own FluxDown install",
   "core.setting.others.fluxdownTakeover": "Take over all script updates",
-  "core.setting.others.fluxdownTakeoverTip": "Take over all script update downloads (not implemented yet; the switch is disabled and reserved for future use)",
+  "core.setting.others.fluxdownTakeoverTip": "When a MirrorChyan CDK is configured for MAA, keep MirrorChyan and bypass FluxDown. Otherwise, check versions via MirrorChyan and download GitHub packages with FluxDown before running. Currently supports MAA; MaaEnd requires the upcoming MXU import interface. Scripts handle validation and installation. Native updates remain available on failure.",
   "core.setting.others.githubMirror": "GitHub download mirror",
   "core.setting.others.githubMirrorAuto": "Auto (mirrors first, direct on failure)",
   "core.setting.others.githubMirrorOff": "Off (direct GitHub only)",

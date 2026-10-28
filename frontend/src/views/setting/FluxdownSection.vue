@@ -191,7 +191,9 @@ const showUpdateHistory = ref(false)
           :value="!!settings.Update?.FluxdownTakeoverAll"
           size="large"
           style="width: 100%"
-          disabled
+          @change="
+            (val: boolean) => props.handleSettingChange('Update', 'FluxdownTakeoverAll', val)
+          "
         >
           <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
           <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>

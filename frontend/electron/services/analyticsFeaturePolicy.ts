@@ -159,6 +159,7 @@ export const featureAnalyticsSchemas = {
       'replay_connection',
       'voice',
       'auto_update',
+      'script_update_takeover',
       'update_channel',
       'update_source',
       'mirror',

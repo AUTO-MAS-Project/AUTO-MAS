@@ -20,9 +20,16 @@
 
 """MAA 本体与资源更新共用的接管凭据，避免两个更新器的启用条件分歧。"""
 
+from collections.abc import Sequence
+from pathlib import Path
+
 from app.core import Config
 from app.models.config import MaaConfig
 from app.services.update_transport import MirrorCdkStatus, query_mirror_cdk_status
+from app.utils import get_logger
+from app.utils import io as _utils_io
+
+logger = get_logger("MAA 更新凭据")
 
 
 def resolve_takeover_cdk(cdk: str) -> str:
@@ -36,6 +43,40 @@ def resolve_takeover_credentials(config: MaaConfig) -> tuple[bool, str | None]:
         return False, None
     cdk = resolve_takeover_cdk(str(config.Update.MirrorChyanCDK or ""))
     return bool(cdk), cdk or None
+
+
+def use_maa_fluxdown_update(config: MaaConfig, *, config_dirs: Sequence[Path]) -> bool:
+    """仅无 CDK 时允许 FluxDown；原生加密值只判断是否存在，不解密、不记录。
+
+    按用户要求，MAA 专项、MAS 全局或原生配置存在 CDK 均保留 Mirror 酱路径，
+    不受专项的更新接管开关影响。配置损坏时也不绕过其下载来源选择。
+    """
+    if not Config.setting.Update.FluxdownTakeoverAll:
+        return False
+    if resolve_takeover_cdk(str(config.Update.MirrorChyanCDK or "")):
+        return False
+    # 上游 Update.cs / ConfigurationKeys.cs 定义的原生字段。仅用于执行
+    # 「配置 CDK 时不代理下载」策略，不消费凭据语义，也不传给 MAS 下载器。
+    for directory in config_dirs:
+        for name, section, key in (
+            ("gui.new.json", "Update", "MirrorChyanCdk"),
+            ("gui.json", "Global", "VersionUpdate.ResourceUpdateSource.MirrorChyanCdk"),
+        ):
+            path = directory / name
+            if not path.is_file():
+                continue
+            try:
+                data = _utils_io.read_dict_file(path)
+                values = data.get(section, {})
+                if not isinstance(values, dict):
+                    raise ValueError("更新配置不是对象")
+                value = values.get(key)
+                if value is not None and (not isinstance(value, str) or value.strip()):
+                    return False
+            except (OSError, ValueError):
+                logger.warning("无法确认 MAA 原生 CDK 设置，保留原生更新路径")
+                return False
+    return True
 
 
 async def query_takeover_cdk(cdk: str) -> MirrorCdkStatus:

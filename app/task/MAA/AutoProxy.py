@@ -1167,6 +1167,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.check_result = "-"
         self.maa_root_path: Path | None = None
         self.pending_update: tuple[str, str] | None = None
+        self.software_update_prepared: bool = False
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -2131,10 +2132,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Info.IfQuickConfig:
             self._apply_depot_context(gui_new_set)
 
-        takeover_ready = await has_cached_maa_software_update(
-            self.maa_root_path,
-            config_dir=self.update_config_dir,
-            config=self.script_config,
+        takeover_ready = (
+            self.software_update_prepared
+            or await has_cached_maa_software_update(
+                self.maa_root_path,
+                config_dir=self.update_config_dir,
+                config=self.script_config,
+            )
         )
         self._configure_maa_runtime(
             gui_new_set=gui_new_set,

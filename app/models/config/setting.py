@@ -405,7 +405,7 @@ class GlobalConfig(DomainEntry):
 
         FluxdownTakeoverAll: bool = Field(
             default_factory=lambda: False,
-            description="FluxDown 接管所有自动化脚本更新（预留项，后端尚未实现，前端已禁用展示）",
+            description="运行前使用 FluxDown 代理脚本更新下载（当前支持 MAA），校验和安装由脚本负责",
         )
 
         GitHubMirror: Literal["Auto", "Off"] = Field(
