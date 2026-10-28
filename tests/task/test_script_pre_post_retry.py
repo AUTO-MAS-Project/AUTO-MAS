@@ -46,7 +46,7 @@ async def _run(proxy):
         await proxy._execute_task(group)
 
 
-def _record_scripts(monkeypatch, module="app.task.general.tools"):
+def _record_scripts(monkeypatch, module="app.task.base"):
     calls = []
 
     async def fake_execute(script_path, task_name):

@@ -15,6 +15,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
 import asyncio
+import inspect
 import json
 import os
 import shutil
@@ -44,11 +45,14 @@ if TYPE_CHECKING:
     import uvicorn
 
     from app.config import ConfigEntry
+    from app.models.task import ScriptTaskResources
     from app.utils import config_restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
     CONFIG_FILES,
+    LegacyEntryMigrations,
+    contains_legacy_type,
     convert_legacy,
     is_blank_file,
     preserve_pre_upgrade,
@@ -110,8 +114,6 @@ from app.utils import get_logger, is_supervised
 from app.utils import io as _utils_io
 from app.utils import paths as _utils_paths
 
-# 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
-MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
 # 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
 # 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
 DIAGNOSTIC_FILE_SUFFIXES = frozenset({".log", ".png", ".jpg"})
@@ -265,6 +267,18 @@ class AppConfig:
         self._m9a_migration = None
         self._m9a_repair = None
         self._m9a_managed = None
+        # ACTIVE 也可能是部分激活的结果；只有加载成功返回后才允许按引用回收。
+        self._script_configs_loaded = False
+        from app.task.MaaFW.tools.embedded.maintenance import MaaFWMaintenanceService
+
+        self.maafw_maintenance = MaaFWMaintenanceService(
+            script_configs=lambda: tuple(
+                (str(uid), config) for uid, config in self.ScriptConfig.data.items()
+            ),
+            scripts_loaded_intact=self.script_config_loaded_intact,
+            retention_days=lambda: self.setting.Function.HistoryRetentionTime,
+            process_started_at=_PROCESS_STARTED_AT,
+        )
         for model in (
             *CLASS_BOOK.values(),
             MaaUserConfig,
@@ -505,6 +519,7 @@ class AppConfig:
                     self.startup_notices = self.setting.startup_notices
                     await self.setting.activate(fast_init=True)
 
+            entry_migrations: LegacyEntryMigrations = {}
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
                 self._m9a_migration = await asyncio.to_thread(
@@ -520,7 +535,18 @@ class AppConfig:
                 self._m9a_managed = await asyncio.to_thread(
                     normalize_m9a_managed_entries, script_path
                 )
-                await self._archive_legacy_hsr_direct_snapshots(script_path)
+                if await asyncio.to_thread(
+                    contains_legacy_type, script_path, HSRConfig.__name__
+                ):
+                    from app.task.HSR.migration import (
+                        archive_legacy_direct_for_upgrade,
+                        migrate_legacy_user_payload,
+                    )
+
+                    entry_migrations = {HSRUserConfig: migrate_legacy_user_payload}
+                    notice = await archive_legacy_direct_for_upgrade(script_path)
+                    if notice is not None:
+                        self.startup_notices.append(notice)
             prepared = {
                 key: await node.to_dict()
                 for key, node in self._config_nodes.items()
@@ -531,6 +557,7 @@ class AppConfig:
                 self.config_path,
                 self._config_nodes,
                 prepared_documents=prepared,
+                entry_migrations=entry_migrations,
             )
         if self._m9a_managed is None:
             self._m9a_managed = await asyncio.to_thread(
@@ -544,6 +571,8 @@ class AppConfig:
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
                 await node.activate(fast_init=True)
+                if key == "ScriptConfig":
+                    self._script_configs_loaded = True
         for script in self.ScriptConfig.values():
             await self._initialize_script_config(script)
         await config_manager.flush()
@@ -1161,7 +1190,7 @@ class AppConfig:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         handler = self._get_script_config_handler(self.ScriptConfig[uid])
-        if handler is not None:
+        if handler is not None and handler.validate_update is not None:
             handler.validate_update(data)
 
         await self.ScriptConfig[uid].update(
@@ -1240,17 +1269,11 @@ class AppConfig:
         uid = uuid.UUID(script_id)
 
         script_config = self.ScriptConfig[uid]
-        if isinstance(script_config, MaaFWConfig):
-            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
-            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
-
-            await fill_default_task_snapshots(
-                script_id,
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_read is not None:
+            await handler.prepare_user_read(
                 script_config,
-                None if user_id is None else [str(uuid.UUID(user_id))],
+                user_ids=None if user_id is None else [str(uuid.UUID(user_id))],
             )
 
         if user_id is None:
@@ -1294,79 +1317,25 @@ class AppConfig:
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid = script_config.UserData.add(MaaUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, SrcConfig):
-            uid = script_config.UserData.add(SrcUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, GeneralConfig):
-            uid = script_config.UserData.add(GeneralUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, OkwwConfig):
-            uid = script_config.UserData.add(OkwwUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            try:
-                from app.task.Okww.tools.config_dir import ensure_user_config_dir
+        handler = self._get_script_config_handler(script_config)
+        # 特调脚本自行声明的用户类优先，不能被 MaaFW 父类型处理器覆盖。
+        user_class = getattr(script_config, "USER_CONFIG_CLASS", None)
+        if user_class is None and handler is not None:
+            user_class = handler.user_config_class
+        if user_class is None:
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
-                await ensure_user_config_dir(
-                    script_id=script_id,
-                    user_id=str(uid),
-                    base=str(config.Info.Base or _utils_constants.BASE_SHARED),
-                )
-            except Exception:
-                # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
+        uid = script_config.UserData.add(user_class, payload=payload)
+        await script_config.UserData.commit()
+        config = script_config.UserData[uid]
+        if handler is not None and handler.initialize_user is not None:
+
+            async def rollback() -> None:
+                # 只撤回本次集合成员，不递归走完整删除生命周期或碰共享目录。
                 script_config.UserData.remove(uid)
                 await script_config.UserData.commit()
-                raise
-        elif isinstance(script_config, OkNteConfig):
-            uid = script_config.UserData.add(OkNteUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaEndConfig):
-            uid = script_config.UserData.add(MaaEndUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaFWConfig):
-            # 含特调子类（M9A / MSS）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
-            uid = script_config.UserData.add(
-                script_config.USER_CONFIG_CLASS, payload=payload
-            )
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
 
-            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
-        elif isinstance(script_config, HSRConfig):
-            uid = script_config.UserData.add(HSRUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BetterGIConfig):
-            uid = script_config.UserData.add(BetterGIUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, ZzzOdConfig):
-            uid = script_config.UserData.add(ZzzOdUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BAAHConfig):
-            uid = script_config.UserData.add(BAAHUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, WhimboxConfig):
-            uid = script_config.UserData.add(WhimboxUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+            await handler.initialize_user(script_config, config, rollback=rollback)
 
         return uid, config
 
@@ -1505,78 +1474,13 @@ class AppConfig:
         script_config = self.ScriptConfig[script_uid]
         user_config = script_config.UserData[user_uid]
 
-        # 来源策略由专项持有；MAA/SRC 仍保留已有的单原生用户守卫。
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.api_service import get_service
-
-            get_service(self).prepare_user_update(
-                script_id=script_id, user_id=user_id, data=data
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_update is not None:
+            prepared = handler.prepare_user_update(
+                script_config, user_config, data=data
             )
-        elif isinstance(script_config, (MaaConfig, SrcConfig)):
-            new_base = _utils_constants.normalize_base_source(
-                data.get("Info", {}).get("Base", "")
-            )
-            if (
-                new_base == _utils_constants.BASE_NATIVE
-                and _utils_constants.normalize_base_source(
-                    user_config.Info.Base or _utils_constants.BASE_INDEPENDENT
-                )
-                != _utils_constants.BASE_NATIVE
-                and any(
-                    (
-                        _utils_constants.normalize_base_source(
-                            cfg.Info.Base or _utils_constants.BASE_INDEPENDENT
-                        )
-                        == _utils_constants.BASE_NATIVE
-                        for uid, cfg in script_config.UserData.items()
-                        if uid != user_uid
-                    )
-                )
-            ):
-                raise ValueError(
-                    "每个脚本仅允许一个原生来源用户, 多账号请在该用户的实例管理中配置"
-                )
-
-        # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
-        # 已保存的是密文，按项目 interface 只加密前者。加密前把只属于全局的选项双写到各任务上
-        # （降级兼容，见 task_config.mirror_global_options_to_tasks）。
-        task_data = data.get("Task")
-        if (
-            isinstance(script_config, MaaFWConfig)
-            and isinstance(task_data, dict)
-            and "TaskSnapshot" in task_data
-        ):
-            from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
-            from app.task.MaaFW.tools.embedded.option_secrets import (
-                prepare_user_task_snapshot,
-            )
-
-            # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
-            await asyncio.to_thread(
-                sanitize_user_task_update, script_id, script_config, user_config, data
-            )
-
-            task_data["TaskSnapshot"] = await asyncio.to_thread(
-                prepare_user_task_snapshot,
-                script_id,
-                script_config,
-                task_data["TaskSnapshot"],
-            )
-
-        # 养成接管提示只在运行注入准备时重写（AutoProxy._prepare_cultivate_injection）。
-        # 养成被关到不可能接管的状态后，上一轮写入的提示会残留到下次运行，前端把
-        # 它展示得像当前状态。判定口径归专项（与注入早退分支同源），这里只在
-        # 用户配置写入漏斗里应用其结论
-        if isinstance(script_config, MaaConfig) and isinstance(data.get("Task"), dict):
-            from app.task.MAA.tools.cultivate.service import takeover_notice_patch_value
-
-            task_patch = data["Task"]
-            notice = takeover_notice_patch_value(
-                task_patch.get("IfCultivate", user_config.Task.IfCultivate),
-                task_patch.get("CultivateTargets", user_config.Task.CultivateTargets),
-            )
-            if notice is not None:
-                data.setdefault("Data", {})["CultivateNotice"] = notice
+            if inspect.isawaitable(prepared):
+                await prepared
 
         if precondition is not None and not precondition():
             return False
@@ -1595,21 +1499,17 @@ class AppConfig:
         if script_config.is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
 
-        # OK-WW 的配置目录布局与导入语义由专项维护
-        # （app/task/Okww/tools/config_dir.py），core 只做分派。
-        if isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.config_dir import import_script_config_dir
-
-            await import_script_config_dir(script_id, user_id)
-            return
-
         handler = self._get_script_config_handler(script_config)
-        if handler is None:
+        if handler is None or handler.import_config is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        handler.import_config(script_config, target_config_dir, user_id=user_id)
+        imported = handler.import_config(
+            script_config, target_config_dir, user_id=user_id
+        )
+        if inspect.isawaitable(imported):
+            await imported
 
     def bind_script_config_handler(
         self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
@@ -1625,9 +1525,18 @@ class AppConfig:
                 return handler
         return None
 
+    def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
+        """读取专项资源声明，不提交配置或访问脚本资源文件。"""
+        from app.models.task import ScriptTaskResources
+
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.task_resources is None:
+            return ScriptTaskResources()
+        return handler.task_resources(script)
+
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)
-        if handler is not None:
+        if handler is not None and handler.initialize is not None:
             await handler.initialize(script)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
@@ -1639,13 +1548,15 @@ class AppConfig:
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
 
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.api_service import get_service
+        handler = self._get_script_config_handler(script_config)
+        cleanup = None
+        if handler is not None and handler.prepare_user_removal is not None:
+            cleanup = handler.prepare_user_removal(script_config, user_uid)
 
-            await get_service(self).recovery.remove_user(script_id, user_id)
-        else:
-            script_config.UserData.remove(user_uid)
-            await script_config.UserData.commit()
+        script_config.UserData.remove(user_uid)
+        await script_config.UserData.commit()
+        if cleanup is not None:
+            await cleanup()
 
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
@@ -2698,69 +2609,6 @@ class AppConfig:
             json.loads(self.setting.Data.Notice).get("notice_dict", {}),
         )
 
-    async def clean_maafw_agent_venvs(self) -> None:
-        """清掉已无脚本引用的 MFW agent 隔离 venv。
-
-        这些 venv 每个几十到上百 MB，此前没有任何回收——只有「同一项目依赖变了
-        就重建」那一条。用户删脚本、改项目路径、或项目升级换了目录，旧 venv 都会
-        永远留着。
-
-        放在启动清理里而不是运行前：判定依赖「当前全部脚本配置」这个全局状态，
-        只有真实启动时它才可信。挂在 check() 上曾把测试替身当成真配置，
-        把开发者磁盘上的真 venv 删掉了。
-
-        判定不读目录内的清单：目录名就是项目路径的哈希，凡不属于任何存活脚本的
-        即孤儿；再加一道保护——刚动过的一律不碰，避免与正在准备环境的运行抢。
-        """
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.core.agent_env.planner import (
-            collect_orphan_agent_venvs,
-        )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        root = Path.cwd() / "config" / "maafw_agent_venvs"
-        if not root.is_dir():
-            return
-
-        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
-        # 会把副本的 venv 当孤儿删掉。
-        live_paths = [
-            path
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-            and (path := str(resolve_maafw_project_root(str(uid), config)).strip())
-        ]
-
-        # 有效根都是本机 data/ 下的副本：不存在只说明这个脚本还没导入过（新建未选目录、
-        # 升级后没打开过），它名下不可能有 venv，从存活集合里去掉即可；不能像路径模式
-        # 那样「一个不可达就整轮弃权」，否则任何一个空脚本都会永久关掉回收。
-        missing = [path for path in live_paths if not Path(path).exists()]
-        if missing:
-            logger.debug(
-                f"MFW 隔离 venv 清理：{len(missing)} 个脚本还没有副本，不计入存活"
-            )
-            live_paths = [path for path in live_paths if Path(path).exists()]
-
-        try:
-            orphans = collect_orphan_agent_venvs(root, live_paths)
-        except Exception as exc:
-            logger.warning(f"MFW 隔离 venv 孤儿扫描失败: {exc}")
-            return
-
-        cutoff = time.time() - MAAFW_AGENT_VENV_GRACE_SECONDS
-        for venv_path in orphans:
-            try:
-                if venv_path.stat().st_mtime > cutoff:
-                    continue  # 刚动过，可能有运行正在用它
-                shutil.rmtree(venv_path)
-            except OSError as exc:
-                logger.warning(f"MFW 隔离 venv 清理失败: {venv_path} - {exc}")
-                continue
-            logger.info(f"已清理无人引用的 MFW 隔离 venv: {venv_path}")
-
     async def _settle_m9a_migration(self, report: Any) -> None:
         """旧 M9A 配置迁完之后的两件收尾：原先有归档的脚本用 MaaFW 池归档一次；结果攒成系统通知。
 
@@ -2828,36 +2676,6 @@ class AppConfig:
             }
         )
 
-    async def _archive_legacy_hsr_direct_snapshots(
-        self, script_config_path: Path
-    ) -> None:
-        """HSR 旧直控快照停用前的留档，结果攒成启动通知；见 ``app.task.HSR.tools.legacy_direct``。
-
-        没有 HSR 脚本时不导入 HSR 专项（导入要近 1 秒），先按字节找一次类型标签。
-        """
-
-        def _has_hsr_script() -> bool:
-            try:
-                return b'"HSRConfig"' in script_config_path.read_bytes()
-            except OSError:
-                return False
-
-        try:
-            if not await asyncio.to_thread(_has_hsr_script):
-                return
-            from app.task.HSR.tools.legacy_direct import (
-                archive_legacy_direct_snapshots,
-            )
-
-            report = await asyncio.to_thread(
-                archive_legacy_direct_snapshots, script_config_path
-            )
-        except Exception as exc:  # noqa: BLE001 - 留档失败不该挡住启动
-            logger.opt(exception=True).warning(f"HSR 旧直控快照留档失败：{exc}")
-            return
-        if report.needs_notice:
-            self.startup_notices.append(report.notice())
-
     async def push_system_notice(
         self, *, level: str, title: str, lines: list[str]
     ) -> None:
@@ -2908,413 +2726,11 @@ class AppConfig:
             # 发送期间 push_system_notice 可能又攒进来新的，放在它们前面保持顺序
             self.startup_notices[:0] = pending
 
-    async def clean_maafw_embedded_copies(self) -> None:
-        """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
+    def script_config_loaded_intact(self) -> bool:
+        """确认脚本集合加载成功；空表再核对持久文件，避免把损坏配置当成无引用。"""
 
-        导入在 ``.staging/`` 里投影完再换入，进程中途退出会留下半成品；删脚本时
-        副本删除失败（只读、被占用）也会留下孤儿。两者都是 MAS 自己铺的，不含用户
-        内容，启动期没有任务在跑，直接清。目录名必须是副本目录名的形状才会被当作副本。
-        """
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            STAGING_DIR_NAME,
-            embedded_copy_dir_name,
-            embedded_projects_root,
-            is_embedded_copy_dir_name,
-            recover_switches,
-            remove_tree,
-            switch_root,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-
-        root = embedded_projects_root()
-        if not root.is_dir():
-            return
-        # 先按 journal 收尾被打断的视图切换：切换的 old / staging 都在 .staging 里，
-        # 不先恢复的话下面的半成品清理会把「rename 了一半」时暂存的原视图当垃圾删掉。
-        try:
-            # 本进程起来之后才写的 journal、拿不到视图预约的（正在切换 / 运行）不碰：
-            # 后台初始化时 API 已经在服务，可能正有一次切换在建 staging。
-            await asyncio.to_thread(
-                lambda: recover_switches(started_at=_PROCESS_STARTED_AT, reserve=True)
-            )
-        except Exception as exc:  # noqa: BLE001 - 恢复失败不该影响启动，journal 留着下次再试
-            logger.warning(f"MFW 视图切换恢复失败: {exc}")
-        staging = root / STAGING_DIR_NAME
-        if staging.is_dir():
-            for leftover in staging.iterdir():
-                # 后台初始化时 API 已在服务，preview / reimport 可能正往 .staging 里写：
-                # 本进程起来之后才出现的、或该脚本的副本路径正被预约的，都不是半成品。
-                try:
-                    if leftover.stat().st_mtime >= _PROCESS_STARTED_AT:
-                        continue
-                except OSError:
-                    continue
-                # 半成品叫 <副本目录名>-<8 位随机>、<副本目录名>-old-/-sw-<8 位随机>
-                # 或 payload-<谱系>-<8 位随机>
-                prefix = leftover.name.split("-", 1)[0]
-                if (switch_root() / f"{prefix}.json").exists():
-                    # 恢复没收尾的切换：它的 old 目录可能就是原视图，留着待查
-                    continue
-                reservation = await try_reserve_project_path(root / prefix)
-                if reservation is None:
-                    continue
-                await release_project_path(reservation)
-                try:
-                    remove_tree(leftover)
-                except OSError as exc:
-                    logger.warning(
-                        f"MFW 内嵌 staging 半成品清理失败: {leftover} - {exc}"
-                    )
-                    continue
-                logger.info(f"已清理 MFW 内嵌导入半成品: {leftover}")
-        # 存活的副本：脚本还在。删脚本时删副本可能因文件被占用而失败（与别的副本
-        # 共用的库正被映射着），那份留下的副本也在这里收掉。
-        # 但脚本表本身没加载起来（ScriptConfig.json 损坏时 _load_json_file 留下
-        # .corrupt 副本后按空表继续）就不能扫：那会把所有副本当孤儿删光，来源目录
-        # 已被用户清掉的项目从此没得修。
-        if not self._script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 内嵌副本孤儿清理"
-            )
-            return
-        live = {
-            embedded_copy_dir_name(str(uid))
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-        }
-        for child in root.iterdir():
-            if child.name == STAGING_DIR_NAME or not child.is_dir():
-                continue
-            if not is_embedded_copy_dir_name(child.name) or child.name in live:
-                continue
-            try:
-                remove_tree(child)
-            except OSError as exc:
-                logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
-                continue
-            logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
-        # 视图没了的脚本（下次运行前要按载荷重建）：它的导入来源在事件循环线程上抄出来，
-        # 回收据此保住对应的谱系。
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            embedded_project_dir,
-            follow_source_enabled,
-            imported_source_path,
-            read_view_marker,
-        )
-
-        live_sources = [
-            imported_source_path(config) or str(config.Info.Path or "")
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig)
-            and read_view_marker(embedded_project_dir(str(uid))) is None
-        ]
-        # 开着开发者模式的脚本：它们私有渠道的 latest 保住，其余私有渠道（关了开关、删了
-        # 脚本）摘掉，留下的开发者载荷随后按普通规则回收。
-        follow_views = [
-            embedded_copy_dir_name(str(uid))
-            for uid, config in self.ScriptConfig.items()
-            if isinstance(config, MaaFWConfig) and follow_source_enabled(config)
-        ]
-        await asyncio.to_thread(
-            self._collect_unreferenced_payloads, live_sources, follow_views
-        )
-
-    @staticmethod
-    def _collect_unreferenced_payloads(
-        live_sources: list[str], follow_views: list[str]
-    ) -> None:
-        """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
-        （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
-
-        引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
-        谱系还有视图时算引用（开发者模式的私有渠道只在脚本还开着开关时算）。本进程起来
-        之后才建的不收。载荷删掉之后，它独有的 blob 只剩库里一个链接，紧接着的
-        ``clean_maafw_runtime_blobs`` 收走。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            collect_payload_garbage,
-        )
-
-        try:
-            report = collect_payload_garbage(
-                started_at=_PROCESS_STARTED_AT,
-                live_sources=live_sources,
-                follow_source_views=follow_views,
-            )
-        except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
-            logger.warning(f"MFW 载荷回收失败: {exc}")
-            return
-        if not (report.payloads or report.lineages):
-            return
-        parts = []
-        if report.payloads:
-            parts.append(f"{report.payloads} 个无人引用的项目版本（载荷）")
-        if report.lineages:
-            parts.append(
-                f"{len(report.lineages)} 个不再有脚本使用的项目（整个谱系: "
-                + ", ".join(report.lineages)
-                + "）"
-            )
-        # 与共用库共享的大文件由紧接着的共用库回收释放（那一行另报 MB）。
-        logger.info(
-            f"已回收 MFW {'、'.join(parts)}，释放 {report.freed_bytes / 2**20:.1f} MB"
-        )
-
-    async def migrate_maafw_embedded_copies_to_payloads(self) -> None:
-        """启动期一次性迁移：把没有标记的老副本采纳成「载荷 + 视图」（附录 B）。
-
-        逐副本持视图预约、各自失败隔离（不写标记、日志点名、下次启动再试）。**全部采纳完
-        再统一决定同版本的 latest**（``settle_adopted_latest``：有更新器清单的、文件集合是
-        超集的、文件多的优先，与脚本顺序无关），然后每个谱系每个渠道统一到 latest（附录 B
-        第 8 条），切过的视图连同预约交给后台确认运行环境。之后收掉老的原地更新留下的清单、
-        预检备忘与作废的更新流水（还有没采纳的副本时留着它们要用的那部分）。配置一个字段
-        都不写；脚本表没加载起来（疑似损坏）整轮弃权。
-
-        迁移在后台跑、不挡主定时器：期间拿不到视图预约的运行在运行前检查里按「正在切换
-        版本」跳过一次（``embedded_project.migration_active``）。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import set_migration_active
-
-        set_migration_active(True)
-        try:
-            await self._migrate_maafw_embedded_copies()
-        finally:
-            set_migration_active(False)
-
-    async def _migrate_maafw_embedded_copies(self) -> None:
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            GroupMember,
-            adopt_view,
-            copy_is_healthy,
-            effective_channel,
-            embedded_project_dir,
-            imported_source_path,
-            read_view_marker,
-            settle_adopted_latest,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-        from app.task.MaaFW.tools.embedded.update_credentials import (
-            resolve_update_proxy_url,
-        )
-
-        if not self._script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 副本迁移"
-            )
-            return
-        entries: list[tuple[str, str, str, str, str | None]] = []
-        for uid, config in self.ScriptConfig.items():
-            if not isinstance(config, MaaFWConfig):
-                continue
-            entries.append(
-                (
-                    str(uid),
-                    effective_channel(str(uid), config),
-                    imported_source_path(config) or str(config.Info.Path or ""),
-                    str(config.Info.Name or str(uid)[:8]),
-                    resolve_update_proxy_url(config) or None,
-                )
-            )
-        pending = [
-            entry
-            for entry in entries
-            if copy_is_healthy(embedded_project_dir(entry[0]))
-            and read_view_marker(embedded_project_dir(entry[0])) is None
-        ]
-        if not pending:
-            # 没有待采纳的副本：老的原地更新留下的清单与更新记录都没用了（每次启动都收，
-            # 不只在「刚迁移完且全部成功」那一次）。
-            await asyncio.to_thread(
-                self._discard_legacy_update_state, keep_adoption_baseline=False
-            )
-            return
-        started = time.monotonic()
-        adopted: list[str] = []
-        failed: list[str] = []
-        for script_id, channel, source, name, _proxy in pending:
-            view = embedded_project_dir(script_id)
-            key = await try_reserve_project_path(view)
-            if key is None:
-                failed.append(name)
-                logger.warning(
-                    f"MFW 副本迁移：脚本「{name}」的副本正被占用，下次启动再试"
-                )
-                continue
-            began = time.monotonic()
-            try:
-                if await asyncio.to_thread(read_view_marker, view) is not None:
-                    # 迁移在后台跑：它自己开跑时的运行前检查已经就地采纳过了。
-                    continue
-                result = await asyncio.to_thread(
-                    lambda sid=script_id, ch=channel, src=source: adopt_view(
-                        sid, channel=ch, source=src
-                    )
-                )
-                adopted.append(script_id)
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」已登记为 {result.version}（{result.payload_id}），"
-                    f"私有文件 {result.carried} 个，采纳用时 {time.monotonic() - began:.1f} s"
-                )
-            except Exception as exc:  # noqa: BLE001 - 逐副本隔离，下次启动再试
-                failed.append(name)
-                logger.opt(exception=True).warning(
-                    f"MFW 副本迁移：脚本「{name}」采纳失败，下次启动再试：{exc}"
-                )
-            finally:
-                await release_project_path(key)
-        # 全部登记完才定同版本的 latest（登记本身是「同版本保留先来的」），再统一切换。
-        await asyncio.to_thread(settle_adopted_latest)
-        switched, held = await self._unify_maafw_views_to_group(entries)
-        logger.info(
-            f"MFW 副本迁移完成：采纳 {len(adopted)} 个、失败 {len(failed)} 个、"
-            f"统一到组版本 {len(switched)} 个，用时 {time.monotonic() - started:.1f} s"
-        )
-        from app.task.MaaFW.tools.embedded.view_update import (
-            confirm_environments_in_background,
-        )
-
-        # 切换时拿的预约直接交给确认线程（两步之间不留空档）；没切的不确认。
-        confirm_environments_in_background(
-            [
-                GroupMember(sid, channel, name=name, proxy_url=proxy)
-                for sid, channel, _src, name, proxy in entries
-                if sid in set(switched)
-            ],
-            held=held,
-        )
-        # 采纳失败的副本下次启动还要靠老的更新清单（committed 记录 + 状态目录里的包内
-        # 清单）认出哪些文件没改过，那部分留着；其余作废记录照收。
-        await asyncio.to_thread(
-            self._discard_legacy_update_state, keep_adoption_baseline=bool(failed)
-        )
-
-    async def _unify_maafw_views_to_group(
-        self, entries: list[tuple[str, str, str, str, str | None]]
-    ) -> tuple[list[str], dict[str, str]]:
-        """附录 B 第 8 条：每个视图切到它所在组（谱系 + 渠道）的 latest。
-
-        返回（切过的脚本, 它们还没放的预约）：预约交给环境确认线程放。
-        """
-
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            MIGRATION_SWITCHED_BY,
-            embedded_project_dir,
-        )
-        from app.task.MaaFW.tools.embedded.project_path import (
-            release_project_path,
-            try_reserve_project_path,
-        )
-        from app.task.MaaFW.tools.embedded.view_update import sync_view_to_group
-
-        switched: list[str] = []
-        held: dict[str, str] = {}
-        for script_id, channel, _source, name, _proxy in entries:
-            # 迁移在后台跑、主定时器已经起来：运行中的脚本在「运行前检查结束 → 第一个用户」
-            # 与用户之间不持视图预约，只看预约会在空档里把它切走（同一轮前后用户跑不同版本、
-            # 下一个用户被「同一路径正在运行」跳过）。与其它传播路径同一口径：脚本配置锁着
-            # （is_locked）就跳过，留给它的收尾同步或下次运行前检查。在事件循环上查。
-            try:
-                config = self.ScriptConfig[uuid.UUID(script_id)]
-            except (KeyError, ValueError):
-                continue
-            if getattr(config, "is_locked", False):
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」正在运行，统一到组版本留给它跑完后再做"
-                )
-                continue
-            key = await try_reserve_project_path(embedded_project_dir(script_id))
-            if key is None:
-                continue
-            if getattr(config, "is_locked", False):
-                # 等预约的那一下它开跑了（锁在预约之后才上，这里再看一眼）。
-                await release_project_path(key)
-                continue
-            result = None
-            try:
-                result = await sync_view_to_group(
-                    script_id,
-                    channel,
-                    reservation_held=True,
-                    # 记下是迁移切的：确认期间它开跑会在运行前检查里得到「正在切换版本」，
-                    # 下次运行打一行「启动期迁移时统一到 vX」。
-                    switched_by=MIGRATION_SWITCHED_BY,
-                )
-            except Exception as exc:  # noqa: BLE001 - 留在原版本，下次运行前再同步
-                logger.warning(f"MFW 副本迁移：脚本「{name}」统一到组版本失败：{exc}")
-            finally:
-                if result is None:
-                    await release_project_path(key)
-            if result is not None:
-                switched.append(script_id)
-                held[script_id] = key
-                logger.info(
-                    f"MFW 副本迁移：脚本「{name}」{result.from_payload} → {result.payload_id}"
-                )
-        return switched, held
-
-    @staticmethod
-    def _discard_legacy_update_state(*, keep_adoption_baseline: bool) -> None:
-        """收掉更新留下的作废记录。
-
-        - ``data/maafw_update_operations``：本进程起来之前写的记录。新流程里它只是一次
-          下载 + 登记的流水（登记后标 ``registered``，失败 / 取消各有终态），没有谁再读，
-          一律删；老的原地更新留下的 ``committed`` 除外——还有没采纳的老副本时
-          （``keep_adoption_baseline``），采纳要靠它找包内清单。
-        - ``data/maafw_project_state`` 各视图状态目录里除 ``local-modified`` 之外的文件
-          （老的包内清单、预检备忘）：同样只在不再需要采纳基线时删。
-        """
-
-        operations = Path.cwd() / "data" / "maafw_update_operations"
-        if operations.is_dir():
-            for record in operations.iterdir():
-                state_file = record / "state.json"
-                try:
-                    if state_file.stat().st_mtime >= _PROCESS_STARTED_AT:
-                        continue
-                    status = json.loads(state_file.read_text(encoding="utf-8")).get(
-                        "status"
-                    )
-                except (OSError, ValueError, AttributeError):
-                    continue
-                if status == "committed" and keep_adoption_baseline:
-                    continue
-                try:
-                    shutil.rmtree(record)
-                except OSError as exc:
-                    logger.warning(f"清理作废的更新记录失败: {record} - {exc}")
-        if keep_adoption_baseline:
-            return
-        state_root = Path.cwd() / "data" / "maafw_project_state"
-        if state_root.is_dir():
-            for state_dir in state_root.iterdir():
-                if not state_dir.is_dir():
-                    continue
-                for child in state_dir.iterdir():
-                    if child.name == "local-modified":
-                        continue
-                    try:
-                        if child.is_dir():
-                            shutil.rmtree(child)
-                        else:
-                            child.unlink()
-                    except OSError as exc:
-                        logger.warning(f"清理老的更新状态失败: {child} - {exc}")
-
-    def _script_config_loaded_intact(self) -> bool:
-        """脚本表是空的时候，看配置文件本身是不是真的空：解析失败或文件里明明有
-        脚本却一个都没加载出来，都算没加载起来。"""
-
+        if not self._script_configs_loaded:
+            return False
         if len(self.ScriptConfig) > 0:
             return True
         path = self.ScriptConfig.persist_path
@@ -3325,82 +2741,6 @@ class AppConfig:
         except (OSError, ValueError):
             return False
         return not bool(data.get("order"))
-
-    async def clean_maafw_runtime_blobs(self) -> None:
-        """回收没有任何内嵌副本引用的共用运行时文件（只剩库里这一个硬链接的）。
-
-        放在副本清理之后：副本删掉，它引用的 blob 才会变成孤儿。
-        """
-
-        from app.task.MaaFW.tools.core.project_update.blob_store import (
-            RuntimeBlobStore,
-        )
-
-        try:
-            report = RuntimeBlobStore.default().collect_garbage()
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 共用运行时库回收失败: {exc}")
-            return
-        if report.removed_blobs or report.removed_temps:
-            logger.info(
-                f"已回收 MFW 共用运行时库: {report.removed_blobs} 个文件、"
-                f"{report.removed_bytes / 2**20:.1f} MB，半成品 {report.removed_temps} 个"
-            )
-
-    async def clean_maafw_update_cache(self) -> None:
-        """回收 7 天没人碰过的 MFW 项目更新包缓存。
-
-        下载好的包留在 ``data/maafw_update_cache`` 里给同一项目的其它副本命中，
-        一份 200 MB 的全量包只下一次；但此前从不回收，每个下过的版本都永久留着。
-        正在下载 / 落地的条目持有文件锁，会被跳过。
-        """
-
-        from app.task.MaaFW.tools.core.project_update.transport import (
-            prune_update_cache,
-        )
-
-        try:
-            report = await asyncio.to_thread(prune_update_cache)
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 更新包缓存回收失败: {exc}")
-            return
-        if report.removed_artifacts:
-            logger.info(
-                f"已回收 MFW 更新包缓存: {report.removed_artifacts} 个、"
-                f"{report.removed_bytes / 2**20:.1f} MB"
-            )
-
-    async def clean_maafw_runtime_pool(self) -> None:
-        """按引用对账回收 MFW 运行池里无人引用的共享 runtime。
-
-        与 ``clean_maafw_agent_venvs`` 同一个道理放在启动清理里：判定依赖「当前
-        全部脚本配置」这个全局状态，只有真实启动时它才可信。规则与保守条件见
-        ``tools/embedded/pool_reconcile.py``；这里只负责把权威集合（全部 MaaFW 类
-        脚本的项目目录）交过去，并在脚本表疑似没加载起来时弃权。
-        """
-
-        from app.task.MaaFW.tools.embedded.pool_reconcile import (
-            collect_live_project_paths,
-            reconcile_runtime_pool,
-            runtime_pool_root,
-            script_config_loaded_intact,
-        )
-
-        if not (runtime_pool_root() / "runtimes").is_dir():
-            return
-        if not script_config_loaded_intact():
-            logger.warning(
-                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
-            )
-            return
-        try:
-            await asyncio.to_thread(
-                reconcile_runtime_pool,
-                collect_live_project_paths(),
-                reason="startup",
-            )
-        except Exception as exc:  # noqa: BLE001 - 回收失败不该影响启动
-            logger.warning(f"MFW 运行池回收失败: {exc}")
 
     def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
@@ -3470,61 +2810,6 @@ class AppConfig:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
         if screenshot_deleted_count:
             logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
-
-    def clean_maafw_native_debug_logs(self) -> None:
-        """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。
-
-        MaaFramework 把 ``debug/maafw.log`` 写到一定大小就整体挪成
-        ``debug/maafw.bak.<时间戳>.log`` 再开新的，但从不回收旧的——一个每天跑
-        的项目几天就能堆出几百 MB。每次运行的完整内容已经另存进历史记录的
-        ``*.maafw.log``，所以这里只删备份，正在写的 ``maafw.log`` 不动。
-        保留时长沿用历史记录的保留天数设置。
-
-        纯同步文件 IO，调用方在事件循环里请经 ``asyncio.to_thread`` 执行。
-        """
-
-        # 只读一次 + 集合快照：每日任务在工作线程跑本函数，主循环可能并发改
-        # 设置（guard 与 cutoff 之间翻到 0 会让 cutoff 变成 now、删光全部备份）
-        # 和增删脚本。items() 是 zip(order 列表, data 逐项查找) 的惰性结构，
-        # list() 消费它并非原子拷贝、并发增删仍可 KeyError 中止本轮；直接对
-        # data 的 dict 视图做 list() 才是单条 C 级拷贝的真原子快照
-        retention_days = self.setting.Function.HistoryRetentionTime
-        if retention_days == 0:
-            logger.info("原生日志永久保留, 跳过 MFW 原生日志备份清理")
-            return
-
-        from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        cutoff = time.time() - retention_days * 86400
-        deleted_count = 0
-        for uid, script_config in list(self.ScriptConfig.data.items()):
-            if not isinstance(script_config, MaaFWConfig):
-                continue
-            # runner 把原生日志写在有效根下：内嵌脚本是副本，不是来源目录。
-            project_path = str(
-                resolve_maafw_project_root(str(uid), script_config)
-            ).strip()
-            if not project_path:
-                continue
-            debug_folder = Path(project_path) / "debug"
-            if not debug_folder.is_dir():
-                continue
-            # 备份文件名由 MaaFramework 决定，与 runner_task 里
-            # _iter_rotated_native_debug_logs 认的是同一套。
-            for file in debug_folder.glob("maafw.bak.*.log"):
-                try:
-                    if file.stat().st_mtime >= cutoff:
-                        continue
-                    file.unlink()
-                except OSError as exc:
-                    logger.warning(f"MFW 原生日志备份清理失败: {file} - {exc}")
-                    continue
-                deleted_count += 1
-        if deleted_count:
-            logger.success(f"清理完成: {deleted_count} 个过期 MFW 原生日志备份")
 
 
 Config = AppConfig()

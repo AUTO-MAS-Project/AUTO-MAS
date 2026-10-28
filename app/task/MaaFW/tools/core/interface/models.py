@@ -565,6 +565,14 @@ class MaaFWPresetTask(BaseModel):
         return coerced
 
 
+class MaaFWPresetPretask(MaaFWPresetTask):
+    """预设里的一条前置任务设置（PI v2.10.3 ``preset.pretask[]``）。
+
+    ``name`` 对应顶层 ``pretask[].name``（``import`` 合并后），``enabled`` 缺省为 true，
+    ``option`` 的键与值类型同 ``preset.task[].option``，与预设任务同形。
+    """
+
+
 class MaaFWPreset(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -573,6 +581,23 @@ class MaaFWPreset(BaseModel):
     description: str | None = None
     icon: str | None = None
     task: list[MaaFWPresetTask] | None = None
+    # PI v2.10.3：声明了（哪怕是空数组）就按它设前置任务的勾选，未列出的不勾选；
+    # 没声明（None）时应用预设不动用户的前置任务。
+    pretask: list[MaaFWPresetPretask] | None = None
+
+    @field_validator("pretask", mode="before")
+    @classmethod
+    def drop_invalid_pretasks(cls, value: Any) -> Any:
+        # 宽松解析：这是新字段，写错一条不该让整份 interface 读不出来（告警由加载器写）。
+        # 不是数组按没声明处理；数组里不是对象、没有字符串 name 的条目丢掉。
+        if not isinstance(value, list):
+            return None
+        return [
+            item
+            for item in value
+            if isinstance(item, MaaFWPresetPretask)
+            or (isinstance(item, dict) and isinstance(item.get("name"), str))
+        ]
 
 
 class MaaFWInterface(BaseModel):

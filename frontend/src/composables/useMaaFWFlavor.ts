@@ -105,6 +105,12 @@ export const isMaaFWFamily = (
 export const resolveMaaFWFlavor = (type: ScriptType | string | null | undefined): MaaFWFlavor =>
   (type && FLAVOR_BY_TYPE.get(type)) || MAAFW_FLAVOR
 
+/**
+ * 头像用不用项目自己的图标（interface 顶层 icon）：特调优先用自己声明的 logo；通用 MaaFW
+ * 跑的项目各不相同，用项目图标，取不到时回退到 MaaFW 图标。
+ */
+export const usesMaaFWProjectIcon = (flavor: MaaFWFlavor): boolean => flavor === MAAFW_FLAVOR
+
 /** 路由后缀（/edit/<suffix>、/users/add/<suffix>），未知类型按 maafw */
 export const maafwRouteSuffix = (type: ScriptType | string | null | undefined): string =>
   resolveMaaFWFlavor(type).routes.suffix

@@ -4,9 +4,17 @@ import type { ScriptListItem, ScriptListUser } from './scriptListModel'
 import {
   isMaaFWFamily,
   resolveMaaFWFlavor,
+  usesMaaFWProjectIcon,
   type MaaFWFlavorType,
 } from '@/composables/useMaaFWFlavor'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 export const getScriptLogo = (type: ScriptListItem['type']) => SCRIPT_LOGOS[type]
+
+/** MaaFW 家族的头像：特调用注册表里声明的图标；通用 MaaFW 用项目自己的图标，取不到由调用方回退 */
+export const getMaaFWScriptLogo = (script: Pick<ScriptListItem, 'id' | 'type'>) => {
+  const flavor = resolveMaaFWFlavor(script.type)
+  return usesMaaFWProjectIcon(flavor) ? buildMaaFWScriptIconUrl(script.id) : flavor.logo
+}
 
 export const getScriptLogoAlt = (type: ScriptListItem['type']) =>
   type === 'OkNte' ? 'ok-nte' : SCRIPT_LABELS[type]

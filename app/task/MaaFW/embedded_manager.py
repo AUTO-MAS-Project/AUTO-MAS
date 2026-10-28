@@ -56,6 +56,7 @@ from app.task.MaaFW.tools.backup_archive import (
     archive_native_backup,
     read_overlay_values,
 )
+from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
@@ -395,6 +396,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
         self._missing_task_notices: list[str] = []
         self._missing_task_user_ids: set[str] = set()
+        # 各用户被原地打转检测 / 单任务时限停下过的任务（之后重试成功了也列），随「代理结果」发出
+        self._run_incident_notices: list[str] = []
         # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
         # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
         self.signal_tracker = MaaFWSignalTracker()
@@ -650,9 +653,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     def _resolve_runtime_pool_route():
         """解析 Runtime Pool 路由（root + poolId）。
 
-        插件形态下这一步由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后
-        注入；树内没有服务注册表，直接实例化服务再走同一个解析函数。
-        `_run_maafw` 缺这两个值会直接拒绝运行。
+        直接实例化运行池服务，交给 `runtime_route.runtime_pool_route_from_service`
+        解析。`_run_maafw` 缺这两个值会直接拒绝运行。
 
         **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
         别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
@@ -1078,10 +1080,15 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 script_id, channel, reservation_held=reservation_held
             )
         except Exception as exc:  # noqa: BLE001 - 同步失败不挡运行，视图留在原版本
+            # 换视图被占用（rename 拒绝访问）时尽力点出占用者；查不到就什么都不加。
+            lockers = await describe_lockers_async(exc)
+            suffix = f"（{lockers}）" if lockers else ""
             logger.opt(exception=True).warning(
-                f"MFW 组同步失败，本轮沿用当前版本：{exc}"
+                f"MFW 组同步失败，本轮沿用当前版本：{exc}{suffix}"
             )
-            self._append_update_log(f"切换到同组版本失败，本轮沿用当前版本：{exc}")
+            self._append_update_log(
+                f"切换到同组版本失败，本轮沿用当前版本：{exc}{suffix}"
+            )
             return False
         if result is None:
             return False
@@ -1766,6 +1773,13 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     user_item = self.inner_task.cur_user_item
                     self._missing_task_notices.append(f"{user_item.name}: {notice}")
                     self._missing_task_user_ids.add(user_item.user_id)
+            with suppress(Exception):
+                incidents = self.inner_task.run_incident_notice()
+                if incidents:
+                    user_item = self.inner_task.cur_user_item
+                    self._run_incident_notices.extend(
+                        f"{user_item.name}: {line}" for line in incidents.splitlines()
+                    )
 
     async def _commit_user_data(self) -> None:
         """保存已提交的运行状态，并在异常或取消时也释放 X 锁。"""
@@ -1912,11 +1926,20 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 + len(attention_users)
                 + len(waiting_users or [])
             ),
-            # 失效任务每个用户一行跟在结果后面：通用模板没有单独的块，结果框按原样换行
+            # 原地打转 / 单任务超时、失效任务每个用户一行跟在结果后面：通用模板没有单独的块，
+            # 结果框按原样换行
             "result": "\n\n".join(
-                [self.script_info.result, "\n".join(self._missing_task_notices)]
-                if self._missing_task_notices
-                else [self.script_info.result]
+                [
+                    self.script_info.result,
+                    *(
+                        "\n".join(lines)
+                        for lines in (
+                            self._run_incident_notices,
+                            self._missing_task_notices,
+                        )
+                        if lines
+                    ),
+                ]
             ),
         }
         summary_title = self._signal_summary_title(

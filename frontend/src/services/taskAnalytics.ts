@@ -56,7 +56,14 @@ export function bootstrapTaskAnalytics(): void {
       const entry = scriptRuns.get(data.runId)
       scriptRuns.delete(data.runId)
       if (entry && entry.taskId === data.taskId)
-        entry.operation.finish({ ...entry.props, outcome: data.outcome })
+        entry.operation.finish({
+          ...entry.props,
+          outcome: data.outcome,
+          partial_failure:
+            data.partialFailure === 'yes' || data.partialFailure === 'no'
+              ? data.partialFailure
+              : 'unknown',
+        })
     })
   )
   disposeListener = onTaskRuntimeEvent(event => {
