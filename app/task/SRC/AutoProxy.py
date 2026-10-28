@@ -21,6 +21,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app import core
 from app.config import ConfigCollection
 from app.core import Config
 from app.core.history import aggregate_data, history_store
@@ -239,10 +240,13 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
                 break
 
             if await login(
-                emulator_info,
-                STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
-                self.cur_user_config.Info.Id,
-                self.cur_user_config.Info.Password,
+                emulator_info=emulator_info,
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                id=self.cur_user_config.Info.Id,
+                password=self.cur_user_config.Info.Password,
+                get_agree_bilibili=lambda: Config.setting.Function.IfAgreeBilibili,
+                get_adb_tasker=lambda device: core.MaaFWManager.get_adb_tasker(device),
+                do_job=lambda job: core.MaaFWManager.do_job(job),
             ):
                 logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
             else:
