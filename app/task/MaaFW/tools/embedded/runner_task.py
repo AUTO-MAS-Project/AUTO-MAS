@@ -2559,6 +2559,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             reader = asyncio.create_task(pump.run(process.stdout))
             timed_out = False
+            held = False
             try:
                 exited = await _wait_pretask_exit(process, deadline - loop.time())
                 if not exited:
@@ -2618,9 +2619,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"运行前设置 {display_name} 执行失败（退出码 {process.returncode}）",
                     warning=True,
                 )
-                raise MaaFWPretaskError(
-                    f"运行前设置「{display_name}」失败：{_pretask_failure_reason(detail)}"
+                # 半行还留在缓冲里时，tail 的最后一行是更早的输出（可能是「成功」那一行），
+                # 不拿它冒充失败原因；半行本身也不写（可能是密码前半段）
+                reason = (
+                    "最后一行输出还没换行，完整内容稍后写进后端日志"
+                    if held
+                    else _pretask_failure_reason(detail)
                 )
+                raise MaaFWPretaskError(f"运行前设置「{display_name}」失败：{reason}")
             self._append_log(f"运行前设置完成: {display_name}")
 
     async def _terminate_pretask_process(self) -> None:
@@ -4154,7 +4160,8 @@ class _PretaskOutputPump:
             self._sink("")
         self._blank_lines = 0
         self._seen_text = True
-        self._sink(self._redact(text.rstrip()))
+        # 先对整段打码再去尾空白：密码可以以空白结尾，先去尾空白会把它截短而匹配不上
+        self._sink(self._redact(text).rstrip())
 
 
 def _keep_pretask_drain(reader: asyncio.Task[None]) -> None:
