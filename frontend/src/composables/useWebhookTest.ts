@@ -24,16 +24,16 @@ export function useWebhookTest<T extends WebhookTestItem>(
       const response = await Service.testWebhookApiSettingWebhookTestPost(buildRequest(item))
       operation.finish({ scope_kind, outcome: response.code === 200 ? 'success' : 'failure' })
       if (response.code === 200) {
-        message.success(t('comp.webhookP0TestedSuccessfully', { p0: item.name }))
+        message.success(t('core.comp.webhookP0TestedSuccessfully', { p0: item.name }))
       } else {
-        message.error(t('comp.webhookTestFailedP0', { p0: response.message || '未知错误' }))
+        message.error(t('core.comp.webhookTestFailedP0', { p0: response.message || '未知错误' }))
       }
     } catch (error: any) {
       operation.finish({ scope_kind, outcome: 'unknown' })
       const errorMsg =
         error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
       logger.error(`Webhook测试错误: ${errorMsg}`)
-      message.error(t('comp.webhookTestFailedP0', { p0: errorMsg }))
+      message.error(t('core.comp.webhookTestFailedP0', { p0: errorMsg }))
     } finally {
       testingWebhooks.value[item.uid] = false
     }

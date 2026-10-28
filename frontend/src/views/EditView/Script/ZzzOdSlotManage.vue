@@ -5,8 +5,8 @@
       <a-collapse-panel key="slots">
         <template #header>
           <h3 class="slot-manage-title">
-            {{ t('edit.zzzodSlotsManage') }}
-            <a-tooltip :title="t('edit.zzzodSlotsManageHint')">
+            {{ t('core.edit.zzzodSlotsManage') }}
+            <a-tooltip :title="t('core.edit.zzzodSlotsManageHint')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </h3>
@@ -15,7 +15,7 @@
           <a-space :size="8">
             <a-button size="small" :loading="slotsLoading" @click="loadSlotView">
               <template #icon><ReloadOutlined /></template>
-              {{ t('edit.zzzodSlotsRefresh') }}
+              {{ t('core.edit.zzzodSlotsRefresh') }}
             </a-button>
             <a-button
               size="small"
@@ -25,12 +25,12 @@
               @click="confirmCleanOrphanSlots"
             >
               <template #icon><ClearOutlined /></template>
-              {{ t('edit.zzzodSlotsClean') }}
+              {{ t('core.edit.zzzodSlotsClean') }}
             </a-button>
           </a-space>
         </div>
         <a-tabs v-model:activeKey="slotTab" size="small">
-          <a-tab-pane key="slots" :tab="t('edit.zzzodSlotTabSlots')">
+          <a-tab-pane key="slots" :tab="t('core.edit.zzzodSlotTabSlots')">
             <a-table
               size="small"
               row-key="idx"
@@ -38,7 +38,7 @@
               :data-source="slots"
               :loading="slotsLoading"
               :pagination="false"
-              :locale="{ emptyText: t('edit.zzzodSlotEmpty') }"
+              :locale="{ emptyText: t('core.edit.zzzodSlotEmpty') }"
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'idx'">
@@ -50,10 +50,10 @@
                   </a-tag>
                   <a-tooltip
                     v-if="slotNativeConflict(record)"
-                    :title="t('edit.zzzodSlotNativeConflictHint')"
+                    :title="t('core.edit.zzzodSlotNativeConflictHint')"
                   >
                     <a-tag color="warning" class="slot-conflict-tag">
-                      {{ t('edit.zzzodSlotNativeConflict') }}
+                      {{ t('core.edit.zzzodSlotNativeConflict') }}
                     </a-tag>
                   </a-tooltip>
                 </template>
@@ -61,7 +61,9 @@
                   {{ slotOwnerText(record) }}
                 </template>
                 <template v-else-if="column.key === 'dir'">
-                  {{ record.has_dir ? t('edit.zzzodSlotHasDir') : t('edit.zzzodSlotNoDir') }}
+                  {{
+                    record.has_dir ? t('core.edit.zzzodSlotHasDir') : t('core.edit.zzzodSlotNoDir')
+                  }}
                 </template>
                 <template v-else-if="column.key === 'size'">
                   {{ formatBytes(record.size) }}
@@ -72,7 +74,7 @@
           <a-tab-pane key="recycle" :tab="recycleTabLabel">
             <div class="slot-manage-hint-row">
               <a-typography-text type="secondary" class="slot-manage-hint">
-                {{ t('edit.zzzodRecycleHint') }}
+                {{ t('core.edit.zzzodRecycleHint') }}
               </a-typography-text>
               <a-button
                 size="small"
@@ -82,7 +84,7 @@
                 @click="confirmClearRecycle"
               >
                 <template #icon><ClearOutlined /></template>
-                {{ t('edit.zzzodRecycleClear') }}
+                {{ t('core.edit.zzzodRecycleClear') }}
               </a-button>
             </div>
             <a-table
@@ -92,7 +94,7 @@
               :data-source="recycleRows"
               :loading="recycleLoading"
               :pagination="false"
-              :locale="{ emptyText: t('edit.zzzodRecycleEmpty') }"
+              :locale="{ emptyText: t('core.edit.zzzodRecycleEmpty') }"
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'slot'">
@@ -113,7 +115,7 @@
                 <template v-else-if="column.key === 'ops'">
                   <a-space :size="4">
                     <a-button size="small" type="link" @click="openRecycleFolder(record)">
-                      {{ t('edit.zzzodRecycleOpen') }}
+                      {{ t('core.edit.zzzodRecycleOpen') }}
                     </a-button>
                     <a-button
                       v-if="record.kind === 'slot'"
@@ -122,7 +124,7 @@
                       :disabled="slotActionBusy"
                       @click="confirmRestoreRecycle(record)"
                     >
-                      {{ t('edit.zzzodRecycleRestore') }}
+                      {{ t('core.edit.zzzodRecycleRestore') }}
                     </a-button>
                   </a-space>
                 </template>
@@ -136,25 +138,25 @@
     <!-- 恢复落到某个用户的绑定槽：只物化到裸槽号的恢复没有出口，MAS 不会认领它 -->
     <a-modal
       v-model:open="restoreTarget.open"
-      :title="t('edit.zzzodRecycleRestore')"
+      :title="t('core.edit.zzzodRecycleRestore')"
       :confirm-loading="restoring"
       :closable="!restoring"
       :mask-closable="!restoring"
       :keyboard="!restoring"
-      :ok-text="t('edit.zzzodRecycleRestore')"
+      :ok-text="t('core.edit.zzzodRecycleRestore')"
       @ok="submitRestore"
     >
       <a-typography-paragraph type="secondary">
         {{
-          t('edit.zzzodRecycleRestoreTargetHint', {
+          t('core.edit.zzzodRecycleRestoreTargetHint', {
             slot: String(restoreTarget.entry?.slot ?? 0).padStart(2, '0'),
             ts: restoreTarget.entry ? formatArchiveTs(restoreTarget.entry.ts) : '',
           })
         }}
       </a-typography-paragraph>
       <a-radio-group v-model:value="restoreTarget.mode" class="restore-mode">
-        <a-radio value="existing">{{ t('edit.zzzodRecycleRestoreToUser') }}</a-radio>
-        <a-radio value="new">{{ t('edit.zzzodRecycleRestoreToNewUser') }}</a-radio>
+        <a-radio value="existing">{{ t('core.edit.zzzodRecycleRestoreToUser') }}</a-radio>
+        <a-radio value="new">{{ t('core.edit.zzzodRecycleRestoreToNewUser') }}</a-radio>
       </a-radio-group>
       <a-select
         v-if="restoreTarget.mode === 'existing'"
@@ -164,18 +166,18 @@
         option-filter-prop="label"
         :loading="usersLoading"
         :options="userOptions"
-        :placeholder="t('edit.zzzodRecycleRestoreUserPlaceholder')"
+        :placeholder="t('core.edit.zzzodRecycleRestoreUserPlaceholder')"
       />
       <a-input
         v-else
         v-model:value="restoreTarget.newUserName"
         class="restore-mode-target"
         :maxlength="32"
-        :placeholder="t('edit.zzzodRecycleRestoreNewUserName')"
+        :placeholder="t('core.edit.zzzodRecycleRestoreNewUserName')"
       />
       <a-typography-text v-if="restoreTargetSlot" type="warning" class="restore-target-hint">
         {{
-          t('edit.zzzodRecycleRestoreOverwriteHint', {
+          t('core.edit.zzzodRecycleRestoreOverwriteHint', {
             slot: String(restoreTargetSlot).padStart(2, '0'),
           })
         }}

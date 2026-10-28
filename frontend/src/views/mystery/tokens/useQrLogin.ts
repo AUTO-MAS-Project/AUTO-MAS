@@ -37,7 +37,7 @@ const t = translate
 type QrApiResponse = QrCreateOut & QrCheckOut & OutBase & { scan_code?: string }
 type QrLogger = ReturnType<typeof window.electronAPI.getLogger>
 
-const QR_RESPONSE_INVALID_MESSAGE = t('gamesign.qr.responseInvalid')
+const qrResponseInvalidMessage = () => t('core.gamesign.qr.responseInvalid')
 
 const POLL_INTERVAL_MS = 2000
 /** 成功后延迟关闭弹窗，让用户看到成功提示 */
@@ -197,7 +197,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       )
     }
     if (!response || typeof response !== 'object' || Array.isArray(response)) {
-      throw new Error(QR_RESPONSE_INVALID_MESSAGE)
+      throw new Error(qrResponseInvalidMessage())
     }
     // 二维码 URL、ticket、设备标识和 Cookie 都是登录凭据，禁止写入前端日志。
     const logData = {
@@ -213,7 +213,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     return response
   }
 
-  const markExpired = (messageText = t('gamesign.qr.expired')) => {
+  const markExpired = (messageText = t('core.gamesign.qr.expired')) => {
     finishAnalytics('expired')
     stopPoll()
     status.value = 'expired'
@@ -241,7 +241,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     if (!credential) {
       finishAnalytics('failure')
       status.value = 'error'
-      statusText.value = t('gamesign.qr.noCookie')
+      statusText.value = t('core.gamesign.qr.noCookie')
       return
     }
 
@@ -250,7 +250,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     if (accountId) {
       analyticsStage = 'save'
       status.value = 'exchanging'
-      statusText.value = t('gamesign.qr.saving')
+      statusText.value = t('core.gamesign.qr.saving')
       try {
         const saveResponse = await qrFetch(
           '/save',
@@ -261,7 +261,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
         )
         if (!isCurrentSession(id)) return
         if (saveResponse.code !== 200 || saveResponse.status === 'error') {
-          throw new Error(saveResponse.message || t('gamesign.qr.saveTokenFailed'))
+          throw new Error(saveResponse.message || t('core.gamesign.qr.saveTokenFailed'))
         }
         // 凭据已落库；之后的表单回填失败不能反过来记成保存失败。
         finishAnalytics('saved')
@@ -272,21 +272,21 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
         finishAnalytics('failure')
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`扫码保存 Token 失败: ${errorMsg}`)
-        message.error(t('gamesign.qr.scannedButSaveFailed'))
+        message.error(t('core.gamesign.qr.scannedButSaveFailed'))
         status.value = 'error'
-        statusText.value = t('gamesign.qr.scannedButSaveFailed')
+        statusText.value = t('core.gamesign.qr.scannedButSaveFailed')
         return
       }
     } else {
       finishAnalytics('confirmed_unsaved')
     }
     status.value = 'done'
-    statusText.value = t('gamesign.qr.success')
+    statusText.value = t('core.gamesign.qr.success')
     message.success(
       t(
         resolveProvider() === 'skland'
-          ? 'gamesign.qr.sklandLoginSuccess'
-          : 'gamesign.qr.loginSuccess'
+          ? 'core.gamesign.qr.sklandLoginSuccess'
+          : 'core.gamesign.qr.loginSuccess'
       )
     )
     clearCloseTimer()
@@ -311,13 +311,13 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     // 后端错误响应（code=500 或 status=error）
     if (data.code === 500 || data.status === 'error') {
       if (isQrExpiredMessage(responseMessage)) markExpired(responseMessage)
-      else failPoll(responseMessage || t('gamesign.qr.queryFailed'))
+      else failPoll(responseMessage || t('core.gamesign.qr.queryFailed'))
       return
     }
 
     if (data.status === 'Scanned') {
       status.value = 'scanned'
-      statusText.value = t('gamesign.qr.scanned')
+      statusText.value = t('core.gamesign.qr.scanned')
     } else if (data.status === 'Confirmed') {
       stopPoll()
       const credential =
@@ -325,12 +325,12 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       await handleConfirmed(credential, id, signal)
     } else if (data.status === 'Canceled') {
       finishAnalytics('cancelled')
-      failPoll(responseMessage || t('gamesign.qr.cancelled'))
+      failPoll(responseMessage || t('core.gamesign.qr.cancelled'))
     } else if (data.status === 'Expired') {
-      markExpired(responseMessage || t('gamesign.qr.expired'))
+      markExpired(responseMessage || t('core.gamesign.qr.expired'))
     } else if (data.status === 'Error') {
       if (isQrExpiredMessage(responseMessage)) markExpired(responseMessage)
-      else failPoll(responseMessage || t('gamesign.qr.queryFailed'))
+      else failPoll(responseMessage || t('core.gamesign.qr.queryFailed'))
     }
   }
 
@@ -349,8 +349,8 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     } catch (e) {
       if (!isCurrentSession(id) || isQrAbortError(e)) return
       const errorMessage = e instanceof Error ? e.message : String(e)
-      if (isQrExpiredMessage(errorMessage) || errorMessage === QR_RESPONSE_INVALID_MESSAGE) {
-        markExpired(t('gamesign.qr.invalidState'))
+      if (isQrExpiredMessage(errorMessage) || errorMessage === qrResponseInvalidMessage()) {
+        markExpired(t('core.gamesign.qr.invalidState'))
       } else {
         // 短暂网络错误不停止轮询，但记录日志便于调试。
         logger.warn(`[QR poll] 轮询异常: ${errorMessage}`)
@@ -370,7 +370,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     const { signal } = abortController
     loading.value = true
     status.value = 'loading'
-    statusText.value = t('gamesign.qr.generating')
+    statusText.value = t('core.gamesign.qr.generating')
     qrCodeDataUrl.value = ''
     ticket.value = ''
     device.value = ''
@@ -382,11 +382,11 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       if (data.code === 500 || data.status === 'error') {
         finishAnalytics('failure')
         status.value = 'error'
-        statusText.value = data.message || t('gamesign.qr.createFailed')
+        statusText.value = data.message || t('core.gamesign.qr.createFailed')
         return
       }
       if (!data.qr_url || !data.ticket || !data.device) {
-        throw new Error(t('gamesign.qr.createMissingInfo'))
+        throw new Error(t('core.gamesign.qr.createMissingInfo'))
       }
       // 先算好再判会话：原实现直接赋值给 qrCodeDataUrl，
       // 会话已被换掉时会把旧二维码写进新会话的界面。
@@ -402,7 +402,9 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
       analyticsStage = 'scan'
       status.value = 'waiting'
       statusText.value = t(
-        resolveProvider() === 'skland' ? 'gamesign.qr.sklandWaiting' : 'gamesign.qr.waiting'
+        resolveProvider() === 'skland'
+          ? 'core.gamesign.qr.sklandWaiting'
+          : 'core.gamesign.qr.waiting'
       )
       pollTimer.value = setInterval(() => {
         void poll(id)

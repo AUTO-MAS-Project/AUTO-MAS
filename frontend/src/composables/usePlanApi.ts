@@ -35,7 +35,7 @@ export function usePlanApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotLoadPlan'))
+      message.error(t('core.misc.couldNotLoadPlan'))
       throw error
     } finally {
       loading.value = false
@@ -54,7 +54,7 @@ export function usePlanApi() {
     try {
       const createType = getPlanCreateType(type)
       if (!createType) {
-        throw new Error(t('misc.unsupportedPlanTypeP0', { p0: type }))
+        throw new Error(t('core.misc.unsupportedPlanTypeP0', { p0: type }))
       }
 
       const params: PlanCreateIn = { type: createType }
@@ -74,7 +74,7 @@ export function usePlanApi() {
       operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`创建计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotCreatePlan'))
+      message.error(t('core.misc.couldNotCreatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -112,7 +112,7 @@ export function usePlanApi() {
 
       const response = await Service.updatePlanApiPlanUpdatePost(params)
       if (response.code !== 200) {
-        throw new Error(response.message || t('misc.couldNotUpdatePlan'))
+        throw new Error(response.message || t('core.misc.couldNotUpdatePlan'))
       }
       operation?.finish({ ...dimensions, outcome: 'success' })
       editOperation?.finish({ ...editProps, outcome: 'success' })
@@ -122,7 +122,7 @@ export function usePlanApi() {
       editOperation?.finish({ ...editProps, outcome: 'failure' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotUpdatePlan'))
+      message.error(t('core.misc.couldNotUpdatePlan'))
       throw error
     } finally {
       loading.value = false
@@ -153,7 +153,7 @@ export function usePlanApi() {
       operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`删除计划失败: ${errorMsg}`)
-      message.error(t('misc.couldNotDeletePlan'))
+      message.error(t('core.misc.couldNotDeletePlan'))
       throw error
     } finally {
       loading.value = false
@@ -185,7 +185,7 @@ export function usePlanApi() {
       operation.finish({ ...dimensions, outcome: 'failure' })
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`重新排序失败: ${errorMsg}`)
-      message.error(t('misc.couldNotReorder'))
+      message.error(t('core.misc.couldNotReorder'))
       throw error
     } finally {
       loading.value = false

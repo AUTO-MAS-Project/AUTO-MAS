@@ -2,9 +2,9 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vite-plus/test'
-import enUS from './locales/en-US'
-import jaJP from './locales/ja-JP'
-import zhCN from './locales/zh-CN'
+import enUS from './bootstrap/en-US.json'
+import jaJP from './bootstrap/ja-JP.json'
+import zhCN from './bootstrap/zh-CN.json'
 
 const flatten = (node: unknown, prefix = ''): [string, string][] =>
   typeof node === 'string'
@@ -13,24 +13,34 @@ const flatten = (node: unknown, prefix = ''): [string, string][] =>
         flatten(v, prefix ? `${prefix}.${k}` : k)
       )
 
-const zhEntries = flatten(zhCN)
+const catalogEntries = (bootstrap: unknown, filename: string): [string, string][] => [
+  ...flatten(bootstrap, 'bootstrap'),
+  ...Object.entries(
+    JSON.parse(
+      readFileSync(new URL(`../../../res/i18n/${filename}.json`, import.meta.url), 'utf8')
+    ) as Record<string, string>
+  ),
+]
+
+const zhEntries = catalogEntries(zhCN, 'zh_CN')
 // 中文が源言語。ほかの言語はここに無いキーを持てない
 const TRANSLATIONS = [
-  ['en-US', flatten(enUS)],
-  ['ja-JP', flatten(jaJP)],
+  ['en-US', catalogEntries(enUS, 'en')],
+  ['ja-JP', catalogEntries(jaJP, 'ja')],
 ] as const
 
 const placeholders = (value: string): string[] => (value.match(/\{[A-Za-z_]\w*\}/g) ?? []).sort()
 
 describe('词表', () => {
-  // 中文が源言語。ほかの言語は中文とまったく同じキー集合を持つこと。
-  // 欠けたキーは t() が key をそのまま描画するので、ここで落とす。
-  it('各语言词表的 key 集合与中文完全一致（中文是源语言）', () => {
+  // 初始化词表必须独立完整；业务缺词由 Vue I18n 按语言链回退。
+  it('初始化词表各语言完整，业务词表不包含源语言以外的 key', () => {
     const zhKeys = new Set(zhEntries.map(([k]) => k))
     for (const [locale, entries] of TRANSLATIONS) {
       const keys = new Set(entries.map(([k]) => k))
       const extra = [...keys].filter(k => !zhKeys.has(k))
-      const missing = zhEntries.map(([k]) => k).filter(k => !keys.has(k))
+      const missing = zhEntries
+        .map(([k]) => k)
+        .filter(k => k.startsWith('bootstrap.') && !keys.has(k))
       expect([locale, extra, missing]).toEqual([locale, [], []])
     }
   })
@@ -55,10 +65,10 @@ describe('词表', () => {
 
   // 复数消息，| 是有意的分隔符；其余词条里的 | 都必须转义
   const PLURAL_KEYS = new Set([
-    'home.endfield.ongoing',
-    'plan.count',
-    'queue.count',
-    'scripts.userCount',
+    'core.home.endfield.ongoing',
+    'core.plan.count',
+    'core.queue.count',
+    'core.scripts.userCount',
   ])
 
   // 这一条兜住整张词表：漏转义时 t() 会静默截断（| 后面全丢），
@@ -83,7 +93,7 @@ describe('词表', () => {
   // 但 lint / typecheck / 其余单测都不报错，只能靠这里兜。
   it('源码里用到的 key 在中文词表里都有', () => {
     const zhKeys = new Set(zhEntries.map(([k]) => k))
-    const namespaces = new Set(Object.keys(zhCN))
+    const namespaces = new Set(['bootstrap', 'core'])
     const srcDir = fileURLToPath(new URL('..', import.meta.url))
 
     const walk = (dir: string): string[] =>

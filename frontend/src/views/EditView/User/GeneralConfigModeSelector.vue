@@ -2,10 +2,10 @@
   <a-form-item class="config-mode-form-item">
     <template #label>
       <span class="config-mode-label">
-        {{ t('edit.configurationManagement') }}
+        {{ t('core.edit.configurationManagement') }}
         <span v-if="saving" class="config-mode-saving">
           <LoadingOutlined spin />
-          {{ t('edit.saving') }}
+          {{ t('core.edit.saving') }}
         </span>
       </span>
     </template>
@@ -15,7 +15,7 @@
       :disabled="disabled || saving"
       class="config-mode-options"
       :style="{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }"
-      :aria-label="t('edit.configurationManagement')"
+      :aria-label="t('core.edit.configurationManagement')"
       @change="handleChange"
     >
       <a-tooltip
@@ -66,12 +66,12 @@
     <a-form-item v-if="quickConfig !== undefined" class="overlay-config-form-item">
       <template #label>
         <span class="config-mode-label">
-          {{ t('edit.enableQuickConfiguration') }}
-          <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
+          {{ t('core.edit.enableQuickConfiguration') }}
+          <a-tooltip :title="t('core.edit.overridesCurrentScriptConfiguration')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
           <span v-if="quickConfigReadonly" class="config-mode-derived">
-            {{ t('edit.quickConfigDerivedHint') }}
+            {{ t('core.edit.quickConfigDerivedHint') }}
           </span>
         </span>
       </template>
@@ -80,7 +80,7 @@
         :disabled="overlayDisabled"
         class="config-mode-options"
         :style="{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }"
-        :aria-label="t('edit.enableQuickConfiguration')"
+        :aria-label="t('core.edit.enableQuickConfiguration')"
         @change="handleOverlayChange"
       >
         <label
@@ -110,7 +110,7 @@
       developer/config-semantics.html）。未接入 overlay 的专项没有子态可讲，整块不渲染。
     -->
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
-      <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
+      <span class="config-effective-title">{{ t('core.edit.configSemanticsTitle') }}</span>
       <p class="config-effective-formula">{{ semantics.formula }}</p>
       <p v-if="semantics.effect" class="config-effective-effect">{{ semantics.effect }}</p>
       <p v-if="semantics.note" class="config-effective-note">{{ semantics.note }}</p>
@@ -186,20 +186,20 @@ const props = withDefaults(
 const defaultOptions = computed<ConfigModeOption[]>(() => [
   {
     value: true,
-    title: t('edit.perUserConfiguration'),
-    description: t('edit.saveSeparateConfigurationThis'),
+    title: t('core.edit.perUserConfiguration'),
+    description: t('core.edit.saveSeparateConfigurationThis'),
     icon: 'database',
   },
   {
     value: false,
-    title: t('edit.scriptDirectConfiguration'),
-    description: t('edit.useScriptSCurrent'),
+    title: t('core.edit.scriptDirectConfiguration'),
+    description: t('core.edit.useScriptSCurrent'),
     icon: 'file',
   },
 ])
 
 const options = computed(() => props.options ?? defaultOptions.value)
-const alertMessage = computed(() => props.alertMessage ?? t('edit.configSourceHint'))
+const alertMessage = computed(() => props.alertMessage ?? t('core.edit.configSourceHint'))
 
 /** 整组禁用（页面加载/保存中）或该选项声明 disabled 时，选项置灰不可勾选 */
 const isOptionDisabled = (option: ConfigModeOption): boolean =>
@@ -209,14 +209,14 @@ const isOptionDisabled = (option: ConfigModeOption): boolean =>
 const overlayOptions = computed(() => [
   {
     value: true,
-    title: t('edit.overlayConfigEnabled'),
-    description: t('edit.overlayConfigEnabledDesc'),
+    title: t('core.edit.overlayConfigEnabled'),
+    description: t('core.edit.overlayConfigEnabledDesc'),
     icon: 'setting' as const,
   },
   {
     value: false,
-    title: t('edit.overlayConfigDisabled'),
-    description: t('edit.overlayConfigDisabledDesc'),
+    title: t('core.edit.overlayConfigDisabled'),
+    description: t('core.edit.overlayConfigDisabledDesc'),
     icon: 'file' as const,
   },
 ])

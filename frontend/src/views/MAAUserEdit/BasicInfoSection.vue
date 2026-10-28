@@ -1,7 +1,7 @@
 <template>
   <div class="form-section">
     <div class="section-header">
-      <h3>{{ t('edit.basicInfo') }}</h3>
+      <h3>{{ t('core.edit.basicInfo') }}</h3>
     </div>
     <a-row :gutter="24">
       <a-col :span="12">
@@ -9,8 +9,8 @@
           name="userName"
           required
           v-model="formData.userName"
-          :hint="t('edit.nameUsedTellUsers')"
-          :placeholder="t('edit.enterUsername')"
+          :hint="t('core.edit.nameUsedTellUsers')"
+          :placeholder="t('core.edit.enterUsername')"
           :disabled="loading"
           enhanced
           @save="emitSave('userName', formData.userName)"
@@ -20,14 +20,14 @@
         <a-form-item name="userId">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.accountId')"
-              :hint="t('edit.usedSwitchAccountsCn')"
+              :text="t('core.edit.accountId')"
+              :hint="t('core.edit.usedSwitchAccountsCn')"
               variant="form"
             />
           </template>
           <a-input
             v-model:value="formData.userId"
-            :placeholder="t('edit.enterAccountId')"
+            :placeholder="t('core.edit.enterAccountId')"
             :disabled="loading"
             size="large"
             @blur="emitSave('userId', formData.userId)"
@@ -41,7 +41,7 @@
         <UserStatusField
           name="status"
           v-model="formData.Info.Status"
-          :hint="t('edit.whetherThisUserEnabled')"
+          :hint="t('core.edit.whetherThisUserEnabled')"
           :disabled="loading"
           @save="emitSave('Info.Status', formData.Info.Status)"
         />
@@ -50,14 +50,14 @@
         <a-form-item :name="['Info', 'Password']">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.password')"
-              :hint="t('edit.userSPasswordStored')"
+              :text="t('core.edit.password')"
+              :hint="t('core.edit.userSPasswordStored')"
               variant="form"
             />
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            :placeholder="t('edit.passwordStoredOnlySo')"
+            :placeholder="t('core.edit.passwordStoredOnlySo')"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
@@ -71,14 +71,14 @@
         <a-form-item name="server">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.server')"
-              :hint="t('edit.pickGameServerThis')"
+              :text="t('core.edit.server')"
+              :hint="t('core.edit.pickGameServerThis')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Info.Server"
-            :placeholder="t('edit.pickServer')"
+            :placeholder="t('core.edit.pickServer')"
             :disabled="loading"
             :options="serverOptions"
             size="large"
@@ -91,7 +91,7 @@
         <UserRemainedDayField
           name="remainedDay"
           v-model="formData.Info.RemainedDay"
-          :hint="t('edit.daysLeftAccount1')"
+          :hint="t('core.edit.daysLeftAccount1')"
           placeholder="0"
           :disabled="loading"
           @save="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
@@ -102,8 +102,8 @@
     <UserNotesField
       name="notes"
       v-model="formData.Info.Notes"
-      :hint="t('edit.addNoteAboutThis')"
-      :placeholder="t('edit.enterNote3')"
+      :hint="t('core.edit.addNoteAboutThis')"
+      :placeholder="t('core.edit.enterNote3')"
       :disabled="loading"
       :rows="4"
       enhanced

@@ -291,7 +291,7 @@ export function usePushLogPatterns(options: UsePushLogPatternsOptions) {
         .filter(({ p }) => p.enabled !== false && !ruleHasRequiredField(p))
         .map(({ p, i }) => ruleDisplayName(p, i))
       if (dropped.length > 0) {
-        message.warning(t('edit.p0MissingRequiredField', { p0: dropped.join('、') }))
+        message.warning(t('core.edit.p0MissingRequiredField', { p0: dropped.join('、') }))
       }
     }
     emitJson(json)

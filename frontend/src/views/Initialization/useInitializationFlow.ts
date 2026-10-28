@@ -2,9 +2,8 @@ import { isDevelopmentEnvironment as isDev } from '@/utils/environment'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
+import { finishInitializationEntry } from './finishInitializationEntry'
 import { beginAnalyticsOperation } from '@/utils/analytics'
-import { connectionState } from '@/services/websocket/connection'
 import type { AnalyticsEventProps } from '@/types/analytics'
 import { getBackendVersion } from '@/composables/useVersionService'
 import {
@@ -176,7 +175,7 @@ export function useInitializationFlow() {
 
     return presentationStages.value.map(stage => ({
       key: stage.key,
-      label: t(`init.steps.${stage.key}`),
+      label: t(`bootstrap.init.steps.${stage.key}`),
       state:
         stage.status === 'success'
           ? 'done'
@@ -191,12 +190,12 @@ export function useInitializationFlow() {
     if (currentState.value.status === 'processing' && currentState.value.message) {
       return currentState.value.message
     }
-    if (flowKind.value === 'update') return t('launch.updating')
-    return t('launch.preparing')
+    if (flowKind.value === 'update') return t('bootstrap.launch.updating')
+    return t('bootstrap.launch.preparing')
   })
 
   const statusHint = computed(() =>
-    flowKind.value === 'startup' ? '' : t('launch.firstRunEstimate')
+    flowKind.value === 'startup' ? '' : t('bootstrap.launch.firstRunEstimate')
   )
 
   const statusProgress = computed(() =>
@@ -204,8 +203,8 @@ export function useInitializationFlow() {
   )
 
   const networkDetailLabels: NetworkDetailLabels = {
-    transferSource: source => t('launch.transferSource', { source }),
-    probeUnavailable: source => t('launch.probeUnavailable', { source }),
+    transferSource: source => t('bootstrap.launch.transferSource', { source }),
+    probeUnavailable: source => t('bootstrap.launch.probeUnavailable', { source }),
   }
 
   /**
@@ -228,7 +227,7 @@ export function useInitializationFlow() {
     const state = currentState.value
 
     return {
-      title: t(`init.steps.${activeStageKey.value}`),
+      title: t(`bootstrap.init.steps.${activeStageKey.value}`),
       message: state.message,
       failureActions: state.failureActions,
       failureNotice: state.failureNotice,
@@ -289,7 +288,7 @@ export function useInitializationFlow() {
       state.progressIndeterminate = false
     } else if (progress.status === 'failed') {
       state.status = 'failed'
-      state.message = progress.message || t('init.msg.execFailed')
+      state.message = progress.message || t('bootstrap.init.msg.execFailed')
       state.progressIndeterminate = false
     } else {
       state.status = 'processing'
@@ -385,7 +384,7 @@ export function useInitializationFlow() {
         )
         const failedStepKey = failedStep?.key ?? 'python'
         currentStepIndex.value = steps.findIndex(step => step.key === failedStepKey)
-        markStepFailed(failedStepKey, result.error || t('init.msg.execFailed'), result)
+        markStepFailed(failedStepKey, result.error || t('bootstrap.init.msg.execFailed'), result)
         return false
       }
 
@@ -452,7 +451,7 @@ export function useInitializationFlow() {
 
       if (!result.success) {
         failure = result
-        throw new Error(result.error || t('init.msg.execFailed'))
+        throw new Error(result.error || t('bootstrap.init.msg.execFailed'))
       }
 
       state.status = 'success'
@@ -488,7 +487,7 @@ export function useInitializationFlow() {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`初始化失败: ${errorMessage}`)
       failAnalyticsAttempt('unknown')
-      message.error(t('init.msg.initFailed'))
+      message.error(t('bootstrap.init.msg.initFailed'))
     }
   }
 
@@ -544,7 +543,11 @@ export function useInitializationFlow() {
     state.status = 'success'
     state.message = ''
     resetFailureState(state)
-    message.warning(t('init.msg.skippedStep', { step: t(`init.steps.${activeStageKey.value}`) }))
+    message.warning(
+      t('bootstrap.init.msg.skippedStep', {
+        step: t(`bootstrap.init.steps.${activeStageKey.value}`),
+      })
+    )
 
     if (step.key === 'backend') {
       await handleLocalEnterApp()
@@ -573,7 +576,7 @@ export function useInitializationFlow() {
     for (const stepKey of RUNTIME_TAKEOVER_STEPS) markStepTakenOver(stepStates.value[stepKey])
     networkActivity.value = EMPTY_NETWORK_ACTIVITY
     stepStates.value.python.status = 'processing'
-    stepStates.value.python.message = t('init.failure.runtimeRestarting')
+    stepStates.value.python.message = t('bootstrap.init.failure.runtimeRestarting')
     await loadMirrorConfigs()
     await startInitialization(0)
   }
@@ -591,7 +594,6 @@ export function useInitializationFlow() {
     state.status = 'success'
     state.message = ''
 
-    message.success(t('init.msg.initDone'))
     await window.electronAPI.setInitializedVersion?.(version)
     await getBackendVersion()
     await handleLocalEnterApp()
@@ -626,7 +628,7 @@ export function useInitializationFlow() {
         resetFailureState(state)
         currentStepIndex.value = 0
         stepStates.value[steps[0].key].status = 'processing'
-        stepStates.value[steps[0].key].message = t('init.failure.restoringWorkspace')
+        stepStates.value[steps[0].key].message = t('bootstrap.init.failure.restoringWorkspace')
         await executeRuntimeInitialization()
         return
       case 'open-log':
@@ -648,7 +650,9 @@ export function useInitializationFlow() {
   async function openFailureLog(state: StepState) {
     const target = state.failureLogPath || runtimeFallbackLogPath.value
     if (!target) {
-      message.error(t('init.failure.openLogFailed', { error: t('init.msg.execFailed') }))
+      message.error(
+        t('bootstrap.init.failure.openLogFailed', { error: t('bootstrap.init.msg.execFailed') })
+      )
       return
     }
 
@@ -656,12 +660,14 @@ export function useInitializationFlow() {
       const result = await window.electronAPI.openFile(target)
       if (!result.success) {
         message.error(
-          t('init.failure.openLogFailed', { error: result.error ?? t('init.msg.execFailed') })
+          t('bootstrap.init.failure.openLogFailed', {
+            error: result.error ?? t('bootstrap.init.msg.execFailed'),
+          })
         )
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      message.error(t('init.failure.openLogFailed', { error: errorMessage }))
+      message.error(t('bootstrap.init.failure.openLogFailed', { error: errorMessage }))
     }
   }
 
@@ -672,37 +678,24 @@ export function useInitializationFlow() {
       state.doctorChecks = result.runtimeChecks ?? []
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
-      message.error(t('init.failure.doctorFailed', { error: errorMessage }))
+      message.error(t('bootstrap.init.failure.doctorFailed', { error: errorMessage }))
       state.doctorChecks = []
     } finally {
       state.doctorRunning = false
     }
   }
 
-  async function handleLocalEnterApp() {
+  async function handleLocalEnterApp(resourcesOnly = false) {
+    ensureAnalyticsAttempt()
     const operation = analyticsAttempt
     analyticsAttempt = null
-    const skipped = skippedStage
-    const dimensions = {
-      flow_kind: flowKind.value,
-      runtime_mode: runtimeMode.value,
-      failed_stage: 'none' as const,
-    }
-    try {
-      const success = await enterApp('初始化完成后进入', true)
-      if (!success) await forceEnterApp('初始化完成后强制进入')
-      operation?.finish({
-        ...dimensions,
-        outcome: skipped
-          ? 'skipped'
-          : connectionState().value === 'open'
-            ? 'success'
-            : 'unconfirmed',
-      })
-    } catch {
-      operation?.finish({ ...dimensions, outcome: 'unconfirmed' })
-      await forceEnterApp('初始化失败后强制进入')
-    }
+    await finishInitializationEntry({
+      operation,
+      flowKind: flowKind.value,
+      runtimeMode: runtimeMode.value,
+      skipped: skippedStage,
+      resourcesOnly,
+    })
   }
 
   function convertMirror(mirror: ElectronMirrorSource): MirrorConfig {
@@ -856,6 +849,7 @@ export function useInitializationFlow() {
     handleMirrorSelect,
     handleRuntimeUpdated,
     handleSkip,
+    handleLocalEnterApp,
     hasFailed,
     isBackendStep,
     runtimeMode,

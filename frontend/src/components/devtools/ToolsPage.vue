@@ -22,9 +22,9 @@ const cacheSummary = computed(() => ({
   failed: queries.value.filter(query => query.state.status === 'error').length,
 }))
 const themeOptions = computed(() => [
-  { label: t('devtools.light'), value: 'light' },
-  { label: t('devtools.dark'), value: 'dark' },
-  { label: t('devtools.system'), value: 'system' },
+  { label: t('core.devtools.light'), value: 'light' },
+  { label: t('core.devtools.dark'), value: 'dark' },
+  { label: t('core.devtools.system'), value: 'system' },
 ])
 
 const launchVue = async (inspect: boolean) => {
@@ -32,9 +32,9 @@ const launchVue = async (inspect: boolean) => {
   busy.value = inspect ? 'inspector' : 'vue'
   try {
     if (await openVueDevtools(inspect)) emit('inspect')
-    else message.error(t('devtools.vueUnavailable'))
+    else message.error(t('core.devtools.vueUnavailable'))
   } catch {
-    message.error(t('devtools.vueUnavailable'))
+    message.error(t('core.devtools.vueUnavailable'))
   } finally {
     busy.value = ''
   }
@@ -42,13 +42,13 @@ const launchVue = async (inspect: boolean) => {
 
 const openChromium = async () => {
   if (!window.electronAPI?.openDevTools) {
-    message.info(t('devtools.browserDevtoolsHint'))
+    message.info(t('core.devtools.browserDevtoolsHint'))
     return
   }
   try {
     await window.electronAPI.openDevTools()
   } catch {
-    message.error(t('devtools.nativeDevtoolsFailed'))
+    message.error(t('core.devtools.nativeDevtoolsFailed'))
   }
 }
 
@@ -58,7 +58,7 @@ const changeTheme = async (value: string | number) => {
   try {
     await setThemeMode(value as ThemeMode)
   } catch {
-    message.error(t('devtools.themeFailed'))
+    message.error(t('core.devtools.themeFailed'))
   } finally {
     busy.value = ''
   }
@@ -68,32 +68,32 @@ const changeTheme = async (value: string | number) => {
 <template>
   <section class="devtools-section">
     <h3><CodeOutlined /> Vue DevTools</h3>
-    <p class="devtools-muted">{{ t('devtools.vueHint') }}</p>
+    <p class="devtools-muted">{{ t('core.devtools.vueHint') }}</p>
     <a-space wrap>
       <a-button
         type="primary"
         :loading="busy === 'vue'"
         :disabled="!!busy && busy !== 'vue'"
         @click="launchVue(false)"
-        ><CodeOutlined />{{ t('devtools.openVue') }}</a-button
+        ><CodeOutlined />{{ t('core.devtools.openVue') }}</a-button
       >
       <a-button
         :loading="busy === 'inspector'"
         :disabled="!!busy && busy !== 'inspector'"
         @click="launchVue(true)"
-        ><SelectOutlined />{{ t('devtools.inspectComponent') }}</a-button
+        ><SelectOutlined />{{ t('core.devtools.inspectComponent') }}</a-button
       >
     </a-space>
-    <p class="tool-shortcut devtools-muted">{{ t('devtools.vueShortcut') }}</p>
+    <p class="tool-shortcut devtools-muted">{{ t('core.devtools.vueShortcut') }}</p>
   </section>
   <section class="devtools-section">
-    <h3><DesktopOutlined /> {{ t('devtools.chromiumTools') }}</h3>
-    <p class="devtools-muted">{{ t('devtools.chromiumHint') }}</p>
-    <a-button @click="openChromium">{{ t('devtools.openChromium') }}</a-button>
+    <h3><DesktopOutlined /> {{ t('core.devtools.chromiumTools') }}</h3>
+    <p class="devtools-muted">{{ t('core.devtools.chromiumHint') }}</p>
+    <a-button @click="openChromium">{{ t('core.devtools.openChromium') }}</a-button>
   </section>
   <section class="devtools-section">
-    <h3><BulbOutlined /> {{ t('devtools.themeCheck') }}</h3>
-    <p class="devtools-muted">{{ t('devtools.themeHint') }}</p>
+    <h3><BulbOutlined /> {{ t('core.devtools.themeCheck') }}</h3>
+    <p class="devtools-muted">{{ t('core.devtools.themeHint') }}</p>
     <a-segmented
       :value="themeMode"
       :options="themeOptions"
@@ -102,19 +102,19 @@ const changeTheme = async (value: string | number) => {
     />
   </section>
   <section class="devtools-section">
-    <h3>{{ t('devtools.queryCache') }}</h3>
+    <h3>{{ t('core.devtools.queryCache') }}</h3>
     <a-descriptions :column="3" size="small">
-      <a-descriptions-item :label="t('devtools.cacheTotal')">{{
+      <a-descriptions-item :label="t('core.devtools.cacheTotal')">{{
         cacheSummary.total
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.cacheFetching')">{{
+      <a-descriptions-item :label="t('core.devtools.cacheFetching')">{{
         cacheSummary.fetching
       }}</a-descriptions-item>
-      <a-descriptions-item :label="t('devtools.cacheFailed')">{{
+      <a-descriptions-item :label="t('core.devtools.cacheFailed')">{{
         cacheSummary.failed
       }}</a-descriptions-item>
     </a-descriptions>
-    <p class="devtools-muted">{{ t('devtools.cacheHint') }}</p>
+    <p class="devtools-muted">{{ t('core.devtools.cacheHint') }}</p>
   </section>
 </template>
 

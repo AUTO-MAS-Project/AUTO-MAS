@@ -201,7 +201,7 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
               ? bettergiDirs.value.autoFightDir
               : bettergiDirs.value.scriptGroupDir
     if (!target) {
-      message.warning(t('edit.bettergiPathingEmptyTree'))
+      message.warning(t('core.edit.bettergiPathingEmptyTree'))
       return
     }
     try {
@@ -221,7 +221,7 @@ export function useBettergiCatalogs(scriptId: string, userId: MaybeRefOrGetter<s
     if (!bettergiDirs.value.exePath) await loadBettergiDirs()
     const exe = bettergiDirs.value.exePath
     if (!exe) {
-      message.warning(t('edit.bettergiPathingEmptyTree'))
+      message.warning(t('core.edit.bettergiPathingEmptyTree'))
       return
     }
     try {

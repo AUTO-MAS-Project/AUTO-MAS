@@ -2,7 +2,7 @@
   <div class="history-page">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1 class="page-title app-page-title">{{ t('history.title') }}</h1>
+      <h1 class="page-title app-page-title">{{ t('core.history.title') }}</h1>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -28,8 +28,8 @@
         <div v-if="historyData.length === 0 && !searchLoading" class="empty-state">
           <a-empty :image="noDataImage" :image-style="{ height: '120px' }">
             <template #description>
-              <div class="empty-title">{{ t('history.emptyHistory') }}</div>
-              <div class="empty-description">{{ t('history.emptyHint') }}</div>
+              <div class="empty-title">{{ t('core.history.emptyHistory') }}</div>
+              <div class="empty-description">{{ t('core.history.emptyHint') }}</div>
             </template>
           </a-empty>
         </div>
@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { HistoryIndexItem } from '@/api'

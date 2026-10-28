@@ -232,7 +232,7 @@ export function useBettergiGroupSettings(options: {
     } catch (e) {
       if (!current()) return
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsLoadFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.bettergiGroupSettingsLoadFailed'))
     } finally {
       if (version === readVersion) dragonSettingsLoading.value = false
     }
@@ -253,7 +253,7 @@ export function useBettergiGroupSettings(options: {
     const run = dragonGroupSaveChain.then(async () => {
       if (configLocked.value) {
         if (hasDragonGroupSettingsDirty.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           return false
         }
         return true
@@ -297,11 +297,13 @@ export function useBettergiGroupSettings(options: {
       if (tasks.length === 0) return true
       try {
         await Promise.all(tasks)
-        if (!silent) message.success(t('edit.bettergiGroupSettingsSaved'))
+        if (!silent) message.success(t('core.edit.bettergiGroupSettingsSaved'))
         return true
       } catch (e) {
         logger.error(e instanceof Error ? e.message : String(e))
-        message.error(e instanceof Error ? e.message : t('edit.bettergiGroupSettingsSaveFailed'))
+        message.error(
+          e instanceof Error ? e.message : t('core.edit.bettergiGroupSettingsSaveFailed')
+        )
         return false
       }
     })

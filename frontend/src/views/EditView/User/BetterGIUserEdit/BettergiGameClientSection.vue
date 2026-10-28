@@ -48,7 +48,7 @@ const gamePathInput = ref('')
 
 // BGI 全局路径缺失时的兜底提示（正常情况输入框默认值直接显示 BGI 路径）
 const gamePathPlaceholder = computed(
-  () => gameClientInfo.value?.globalPath || t('edit.bettergiGameClientPlaceholder')
+  () => gameClientInfo.value?.globalPath || t('core.edit.bettergiGameClientPlaceholder')
 )
 
 const normalizePath = (path: string) =>
@@ -67,11 +67,11 @@ const RESOURCE_EXPECTED_CHANNEL: Record<string, string> = {
 const channelLabel = (channel: string) => {
   switch (channel) {
     case '官服':
-      return t('edit.bettergiChannelOfficial')
+      return t('core.edit.bettergiChannelOfficial')
     case 'B服':
-      return t('edit.bettergiChannelBili')
+      return t('core.edit.bettergiChannelBili')
     case '国际服':
-      return t('edit.bettergiChannelGlobal')
+      return t('core.edit.bettergiChannelGlobal')
     default:
       return channel
   }
@@ -103,13 +103,13 @@ const syncGamePathInput = () => {
 const syncResourceWithChannel = async () => {
   const channel = gameClientInfo.value?.channel
   if (channel !== '官服' && channel !== 'B服' && channel !== '国际服') {
-    message.warning(t('edit.bettergiGameClientUnknownWarning'))
+    message.warning(t('core.edit.bettergiGameClientUnknownWarning'))
     return
   }
   if (channel === '国际服') {
     const intlServers = ['亚服', '欧服', '美服', '港澳台服']
     if (!intlServers.includes(props.config.Resource)) {
-      message.warning(t('edit.bettergiGameClientIntlWarning'))
+      message.warning(t('core.edit.bettergiGameClientIntlWarning'))
     }
     return
   }
@@ -119,8 +119,9 @@ const syncResourceWithChannel = async () => {
     failedResource = saved ? null : channel
     if (!saved || !active) return
     message.success(
-      t('edit.bettergiGameClientSynced', {
-        server: channel === '官服' ? t('edit.bettergiServerCn') : t('edit.bettergiServerBili'),
+      t('core.edit.bettergiGameClientSynced', {
+        server:
+          channel === '官服' ? t('core.edit.bettergiServerCn') : t('core.edit.bettergiServerBili'),
       })
     )
   }
@@ -216,7 +217,7 @@ const pickGenshinExe = async (): Promise<string | null> => {
   if (!path) return null
   const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
   if (fileName !== 'yuanshen.exe' && fileName !== 'genshinimpact.exe') {
-    message.error(t('edit.bettergiGameClientInvalid'))
+    message.error(t('core.edit.bettergiGameClientInvalid'))
     return null
   }
   return path
@@ -242,7 +243,7 @@ const handleResourceChange = async (value: string) => {
   const expected = RESOURCE_EXPECTED_CHANNEL[value]
   if (!channel || !expected || expected === channel) return
   message.warning(
-    t('edit.bettergiServerMismatchWarning', {
+    t('core.edit.bettergiServerMismatchWarning', {
       server: channelLabel(value),
       channel: channelLabel(channel),
     })
@@ -259,8 +260,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
       <a-form-item>
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.bettergiGameServer')"
-            :hint="t('edit.bettergiGameServerHint')"
+            :text="t('core.edit.bettergiGameServer')"
+            :hint="t('core.edit.bettergiGameServerHint')"
             variant="form"
           />
         </template>
@@ -270,13 +271,13 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
           class="modern-select"
           @change="handleResourceChange"
         >
-          <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
-          <a-select-option value="B服">{{ t('edit.bettergiServerBili') }}</a-select-option>
-          <a-select-option value="亚服">{{ t('edit.bettergiServerAsia') }}</a-select-option>
-          <a-select-option value="欧服">{{ t('edit.bettergiServerEurope') }}</a-select-option>
-          <a-select-option value="美服">{{ t('edit.bettergiServerAmerica') }}</a-select-option>
+          <a-select-option value="官服">{{ t('core.edit.bettergiServerCn') }}</a-select-option>
+          <a-select-option value="B服">{{ t('core.edit.bettergiServerBili') }}</a-select-option>
+          <a-select-option value="亚服">{{ t('core.edit.bettergiServerAsia') }}</a-select-option>
+          <a-select-option value="欧服">{{ t('core.edit.bettergiServerEurope') }}</a-select-option>
+          <a-select-option value="美服">{{ t('core.edit.bettergiServerAmerica') }}</a-select-option>
           <a-select-option value="港澳台服">
-            {{ t('edit.bettergiServerTwHkMo') }}
+            {{ t('core.edit.bettergiServerTwHkMo') }}
           </a-select-option>
         </a-select>
       </a-form-item>
@@ -289,8 +290,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.bettergiGameClient')"
-              :hint="t('edit.bettergiGameClientHint')"
+              :text="t('core.edit.bettergiGameClient')"
+              :hint="t('core.edit.bettergiGameClientHint')"
               variant="form"
             />
           </template>
@@ -306,7 +307,7 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
               <template #icon>
                 <FolderOpenOutlined />
               </template>
-              {{ t('edit.pickFile') }}
+              {{ t('core.edit.pickFile') }}
             </a-button>
             <a-button
               size="large"
@@ -314,17 +315,17 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
               :disabled="!gamePathInput"
               @click="clearGameClient"
             >
-              {{ t('edit.bettergiGameClientRestore') }}
+              {{ t('core.edit.bettergiGameClientRestore') }}
             </a-button>
           </a-input-group>
         </a-form-item>
-        <a-tooltip :title="updateUnsupported ? t('edit.bettergiUpdateUnsupportedHint') : ''">
+        <a-tooltip :title="updateUnsupported ? t('core.edit.bettergiUpdateUnsupportedHint') : ''">
           <span class="game-client-check">
             <a-button size="large" :disabled="updateCheckDisabled" @click="handleCheckUpdate">
               <template #icon>
                 <ThunderboltOutlined />
               </template>
-              {{ t('edit.checkUpdates') }}
+              {{ t('core.edit.checkUpdates') }}
             </a-button>
           </span>
         </a-tooltip>
@@ -336,8 +337,8 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     v-model:open="updateModal.open"
     :title="
       updateModal.running
-        ? t('edit.bettergiUpdateProgressTitle')
-        : t('edit.bettergiCheckUpdateTitle')
+        ? t('core.edit.bettergiUpdateProgressTitle')
+        : t('core.edit.bettergiCheckUpdateTitle')
     "
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
@@ -349,12 +350,12 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     <template v-if="updateModal.running || updateModal.done">
       <div class="update-log-area">
         <pre class="update-log-content">{{
-          updateModal.log || t('edit.bettergiUpdateConnecting')
+          updateModal.log || t('core.edit.bettergiUpdateConnecting')
         }}</pre>
       </div>
     </template>
     <template v-else>
-      <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
+      <a-alert type="info" show-icon :message="t('core.edit.bettergiWillBeUpdated')" />
     </template>
   </a-modal>
 </template>

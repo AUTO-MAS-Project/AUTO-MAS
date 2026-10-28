@@ -1,7 +1,7 @@
 <template>
   <section class="form-section run-config-section">
     <div class="section-header">
-      <h3>{{ t('edit.runConfiguration') }}</h3>
+      <h3>{{ t('core.edit.runConfiguration') }}</h3>
     </div>
     <div class="run-config-grid">
       <ScriptHardTimeoutField
@@ -22,11 +22,11 @@
           @blur="emit('save', field.key, run[field.key])"
         />
       </a-form-item>
-      <a-form-item :help="t('edit.accountSwitch16x9Only')">
+      <a-form-item :help="t('core.edit.accountSwitch16x9Only')">
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.accountSwitchingMethod')"
-            :hint="t('edit.chooseWhetherMasSwitches')"
+            :text="t('core.edit.accountSwitchingMethod')"
+            :hint="t('core.edit.chooseWhetherMasSwitches')"
             variant="form"
           />
         </template>
@@ -40,8 +40,8 @@
       <a-form-item>
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.taskTransitionMethod')"
-            :hint="t('edit.taskTransitionHint')"
+            :text="t('core.edit.taskTransitionMethod')"
+            :hint="t('core.edit.taskTransitionHint')"
             variant="form"
           />
         </template>
@@ -55,8 +55,8 @@
       <a-form-item>
         <template #label>
           <FieldLabelWithHint
-            :text="t('edit.runsPerDay')"
-            :hint="t('edit.skipRunOnceThis')"
+            :text="t('core.edit.runsPerDay')"
+            :hint="t('core.edit.skipRunOnceThis')"
             variant="form"
           />
         </template>
@@ -93,16 +93,16 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const timeoutFields = [
-  { key: 'RunTimeLimit', label: 'edit.runTimeoutMinutes', hint: 'edit.treatRunAsTimed' },
-  { key: 'RunTimesLimit', label: 'edit.retryLimit2', hint: 'edit.ifRunStillUnfinished' },
+  { key: 'RunTimeLimit', label: 'core.edit.runTimeoutMinutes', hint: 'core.edit.treatRunAsTimed' },
+  { key: 'RunTimesLimit', label: 'core.edit.retryLimit2', hint: 'core.edit.ifRunStillUnfinished' },
 ] as const
 const accountSwitchOptions = computed(() => [
-  { label: t('edit.accountSwitchMethodMas'), value: 'MAS' },
-  { label: t('edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
+  { label: t('core.edit.accountSwitchMethodMas'), value: 'MAS' },
+  { label: t('core.edit.accountSwitchMethodMaaend'), value: 'MAAEND' },
 ])
 const transitionOptions = computed(() => [
-  { label: t('edit.restartMaaendOnly'), value: 'NoAction' },
-  { label: t('edit.restartEndfield'), value: 'ExitGame' },
+  { label: t('core.edit.restartMaaendOnly'), value: 'NoAction' },
+  { label: t('core.edit.restartEndfield'), value: 'ExitGame' },
 ])
 </script>
 
