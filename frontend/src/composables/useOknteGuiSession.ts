@@ -71,7 +71,7 @@ export function useOknteGuiSession() {
     try {
       const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.oknteSessionStopFailed'))
+        throw new Error(response.message || t('core.edit.oknteSessionStopFailed'))
       }
       clearSession()
       return true
@@ -97,7 +97,7 @@ export function useOknteGuiSession() {
         { source: 'script_config' }
       )
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.oknteSessionStartFailed'))
+        throw new Error(response.message || t('core.edit.oknteSessionStartFailed'))
       }
 
       showOknteConfigMask.value = !viewOnly
@@ -107,14 +107,14 @@ export function useOknteGuiSession() {
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           if (wsMessage.data.level !== 'error') return
 
-          message.error(t('edit.oknteSessionFailed', { p0: wsMessage.data.message }))
+          message.error(t('core.edit.oknteSessionFailed', { p0: wsMessage.data.message }))
           void stopSession()
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
         }),
       ]
-      message.success(viewOnly ? t('edit.oknteViewOpened') : t('edit.oknteSessionOpened'))
+      message.success(viewOnly ? t('core.edit.oknteViewOpened') : t('core.edit.oknteSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         oknteConfigTimeout = window.setTimeout(
@@ -124,12 +124,12 @@ export function useOknteGuiSession() {
         return
       }
       oknteConfigWarningTimeout = window.setTimeout(() => {
-        message.warning(t('edit.oknteSessionTimeoutWarn'))
+        message.warning(t('core.edit.oknteSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
       oknteConfigTimeout = window.setTimeout(() => void saveSession('timeout'), SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.oknteSessionStartFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.oknteSessionStartFailed'))
       clearSession()
     } finally {
       oknteConfigLoading.value = false
@@ -139,9 +139,9 @@ export function useOknteGuiSession() {
   const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!oknteWebsocketId.value) return
     if (await stopSession(true, action)) {
-      message.success(t('edit.okNteConfigurationThis'))
+      message.success(t('core.edit.okNteConfigurationThis'))
     } else {
-      message.error(t('edit.couldNotSaveOk'))
+      message.error(t('core.edit.couldNotSaveOk'))
     }
   }
 

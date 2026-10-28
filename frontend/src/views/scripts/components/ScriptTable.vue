@@ -32,7 +32,7 @@
               class="users-load-error"
               type="error"
               show-icon
-              :message="t('apiErrors.userLoadRetry', { reason: script.usersLoadError })"
+              :message="t('core.apiErrors.userLoadRetry', { reason: script.usersLoadError })"
             >
               <template #action>
                 <a-button
@@ -40,7 +40,7 @@
                   :loading="props.retryingUsers?.has(script.id)"
                   @click="emit('retryUsers', script.id)"
                 >
-                  {{ t('apiErrors.retry') }}
+                  {{ t('core.apiErrors.retry') }}
                 </a-button>
               </template>
             </a-alert>
@@ -195,11 +195,11 @@ const handleDelete = (script: ScriptListItem) => {
 
 const handleDeleteConfirm = (script: ScriptListItem) => {
   Modal.confirm({
-    title: t('comp.deleteThisScript'),
-    content: t('comp.thisCannotBeUndone2'),
-    okText: t('comp.ok'),
+    title: t('core.comp.deleteThisScript'),
+    content: t('core.comp.thisCannotBeUndone2'),
+    okText: t('core.comp.ok'),
     okType: 'danger',
-    cancelText: t('comp.cancel'),
+    cancelText: t('core.comp.cancel'),
     onOk: () => handleDelete(script),
   })
 }

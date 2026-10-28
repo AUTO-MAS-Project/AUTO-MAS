@@ -71,7 +71,7 @@ export function useBettergiGuiSession() {
     try {
       const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.bettergiStopFailed'))
+        throw new Error(response.message || t('core.edit.bettergiStopFailed'))
       }
       clearSession()
       return true
@@ -98,7 +98,7 @@ export function useBettergiGuiSession() {
         { source: 'script_config' }
       )
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.bettergiStartFailed'))
+        throw new Error(response.message || t('core.edit.bettergiStartFailed'))
       }
 
       if (viewOnly) {
@@ -111,14 +111,16 @@ export function useBettergiGuiSession() {
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           if (wsMessage.data.level !== 'error') return
 
-          message.error(t('edit.bettergiSessionFailed', { p0: wsMessage.data.message }))
+          message.error(t('core.edit.bettergiSessionFailed', { p0: wsMessage.data.message }))
           void stopSession()
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
         }),
       ]
-      message.success(viewOnly ? t('edit.bettergiViewOpened') : t('edit.bettergiSessionOpened'))
+      message.success(
+        viewOnly ? t('core.edit.bettergiViewOpened') : t('core.edit.bettergiSessionOpened')
+      )
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         bettergiConfigTimeout = window.setTimeout(
@@ -128,7 +130,7 @@ export function useBettergiGuiSession() {
         return
       }
       bettergiConfigWarningTimeout = window.setTimeout(() => {
-        message.warning(t('edit.bettergiSessionTimeoutWarn'))
+        message.warning(t('core.edit.bettergiSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
       bettergiConfigTimeout = window.setTimeout(
         () => void saveSession('timeout'),
@@ -140,8 +142,8 @@ export function useBettergiGuiSession() {
         e instanceof Error
           ? e.message
           : viewOnly
-            ? t('edit.bettergiViewStartFailed')
-            : t('edit.bettergiStartFailed')
+            ? t('core.edit.bettergiViewStartFailed')
+            : t('core.edit.bettergiStartFailed')
       )
       clearSession()
     } finally {
@@ -157,9 +159,9 @@ export function useBettergiGuiSession() {
       return
     }
     if (await stopSession(true, action)) {
-      message.success(t('edit.bettergiSettingsSaved'))
+      message.success(t('core.edit.bettergiSettingsSaved'))
     } else {
-      message.error(t('edit.bettergiSettingsSaveFailed'))
+      message.error(t('core.edit.bettergiSettingsSaveFailed'))
     }
   }
 

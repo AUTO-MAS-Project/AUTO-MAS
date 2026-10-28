@@ -1,25 +1,29 @@
 <template>
   <div class="scheduler-panel log-panel">
     <div class="scheduler-panel-header">
-      <h3>{{ t('scheduler.log.title') }}</h3>
+      <h3>{{ t('core.scheduler.log.title') }}</h3>
       <div class="log-controls">
         <a-space size="small">
           <a-select
             v-model:value="logThemeMode"
             size="small"
             class="log-theme-select"
-            :aria-label="t('scheduler.log.theme')"
+            :aria-label="t('core.scheduler.log.theme')"
           >
-            <a-select-option value="theme">{{ t('scheduler.log.followTheme') }}</a-select-option>
-            <a-select-option value="dark">{{ t('comp.darkTheme') }}</a-select-option>
-            <a-select-option value="light">{{ t('comp.lightTheme') }}</a-select-option>
+            <a-select-option value="theme">{{
+              t('core.scheduler.log.followTheme')
+            }}</a-select-option>
+            <a-select-option value="dark">{{ t('core.comp.darkTheme') }}</a-select-option>
+            <a-select-option value="light">{{ t('core.comp.lightTheme') }}</a-select-option>
           </a-select>
           <a-button
             size="small"
             :type="logMode === 'follow' ? 'primary' : 'default'"
             @click="toggleLogMode"
           >
-            {{ logMode === 'follow' ? t('scheduler.log.follow') : t('scheduler.log.browse') }}
+            {{
+              logMode === 'follow' ? t('core.scheduler.log.follow') : t('core.scheduler.log.browse')
+            }}
           </a-button>
         </a-space>
       </div>
@@ -87,7 +91,7 @@ const logThemeMode = useLocalStorage<LogThemeMode>('auto-mas.scheduler.log-theme
   },
   onError: error => {
     logger.error(`保存日志主题失败: ${String(error)}`)
-    message.error(t('scheduler.log.saveThemeFailed'))
+    message.error(t('core.scheduler.log.saveThemeFailed'))
   },
 })
 const logIsDark = computed(() =>

@@ -22,7 +22,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
 | `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
 | `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
-| `initialization_finished` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
+| `initialization_finished` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |

@@ -5,7 +5,7 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     script-edit-segment="maaend"
-    :current-label="t(isEdit ? 'edit.maaEndEditAccount' : 'edit.maaEndAddAccount')"
+    :current-label="t(isEdit ? 'core.edit.maaEndEditAccount' : 'core.edit.maaEndAddAccount')"
     :user-id="userId"
     button-size="middle"
     actions-size="middle"
@@ -15,10 +15,14 @@
       <div class="account-heading">
         <img :src="maaEndIcon" alt="" class="account-icon" />
         <div class="account-title">
-          <h1>{{ userName || t(isEdit ? 'edit.maaEndEditAccount' : 'edit.maaEndAddAccount') }}</h1>
+          <h1>
+            {{
+              userName || t(isEdit ? 'core.edit.maaEndEditAccount' : 'core.edit.maaEndAddAccount')
+            }}
+          </h1>
           <span>
             <LoadingOutlined v-if="saving" />
-            {{ t(saving ? 'edit.maaEndSaving' : 'edit.maaEndAutoSaveHint') }}
+            {{ t(saving ? 'core.edit.maaEndSaving' : 'core.edit.maaEndAutoSaveHint') }}
           </span>
         </div>
       </div>

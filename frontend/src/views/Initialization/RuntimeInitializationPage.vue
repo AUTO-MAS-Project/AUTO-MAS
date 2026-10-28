@@ -1,9 +1,17 @@
 <template>
   <div class="launch-page">
     <div class="launch-wash" aria-hidden="true"></div>
+    <div v-if="!resources.requested || resources.ready" class="launch-language">
+      <BootstrapLanguageSelect />
+    </div>
 
+    <I18nResourceGate
+      v-if="resources.requested && !resources.ready"
+      @retry="handleLocalEnterApp(true)"
+      @recover="recoverInitialization"
+    />
     <RuntimeBackendStartPanel
-      v-if="isBackendStep"
+      v-else-if="isBackendStep"
       :retrying="flowKind === 'startup'"
       :runtime-mode="runtimeMode"
       :show-skip-button="currentStep.canSkip"
@@ -29,7 +37,7 @@
       :progress="statusProgress"
       :details="statusDetails"
       :steps="launchSteps"
-      :action-label="t('launch.viewLog')"
+      :action-label="t('bootstrap.launch.viewLog')"
       @action="openLaunchLogWindow('初始化流程')"
     />
   </div>
@@ -42,10 +50,19 @@ import { openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './components/LaunchFailure.vue'
 import RuntimeBackendStartPanel from './components/RuntimeBackendStartPanel.vue'
 import { useInitializationFlow } from './useInitializationFlow'
+import BootstrapLanguageSelect from '@/components/BootstrapLanguageSelect.vue'
+import I18nResourceGate from '@/components/I18nResourceGate.vue'
+import { useBackendI18nStore } from '@/stores/backendI18n'
+import { cancelAppEntry } from '@/utils/appEntry'
 
 defineOptions({ name: 'RuntimeInitializationPage' })
 
 const { t } = useI18n()
+const resources = useBackendI18nStore()
+const recoverInitialization = () => {
+  cancelAppEntry()
+  resources.cancelEntry()
+}
 const {
   currentStep,
   failureProps,
@@ -58,6 +75,7 @@ const {
   handleMirrorSelect,
   handleRuntimeUpdated,
   handleSkip,
+  handleLocalEnterApp,
   hasFailed,
   isBackendStep,
   launchSteps,
@@ -78,6 +96,13 @@ const {
   min-height: 100%;
   background: var(--ant-color-bg-layout);
   color: var(--ant-color-text);
+}
+
+.launch-language {
+  position: absolute;
+  top: 16px;
+  right: 24px;
+  z-index: 1;
 }
 
 /* 与标题栏 logo 的主题色晕开同一套语言，给空屏一点纵深。 */

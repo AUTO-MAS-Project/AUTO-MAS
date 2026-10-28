@@ -19,7 +19,7 @@ const { t } = useI18n()
     @click.stop="emit('resume')"
   >
     <PauseCircleOutlined />
-    <span>{{ t('home.satelliteEffectsPaused') }}</span>
+    <span>{{ t('core.home.satelliteEffectsPaused') }}</span>
   </button>
 </template>
 

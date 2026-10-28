@@ -21,7 +21,7 @@ const isFeaturePage = computed(() => route.name !== 'Mystery')
 const pageTitle = computed(() =>
   store.unlocked && typeof route.meta.mysteryTitleKey === 'string'
     ? t(route.meta.mysteryTitleKey)
-    : t('mystery.entry')
+    : t('core.mystery.entry')
 )
 
 const back = () => {
@@ -57,13 +57,13 @@ const savePersonalMss = async (enabled: boolean) => {
       data: { Function: { IfPersonalMss: enabled } },
     })
     if (response.code !== 200) {
-      message.error(t('mystery.personalMss.failed'))
+      message.error(t('core.mystery.personalMss.failed'))
       return
     }
     personalMssEnabled.value = enabled
-    message.success(t(enabled ? 'mystery.personalMss.on' : 'mystery.personalMss.off'))
+    message.success(t(enabled ? 'core.mystery.personalMss.on' : 'core.mystery.personalMss.off'))
   } catch {
-    message.error(t('mystery.personalMss.failed'))
+    message.error(t('core.mystery.personalMss.failed'))
   } finally {
     personalMssSaving.value = false
   }
@@ -95,13 +95,13 @@ const unlock = async () => {
   error.value = ''
   try {
     if (!(await store.unlock(form.accessCode))) {
-      error.value = t('mystery.accessCodeInvalid')
+      error.value = t('core.mystery.accessCodeInvalid')
       return
     }
     form.accessCode = ''
   } catch (cause) {
     logger.error(`解锁失败: ${cause instanceof Error ? cause.message : String(cause)}`)
-    error.value = t('mystery.saveFailed')
+    error.value = t('core.mystery.saveFailed')
   }
 }
 
@@ -112,7 +112,7 @@ const lock = async () => {
     error.value = ''
   } catch (cause) {
     logger.error(`重新锁定失败: ${cause instanceof Error ? cause.message : String(cause)}`)
-    message.error(t('mystery.saveFailed'))
+    message.error(t('core.mystery.saveFailed'))
   }
 }
 </script>
@@ -123,37 +123,41 @@ const lock = async () => {
       <div class="mystery-heading">
         <a-button @click="back">
           <template #icon><ArrowLeftOutlined /></template>
-          {{ t(isFeaturePage ? 'mystery.backToOverview' : 'mystery.back') }}
+          {{ t(isFeaturePage ? 'core.mystery.backToOverview' : 'core.mystery.back') }}
         </a-button>
         <h1>{{ pageTitle }}</h1>
       </div>
       <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
         <template #icon><LockOutlined /></template>
-        {{ t('mystery.lock') }}
+        {{ t('core.mystery.lock') }}
       </a-button>
     </div>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
-      <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
+      <a-result v-if="loadFailed" status="error" :title="t('core.mystery.loadFailed')">
         <template #extra>
-          <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
+          <a-button type="primary" @click="load">{{ t('core.mystery.retry') }}</a-button>
         </template>
       </a-result>
       <div v-else-if="!store.initialized" class="mystery-loading">
         <a-spin />
       </div>
-      <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
+      <a-card
+        v-else-if="!store.unlocked"
+        :title="t('core.mystery.unlockTitle')"
+        class="mystery-unlock"
+      >
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"
-            :rules="[{ required: true, message: t('mystery.accessCodeRequired') }]"
+            :rules="[{ required: true, message: t('core.mystery.accessCodeRequired') }]"
             :validate-status="error ? 'error' : undefined"
             :help="error || undefined"
           >
             <a-input-password
               v-model:value="form.accessCode"
-              :aria-label="t('mystery.accessCode')"
-              :placeholder="t('mystery.accessCodePlaceholder')"
+              :aria-label="t('core.mystery.accessCode')"
+              :placeholder="t('core.mystery.accessCodePlaceholder')"
               :disabled="store.saving"
               size="large"
               autocomplete="off"
@@ -161,7 +165,7 @@ const lock = async () => {
             />
           </a-form-item>
           <a-button type="primary" html-type="submit" size="large" block :loading="store.saving">
-            {{ t('mystery.unlock') }}
+            {{ t('core.mystery.unlock') }}
           </a-button>
         </a-form>
       </a-card>
@@ -174,8 +178,8 @@ const lock = async () => {
         <a-col :xs="24" :sm="12" :lg="8">
           <a-card
             hoverable
-            :title="t('mystery.tokens.title')"
-            :aria-label="t('mystery.tokens.title')"
+            :title="t('core.mystery.tokens.title')"
+            :aria-label="t('core.mystery.tokens.title')"
             role="button"
             tabindex="0"
             @click="openTokens"
@@ -183,20 +187,20 @@ const lock = async () => {
             @keydown.space.prevent="openTokens"
           >
             <template #extra><ArrowRightOutlined /></template>
-            {{ t('mystery.tokens.entryDescription') }}
+            {{ t('core.mystery.tokens.entryDescription') }}
           </a-card>
         </a-col>
         <a-col :xs="24" :sm="12" :lg="8">
           <a-card
-            :title="t('mystery.personalMss.title')"
-            :aria-label="t('mystery.personalMss.title')"
+            :title="t('core.mystery.personalMss.title')"
+            :aria-label="t('core.mystery.personalMss.title')"
           >
-            {{ t('mystery.personalMss.hint') }}
+            {{ t('core.mystery.personalMss.hint') }}
             <div class="personal-mss-switch">
               <a-switch
                 :checked="personalMssEnabled"
                 :loading="personalMssSaving"
-                :aria-label="t('mystery.personalMss.title')"
+                :aria-label="t('core.mystery.personalMss.title')"
                 @change="handlePersonalMssToggle"
               />
             </div>

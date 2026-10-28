@@ -118,14 +118,14 @@ export const useHomeQuickStart = () => {
 
       schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
-        message.warning(t('home.quickStart.listUnavailable'))
+        message.warning(t('core.home.quickStart.listUnavailable'))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取首页任务列表失败: ${errorMsg}`)
       schedulerTasksUnavailable.value = true
       if (!options?.quiet) {
-        message.warning(t('home.quickStart.listUnavailable'))
+        message.warning(t('core.home.quickStart.listUnavailable'))
       }
     } finally {
       schedulerTasksLoading.value = false
@@ -143,7 +143,7 @@ export const useHomeQuickStart = () => {
 
     const taskIds = retainSelectedTaskIds(selectedHomeTaskIds.value, schedulerTaskOptions.value)
     if (!taskIds.length) {
-      message.error(t('home.quickStart.selectTask'))
+      message.error(t('core.home.quickStart.selectTask'))
       return
     }
 
@@ -152,8 +152,8 @@ export const useHomeQuickStart = () => {
       const outcome = await launchHomeTasks({
         taskIds,
         options: schedulerTaskOptions.value,
-        fallbackLabel: t('home.quickStart.fallbackLabel'),
-        failureReason: t('home.quickStart.startFailed'),
+        fallbackLabel: t('core.home.quickStart.fallbackLabel'),
+        failureReason: t('core.home.quickStart.startFailed'),
         startTask: taskId =>
           startTask(
             {
@@ -179,7 +179,7 @@ export const useHomeQuickStart = () => {
 
       if (outcome.started.length) {
         message.success(
-          t('home.quickStart.startedCount', {
+          t('core.home.quickStart.startedCount', {
             p0: outcome.started.length,
             p1: taskIds.length,
           })
@@ -189,7 +189,7 @@ export const useHomeQuickStart = () => {
         const failureSummary = outcome.failed
           .map(failure => `${failure.taskLabel}: ${failure.reason}`)
           .join('; ')
-        message.error(t('home.quickStart.startFailedItems', { p0: failureSummary }))
+        message.error(t('core.home.quickStart.startFailedItems', { p0: failureSummary }))
       }
       if (outcome.started.length) {
         await navigateTo('/scheduler')
@@ -198,7 +198,7 @@ export const useHomeQuickStart = () => {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`首页开始任务失败: ${errorMsg}`)
-      message.error(t('home.quickStart.startError'))
+      message.error(t('core.home.quickStart.startError'))
     } finally {
       startingHomeTask.value = false
     }

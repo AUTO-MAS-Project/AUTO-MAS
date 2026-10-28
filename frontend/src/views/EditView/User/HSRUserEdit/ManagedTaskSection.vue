@@ -1,10 +1,10 @@
 <template>
   <div class="managed-task-section">
     <div class="section-header section-header--compact">
-      <h3>{{ t('edit.hsrTaskConfig') }}</h3>
+      <h3>{{ t('core.edit.hsrTaskConfig') }}</h3>
       <!-- 共享来源编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
-      <a-tooltip v-if="shared" :title="t('edit.hsrSharedPlanHint')">
-        <a-tag color="blue" class="shared-tag">{{ t('edit.hsrSharedPlanTag') }}</a-tag>
+      <a-tooltip v-if="shared" :title="t('core.edit.hsrSharedPlanHint')">
+        <a-tag color="blue" class="shared-tag">{{ t('core.edit.hsrSharedPlanTag') }}</a-tag>
       </a-tooltip>
     </div>
     <!-- 快照诊断合成一条：区块内最多一条提示 -->
@@ -17,7 +17,10 @@
     />
 
     <a-spin :spinning="loading">
-      <a-empty v-if="!snapshot && !loading" :description="t('edit.nativeTaskConfigurationHas')" />
+      <a-empty
+        v-if="!snapshot && !loading"
+        :description="t('core.edit.nativeTaskConfigurationHas')"
+      />
       <!-- 与 MFW 任务队列同一种布局：左边模块列表、右边所选模块的设置，两栏定高各自滚动 -->
       <a-row v-else-if="snapshot" :gutter="24" class="module-layout">
         <a-col :xs="24" :lg="9" class="module-list-column">
@@ -41,7 +44,9 @@
                   <span class="module-name">{{ task.name }}</span>
                   <a-tag class="phase-tag">{{ phaseLabel(task.phase) }}</a-tag>
                   <a-tag v-if="droppedOverridesOf(task).length" color="warning">
-                    {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
+                    {{
+                      t('core.edit.invalidOverridesCount', { n: droppedOverridesOf(task).length })
+                    }}
                   </a-tag>
                 </div>
                 <div class="module-summary" :title="taskSummary(task)">{{ taskSummary(task) }}</div>
@@ -180,13 +185,14 @@ const engineOptions = computed(() =>
     : []
 )
 
-const phaseLabel = (phase: string) => (phase === 'weekly' ? t('edit.weekly') : t('edit.daily'))
+const phaseLabel = (phase: string) =>
+  phase === 'weekly' ? t('core.edit.weekly') : t('core.edit.daily')
 const engineLabel = (engine?: HSREngine) =>
   engine === 'M7A'
-    ? t('edit.directEngineM7a')
+    ? t('core.edit.directEngineM7a')
     : engine === 'SRA'
       ? 'SRA'
-      : t('edit.hsrEngineUnavailable')
+      : t('core.edit.hsrEngineUnavailable')
 const engineColor = (engine?: HSREngine) =>
   engine === 'M7A' ? 'purple' : engine === 'SRA' ? 'blue' : 'default'
 
@@ -195,17 +201,17 @@ const taskSummary = (task: HSRManagedTask) => {
   if (pageSummary) return pageSummary
   const engine = mappedEngine(task)
   const form = formOf(task, engine)
-  if (!form) return t('edit.hsrNativeConfigNotLoaded')
+  if (!form) return t('core.edit.hsrNativeConfigNotLoaded')
   const summary = summarizeOverriddenFields(form.fields, {
-    on: t('edit.hsrValueOn'),
-    off: t('edit.hsrValueOff'),
-    empty: t('edit.hsrValueEmpty'),
+    on: t('core.edit.hsrValueOn'),
+    off: t('core.edit.hsrValueOff'),
+    empty: t('core.edit.hsrValueEmpty'),
   })
-  if (!summary) return t('edit.hsrSummaryNative', { engine: engineLabel(engine) })
+  if (!summary) return t('core.edit.hsrSummaryNative', { engine: engineLabel(engine) })
   const text = summary.items
-    .map(item => t('edit.hsrSummaryItem', { label: item.label, value: item.value }))
+    .map(item => t('core.edit.hsrSummaryItem', { label: item.label, value: item.value }))
     .join(' · ')
-  return summary.rest ? t('edit.hsrSummaryMore', { text, n: summary.rest }) : text
+  return summary.rest ? t('core.edit.hsrSummaryMore', { text, n: summary.rest }) : text
 }
 
 const handleEngineChange = (engine: HSREngine) => {

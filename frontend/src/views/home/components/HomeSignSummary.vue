@@ -31,22 +31,22 @@ watch(
 )
 
 const renderUser = (user: GameSignUser) => {
-  const name = escapeSignMarkdown(user.name || t('home.activityNotes.user'))
+  const name = escapeSignMarkdown(user.name || t('core.home.activityNotes.user'))
   const entries = user.entries.map(entry => {
     // 中文状态是后端合同值，翻译只用于最终展示。
     const status =
       entry.status === '成功'
-        ? t('home.activityNotes.signed')
+        ? t('core.home.activityNotes.signed')
         : entry.status === '已签到'
-          ? t('home.activityNotes.alreadySigned')
+          ? t('core.home.activityNotes.alreadySigned')
           : entry.status === '失败'
-            ? t('home.activityNotes.failed')
+            ? t('core.home.activityNotes.failed')
             : entry.status
     return [status, entry.reward, entry.reason].filter(Boolean).map(escapeSignMarkdown).join(' ')
   })
   const detail = entries.length
     ? entries.join('；')
-    : escapeSignMarkdown(t('home.activityNotes.noRecord'))
+    : escapeSignMarkdown(t('core.home.activityNotes.noRecord'))
   return md.renderInline(`**${name}**：${detail}`)
 }
 </script>
@@ -56,14 +56,14 @@ const renderUser = (user: GameSignUser) => {
     <div class="sign-heading">
       <CheckCircleOutlined :class="summary.signed === summary.total ? 'is-signed' : 'is-pending'" />
       <strong>{{
-        t('home.activityNotes.sign', { signed: summary.signed, total: summary.total })
+        t('core.home.activityNotes.sign', { signed: summary.signed, total: summary.total })
       }}</strong>
       <a-button
         v-if="showRefresh"
         type="text"
         size="small"
         :loading="loading"
-        :aria-label="t('gamesign.activity.refresh')"
+        :aria-label="t('core.gamesign.activity.refresh')"
         @click="$emit('refresh')"
         ><ReloadOutlined
       /></a-button>
@@ -80,11 +80,11 @@ const renderUser = (user: GameSignUser) => {
     >
       {{
         expanded
-          ? t('home.activityNotes.collapse')
-          : t('home.activityNotes.expand', { count: hiddenCount })
+          ? t('core.home.activityNotes.collapse')
+          : t('core.home.activityNotes.expand', { count: hiddenCount })
       }}
     </a-button>
-    <span v-if="error" class="sign-error">{{ t('home.activityNotes.signFailed') }}</span>
+    <span v-if="error" class="sign-error">{{ t('core.home.activityNotes.signFailed') }}</span>
   </div>
 </template>
 

@@ -101,8 +101,8 @@ async def _koishi_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="koishi",
-        name_key="setting.notify.koishiSection",
-        desc_key="setting.notify.koishiTip",
+        name_key="core.setting.notify.koishiSection",
+        desc_key="core.setting.notify.koishiTip",
         icon="chat",
         group="builtin",
         order=60,
@@ -111,25 +111,25 @@ def register() -> NotifyChannel:
         kind="fields",
         custom_block=None,
         enable_field=("Notify", "IfKoishiSupport"),
-        summary_key="setting.notify.summary.koishi",
+        summary_key="core.setting.notify.summary.koishi",
         summary_fields=("KoishiServerAddress",),
         fields={
             SCOPE_GLOBAL: (
                 NotifyChannelField(
                     group="Notify",
                     name="KoishiServerAddress",
-                    label_key="setting.notify.koishiWs",
+                    label_key="core.setting.notify.koishiWs",
                     control="text",
-                    placeholder_key="setting.notify.koishiWsPlaceholder",
-                    tip_key="setting.notify.koishiWsTip",
+                    placeholder_key="core.setting.notify.koishiWsPlaceholder",
+                    tip_key="core.setting.notify.koishiWsTip",
                 ),
                 NotifyChannelField(
                     group="Notify",
                     name="KoishiToken",
-                    label_key="setting.notify.koishiToken",
+                    label_key="core.setting.notify.koishiToken",
                     control="password",
-                    placeholder_key="setting.notify.koishiTokenPlaceholder",
-                    tip_key="setting.notify.koishiTokenTip",
+                    placeholder_key="core.setting.notify.koishiTokenPlaceholder",
+                    tip_key="core.setting.notify.koishiTokenTip",
                 ),
             )
         },

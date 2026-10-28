@@ -92,7 +92,7 @@ export function useMaaFWEmbeddedImport({
   const selectMaaFWPath = async () => {
     try {
       if (!window.electronAPI) {
-        message.error(t('edit.filePickingUnavailableRun'))
+        message.error(t('core.edit.filePickingUnavailableRun'))
         return
       }
       const path = await window.electronAPI.selectFolder()
@@ -113,7 +113,7 @@ export function useMaaFWEmbeddedImport({
       await runPreviewOnNewRoot()
     } catch (error) {
       logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('edit.couldNotPickFolder'))
+      message.error(t('core.edit.couldNotPickFolder'))
     }
   }
 

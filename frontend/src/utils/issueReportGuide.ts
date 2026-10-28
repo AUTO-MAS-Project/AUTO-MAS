@@ -12,10 +12,10 @@ export function showIssueReportGuide(zipPath: string | undefined, fallbackName: 
   const fileName = getZipFileName(zipPath, fallbackName)
 
   Modal.info({
-    title: t('misc.sendIssueBundleMas'),
+    title: t('bootstrap.misc.sendIssueBundleMas'),
     closable: true,
-    content: t('misc.issueReportGuide', { fileName }),
-    okText: t('misc.openMasGroup'),
+    content: t('bootstrap.misc.issueReportGuide', { fileName }),
+    okText: t('bootstrap.misc.openMasGroup'),
     onOk: () => openHelpLink(MAS_QQ_GROUP_URL, 'support', 'other'),
   })
 }

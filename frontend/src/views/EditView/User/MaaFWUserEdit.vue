@@ -146,15 +146,15 @@
       :script-name="MAAFW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :user-desc="t('edit.maafwConfigRestoreUserDesc')"
-      :script-desc="t('edit.maafwConfigRestoreScriptDesc')"
+      :user-desc="t('core.edit.maafwConfigRestoreUserDesc')"
+      :script-desc="t('core.edit.maafwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
     >
       <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="s in previewSections(raw)" :key="s.name">

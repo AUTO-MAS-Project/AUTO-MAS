@@ -1834,7 +1834,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateSklandSyncFailed",
+                        messageKey="core.edit.maaCultivateSklandSyncFailed",
                     ),
                 )
             return None, True, None
@@ -1873,7 +1873,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         data=WSTaskNoticeData(
                             level="warning",
                             message=message,
-                            messageKey="edit.maaCultivateTargetsDeferred",
+                            messageKey="core.edit.maaCultivateTargetsDeferred",
                         ),
                     )
             if not targets:
@@ -1910,7 +1910,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivatePreparationUnavailable",
+                        messageKey="core.edit.maaCultivatePreparationUnavailable",
                     ),
                 )
             return None, True, None
@@ -1990,7 +1990,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateAutoRaiseUnsupported",
+                        messageKey="core.edit.maaCultivateAutoRaiseUnsupported",
                     ),
                 )
             return None
@@ -2014,7 +2014,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     data=WSTaskNoticeData(
                         level="warning",
                         message=message,
-                        messageKey="edit.maaCultivateAutoRaiseDataUnavailable",
+                        messageKey="core.edit.maaCultivateAutoRaiseDataUnavailable",
                     ),
                 )
             return None

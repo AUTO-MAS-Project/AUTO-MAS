@@ -48,6 +48,19 @@
 
     <a-layout style="flex: 1; min-width: 0; background: transparent">
       <a-layout-content class="content-area">
+        <a-alert
+          v-if="languageResources.error"
+          type="warning"
+          show-icon
+          :message="t('bootstrap.i18n.failed')"
+          :description="languageResources.error"
+        >
+          <template #action>
+            <a-button :loading="languageResources.loading" @click="languageResources.refresh()">
+              {{ t('bootstrap.i18n.retry') }}
+            </a-button>
+          </template>
+        </a-alert>
         <router-view v-slot="{ Component, route: currentRoute }">
           <keep-alive :include="['SchedulerPage']">
             <component :is="Component" :key="currentRoute.path" />
@@ -82,8 +95,10 @@ import { useRouteLock } from '../composables/useRouteLock.ts'
 import type { MenuProps } from 'ant-design-vue'
 import type { AppearanceMenuIconKey } from '@/types/appearance'
 import { createAppearanceMenuIcon } from './appearanceMenuIcon'
+import { useBackendI18nStore } from '@/stores/backendI18n'
 
 const { t } = useI18n()
+const languageResources = useBackendI18nStore()
 
 const SIDER_WIDTH = 160
 
@@ -113,28 +128,32 @@ const icon =
 const isDevelopment = import.meta.env.DEV && isDev
 
 const mainMenuItems = computed(() => [
-  { key: '/home', label: t('comp.home'), icon: icon('home', HomeOutlined) },
-  { key: '/scripts', label: t('comp.scripts'), icon: icon('scripts', FileTextOutlined) },
-  { key: '/plans', label: t('comp.plans'), icon: icon('plans', CalendarOutlined) },
-  { key: '/emulators', label: t('comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
-  { key: '/queue', label: t('comp.queue'), icon: icon('queue', UnorderedListOutlined) },
-  { key: '/scheduler', label: t('comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
+  { key: '/home', label: t('core.comp.home'), icon: icon('home', HomeOutlined) },
+  { key: '/scripts', label: t('core.comp.scripts'), icon: icon('scripts', FileTextOutlined) },
+  { key: '/plans', label: t('core.comp.plans'), icon: icon('plans', CalendarOutlined) },
+  { key: '/emulators', label: t('core.comp.emulators'), icon: icon('emulators', DatabaseOutlined) },
+  { key: '/queue', label: t('core.comp.queue'), icon: icon('queue', UnorderedListOutlined) },
+  { key: '/scheduler', label: t('core.comp.scheduler'), icon: icon('scheduler', ControlOutlined) },
 ])
 
 // 开发环境专用菜单项
 const devMenuItems = computed(() => [
-  { key: '/TestRouter', label: t('comp.testRoute'), icon: icon('testRouter', SettingOutlined) },
-  { key: '/OCRdev', label: t('comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
+  {
+    key: '/TestRouter',
+    label: t('core.comp.testRoute'),
+    icon: icon('testRouter', SettingOutlined),
+  },
+  { key: '/OCRdev', label: t('core.comp.ocrTest'), icon: icon('ocrDev', SettingOutlined) },
   {
     key: '/OverlayMaskDev',
-    label: t('comp.overlayEasterEggTest'),
+    label: t('core.comp.overlayEasterEggTest'),
     icon: icon('overlayMaskDev', SettingOutlined),
   },
   ...(isDevelopment
     ? [
         {
           key: '/update-download-dev',
-          label: t('comp.updateDownloadTest'),
+          label: t('core.comp.updateDownloadTest'),
           icon: icon('updateDownloadDev', BugOutlined),
         },
       ]
@@ -142,10 +161,10 @@ const devMenuItems = computed(() => [
 ])
 
 const bottomMenuItems = computed(() => [
-  { key: '/gamesign', label: t('comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
-  { key: '/history', label: t('comp.history'), icon: icon('history', HistoryOutlined) },
-  { key: '/theme-store', label: t('comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
-  { key: '/settings', label: t('comp.settings'), icon: icon('settings', SettingOutlined) },
+  { key: '/gamesign', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
+  { key: '/history', label: t('core.comp.history'), icon: icon('history', HistoryOutlined) },
+  { key: '/theme-store', label: t('core.comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
+  { key: '/settings', label: t('core.comp.settings'), icon: icon('settings', SettingOutlined) },
 ])
 
 type MenuEntry = NonNullable<MenuProps['items']>[number]
@@ -207,7 +226,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
       path: '/update-download-dev',
       name: 'UpdateDownloadDev',
       component: () => import('@/views/UpdateDownloadDev.vue'),
-      meta: { title: t('comp.updateDownloadTest'), skipGuard: true },
+      meta: { title: t('core.comp.updateDownloadTest'), skipGuard: true },
     })
   }
 

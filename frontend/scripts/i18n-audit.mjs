@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// i18n 词表审计。零新依赖：词表用 typescript 求值，模板用 vue/compiler-sfc 解析。
+// i18n 词表审计。读取前端初始化 JSON 与后端业务 JSON，模板用 vue/compiler-sfc 解析。
 //
 //   yarn audit:i18n                   人读报告
 //   yarn audit:i18n --verbose         列出每一条明细
@@ -15,12 +15,13 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
 import { parse as parseSfc } from 'vue/compiler-sfc'
 
 const FRONTEND = dirname(dirname(fileURLToPath(import.meta.url)))
 const SRC_DIR = join(FRONTEND, 'src')
-const LOCALES_DIR = join(SRC_DIR, 'i18n', 'locales')
+const BOOTSTRAP_DIR = join(SRC_DIR, 'i18n', 'bootstrap')
+const RUNTIME_DIR = join(FRONTEND, '..', 'res', 'i18n')
+const RUNTIME_FILES = { 'zh-CN': 'zh_CN', 'en-US': 'en', 'ja-JP': 'ja' }
 const BACKEND_DIR = join(FRONTEND, '..', 'app')
 const SOURCE_LOCALE = 'zh-CN'
 const TARGET_LOCALES = ['en-US', 'ja-JP']
@@ -57,6 +58,12 @@ const HARDCODED_ALLOWLIST = [
   },
 ]
 
+// 独立迁移要求逐键保留 dev 原译文；此旧活动序号文案暂未消费，留待单独清理评估。
+// 保留项单独展示，不将它伪装成已有源码引用，也不放宽其他死词条的检查。
+const RETAINED_UNUSED_KEYS = new Map([
+  ['core.eventDepotPreview.legacyIndex', '无损迁移保留的旧活动优先序号译文'],
+])
+
 // 汉字、假名、谚文；不含全角标点，避免“、。”“「」”单独成条
 const CJK = /[\u3005\u3007\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
 
@@ -68,14 +75,20 @@ const numberArg = (name, fallback) => {
 }
 
 const loadLocale = async locale => {
-  const source = readFileSync(join(LOCALES_DIR, locale + '.ts'), 'utf8')
-  const js = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText
-  // 词表文件必须能单独求值；一旦引入 import，这里会先炸而不是给出错的结果
-  if (/^\s*import\s/m.test(js)) throw new Error(locale + '.ts 引入了其它模块，审计脚本无法直接求值')
-  const url = 'data:text/javascript;base64,' + Buffer.from(js).toString('base64')
-  return (await import(url)).default
+  const messages = {
+    bootstrap: JSON.parse(readFileSync(join(BOOTSTRAP_DIR, locale + '.json'), 'utf8')),
+    core: {},
+  }
+  const flat = JSON.parse(readFileSync(join(RUNTIME_DIR, RUNTIME_FILES[locale] + '.json'), 'utf8'))
+  for (const [key, value] of Object.entries(flat)) {
+    const parts = key.split('.')
+    if (parts.shift() !== 'core' || typeof value !== 'string')
+      throw new Error(`Invalid resource: ${key}`)
+    let node = messages.core
+    for (const part of parts.slice(0, -1)) node = node[part] ??= {}
+    node[parts.at(-1)] = value
+  }
+  return messages
 }
 
 const flatten = (node, prefix = '', out = new Map()) => {
@@ -189,7 +202,14 @@ const audit = async () => {
     key => namespaces.has(key.split('.')[0]) && !sourceKeys.has(key)
   )
 
-  const unused = [...sourceKeys].filter(key => !literalKeys.has(key) && !covered(key))
+  for (const key of RETAINED_UNUSED_KEYS.keys()) {
+    if (!sourceKeys.has(key)) throw new Error(`词条已移除，请同步清理保留记录：${key}`)
+  }
+  const unreferenced = [...sourceKeys].filter(key => !literalKeys.has(key) && !covered(key))
+  const unused = unreferenced.filter(key => !RETAINED_UNUSED_KEYS.has(key))
+  const retainedUnused = unreferenced
+    .filter(key => RETAINED_UNUSED_KEYS.has(key))
+    .map(key => ({ key, reason: RETAINED_UNUSED_KEYS.get(key) }))
   const looseUnused = [...sourceKeys].filter(
     key => literalKeys.has(key) && !calledKeys.has(key) && !covered(key)
   )
@@ -253,6 +273,7 @@ const audit = async () => {
     placeholders,
     unknownSourceKeys,
     unused,
+    retainedUnused,
     looseUnused,
     hardcoded: reportable,
     hardcodedDevOnly: hardcoded.filter(item => item.devOnly).length,
@@ -347,6 +368,9 @@ const report = result => {
     )
   }
   if (verbose) for (const key of result.unused) lines.push('    ' + key)
+  for (const { key, reason } of result.retainedUnused) {
+    lines.push(`  明确保留：${key}（${reason}）`)
+  }
   lines.push(
     '  疑似死词条 ' +
       result.looseUnused.length +

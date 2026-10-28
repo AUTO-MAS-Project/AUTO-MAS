@@ -71,7 +71,7 @@ export function useZzzodGuiSession() {
     try {
       const response = await stopNativeConfig(taskId, action)
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.zzzodStopFailed'))
+        throw new Error(response.message || t('core.edit.zzzodStopFailed'))
       }
       clearSession()
       return true
@@ -102,7 +102,7 @@ export function useZzzodGuiSession() {
         { source: 'script_config' }
       )
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.zzzodStartFailed'))
+        throw new Error(response.message || t('core.edit.zzzodStartFailed'))
       }
 
       showZzzodConfigMask.value = !viewOnly
@@ -112,14 +112,14 @@ export function useZzzodGuiSession() {
         subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
           if (wsMessage.data.level !== 'error') return
 
-          message.error(t('edit.zzzodSessionFailed', { p0: wsMessage.data.message }))
+          message.error(t('core.edit.zzzodSessionFailed', { p0: wsMessage.data.message }))
           void stopSession()
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           clearSession()
         }),
       ]
-      message.success(viewOnly ? t('edit.zzzodViewOpened') : t('edit.zzzodSessionOpened'))
+      message.success(viewOnly ? t('core.edit.zzzodViewOpened') : t('core.edit.zzzodSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         zzzodConfigTimeout = window.setTimeout(
@@ -129,12 +129,12 @@ export function useZzzodGuiSession() {
         return
       }
       zzzodConfigWarningTimeout = window.setTimeout(() => {
-        message.warning(t('edit.zzzodSessionTimeoutWarn'))
+        message.warning(t('core.edit.zzzodSessionTimeoutWarn'))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
       zzzodConfigTimeout = window.setTimeout(() => void saveSession('timeout'), SESSION_TIMEOUT_MS)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.zzzodStartFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.zzzodStartFailed'))
       clearSession()
     } finally {
       zzzodConfigLoading.value = false
@@ -144,9 +144,9 @@ export function useZzzodGuiSession() {
   const saveSession = async (action: 'save' | 'timeout' = 'save') => {
     if (!zzzodWebsocketId.value) return
     if (await stopSession(true, action)) {
-      message.success(t('edit.zzzodSettingsSaved'))
+      message.success(t('core.edit.zzzodSettingsSaved'))
     } else {
-      message.error(t('edit.zzzodSettingsSaveFailed'))
+      message.error(t('core.edit.zzzodSettingsSaveFailed'))
     }
   }
 

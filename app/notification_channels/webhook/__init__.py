@@ -138,8 +138,8 @@ async def _webhook_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="webhook",
-        name_key="setting.notify.webhookName",
-        desc_key="setting.notify.webhookDesc",
+        name_key="core.setting.notify.webhookName",
+        desc_key="core.setting.notify.webhookDesc",
         icon="webhook",
         group="custom",
         order=50,

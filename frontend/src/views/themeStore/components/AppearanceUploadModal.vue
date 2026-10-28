@@ -43,9 +43,9 @@ const DISPLAY_NAME_MAX = 60
 const DESCRIPTION_MAX = 2000
 const CHANGE_NOTE_MAX = 500
 const COVER_MODE_LABELS: Record<AppearanceCoverMode, string> = {
-  inherit: 'themeStore.upload.coverInherit',
-  package: 'themeStore.upload.coverPackage',
-  custom: 'themeStore.upload.coverCustom',
+  inherit: 'core.themeStore.upload.coverInherit',
+  package: 'core.themeStore.upload.coverPackage',
+  custom: 'core.themeStore.upload.coverCustom',
 }
 
 const { t } = useI18n()
@@ -205,7 +205,7 @@ const selectTarget = (value: SelectValue): void => {
 
 const pickPackage = async (): Promise<void> => {
   const paths = await window.electronAPI.selectFile([
-    { name: t('themeStore.upload.packageFilter'), extensions: ['zip'] },
+    { name: t('core.themeStore.upload.packageFilter'), extensions: ['zip'] },
   ])
   const picked = paths[0]
   if (!picked) return
@@ -218,8 +218,8 @@ const pickPackage = async (): Promise<void> => {
       zipPath.value = ''
       inspectError.value =
         props.categoryKey === 'mascot'
-          ? t('themeStore.upload.invalidPackage')
-          : result?.error || t('themeStore.upload.invalidPackage')
+          ? t('core.themeStore.upload.invalidPackage')
+          : result?.error || t('core.themeStore.upload.invalidPackage')
       return
     }
     zipPath.value = picked
@@ -232,7 +232,7 @@ const pickPackage = async (): Promise<void> => {
     applyDefaultTarget()
   } catch (error) {
     logger.error(`读取外观包失败: ${error instanceof Error ? error.message : String(error)}`)
-    inspectError.value = t('themeStore.upload.invalidPackage')
+    inspectError.value = t('core.themeStore.upload.invalidPackage')
   } finally {
     inspecting.value = false
   }
@@ -240,14 +240,14 @@ const pickPackage = async (): Promise<void> => {
 
 const pickCover = async (): Promise<void> => {
   const paths = await window.electronAPI.selectFile([
-    { name: t('themeStore.upload.coverFilter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+    { name: t('core.themeStore.upload.coverFilter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] },
   ])
   const picked = paths[0]
   if (!picked) return
   // 主进程按上传时同样的规则先查一遍（≤8 MB、PNG / JPEG / WebP），不合格就不采用。
   const result = await window.electronAPI.inspectAppearanceCover?.(picked)
   if (!result?.success || !result.dataUrl) {
-    message.error(result?.error || t('themeStore.upload.invalidCover'))
+    message.error(result?.error || t('core.themeStore.upload.invalidCover'))
     return
   }
   coverPath.value = picked
@@ -267,11 +267,11 @@ const close = (): void => {
 }
 
 const failureMessage = (result: { message: string; reason?: string }): string => {
-  if (result.reason === 'categoryMismatch') return t('themeStore.upload.categoryMismatch')
-  if (result.reason === 'conflict' && updating.value) return t('themeStore.upload.unchanged')
-  if (result.reason === 'tooLarge') return t('themeStore.upload.tooLarge')
-  if (result.reason === 'pendingLimit') return t('themeStore.upload.pendingLimit')
-  return result.message || t('themeStore.upload.failed')
+  if (result.reason === 'categoryMismatch') return t('core.themeStore.upload.categoryMismatch')
+  if (result.reason === 'conflict' && updating.value) return t('core.themeStore.upload.unchanged')
+  if (result.reason === 'tooLarge') return t('core.themeStore.upload.tooLarge')
+  if (result.reason === 'pendingLimit') return t('core.themeStore.upload.pendingLimit')
+  return result.message || t('core.themeStore.upload.failed')
 }
 
 const submit = async (): Promise<void> => {
@@ -298,7 +298,7 @@ const submit = async (): Promise<void> => {
         target.value = 'new'
         selectedFileId.value = null
         void props.mine.load()
-        message.warning(t('themeStore.upload.versionTargetGone'))
+        message.warning(t('core.themeStore.upload.versionTargetGone'))
         return
       }
       message.error(failureMessage(result))
@@ -306,8 +306,8 @@ const submit = async (): Promise<void> => {
     }
     message.success(
       result.data?.reviewStatus === 'approved'
-        ? t('themeStore.upload.published')
-        : t('themeStore.upload.submitted')
+        ? t('core.themeStore.upload.published')
+        : t('core.themeStore.upload.submitted')
     )
     emit('uploaded')
     emit('update:open', false)
@@ -357,7 +357,7 @@ watch(authorized, isAuthorized => {
     :open="open"
     :width="640"
     :z-index="90"
-    :title="t('themeStore.upload.title')"
+    :title="t('core.themeStore.upload.title')"
     :closable="!submitting"
     :keyboard="!submitting"
     :mask-closable="!submitting"
@@ -369,7 +369,7 @@ watch(authorized, isAuthorized => {
         v-if="!authorized"
         type="info"
         show-icon
-        :message="t('themeStore.upload.loginRequired')"
+        :message="t('core.themeStore.upload.loginRequired')"
       >
         <template #description>
           <ThemeStoreAccount :account="account" class="upload-account" />
@@ -377,11 +377,11 @@ watch(authorized, isAuthorized => {
       </a-alert>
 
       <section class="upload-section">
-        <div class="upload-label">{{ t('themeStore.category') }}</div>
+        <div class="upload-label">{{ t('core.themeStore.category') }}</div>
         <a-select
           :value="categoryKey ?? 'theme'"
           :disabled="!allowCategoryChange || submitting || inspecting || Boolean(zipPath)"
-          :aria-label="t('themeStore.category')"
+          :aria-label="t('core.themeStore.category')"
           style="width: 100%"
           @change="
             (value: SelectValue) => {
@@ -389,17 +389,21 @@ watch(authorized, isAuthorized => {
             }
           "
         >
-          <a-select-option value="theme">{{ t('themeStore.categories.theme') }}</a-select-option>
-          <a-select-option value="mascot">{{ t('themeStore.categories.mascot') }}</a-select-option>
+          <a-select-option value="theme">{{
+            t('core.themeStore.categories.theme')
+          }}</a-select-option>
+          <a-select-option value="mascot">{{
+            t('core.themeStore.categories.mascot')
+          }}</a-select-option>
         </a-select>
       </section>
 
       <section class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.package') }}</div>
+        <div class="upload-label">{{ t('core.themeStore.upload.package') }}</div>
         <div class="upload-file-row">
           <a-button :loading="inspecting" :disabled="submitting" @click="pickPackage">
             <template #icon><FileZipOutlined /></template>
-            {{ zipPath ? t('themeStore.upload.repick') : t('themeStore.upload.pick') }}
+            {{ zipPath ? t('core.themeStore.upload.repick') : t('core.themeStore.upload.pick') }}
           </a-button>
           <span v-if="zipPath" class="upload-file-name">
             {{ fileName(zipPath) }} · {{ formatAppearanceFileSize(packageInfo?.fileSize ?? 0) }}
@@ -411,23 +415,23 @@ watch(authorized, isAuthorized => {
           <span v-if="packageInfo.appearance.mode">
             {{
               packageInfo.appearance.mode === 'dark'
-                ? t('setting.themeMode.dark')
-                : t('setting.themeMode.light')
+                ? t('core.setting.themeMode.dark')
+                : t('core.setting.themeMode.light')
             }}
           </span>
         </div>
       </section>
 
       <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.target') }}</div>
+        <div class="upload-label">{{ t('core.themeStore.upload.target') }}</div>
         <a-radio-group
           :value="target"
           :disabled="submitting || lockedFileId !== null"
           @update:value="changeTarget"
         >
-          <a-radio value="new">{{ t('themeStore.upload.targetNew') }}</a-radio>
+          <a-radio value="new">{{ t('core.themeStore.upload.targetNew') }}</a-radio>
           <a-radio value="update" :disabled="targetOptions.length === 0 && lockedFileId === null">
-            {{ t('themeStore.upload.targetUpdate') }}
+            {{ t('core.themeStore.upload.targetUpdate') }}
           </a-radio>
         </a-radio-group>
         <a-select
@@ -436,14 +440,14 @@ watch(authorized, isAuthorized => {
           :options="targetOptions"
           :loading="mineLoading"
           :disabled="submitting || lockedFileId !== null"
-          :placeholder="t('themeStore.upload.targetPlaceholder')"
+          :placeholder="t('core.themeStore.upload.targetPlaceholder')"
           class="upload-target-select"
           @change="selectTarget"
         />
       </section>
 
       <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('themeStore.upload.cover') }}</div>
+        <div class="upload-label">{{ t('core.themeStore.upload.cover') }}</div>
         <div class="upload-cover">
           <div class="upload-cover-frame">
             <img
@@ -470,15 +474,15 @@ watch(authorized, isAuthorized => {
             </span>
             <template v-else-if="!updating">
               <span v-if="coverMode === 'package'" class="upload-hint">
-                {{ t('themeStore.upload.coverFromPackage') }}
+                {{ t('core.themeStore.upload.coverFromPackage') }}
               </span>
               <span v-else class="upload-hint upload-hint-warning">
-                {{ t('themeStore.upload.coverRequired') }}
+                {{ t('core.themeStore.upload.coverRequired') }}
               </span>
             </template>
             <span v-if="!updating || coverMode === 'custom'" class="upload-cover-buttons">
               <a-button size="small" :disabled="submitting" @click="pickCover">
-                {{ t('themeStore.upload.pickCover') }}
+                {{ t('core.themeStore.upload.pickCover') }}
               </a-button>
               <a-button
                 v-if="!updating && coverMode === 'custom' && packagePreview"
@@ -487,18 +491,18 @@ watch(authorized, isAuthorized => {
                 :disabled="submitting"
                 @click="usePackageCover"
               >
-                {{ t('themeStore.upload.usePackageCover') }}
+                {{ t('core.themeStore.upload.usePackageCover') }}
               </a-button>
             </span>
             <span v-if="!updating || coverMode === 'custom'" class="upload-hint">
-              {{ t('themeStore.upload.coverSpec') }}
+              {{ t('core.themeStore.upload.coverSpec') }}
             </span>
           </div>
         </div>
       </section>
 
       <a-form v-if="packageInfo" layout="vertical" class="upload-form">
-        <a-form-item v-if="!updating" :label="t('themeStore.upload.name')" required>
+        <a-form-item v-if="!updating" :label="t('core.themeStore.upload.name')" required>
           <a-input
             v-model:value="form.displayName"
             :maxlength="DISPLAY_NAME_MAX"
@@ -506,7 +510,7 @@ watch(authorized, isAuthorized => {
             :disabled="submitting"
           />
         </a-form-item>
-        <a-form-item v-if="!updating" :label="t('themeStore.upload.description')">
+        <a-form-item v-if="!updating" :label="t('core.themeStore.upload.description')">
           <a-textarea
             v-model:value="form.description"
             :maxlength="DESCRIPTION_MAX"
@@ -514,7 +518,7 @@ watch(authorized, isAuthorized => {
             :disabled="submitting"
           />
         </a-form-item>
-        <a-form-item :label="t('themeStore.upload.changeNote')">
+        <a-form-item :label="t('core.themeStore.upload.changeNote')">
           <a-input
             v-model:value="form.changeNote"
             :maxlength="CHANGE_NOTE_MAX"
@@ -525,9 +529,9 @@ watch(authorized, isAuthorized => {
     </div>
 
     <template #footer>
-      <a-button :disabled="submitting" @click="close">{{ t('common.cancel') }}</a-button>
+      <a-button :disabled="submitting" @click="close">{{ t('core.common.cancel') }}</a-button>
       <a-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
-        {{ t('themeStore.upload.submit') }}
+        {{ t('core.themeStore.upload.submit') }}
       </a-button>
     </template>
   </a-modal>

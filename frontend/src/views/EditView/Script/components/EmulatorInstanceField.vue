@@ -2,11 +2,11 @@
   <a-form-item>
     <template #label>
       <FieldLabelWithHint
-        :text="t('edit.emulatorInstance')"
+        :text="t('core.edit.emulatorInstance')"
         :hint="
           options.length === 0 && !loading
-            ? t('edit.thisEmulatorCannotBe')
-            : t('edit.pickEmulatorInstance')
+            ? t('core.edit.thisEmulatorCannotBe')
+            : t('core.edit.pickEmulatorInstance')
         "
         variant="form"
       />
@@ -16,7 +16,7 @@
       v-if="options.length === 0 && !loading && emulatorId"
       v-model:value="value"
       size="large"
-      :placeholder="t('edit.enterInstanceInfoAs')"
+      :placeholder="t('core.edit.enterInstanceInfoAs')"
       class="modern-input"
       @blur="emit('save', value)"
     />
@@ -25,7 +25,7 @@
       v-else
       v-model:value="value"
       size="large"
-      :placeholder="t('edit.pickEmulatorFirst')"
+      :placeholder="t('core.edit.pickEmulatorFirst')"
       :loading="loading"
       :disabled="!emulatorId"
       @change="emit('save', $event)"

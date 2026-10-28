@@ -21,7 +21,7 @@ export function useZzzodInstances(scriptId: string) {
     try {
       const resp = await Service.getZzzodInstancesApiApiScriptsZzzodInstancesGet(scriptId)
       if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodLoadInstancesFailed'))
+        throw new Error(resp.message || t('core.edit.zzzodLoadInstancesFailed'))
       }
       instances.value = resp.data || []
     } catch (e) {

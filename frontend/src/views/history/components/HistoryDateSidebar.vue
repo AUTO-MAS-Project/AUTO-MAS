@@ -2,7 +2,7 @@
   <div class="date-sidebar">
     <div class="sidebar-header">
       <CalendarOutlined />
-      <span>{{ t('history.dateList') }}</span>
+      <span>{{ t('core.history.dateList') }}</span>
     </div>
     <div class="date-list">
       <a-collapse
@@ -37,8 +37,8 @@
                     class="result-count success-count"
                     :class="{ 'is-zero': !row.successCount }"
                     role="img"
-                    :aria-label="t('history.successCount', { count: row.successCount })"
-                    :title="t('history.successCount', { count: row.successCount })"
+                    :aria-label="t('core.history.successCount', { count: row.successCount })"
+                    :title="t('core.history.successCount', { count: row.successCount })"
                   >
                     <CheckOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.successCount }}</span>
@@ -47,8 +47,8 @@
                     class="result-count failure-count"
                     :class="{ 'is-zero': !row.failureCount }"
                     role="img"
-                    :aria-label="t('history.failureCount', { count: row.failureCount })"
-                    :title="t('history.failureCount', { count: row.failureCount })"
+                    :aria-label="t('core.history.failureCount', { count: row.failureCount })"
+                    :title="t('core.history.failureCount', { count: row.failureCount })"
                   >
                     <CloseOutlined aria-hidden="true" />
                     <span class="count-value" aria-hidden="true">{{ row.failureCount }}</span>
@@ -65,7 +65,7 @@
         <a-empty
           :image="noDataImage"
           :image-style="{ height: '80px' }"
-          :description="t('history.empty')"
+          :description="t('core.history.empty')"
         />
       </div>
     </div>
