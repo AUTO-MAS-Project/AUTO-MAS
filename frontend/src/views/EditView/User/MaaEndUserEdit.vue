@@ -5,19 +5,19 @@
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
       :title="maaEndConfigMaskTitle"
-      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :description="`${maaEndConfigMaskDesc}\n${t('core.edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-          {{ t('edit.saveConfiguration') }}
+          {{ t('core.edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showMaaEndViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.maaendViewingTitle')"
-      :description="`${t('edit.maaendViewingDesc')}\n${t('edit.maaendViewingDesc2')}`"
+      :title="t('core.edit.maaendViewingTitle')"
+      :description="`${t('core.edit.maaendViewingDesc')}\n${t('core.edit.maaendViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -27,7 +27,7 @@
           :loading="stoppingMaaEndConfig"
           @click="handleCloseMaaEndView"
         >
-          {{ t('edit.maaendViewClose') }}
+          {{ t('core.edit.maaendViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -52,11 +52,11 @@
           class="config-form"
         >
           <a-card id="section-source" class="section-card">
-            <template #title>{{ t('edit.configurationSource') }}</template>
+            <template #title>{{ t('core.edit.configurationSource') }}</template>
             <template #extra>
               <a-button @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </template>
             <ConfigSourceSection
@@ -78,7 +78,7 @@
           </a-card>
 
           <a-card id="section-basic" class="section-card">
-            <template #title>{{ t('edit.basicInfo') }}</template>
+            <template #title>{{ t('core.edit.basicInfo') }}</template>
             <BasicInfoSection
               v-model:form-data="formData"
               :loading="loading"
@@ -89,7 +89,7 @@
           </a-card>
 
           <section v-if="formData.Info.IfQuickConfig" id="section-tasks">
-            <h2 class="section-heading">{{ t('edit.taskConfiguration') }}</h2>
+            <h2 class="section-heading">{{ t('core.edit.taskConfiguration') }}</h2>
             <TaskConfigSection
               :form-data="formData"
               :loading="loading"
@@ -99,7 +99,7 @@
             />
 
             <a-collapse id="section-limits" class="optional-section" :bordered="false">
-              <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
+              <a-collapse-panel key="limits" :header="t('core.edit.maaEndDailyOnceTasks')">
                 <DailyOnceSection
                   :value="formData.Task.DailyOnceTasks"
                   :loading="loading"
@@ -129,7 +129,7 @@
           />
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-collect" class="section-card">
-            <template #title>{{ t('edit.maaEndAutoCollectConfig') }}</template>
+            <template #title>{{ t('core.edit.maaEndAutoCollectConfig') }}</template>
             <AutoCollectConfigSection
               :groups="autoCollectGroups"
               :options-loading="maaEndOptionsLoading"
@@ -140,7 +140,7 @@
           </a-card>
 
           <a-card v-if="formData.Info.IfQuickConfig" id="section-delivery" class="section-card">
-            <template #title>{{ t('edit.maaEndDeliveryConfig') }}</template>
+            <template #title>{{ t('core.edit.maaEndDeliveryConfig') }}</template>
             <DeliveryConfigSection
               :form-data="formData"
               :loading="loading"
@@ -149,7 +149,7 @@
           </a-card>
 
           <a-collapse id="section-script" class="optional-section" :bordered="false">
-            <a-collapse-panel key="script" :header="t('comp.extraScripts')">
+            <a-collapse-panel key="script" :header="t('core.comp.extraScripts')">
               <ExtraScriptSection
                 v-model:form-data="formData"
                 :loading="loading"
@@ -160,7 +160,7 @@
           </a-collapse>
 
           <a-collapse id="section-notify" class="optional-section" :bordered="false">
-            <a-collapse-panel key="notify" :header="t('edit.notificationSettings')">
+            <a-collapse-panel key="notify" :header="t('core.edit.notificationSettings')">
               <UserNotifyConfig
                 v-model="formData.Notify"
                 :loading="loading"
@@ -183,7 +183,7 @@
       :script-name="MAAEND_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.maaendConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.maaendConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -191,7 +191,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -312,7 +312,7 @@ const restoreFailedFieldSaves = (changes: Array<[string, any]>) => {
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
   if (!errorMsg) {
-    message.error(t('edit.couldNotSaveUser'))
+    message.error(t('core.edit.couldNotSaveUser'))
   }
   logger.error(`保存用户字段失败: ${errorMsg || '用户 API 未返回成功'}`)
 }
@@ -326,20 +326,20 @@ const formData = reactive({
 // 原生来源直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
 const maaEndConfigMaskTitle = computed(() =>
   formData.Info.Base === 'independent'
-    ? t('scripts.mask.maaEndUserTitle')
-    : t('scripts.mask.maaEndScriptTitle')
+    ? t('core.scripts.mask.maaEndUserTitle')
+    : t('core.scripts.mask.maaEndScriptTitle')
 )
 
 const maaEndConfigMaskDesc = computed(() =>
   formData.Info.Base === 'independent'
-    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
-    : t('scripts.mask.maaEndScriptDesc')
+    ? t('core.scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+    : t('core.scripts.mask.maaEndScriptDesc')
 )
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
-    { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-    { min: 1, max: 50, message: t('edit.usernameMustBe12'), trigger: 'blur' },
+    { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+    { min: 1, max: 50, message: t('core.edit.usernameMustBe12'), trigger: 'blur' },
   ],
 }))
 
@@ -497,7 +497,7 @@ const loadUserData = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (error) {
     if (!userError.value)
-      message.error(error instanceof Error ? error.message : t('apiErrors.userListFailed'))
+      message.error(error instanceof Error ? error.message : t('core.apiErrors.userListFailed'))
     router.push('/scripts')
   }
 }
@@ -533,7 +533,7 @@ const handleImportMaaEndConfig = async () => {
       throw new Error(response.message || '导入脚本配置文件失败')
     }
     const importTarget = formData.Info.Base === 'shared' ? '共享配置' : '独立配置'
-    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+    message.success(t('core.edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
   } finally {
@@ -604,8 +604,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: MAAEND_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -619,11 +619,11 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -633,7 +633,7 @@ const handleRestoreView = (
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
@@ -646,7 +646,7 @@ const handleRestoreView = (
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -679,7 +679,7 @@ onMounted(async () => {
       isEdit.value = true
       await normalizeQuickConfig()
     } else {
-      if (!userError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userError.value) message.error(t('core.edit.couldNotCreateUser'))
       router.push('/scripts')
       return
     }

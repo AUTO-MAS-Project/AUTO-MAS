@@ -509,14 +509,14 @@ export function useBettergiDragonQueue(options: {
   // ---- 添加：把配置组加入一条龙（放到队列末尾）----
   const addToDragon = (item: ConfigGroupIdentity): boolean => {
     if (configLocked.value) {
-      message.error(t('edit.configLocked'))
+      message.error(t('core.edit.configLocked'))
       return false
     }
     if (!groupsEditable.value) return false
     if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return false
     // 体力作战开启时刷取类官方内置组被冻结，禁止再次加入一条龙（防止把被接管的组写回后端 Groups）
     if (item.kind === 'builtin' && isGroupFrozen(item)) {
-      message.warning(t('edit.bettergiGroupFrozenTip'))
+      message.warning(t('core.edit.bettergiGroupFrozenTip'))
       return false
     }
     if (item.kind === 'builtin') {
@@ -554,7 +554,7 @@ export function useBettergiDragonQueue(options: {
   const removeFromDragon = (item: ConfigGroupIdentity) => {
     if (!groupsEditable.value) return
     if (configLocked.value) {
-      message.error(t('edit.configLocked'))
+      message.error(t('core.edit.configLocked'))
       return
     }
     if (item.kind === 'builtin') {

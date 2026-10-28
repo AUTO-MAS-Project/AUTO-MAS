@@ -4,9 +4,9 @@
     :script-name="scriptName"
     :is-edit="isEdit"
     script-edit-segment="general"
-    :current-label="isEdit ? t('comp.editUser') : t('comp.addUser')"
+    :current-label="isEdit ? t('core.comp.editUser') : t('core.comp.addUser')"
     :user-id="userId"
-    :config-label="t('edit.generalConfiguration')"
+    :config-label="t('core.edit.generalConfiguration')"
     :config-loading="generalConfigLoading"
     :config-active="showGeneralConfigMask"
     :config-disabled="configLocked"
@@ -26,19 +26,19 @@
           <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
         </div>
         <template v-if="generalSessionViewOnly">
-          <h2 class="mask-title">{{ t('edit.generalViewingTitle') }}</h2>
+          <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalViewingDesc') }}
+            {{ t('core.edit.generalViewingDesc') }}
             <br />
-            {{ t('edit.generalViewingDesc2') }}
+            {{ t('core.edit.generalViewingDesc2') }}
           </p>
         </template>
         <template v-else>
-          <h2 class="mask-title">{{ t('edit.generalConfigurationProgress') }}</h2>
+          <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
           <p class="mask-description">
-            {{ t('edit.generalConfigurationThisUser') }}
+            {{ t('core.edit.generalConfigurationThisUser') }}
             <br />
-            {{ t('edit.clickSaveConfigurationWhen2') }}
+            {{ t('core.edit.clickSaveConfigurationWhen2') }}
           </p>
         </template>
         <div class="mask-actions">
@@ -48,7 +48,11 @@
             size="large"
             @click="handleSaveGeneralConfig"
           >
-            {{ generalSessionViewOnly ? t('edit.generalViewClose') : t('edit.saveConfiguration') }}
+            {{
+              generalSessionViewOnly
+                ? t('core.edit.generalViewClose')
+                : t('core.edit.saveConfiguration')
+            }}
           </a-button>
         </div>
       </div>
@@ -61,11 +65,11 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
@@ -75,8 +79,8 @@
                 name="userName"
                 required
                 v-model="formData.userName"
-                :hint="t('edit.displayNameUsedIdentify')"
-                :placeholder="t('edit.enterUsername')"
+                :hint="t('core.edit.displayNameUsedIdentify')"
+                :placeholder="t('core.edit.enterUsername')"
                 :disabled="loading"
                 enhanced
                 @save="handleFieldSave('userName', formData.userName)"
@@ -86,7 +90,7 @@
               <UserStatusField
                 name="status"
                 v-model="formData.Info.Status"
-                :hint="t('edit.whetherThisUserEnabled')"
+                :hint="t('core.edit.whetherThisUserEnabled')"
                 @save="handleFieldSave('Info.Status', formData.Info.Status)"
               />
             </a-col>
@@ -94,7 +98,7 @@
               <UserRemainedDayField
                 name="remainedDay"
                 v-model="formData.Info.RemainedDay"
-                :hint="t('edit.daysLeftAccount1')"
+                :hint="t('core.edit.daysLeftAccount1')"
                 placeholder="-1"
                 :disabled="loading"
                 @save="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
@@ -106,7 +110,7 @@
                 :options="generalConfigModeOptions"
                 :disabled="loading"
                 :saving="configModeSaving"
-                :alert-message="t('edit.configSourceHintBase')"
+                :alert-message="t('core.edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -115,8 +119,8 @@
           <UserNotesField
             name="notes"
             v-model="formData.Info.Notes"
-            :hint="t('edit.addNoteAboutThis')"
-            :placeholder="t('edit.enterNote3')"
+            :hint="t('core.edit.addNoteAboutThis')"
+            :placeholder="t('core.edit.enterNote3')"
             :disabled="loading"
             :rows="4"
             enhanced
@@ -149,8 +153,8 @@
     :script-name="GENERAL_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.generalConfigRestoreUserDesc')"
-    :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
     :on-detail="handleRestoreView"
   />
@@ -268,8 +272,8 @@ const formData = reactive({
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -343,26 +347,26 @@ const generalConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useScriptS'),
     icon: 'database',
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.useScriptSCurrent'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.useScriptSCurrent'),
     icon: 'setting',
   },
 ]
@@ -418,13 +422,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   }
 }
 
@@ -446,13 +450,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -496,17 +500,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
 }
 
@@ -556,7 +560,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             logger.error(`用户 ${formData.userName} 通用配置异常: ${data.message}`)
-            message.error(t('edit.generalConfigurationFailedP0', { p0: data.message }))
+            message.error(t('core.edit.generalConfigurationFailedP0', { p0: data.message }))
           }
         }),
         // 处理任务结束消息
@@ -565,7 +569,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息（查看会话只读不保存，不打扰用户）
           if (data.outcome === 'success' && !generalSessionViewOnly.value) {
-            message.success(t('edit.configurationUserP0Done', { p0: formData.userName }))
+            message.success(t('core.edit.configurationUserP0Done', { p0: formData.userName }))
           }
           // 清理连接
           for (const subscriptionId of generalSubscriptionIds.value) {
@@ -586,7 +590,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
       generalTaskId.value = wsId
       showGeneralConfigMask.value = true
       configTimedOut.value = false
-      message.success(t('edit.startedGeneralSetupUser', { p0: formData.userName }))
+      message.success(t('core.edit.startedGeneralSetupUser', { p0: formData.userName }))
 
       // 设置 30 分钟超时自动断开（查看会话静默关闭；配置会话提醒 + 自动保存）
       generalConfigTimeout = window.setTimeout(
@@ -606,7 +610,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
               if (generalSessionViewOnly.value) {
                 logger.info('通用脚本查看会话已超时，静默关闭')
               } else {
-                message.success(t('edit.configurationSessionTimedOut'))
+                message.success(t('core.edit.configurationSessionTimedOut'))
               }
             } else if (generalSessionViewOnly.value) {
               logger.error(response?.message || '查看会话超时关闭失败')
@@ -627,7 +631,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`启动通用配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotStartGeneral'))
+    message.error(t('core.edit.couldNotStartGeneral'))
     showGeneralConfigMask.value = false
   } finally {
     generalConfigLoading.value = false
@@ -638,7 +642,7 @@ const handleSaveGeneralConfig = async () => {
   try {
     const taskId = generalTaskId.value
     if (!taskId) {
-      message.error(t('edit.noActiveConfigurationSession'))
+      message.error(t('core.edit.noActiveConfigurationSession'))
       return
     }
 
@@ -659,7 +663,7 @@ const handleSaveGeneralConfig = async () => {
       if (wasViewOnly) {
         logger.info('通用脚本查看会话已关闭，配置保持原状')
       } else {
-        message.success(t('edit.generalConfigurationThisUser2'))
+        message.success(t('core.edit.generalConfigurationThisUser2'))
       }
     } else {
       message.error(response.message || '保存配置失败')
@@ -667,7 +671,7 @@ const handleSaveGeneralConfig = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存通用配置失败: ${errorMsg}`)
-    message.error(t('edit.couldNotSaveGeneral'))
+    message.error(t('core.edit.couldNotSaveGeneral'))
   }
 }
 
@@ -724,18 +728,18 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 
   return new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -745,13 +749,13 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           await handleGeneralConfig(true, target)
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -789,7 +793,7 @@ const stopGeneralSession = async () => {
 
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }

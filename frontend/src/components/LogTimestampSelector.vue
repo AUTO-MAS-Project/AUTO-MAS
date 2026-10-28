@@ -7,8 +7,8 @@
       class="view-mode-group"
       @change="onViewModeChange"
     >
-      <a-radio-button value="input">{{ t('comp.textInput') }}</a-radio-button>
-      <a-radio-button value="visual">{{ t('comp.visualSelection') }}</a-radio-button>
+      <a-radio-button value="input">{{ t('core.comp.textInput') }}</a-radio-button>
+      <a-radio-button value="visual">{{ t('core.comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
@@ -19,8 +19,8 @@
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
               <FieldLabelWithHint
-                :text="t('comp.logTimestampStart')"
-                :hint="t('comp.logTimestampStartPosition')"
+                :text="t('core.comp.logTimestampStart')"
+                :hint="t('core.comp.logTimestampStartPosition')"
                 variant="form"
               />
             </template>
@@ -38,8 +38,8 @@
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
               <FieldLabelWithHint
-                :text="t('comp.logTimestampEnd')"
-                :hint="t('comp.logTimestampEndPosition')"
+                :text="t('core.comp.logTimestampEnd')"
+                :hint="t('core.comp.logTimestampEndPosition')"
                 variant="form"
               />
             </template>
@@ -60,14 +60,14 @@
     <div v-else-if="viewMode === 'visual'">
       <div class="visual-mode-container">
         <div class="log-preview-header">
-          <span>{{ t('comp.logPreviewSelectTimestamp') }}</span>
+          <span>{{ t('core.comp.logPreviewSelectTimestamp') }}</span>
           <a-button
             type="primary"
             :loading="loadingPreview"
             :disabled="!logFilePath"
             @click="loadLogFile"
           >
-            {{ t('comp.loadLog') }}
+            {{ t('core.comp.loadLog') }}
           </a-button>
         </div>
 
@@ -100,12 +100,17 @@
         <div class="selection-info">
           <div class="current-selection">
             {{
-              t('comp.currentSelection', { p0: selection.startPos + 1, p1: selection.endPos + 1 })
+              t('core.comp.currentSelection', {
+                p0: selection.startPos + 1,
+                p1: selection.endPos + 1,
+              })
             }}
-            <span v-if="selectedText">{{ t('comp.selectedContent', { text: selectedText }) }}</span>
+            <span v-if="selectedText">{{
+              t('core.comp.selectedContent', { text: selectedText })
+            }}</span>
           </div>
           <a-button type="primary" :disabled="!selection.valid" @click="applySelection">
-            {{ t('comp.appSelection') }}
+            {{ t('core.comp.appSelection') }}
           </a-button>
         </div>
       </div>
@@ -282,7 +287,7 @@ const loadLogFile = async () => {
   const targetPath = props.logFilePath
 
   if (!targetPath || targetPath.trim() === '') {
-    message.warning(t('comp.pickLogFilePath'))
+    message.warning(t('core.comp.pickLogFilePath'))
     return
   }
 
@@ -295,7 +300,7 @@ const loadLogFile = async () => {
       const content = await window.electronAPI.readFile(targetPath)
 
       if (!content) {
-        message.warning(t('comp.logFileEmptyCould'))
+        message.warning(t('core.comp.logFileEmptyCould'))
         return
       }
 
@@ -306,14 +311,14 @@ const loadLogFile = async () => {
       logLines.value = logLines.value.filter(line => line.trim() !== '').slice(0, 50) // 进一步过滤并限制行数
     } else {
       // 如果没有Electron API可用，显示错误信息
-      message.error(t('comp.fileSystemUnavailableUse'))
+      message.error(t('core.comp.fileSystemUnavailableUse'))
       return
     }
 
-    message.success(t('comp.logFileLoadedP0', { p0: logLines.value.length }))
+    message.success(t('core.comp.logFileLoadedP0', { p0: logLines.value.length }))
   } catch (error) {
     logger.error(`加载日志文件失败: ${String(error)}`)
-    message.error(t('comp.couldNotLoadLog') + (error as Error).message)
+    message.error(t('core.comp.couldNotLoadLog') + (error as Error).message)
   } finally {
     loadingPreview.value = false
   }
@@ -322,7 +327,7 @@ const loadLogFile = async () => {
 // 应用选择
 const applySelection = async () => {
   if (!selection.valid) {
-    message.warning(t('comp.pickValidLogTimestamp'))
+    message.warning(t('core.comp.pickValidLogTimestamp'))
     return
   }
 
@@ -333,7 +338,7 @@ const applySelection = async () => {
   await props.handleChange('Script', 'LogTimeStart', startPos)
   await props.handleChange('Script', 'LogTimeEnd', endPos)
 
-  message.success(t('comp.selectionAppliedStartP0', { p0: startPos, p1: endPos }))
+  message.success(t('core.comp.selectionAppliedStartP0', { p0: startPos, p1: endPos }))
 }
 </script>
 

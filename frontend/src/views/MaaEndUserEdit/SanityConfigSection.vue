@@ -13,7 +13,7 @@
     />
     <a-row v-if="showSanityDetail && isMasStrategy" :gutter="24">
       <a-col :xs="24" :sm="12">
-        <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
+        <a-form-item :label="t('core.edit.sanityTaskConfigurationMode')">
           <a-select
             v-model:value="formData.Info.SanityMode"
             :options="resolvedSanityModeOptions"
@@ -28,14 +28,14 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.sanityTask')"
-              :hint="t('edit.pickSanityTaskType')"
+              :text="t('core.edit.sanityTask')"
+              :hint="t('core.edit.pickSanityTaskType')"
               variant="form"
             />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displaySanityTaskType }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -49,10 +49,10 @@
       </a-col>
 
       <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
-        <a-form-item :label="t('edit.maaEndEssenceFarmMode')">
+        <a-form-item :label="t('core.edit.maaEndEssenceFarmMode')">
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayEssenceMenu }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -72,7 +72,7 @@
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayCurrentTask }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -90,14 +90,14 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.rewardGroup')"
-              :hint="t('edit.rewardGroupsProtocolSpace')"
+              :text="t('core.edit.rewardGroup')"
+              :hint="t('core.edit.rewardGroupsProtocolSpace')"
               variant="form"
             />
           </template>
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayRewardsSet }}</span>
-            <span class="plan-source">{{ t('edit.fromPlan') }}</span>
+            <span class="plan-source">{{ t('core.edit.fromPlan') }}</span>
           </div>
           <a-select
             v-else
@@ -184,7 +184,7 @@ const props = withDefaults(
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
 // 引用不到 useI18n() 返回的 t，编译期直接报错。改成在这里兜底。
 const resolvedSanityModeOptions = computed(
-  () => props.sanityModeOptions ?? [{ label: t('edit.fixed'), value: 'Fixed' }]
+  () => props.sanityModeOptions ?? [{ label: t('core.edit.fixed'), value: 'Fixed' }]
 )
 
 const emit = defineEmits<{

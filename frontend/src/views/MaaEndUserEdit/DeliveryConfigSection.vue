@@ -5,8 +5,8 @@
         <a-form-item name="IfSeizeDeliveryJobs">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.maaEndSeizeDeliveryJobs')"
-              :hint="t('edit.maaEndSeizeDeliveryJobsHint')"
+              :text="t('core.edit.maaEndSeizeDeliveryJobs')"
+              :hint="t('core.edit.maaEndSeizeDeliveryJobsHint')"
               variant="form"
             />
           </template>
@@ -23,8 +23,8 @@
           <a-form-item name="SeizeDeliveryJobsReward">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.maaEndSeizeDeliveryJobsReward')"
-                :hint="t('edit.maaEndSeizeDeliveryJobsRewardHint')"
+                :text="t('core.edit.maaEndSeizeDeliveryJobsReward')"
+                :hint="t('core.edit.maaEndSeizeDeliveryJobsRewardHint')"
                 variant="form"
               />
             </template>
@@ -43,7 +43,7 @@
         <a-col :xs="24" :sm="12">
           <a-form-item
             name="SeizeDeliveryJobsCommissionSource"
-            :label="t('edit.maaEndDeliveryCommissionSource')"
+            :label="t('core.edit.maaEndDeliveryCommissionSource')"
           >
             <a-select
               v-model:value="formData.Task.SeizeDeliveryJobsCommissionSource"

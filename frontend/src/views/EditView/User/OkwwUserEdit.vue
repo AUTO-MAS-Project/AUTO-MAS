@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="okww"
       :user-id="userId"
-      :config-label="t('edit.configureOkww')"
+      :config-label="t('core.edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
       :config-disabled="configActionsDisabled"
@@ -18,20 +18,20 @@
     <GuiSessionMask
       :open="showOkwwConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.okWwSetupProgress')"
-      :description="`${t('edit.finishSetupOkWw')}\n${t('edit.clickSaveSettingsWhen')}`"
+      :title="t('core.edit.okWwSetupProgress')"
+      :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
     >
       <template #actions>
         <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showOkwwViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.okwwViewingTitle')"
-      :description="`${t('edit.okwwViewingDesc')}\n${t('edit.okwwViewingDesc2')}`"
+      :title="t('core.edit.okwwViewingTitle')"
+      :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -41,7 +41,7 @@
           :loading="stoppingOkwwConfig"
           @click="handleCloseOkwwView"
         >
-          {{ t('edit.okwwViewClose') }}
+          {{ t('core.edit.okwwViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -51,22 +51,22 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
               <a-col :span="12">
                 <UserNameField
                   v-model="formData.userName"
-                  :hint="t('edit.nameUsedTellUsers')"
-                  :placeholder="t('edit.enterUsername')"
+                  :hint="t('core.edit.nameUsedTellUsers')"
+                  :placeholder="t('core.edit.enterUsername')"
                   @save="saveField('Info.Name', formData.userName)"
                 />
               </a-col>
               <a-col :span="12">
                 <UserStatusField
                   v-model="formData.Info.Status"
-                  :hint="t('edit.whetherThisUserEnabled')"
+                  :hint="t('core.edit.whetherThisUserEnabled')"
                   @save="saveField('Info.Status', formData.Info.Status)"
                 />
               </a-col>
@@ -77,8 +77,11 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                      {{ t('core.edit.collectNodeDetails') }}
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('core.edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -99,14 +102,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.account')"
-                      :hint="t('edit.usedSwitchAccountsLeave')"
+                      :text="t('core.edit.account')"
+                      :hint="t('core.edit.usedSwitchAccountsLeave')"
                       variant="form"
                     />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.enterAccount')"
+                    :placeholder="t('core.edit.enterAccount')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -116,14 +119,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.gameResource')"
-                      :hint="t('edit.pickGameResourceThis')"
+                      :text="t('core.edit.gameResource')"
+                      :hint="t('core.edit.pickGameResourceThis')"
                       variant="form"
                     />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    :placeholder="t('edit.pickResource')"
+                    :placeholder="t('core.edit.pickResource')"
                     size="large"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
@@ -133,7 +136,7 @@
               <a-col :span="12">
                 <UserRemainedDayField
                   v-model="formData.Info.RemainedDay"
-                  :hint="t('edit.daysLeftAccount1')"
+                  :hint="t('core.edit.daysLeftAccount1')"
                   @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
                 />
               </a-col>
@@ -141,8 +144,8 @@
 
             <UserNotesField
               v-model="formData.Info.Notes"
-              :hint="t('edit.addNoteAboutThis')"
-              :placeholder="t('edit.enterNote')"
+              :hint="t('core.edit.addNoteAboutThis')"
+              :placeholder="t('core.edit.enterNote')"
               :rows="4"
               @save="saveField('Info.Notes', formData.Info.Notes)"
             />
@@ -155,7 +158,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.configurationSource') }}</h3>
+              <h3>{{ t('core.edit.configurationSource') }}</h3>
             </div>
             <a-row :gutter="24">
               <a-col :span="24">
@@ -166,7 +169,7 @@
                   :saving="isSaving"
                   :quick-config="formData.Info.IfQuickConfig"
                   :quick-config-disabled="configActionsDisabled || isInitializing"
-                  :alert-message="t('edit.configSourceHintBase')"
+                  :alert-message="t('core.edit.configSourceHintBase')"
                   :show-gui-hint="false"
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
@@ -193,11 +196,11 @@
       </a-card>
 
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <h3>{{ t('core.edit.taskConfiguration') }}</h3>
         <a-space>
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
+            {{ t('core.edit.configRestoreTitle') }}
           </a-button>
         </a-space>
       </a-flex>
@@ -209,8 +212,8 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.currentLaunchArguments')"
-                      :hint="t('edit.argumentsGeneratedFromTask')"
+                      :text="t('core.edit.currentLaunchArguments')"
+                      :hint="t('core.edit.argumentsGeneratedFromTask')"
                       variant="form"
                     />
                   </template>
@@ -221,7 +224,7 @@
 
             <a-row :gutter="24">
               <a-col :span="12">
-                <a-form-item :label="t('edit.spendSanityFarm')">
+                <a-form-item :label="t('core.edit.spendSanityFarm')">
                   <a-select
                     v-model:value="formData.Task.WhichToFarm"
                     size="large"
@@ -231,7 +234,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-if="formData.Task.WhichToFarm === 'Tacet Suppression'" :span="12">
-                <a-form-item :label="t('edit.sonanceCasketNumberF2')">
+                <a-form-item :label="t('core.edit.sonanceCasketNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichTacetSuppressionToFarm"
                     :min="1"
@@ -243,7 +246,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else-if="formData.Task.WhichToFarm === 'Forgery Challenge'" :span="12">
-                <a-form-item :label="t('edit.echoDomainNumberF2')">
+                <a-form-item :label="t('core.edit.echoDomainNumberF2')">
                   <a-input-number
                     v-model:value="formData.Task.WhichForgeryChallengeToFarm"
                     :min="1"
@@ -255,7 +258,7 @@
                 </a-form-item>
               </a-col>
               <a-col v-else :span="12">
-                <a-form-item :label="t('edit.simulatedUniverseMaterials')">
+                <a-form-item :label="t('core.edit.simulatedUniverseMaterials')">
                   <a-select
                     v-model:value="formData.Task.MaterialSelection"
                     size="large"
@@ -266,14 +269,14 @@
               </a-col>
             </a-row>
 
-            <a-form-item :label="t('edit.useNightmareNestDaily')">
+            <a-form-item :label="t('core.edit.useNightmareNestDaily')">
               <a-switch
                 v-model:checked="formData.Task.FarmNightmareNestForDailyEcho"
                 @change="saveTaskConfig"
               />
             </a-form-item>
 
-            <a-form-item :label="t('edit.extraTasksThatRun')">
+            <a-form-item :label="t('core.edit.extraTasksThatRun')">
               <a-checkbox-group
                 v-model:value="formData.Task.AdditionalTasks"
                 :options="additionalTaskOptions"
@@ -314,7 +317,7 @@
       :script-name="OKWW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.okwwConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -322,7 +325,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -421,9 +424,9 @@ const resourceOptions = [
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const okwwConfigModeOptions: Array<{
@@ -434,24 +437,24 @@ const okwwConfigModeOptions: Array<{
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.useExistingOkwwConfiguration'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.useExistingOkwwConfiguration'),
     icon: 'setting',
   },
 ]
@@ -557,9 +560,9 @@ const createUserImmediately = async (): Promise<boolean> => {
     const errorMessage = userApiError.value || '创建用户失败'
     if (addUserErrorCode.value === 409) {
       Modal.warning({
-        title: t('edit.noOkWwSettings'),
-        content: t('edit.currentOkWwInstall'),
-        okText: t('edit.backScriptList'),
+        title: t('core.edit.noOkWwSettings'),
+        content: t('core.edit.currentOkWwInstall'),
+        okText: t('core.edit.backScriptList'),
         onOk: handleCancel,
       })
       return false
@@ -635,17 +638,17 @@ const handleImportOkwwConfig = async () => {
   if (configActionsDisabled.value) return
   okwwImportLoading.value = true
   try {
-    if (formData.Info.Base === 'native') throw new Error(t('edit.nativeConfigNoImport'))
+    if (formData.Info.Base === 'native') throw new Error(t('core.edit.nativeConfigNoImport'))
     const response = await importScriptConfigFile(scriptId, userId.value)
     if (response.code !== 200)
-      throw new Error(response.message || t('edit.importScriptConfigFailed'))
+      throw new Error(response.message || t('core.edit.importScriptConfigFailed'))
     const importTarget =
       formData.Info.Base === 'shared'
-        ? t('comp.configSourceShared')
-        : t('comp.configSourceIndependent')
-    message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))
+        ? t('core.comp.configSourceShared')
+        : t('core.comp.configSourceIndependent')
+    message.success(t('core.edit.importedP0ConfigurationFile', { p0: importTarget }))
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.importScriptConfigFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.importScriptConfigFailed'))
   } finally {
     okwwImportLoading.value = false
   }
@@ -669,7 +672,7 @@ const handleCloseOkwwView = () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'Okww') {
-    if (!scriptApiError.value) message.error(t('edit.okWwScriptDoes'))
+    if (!scriptApiError.value) message.error(t('core.edit.okWwScriptDoes'))
     handleCancel()
     return false
   }
@@ -703,7 +706,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -769,8 +772,8 @@ const handleRestoreView = (
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
-        title: t('edit.configRestoreDetailView'),
-        desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+        title: t('core.edit.configRestoreDetailView'),
+        desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
       },
       item.base,
       currentMode
@@ -784,11 +787,11 @@ const handleRestoreView = (
         )
       ),
       okType: 'danger',
-      okText: t('edit.configRestoreConfirmOk'),
-      cancelText: t('edit.cancel'),
+      okText: t('core.edit.configRestoreConfirmOk'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -798,7 +801,7 @@ const handleRestoreView = (
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
@@ -811,7 +814,7 @@ const handleRestoreView = (
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },

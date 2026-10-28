@@ -133,10 +133,10 @@ export function useLogHookRules(options: UseLogHookRulesOptions) {
         }
       })
       if (dropped.length > 0) {
-        message.warning(t('edit.p0HasNoMatch', { p0: dropped.join('、') }))
+        message.warning(t('core.edit.p0HasNoMatch', { p0: dropped.join('、') }))
       }
       if (invalid.length > 0) {
-        message.warning(t('edit.matchPatternP0Has', { p0: invalid.join('、') }))
+        message.warning(t('core.edit.matchPatternP0Has', { p0: invalid.join('、') }))
       }
     }
     emitJson(json)

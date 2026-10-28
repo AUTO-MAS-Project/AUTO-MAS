@@ -38,7 +38,7 @@
    仍有旧 runtime 在等新身份替换时不清，保住离线用户靠缓存重建的能力。
 
 核心包 ``runtime_pool`` 不读 ``Config``，权威集合只在这一层算。与
-``Config.clean_maafw_agent_venvs`` 同一套保守规则：任一存活项目此刻不可达、任一
+``MaaFWMaintenanceService.clean_agent_venvs`` 同一套保守规则：任一存活项目此刻不可达、任一
 项目算不出 selection、托管解释器还没装（算不出身份），整轮弃权——回收晚一轮
 没有代价，误删一份 runtime 要重下几十到上百 MB。
 """
@@ -49,9 +49,22 @@ import json
 import os
 import threading
 from collections.abc import Iterable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.models.config import MaaFWConfig
+from app.task.MaaFW.tools.core.runner.environment import (
+    describe_runner_runtime_selection,
+    resolve_project_maafw_requirement,
+)
+from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+from app.task.MaaFW.tools.core.runtime_pool.binding import (
+    prune_selections,
+    retained_versions,
+)
+from app.task.MaaFW.tools.core.runtime_pool.identity import infer_exact_maafw_version
+from app.task.MaaFW.tools.embedded.embedded_project import resolve_maafw_project_root
 from app.utils import get_logger
 
 logger = get_logger("MFW 运行池回收")
@@ -65,7 +78,9 @@ def runtime_pool_root() -> Path:
     return Path.cwd() / "config" / "maafw_runtime_pool"
 
 
-def collect_live_project_paths() -> list[str]:
+def collect_live_project_paths(
+    scripts: Iterable[tuple[str, MaaFWConfig]],
+) -> list[str]:
     """当前配置里全部 MaaFW 类脚本的有效项目根（权威集合的输入）。
 
     lab（内嵌副本）口径：有效根永远是副本 ``data/mfw/<12hex>``（更新只落在副本，
@@ -75,16 +90,8 @@ def collect_live_project_paths() -> list[str]:
     binding，不计入。
     """
 
-    from app.core import Config
-    from app.models.config import MaaFWConfig
-    from app.task.MaaFW.tools.embedded.embedded_project import (
-        resolve_maafw_project_root,
-    )
-
     paths: list[str] = []
-    for uid, config in Config.ScriptConfig.items():
-        if not isinstance(config, MaaFWConfig):
-            continue
+    for uid, config in scripts:
         copy_dir = resolve_maafw_project_root(str(uid), config)
         if copy_dir.is_dir():
             paths.append(str(copy_dir))
@@ -93,28 +100,6 @@ def collect_live_project_paths() -> list[str]:
         if source and Path(source).is_dir():
             paths.append(source)
     return paths
-
-
-def script_config_loaded_intact() -> bool:
-    """脚本表是空的时候，看配置文件本身是不是真的空。
-
-    解析失败、或文件里明明有脚本却一个都没加载出来，都算没加载起来——此时
-    「权威集合为空」不可信，按它回收会把所有 runtime 当孤儿删光。
-    """
-
-    from app.core import Config
-
-    if len(Config.ScriptConfig) > 0:
-        return True
-    path = getattr(Config.ScriptConfig, "file", None)
-    if path is None or not Path(path).is_file():
-        return True
-    try:
-        text = Path(path).read_text(encoding="utf-8")
-        data = json.loads(text) if text.strip() else {}
-    except (OSError, ValueError):
-        return False
-    return not (isinstance(data, dict) and data)
 
 
 def reconcile_runtime_pool(
@@ -170,24 +155,11 @@ def _reconcile(
         )
         return None
 
-    # 这几个模块会拉起 runtime_pool 与 runner，只在真要用时导入。
-    from app.task.MaaFW.tools.core.runner.environment import (
-        describe_runner_runtime_selection,
-    )
-    from app.task.MaaFW.tools.core.runtime_pool import (
-        MaaFWRuntimePoolService,
-    )
-
     try:
         pool = MaaFWRuntimePoolService().pool
     except Exception as exc:  # noqa: BLE001 - 池本身有问题时不回收
         logger.warning(f"MFW 运行池回收已跳过：池初始化失败: {exc}")
         return None
-
-    from app.task.MaaFW.tools.core.runtime_pool.binding import (
-        prune_selections,
-        retained_versions,
-    )
 
     valid_runtime_ids: set[str] = set()
     binding_versions: set[str] = set()
@@ -409,8 +381,6 @@ def _has_files(directory: Path) -> bool:
 
 
 def _now_text() -> str:
-    from datetime import datetime, timezone
-
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
@@ -429,13 +399,6 @@ def previous_maafw_version(project_path: str | Path) -> str | None:
     更新提交后拿它与新版本比：版本换了就把旧版本作为 ``replaced_versions`` 传给
     回收，旧 runtime 不必再等 24 h 宽限。
     """
-
-    from app.task.MaaFW.tools.core.runner.environment import (
-        resolve_project_maafw_requirement,
-    )
-    from app.task.MaaFW.tools.core.runtime_pool.identity import (
-        infer_exact_maafw_version,
-    )
 
     try:
         requirement = resolve_project_maafw_requirement(Path(project_path))
@@ -494,12 +457,20 @@ def reconcile_in_background(
     事件循环上改，守护线程里去遍历它会撞上「dict changed size」。
     """
 
-    if not script_config_loaded_intact():
+    from app.core import Config
+
+    if not Config.script_config_loaded_intact():
         logger.warning(
             "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 运行池回收"
         )
         return
-    project_paths = collect_live_project_paths()
+    project_paths = collect_live_project_paths(
+        [
+            (str(uid), config)
+            for uid, config in Config.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig)
+        ]
+    )
 
     def _run() -> None:
         try:
@@ -527,5 +498,4 @@ __all__ = [
     "reconcile_in_background",
     "reconcile_runtime_pool",
     "runtime_pool_root",
-    "script_config_loaded_intact",
 ]

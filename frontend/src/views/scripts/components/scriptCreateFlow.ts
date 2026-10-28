@@ -58,88 +58,88 @@ export type ScriptCreateRequest =
 const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'General',
-    titleKey: 'scripts.type.General',
-    descriptionKey: 'scripts.create.typeDesc.General',
+    titleKey: 'core.scripts.type.General',
+    descriptionKey: 'core.scripts.create.typeDesc.General',
     keywords: ['general', '通用', '自定义'],
     group: 'general',
     icon: SCRIPT_LOGOS.General,
   },
   {
     value: 'MAA',
-    titleKey: 'scripts.type.MAA',
-    descriptionKey: 'scripts.create.typeDesc.MAA',
+    titleKey: 'core.scripts.type.MAA',
+    descriptionKey: 'core.scripts.create.typeDesc.MAA',
     keywords: ['maa', '明日方舟'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MAA,
   },
   {
     value: 'SRC',
-    titleKey: 'scripts.type.SRC',
-    descriptionKey: 'scripts.create.typeDesc.SRC',
+    titleKey: 'core.scripts.type.SRC',
+    descriptionKey: 'core.scripts.create.typeDesc.SRC',
     keywords: ['src', '星穹铁道'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.SRC,
   },
   {
     value: 'MaaEnd',
-    titleKey: 'scripts.type.MaaEnd',
-    descriptionKey: 'scripts.create.typeDesc.MaaEnd',
+    titleKey: 'core.scripts.type.MaaEnd',
+    descriptionKey: 'core.scripts.create.typeDesc.MaaEnd',
     keywords: ['maaend', 'maaframework', '终末地', 'endfield'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
   },
   {
     value: 'Okww',
-    titleKey: 'scripts.type.Okww',
-    descriptionKey: 'scripts.create.typeDesc.Okww',
+    titleKey: 'core.scripts.type.Okww',
+    descriptionKey: 'core.scripts.create.typeDesc.Okww',
     keywords: ['okww', 'ok-ww', 'ok-script'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.Okww,
   },
   {
     value: 'OkNte',
-    titleKey: 'scripts.type.OkNte',
-    descriptionKey: 'scripts.create.typeDesc.OkNte',
+    titleKey: 'core.scripts.type.OkNte',
+    descriptionKey: 'core.scripts.create.typeDesc.OkNte',
     keywords: ['oknte', 'ok-nte', '异环', 'ok-script'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.OkNte,
   },
   {
     value: 'HSR',
-    titleKey: 'scripts.type.HSR',
-    descriptionKey: 'scripts.create.typeDesc.HSR',
+    titleKey: 'core.scripts.type.HSR',
+    descriptionKey: 'core.scripts.create.typeDesc.HSR',
     keywords: ['hsr', '三月七', 'sra'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.HSR,
   },
   {
     value: 'BetterGI',
-    titleKey: 'scripts.type.BetterGI',
-    descriptionKey: 'scripts.create.typeDesc.BetterGI',
+    titleKey: 'core.scripts.type.BetterGI',
+    descriptionKey: 'core.scripts.create.typeDesc.BetterGI',
     keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.BetterGI,
   },
   {
     value: 'ZzzOd',
-    titleKey: 'scripts.type.ZzzOd',
-    descriptionKey: 'scripts.create.typeDesc.ZzzOd',
+    titleKey: 'core.scripts.type.ZzzOd',
+    descriptionKey: 'core.scripts.create.typeDesc.ZzzOd',
     keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.ZzzOd,
   },
   {
     value: 'BAAH',
-    titleKey: 'scripts.type.BAAH',
-    descriptionKey: 'scripts.create.typeDesc.BAAH',
+    titleKey: 'core.scripts.type.BAAH',
+    descriptionKey: 'core.scripts.create.typeDesc.BAAH',
     keywords: ['baah', '碧蓝档案', '蔚蓝档案', 'bluearchive', '爱丽丝助手'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.BAAH,
   },
   {
     value: 'Whimbox',
-    titleKey: 'scripts.type.Whimbox',
-    descriptionKey: 'scripts.create.typeDesc.Whimbox',
+    titleKey: 'core.scripts.type.Whimbox',
+    descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
     keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.Whimbox,
@@ -214,11 +214,11 @@ export const buildMfwReuseChoices = (
 }
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
-  const steps: CreateStep[] = [{ key: 'type', titleKey: 'scripts.create.step.type' }]
+  const steps: CreateStep[] = [{ key: 'type', titleKey: 'core.scripts.create.step.type' }]
   if (type === 'General') {
-    steps.push({ key: 'config', titleKey: 'scripts.create.step.config' })
+    steps.push({ key: 'config', titleKey: 'core.scripts.create.step.config' })
   } else if (isMfwFamily(type)) {
-    steps.push({ key: 'config', titleKey: 'scripts.create.step.mfwSource' })
+    steps.push({ key: 'config', titleKey: 'core.scripts.create.step.mfwSource' })
   }
   return steps
 }

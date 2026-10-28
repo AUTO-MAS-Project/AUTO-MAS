@@ -6,14 +6,14 @@ export function useOknteGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'OK-NTE配置会话',
     keys: {
-      stopFailed: 'edit.oknteSessionStopFailed',
-      startFailed: 'edit.oknteSessionStartFailed',
-      setupFailed: 'edit.oknteSessionFailed',
-      opened: 'edit.oknteSessionOpened',
-      viewOpened: 'edit.oknteViewOpened',
-      timeoutWarn: 'edit.oknteSessionTimeoutWarn',
-      saved: 'edit.okNteConfigurationThis',
-      saveFailed: 'edit.couldNotSaveOk',
+      stopFailed: 'core.edit.oknteSessionStopFailed',
+      startFailed: 'core.edit.oknteSessionStartFailed',
+      setupFailed: 'core.edit.oknteSessionFailed',
+      opened: 'core.edit.oknteSessionOpened',
+      viewOpened: 'core.edit.oknteViewOpened',
+      timeoutWarn: 'core.edit.oknteSessionTimeoutWarn',
+      saved: 'core.edit.okNteConfigurationThis',
+      saveFailed: 'core.edit.couldNotSaveOk',
     },
   })
   return {

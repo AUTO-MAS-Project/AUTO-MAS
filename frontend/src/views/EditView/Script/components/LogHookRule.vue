@@ -60,8 +60,8 @@ const getTypeHint = (type: LogHookType): string =>
     : '按匹配正则替换命中内容后继续交给后续规则，用于脱敏与格式归一化'
 
 const typeOptions = [
-  { value: 'drop', label: t('edit.drop') },
-  { value: 'replace', label: t('edit.rewrite') },
+  { value: 'drop', label: t('core.edit.drop') },
+  { value: 'replace', label: t('core.edit.rewrite') },
 ]
 </script>
 
@@ -92,14 +92,14 @@ const typeOptions = [
           >
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.matchPattern')"
-                :hint="t('edit.requiredEmptyValueDisables3')"
+                :text="t('core.edit.matchPattern')"
+                :hint="t('core.edit.requiredEmptyValueDisables3')"
                 variant="form"
               />
             </template>
             <a-input
               v-model:value="local.match"
-              :placeholder="t('edit.exampleHeartbeatCurrentProgress')"
+              :placeholder="t('core.edit.exampleHeartbeatCurrentProgress')"
               size="middle"
               @blur="commit"
             />
@@ -109,14 +109,14 @@ const typeOptions = [
           <a-form-item class="compact-form-item">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.replace')"
-                :hint="t('edit.replacementTextMatchBack')"
+                :text="t('core.edit.replace')"
+                :hint="t('core.edit.replacementTextMatchBack')"
                 variant="form"
               />
             </template>
             <a-input
               v-model:value="local.replace"
-              :placeholder="t('edit.exampleToken')"
+              :placeholder="t('core.edit.exampleToken')"
               size="middle"
               @blur="commit"
             />
@@ -128,7 +128,7 @@ const typeOptions = [
     <template #footer>
       <div class="hook-rule-footer">
         <span class="footer-type-tag">{{
-          local.type === 'drop' ? t('edit.drop') : t('edit.rewrite')
+          local.type === 'drop' ? t('core.edit.drop') : t('core.edit.rewrite')
         }}</span>
         <span class="footer-hint">{{ getTypeHint(local.type) }}</span>
       </div>

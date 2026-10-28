@@ -274,12 +274,12 @@ export const useHomeLayout = () => {
     }))
 
   const homeModules = computed<HomeModuleDescriptor[]>(() =>
-    toDescriptors(homeTopLevelOrder.value, key => `home.module.${key}`)
+    toDescriptors(homeTopLevelOrder.value, key => `core.home.module.${key}`)
   )
 
   // 轮播内部用游戏短名，顶层列表用带“活动信息”的完整模块名
   const homeActivityModules = computed<HomeModuleDescriptor[]>(() =>
-    toDescriptors(homeActivityOrder.value, key => `home.game.${key}`)
+    toDescriptors(homeActivityOrder.value, key => `core.home.game.${key}`)
   )
 
   const visibleActivityKeys = computed(() =>

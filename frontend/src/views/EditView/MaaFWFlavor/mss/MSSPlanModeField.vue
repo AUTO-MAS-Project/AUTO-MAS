@@ -3,8 +3,8 @@
   <!-- MSS 的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
   <a-form-item
     class="flavor-plan-mode"
-    :label="t('edit.maafwFlavorPlanMode')"
-    :extra="t('edit.mssFlavorPlanHint')"
+    :label="t('core.edit.maafwFlavorPlanMode')"
+    :extra="t('core.edit.mssFlavorPlanHint')"
   >
     <a-select
       v-model:value="context.formData.Info.PlanMode"
@@ -20,7 +20,7 @@
     class="flavor-queue-empty"
     type="warning"
     show-icon
-    :message="t('edit.mssFlavorQueueEmpty')"
+    :message="t('core.edit.mssFlavorQueueEmpty')"
   />
 </template>
 
@@ -41,7 +41,7 @@ const emit = defineEmits<{
 }>()
 
 const planModeOptions = computed(() =>
-  buildPlanModeOptions(mssPlanComboxItems.value, t('edit.maafwFlavorPlanFixed'))
+  buildPlanModeOptions(mssPlanComboxItems.value, t('core.edit.maafwFlavorPlanFixed'))
 )
 
 const queueCannotRun = computed(() =>

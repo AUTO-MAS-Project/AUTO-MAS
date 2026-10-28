@@ -581,7 +581,7 @@ export function request(
     const subscriptionIds: string[] = []
     const timer = window.setTimeout(() => {
       cleanup()
-      reject(new Error(t('misc.requestTimedOutP0', { p0: id, p1: requestType })))
+      reject(new Error(t('bootstrap.misc.requestTimedOutP0', { p0: id, p1: requestType })))
     }, timeoutMs)
 
     const cleanup = (): void => {
@@ -604,7 +604,7 @@ export function request(
 
     if (!send(id, requestType, { ...(data ?? {}), requestId })) {
       cleanup()
-      reject(new Error(t('misc.requestFailedP0P1', { p0: id, p1: requestType })))
+      reject(new Error(t('bootstrap.misc.requestFailedP0P1', { p0: id, p1: requestType })))
     }
   })
 }

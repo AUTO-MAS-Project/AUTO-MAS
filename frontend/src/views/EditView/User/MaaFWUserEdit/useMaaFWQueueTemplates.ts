@@ -126,7 +126,7 @@ export function useMaaFWQueueTemplates({
     })
 
   const rejectDuplicate = (next: MaaFWQueueTemplate[] | null) => {
-    if (!next) message.error(t('edit.queueTemplateNameExists'))
+    if (!next) message.error(t('core.edit.queueTemplateNameExists'))
     return next
   }
 

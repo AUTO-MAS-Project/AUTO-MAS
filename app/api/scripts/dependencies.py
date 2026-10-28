@@ -21,13 +21,10 @@
 
 from app.core import Config, emulator2
 from app.core.script_settings import ScriptSettings
-from app.models.config import BetterGIConfig
-from app.task.BetterGI.api_service import prepare_user_update
 
 _script_settings = ScriptSettings(
     gateway=Config,
     validate_binding=emulator2.mod_avd_binding_error,
-    user_preparers={BetterGIConfig: prepare_user_update},
 )
 
 

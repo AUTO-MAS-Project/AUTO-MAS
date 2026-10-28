@@ -13,11 +13,11 @@ export type MaaEndDeliveryCommissionSource =
 
 export const MAAEND_AUTO_COLLECT_MODE_OPTIONS = [
   {
-    labelKey: 'edit.maaEndAutoCollectModeDistributed',
+    labelKey: 'core.edit.maaEndAutoCollectModeDistributed',
     value: 'Distributed',
   },
   {
-    labelKey: 'edit.maaEndAutoCollectModeConcentrated',
+    labelKey: 'core.edit.maaEndAutoCollectModeConcentrated',
     value: 'Concentrated',
   },
 ] as const

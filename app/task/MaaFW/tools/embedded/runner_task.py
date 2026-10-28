@@ -23,6 +23,7 @@ from typing import Any, AsyncIterator, Callable, Mapping
 import psutil
 
 from app.core import Config
+from app.core.custom_script import execute_script_task
 from app.core.ws import Publisher, protocol
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification_ports import LocalNotice
@@ -35,7 +36,6 @@ from app.models.schema import (
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services.platform.power import power
 from app.task.emulator_core import close_emulator, resolve_host_adb
-from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
     controller_has_window_rules,

@@ -25,10 +25,10 @@ const storagePage = ref<InstanceType<typeof StoragePage> | null>(null)
 const history = ref<RouteVisit[]>([])
 const panelWidth = computed(() => Math.min(780, Math.max(280, width.value - 24)))
 const tabs = computed(() => [
-  { key: 'connection', label: t('devtools.connection') },
-  { key: 'storage', label: t('devtools.storage') },
-  { key: 'routes', label: t('devtools.routes') },
-  { key: 'tools', label: t('devtools.tools') },
+  { key: 'connection', label: t('core.devtools.connection') },
+  { key: 'storage', label: t('core.devtools.storage') },
+  { key: 'routes', label: t('core.devtools.routes') },
+  { key: 'tools', label: t('core.devtools.tools') },
 ])
 
 // 历史属于面板会话，切换标签、关闭工作台都不丢失；不持久化路由参数。
@@ -79,7 +79,7 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
   <a-button
     v-if="!open"
     class="devtools-launcher"
-    :aria-label="t('devtools.open')"
+    :aria-label="t('core.devtools.open')"
     @click="open = true"
   >
     <BugOutlined />
@@ -100,15 +100,15 @@ useEventListener(document, 'keydown', (event: KeyboardEvent) => {
       <div class="devtools-heading">
         <BugOutlined />
         <div>
-          <strong>{{ t('devtools.title') }}</strong>
-          <span class="devtools-caption">{{ t('devtools.subtitle') }}</span>
+          <strong>{{ t('core.devtools.title') }}</strong>
+          <span class="devtools-caption">{{ t('core.devtools.subtitle') }}</span>
         </div>
       </div>
     </template>
     <template #extra>
       <a-space>
         <kbd class="devtools-shortcut">Ctrl + Shift + D</kbd>
-        <a-button type="text" :aria-label="t('devtools.close')" @click="closePanel">
+        <a-button type="text" :aria-label="t('core.devtools.close')" @click="closePanel">
           <CloseOutlined />
         </a-button>
       </a-space>

@@ -263,7 +263,7 @@ def main():
 
     from app.core import Config
     from app.core.restore_bindings import resolve_restore_pools
-    from app.models.config import MaaEndConfig
+    from app.core.script_config_bindings import bind_script_config_handlers
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
@@ -275,6 +275,8 @@ def main():
         read_unity_display_type,
         read_unity_resolution,
     )
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     Config.set_restore_pool_resolver(resolve_restore_pools)
     baah_config_service = BAAHConfigService(
@@ -285,7 +287,15 @@ def main():
         read_resolution=read_unity_resolution,
         read_display_type=read_unity_display_type,
     )
-    Config.bind_script_config_handler(MaaEndConfig, maaend_config_service)
+    bind_script_config_handlers(
+        Config.bind_script_config_handler,
+        maaend=maaend_config_service,
+        zzzod=ZzzOdRecovery(
+            ZzzOdContext(
+                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
+            )
+        ),
+    )
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -328,9 +338,12 @@ def main():
 
         await ObsReplay.cleanup_temporary()
 
+        from functools import partial
+
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
         from app.core.game_calendar import GameCalendar
+        from app.core.notification_commands import execute_notification_command
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
 
@@ -342,6 +355,9 @@ def main():
             transactions=config_manager,
             runtime=RuntimeTasks,
             command_executor=execute_ws_command,
+            notification_command_executor=partial(
+                execute_notification_command, config=Config, task_manager=TaskManager
+            ),
         )
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)
@@ -421,12 +437,12 @@ def main():
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
                         await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        await Config.maafw_maintenance.clean_agent_venvs()
+                        await Config.maafw_maintenance.clean_embedded_copies()
+                        await Config.maafw_maintenance.clean_runtime_blobs()
+                        await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -568,6 +584,7 @@ def main():
         emulator2_router,
         emulator_router,
         history_router,
+        i18n_router,
         info_router,
         ocr_router,
         openclaw_qq_router,
@@ -608,6 +625,7 @@ def main():
     app.include_router(queue_router)
     app.include_router(dispatch_router)
     app.include_router(history_router)
+    app.include_router(i18n_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
     app.include_router(share_router)

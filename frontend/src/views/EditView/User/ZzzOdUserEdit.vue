@@ -4,7 +4,7 @@
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="`/scripts/${scriptId}/edit/zzzod`" class="breadcrumb-link">
@@ -12,7 +12,7 @@
             </router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            {{ isEdit ? t('comp.editUser') : t('comp.addUser2') }}
+            {{ isEdit ? t('core.comp.editUser') : t('core.comp.addUser2') }}
           </a-breadcrumb-item>
         </a-breadcrumb>
       </div>
@@ -22,9 +22,9 @@
           <template #icon>
             <FolderOpenOutlined />
           </template>
-          {{ t('comp.openConfigFolder') }}
+          {{ t('core.comp.openConfigFolder') }}
         </a-button>
-        <a-tooltip :title="t('edit.zzzodOpenNativeConfigHint')">
+        <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
           <a-button
             v-if="!showZzzodConfigMask && !showZzzodViewMask"
             type="primary"
@@ -37,7 +37,7 @@
             <template #icon>
               <SettingOutlined />
             </template>
-            {{ t('edit.zzzodOpenNativeConfig') }}
+            {{ t('core.edit.zzzodOpenNativeConfig') }}
           </a-button>
         </a-tooltip>
         <a-button
@@ -50,13 +50,13 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.configuring') }}
+          {{ t('core.edit.configuring') }}
         </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
           </template>
-          {{ t('edit.back') }}
+          {{ t('core.edit.back') }}
         </a-button>
       </a-space>
     </div>
@@ -64,8 +64,8 @@
     <GuiSessionMask
       :open="showZzzodConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.zzzodConfiguringTitle')"
-      :description="`${t('edit.zzzodConfiguringDesc')}\n${t('edit.zzzodConfiguringDesc2')}`"
+      :title="t('core.edit.zzzodConfiguringTitle')"
+      :description="`${t('core.edit.zzzodConfiguringDesc')}\n${t('core.edit.zzzodConfiguringDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -74,15 +74,15 @@
           size="large"
           @click="handleSaveZzzodConfig"
         >
-          {{ t('edit.saveSettings') }}
+          {{ t('core.edit.saveSettings') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showZzzodViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.zzzodViewingTitle')"
-      :description="`${t('edit.zzzodViewingDesc')}\n${t('edit.zzzodViewingDesc2')}`"
+      :title="t('core.edit.zzzodViewingTitle')"
+      :description="`${t('core.edit.zzzodViewingDesc')}\n${t('core.edit.zzzodViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -92,7 +92,7 @@
           :loading="stoppingZzzodConfig"
           @click="handleCloseZzzodView"
         >
-          {{ t('edit.zzzodViewClose') }}
+          {{ t('core.edit.zzzodViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -103,15 +103,15 @@
           <a-form :model="formData" layout="vertical" class="config-form">
             <div class="form-section">
               <div class="section-header">
-                <h3>{{ t('edit.basicInfo') }}</h3>
+                <h3>{{ t('core.edit.basicInfo') }}</h3>
               </div>
 
               <a-row :gutter="24">
                 <a-col :span="12">
                   <UserNameField
                     v-model="formData.userName"
-                    :hint="t('edit.zzzodUserNameHint')"
-                    :placeholder="t('edit.enterUsername')"
+                    :hint="t('core.edit.zzzodUserNameHint')"
+                    :placeholder="t('core.edit.enterUsername')"
                     enhanced
                     @save="handleNameBlur"
                   />
@@ -119,7 +119,7 @@
                 <a-col :span="12">
                   <UserStatusField
                     v-model="formData.Info.Status"
-                    :hint="t('edit.whetherThisUserEnabled')"
+                    :hint="t('core.edit.whetherThisUserEnabled')"
                     @save="saveField('Info.Status', formData.Info.Status)"
                   />
                 </a-col>
@@ -145,8 +145,8 @@
                   <a-form-item>
                     <template #label>
                       <FieldLabelWithHint
-                        :text="t('edit.zzzodDirectInstanceRun')"
-                        :hint="t('edit.zzzodDirectInstanceRunHint')"
+                        :text="t('core.edit.zzzodDirectInstanceRun')"
+                        :hint="t('core.edit.zzzodDirectInstanceRunHint')"
                         variant="form"
                       />
                     </template>
@@ -164,8 +164,8 @@
                   <a-form-item>
                     <template #label>
                       <FieldLabelWithHint
-                        :text="t('edit.zzzodQuickImport')"
-                        :hint="t('edit.zzzodImportConfigHint')"
+                        :text="t('core.edit.zzzodQuickImport')"
+                        :hint="t('core.edit.zzzodImportConfigHint')"
                         variant="form"
                       />
                     </template>
@@ -173,7 +173,7 @@
                       <a-select
                         v-model:value="importSourceIdx"
                         :options="importInstanceOptions"
-                        :placeholder="t('edit.zzzodImportPlaceholder')"
+                        :placeholder="t('core.edit.zzzodImportPlaceholder')"
                         :loading="instancesLoading"
                         size="large"
                         class="modern-select import-source-select"
@@ -185,7 +185,7 @@
                         :disabled="importSourceIdx === null"
                         @click="confirmImport"
                       >
-                        {{ t('edit.zzzodImport') }}
+                        {{ t('core.edit.zzzodImport') }}
                       </a-button>
                     </div>
                   </a-form-item>
@@ -194,7 +194,7 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.zzzodLauncherMode') }}
+                        {{ t('core.edit.zzzodLauncherMode') }}
                       </span>
                     </template>
                     <a-select
@@ -208,24 +208,24 @@
                         value="自动"
                         :disabled="!launchersReady || !launchersUsable.smart"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherAutoHint')">
-                          <span>{{ t('edit.zzzodLauncherAuto') }}</span>
+                        <a-tooltip :title="t('core.edit.zzzodLauncherAutoHint')">
+                          <span>{{ t('core.edit.zzzodLauncherAuto') }}</span>
                         </a-tooltip>
                       </a-select-option>
                       <a-select-option
                         value="原始"
                         :disabled="!launchersReady || !launchersUsable.original"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherOriginalHint')">
-                          <span>{{ t('edit.zzzodLauncherOriginal') }}</span>
+                        <a-tooltip :title="t('core.edit.zzzodLauncherOriginalHint')">
+                          <span>{{ t('core.edit.zzzodLauncherOriginal') }}</span>
                         </a-tooltip>
                       </a-select-option>
                       <a-select-option
                         value="集成"
                         :disabled="!launchersReady || !launchersUsable.integrated"
                       >
-                        <a-tooltip :title="t('edit.zzzodLauncherIntegratedHint')">
-                          <span>{{ t('edit.zzzodLauncherIntegrated') }}</span>
+                        <a-tooltip :title="t('core.edit.zzzodLauncherIntegratedHint')">
+                          <span>{{ t('core.edit.zzzodLauncherIntegrated') }}</span>
                         </a-tooltip>
                       </a-select-option>
                     </a-select>
@@ -252,15 +252,15 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodDirectInstance')"
-                          :hint="t('edit.zzzodDirectInstanceHint')"
+                          :text="t('core.edit.zzzodDirectInstance')"
+                          :hint="t('core.edit.zzzodDirectInstanceHint')"
                           variant="form"
                         />
                       </template>
                       <a-select
                         :value="nativeInstanceIdx"
                         :options="instanceOptions"
-                        :placeholder="t('edit.zzzodDirectPickInstance')"
+                        :placeholder="t('core.edit.zzzodDirectPickInstance')"
                         :loading="instancesLoading"
                         size="large"
                         class="modern-select"
@@ -274,7 +274,7 @@
                   type="info"
                   show-icon
                   class="native-bind-alert"
-                  :message="t('edit.zzzodDirectBindAlert')"
+                  :message="t('core.edit.zzzodDirectBindAlert')"
                 />
 
                 <!-- 原生来源：所选实例的原生账号字段（保存即写回一条龙 game_account.yml） -->
@@ -295,8 +295,8 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodGameRegion')"
-                          :hint="t('edit.zzzodGameRegionHint')"
+                          :text="t('core.edit.zzzodGameRegion')"
+                          :hint="t('core.edit.zzzodGameRegionHint')"
                           variant="form"
                         />
                       </template>
@@ -313,8 +313,8 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodGameLanguage')"
-                          :hint="t('edit.zzzodGameLanguageHint')"
+                          :text="t('core.edit.zzzodGameLanguage')"
+                          :hint="t('core.edit.zzzodGameLanguageHint')"
                           variant="form"
                         />
                       </template>
@@ -334,16 +334,16 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodGamePath')"
-                          :hint="t('edit.zzzodGamePathHint')"
+                          :text="t('core.edit.zzzodGamePath')"
+                          :hint="t('core.edit.zzzodGamePathHint')"
                           variant="form"
                         />
                       </template>
                       <PathPickerField
                         v-model="formData.Game.GamePath"
                         mode="file"
-                        :placeholder="t('edit.zzzodGamePathPlaceholder')"
-                        :pick-label="t('edit.pickFile')"
+                        :placeholder="t('core.edit.zzzodGamePathPlaceholder')"
+                        :pick-label="t('core.edit.pickFile')"
                         @pick="selectGamePath"
                       />
                     </a-form-item>
@@ -355,14 +355,14 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodAccount')"
-                          :hint="t('edit.zzzodAccountHint')"
+                          :text="t('core.edit.zzzodAccount')"
+                          :hint="t('core.edit.zzzodAccountHint')"
                           variant="form"
                         />
                       </template>
                       <a-input
                         v-model:value="formData.Game.Account"
-                        :placeholder="t('edit.zzzodEnterAccount')"
+                        :placeholder="t('core.edit.zzzodEnterAccount')"
                         size="large"
                         class="modern-input"
                         @blur="saveField('Game.Account', formData.Game.Account)"
@@ -373,14 +373,14 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.password')"
-                          :hint="t('edit.zzzodPasswordHint')"
+                          :text="t('core.edit.password')"
+                          :hint="t('core.edit.zzzodPasswordHint')"
                           variant="form"
                         />
                       </template>
                       <a-input-password
                         v-model:value="formData.Game.Password"
-                        :placeholder="t('edit.zzzodEnterPasswordPlaceholder')"
+                        :placeholder="t('core.edit.zzzodEnterPasswordPlaceholder')"
                         size="large"
                         class="modern-input"
                         @blur="saveField('Game.Password', formData.Game.Password)"
@@ -394,14 +394,14 @@
                     <a-form-item>
                       <template #label>
                         <FieldLabelWithHint
-                          :text="t('edit.zzzodBilibiliAccount')"
-                          :hint="t('edit.zzzodBilibiliAccountHint')"
+                          :text="t('core.edit.zzzodBilibiliAccount')"
+                          :hint="t('core.edit.zzzodBilibiliAccountHint')"
                           variant="form"
                         />
                       </template>
                       <a-input
                         v-model:value="formData.Game.BilibiliAccountName"
-                        :placeholder="t('edit.zzzodEnterBilibiliAccount')"
+                        :placeholder="t('core.edit.zzzodEnterBilibiliAccount')"
                         size="large"
                         class="modern-input"
                         @blur="
@@ -417,7 +417,7 @@
                 <a-col :span="12">
                   <UserRemainedDayField
                     v-model="formData.Info.RemainedDay"
-                    :hint="t('edit.daysLeftAccount1')"
+                    :hint="t('core.edit.daysLeftAccount1')"
                     @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
                   />
                 </a-col>
@@ -425,14 +425,14 @@
                   <a-form-item>
                     <template #label>
                       <FieldLabelWithHint
-                        :text="t('edit.note')"
-                        :hint="t('edit.addNoteAboutThis')"
+                        :text="t('core.edit.note')"
+                        :hint="t('core.edit.addNoteAboutThis')"
                         variant="form"
                       />
                     </template>
                     <a-input
                       v-model:value="formData.Info.Notes"
-                      :placeholder="t('edit.enterNote')"
+                      :placeholder="t('core.edit.enterNote')"
                       size="large"
                       class="modern-input"
                       @blur="saveField('Info.Notes', formData.Info.Notes)"
@@ -446,10 +446,10 @@
                   <a-form-item>
                     <template #label>
                       <span class="form-label">
-                        {{ t('edit.collectNodeDetails') }}
+                        {{ t('core.edit.collectNodeDetails') }}
                         <a-tooltip
                           mouse-enter-delay="0.5"
-                          :title="t('edit.collectsKeyMomentsFrom')"
+                          :title="t('core.edit.collectsKeyMomentsFrom')"
                         >
                           <QuestionCircleOutlined class="help-icon" />
                         </a-tooltip>
@@ -468,8 +468,8 @@
                   <a-form-item>
                     <template #label>
                       <FieldLabelWithHint
-                        :text="t('edit.zzzodAfterDone')"
-                        :hint="t('edit.zzzodAfterDoneHint')"
+                        :text="t('core.edit.zzzodAfterDone')"
+                        :hint="t('core.edit.zzzodAfterDoneHint')"
                         variant="form"
                       />
                     </template>
@@ -494,8 +494,8 @@
             <div class="form-section">
               <div class="section-header">
                 <h3>
-                  {{ t('edit.zzzodLaunchArgsTitle') }}
-                  <a-tooltip :title="t('edit.zzzodLaunchArgsSwitchHint')">
+                  {{ t('core.edit.zzzodLaunchArgsTitle') }}
+                  <a-tooltip :title="t('core.edit.zzzodLaunchArgsSwitchHint')">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </h3>
@@ -515,14 +515,14 @@
                 </div>
               </div>
               <p class="section-desc">
-                {{ t('edit.zzzodLaunchArgsDesc') }}
+                {{ t('core.edit.zzzodLaunchArgsDesc') }}
               </p>
               <a-collapse
                 v-model:activeKey="launchArgsOpen"
                 class="optional-section"
                 :bordered="false"
               >
-                <a-collapse-panel key="launch-args" :header="t('edit.zzzodLaunchArgsDetail')">
+                <a-collapse-panel key="launch-args" :header="t('core.edit.zzzodLaunchArgsDetail')">
                   <!-- 原生来源：所选实例的原生启动参数（改动即时写回一条龙 game.yml） -->
                   <template v-if="formData.Info.Base === 'native'">
                     <a-spin :spinning="nativeLoading">
@@ -545,7 +545,7 @@
                           "
                         />
                       </template>
-                      <a-empty v-else :description="t('edit.zzzodDirectPickInstanceFirst')" />
+                      <a-empty v-else :description="t('core.edit.zzzodDirectPickInstanceFirst')" />
                     </a-spin>
                   </template>
                   <!-- 用户：MAS 字段化启动参数（改动即时保存，运行时注入绑定槽） -->
@@ -588,8 +588,8 @@
                 <p class="section-desc">
                   {{
                     formData.Info.Base === 'native'
-                      ? t('edit.zzzodDirectTasksDesc')
-                      : t('edit.zzzodOneDragonDesc')
+                      ? t('core.edit.zzzodDirectTasksDesc')
+                      : t('core.edit.zzzodOneDragonDesc')
                   }}
                 </p>
               </ZzzodTaskBoard>
@@ -711,7 +711,7 @@ const handleOpenFolder = async () => {
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => scriptId)
-const scriptName = ref(t('edit.zzzodScriptFallbackName'))
+const scriptName = ref(t('core.edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
@@ -783,17 +783,17 @@ const formData = reactive<ZzzOdUserFormData>({
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 // 游戏结束后操作（value 为后端 OneDragon.AfterDone 取值，与一条龙原生「结束后」
 // 同词表；独立来源/共享来源模式经配置会话双向联动，原生来源直读写原生 after_done）
 const afterDoneOptions = [
-  { label: t('edit.zzzodAfterDoneNone'), value: '无' },
-  { label: t('edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
-  { label: t('edit.zzzodAfterDoneShutdown'), value: '关机' },
+  { label: t('core.edit.zzzodAfterDoneNone'), value: '无' },
+  { label: t('core.edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
+  { label: t('core.edit.zzzodAfterDoneShutdown'), value: '关机' },
 ]
 const afterDoneValue = computed<AfterDoneValue>({
   get: () =>
@@ -837,26 +837,26 @@ const configModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useScriptS'),
     icon: 'database',
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    label: t('edit.zzzodModeUser'),
+    label: t('core.edit.zzzodModeUser'),
     value: 'independent',
-    title: t('edit.zzzodModeUser'),
-    description: t('edit.zzzodModeUserDesc'),
+    title: t('core.edit.zzzodModeUser'),
+    description: t('core.edit.zzzodModeUserDesc'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.zzzodModeDirectDesc'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.zzzodModeDirectDesc'),
     icon: 'setting',
   },
 ]
@@ -864,22 +864,22 @@ const configModeOptions: Array<{
 // 蓝色说明框随所选模式动态切换（只显示当前模式的行为，减少固定长文案）
 const configModeAlert = computed(() =>
   formData.Info.Base === 'native'
-    ? t('edit.zzzodConfigSourceDirectAlert')
-    : t('edit.zzzodConfigSourceUserAlert')
+    ? t('core.edit.zzzodConfigSourceDirectAlert')
+    : t('core.edit.zzzodConfigSourceUserAlert')
 )
 
 // ══ 区服 / 语言选项（value 为 zzz-od YAML 原生取值，驱动逻辑需保持原样）══
 const gameRegionOptions = [
-  { label: t('edit.zzzodRegionCn'), value: 'cn' },
-  { label: t('edit.zzzodRegionCnB'), value: 'cn_b' },
-  { label: t('edit.zzzodRegionUs'), value: 'us' },
-  { label: t('edit.zzzodRegionEu'), value: 'eu' },
-  { label: t('edit.zzzodRegionAsia'), value: 'asia' },
-  { label: t('edit.zzzodRegionTwHkMo'), value: 'twhkmo' },
+  { label: t('core.edit.zzzodRegionCn'), value: 'cn' },
+  { label: t('core.edit.zzzodRegionCnB'), value: 'cn_b' },
+  { label: t('core.edit.zzzodRegionUs'), value: 'us' },
+  { label: t('core.edit.zzzodRegionEu'), value: 'eu' },
+  { label: t('core.edit.zzzodRegionAsia'), value: 'asia' },
+  { label: t('core.edit.zzzodRegionTwHkMo'), value: 'twhkmo' },
 ]
 const gameLanguageOptions = [
-  { label: t('edit.zzzodLanguageCn'), value: 'cn' },
-  { label: t('edit.zzzodLanguageEn'), value: 'en' },
+  { label: t('core.edit.zzzodLanguageCn'), value: 'cn' },
+  { label: t('core.edit.zzzodLanguageEn'), value: 'en' },
 ]
 // options 表派生 value→label 映射（备份预览反显共用，避免枚举双份维护）
 const gameRegionLabels: Record<string, string> = Object.fromEntries(
@@ -908,7 +908,7 @@ const handleNameBlur = async () => {
         String((user as { Info?: { Name?: string } })?.Info?.Name ?? '').trim() === name
     )
     if (duplicate) {
-      message.error(t('edit.zzzodDuplicateUserName'))
+      message.error(t('core.edit.zzzodDuplicateUserName'))
       return
     }
   } catch (e) {
@@ -923,7 +923,7 @@ const createUserImmediately = async (): Promise<boolean> => {
 
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
-    message.error(userApiError.value || t('edit.couldNotCreateUser'))
+    message.error(userApiError.value || t('core.edit.couldNotCreateUser'))
     handleCancel()
     return false
   }
@@ -989,7 +989,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
       )
       if (hasOtherDirect) {
         formData.Info.Base = prev
-        message.error(t('edit.zzzodDirectModeLimit'))
+        message.error(t('core.edit.zzzodDirectModeLimit'))
         return
       }
     } catch (e) {
@@ -1023,13 +1023,13 @@ const ensurePoolBackup = async (target: string): Promise<void> => {
   if (!userId.value) return
   try {
     const resp = await ensureConfigBackup(target)
-    if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
+    if (resp.code !== 200) throw new Error(resp.message || t('core.edit.zzzodBackupFailed'))
   } catch (e) {
     // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）；
     // 后端诊断（配置损坏时含损坏位置）附加展示，便于用户自愈
     const detail = e instanceof Error ? e.message : String(e)
     logger.warn(detail)
-    message.warning(`${t('edit.zzzodBackupFailed')}（${detail}）`)
+    message.warning(`${t('core.edit.zzzodBackupFailed')}（${detail}）`)
   }
 }
 
@@ -1086,9 +1086,9 @@ const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
 const confirmImport = () => {
   if (importSourceIdx.value === null || configLocked.value) return
   Modal.confirm({
-    title: t('edit.zzzodImportConfirmTitle'),
-    content: t('edit.zzzodImportConfirmDesc'),
-    okText: t('edit.zzzodImport'),
+    title: t('core.edit.zzzodImportConfirmTitle'),
+    content: t('core.edit.zzzodImportConfirmDesc'),
+    okText: t('core.edit.zzzodImport'),
     onOk: () => importFromInstance(),
   })
 }
@@ -1110,9 +1110,9 @@ const importFromInstance = async () => {
     // 重新拉取让表单与后端一致，预备编队组件一并强制刷新
     await loadUserData()
     teamsRef.value?.reload()
-    message.success(t('edit.zzzodImportSuccess'))
+    message.success(t('core.edit.zzzodImportSuccess'))
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('edit.zzzodImportFailed'))
+    message.error(e instanceof Error ? e.message : t('core.edit.zzzodImportFailed'))
   } finally {
     importLoading.value = false
   }
@@ -1135,7 +1135,7 @@ const loadLaunchers = async () => {
   try {
     const resp = await Service.getZzzodLaunchersApiApiScriptsZzzodLaunchersGet(scriptId)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodLauncherLoadFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodLauncherLoadFailed'))
     }
     launcherOriginal.value = resp.original_available
     launcherIntegrated.value = resp.integrated_available
@@ -1197,7 +1197,7 @@ const loadCatalog = async () => {
   try {
     const resp = await Service.getZzzodCatalogApiApiScriptsZzzodCatalogGet(scriptId)
     if (resp.code !== 200) {
-      throw new Error(resp.message || t('edit.zzzodLoadOneDragonFailed'))
+      throw new Error(resp.message || t('core.edit.zzzodLoadOneDragonFailed'))
     }
     catalog.value = resp.data || []
   } catch (e) {
@@ -1255,14 +1255,14 @@ const restoreTargets: Array<{ key: 'mas' | 'onedragon'; kind: 'user' | 'script' 
 
 // 预览字段标签（组件展示账号明细用）
 const previewFieldLabels: Record<string, string> = {
-  game_region: t('edit.zzzodGameRegion'),
-  game_path: t('edit.zzzodGamePath'),
-  game_language: t('edit.zzzodGameLanguage'),
-  account: t('edit.zzzodAccount'),
-  password: t('edit.password'),
-  bilibili_account_name: t('edit.zzzodBilibiliAccount'),
-  use_custom_win_title: t('edit.zzzodUseCustomWinTitle'),
-  custom_win_title: t('edit.zzzodCustomWinTitle'),
+  game_region: t('core.edit.zzzodGameRegion'),
+  game_path: t('core.edit.zzzodGamePath'),
+  game_language: t('core.edit.zzzodGameLanguage'),
+  account: t('core.edit.zzzodAccount'),
+  password: t('core.edit.password'),
+  bilibili_account_name: t('core.edit.zzzodBilibiliAccount'),
+  use_custom_win_title: t('core.edit.zzzodUseCustomWinTitle'),
+  custom_win_title: t('core.edit.zzzodCustomWinTitle'),
 }
 
 // 枚举值为后端/一条龙原生取值（驱动文案映射需保持原样），展示走词表
@@ -1270,30 +1270,30 @@ const formatPreviewValue = (key: string, raw: string): string => {
   switch (key) {
     case 'status':
       // 后端传 str(bool)（"True"/"False"），大小写与 YAML 表示不定，统一小写比较
-      return raw.toLowerCase() === 'true' ? t('edit.yes') : t('edit.no')
+      return raw.toLowerCase() === 'true' ? t('core.edit.yes') : t('core.edit.no')
     case 'base':
       return raw === 'independent'
-        ? t('edit.zzzodModeUser')
+        ? t('core.edit.zzzodModeUser')
         : raw === 'native'
-          ? t('edit.directControl')
+          ? t('core.edit.directControl')
           : raw
     case 'launcher_mode':
       return raw === '自动'
-        ? t('edit.zzzodLauncherAuto')
+        ? t('core.edit.zzzodLauncherAuto')
         : raw === '原始'
-          ? t('edit.zzzodLauncherOriginal')
+          ? t('core.edit.zzzodLauncherOriginal')
           : raw === '集成'
-            ? t('edit.zzzodLauncherIntegrated')
+            ? t('core.edit.zzzodLauncherIntegrated')
             : raw
     case 'remained_day':
-      return raw === '-1' ? t('edit.zzzodPreviewUnlimited') : raw
+      return raw === '-1' ? t('core.edit.zzzodPreviewUnlimited') : raw
     case 'push_log_mode':
       return raw === '关闭'
-        ? t('edit.pushLogModeOff')
+        ? t('core.edit.pushLogModeOff')
         : raw === '逐条'
-          ? t('edit.pushLogModeList')
+          ? t('core.edit.pushLogModeList')
           : raw === '汇总'
-            ? t('edit.pushLogModeSummary')
+            ? t('core.edit.pushLogModeSummary')
             : raw
     case 'game_region':
       return gameRegionLabels[raw] ?? raw
@@ -1338,18 +1338,18 @@ const handleRestoreView = (target: string, item: { time: string }) => {
     // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
     // 切任务开关会写回旧 AppList，导致恢复被静默撤销。
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: ZZZOD_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -1358,7 +1358,7 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           // 提前放行、查看会话对着没被恢复的配置打开
           resolve(await restoreForDetailView(target, item, target === 'mas'))
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },
@@ -1380,13 +1380,13 @@ const restoreForDetailView = async (
   if (resp.code === 409) {
     if (force) {
       // force 仍被拦：不再重复弹确认，直接把原因报给用户
-      throw new Error(resp.message || t('edit.configRestoreFailed'))
+      throw new Error(resp.message || t('core.edit.configRestoreFailed'))
     }
     // 源配置损坏：与「一键恢复」同一套二次确认，确认后带 force 重试本入口流程
     return confirmForceRestoreDetail(target, item, isMas, resp.message || '')
   }
   if (resp.code !== 200) {
-    throw new Error(resp.message || t('edit.configRestoreFailed'))
+    throw new Error(resp.message || t('core.edit.configRestoreFailed'))
   }
   restoreOpen.value = false
   if (isMas) {
@@ -1415,12 +1415,12 @@ const confirmForceRestoreDetail = (
       content: corruptedForceConfirmContent(copy.detail, copy.desc),
       okText: copy.okText,
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         try {
           forceResolve(await restoreForDetailView(target, item, isMas, true))
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           forceResolve(false)
         }
       },
@@ -1535,7 +1535,7 @@ const selectGamePath = async () => {
 const loadScriptInfo = async (): Promise<boolean> => {
   const detail = await getScript(scriptId)
   if (!detail || detail.type !== 'ZzzOd') {
-    if (!scriptApiError.value) message.error(t('edit.zzzodScriptNotFound'))
+    if (!scriptApiError.value) message.error(t('core.edit.zzzodScriptNotFound'))
     handleCancel()
     return false
   }
@@ -1575,7 +1575,7 @@ const loadUser = async () => {
     await loadUserData()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false

@@ -83,7 +83,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.bettergiUpdateStopFailed'))
+        throw new Error(response.message || t('core.edit.bettergiUpdateStopFailed'))
       }
       return true
     } catch (e) {
@@ -100,7 +100,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       window.clearTimeout(updateSession.timeout)
     }
     updateSession.timeout = window.setTimeout(() => {
-      message.error(t('edit.bettergiUpdateTimed'))
+      message.error(t('core.edit.bettergiUpdateTimed'))
       // 状态一定要落回不运行，否则弹窗会一直停在「进行中」出不来
       updateModal.running = false
       updateModal.done = true
@@ -163,7 +163,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
         { source: 'script_update', target_kind: 'user' }
       )
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.bettergiUpdateStartFailed'))
+        throw new Error(response.message || t('core.edit.bettergiUpdateStartFailed'))
       }
       updateModal.running = true
       updateModal.done = false
@@ -179,7 +179,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             errored = true
-            message.error(t('edit.bettergiUpdateFailed', { p0: data.message }))
+            message.error(t('core.edit.bettergiUpdateFailed', { p0: data.message }))
             updateModal.running = false
             updateModal.done = true
             // 弹窗留着：具体原因就在里面那几行日志里
@@ -188,7 +188,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           if (!errored) {
-            message.success(t('edit.bettergiUpdateTask'))
+            message.success(t('core.edit.bettergiUpdateTask'))
           }
           updateModal.running = false
           updateModal.done = true
@@ -200,7 +200,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       armIdleTimer()
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.bettergiUpdateStartFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.bettergiUpdateStartFailed'))
     } finally {
       updateModal.starting = false
     }

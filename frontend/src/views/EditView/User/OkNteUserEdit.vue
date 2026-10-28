@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="oknte"
       :user-id="activeUserId"
-      :config-label="t('edit.configureOkNte')"
+      :config-label="t('core.edit.configureOkNte')"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
       :config-disabled="pageLoading || !activeUserId || configLocked"
@@ -18,8 +18,8 @@
     <GuiSessionMask
       :open="showOknteConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.okNteConfigurationProgress')"
-      :description="`${t('edit.okNteGuiConfiguration')}\n${t('edit.clickSaveConfigurationWhen2')}`"
+      :title="t('core.edit.okNteConfigurationProgress')"
+      :description="`${t('core.edit.okNteGuiConfiguration')}\n${t('core.edit.clickSaveConfigurationWhen2')}`"
     >
       <template #actions>
         <a-button
@@ -28,15 +28,15 @@
           size="large"
           @click="handleSaveOkNteConfig"
         >
-          {{ t('edit.saveConfiguration') }}
+          {{ t('core.edit.saveConfiguration') }}
         </a-button>
       </template>
     </GuiSessionMask>
     <GuiSessionMask
       :open="showOknteViewMask"
       :icon="EyeOutlined"
-      :title="t('edit.oknteViewingTitle')"
-      :description="`${t('edit.oknteViewingDesc')}\n${t('edit.oknteViewingDesc2')}`"
+      :title="t('core.edit.oknteViewingTitle')"
+      :description="`${t('core.edit.oknteViewingDesc')}\n${t('core.edit.oknteViewingDesc2')}`"
     >
       <template #actions>
         <a-button
@@ -46,7 +46,7 @@
           :loading="stoppingOknteConfig"
           @click="handleCloseOknteView"
         >
-          {{ t('edit.oknteViewClose') }}
+          {{ t('core.edit.oknteViewClose') }}
         </a-button>
       </template>
     </GuiSessionMask>
@@ -56,22 +56,22 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.basicInfo') }}</h3>
+              <h3>{{ t('core.edit.basicInfo') }}</h3>
             </div>
 
             <a-row :gutter="24">
               <a-col :span="12">
                 <UserNameField
                   v-model="formData.userName"
-                  :hint="t('edit.nameUsedTellUsers')"
-                  :placeholder="t('edit.enterUsername')"
+                  :hint="t('core.edit.nameUsedTellUsers')"
+                  :placeholder="t('core.edit.enterUsername')"
                   @save="saveField('Info.Name', formData.userName)"
                 />
               </a-col>
               <a-col :span="12">
                 <UserStatusField
                   v-model="formData.Info.Status"
-                  :hint="t('edit.whetherThisUserEnabled')"
+                  :hint="t('core.edit.whetherThisUserEnabled')"
                   @save="saveField('Info.Status', formData.Info.Status)"
                 />
               </a-col>
@@ -82,14 +82,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.account')"
-                      :hint="t('edit.usedSwitchAccountsLeave')"
+                      :text="t('core.edit.account')"
+                      :hint="t('core.edit.usedSwitchAccountsLeave')"
                       variant="form"
                     />
                   </template>
                   <a-input
                     v-model:value="formData.Info.Id"
-                    :placeholder="t('edit.enterAccount')"
+                    :placeholder="t('core.edit.enterAccount')"
                     size="large"
                     @blur="saveField('Info.Id', formData.Info.Id)"
                   />
@@ -99,14 +99,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.password')"
-                      :hint="t('edit.requiredWhenSwitchingAccounts')"
+                      :text="t('core.edit.password')"
+                      :hint="t('core.edit.requiredWhenSwitchingAccounts')"
                       variant="form"
                     />
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
-                    :placeholder="t('edit.enterPassword')"
+                    :placeholder="t('core.edit.enterPassword')"
                     size="large"
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
@@ -124,7 +124,7 @@
                   :quick-config-disabled="
                     pageLoading || isInitializing || isSaving || configEditorSaving
                   "
-                  :alert-message="t('edit.configSourceHintBase')"
+                  :alert-message="t('core.edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
                   @quick-config-change="handleQuickConfigChange"
                 />
@@ -136,14 +136,14 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.gameResource')"
-                      :hint="t('edit.pickGameResourceThis')"
+                      :text="t('core.edit.gameResource')"
+                      :hint="t('core.edit.pickGameResourceThis')"
                       variant="form"
                     />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"
-                    :placeholder="t('edit.pickResource')"
+                    :placeholder="t('core.edit.pickResource')"
                     size="large"
                     :options="resourceOptions"
                     @change="saveField('Info.Resource', formData.Info.Resource)"
@@ -153,7 +153,7 @@
               <a-col :span="12">
                 <UserRemainedDayField
                   v-model="formData.Info.RemainedDay"
-                  :hint="t('edit.daysLeftAccount1')"
+                  :hint="t('core.edit.daysLeftAccount1')"
                   @save="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
                 />
               </a-col>
@@ -164,8 +164,11 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                      {{ t('core.edit.collectNodeDetails') }}
+                      <a-tooltip
+                        mouse-enter-delay="0.5"
+                        :title="t('core.edit.collectsKeyMomentsFrom')"
+                      >
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -183,8 +186,8 @@
 
             <UserNotesField
               v-model="formData.Info.Notes"
-              :hint="t('edit.addNoteAboutThis')"
-              :placeholder="t('edit.enterNote')"
+              :hint="t('core.edit.addNoteAboutThis')"
+              :placeholder="t('core.edit.enterNote')"
               :rows="4"
               @save="saveField('Info.Notes', formData.Info.Notes)"
             />
@@ -192,7 +195,7 @@
 
           <div class="form-section">
             <div class="section-header">
-              <h3>{{ t('edit.taskConfiguration') }}</h3>
+              <h3>{{ t('core.edit.taskConfiguration') }}</h3>
             </div>
 
             <a-row :gutter="24">
@@ -200,8 +203,8 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.startTaskTN')"
-                      :hint="t('edit.taskNumbersMatchOk')"
+                      :text="t('core.edit.startTaskTN')"
+                      :hint="t('core.edit.taskNumbersMatchOk')"
                       variant="form"
                     />
                   </template>
@@ -224,8 +227,8 @@
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
-                      :text="t('edit.currentLaunchArguments')"
-                      :hint="t('edit.argumentsGeneratedFromTask')"
+                      :text="t('core.edit.currentLaunchArguments')"
+                      :hint="t('core.edit.argumentsGeneratedFromTask')"
                       variant="form"
                     />
                   </template>
@@ -238,11 +241,11 @@
       </a-card>
 
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('edit.okNteConfiguration') }}</h3>
+        <h3>{{ t('core.edit.okNteConfiguration') }}</h3>
         <a-space>
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
-            {{ t('edit.configRestoreTitle') }}
+            {{ t('core.edit.configRestoreTitle') }}
           </a-button>
         </a-space>
       </a-flex>
@@ -278,7 +281,7 @@
       :script-name="OKNTE_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
-      :script-desc="t('edit.oknteConfigRestoreScriptDesc')"
+      :script-desc="t('core.edit.oknteConfigRestoreScriptDesc')"
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
@@ -286,7 +289,7 @@
       <template #preview="{ raw }">
         <a-empty
           v-if="!previewFiles(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
+          :description="t('core.edit.configRestorePreviewEmpty')"
         />
         <div v-else>
           <template v-for="f in previewFiles(raw)" :key="f.name">
@@ -380,32 +383,32 @@ const oknteConfigModeOptions: Array<{
   icon: 'file' | 'database' | 'setting'
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useSharedScriptLevel'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
 
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const oknteTaskOptions = [
@@ -577,7 +580,7 @@ const handleTaskIndexChange = async (value: number) => {
 const handleOkNteConfig = async () => {
   if (configLocked.value) return
   if (!userId) {
-    message.error(t('edit.createUserBeforeConfiguring'))
+    message.error(t('core.edit.createUserBeforeConfiguring'))
     return
   }
   if (configEditor.value && !(await configEditor.value.saveAll())) return
@@ -627,7 +630,7 @@ const loadUser = async () => {
     formData.userName = formData.Info.Name || ''
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser'))
     handleCancel()
   } finally {
     isInitializing.value = false
@@ -689,18 +692,18 @@ const handleRestoreView = (target: string, item: { time: string }) => {
   if (configLocked.value) return Promise.resolve(false)
   return new Promise<boolean>(resolve => {
     Modal.confirm({
-      title: t('edit.configRestoreDetailView'),
+      title: t('core.edit.configRestoreDetailView'),
       content: h(
         'p',
         { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
+        t('core.edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
       ),
-      okText: t('edit.configRestoreConfirmOk'),
+      okText: t('core.edit.configRestoreConfirmOk'),
       okType: 'danger',
-      cancelText: t('edit.cancel'),
+      cancelText: t('core.edit.cancel'),
       onOk: async () => {
         if (configLocked.value) {
-          message.error(t('edit.configLocked'))
+          message.error(t('core.edit.configLocked'))
           resolve(false)
           return
         }
@@ -709,7 +712,7 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
           // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
           if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
+            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
           }
           restoreOpen.value = false
           if (target === 'mas') {
@@ -719,7 +722,7 @@ const handleRestoreView = (target: string, item: { time: string }) => {
           }
           resolve(true)
         } catch (e) {
-          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
           resolve(false)
         }
       },

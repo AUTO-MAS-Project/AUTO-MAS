@@ -88,10 +88,10 @@
           <template v-if="column.key === 'globalControl'">
             <a-space>
               <a-button ghost size="small" type="primary" @click="enableAllStages(record.key)">{{
-                t('plan.table.on')
+                t('core.plan.table.on')
               }}</a-button>
               <a-button size="small" danger @click="disableAllStages(record.key)">{{
-                t('plan.table.off')
+                t('core.plan.table.off')
               }}</a-button>
             </a-space>
           </template>
@@ -124,16 +124,16 @@
         <a-col v-for="i in 4" :key="i" :span="6">
           <a-form-item :colon="false" class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('plan.table.customStageTip')">
+              <a-tooltip :title="t('core.plan.table.customStageTip')">
                 <span class="form-label">
-                  {{ t('plan.table.customStage', { n: i }) }}
+                  {{ t('core.plan.table.customStage', { n: i }) }}
                   <QuestionCircleOutlined class="help-icon" />
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="tempCustomStages[`custom_stage_${i}` as keyof typeof tempCustomStages]"
-              :placeholder="t('plan.table.stagePlaceholder')"
+              :placeholder="t('core.plan.table.stagePlaceholder')"
               :maxlength="50"
               allow-clear
               size="large"
@@ -223,12 +223,12 @@ const columnKeys = computed(() =>
 )
 
 const columnTitle = (key: string) =>
-  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+  key === 'ALL' ? t('core.plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 
 // 配置视图列定义
 const configColumns = computed(() => [
   {
-    title: t('plan.table.field'),
+    title: t('core.plan.table.field'),
     dataIndex: 'taskName',
     key: 'taskName',
     width: 120,
@@ -247,14 +247,14 @@ const configColumns = computed(() => [
 // 简化视图列定义
 const simpleColumns = computed(() => [
   {
-    title: t('plan.table.globalControl'),
+    title: t('core.plan.table.globalControl'),
     key: 'globalControl',
     width: 75,
     fixed: 'left',
     align: 'center',
   },
   {
-    title: t('plan.table.stage'),
+    title: t('core.plan.table.stage'),
     dataIndex: 'taskName',
     key: 'taskName',
     width: 120,
@@ -351,7 +351,7 @@ const SERIES_OPTIONS = computed<SelectOption[]>(() => [
   { label: '4', value: '4' },
   { label: '5', value: '5' },
   { label: '6', value: '6' },
-  { label: t('plan.table.noSwitch'), value: '-1' },
+  { label: t('core.plan.table.noSwitch'), value: '-1' },
 ])
 
 // 选项类型定义
@@ -390,7 +390,7 @@ const getSelectOptions = (
     disabled: usedStages.includes(option.value) && option.value !== currentValue,
     label:
       usedStages.includes(option.value) && option.value !== currentValue
-        ? t('plan.table.usedSuffix', { label: option.label })
+        ? t('core.plan.table.usedSuffix', { label: option.label })
         : option.label,
   }))
 }

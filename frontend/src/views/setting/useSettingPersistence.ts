@@ -77,7 +77,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`设置保存失败: ${errorMsg}`)
-      message.error(t('setting.toast.saveFailed'))
+      message.error(t('core.setting.toast.saveFailed'))
       return false
     }
   }
@@ -105,7 +105,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
     const success = await saveSettings(category, changes)
 
     if (!success) {
-      if (category === 'Replay') throw new Error(t('setting.toast.saveFailed'))
+      if (category === 'Replay') throw new Error(t('core.setting.toast.saveFailed'))
       return false
     }
 
@@ -130,7 +130,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`更新托盘失败: ${errorMsg}`)
-        message.error(t('setting.toast.trayUpdateFailed'))
+        message.error(t('core.setting.toast.trayUpdateFailed'))
       }
     }
 
@@ -141,7 +141,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`重启更新检查失败: ${errorMsg}`)
-        message.error(t('setting.toast.updateCheckFailed'))
+        message.error(t('core.setting.toast.updateCheckFailed'))
       }
     }
 

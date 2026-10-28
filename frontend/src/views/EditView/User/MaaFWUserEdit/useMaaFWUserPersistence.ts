@@ -71,7 +71,7 @@ export function useMaaFWUserPersistence({
 
       const success = await updateUser(scriptId, userIdHolder.value, userData)
       // 这句会进页头的保存失败提示，不带内部字段键名；键名只进日志
-      if (!success) throw new Error(t('edit.couldNotSaveUser'))
+      if (!success) throw new Error(t('core.edit.couldNotSaveUser'))
       logger.info(`用户配置已保存: ${key}`)
       // 失败按字段记账：只有这个字段后来存成功才算补上（userName 写的就是 Info.Name）
     }, saveItemKey(key))
@@ -108,7 +108,7 @@ export function useMaaFWUserPersistence({
           TaskSnapshot: taskSnapshotValue,
         },
       })
-      if (!success) throw new Error(t('edit.couldNotSaveUser'))
+      if (!success) throw new Error(t('core.edit.couldNotSaveUser'))
       // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
       if (hasManagedTasks && pendingCount() === 1) await reloadManagedUserFields()
       // 每次都写整份队列快照：任一次存成功就补上了之前失败的那次

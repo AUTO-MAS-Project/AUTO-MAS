@@ -1,6 +1,6 @@
 <template>
-  <a-card class="shortcut-card" :title="t('home.quick.title')">
-    <section class="quick-actions" :aria-label="t('home.quick.aria')">
+  <a-card class="shortcut-card" :title="t('core.home.quick.title')">
+    <section class="quick-actions" :aria-label="t('core.home.quick.aria')">
       <button
         v-for="action in quickActions"
         :key="action.path"
@@ -36,32 +36,32 @@ const { t } = useI18n()
 
 const quickActions = computed(() => [
   {
-    title: t('home.quick.scripts'),
-    description: t('home.quick.scriptsDesc'),
+    title: t('core.home.quick.scripts'),
+    description: t('core.home.quick.scriptsDesc'),
     path: '/scripts',
     icon: FileTextOutlined,
   },
   {
-    title: t('home.quick.plans'),
-    description: t('home.quick.plansDesc'),
+    title: t('core.home.quick.plans'),
+    description: t('core.home.quick.plansDesc'),
     path: '/plans',
     icon: CalendarOutlined,
   },
   {
-    title: t('home.quick.emulators'),
-    description: t('home.quick.emulatorsDesc'),
+    title: t('core.home.quick.emulators'),
+    description: t('core.home.quick.emulatorsDesc'),
     path: '/emulators',
     icon: DatabaseOutlined,
   },
   {
-    title: t('home.quick.queue'),
-    description: t('home.quick.queueDesc'),
+    title: t('core.home.quick.queue'),
+    description: t('core.home.quick.queueDesc'),
     path: '/queue',
     icon: UnorderedListOutlined,
   },
   {
-    title: t('home.quick.scheduler'),
-    description: t('home.quick.schedulerDesc'),
+    title: t('core.home.quick.scheduler'),
+    description: t('core.home.quick.schedulerDesc'),
     path: '/scheduler',
     icon: ControlOutlined,
   },
