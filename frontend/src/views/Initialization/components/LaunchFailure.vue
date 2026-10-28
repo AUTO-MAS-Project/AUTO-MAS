@@ -3,7 +3,7 @@
     <div class="failure-body">
       <h2 class="failure-title">
         <i class="failure-dot" aria-hidden="true"></i>
-        {{ t('init.step.failed', { title }) }}
+        {{ t('bootstrap.init.step.failed', { title }) }}
       </h2>
 
       <p v-if="message" class="failure-message">{{ message }}</p>
@@ -27,10 +27,10 @@
           :disabled="doctorRunning"
           @click="updateRuntime"
         >
-          {{ t('init.failure.updateRuntime') }}
+          {{ t('bootstrap.init.failure.updateRuntime') }}
         </a-button>
         <a-button v-if="docsUrl" type="text" @click="emit('open-docs')">
-          {{ t('init.backend.viewDocs') }}
+          {{ t('bootstrap.init.backend.viewDocs') }}
         </a-button>
       </div>
 
@@ -42,14 +42,14 @@
       />
 
       <div v-if="showMirrorSelection && mirrors.length > 0" class="failure-mirrors">
-        <p class="mirrors-title">{{ t('init.failure.mirrorTitle') }}</p>
+        <p class="mirrors-title">{{ t('bootstrap.init.failure.mirrorTitle') }}</p>
         <a-radio-group
           :value="selectedMirror"
           :name="mirrorGroupName"
           :disabled="updating"
           class="mirror-options"
           role="radiogroup"
-          :aria-label="t('init.failure.mirrorTitle')"
+          :aria-label="t('bootstrap.init.failure.mirrorTitle')"
           @change="emit('update:selected-mirror', $event.target.value)"
         >
           <a-radio
@@ -61,7 +61,11 @@
             <span class="mirror-content">
               <span class="mirror-name">{{ mirror.name }}</span>
               <span class="mirror-note">
-                {{ mirror.recommended ? t('init.failure.mirrorRecommended') : mirror.description }}
+                {{
+                  mirror.recommended
+                    ? t('bootstrap.init.failure.mirrorRecommended')
+                    : mirror.description
+                }}
               </span>
             </span>
           </a-radio>
@@ -74,9 +78,11 @@
         :open="detailsOpen"
         @toggle="detailsOpen = ($event.target as HTMLDetailsElement).open"
       >
-        <summary>{{ t('init.failure.details') }}</summary>
+        <summary>{{ t('bootstrap.init.failure.details') }}</summary>
 
-        <div v-if="doctorRunning" class="details-line">{{ t('init.failure.doctorRunning') }}</div>
+        <div v-if="doctorRunning" class="details-line">
+          {{ t('bootstrap.init.failure.doctorRunning') }}
+        </div>
         <template v-else-if="doctorChecks">
           <div v-if="doctorChecks.length > 0" class="doctor-checks">
             <span v-for="check in doctorChecks" :key="check.id" class="doctor-check">
@@ -84,31 +90,31 @@
               <b :class="{ bad: check.status !== 'ok' }">{{ check.message || check.status }}</b>
             </span>
           </div>
-          <div v-else class="details-line">{{ t('init.failure.doctorEmpty') }}</div>
+          <div v-else class="details-line">{{ t('bootstrap.init.failure.doctorEmpty') }}</div>
         </template>
 
         <pre v-if="failureLogs" class="failure-log">{{ failureLogs }}</pre>
       </details>
 
       <div class="failure-support">
-        <p class="support-hint">{{ t('init.failure.exportLogsHint') }}</p>
+        <p class="support-hint">{{ t('bootstrap.init.failure.exportLogsHint') }}</p>
         <a-space wrap>
           <a-button :loading="exportingLogs" @click="packageLogs">
             <template #icon><FileZipOutlined /></template>
-            {{ t('logs.package') }}
+            {{ t('bootstrap.logs.package') }}
           </a-button>
           <a-button class="failure-help" @click="handleJoinGroup">
             <template #icon><TeamOutlined /></template>
-            {{ t('init.failure.joinGroup') }}
+            {{ t('bootstrap.init.failure.joinGroup') }}
           </a-button>
         </a-space>
       </div>
 
       <p v-if="showSkipButton" class="failure-skip">
         <button type="button" :disabled="updating" @click="emit('skip')">
-          {{ t('init.step.skip') }}
+          {{ t('bootstrap.init.step.skip') }}
         </button>
-        {{ t('init.step.skipConsequence') }}
+        {{ t('bootstrap.init.step.skipConsequence') }}
       </p>
     </div>
   </div>
@@ -190,9 +196,9 @@ const SUPPORT_GROUP_URL = 'https://qm.qq.com/q/DEG4a3p0FG'
 const noticeText = computed(() => {
   switch (props.failureNotice) {
     case 'internal-error':
-      return t('init.failure.internalErrorNotice')
+      return t('bootstrap.init.failure.internalErrorNotice')
     case 'contact-support':
-      return t('init.failure.contactSupportNotice')
+      return t('bootstrap.init.failure.contactSupportNotice')
     default:
       return ''
   }
@@ -216,7 +222,7 @@ async function handleJoinGroup() {
     if (!result.success) throw new Error(String(result.error))
   } catch (error) {
     logger.error(`打开初始化求助群失败: ${error instanceof Error ? error.message : String(error)}`)
-    feedback.error(t('comp.couldNotOpenLink'))
+    feedback.error(t('bootstrap.comp.couldNotOpenLink'))
   }
 }
 

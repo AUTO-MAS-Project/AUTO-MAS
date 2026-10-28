@@ -21,6 +21,7 @@ from pathlib import Path
 from app.config import config_manager
 from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb
+from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig
 from app.models.emulator import DeviceProvider
@@ -82,7 +83,6 @@ from .tools.software_update import (
     prepare_maa_software_update,
     read_installed_release,
 )
-from .tools.stage_service import maa_stage_service
 from .tools.update_credentials import resolve_takeover_credentials
 from .tools.UpdateMAA import MaaUpdaterRunningError
 

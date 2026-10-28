@@ -183,7 +183,7 @@ export const useArknightsActivitySource = () => {
       overview.value = {
         ...createEmptySraActivityOverview(),
         Available: false,
-        Message: t('home.arknights.unavailable'),
+        Message: t('core.home.arknights.unavailable'),
       }
     },
   })

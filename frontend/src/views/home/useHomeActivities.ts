@@ -75,7 +75,7 @@ export const useHomeActivities = ({
           section: {
             ...panel.activities,
             refresh: {
-              label: t('home.activity.refresh'),
+              label: t('core.home.activity.refresh'),
               loading: refreshing.value.has(panel.key),
             },
           },
@@ -130,7 +130,7 @@ export const useHomeActivities = ({
       await completion.toggle(activity)
     } catch (error) {
       message.error(
-        error instanceof Error ? error.message : t('home.activity.completionSaveFailed')
+        error instanceof Error ? error.message : t('core.home.activity.completionSaveFailed')
       )
     }
   }

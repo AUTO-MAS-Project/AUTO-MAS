@@ -143,11 +143,11 @@ const batchToggleEnabled = (target: boolean) => {
 const batchRemoveSelected = () => {
   const count = multiSelectedRows.value.length
   Modal.confirm({
-    title: t('edit.bettergiMultiRemoveTitle'),
-    content: t('edit.bettergiMultiRemoveContent', { count }),
-    okText: t('edit.bettergiMultiRemove'),
+    title: t('core.edit.bettergiMultiRemoveTitle'),
+    content: t('core.edit.bettergiMultiRemoveContent', { count }),
+    okText: t('core.edit.bettergiMultiRemove'),
     okButtonProps: { danger: true },
-    cancelText: t('edit.cancel'),
+    cancelText: t('core.edit.cancel'),
     onOk: () => {
       const rows = [...multiSelectedRows.value]
       for (const row of rows) removeFromDragon(row)
@@ -178,15 +178,15 @@ const handleGroupDragEnd = () => {
 const handleRowContextMenu = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
   if (isGroupFrozen(item)) {
-    message.warning(t('edit.bettergiGroupFrozenTip'))
+    message.warning(t('core.edit.bettergiGroupFrozenTip'))
     return
   }
   Modal.confirm({
-    title: t('edit.bettergiRemoveFromDragonTitle'),
-    content: t('edit.bettergiRemoveFromDragonContent', { name: groupLabel(item) }),
-    okText: t('edit.deleteSelected'),
+    title: t('core.edit.bettergiRemoveFromDragonTitle'),
+    content: t('core.edit.bettergiRemoveFromDragonContent', { name: groupLabel(item) }),
+    okText: t('core.edit.deleteSelected'),
     okButtonProps: { danger: true },
-    cancelText: t('edit.cancel'),
+    cancelText: t('core.edit.cancel'),
     onOk: () => removeFromDragon(item),
   })
 }
@@ -205,12 +205,12 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
           <template #icon>
             <PlusOutlined />
           </template>
-          {{ t('edit.bettergiAddToDragon') }}
+          {{ t('core.edit.bettergiAddToDragon') }}
         </a-button>
         <a-popconfirm
-          :title="t('edit.bettergiClearDragonTitle')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
+          :title="t('core.edit.bettergiClearDragonTitle')"
+          :ok-text="t('core.edit.ok')"
+          :cancel-text="t('core.edit.cancel')"
           :disabled="!groupsEditable || dragonList.length === 0"
           @confirm="clearDragon"
         >
@@ -218,7 +218,7 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
             <template #icon>
               <ClearOutlined />
             </template>
-            {{ t('edit.bettergiClearDragon') }}
+            {{ t('core.edit.bettergiClearDragon') }}
           </a-button>
         </a-popconfirm>
       </a-space>
@@ -226,18 +226,18 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
 
     <div v-if="hasMultiSelection" class="bettergi-groups-multi-bar">
       <span class="bettergi-groups-multi-count">
-        {{ t('edit.bettergiMultiSelected', { count: multiSelectedRows.length }) }}
+        {{ t('core.edit.bettergiMultiSelected', { count: multiSelectedRows.length }) }}
       </span>
       <a-space size="small">
         <a-button size="small" @click="batchToggleEnabled(true)">
-          {{ t('edit.bettergiMultiEnable') }}
+          {{ t('core.edit.bettergiMultiEnable') }}
         </a-button>
         <a-button size="small" @click="batchToggleEnabled(false)">
-          {{ t('edit.bettergiMultiDisable') }}
+          {{ t('core.edit.bettergiMultiDisable') }}
         </a-button>
         <a-button size="small" danger @click="batchRemoveSelected">
           <template #icon><ClearOutlined /></template>
-          {{ t('edit.bettergiMultiRemove') }}
+          {{ t('core.edit.bettergiMultiRemove') }}
         </a-button>
       </a-space>
     </div>
@@ -275,44 +275,47 @@ const handleRowContextMenu = (item: ConfigGroupIdentity) => {
               </a-tag>
               <span class="group-row-label">{{ groupLabel(item) }}</span>
               <a-tag v-if="isGroupFrozen(item)" color="orange" size="small">
-                {{ t('edit.bettergiGroupFrozen') }}
+                {{ t('core.edit.bettergiGroupFrozen') }}
               </a-tag>
             </span>
           </div>
           <!-- 行尾操作（右对齐）：左=另存为新配置组（scriptgroup/js/pathing 内容可复制成新组），
                            右=复制相同（所有可编辑行直接加一份相同配置组入队，无弹窗；内置/专项同此） -->
           <span v-if="groupsEditable" class="group-row-actions" @click.stop>
-            <a-tooltip v-if="canDuplicateGroup(item)" :title="t('edit.bettergiDuplicateAsNew')">
+            <a-tooltip
+              v-if="canDuplicateGroup(item)"
+              :title="t('core.edit.bettergiDuplicateAsNew')"
+            >
               <a-button
                 class="group-row-action-btn"
                 type="text"
                 size="small"
                 :disabled="isGroupFrozen(item)"
-                :aria-label="t('edit.bettergiDuplicateAsNew')"
+                :aria-label="t('core.edit.bettergiDuplicateAsNew')"
                 @click.stop="openDuplicateModal(item)"
               >
                 <template #icon><SaveOutlined /></template>
               </a-button>
             </a-tooltip>
-            <a-tooltip :title="t('edit.bettergiRenameAsNew')">
+            <a-tooltip :title="t('core.edit.bettergiRenameAsNew')">
               <a-button
                 class="group-row-action-btn"
                 type="text"
                 size="small"
                 :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
-                :aria-label="t('edit.bettergiRenameAsNew')"
+                :aria-label="t('core.edit.bettergiRenameAsNew')"
                 @click.stop="openRenameModal(item)"
               >
                 <template #icon><EditOutlined /></template>
               </a-button>
             </a-tooltip>
-            <a-tooltip :title="t('edit.bettergiCopySameAs')">
+            <a-tooltip :title="t('core.edit.bettergiCopySameAs')">
               <a-button
                 class="group-row-action-btn"
                 type="text"
                 size="small"
                 :disabled="isGroupFrozen(item)"
-                :aria-label="t('edit.bettergiCopySameAs')"
+                :aria-label="t('core.edit.bettergiCopySameAs')"
                 @click.stop="duplicateSameGroup(item)"
               >
                 <template #icon><CopyOutlined /></template>

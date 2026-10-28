@@ -4,11 +4,11 @@
     :href="localizedUrl"
     target="_blank"
     rel="noreferrer"
-    :aria-label="t('common.viewPageDocs')"
+    :aria-label="t('core.common.viewPageDocs')"
     @click.prevent="openHelpLink(localizedUrl, 'docs', entrySource)"
   >
     <BookOutlined />
-    {{ t('common.viewPageDocs') }}
+    {{ t('core.common.viewPageDocs') }}
     <ExportOutlined />
   </a>
 </template>

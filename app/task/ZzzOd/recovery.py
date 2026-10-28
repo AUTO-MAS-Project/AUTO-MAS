@@ -22,7 +22,11 @@ import asyncio
 import json
 import shutil
 import uuid
+from collections.abc import Awaitable, Callable
+from functools import partial
+from typing import cast
 
+from app.config import ConfigEntry
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
@@ -49,28 +53,26 @@ class ZzzOdRecovery:
                 exclude_same_script=True,
             )
 
-    async def remove_user(self, script_id: str, user_id: str) -> None:
-        """先提交用户删除，再回收已捕获的槽，避免锁拒绝后现场已被删除。"""
-        script_config = self.context.script_config(script_id)
-        uid = uuid.UUID(user_id)
-        recycle_ctx: tuple[int, str] | None = None
-        if uid in script_config.UserData:
-            user_cfg = script_config.UserData[uid]
-            slot = int(user_cfg.Info.SlotIdx or -1)
-            if slot > 0:
-                recycle_ctx = (slot, str(user_cfg.Info.Name or ""))
-        script_config.UserData.remove(uid)
-        await script_config.UserData.commit()
-        if recycle_ctx is not None:
-            slot, name = recycle_ctx
-            await self._recycle_bound_slot(
-                script_id=script_id,
-                script_config=script_config,
-                user_uid=uid,
-                slot=slot,
-                name=name,
-                action="删除用户",
-            )
+    def prepare_user_removal(
+        self, script: ConfigEntry, user_id: uuid.UUID
+    ) -> Callable[[], Awaitable[None]] | None:
+        """捕获槽信息；公共层提交删除后才回收，锁拒绝时不动文件。"""
+        script_config = cast(ZzzOdConfig, script)
+        if user_id not in script_config.UserData:
+            return None
+        user_cfg = script_config.UserData[user_id]
+        slot = int(user_cfg.Info.SlotIdx or -1)
+        if slot <= 0:
+            return None
+        return partial(
+            self._recycle_bound_slot,
+            script_id=str(script.uid),
+            script_config=script_config,
+            user_uid=user_id,
+            slot=slot,
+            name=str(user_cfg.Info.Name or ""),
+            action="删除用户",
+        )
 
     async def restore_recycle(
         self,

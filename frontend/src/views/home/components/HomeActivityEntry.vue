@@ -71,11 +71,11 @@
       <div v-if="item.endTime" class="activity-meta">
         <div class="activity-countdown">
           <span v-if="item.countdownLabel">{{
-            t(upcoming ? 'home.countdown.startsIn' : 'home.countdown.left')
+            t(upcoming ? 'core.home.countdown.startsIn' : 'core.home.countdown.left')
           }}</span>
           <a-statistic-countdown
             :value="targetTime"
-            :format="t(item.countdownDaysOnly ? 'home.countdown.d' : 'home.countdown.dh')"
+            :format="t(item.countdownDaysOnly ? 'core.home.countdown.d' : 'core.home.countdown.dh')"
             :value-style="countdownStyle"
             @finish="emit('boundary', targetTime)"
           />
@@ -138,7 +138,7 @@ const target = computed(() => (upcoming.value ? props.item.startTime : props.ite
 const targetTime = computed(() => new Date(target.value).getTime())
 const boundaryLabel = computed(() => {
   const time = formatActivityTime(target.value, locale.value, props.timeZone)
-  const label = t(upcoming.value ? 'home.activity.startsAt' : 'home.activity.endsAt', {
+  const label = t(upcoming.value ? 'core.home.activity.startsAt' : 'core.home.activity.endsAt', {
     time,
   })
   return props.timeZoneLabel ? `${label} (${props.timeZoneLabel})` : label

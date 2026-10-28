@@ -39,17 +39,17 @@ const handleFluxdownDetect = async () => {
   try {
     const result = await GetService.detectFluxdownApiUpdateFluxdownDetectGet()
     if (!isDetectSuccess(result)) {
-      throw new Error(result.message || t('setting.others.fluxdownDetectFailed'))
+      throw new Error(result.message || t('core.setting.others.fluxdownDetectFailed'))
     }
     if (result.path) {
       const saved = await props.handleSettingChange('Update', 'FluxdownPath', result.path)
       if (saved) {
         fluxdownOnlyFull.value = result.only_full_warning ?? false
-        message.success(t('setting.others.fluxdownDetectFound', { path: result.path }))
+        message.success(t('core.setting.others.fluxdownDetectFound', { path: result.path }))
       }
     } else {
       fluxdownOnlyFull.value = false
-      message.warning(t('setting.others.fluxdownDetectNotFound'))
+      message.warning(t('core.setting.others.fluxdownDetectNotFound'))
     }
   } catch (error) {
     const errorMsg =
@@ -91,15 +91,15 @@ const openUpdateHistory = async () => {
 
 // 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
 const historyStatusLabels = computed<Record<string, string>>(() => ({
-  success: t('setting.others.historyStatusSuccess'),
-  failed: t('setting.others.historyStatusFailed'),
-  checksum_fail: t('setting.others.historyStatusChecksumFail'),
-  interrupted: t('setting.others.historyStatusInterrupted'),
-  fluxdown_fallback: t('setting.others.historyStatusFluxdownFallback'),
+  success: t('core.setting.others.historyStatusSuccess'),
+  failed: t('core.setting.others.historyStatusFailed'),
+  checksum_fail: t('core.setting.others.historyStatusChecksumFail'),
+  interrupted: t('core.setting.others.historyStatusInterrupted'),
+  fluxdown_fallback: t('core.setting.others.historyStatusFluxdownFallback'),
 }))
 
 const formatHistoryStatus = (status?: string | null) =>
-  (status && historyStatusLabels.value[status]) || status || t('common.unknown')
+  (status && historyStatusLabels.value[status]) || status || t('core.common.unknown')
 
 const formatHistorySize = (size?: number | null) =>
   size ? `${(size / 1024 / 1024).toFixed(1)} MB` : '-'
@@ -115,19 +115,19 @@ const handleExportHistory = async (item: FluxdownRecord) => {
       JSON.stringify(item, null, 2),
       [{ name: 'JSON', extensions: ['json'] }],
       {
-        dialogTitle: t('setting.others.historyExportDialogTitle'),
-        buttonLabel: t('setting.others.historyExportSaveLabel'),
+        dialogTitle: t('core.setting.others.historyExportDialogTitle'),
+        buttonLabel: t('core.setting.others.historyExportSaveLabel'),
       }
     )
     if (result.success) {
-      message.success(t('setting.others.historyExportSuccess'))
+      message.success(t('core.setting.others.historyExportSuccess'))
     } else if (result.error && result.error !== '用户取消') {
       message.error(result.error)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`导出下载日志失败: ${errorMsg}`)
-    message.error(t('setting.others.historyExportFailed'))
+    message.error(t('core.setting.others.historyExportFailed'))
   }
 }
 
@@ -140,8 +140,8 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.downloader') }}</span>
-          <a-tooltip :title="t('setting.others.downloaderTip')">
+          <span class="form-label">{{ t('core.setting.others.downloader') }}</span>
+          <a-tooltip :title="t('core.setting.others.downloaderTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
@@ -152,10 +152,10 @@ const showUpdateHistory = ref(false)
           @change="(value: any) => handleSettingChange('Update', 'Downloader', value)"
         >
           <a-select-option value="builtin">{{
-            t('setting.others.downloaderBuiltin')
+            t('core.setting.others.downloaderBuiltin')
           }}</a-select-option>
           <a-select-option value="fluxdown">{{
-            t('setting.others.downloaderFluxdown')
+            t('core.setting.others.downloaderFluxdown')
           }}</a-select-option>
         </a-select>
       </div>
@@ -163,8 +163,8 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.fluxdownSegments') }}</span>
-          <a-tooltip :title="t('setting.others.fluxdownSegmentsTip')">
+          <span class="form-label">{{ t('core.setting.others.fluxdownSegments') }}</span>
+          <a-tooltip :title="t('core.setting.others.fluxdownSegmentsTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
@@ -182,8 +182,8 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.fluxdownTakeover') }}</span>
-          <a-tooltip :title="t('setting.others.fluxdownTakeoverTip')">
+          <span class="form-label">{{ t('core.setting.others.fluxdownTakeover') }}</span>
+          <a-tooltip :title="t('core.setting.others.fluxdownTakeoverTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
@@ -193,8 +193,8 @@ const showUpdateHistory = ref(false)
           style="width: 100%"
           disabled
         >
-          <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-          <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+          <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
+          <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
         </a-select>
       </div>
     </a-col>
@@ -203,36 +203,36 @@ const showUpdateHistory = ref(false)
     <a-col :span="16">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.fluxdownPath') }}</span>
-          <a-tooltip :title="t('setting.others.fluxdownPathTip')">
+          <span class="form-label">{{ t('core.setting.others.fluxdownPath') }}</span>
+          <a-tooltip :title="t('core.setting.others.fluxdownPathTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
         <div class="fluxdown-path-row">
           <a-input
             :value="settings.Update?.FluxdownPath ?? ''"
-            :placeholder="t('setting.others.fluxdownPathPlaceholder')"
+            :placeholder="t('core.setting.others.fluxdownPathPlaceholder')"
             size="large"
             style="flex: 1"
             @blur="(e: any) => handleSettingChange('Update', 'FluxdownPath', e.target.value)"
           />
           <a-button size="large" @click="handleFluxdownBrowse">
-            {{ t('setting.others.fluxdownBrowse') }}
+            {{ t('core.setting.others.fluxdownBrowse') }}
           </a-button>
           <a-button size="large" :loading="fluxdownDetecting" @click="handleFluxdownDetect">
-            {{ t('setting.others.fluxdownDetect') }}
+            {{ t('core.setting.others.fluxdownDetect') }}
           </a-button>
         </div>
         <div v-if="fluxdownOnlyFull" class="fluxdown-only-full-warning">
-          {{ t('setting.others.fluxdownOnlyFullWarning') }}
+          {{ t('core.setting.others.fluxdownOnlyFullWarning') }}
         </div>
       </div>
     </a-col>
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.fluxdownServerMode') }}</span>
-          <a-tooltip :title="t('setting.others.fluxdownServerModeTip')">
+          <span class="form-label">{{ t('core.setting.others.fluxdownServerMode') }}</span>
+          <a-tooltip :title="t('core.setting.others.fluxdownServerModeTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
@@ -243,8 +243,8 @@ const showUpdateHistory = ref(false)
           :disabled="settings.Update?.Downloader !== 'fluxdown'"
           @change="(checked: any) => handleSettingChange('Update', 'FluxdownServerMode', checked)"
         >
-          <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-          <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+          <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
+          <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
         </a-select>
       </div>
     </a-col>
@@ -253,13 +253,13 @@ const showUpdateHistory = ref(false)
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <span class="form-label">{{ t('setting.others.lastUpdateHistory') }}</span>
-          <a-tooltip :title="t('setting.others.lastUpdateHistoryTip')">
+          <span class="form-label">{{ t('core.setting.others.lastUpdateHistory') }}</span>
+          <a-tooltip :title="t('core.setting.others.lastUpdateHistoryTip')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
         <a-button block size="large" :loading="historyLoading" @click="openUpdateHistory">
-          {{ t('setting.others.viewHistory') }} ({{ updateHistory.length }})
+          {{ t('core.setting.others.viewHistory') }} ({{ updateHistory.length }})
         </a-button>
       </div>
     </a-col>
@@ -267,7 +267,7 @@ const showUpdateHistory = ref(false)
 
   <a-modal
     v-model:open="showUpdateHistory"
-    :title="t('setting.others.lastUpdateHistory')"
+    :title="t('core.setting.others.lastUpdateHistory')"
     :width="700"
     :footer="null"
     class="update-history-modal"
@@ -302,12 +302,12 @@ const showUpdateHistory = ref(false)
               class="history-export-button"
               @click="handleExportHistory(item)"
             >
-              {{ t('setting.others.historyExport') }}
+              {{ t('core.setting.others.historyExport') }}
             </a-button>
           </div>
         </a-timeline-item>
       </a-timeline>
-      <a-empty v-else :description="t('setting.others.noHistory')" />
+      <a-empty v-else :description="t('core.setting.others.noHistory')" />
     </a-spin>
   </a-modal>
 </template>

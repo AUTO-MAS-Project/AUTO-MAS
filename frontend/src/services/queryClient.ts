@@ -8,7 +8,7 @@ export const queryClient = new QueryClient({
     // 同一查询失败只提示一次；页面通过 meta 显式选择由公共层提示。
     onError: (error, query) => {
       if (query.meta?.notifyOnError !== true) return
-      const errorMessage = getApiErrorMessage(error, t('apiErrors.requestFailed'))
+      const errorMessage = getApiErrorMessage(error, t('core.apiErrors.requestFailed'))
       window.electronAPI.getLogger('数据查询').error(errorMessage)
       message.error(errorMessage)
     },

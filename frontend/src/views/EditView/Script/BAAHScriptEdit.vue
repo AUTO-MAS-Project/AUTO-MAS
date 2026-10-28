@@ -1,8 +1,12 @@
 <template>
-  <ScriptEditHeader script-type="BAAH" :title="t('edit.editScript')" @cancel="handleCancel" />
+  <ScriptEditHeader script-type="BAAH" :title="t('core.edit.editScript')" @cancel="handleCancel" />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="t('edit.baahScriptConfiguration')" :loading="pageLoading" class="config-card">
+    <a-card
+      :title="t('core.edit.baahScriptConfiguration')"
+      :loading="pageLoading"
+      class="config-card"
+    >
       <template #extra>
         <a-tag color="magenta" class="type-tag">BAAH</a-tag>
       </template>
@@ -11,21 +15,21 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="24">
               <a-form-item name="name">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.scriptName')"
-                    :hint="t('edit.baahScriptNameHint')"
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.baahScriptNameHint')"
                     variant="form"
                   />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -38,23 +42,23 @@
         <!-- 脚本配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.scriptConfiguration') }}</h3>
+            <h3>{{ t('core.edit.scriptConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.mainProgramPath')"
-                    :hint="t('edit.baahScriptPathHint')"
+                    :text="t('core.edit.mainProgramPath')"
+                    :hint="t('core.edit.baahScriptPathHint')"
                     variant="form"
                   />
                 </template>
                 <PathPickerField
                   v-model="formData.baahPath"
                   mode="file"
-                  :placeholder="t('edit.pickScriptSMain')"
-                  :pick-label="t('edit.pickFile')"
+                  :placeholder="t('core.edit.pickScriptSMain')"
+                  :pick-label="t('core.edit.pickFile')"
                   :disabled="isSaving"
                   @pick="selectBaahPath"
                 />
@@ -64,8 +68,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahManageConfig')"
-                    :hint="t('edit.baahManageConfigHint')"
+                    :text="t('core.edit.baahManageConfig')"
+                    :hint="t('core.edit.baahManageConfigHint')"
                     variant="form"
                   />
                 </template>
@@ -75,8 +79,8 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'IfManageConfig', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -84,8 +88,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahPushLogEnabled')"
-                    :hint="t('edit.baahPushLogEnabledHint')"
+                    :text="t('core.edit.baahPushLogEnabled')"
+                    :hint="t('core.edit.baahPushLogEnabledHint')"
                     variant="form"
                   />
                 </template>
@@ -95,8 +99,8 @@
                   style="width: 100%"
                   @change="handleChange('Script', 'PushLogEnabled', $event)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -106,7 +110,7 @@
           <a-alert
             type="warning"
             show-icon
-            :message="t('edit.baahAutoStartNotice')"
+            :message="t('core.edit.baahAutoStartNotice')"
             style="margin-top: 16px"
           />
         </div>
@@ -114,22 +118,22 @@
         <!-- 模拟器管理 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.emulators') }}</h3>
+            <h3>{{ t('core.edit.emulators') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.emulator')"
-                    :hint="t('edit.baahEmulatorHint')"
+                    :text="t('core.edit.emulator')"
+                    :hint="t('core.edit.baahEmulatorHint')"
                     variant="form"
                   />
                 </template>
                 <a-select
                   v-model:value="baahConfig.Emulator.Id"
                   size="large"
-                  :placeholder="t('edit.pickEmulator')"
+                  :placeholder="t('core.edit.pickEmulator')"
                   :loading="emulatorLoading"
                   @change="handleEmulatorSelectChange"
                 >
@@ -147,8 +151,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.emulatorInstance')"
-                    :hint="t('edit.pickEmulatorInstance')"
+                    :text="t('core.edit.emulatorInstance')"
+                    :hint="t('core.edit.pickEmulatorInstance')"
                     variant="form"
                   />
                 </template>
@@ -161,7 +165,7 @@
                   "
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
+                  :placeholder="t('core.edit.enterInstanceInfoAs')"
                   class="modern-input"
                   @blur="handleChange('Emulator', 'Index', baahConfig.Emulator.Index)"
                 />
@@ -170,7 +174,7 @@
                   v-else
                   v-model:value="baahConfig.Emulator.Index"
                   size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
+                  :placeholder="t('core.edit.pickEmulatorFirst')"
                   :loading="emulatorDeviceLoading"
                   :disabled="!baahConfig.Emulator.Id"
                   @change="handleChange('Emulator', 'Index', $event)"
@@ -192,7 +196,7 @@
         <!-- 运行配置 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="baahConfig.Run.HardTimeLimit"
@@ -203,8 +207,8 @@
               <ScriptRunLimitField
                 v-model="baahConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('edit.retryLimit2')"
-                :hint="t('edit.baahRunTimesLimitHint')"
+                :label="t('core.edit.retryLimit2')"
+                :hint="t('core.edit.baahRunTimesLimitHint')"
                 @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
               />
             </a-col>
@@ -212,8 +216,8 @@
               <ScriptRunLimitField
                 v-model="baahConfig.Run.RunTimeLimit"
                 kind="timeout"
-                :label="t('edit.runTimeoutMinutes')"
-                :hint="t('edit.baahRunTimeLimitHint')"
+                :label="t('core.edit.runTimeoutMinutes')"
+                :hint="t('core.edit.baahRunTimeLimitHint')"
                 @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
               />
             </a-col>
@@ -327,7 +331,7 @@ const formData = reactive({
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
 }))
 
 // 统一使用正斜杠落盘，与后端 FolderValidator/FileValidator 的取值保持一致
@@ -339,12 +343,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'BAAH') {
-      message.error(t('edit.baahNotBaahScript'))
+      message.error(t('core.edit.baahNotBaahScript'))
       handleCancel()
       return
     }
@@ -360,7 +364,7 @@ const loadScript = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -372,7 +376,7 @@ const handleCancel = () => router.push('/scripts')
 const selectBaahPath = async () => {
   const paths = await window.electronAPI?.selectFile([
     { name: 'BAAH.exe', extensions: ['exe'] },
-    { name: t('edit.allFiles'), extensions: ['*'] },
+    { name: t('core.edit.allFiles'), extensions: ['*'] },
   ])
   const path = paths?.[0]
   if (!path) return

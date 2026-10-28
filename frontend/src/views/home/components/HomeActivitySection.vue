@@ -11,7 +11,7 @@
           @click="handleExternalLink"
           >{{ section.source.label }}</a-typography-link
         >
-        <a-tag v-if="section.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
+        <a-tag v-if="section.stale" color="orange">{{ t('core.home.sra.stale') }}</a-tag>
         <a-button
           v-if="section.refresh"
           type="text"

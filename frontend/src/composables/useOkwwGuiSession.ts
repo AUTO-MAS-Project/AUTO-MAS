@@ -5,14 +5,14 @@ export function useOkwwGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'ok-ww配置会话',
     keys: {
-      stopFailed: 'edit.okwwSessionStopFailed',
-      startFailed: 'edit.okwwSessionStartFailed',
-      setupFailed: 'edit.okWwSetupFailed',
-      opened: 'edit.okwwSessionOpened',
-      viewOpened: 'edit.okwwViewOpened',
-      timeoutWarn: 'edit.okwwSessionTimeoutWarn',
-      saved: 'edit.okWwSettingsSaved',
-      saveFailed: 'edit.couldNotSaveOk2',
+      stopFailed: 'core.edit.okwwSessionStopFailed',
+      startFailed: 'core.edit.okwwSessionStartFailed',
+      setupFailed: 'core.edit.okWwSetupFailed',
+      opened: 'core.edit.okwwSessionOpened',
+      viewOpened: 'core.edit.okwwViewOpened',
+      timeoutWarn: 'core.edit.okwwSessionTimeoutWarn',
+      saved: 'core.edit.okWwSettingsSaved',
+      saveFailed: 'core.edit.couldNotSaveOk2',
     },
   })
   return {

@@ -2,8 +2,8 @@
   <a-form-item>
     <template #label>
       <FieldLabelWithHint
-        :text="t('edit.username')"
-        :hint="hint ?? t('edit.nameUsedTellUsers')"
+        :text="t('core.edit.username')"
+        :hint="hint ?? t('core.edit.nameUsedTellUsers')"
         variant="form"
       />
     </template>
