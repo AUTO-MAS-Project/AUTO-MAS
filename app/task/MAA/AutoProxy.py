@@ -323,135 +323,60 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     return False
 
 
-def _maa_task_name_matches(task_name: str, task_names: tuple[str, ...]) -> bool:
-    """判断 MAA 日志中的任务名是否属于指定任务链。"""
+def _parse_stock_task_result(log: str) -> tuple[bool, bool, bool]:
+    """读取库存阶段的理智消耗、失败和其他任务错误。"""
 
-    return any(
-        task_name == name
-        or task_name.startswith(f"{name} #")
-        or task_name == f"{name} (仓库识别)"
-        for name in task_names
-    )
-
-
-def _has_task_sanity_consumption(log: str, task_names: tuple[str, ...]) -> bool:
-    """判断指定 MAA 任务链是否出现过实际刷关消耗理智。"""
-
-    current_task = ""
-    for line in log.splitlines():
-        task_match = _MAA_TASK_START_RE.search(line)
-        if task_match:
-            current_task = task_match.group("name").strip()
-        if _maa_task_name_matches(
-            current_task, task_names
-        ) and _MAA_SANITY_CONSUMPTION_RE.search(line):
-            return True
-    return False
-
-
-def _has_task_error_outside(log: str, ignored_task_names: tuple[str, ...]) -> bool:
-    """判断 MAA 是否在指定任务链之外报告了任务错误。"""
-
-    current_task = ""
-    for line in log.splitlines():
-        task_match = _MAA_TASK_START_RE.search(line)
-        if task_match:
-            current_task = task_match.group("name").strip()
-        if "任务出错:" in line and not _maa_task_name_matches(
-            current_task, ignored_task_names
-        ):
-            return True
-    return False
-
-
-def _has_task_error_within(log: str, task_names: tuple[str, ...]) -> bool:
-    """判断 MAA 是否在指定任务链内报告了任务错误。"""
-
-    current_task = ""
-    for line in log.splitlines():
-        task_match = _MAA_TASK_START_RE.search(line)
-        if task_match:
-            current_task = task_match.group("name").strip()
-        if "任务出错:" in line and _maa_task_name_matches(current_task, task_names):
-            return True
-    return False
-
-
-def _has_stock_plan_insufficient_skip(log: str) -> bool:
-    """判断库存子计划是否因理智不足被跳过。"""
-
-    current_task = ""
-    for line in log.splitlines():
-        task_match = _MAA_TASK_START_RE.search(line)
-        if task_match:
-            current_task = task_match.group("name").strip()
-        if (
-            _maa_task_name_matches(current_task, _MAA_STOCK_TASK_NAMES)
-            and "理智不足" in line
-            and "已跳过" in line
-        ):
-            return True
-    return False
-
-
-def _stock_task_failed_without_sanity(log: str) -> bool:
-    """库存阶段报错或理智不足跳过且完全没有消耗理智时保留失败状态。"""
-
-    return not _has_task_sanity_consumption(log, _MAA_STOCK_TASK_NAMES) and (
-        _has_stock_plan_insufficient_skip(log)
-        or _has_task_error_within(log, _MAA_STOCK_TASK_NAMES)
-        or bool(_maa_error_summary_names(log).intersection(_MAA_STOCK_TASK_NAMES))
-    )
-
-
-def _has_completed_stock_task(log: str) -> bool:
-    """识别完整库存任务或仓库识别完成，不把单条 #N 子计划当作整段完成。"""
-
-    return any(
-        re.search(
-            rf"完成任务:\s*{re.escape(name)}(?: \(仓库识别\))?\s*$",
-            log,
-            re.M,
+    def is_stock_task(task_name: str) -> bool:
+        return any(
+            task_name == name
+            or task_name.startswith(f"{name} #")
+            or task_name == f"{name} (仓库识别)"
+            for name in _MAA_STOCK_TASK_NAMES
         )
-        for name in _MAA_STOCK_TASK_NAMES
-    )
 
+    current_task = ""
+    in_error_summary = False
+    sanity_spent = False
+    stock_error = False
+    other_error = False
 
-def _maa_error_summary_names(log: str) -> set[str]:
-    """提取 MAA 新版收尾错误清单中的任务名。"""
-
-    names: set[str] = set()
-    in_summary = False
     for line in log.splitlines():
+        task_match = _MAA_TASK_START_RE.search(line)
+        if task_match:
+            current_task = task_match.group("name").strip()
+            in_error_summary = False
+
         summary_match = re.search(r"任务已结束，以下任务出现错误[:：]?\s*(.*)", line)
         if summary_match:
-            in_summary = True
-            inline_name = summary_match.group(1).strip()
-            if inline_name:
-                names.add(inline_name)
+            in_error_summary = True
+            summary_name = summary_match.group(1).strip()
+            if summary_name:
+                if is_stock_task(summary_name):
+                    stock_error = True
+                else:
+                    other_error = True
             continue
-        if not in_summary:
+
+        if in_error_summary:
+            summary_name = line.strip()
+            if not summary_name or "(用时" in summary_name:
+                in_error_summary = False
+            elif not summary_name.startswith("["):
+                if is_stock_task(summary_name):
+                    stock_error = True
+                else:
+                    other_error = True
             continue
-        stripped = line.strip()
-        if "(用时" in stripped or not stripped:
-            in_summary = False
-        elif not stripped.startswith("["):
-            names.add(stripped)
-    return names
 
+        if is_stock_task(current_task):
+            sanity_spent |= bool(_MAA_SANITY_CONSUMPTION_RE.search(line))
+            stock_error |= "任务出错:" in line or (
+                "理智不足" in line and "已跳过" in line
+            )
+        elif "任务出错:" in line:
+            other_error = True
 
-def _stock_task_failure_is_ignorable(log: str) -> bool:
-    """只在库存任务已有理智消耗且错误仅属于库存任务时忽略其失败标记。"""
-
-    if not _has_task_sanity_consumption(log, _MAA_STOCK_TASK_NAMES):
-        return False
-    if _has_task_error_outside(log, _MAA_STOCK_TASK_NAMES):
-        return False
-
-    error_summary_names = _maa_error_summary_names(log)
-    if error_summary_names:
-        return error_summary_names.issubset(_MAA_STOCK_TASK_NAMES)
-    return _has_task_error_within(log, _MAA_STOCK_TASK_NAMES)
+    return sanity_spent, stock_error, other_error
 
 
 _MAA_CONFIG_FILES = ("gui.new.json",)
@@ -2987,39 +2912,35 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             stock_task_enabled = bool(
                 self.task_dict.get("DepotMaintain") or self._stock_depot_completed
             )
-            stock_task_failed_without_sanity = (
-                stock_task_enabled and _stock_task_failed_without_sanity(log)
-            )
-            stock_sanity_spent = stock_task_enabled and _has_task_sanity_consumption(
-                log, _MAA_STOCK_TASK_NAMES
-            )
-            stock_failure_ignored = (
-                stock_task_enabled and _stock_task_failure_is_ignorable(log)
+            stock_sanity_spent, stock_error, other_error = (
+                _parse_stock_task_result(log)
+                if stock_task_enabled
+                else (False, False, False)
             )
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 names = {zh_task}
                 if en_task == "DepotMaintain":
-                    if not stock_task_enabled:
-                        continue
-                    if stock_sanity_spent:
-                        self.task_dict[en_task] = False
-                        self._stock_depot_completed = True
-                    elif stock_task_failed_without_sanity:
-                        self.task_dict[en_task] = True
-                    elif _has_completed_stock_task(log):
-                        self.task_dict[en_task] = False
-                        self._stock_depot_completed = True
-                    elif any(
-                        f"{name} 任务跳过" in log for name in _MAA_STOCK_TASK_NAMES
-                    ):
-                        self.task_dict[en_task] = False
-                    continue
+                    names.update(("库存保持", _MAA_CULTIVATE_TASK_NAME))
                 elif en_task == "Fight":
                     names.update(("理智作战", "剿灭作战"))
                 task_completed = any(f"完成任务: {name}" in log for name in names)
                 task_skipped = any(f"{name} 任务跳过" in log for name in names)
                 if task_completed or task_skipped:
+                    if (
+                        en_task == "DepotMaintain"
+                        and self.task_dict.get(en_task)
+                        and task_completed
+                    ):
+                        self._stock_depot_completed = True
                     self.task_dict[en_task] = False
+
+            if stock_task_enabled:
+                if stock_sanity_spent:
+                    self.task_dict["DepotMaintain"] = False
+                    self._stock_depot_completed = True
+                elif stock_error:
+                    self.task_dict["DepotMaintain"] = True
+                    self._stock_depot_completed = False
 
             if self.task_dict.get("EventDepotMaintain"):
                 event_names = ("活动关均衡理智", "活动库存保持")
@@ -3059,6 +2980,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 库存阶段有理智消耗即完成本轮，其余任务仍以 MAA 收尾错误为准。
+            stock_failure_ignored = (
+                stock_sanity_spent and stock_error and not other_error
+            )
             if (
                 (
                     "任务已完成，但出现错误！" in log
