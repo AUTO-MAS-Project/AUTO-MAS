@@ -48,6 +48,8 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -85,7 +87,7 @@ class FluxdownDownloadRecord:
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
     def to_dict(self) -> dict:
-        # --proxy 需要认证信息，但下载历史和导出记录不应保留账号密码。
+        # 下载历史和导出记录不应保留账号密码，包括旧版本的认证代理。
         from urllib.parse import urlsplit, urlunsplit
 
         proxy = self.proxy
@@ -811,8 +813,8 @@ def _run_cli(
         return out.returncode, (out.stdout or "") + (out.stderr or "")
     except subprocess.TimeoutExpired:
         return 124, "timeout"
-    except OSError as e:
-        return 1, str(e)
+    except (OSError, RuntimeError) as e:
+        return 1, f"server 不可用: {e}"
 
 
 def _parse_cli_json(text: str):
@@ -904,6 +906,12 @@ def fluxdown_server_ensure(cli_exe: Path) -> _ServerHandle | None:
     if bins is None:
         return None
     agent_exe, _ = bins
+    # 先准备管理 CLI，再启动进程，避免副本失败留下未登记的 agent。
+    try:
+        _local_cli_exe(cli_exe)
+    except (OSError, RuntimeError):
+        logger.warning("[server] 管理 CLI 副本不可用，跳过启动")
+        return None
     data_dir = _server_data_dir(cli_exe)
     token = _load_or_create_token(cli_exe)
 
@@ -1087,8 +1095,11 @@ def _map_put(
 def _proxy_hash(proxy: str | None) -> str:
     """本地续传配置指纹，避免将代理认证信息写进任务映射。"""
     import hashlib
+    from urllib.parse import urlsplit, urlunsplit
 
-    return hashlib.sha256((proxy or "").encode("utf-8")).hexdigest()
+    parts = urlsplit(proxy or "")
+    endpoint = urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[-1]))
+    return hashlib.sha256(endpoint.encode("utf-8")).hexdigest()
 
 
 def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
@@ -1166,6 +1177,7 @@ def fluxdown_server_mark_failure(cli_exe: Path, url: str, destination: Path) -> 
         entry = task_map.get(key) or {}
         count = int(entry.get("fail_count") or 0) + 1
         task_map[key] = {
+            **entry,
             "task_id": entry.get("task_id"),
             "url": url,
             "save_path": str(destination),
@@ -1245,7 +1257,83 @@ class FluxdownCancelUnconfirmed(RuntimeError):
     """
 
 
+_DESTINATION_OWNERS: ContextVar[tuple] = ContextVar(
+    "fluxdown_destination_owners", default=()
+)
+
+
+@asynccontextmanager
+async def fluxdown_destination_lock(cli_exe: Path, destination: Path):
+    """跨协程、跨进程锁住输出文件；取消等待不会遗留后台持锁线程。"""
+    import errno
+    import hashlib
+
+    key = hashlib.sha256(
+        os.path.normcase(str(destination.resolve())).encode()
+    ).hexdigest()
+    owner = (asyncio.current_task(), key)
+    owners = _DESTINATION_OWNERS.get()
+    if owner in owners:
+        yield
+        return
+    path = _server_data_dir(cli_exe) / "locks" / f"{key}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if path.stat().st_size == 0:
+            handle.write(b"0")
+            handle.flush()
+        while True:
+            handle.seek(0)
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
+                    raise
+                await asyncio.sleep(0.05)
+        token = _DESTINATION_OWNERS.set((*owners, owner))
+        try:
+            yield
+        finally:
+            _DESTINATION_OWNERS.reset(token)
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 async def fluxdown_server_download(
+    url: str,
+    destination: Path,
+    *,
+    cli_exe: Path,
+    segments: int = 8,
+    proxy: str | None = None,
+    timeout: float = 300,
+    progress: DownloadProgress | None = None,
+) -> tuple[int, FluxdownDownloadRecord]:
+    """串行管理同一输出文件的续传、代理切换与下载，避免两个任务同时写入。"""
+    async with fluxdown_destination_lock(cli_exe, destination):
+        return await _fluxdown_server_download(
+            url,
+            destination,
+            cli_exe=cli_exe,
+            segments=segments,
+            proxy=proxy,
+            timeout=timeout,
+            progress=progress,
+        )
+
+
+async def _fluxdown_server_download(
     url: str,
     destination: Path,
     *,
@@ -1338,7 +1426,7 @@ async def fluxdown_server_download(
             status_code = int(st.get("status"))
         except (TypeError, ValueError):
             return False
-        return status_code not in _ACTIVE_STATUSES
+        return status_code in (2, 3, 4)
 
     # 既有任务查询 → resume/add → 映射落盘 → 轮询 → 完成归位，整段共用一个
     # 取消作用域：任一阶段被取消都走同一套清理（确认暂停），不吞掉取消，
@@ -1378,7 +1466,7 @@ async def fluxdown_server_download(
                     raise
                 except Exception:
                     pause_code = 1
-                confirmed = False
+                confirmed = pause_code == 3  # 明确 NotFound，可清除取消后残留的映射。
                 if pause_code == 0:
                     st_after = await asyncio.to_thread(_status, task_id)
                     # 有响应不等于已停下：pause 可能被接受但任务仍处于活动态，
@@ -1387,10 +1475,7 @@ async def fluxdown_server_download(
                         after_status = int(st_after.get("status")) if st_after else None
                     except (TypeError, ValueError):
                         after_status = None
-                    confirmed = (
-                        after_status is not None
-                        and after_status not in _ACTIVE_STATUSES
-                    )
+                    confirmed = after_status is not None and after_status in (2, 3, 4)
                 if confirmed:
                     task_id = None
                     await asyncio.to_thread(_map_pop, cli_exe, key)
@@ -1660,7 +1745,7 @@ async def fluxdown_server_download(
                 if salvaged and task_id is None:
                     task_id = salvaged
                     await _to_thread_strong(
-                        _map_put, cli_exe, key, task_id, url, destination
+                        _map_put, cli_exe, key, task_id, url, destination, proxy
                     )
                     logger.info(f"[server] 取消时补救 add: 已持久化 task {task_id}")
             except Exception:
