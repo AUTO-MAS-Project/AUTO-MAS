@@ -28,7 +28,7 @@ from pathlib import Path
 
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
 from app.models.config import (
@@ -3181,38 +3181,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 logger.warning(diagnostic)
                 history_records[-1].logs += f"\n{diagnostic}\n"
         try:
-            if history_records:
-                try:
-                    attachments = await self.task_info.collect_user_history_attachments(
-                        self.script_info, self.cur_user_item
-                    )
-                    history_records[-1].attachments.extend(attachments)
-                except Exception:
-                    logger.opt(exception=True).warning(
-                        "收集用户历史附件失败，继续保存日志与执行结果"
-                    )
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-        finally:
-            await self.task_info.discard_user_history_capture(
-                self.script_info, self.cur_user_item
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
             )
+        finally:
             if snapshot_directory is not None:
                 try:
                     snapshot_directory.cleanup()
