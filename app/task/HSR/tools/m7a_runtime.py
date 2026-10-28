@@ -35,6 +35,7 @@ import psutil
 from app.utils import ProcessManager, decode_bytes, get_logger
 
 from .log_detect import (
+    HSR_CONSOLE_PAUSE_SUCCESS_MARKER,
     M7A_COMPLETION_MARKERS,
     can_read_stream_live,
     emit_process_output,
@@ -61,6 +62,10 @@ M7A_ENV_PREFIX = "MARCH7TH_"
 # 保留的近期输出行数：M7A 失败前会连打十几条同样的 WARNING，太短会把
 # 真正的 ERROR 挤掉。
 RECENT_OUTPUT_LINES = 40
+
+
+class _M7ACommandTimeout(TimeoutError):
+    """命令预算耗尽，与输出回调自身抛出的 TimeoutError 区分。"""
 
 
 def _env_bool(value: bool) -> str:
@@ -277,21 +282,69 @@ class M7ARunner:
             return False
         return True
 
+    @staticmethod
+    async def _wait_for_process_exit(proc: asyncio.subprocess.Process) -> None:
+        # asyncio 的 wait() 在部分平台会连同管道 EOF 一起等待；returncode
+        # 由子进程退出通知更新，不受后代继承 stdout/stderr 的影响。
+        while proc.returncode is None:
+            await asyncio.sleep(0.05)
+
+    @staticmethod
+    def _close_process_pipes(proc: asyncio.subprocess.Process) -> None:
+        if proc.stdin is not None:
+            proc.stdin.close()
+        # StreamReader 没有公开的 close；只关闭本次子进程的读端，不终止可能是
+        # 游戏客户端的后代。项目固定 Python 3.12，升级时需核对该 transport 接口。
+        for fd in (1, 2):
+            pipe = proc._transport.get_pipe_transport(fd)
+            if pipe is not None:
+                pipe.close()
+
+    async def _cleanup_process(self, proc: asyncio.subprocess.Process | None) -> None:
+        # open_process 已创建进程但尚未返回时也可能收到取消，此时本地 proc
+        # 还没赋值，仍须取回管理器持有的句柄并关闭管道。
+        process = proc or self._process_manager.main_process
+        try:
+            if isinstance(process, asyncio.subprocess.Process):
+                self._close_process_pipes(process)
+        finally:
+            try:
+                await self.terminate()
+            finally:
+                await self._process_manager.clear()
+
+    @staticmethod
+    async def _wait_for_cleanup(cleanup: asyncio.Future) -> None:
+        """推迟重复取消，直到本次资源清理真正结束。"""
+
+        cancelled = False
+        while not cleanup.done():
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                cancelled = True
+        cleanup.result()
+        if cancelled:
+            raise asyncio.CancelledError
+
     async def _communicate_with_live_output(
         self,
         proc: asyncio.subprocess.Process,
         timeout: int,
     ) -> tuple[str, str, bool]:
-        """读取 M7A 输出并检测完成/失败标记。"""
+        """读取输出，返回文本及是否在停止标记后主动终止进程。"""
 
         stdout_stream = getattr(proc, "stdout", None)
         stderr_stream = getattr(proc, "stderr", None)
         if not (
             can_read_stream_live(stdout_stream) or can_read_stream_live(stderr_stream)
         ):
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
+            try:
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+            except asyncio.TimeoutError as exc:
+                raise _M7ACommandTimeout from exc
             stdout = unescape_backslash_u(decode_bytes(stdout_bytes)).strip()
             stderr = unescape_backslash_u(decode_bytes(stderr_bytes)).strip()
             self._emit_process_output("三月七", stdout)
@@ -307,10 +360,7 @@ class M7ARunner:
                     result = self._output_line_callback(line)
                     if isawaitable(result):
                         await result
-            completed = self._has_completion_marker(
-                stdout
-            ) or self._has_completion_marker(stderr)
-            return stdout, stderr, completed
+            return stdout, stderr, False
 
         stdout_lines: list[str] = []
         stderr_lines: list[str] = []
@@ -339,71 +389,80 @@ class M7ARunner:
                 )
             )
 
-        wait_group = asyncio.gather(proc.wait(), *read_tasks)
+        read_group = asyncio.gather(*read_tasks)
+        exit_wait = asyncio.create_task(self._wait_for_process_exit(proc))
         completion_wait = asyncio.create_task(completion_event.wait())
-        completed_by_marker = False
-        wait_group_cancelled = False
+        deadline = asyncio.get_running_loop().time() + timeout
+        terminated_after_completion = False
         try:
-            done, _ = await asyncio.wait(
-                {wait_group, completion_wait},
-                timeout=timeout,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if not done:
-                raise asyncio.TimeoutError
-
-            completed_by_marker = completion_event.is_set()
-            if completed_by_marker and not wait_group.done():
-                if await self._send_enter_to_process(proc):
-                    logger.info(
-                        "三月七已输出停止运行标记，已发送回车并等待进程自然退出"
+            pending = {exit_wait, completion_wait, read_group}
+            while not exit_wait.done():
+                done, _ = await asyncio.wait(
+                    pending,
+                    timeout=max(0, deadline - asyncio.get_running_loop().time()),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    if proc.returncode is not None or completion_event.is_set():
+                        break
+                    raise _M7ACommandTimeout
+                if read_group in done:
+                    # EOF 不等于进程退出；读取/回调异常则立即传播，不等命令超时。
+                    await read_group
+                    pending.remove(read_group)
+                if completion_wait in done:
+                    pending.remove(completion_wait)
+                    deadline = min(
+                        deadline,
+                        asyncio.get_running_loop().time()
+                        + self._completion_grace_timeout,
                     )
-                else:
+                    await self._send_enter_to_process(proc)
                     logger.info("三月七已输出停止运行标记，等待进程自然退出")
-                try:
-                    await asyncio.wait_for(
-                        asyncio.shield(wait_group),
-                        timeout=self._completion_grace_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "三月七命令已完成但进程未退出，终止子进程以继续后续任务"
-                    )
-                    await self.terminate()
-                    try:
-                        await asyncio.wait_for(wait_group, timeout=2.0)
-                    except asyncio.TimeoutError:
-                        wait_group.cancel()
-                        wait_group_cancelled = True
-                        with suppress(BaseException):
-                            await asyncio.gather(wait_group, return_exceptions=True)
 
-            if wait_group.done() and not wait_group_cancelled:
-                await wait_group
-        except Exception:
-            wait_group.cancel()
-            completion_wait.cancel()
-            for task in read_tasks:
-                task.cancel()
-            with suppress(BaseException):
-                await asyncio.gather(
-                    wait_group,
-                    completion_wait,
-                    return_exceptions=True,
+            if proc.returncode is None:
+                logger.warning("三月七已停止运行但进程未退出，终止子进程")
+                terminated_after_completion = True
+                self._close_process_pipes(proc)
+                await self._wait_for_cleanup(asyncio.create_task(self.terminate()))
+
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(read_group),
+                    timeout=max(
+                        0,
+                        min(
+                            self._completion_grace_timeout,
+                            deadline - asyncio.get_running_loop().time(),
+                        ),
+                    ),
                 )
-            raise
+            except asyncio.TimeoutError:
+                if read_group.done():
+                    # 不把回调本身的 TimeoutError 当成输出排空到期。
+                    await read_group
+                else:
+                    logger.warning("三月七进程已退出，输出未在宽限期内结束，关闭管道")
         finally:
-            completion_wait.cancel()
-            with suppress(BaseException):
-                await asyncio.gather(
+            # 成功、异常与取消均回收全部读流/退出等待任务。关闭的是本次运行的
+            # 管道，客户端后代是否终止仍由既有平台策略决定。
+            for task in (*read_tasks, exit_wait, completion_wait):
+                task.cancel()
+            self._close_process_pipes(proc)
+            await self._wait_for_cleanup(
+                asyncio.gather(
+                    *read_tasks,
+                    read_group,
+                    exit_wait,
                     completion_wait,
                     return_exceptions=True,
                 )
+            )
 
         return (
             "\n".join(stdout_lines).strip(),
             "\n".join(stderr_lines).strip(),
-            completed_by_marker,
+            terminated_after_completion,
         )
 
     async def run_task(self, task_name: str, timeout: int = 600) -> M7ACommandResult:
@@ -411,6 +470,7 @@ class M7ARunner:
 
         started_at = datetime.now(timezone.utc)
         self._recent_output.clear()
+        proc: asyncio.subprocess.Process | None = None
 
         if not self._m7a_exe.exists():
             msg = f"March7th Assistant.exe does not exist: {self._m7a_exe}"
@@ -434,18 +494,28 @@ class M7ARunner:
                 stderr=asyncio.subprocess.PIPE,
                 env=build_m7a_env(self.env_overrides),
             )
-            proc = self._process_manager.main_process
-            if not isinstance(proc, asyncio.subprocess.Process):
+            process = self._process_manager.main_process
+            if not isinstance(process, asyncio.subprocess.Process):
                 raise RuntimeError("三月七子进程启动后未能被 ProcessManager 跟踪")
+            proc = process
             (
                 stdout,
                 stderr,
-                completed_by_marker,
+                terminated_after_completion,
             ) = await self._communicate_with_live_output(proc, timeout)
             # rc=0 且没有任何输出不算成功：M7A 未提权时会另起提权进程后原进程
             # 直接 exit(0)，真正干活的进程脱离了 MAS 的视野。
+            combined_output = f"{stdout}\n{stderr}"
+            # 沿用旧版三月七成功后暂停崩溃的兼容；普通非零退出即便打过
+            # 「停止运行」也不能据此判成功，正文失败仍由 has_failure_output 否决。
+            completed_before_pause_crash = (
+                self._has_completion_marker(combined_output)
+                and HSR_CONSOLE_PAUSE_SUCCESS_MARKER in combined_output
+            )
             success = (
-                completed_by_marker or (proc.returncode == 0 and bool(stdout or stderr))
+                (terminated_after_completion and proc.returncode is not None)
+                or completed_before_pause_crash
+                or (proc.returncode == 0 and bool(stdout or stderr))
             ) and not has_failure_output(stdout, stderr)
 
             logger.info(
@@ -457,15 +527,14 @@ class M7ARunner:
                 exe_path=str(self._m7a_exe),
                 success=success,
                 output=stdout,
-                error=stderr,
+                error=stderr or (stdout if not success else ""),
                 returncode=proc.returncode or 0,
                 started_at=started_at,
                 finished_at=datetime.now(timezone.utc),
             )
 
-        except asyncio.TimeoutError:
+        except _M7ACommandTimeout:
             logger.warning(f"三月七 {task_name} timed out after {timeout}s")
-            await self.terminate()
             return M7ACommandResult(
                 task_name=task_name,
                 exe_path=str(self._m7a_exe),
@@ -477,7 +546,6 @@ class M7ARunner:
 
         except asyncio.CancelledError:
             logger.warning(f"三月七 {task_name} 收到取消请求，准备终止子进程")
-            await self.terminate()
             raise
 
         except Exception as e:
@@ -491,4 +559,7 @@ class M7ARunner:
                 finished_at=datetime.now(timezone.utc),
             )
         finally:
-            await self._process_manager.clear()
+            # 清理期间重复点击停止，也要先终止进程再清除跟踪信息。
+            await self._wait_for_cleanup(
+                asyncio.create_task(self._cleanup_process(proc))
+            )
