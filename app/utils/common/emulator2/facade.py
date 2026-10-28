@@ -39,7 +39,13 @@ import asyncio
 from pathlib import Path
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceRef,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
@@ -109,11 +115,14 @@ def dump_paths(records: list[PathRecord]) -> str:
 class Emulator2Manager(DeviceBase):
     """纳管多条模拟器安装的设备管理器。"""
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(
+        self, config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+    ) -> None:
         if config.Info.Type != "emulator2":
             raise ValueError("配置的模拟器类型不是 emulator2")
 
         self.config = config
+        self.runtime_policy = runtime_policy
         self.paths: list[PathRecord] = load_paths(config.Info.Paths)
         self.slots: SlotTable = SlotTable.from_json(config.Info.Slots)
         #: 配置守卫的基准：{设备号: {字段: 值}}。只读，写由服务层负责。
@@ -194,6 +203,7 @@ class Emulator2Manager(DeviceBase):
                 str(manager_exe),
                 max_wait_time=int(self.config.Info.MaxWaitTime),
                 force_kill_on_close=bool(self.config.Info.ForceKillOnClose),
+                runtime_policy=self.runtime_policy,
             )
             self._managers[path.path_id] = manager
             return manager
@@ -289,7 +299,7 @@ class Emulator2Manager(DeviceBase):
         只在有实例要起时做，是因为这时用户明确在用这条配置；处理失败只记警告，不拦启动。
         安卓端那层（雷电 ``cleanmode``、MuMu 桌面组件）仍由各后端在自己的启动钩子里做。
         """
-        enabled = is_master_mode_enabled()
+        enabled = is_master_mode_enabled(self.runtime_policy.block_ads_enabled)
         for path in self.paths:
             label = path.alias or path.install_path
             try:

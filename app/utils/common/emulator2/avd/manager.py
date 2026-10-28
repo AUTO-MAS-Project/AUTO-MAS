@@ -50,7 +50,13 @@ from typing import Any
 
 import psutil
 
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceRef,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import emulator_native, get_logger
 from app.utils import paths as _utils_paths
 
@@ -203,12 +209,10 @@ def shm_exists(port: int) -> bool:
     return emulator_native.shm_exists(port)
 
 
-def _silence_enabled() -> bool:
-    """全局「静默模式」开没开；读不到（配置没加载）按开，宁可无头。"""
+def _silence_enabled(runtime_policy: EmulatorRuntimePolicy) -> bool:
+    """宿主「静默模式」开没开；读不到按开，宁可无头。"""
     try:
-        from app.core import Config
-
-        return bool(Config.setting.Function.IfSilence)
+        return bool(runtime_policy.silence_enabled())
     except Exception:  # noqa: BLE001
         return True
 
@@ -1923,6 +1927,17 @@ class AvdManager(AppLaunchMixin, _AvdCore):
 
     store_package = None
 
+    def __init__(
+        self,
+        manager_exe: str | Path,
+        max_wait_time: int,
+        force_kill_on_close: bool,
+        *,
+        runtime_policy: EmulatorRuntimePolicy,
+    ) -> None:
+        super().__init__(manager_exe, max_wait_time, force_kill_on_close)
+        self.runtime_policy = runtime_policy
+
     def host_adb(self, idx: str) -> AvdHostAdb:
         """宿主进程对这台实例发 adb 命令的通道（走私有 server，见 :class:`AvdHostAdb`）。"""
         self._instance(idx)
@@ -1936,7 +1951,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         - ``manual=True``：用户在模拟器页手动点启动（:meth:`~app.core.emulator_manager._EmulatorManager.operate_emulator_task`），带窗口；
         - 任务拉起（``manual`` 不传）：跟「静默模式」走，``Function.IfSilence`` 开着无头，关着带窗口。
         """
-        self._open_window = manual or not _silence_enabled()
+        self._open_window = manual or not _silence_enabled(self.runtime_policy)
         # AppLaunchMixin 有意不把包名传给开机那一步；开机时要对照推荐内存记日志，所以在这里记下
         self._open_package = package_name or ""
         return await super().open(idx, package_name)
@@ -2013,20 +2028,29 @@ def running_instances(root: Path) -> list[str]:
     这个根目录 ``sdk\\emulator`` 下的，免得把另一个根目录的同名实例算进来。
     """
     ours = {item["pid"] for item in update_stage.processes_using(root)}
-    running = AvdManager(
+    running = _AvdCore(
         manager_key_exe(root), max_wait_time=60, force_kill_on_close=False
     )._scan_processes()
     return sorted(idx for idx, process in running.items() if process.pid in ours)
 
 
 async def build_manager(
-    manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
+    manager_exe: str,
+    max_wait_time: int,
+    force_kill_on_close: bool = False,
+    *,
+    runtime_policy: EmulatorRuntimePolicy,
 ) -> AvdManager:
     """与雷电 / MuMu 的 ``build_manager`` 同签名。``manager_exe`` 是 ``sdk\\emulator\\emulator.exe``。"""
     exe = emulator_exe(root_from_manager_exe(manager_exe))
     if not exe.is_file():
         raise RuntimeError(f"找不到魔改 AVD 程序 {exe}")
-    return AvdManager(manager_exe, max_wait_time, force_kill_on_close)
+    return AvdManager(
+        manager_exe=manager_exe,
+        max_wait_time=max_wait_time,
+        force_kill_on_close=force_kill_on_close,
+        runtime_policy=runtime_policy,
+    )
 
 
 __all__ = [
