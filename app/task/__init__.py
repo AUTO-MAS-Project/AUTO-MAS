@@ -37,6 +37,7 @@ _LAZY_EXPORTS = {
     "MaaManager": (".MAA", "MaaManager"),
     "MaaEndManager": (".MaaEnd", "MaaEndManager"),
     "SrcManager": (".SRC", "SrcManager"),
+    "build_src_manager": (".SRC.manager", "build_src_manager"),
     "GeneralManager": (".general", "GeneralManager"),
     "OkwwManager": (".Okww", "OkwwManager"),
     "OkNteManager": (".OkNte", "OkNteManager"),
@@ -65,6 +66,7 @@ def __dir__() -> list[str]:
 __all__ = [
     "MaaManager",
     "SrcManager",
+    "build_src_manager",
     "GeneralManager",
     "MaaEndManager",
     "OkwwManager",

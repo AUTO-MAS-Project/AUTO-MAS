@@ -28,7 +28,9 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, List, Literal, Optional
+from uuid import UUID
 
 from app.models.notification_ports import LocalNotifier, TaskNotifications
 from app.models.notification_report import TaskNotificationState
@@ -45,6 +47,14 @@ TaskTriggerSource = Literal[
     "manual_task",
     "startup_task",
 ]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ScriptTaskResources:
+    """专项声明原始资源，规范化与占用管理由公共调度器负责。"""
+
+    root_paths: tuple[Path, ...] = ()
+    emulator: tuple[str | UUID, str] | None = None
 
 
 @dataclass

@@ -265,7 +265,9 @@ def main():
     from app.core.restore_bindings import resolve_restore_pools
     from app.core.script_config import ScriptConfigHandler
     from app.models.config import (
+        BAAHConfig,
         BetterGIConfig,
+        GeneralConfig,
         MaaConfig,
         MaaEndConfig,
         MaaFWConfig,
@@ -278,18 +280,30 @@ def main():
         resolve_sentry_dist,
     )
     from app.task.BAAH.api_service import BAAHConfigService
+    from app.task.BAAH.resources import declare_task_resources as baah_task_resources
     from app.task.BetterGI.api_service import (
         prepare_user_update as prepare_bettergi_user_update,
     )
+    from app.task.general.resources import (
+        declare_task_resources as general_task_resources,
+    )
+    from app.task.MAA.resources import declare_task_resources as maa_task_resources
     from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
     from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.MaaEnd.resources import (
+        declare_task_resources as maaend_task_resources,
+    )
     from app.task.MaaFW.tools.embedded.game_resolution import (
         read_unity_display_type,
         read_unity_resolution,
     )
+    from app.task.MaaFW.tools.embedded.resources import (
+        declare_task_resources as maafw_task_resources,
+    )
     from app.task.MaaFW.tools.embedded.user_update import (
         prepare_user_update as prepare_maafw_user_update,
     )
+    from app.task.SRC.resources import declare_task_resources as src_task_resources
     from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
     from app.task.ZzzOd.user_update import (
         prepare_user_update as prepare_zzzod_user_update,
@@ -310,17 +324,21 @@ def main():
             initialize=maaend_config_service.initialize,
             validate_update=maaend_config_service.validate_update,
             import_config=maaend_config_service.import_config,
+            task_resources=maaend_task_resources,
         ),
     )
-    for entry_type, prepare in (
-        (BetterGIConfig, prepare_bettergi_user_update),
-        (MaaConfig, prepare_maa_user_update),
-        (SrcConfig, prepare_src_user_update),
-        (ZzzOdConfig, prepare_zzzod_user_update),
-        (MaaFWConfig, prepare_maafw_user_update),
+    for entry_type, prepare, resources in (
+        (BetterGIConfig, prepare_bettergi_user_update, None),
+        (MaaConfig, prepare_maa_user_update, maa_task_resources),
+        (SrcConfig, prepare_src_user_update, src_task_resources),
+        (ZzzOdConfig, prepare_zzzod_user_update, None),
+        (MaaFWConfig, prepare_maafw_user_update, maafw_task_resources),
+        (GeneralConfig, None, general_task_resources),
+        (BAAHConfig, None, baah_task_resources),
     ):
         Config.bind_script_config_handler(
-            entry_type, ScriptConfigHandler(prepare_user_update=prepare)
+            entry_type,
+            ScriptConfigHandler(prepare_user_update=prepare, task_resources=resources),
         )
 
     # 开发环境不上报遥测数据
