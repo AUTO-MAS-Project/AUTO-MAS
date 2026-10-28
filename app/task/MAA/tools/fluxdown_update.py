@@ -74,6 +74,7 @@ async def prepare_maa_fluxdown_update(
             latest = cached[1]
         else:
             logger.info(f"正在通过 Mirror 酱检查 MAA 更新（{channel}/{arch}）")
+            query_started = time.monotonic()
             payload = await request_mirror_resource(
                 "MAA",
                 params={"os": "win", "arch": arch, "channel": channel},
@@ -84,13 +85,22 @@ async def prepare_maa_fluxdown_update(
             latest = data.get("version_name") if isinstance(data, dict) else None
             if not isinstance(latest, str) or parse_version(latest) is None:
                 raise ValueError("Mirror 酱未返回可识别的 MAA 版本")
-            _latest_versions[key] = (time.monotonic(), latest)
+            # 较慢的旧响应不能覆盖并发请求已经确认的较新版本。
+            newer = _latest_versions.get(key)
+            if (
+                newer
+                and newer[0] >= query_started
+                and compare_versions(parse_version(newer[1]), parse_version(latest)) > 0
+            ):
+                latest = newer[1]
+            else:
+                _latest_versions[key] = (time.monotonic(), latest)
         target_version, current_version = parse_version(latest), parse_version(current)
         if target_version is None or current_version is None:
             raise ValueError("无法比较 MAA 版本")
         if compare_versions(target_version, current_version) <= 0:
             logger.info(f"MAA 已是最新版本（{current}，{channel} 通道）")
-            return current
+            return None
 
         # 官方完整包的规范名称；版本经过 SemVer 解析，不接受路径或任意 URL。
         tag = latest if latest.startswith("v") else f"v{latest}"
@@ -122,6 +132,11 @@ async def prepare_maa_fluxdown_update(
                 logger.warning("MAA 更新下载中断，正在重试续传")
                 await asyncio.sleep(1)
         # 仅在下载器确认完成后发布文件；未确认停止的任务仍保留 .part 所有权。
+        if not use_maa_fluxdown_update(
+            config, config_dirs=[config_dir, maa_root / "config"]
+        ):
+            logger.info("下载期间更新来源已变更，保留文件但不登记安装")
+            return None
         part.replace(destination)
         write_pending_update(
             maa_root, version=latest, package=str(destination.resolve())

@@ -85,6 +85,7 @@ from .tools.software_update import (
     parse_version,
     prepare_maa_software_update,
     read_installed_release,
+    resolve_update_channel,
 )
 from .tools.update_credentials import (
     resolve_takeover_credentials,
@@ -500,6 +501,9 @@ class MaaManager(ScriptManagerBase):
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
+        if self.task_info.mode == "AutoProxy":
+            self._validate_update_channels()
+
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             if self.task_info.mode == "AutoProxy":
                 current_user = self.script_info.user_list[
@@ -576,6 +580,37 @@ class MaaManager(ScriptManagerBase):
                 self._updater_running = True
                 raise
 
+    def _validate_update_channels(self) -> None:
+        """共享安装在本批运行前确认通道一致，不能先升级再发现后续账号冲突。"""
+        if not Config.setting.Update.FluxdownTakeoverAll:
+            return
+        release = read_installed_release(self.maa_set_path.parent)
+        if release is None:
+            return
+        channels = set()
+        eligible = False
+        root = Path.cwd() / "data" / str(self.script_info.script_id)
+        for user in self.script_info.user_list:
+            base = read_config_base(
+                self.user_config[uuid.UUID(user.user_id)], CONFIG_BASE_SHARED
+            )
+            if base == CONFIG_BASE_NATIVE:
+                config_dir = root / "Temp"
+            elif base == CONFIG_BASE_SHARED:
+                config_dir = root / "Default" / "ConfigFile"
+            else:
+                config_dir = root / user.user_id / "ConfigFile"
+            eligible = eligible or use_maa_fluxdown_update(
+                self.script_config, config_dirs=[config_dir, self.maa_set_path]
+            )
+            channel = resolve_update_channel(
+                release[0], [config_dir, self.maa_set_path]
+            )
+            if channel is not None:
+                channels.add(channel)
+        if eligible and len(channels) > 1:
+            raise RuntimeError("同一 MAA 安装的账号更新通道不一致，请统一通道后重试")
+
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """运行账号前下载更新，并等待官方安装链结束后才允许注入任务配置。"""
         if not use_maa_fluxdown_update(
@@ -585,9 +620,9 @@ class MaaManager(ScriptManagerBase):
             return False
         # 上次下载后被中止或 MAA 原生下载留下的包先交还官方入口，不能让
         # 账号配置注入清掉它。消费后再查最新版本，不覆盖既有登记。
-        _, pending = read_pending_update(self.maa_set_path.parent)
+        pending_version, pending = read_pending_update(self.maa_set_path.parent)
         if pending and (self.maa_set_path.parent / pending).is_file():
-            await self._install_pending_software_update()
+            await self._install_pending_software_update(target=pending_version)
         last_log = 0.0
 
         async def report(downloaded: int, total: int, speed: float) -> None:
@@ -609,16 +644,12 @@ class MaaManager(ScriptManagerBase):
         )
         if target is None:
             return False
-        await self._install_pending_software_update()
-        installed = read_installed_release(self.maa_set_path.parent)
-        actual = parse_version(installed[0]) if installed else None
-        expected = parse_version(target)
-        ready = bool(actual and expected and compare_versions(actual, expected) >= 0)
-        if not ready:
-            logger.warning("未确认 MAA 已完成更新，本轮保留原生下载")
-        return ready
+        await self._install_pending_software_update(target=target)
+        return True
 
-    async def _install_pending_software_update(self) -> None:
+    async def _install_pending_software_update(
+        self, *, target: str | None = None
+    ) -> None:
         """复用官方安装入口；进程未退出或上游报告失败时停止后续账号任务。"""
         self.script_info.log = "正在等待 MAA 官方更新器处理本地更新包"
         try:
@@ -628,6 +659,14 @@ class MaaManager(ScriptManagerBase):
             raise
         if has_delegated_update_failure(self.maa_set_path.parent):
             raise RuntimeError("MAA 官方更新器报告安装失败，请先在 MAA 内完成修复")
+        if target is not None:
+            installed = read_installed_release(self.maa_set_path.parent)
+            actual = parse_version(installed[0]) if installed else None
+            expected = parse_version(target)
+            if not (actual and expected and compare_versions(actual, expected) >= 0):
+                raise RuntimeError(
+                    "未确认 MAA 已完成更新，已停止后续账号任务，请先完成更新"
+                )
 
     async def final_task(self):
         """运行结束后的收尾工作"""

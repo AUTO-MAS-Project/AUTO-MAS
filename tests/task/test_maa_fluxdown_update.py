@@ -99,7 +99,7 @@ async def test_current_or_older_does_not_download(installation, remote):
             config=SimpleNamespace(Update=SimpleNamespace(MirrorChyanCDK="")),
             config_dir=root / "config",
         )
-        == "v6.0.0"
+        is None
     )
     downloader.assert_not_called()
 
@@ -242,7 +242,11 @@ async def test_manager_waits_for_official_installer(
     monkeypatch.setattr(manager, "update_maa", install)
     monkeypatch.setattr(manager, "read_installed_release", read)
     monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
-    assert await instance._prepare_software_update(task) is ready
+    if ready:
+        assert await instance._prepare_software_update(task) is True
+    else:
+        with pytest.raises(RuntimeError, match="未确认 MAA 已完成更新"):
+            await instance._prepare_software_update(task)
 
 
 @pytest.mark.asyncio
@@ -273,6 +277,9 @@ async def test_manager_consumes_interrupted_pending_before_query(tmp_path, monke
         return None
 
     monkeypatch.setattr(manager, "update_maa", install)
+    monkeypatch.setattr(
+        manager, "read_installed_release", lambda root: ("v6.1.0", "x64")
+    )
     monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
     monkeypatch.setattr(manager, "prepare_maa_fluxdown_update", query)
     assert (
@@ -380,3 +387,107 @@ def test_blank_native_cdk_allows_fluxdown(installation):
     )
     config = SimpleNamespace(Update=SimpleNamespace(MirrorChyanCDK="  "))
     assert credentials.use_maa_fluxdown_update(config, config_dirs=[root / "config"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["script", "global", "native", "disabled"])
+async def test_policy_change_during_download_prevents_handoff(installation, change):
+    root, _, downloader = installation
+    config = SimpleNamespace(Update=SimpleNamespace(MirrorChyanCDK=""))
+    original = downloader.side_effect
+
+    async def download(*args, **kwargs):
+        size = await original(*args, **kwargs)
+        if change == "script":
+            config.Update.MirrorChyanCDK = "new-cdk"
+        elif change == "global":
+            update.Config.setting.Update.MirrorChyanCDK = "new-cdk"
+        elif change == "native":
+            (root / "config/gui.new.json").write_text(
+                '{"Update":{"MirrorChyanCdk":"opaque"}}', encoding="utf-8"
+            )
+        else:
+            update.Config.setting.Update.FluxdownTakeoverAll = False
+        return size
+
+    downloader.side_effect = download
+    assert (
+        await update.prepare_maa_fluxdown_update(
+            root, config=config, config_dir=root / "config"
+        )
+        is None
+    )
+    assert update.read_pending_update(root) == ("", "")
+    assert not list(root.glob("*.zip"))
+    assert list(root.glob("*.part"))
+
+
+@pytest.mark.asyncio
+async def test_slow_metadata_response_cannot_regress_version_cache(installation):
+    root, query, _ = installation
+    started, release = asyncio.Event(), asyncio.Event()
+    config = SimpleNamespace(Update=SimpleNamespace(MirrorChyanCDK=""))
+    count = 0
+
+    async def metadata(*args, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 1:
+            started.set()
+            await release.wait()
+            return {"data": {"version_name": "v6.0.1"}}
+        return {"data": {"version_name": "v6.0.2"}}
+
+    query.side_effect = metadata
+    first = asyncio.create_task(
+        update.prepare_maa_fluxdown_update(
+            root, config=config, config_dir=root / "config"
+        )
+    )
+    await started.wait()
+    await update.prepare_maa_fluxdown_update(
+        root, config=config, config_dir=root / "config"
+    )
+    release.set()
+    await first
+    assert update._latest_versions[("x64", "beta")][1] == "v6.0.2"
+
+
+@pytest.mark.parametrize(
+    "channels, eligible, fails",
+    [
+        (["beta", "stable"], True, True),
+        (["stable", "beta"], True, True),
+        (["beta", "beta"], True, False),
+        (["beta", "stable"], False, False),
+    ],
+)
+def test_batch_checks_channels_before_any_installation(
+    tmp_path, monkeypatch, channels, eligible, fails
+):
+    import uuid
+
+    monkeypatch.setattr(
+        manager.Config,
+        "setting",
+        SimpleNamespace(Update=SimpleNamespace(FluxdownTakeoverAll=True)),
+    )
+    monkeypatch.setattr(manager, "use_maa_fluxdown_update", lambda *a, **kw: eligible)
+    monkeypatch.setattr(
+        manager, "read_installed_release", lambda root: ("v6.0.0", "x64")
+    )
+    calls = iter(channels)
+    monkeypatch.setattr(manager, "resolve_update_channel", lambda *args: next(calls))
+    instance = object.__new__(manager.MaaManager)
+    instance.maa_set_path = tmp_path / "config"
+    instance.script_config = SimpleNamespace()
+    users = [str(uuid.uuid4()), str(uuid.uuid4())]
+    instance.script_info = SimpleNamespace(
+        script_id="script", user_list=[SimpleNamespace(user_id=u) for u in users]
+    )
+    instance.user_config = {uuid.UUID(u): SimpleNamespace() for u in users}
+    if fails:
+        with pytest.raises(RuntimeError, match="更新通道不一致"):
+            instance._validate_update_channels()
+    else:
+        instance._validate_update_channels()
