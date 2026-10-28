@@ -244,6 +244,7 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     mode: ['AutoProxy', 'CycleRun'],
     script_type: script,
     outcome: ['success', 'failed', 'skipped', 'no_user', 'incomplete', 'error', 'cancelled'],
+    partial_failure: ['yes', 'no', 'unknown'],
     duration_bucket: duration,
   },
   native_config_action_finished: {
