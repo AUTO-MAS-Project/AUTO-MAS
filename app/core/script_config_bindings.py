@@ -45,22 +45,35 @@ from app.models.config import (
     ZzzOdConfig,
     ZzzOdUserConfig,
 )
+from app.task.BAAH.resources import EMULATOR_BINDING as baah_emulator_binding
 from app.task.BAAH.resources import declare_task_resources as baah_task_resources
 from app.task.BetterGI.api_service import (
     prepare_user_update as prepare_bettergi_user_update,
 )
 from app.task.general.resources import (
+    EMULATOR_BINDING as general_emulator_binding,
+)
+from app.task.general.resources import (
     declare_task_resources as general_task_resources,
 )
+from app.task.MAA.resources import EMULATOR_BINDING as maa_emulator_binding
+from app.task.MAA.resources import SUPPORTS_MOD_AVD as maa_supports_mod_avd
 from app.task.MAA.resources import declare_task_resources as maa_task_resources
 from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
 from app.task.MaaEnd.api_service import MaaEndConfigService
+from app.task.MaaEnd.resources import EMULATOR_BINDING as maaend_emulator_binding
 from app.task.MaaEnd.resources import declare_task_resources as maaend_task_resources
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     initialize_user as initialize_maafw_user,
 )
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     prepare_user_read as prepare_maafw_user_read,
+)
+from app.task.MaaFW.tools.embedded.resources import (
+    EMULATOR_BINDING as maafw_emulator_binding,
+)
+from app.task.MaaFW.tools.embedded.resources import (
+    SUPPORTS_MOD_AVD as maafw_supports_mod_avd,
 )
 from app.task.MaaFW.tools.embedded.resources import (
     declare_task_resources as maafw_task_resources,
@@ -74,6 +87,7 @@ from app.task.Okww.tools.config_dir import (
 from app.task.Okww.tools.config_dir import (
     initialize_user as initialize_okww_user,
 )
+from app.task.SRC.resources import EMULATOR_BINDING as src_emulator_binding
 from app.task.SRC.resources import declare_task_resources as src_task_resources
 from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
 from app.task.ZzzOd.recovery import ZzzOdRecovery
@@ -94,6 +108,7 @@ def bind_script_config_handlers(
             validate_update=maaend.validate_update,
             import_config=maaend.import_config,
             task_resources=maaend_task_resources,
+            emulator_binding=maaend_emulator_binding,
         ),
         BetterGIConfig: ScriptConfigHandler(
             user_config_class=BetterGIUserConfig,
@@ -103,11 +118,14 @@ def bind_script_config_handlers(
             user_config_class=MaaUserConfig,
             prepare_user_update=prepare_maa_user_update,
             task_resources=maa_task_resources,
+            emulator_binding=maa_emulator_binding,
+            supports_mod_avd=maa_supports_mod_avd,
         ),
         SrcConfig: ScriptConfigHandler(
             user_config_class=SrcUserConfig,
             prepare_user_update=prepare_src_user_update,
             task_resources=src_task_resources,
+            emulator_binding=src_emulator_binding,
         ),
         ZzzOdConfig: ScriptConfigHandler(
             user_config_class=ZzzOdUserConfig,
@@ -120,6 +138,8 @@ def bind_script_config_handlers(
             prepare_user_read=prepare_maafw_user_read,
             initialize_user=initialize_maafw_user,
             task_resources=maafw_task_resources,
+            emulator_binding=maafw_emulator_binding,
+            supports_mod_avd=maafw_supports_mod_avd,
         ),
         OkwwConfig: ScriptConfigHandler(
             user_config_class=OkwwUserConfig,
@@ -127,12 +147,16 @@ def bind_script_config_handlers(
             import_config=import_okww_config,
         ),
         GeneralConfig: ScriptConfigHandler(
-            user_config_class=GeneralUserConfig, task_resources=general_task_resources
+            user_config_class=GeneralUserConfig,
+            task_resources=general_task_resources,
+            emulator_binding=general_emulator_binding,
         ),
         OkNteConfig: ScriptConfigHandler(user_config_class=OkNteUserConfig),
         HSRConfig: ScriptConfigHandler(user_config_class=HSRUserConfig),
         BAAHConfig: ScriptConfigHandler(
-            user_config_class=BAAHUserConfig, task_resources=baah_task_resources
+            user_config_class=BAAHUserConfig,
+            task_resources=baah_task_resources,
+            emulator_binding=baah_emulator_binding,
         ),
         WhimboxConfig: ScriptConfigHandler(user_config_class=WhimboxUserConfig),
     }
