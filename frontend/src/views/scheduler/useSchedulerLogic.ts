@@ -42,6 +42,7 @@ import {
 } from './schedulerQueueScope'
 import { buildStartTaskRequest } from './schedulerStartRequest'
 import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
+import { useBackendI18nStore } from '@/stores/backendI18n'
 
 /** sessionStorage 里的勾选只当字符串数组用，坏数据直接忽略。 */
 const normalizePersistedQueueScope = (value: unknown): QueueUserScope => {
@@ -53,13 +54,6 @@ const normalizePersistedQueueScope = (value: unknown): QueueUserScope => {
     }
   })
   return scope
-}
-
-// 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
-const runtimeModeLabel = (mode: string | null): string | null => {
-  if (!mode) return null
-  const option = TASK_MODE_OPTIONS.find(item => item.value === mode)
-  return option ? t(option.labelKey) : mode
 }
 
 const logger = window.electronAPI.getLogger('调度台逻辑')
@@ -102,13 +96,14 @@ const getDefaultTabRuntimeState = () => ({
   logFirstLine: 1,
   displayLogFirstLine: 1,
   lastLogContent: '',
+  logContentIsBuffer: false,
   overviewData: undefined,
   lastMessageHash: '',
   lastMessageTime: 0,
   cycleNextList: [],
 })
 
-const trimLogForRender = (content: string, firstLine: number) => {
+const trimLogForRender = (content: string, firstLine: number, notice: string) => {
   if (content.length <= LOG_RENDER_MAX_CHARS) return { content, firstLine }
 
   const dropped = content.slice(0, content.length - LOG_RENDER_MAX_CHARS)
@@ -116,8 +111,9 @@ const trimLogForRender = (content: string, firstLine: number) => {
   const firstLineBreak = trimmed.indexOf('\n')
   const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
   return {
-    content: `${t('core.scheduler.log.truncated')}\n\n${tail}`,
-    firstLine: firstLine + dropped.split('\n').length - 1 + (firstLineBreak >= 0 ? 1 : 0) - 2,
+    content: `${notice ? `${notice}\n\n` : ''}${tail}`,
+    firstLine:
+      firstLine + dropped.split('\n').length - 1 + (firstLineBreak >= 0 ? 1 : 0) - (notice ? 2 : 0),
   }
 }
 
@@ -132,7 +128,8 @@ const clearPendingLogUpdate = (tabKey: string) => {
 
 const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   key: tab.key,
-  title: tab.title,
+  title: tab.titleNumber === undefined ? tab.title : '',
+  titleNumber: tab.titleNumber,
   closable: tab.closable,
   status: tab.status,
   selectedTaskId: tab.selectedTaskId,
@@ -151,7 +148,8 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
-  runningModeLabel: tab.runningModeLabel,
+  runningModeLabel: tab.runningModeLabelKey ? undefined : tab.runningModeLabel,
+  runningModeLabelKey: tab.runningModeLabelKey,
   logMode: tab.logMode || 'follow',
   // 保存队列类型，刷新后仍能保留循环任务的显示状态；启动前会重新确认类型
   isCycleQueue: tab.isCycleQueue ?? false,
@@ -296,6 +294,8 @@ let _watchInitialized = false
 // 就注册 task.created，避免启动队列任务的创建通知因订阅晚于连接而丢失
 let _residentSubscribed = false
 let _disposeTabTitle: WatchStopHandle | null = null
+const pendingTaskFeedback: Array<() => void> = []
+let taskFeedbackGeneration = 0
 let _residentSubscriptionIds: string[] = []
 let _disposeTaskRuntimeListener: (() => void) | null = null
 
@@ -303,6 +303,29 @@ export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
   const { exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+  const languageResources = useBackendI18nStore()
+
+  const translateTab = (tab: SchedulerTab) => {
+    if (!languageResources.ready) return
+    if (tab.titleNumber !== undefined) {
+      tab.title = t('core.scheduler.tabName', { n: tab.titleNumber })
+    }
+    if (tab.runningModeLabelKey) tab.runningModeLabel = t(tab.runningModeLabelKey)
+    tab.overviewData?.forEach(script => {
+      if (script.nameKey) script.name = t(script.nameKey)
+    })
+  }
+
+  // 状态与日志仍立即接收；只把依赖业务词表的反馈留到可显示时。
+  const showWhenReady = (show: () => void, generation = taskFeedbackGeneration) => {
+    const isCurrent = () => _residentSubscribed && generation === taskFeedbackGeneration
+    if (!isCurrent()) return
+    if (languageResources.ready) show()
+    else
+      pendingTaskFeedback.push(() => {
+        if (isCurrent()) show()
+      })
+  }
 
   const handleTaskCreated = (state: TaskRuntimeState) => {
     if (!state.taskName && !state.taskType) return
@@ -331,7 +354,10 @@ export function useSchedulerLogic() {
       existing.status = '运行'
       if (queueId) existing.selectedTaskId = queueId
       if (taskName) existing.runningTaskLabel = taskName
-      if (taskType) existing.runningModeLabel = taskType
+      if (taskType) {
+        existing.runningModeLabel = taskType
+        existing.runningModeLabelKey = undefined
+      }
       subscribeToTask(existing)
       return existing
     }
@@ -342,7 +368,7 @@ export function useSchedulerLogic() {
     const newTab =
       reusedTab ??
       addSchedulerTab({
-        title: () => t('core.scheduler.tabName', { n: tabNumber }),
+        titleNumber: tabNumber,
         status: '运行',
         taskId,
         selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
@@ -350,19 +376,29 @@ export function useSchedulerLogic() {
 
     // 设置运行时文本快照，确保自动启动的任务也能正确显示
     if (taskName) newTab.runningTaskLabel = taskName
-    if (taskType) newTab.runningModeLabel = taskType
+    if (taskType) {
+      newTab.runningModeLabel = taskType
+      newTab.runningModeLabelKey = undefined
+    }
     newTab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
     // 立即订阅该任务的WebSocket消息
     subscribeToTask(newTab)
+    const currentTitle = () =>
+      schedulerTabs.value.find(tab => tab.key === newTab.key)?.title ?? newTab.title
 
     if (reusedTab) {
       logger.info(`已复用自动调度台: ${newTab.title}, 任务ID=${taskId}`)
-      if (notifyUser) message.success(t('core.scheduler.toast.tabReused', { title: newTab.title }))
+      if (notifyUser)
+        showWhenReady(() =>
+          message.success(t('core.scheduler.toast.tabReused', { title: currentTitle() }))
+        )
     } else {
       logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
       if (notifyUser)
-        message.success(t('core.scheduler.toast.tabAutoCreated', { title: newTab.title }))
+        showWhenReady(() =>
+          message.success(t('core.scheduler.toast.tabAutoCreated', { title: currentTitle() }))
+        )
     }
 
     saveTabsToStorage(schedulerTabs.value)
@@ -387,7 +423,8 @@ export function useSchedulerLogic() {
 
   // Tab 管理
   const addSchedulerTab = (options?: {
-    title?: string | (() => string)
+    title?: string
+    titleNumber?: number
     status?: string
     taskId?: string
     selectedTaskId?: string
@@ -402,12 +439,8 @@ export function useSchedulerLogic() {
 
     const tab: SchedulerTab = {
       key: `tab-${tabCounter}`,
-      // 常驻任务消息可能早于业务词表；标题在显示或持久化时响应式求值。
-      get title() {
-        return typeof options?.title === 'function'
-          ? options.title()
-          : options?.title || t('core.scheduler.tabName', { n: tabNumber })
-      },
+      title: options?.title || '',
+      titleNumber: options?.title ? undefined : (options?.titleNumber ?? tabNumber),
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.taskId || null,
@@ -424,6 +457,7 @@ export function useSchedulerLogic() {
       logBuffer: '',
       lastLogContent: '',
     }
+    translateTab(tab)
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
 
@@ -466,6 +500,7 @@ export function useSchedulerLogic() {
       existingTab.selectedMode = selectedMode
       existingTab.runningTaskLabel = taskLabel
       existingTab.runningModeLabel = modeLabel
+      existingTab.runningModeLabelKey = undefined
       existingTab.logMode = 'follow'
       activeSchedulerTab.value = existingTab.key
       subscribeToTask(existingTab)
@@ -485,6 +520,7 @@ export function useSchedulerLogic() {
     tab.selectedMode = selectedMode
     tab.runningTaskLabel = taskLabel
     tab.runningModeLabel = modeLabel
+    tab.runningModeLabelKey = undefined
     tab.logMode = 'follow'
     subscribeToTask(tab)
     const runtimeState = getTaskRuntimeState(taskId)
@@ -1079,7 +1115,9 @@ export function useSchedulerLogic() {
   }
 
   const applyLogContentUpdate = (tab: SchedulerTab, content: string) => {
-    const rendered = trimLogForRender(content, tab.logFirstLine ?? 1)
+    tab.logContentIsBuffer = content === tab.logBuffer
+    const notice = languageResources.ready ? t('core.scheduler.log.truncated') : ''
+    const rendered = trimLogForRender(content, tab.logFirstLine ?? 1, notice)
     tab.displayLogFirstLine = rendered.firstLine
     if (tab.lastLogContent !== rendered.content) {
       tab.lastLogContent = rendered.content
@@ -1087,6 +1125,8 @@ export function useSchedulerLogic() {
   }
 
   const scheduleLogContentUpdate = (tab: SchedulerTab, content: string, immediate = false) => {
+    // keep-alive 停用时也要同步待显示内容的来源，重译不能用旧 buffer 覆盖最终结果。
+    tab.logContentIsBuffer = content === tab.logBuffer
     pendingLogContents.set(tab.key, content)
 
     // 页面停用期间只攒着，激活时由 setSchedulerViewActive 一次性写入
@@ -1147,7 +1187,8 @@ export function useSchedulerLogic() {
     try {
       tab.overviewData = data.task_info.map((s, index) => ({
         script_id: s.script_id || `script_${index}`,
-        name: s.name || t('core.scheduler.overview.unknownScript'),
+        name: s.name || '',
+        nameKey: s.name ? undefined : 'core.scheduler.overview.unknownScript',
         status: s.status || '等待',
         user_list: (s.userList ?? []).map((user, userIndex) => ({
           user_id: user.user_id || `user_${index}_${userIndex}`,
@@ -1155,6 +1196,7 @@ export function useSchedulerLogic() {
           status: user.status,
         })),
       }))
+      translateTab(tab)
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
@@ -1184,8 +1226,9 @@ export function useSchedulerLogic() {
   }
 
   const handleTaskNotice = async (tab: SchedulerTab, data: WSTaskNoticeData) => {
+    const feedbackGeneration = taskFeedbackGeneration
     const { playSound } = useAudioPlayer()
-    const noticeMessage = data.messageKey ? t(data.messageKey) : data.message
+    const noticeMessage = () => (data.messageKey ? t(data.messageKey) : data.message)
 
     if (data.level === 'error') {
       const errorMsg = String(data.message).toLowerCase()
@@ -1224,43 +1267,49 @@ export function useSchedulerLogic() {
       }
 
       const isMaaEndError = isMaaEndTask || errorMsg.includes('maaend')
-      if (isMaaEndError) {
-        if (!maaEndFailureModalOpen) {
-          maaEndFailureModalOpen = true
-          Modal.error({
-            centered: true,
-            closable: true,
-            maskClosable: true,
-            keyboard: true,
-            title: t('core.scheduler.modal.maaEndFailTitle'),
-            content: h('div', [
-              h('p', noticeMessage),
-              h('p', t('core.scheduler.modal.maaEndFailHint')),
-            ]),
-            okCancel: true,
-            okText: t('core.scheduler.modal.maaEndExport'),
-            cancelText: t('core.scheduler.modal.maaEndSkip'),
-            onOk: () => {
-              void exportMaaEndIssueReport()
-            },
-            afterClose: () => {
-              maaEndFailureModalOpen = false
-            },
+      showWhenReady(() => {
+        if (isMaaEndError) {
+          if (!maaEndFailureModalOpen) {
+            maaEndFailureModalOpen = true
+            Modal.error({
+              centered: true,
+              closable: true,
+              maskClosable: true,
+              keyboard: true,
+              title: t('core.scheduler.modal.maaEndFailTitle'),
+              content: h('div', [
+                h('p', noticeMessage()),
+                h('p', t('core.scheduler.modal.maaEndFailHint')),
+              ]),
+              okCancel: true,
+              okText: t('core.scheduler.modal.maaEndExport'),
+              cancelText: t('core.scheduler.modal.maaEndSkip'),
+              onOk: () => {
+                void exportMaaEndIssueReport()
+              },
+              afterClose: () => {
+                maaEndFailureModalOpen = false
+              },
+            })
+          }
+        } else {
+          notification.error({
+            message: t('core.scheduler.toast.taskError'),
+            description: noticeMessage(),
           })
         }
-      } else {
-        notification.error({
-          message: t('core.scheduler.toast.taskError'),
-          description: noticeMessage,
-        })
-      }
+      }, feedbackGeneration)
     } else if (data.level === 'warning') {
       // 播放异常音频
       await playSound('exception_occurred')
-      notification.warning({
-        message: t('core.scheduler.toast.taskWarning'),
-        description: noticeMessage,
-      })
+      showWhenReady(
+        () =>
+          notification.warning({
+            message: t('core.scheduler.toast.taskWarning'),
+            description: noticeMessage(),
+          }),
+        feedbackGeneration
+      )
     } else {
       const infoMsg = String(data.message).toLowerCase()
 
@@ -1291,11 +1340,19 @@ export function useSchedulerLogic() {
         await playSound('adb_failed')
       }
 
-      notification.info({ message: t('core.scheduler.toast.taskInfo'), description: noticeMessage })
+      showWhenReady(
+        () =>
+          notification.info({
+            message: t('core.scheduler.toast.taskInfo'),
+            description: noticeMessage(),
+          }),
+        feedbackGeneration
+      )
     }
   }
 
   const handleTaskCompleted = async (tab: SchedulerTab, data: WSTaskCompletedData) => {
+    const feedbackGeneration = taskFeedbackGeneration
     // 收到任务完成消息才将任务标记为结束状态
     // 这确保了调度台状态与实际任务执行状态严格同步
     logger.info('收到任务完成消息，设置任务状态为结束')
@@ -1343,20 +1400,30 @@ export function useSchedulerLogic() {
     const { playSound } = useAudioPlayer()
     if (feedback.kind === 'error') {
       await playSound('error_occurred')
-      message.error(data.error || t('core.scheduler.toast.taskRunFailed'))
+      showWhenReady(
+        () => message.error(data.error || t('core.scheduler.toast.taskRunFailed')),
+        feedbackGeneration
+      )
     } else if (feedback.kind === 'cancelled') {
-      message.warning(t('core.scheduler.toast.taskCancelled'))
+      showWhenReady(
+        () => message.warning(t('core.scheduler.toast.taskCancelled')),
+        feedbackGeneration
+      )
     } else if (feedback.kind === 'partialFailure') {
       await playSound('error_occurred')
       const { users, scripts } = feedback.failures
-      message.warning(
-        users > 0
-          ? t('core.scheduler.toast.taskDoneWithFailedUsers', { count: users })
-          : t('core.scheduler.toast.taskDoneWithFailedScripts', { count: scripts })
+      showWhenReady(
+        () =>
+          message.warning(
+            users > 0
+              ? t('core.scheduler.toast.taskDoneWithFailedUsers', { count: users })
+              : t('core.scheduler.toast.taskDoneWithFailedScripts', { count: scripts })
+          ),
+        feedbackGeneration
       )
     } else {
       await playSound('task_completed')
-      message.success(t('core.scheduler.toast.taskDone'))
+      showWhenReady(() => message.success(t('core.scheduler.toast.taskDone')), feedbackGeneration)
     }
     saveTabsToStorage(schedulerTabs.value)
 
@@ -1616,10 +1683,16 @@ export function useSchedulerLogic() {
       tab.isCycleQueue = true
     }
     // 没有任务类型文案（调度台手动启动）时按模式取词表标签，别把枚举原值亮给用户
-    tab.runningModeLabel =
-      state.taskType ??
-      (state.isCycle ? t('core.scheduler.mode.cycleRun') : runtimeModeLabel(state.mode)) ??
-      tab.runningModeLabel
+    if (state.taskType !== null) {
+      tab.runningModeLabel = state.taskType
+      tab.runningModeLabelKey = undefined
+    } else if (state.isCycle || state.mode) {
+      const mode = state.isCycle ? TaskCreateIn.mode.CYCLE_RUN : state.mode
+      const option = TASK_MODE_OPTIONS.find(item => item.value === mode)
+      tab.runningModeLabelKey = option?.labelKey
+      tab.runningModeLabel = option ? '' : (mode ?? tab.runningModeLabel)
+      translateTab(tab)
+    }
     if (state.taskName) tab.runningTaskLabel = state.taskName
     const selectedTaskId = getRuntimeSelectedTaskId(state)
     if (selectedTaskId) tab.selectedTaskId = selectedTaskId
@@ -1699,12 +1772,20 @@ export function useSchedulerLogic() {
   const registerResidentSubscriptions = () => {
     if (_residentSubscribed) return
     _residentSubscribed = true
+    taskFeedbackGeneration++
     _disposeTabTitle = watch(
-      () => t('core.scheduler.mainTab'),
-      title => {
-        if (!i18n.global.te('core.scheduler.mainTab')) return
+      [() => languageResources.ready, () => languageResources.revision, i18n.global.locale],
+      () => {
+        if (!languageResources.ready) return
         const mainTab = schedulerTabs.value.find(tab => tab.key === 'main')
-        if (mainTab) mainTab.title = title
+        if (mainTab) mainTab.title = t('core.scheduler.mainTab')
+        schedulerTabs.value.forEach(tab => {
+          translateTab(tab)
+          if (tab.logContentIsBuffer && tab.logBuffer.length > LOG_RENDER_MAX_CHARS) {
+            scheduleLogContentUpdate(tab, tab.logBuffer, true)
+          }
+        })
+        pendingTaskFeedback.splice(0).forEach(show => show())
       },
       { immediate: true }
     )
@@ -1723,6 +1804,8 @@ export function useSchedulerLogic() {
   }
 
   const disposeResidentSubscriptions = () => {
+    taskFeedbackGeneration++
+    pendingTaskFeedback.length = 0
     _disposeTabTitle?.()
     _disposeTabTitle = null
     _disposeTaskRuntimeListener?.()

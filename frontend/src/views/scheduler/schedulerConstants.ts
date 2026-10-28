@@ -17,6 +17,7 @@ export interface Script {
   script_id: string
   status: string
   name: string
+  nameKey?: string
   user_list: User[]
 }
 
@@ -49,6 +50,8 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
 export interface SchedulerTab {
   key: string
   title: string
+  /** 自动标题保留编号，词表就绪或切语后再生成文案。 */
+  titleNumber?: number
   closable: boolean
   status: SchedulerStatus
   selectedTaskId: string | null
@@ -74,6 +77,8 @@ export interface SchedulerTab {
   displayLogFirstLine?: number
   // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
+  /** 词表变化时仅重绘运行日志，不能覆盖已显示的最终结果。 */
+  logContentIsBuffer?: boolean
   // 新增：任务总览快照（用于路由返回时快速恢复显示）
   overviewData?: Script[]
   // 新增：消息去重相关字段
@@ -82,6 +87,8 @@ export interface SchedulerTab {
   // 新增：运行时任务/模式文本快照（用于持久化显示）
   runningTaskLabel?: string
   runningModeLabel?: string
+  /** 后端未给任务类型文案时，保存本地模式的语义 key。 */
+  runningModeLabelKey?: string
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
   // 所选任务是否为循环队列，循环队列固定按「循环运行」启动
