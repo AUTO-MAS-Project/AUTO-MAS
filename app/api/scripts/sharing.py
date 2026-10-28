@@ -110,7 +110,7 @@ async def inspect_script_share(
 ) -> ShareInspectOut:
 
     try:
-        _, risks = await general_share_service.build_share_config(
+        _, risks = general_share_service.build_share_config(
             script.scriptId, config_name=script.config_name
         )
     except Exception as e:

@@ -76,7 +76,7 @@ class GeneralShareService:
         await self._scripts.update_script(UUID(script_id), config)
         logger.success(f"{script_id} 配置加载成功")
 
-    async def build_share_config(
+    def build_share_config(
         self, script_id: str, config_name: str
     ) -> tuple[dict[str, Any], list[dict[str, str]]]:
         """从独立导出整理分享内容，不修改原配置；风险项交由用户确认。"""
@@ -97,7 +97,7 @@ class GeneralShareService:
     ) -> None:
         """重新检查当前配置，存在未确认风险时阻止上传。"""
         logger.info(f"上传配置到配置中心: {script_id} - {config_name}")
-        config, risks = await self.build_share_config(script_id, config_name)
+        config, risks = self.build_share_config(script_id, config_name)
         if risks and not acknowledged:
             logger.warning(f"分享前检查到 {len(risks)} 项待确认内容, 已阻止上传")
             raise ConfigCenterError("配置中仍有可能泄露隐私的内容, 请确认后再分享")
