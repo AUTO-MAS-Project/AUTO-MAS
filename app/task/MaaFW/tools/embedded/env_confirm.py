@@ -26,13 +26,19 @@
   建不出来就丢掉新版本。运行前 / 运行后自动更新、手动更新、投影补齐共用。
 - **切换后确认**（:func:`confirm_switched_environment`）：手动更新切完视图，在调用方自己的
   视图预约里确认一次再放手。
-- **同组传播后的后台确认**：``view_update.confirm_environments_in_background`` 的线程里调
-  :func:`prepare_environment`。
+- **同组传播后的后台确认**：``view_update.confirm_environments_in_background`` 的线程里用
+  :func:`resolve_prepare_environment` 取到的实现。
 
 实现仍是 ``MaaFWEmbeddedManager._prepare_project_environment_sync``（静态方法：读
 interface、解析运行池路由、进代理作用域、写环境缓存与 ``envConfirmedFor``）。这里在调用时
 才导入 manager：manager 顶层导入了 ``view_heal`` → ``view_update`` → 本模块，提前导入会
 成环。宽严口径（``lenient_health_check``）见 ``app/task/MaaFW/AGENTS.md``，缺省严格。
+
+**导入只在事件循环上解析**：:func:`resolve_prepare_environment`、
+:func:`resolve_update_precheck`、:func:`build_update_precheck` 里有函数内导入，只在事件循环
+（编排层的协程）上调，交给工作线程的是解析好的可调用对象。含函数内导入的函数体不能送进线程池
+（``asyncio.to_thread`` / ``run_in_executor``）：几个工作线程并发冷导入同一个包，会在 CPython
+的模块导入锁上死锁，或者看到初始化到一半的模块。
 """
 
 from __future__ import annotations
@@ -50,21 +56,20 @@ from app.utils import get_logger
 _update_logger = get_logger("MaaFW 项目更新")
 
 PrepareEnvironment = Callable[..., bool]
+UpdatePrecheckBuilder = Callable[..., Callable[[Path], bool]]
 
 
-def prepare_environment(
-    project_path: Path,
-    cancel_event: threading.Event,
-    send_log: Callable[[str], None],
-    **options: Any,
-) -> bool:
-    """在**工作线程**里备好 ``project_path`` 的运行环境，返回是否真做了准备（指纹命中为 False）。
+def resolve_prepare_environment() -> PrepareEnvironment:
+    """取宿主的运行环境准备实现（``MaaFWEmbeddedManager._prepare_project_environment_sync``）。
+
+    **在事件循环上调**，把返回的函数交给工作线程（见模块说明）。返回的函数是
+    ``(project_path, cancel_event, send_log, **options) -> bool``，在**工作线程**里备好
+    ``project_path`` 的运行环境，返回是否真做了准备（指纹命中为 False）：
 
     - ``cancel_event``：置位后正在跑的 uv / pip 子进程被终止；
     - ``send_log``：逐行进度（会从工作线程回调，调用方自己保证线程安全）。
 
-    ``options`` 只认 ``MaaFWEmbeddedManager._prepare_project_environment_sync`` 的关键字参数，
-    原样转交（没给的按那边的缺省）：
+    ``options`` 只认这些关键字参数（没给的按那边的缺省）：
 
     - ``proxy_url``：脚本级解析出的代理，``None`` 表示没解析过、沿用全局，``""`` 表示直连；
     - ``agent_env_root`` / ``store_cache``：预检用（isolated_venv 建到池根下的预检目录、
@@ -76,16 +81,58 @@ def prepare_environment(
 
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
 
-    return MaaFWEmbeddedManager._prepare_project_environment_sync(
-        project_path, cancel_event, send_log, **options
+    return MaaFWEmbeddedManager._prepare_project_environment_sync
+
+
+def bind_proxy(
+    prepare: PrepareEnvironment, proxy_url: str | None
+) -> PrepareEnvironment:
+    """把代理绑进已解析的 ``prepare``（:func:`resolve_prepare_environment` 的返回值），签名与
+    ``precheck.PrepareProjectEnvironment`` 一致（预检里的 uv / pip 子进程也走脚本级代理）。
+    不导入任何东西。"""
+
+    return functools.partial(prepare, proxy_url=proxy_url)
+
+
+def resolve_update_precheck() -> UpdatePrecheckBuilder:
+    """在事件循环上解析好预检要的导入（``precheck`` 与 manager），返回与
+    :func:`build_update_precheck` 同参的组装函数。
+
+    返回的函数不再导入任何东西，可以带进工作线程里再调（投影补齐要到真预检时才解析运行池
+    路由，组装就发生在工作线程里）。``precheck`` 会拉起 agent_env，所以只在真要组装预检时
+    才导入。
+    """
+
+    from app.task.MaaFW.tools.embedded.precheck import (
+        build_precheck_validator,
+        precheck_agent_root,
     )
 
+    prepare = resolve_prepare_environment()
 
-def bind_proxy(proxy_url: str | None) -> PrepareEnvironment:
-    """把代理绑进 :func:`prepare_environment`，签名与 ``precheck.PrepareProjectEnvironment``
-    一致（预检里的 uv / pip 子进程也走脚本级代理）。"""
+    def build(
+        *,
+        proxy_url: str | None,
+        cancel_event: threading.Event,
+        send_log: Callable[[str], None],
+        pool_root: str | Path,
+        failure: MutableMapping[str, Any],
+        previous_version: str | None,
+        project_name: str | None,
+        memo_path_for: Callable[[str], Path] | None,
+    ) -> Callable[[Path], bool]:
+        return build_precheck_validator(
+            prepare=bind_proxy(prepare, proxy_url),
+            cancel_event=cancel_event,
+            send_log=send_log,
+            agent_env_root=precheck_agent_root(pool_root),
+            failure=failure,
+            previous_version=previous_version,
+            project_name=project_name,
+            memo_path_for=memo_path_for,
+        )
 
-    return functools.partial(prepare_environment, proxy_url=proxy_url)
+    return build
 
 
 def build_update_precheck(
@@ -101,27 +148,23 @@ def build_update_precheck(
 ) -> Callable[[Path], bool]:
     """更新类操作的 ``post_validate``：登记前在新载荷的 staging 上真建一次运行环境。
 
-    就是 ``precheck.build_precheck_validator``，只是 ``prepare`` 固定为绑好代理的
-    :func:`prepare_environment`、``agent_env_root`` 固定为 ``pool_root`` 下的预检目录。
+    就是 ``precheck.build_precheck_validator``，只是 ``prepare`` 固定为绑好代理的宿主实现
+    （:func:`resolve_prepare_environment`）、``agent_env_root`` 固定为 ``pool_root`` 下的预检目录。
 
     - ``cancel_event``：预检里 uv / pip 的终止令牌（自动更新传用户停止的令牌，手动更新与
       投影补齐传一个不会置位的新令牌）；
     - ``failure``：预检失败时写进 ``{targetVersion, requirement, kind, reason, …}``；
     - ``memo_path_for``：按目标版本落预检备忘（组共有）；投影补齐没有新版本，传 None。
 
-    要在调用时导入 ``precheck``：它会拉起 agent_env（只在真要预检时导入）。
+    **在事件循环上调**（导入在这里解析，见 :func:`resolve_update_precheck`）；返回的回调跑在
+    工作线程里，不再导入 manager 与 ``precheck``。
     """
 
-    from app.task.MaaFW.tools.embedded.precheck import (
-        build_precheck_validator,
-        precheck_agent_root,
-    )
-
-    return build_precheck_validator(
-        prepare=bind_proxy(proxy_url),
+    return resolve_update_precheck()(
+        proxy_url=proxy_url,
         cancel_event=cancel_event,
         send_log=send_log,
-        agent_env_root=precheck_agent_root(pool_root),
+        pool_root=pool_root,
         failure=failure,
         previous_version=previous_version,
         project_name=project_name,
@@ -143,8 +186,10 @@ async def confirm_switched_environment(
 
     send_log("正在确认新版本的运行环境")
     try:
+        # manager 在事件循环上解析，交给工作线程的只是解析好的函数。
+        prepare = resolve_prepare_environment()
         await asyncio.to_thread(
-            prepare_environment,
+            prepare,
             project_path,
             threading.Event(),
             send_log,
@@ -160,8 +205,10 @@ async def confirm_switched_environment(
 
 __all__ = [
     "PrepareEnvironment",
+    "UpdatePrecheckBuilder",
     "bind_proxy",
     "build_update_precheck",
     "confirm_switched_environment",
-    "prepare_environment",
+    "resolve_prepare_environment",
+    "resolve_update_precheck",
 ]

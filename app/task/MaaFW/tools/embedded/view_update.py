@@ -332,7 +332,7 @@ def confirm_environments_in_background(
 ) -> None:
     """被传播切换的脚本各起一个后台线程确认一次运行环境（持各自的视图预约）。
 
-    确认走 ``env_confirm.prepare_environment``（缺省严格）。切换只把文件摆好：
+    确认走 ``env_confirm.resolve_prepare_environment`` 取到的宿主实现（缺省严格）。切换只把文件摆好：
     ``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
     项目的 venv 会整个重建（分钟级、要联网）。不在这里做就会落进它下次运行的 worker 里、
     游戏已经起来了。确认成功会在视图标记里记 ``envConfirmedFor``；失败或没做成，下次
@@ -360,7 +360,9 @@ def confirm_environments_in_background(
             if key is None:
                 return
             try:
-                env_confirm.prepare_environment(
+                # 每个脚本一条专用后台线程（不进线程池），宿主实现在这里取。
+                prepare = env_confirm.resolve_prepare_environment()
+                prepare(
                     view,
                     threading.Event(),
                     lambda line: logger.debug(f"[{member.script_id[:8]}] {line}"),

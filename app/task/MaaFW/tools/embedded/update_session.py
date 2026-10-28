@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import functools
 import threading
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
@@ -154,6 +155,9 @@ class UpdateSession:
 
         代理与日志出口取自 session；``cancel_event`` 由调用方显式给：自动更新给用户停止的
         令牌，手动更新与投影补齐给一个新令牌（预检一旦开始就做完）。
+
+        **在事件循环上调**（manager 与 ``precheck`` 的导入在这里解析）。要在工作线程里组装的
+        （投影补齐到真预检时才解析运行池路由）先在事件循环上取 :meth:`precheck_builder`。
         """
 
         return env_confirm.build_update_precheck(
@@ -165,6 +169,20 @@ class UpdateSession:
             previous_version=previous_version,
             project_name=project_name,
             memo_path_for=memo_path_for,
+        )
+
+    def precheck_builder(self) -> Callable[..., Callable[[Path], bool]]:
+        """:meth:`precheck` 的组装函数，导入在这里（事件循环上）解析好。
+
+        返回的函数收 :meth:`precheck` 的同名关键字参数（``pool_root`` / ``failure`` /
+        ``previous_version`` / ``project_name`` / ``memo_path_for`` / ``cancel_event``），
+        不再导入任何东西，可以在工作线程里调。
+        """
+
+        return functools.partial(
+            env_confirm.resolve_update_precheck(),
+            proxy_url=self.proxy.url,
+            send_log=self.send_log,
         )
 
     async def run(

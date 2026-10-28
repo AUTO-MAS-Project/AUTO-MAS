@@ -580,7 +580,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
   代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
   后台确认）一律走 `tools/embedded/env_confirm`，不要再延迟导入 manager 调
-  `_prepare_project_environment_sync`。核心包发的进度事件是 dict，消费方先经
+  `_prepare_project_environment_sync`。`env_confirm` 的 `resolve_*` / `build_update_precheck`
+  与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
+  `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
   `core/project_update/progress.UpdateProgressEvent.of` 转成类型化模型再读。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的

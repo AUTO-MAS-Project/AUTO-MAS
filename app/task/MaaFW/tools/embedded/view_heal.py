@@ -79,16 +79,20 @@ def projection_heal_due(script_id: str, channel: str, base: Path | None = None) 
 def _precheck(session: UpdateSession, interface_model: Any) -> Callable[[Path], Any]:
     """补齐后的载荷要预检时用的回调（只在取回的文件会影响运行环境时才被调）：与更新同一个
     预检（``UpdateSession.precheck``，代理与日志出口取自 session），只是不写预检备忘——
-    备忘按「目标版本」拦更新，这里没有新版本；运行池路由到真要预检时才解析。"""
+    备忘按「目标版本」拦更新，这里没有新版本；运行池路由到真要预检时才解析。
+
+    在事件循环上调：导入与预检的组装函数在这里解析好，``validate`` 跑在工作线程里，不再导入。"""
+
+    from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+
+    build_precheck = session.precheck_builder()
 
     def validate(staging: Path) -> Any:
-        from app.task.MaaFW.tools.core.runtime_pool import MaaFWRuntimePoolService
-        from app.task.MaaFW.tools.embedded.runtime_route import (
-            runtime_pool_route_from_service,
-        )
-
         route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        return session.precheck(
+        return build_precheck(
             pool_root=route.root,
             failure={},
             previous_version=getattr(interface_model, "version", None),
