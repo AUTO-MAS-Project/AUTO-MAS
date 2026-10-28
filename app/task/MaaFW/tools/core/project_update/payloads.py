@@ -1457,11 +1457,14 @@ def settle_same_version_latest(
                 continue
             if str(manifest.get("version") or "").strip().lstrip("vV") != version:
                 continue
-            if payload_id != str(entry["id"]) and is_private_channel(
-                str(manifest.get("channel") or "")
+            if (
+                candidates is None
+                and payload_id != str(entry["id"])
+                and is_private_channel(str(manifest.get("channel") or ""))
             ):
                 # 开发者模式导入建出来的载荷（来源目录里本地改过、版本号没变）不参选普通
                 # 渠道的 latest：否则「文件多 / 规则新」会把同组的正式版换成某人的本地修改。
+                # 显式候选已有宿主的组归属证明，不再按初次登记渠道排除共享载荷。
                 continue
             manifests[payload_id] = manifest
         if len(manifests) < 2:
