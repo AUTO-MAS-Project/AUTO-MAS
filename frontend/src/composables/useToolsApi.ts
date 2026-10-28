@@ -30,7 +30,7 @@ export function useToolsApi() {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取工具失败: ${errorMsg}`)
-      message.error(t('misc.couldNotLoadTools'))
+      message.error(t('core.misc.couldNotLoadTools'))
       throw error
     } finally {
       loading.value = false
@@ -48,11 +48,11 @@ export function useToolsApi() {
         throw new Error(response.message || '更新工具失败')
       }
       logger.info('工具更新成功')
-      message.success(t('misc.saved'))
+      message.success(t('core.misc.saved'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新工具失败: ${errorMsg}`)
-      message.error(t('misc.couldNotSave'))
+      message.error(t('core.misc.couldNotSave'))
       throw error
     } finally {
       loading.value = false

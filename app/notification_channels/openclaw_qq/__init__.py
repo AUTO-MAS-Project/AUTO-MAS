@@ -92,8 +92,8 @@ async def _openclaw_qq_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="openclaw_qq",
-        name_key="setting.notify.openclawQqSection",
-        desc_key="setting.notify.openclawQqTip",
+        name_key="core.setting.notify.openclawQqSection",
+        desc_key="core.setting.notify.openclawQqTip",
         icon="qq",
         group="builtin",
         order=80,

@@ -26,30 +26,30 @@ const invalid = computed(
 
 <template>
   <a-form-item
-    :label="t('setting.notify.openclawQqCommandWhitelist')"
+    :label="t('core.setting.notify.openclawQqCommandWhitelist')"
     html-for="qq-command-whitelist"
     :validate-status="invalid ? 'error' : undefined"
-    :help="invalid ? t('setting.notify.openclawQqWhitelistInvalid') : undefined"
+    :help="invalid ? t('core.setting.notify.openclawQqWhitelistInvalid') : undefined"
   >
     <a-space direction="vertical" class="group-commands">
       <a-typography-paragraph type="secondary">
-        {{ t('setting.notify.openclawQqGroupCommandHint') }}
+        {{ t('core.setting.notify.openclawQqGroupCommandHint') }}
       </a-typography-paragraph>
       <a-textarea
         id="qq-command-whitelist"
         v-model:value="draft"
         :auto-size="{ minRows: 3, maxRows: 6 }"
         :disabled="disabled"
-        :placeholder="t('setting.notify.openclawQqWhitelistPlaceholder')"
+        :placeholder="t('core.setting.notify.openclawQqWhitelistPlaceholder')"
       />
       <a-alert
         v-if="!values.length"
         type="info"
         show-icon
-        :message="t('setting.notify.openclawQqWhitelistEmpty')"
+        :message="t('core.setting.notify.openclawQqWhitelistEmpty')"
       />
       <a-button :loading="saving" :disabled="disabled || !dirty || invalid" @click="save(values)">
-        {{ t('setting.notify.openclawQqWhitelistSave') }}
+        {{ t('core.setting.notify.openclawQqWhitelistSave') }}
       </a-button>
     </a-space>
   </a-form-item>

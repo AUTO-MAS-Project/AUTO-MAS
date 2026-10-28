@@ -1,7 +1,7 @@
 <template>
   <LaunchFailure
     v-if="status === 'failed'"
-    :title="t('init.steps.backend')"
+    :title="t('bootstrap.init.steps.backend')"
     :message="errorMessage"
     :failure-actions="BACKEND_FAILURE_ACTIONS"
     :failure-logs="backendLogs"
@@ -15,9 +15,9 @@
   />
   <LaunchStatus
     v-else
-    :title="retrying ? t('launch.retrying') : t('launch.starting')"
+    :title="retrying ? t('bootstrap.launch.retrying') : t('bootstrap.launch.starting')"
     :hint="hintText"
-    :action-label="slow ? t('launch.viewLog') : ''"
+    :action-label="slow ? t('bootstrap.launch.viewLog') : ''"
     @action="openLaunchLogWindow('后端启动步骤')"
   />
 </template>
@@ -66,8 +66,8 @@ const { startPolling } = useUpdateChecker()
 // 加一个查看日志：这一段的失败结果不带 logPath，spawn 之前就失败时连日志正文都没有，
 // 「详细信息」折叠整块不出现，不给入口的话这一屏一个日志出口都没有。
 const BACKEND_FAILURE_ACTIONS: FailureAction[] = [
-  { kind: 'retry', labelKey: 'init.step.retry' },
-  { kind: 'open-log', labelKey: 'launch.viewLog' },
+  { kind: 'retry', labelKey: 'bootstrap.init.step.retry' },
+  { kind: 'open-log', labelKey: 'bootstrap.launch.viewLog' },
 ]
 
 const BACKEND_START_FAILURE_DOC_URL =
@@ -82,8 +82,8 @@ let completeTimer: ReturnType<typeof setTimeout> | null = null
 let slowTimer: ReturnType<typeof setTimeout> | null = null
 
 const hintText = computed(() => {
-  if (slow.value) return t('launch.slowHint')
-  return props.retrying ? t('launch.retryingHint') : ''
+  if (slow.value) return t('bootstrap.launch.slowHint')
+  return props.retrying ? t('bootstrap.launch.retryingHint') : ''
 })
 
 function clearSlowTimer() {
@@ -126,7 +126,7 @@ async function startBackend() {
     if (!result.success) {
       failure = result
       backendLogs.value = result.logs || ''
-      throw new Error(result.error || t('init.backend.failedTitle'))
+      throw new Error(result.error || t('bootstrap.init.backend.failedTitle'))
     }
 
     const backendStatus = await window.electronAPI.backendStatus()
@@ -145,7 +145,7 @@ async function startBackend() {
 
     try {
       const finalStatus = await window.electronAPI.backendStatus()
-      if (!finalStatus.isRunning) throw new Error(t('init.backend.notRunning'))
+      if (!finalStatus.isRunning) throw new Error(t('bootstrap.init.backend.notRunning'))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.warn(`后端连接验证失败，但继续执行: ${message}`)

@@ -5,8 +5,8 @@
   <a-form-item
     v-if="enabled"
     class="flavor-mss-defense"
-    :label="t('edit.mssFlavorDefense')"
-    :extra="t('edit.mssFlavorDefenseHint')"
+    :label="t('core.edit.mssFlavorDefense')"
+    :extra="t('core.edit.mssFlavorDefenseHint')"
   >
     <a-space :size="12">
       <a-switch
@@ -59,11 +59,11 @@ const enabled = computed(() => status.value?.enabled === true)
 
 const statusText = computed(() => {
   const state = status.value
-  if (!state?.known) return t('edit.mssFlavorDefenseUnknown')
-  if (state.done) return t('edit.mssFlavorDefenseDone')
-  if (state.givenUp) return t('edit.mssFlavorDefenseGivenUp')
-  if (state.armed) return t('edit.mssFlavorDefenseArmed')
-  return t('edit.mssFlavorDefensePending')
+  if (!state?.known) return t('core.edit.mssFlavorDefenseUnknown')
+  if (state.done) return t('core.edit.mssFlavorDefenseDone')
+  if (state.givenUp) return t('core.edit.mssFlavorDefenseGivenUp')
+  if (state.armed) return t('core.edit.mssFlavorDefenseArmed')
+  return t('core.edit.mssFlavorDefensePending')
 })
 
 const statusColor = computed(() => {
@@ -81,12 +81,14 @@ const statusColor = computed(() => {
  */
 const periodHintLines = computed(() => {
   const state = status.value
-  if (!state?.known || !state.period) return [t('edit.mssFlavorDefenseUnknown')]
-  const lines = [t('edit.mssFlavorDefensePeriod', { period: formatBackendDateTime(state.period) })]
+  if (!state?.known || !state.period) return [t('core.edit.mssFlavorDefenseUnknown')]
+  const lines = [
+    t('core.edit.mssFlavorDefensePeriod', { period: formatBackendDateTime(state.period) }),
+  ]
   if (state.failedDays?.length) {
     lines.push(
-      t('edit.mssFlavorDefenseFailedDays', {
-        days: state.failedDays.join(t('edit.maafwListSeparator')),
+      t('core.edit.mssFlavorDefenseFailedDays', {
+        days: state.failedDays.join(t('core.edit.maafwListSeparator')),
       })
     )
   }
@@ -118,13 +120,15 @@ const handleToggle = async (checked: boolean | string | number) => {
       data: { Function: { IfPersonalMss: next } },
     })
     if (response.code !== 200) {
-      message.error(response.message || t('edit.mssFlavorDefenseSaveFailed'))
+      message.error(response.message || t('core.edit.mssFlavorDefenseSaveFailed'))
       return
     }
     // 本地先翻过去，省得为一个布尔再查一次；关掉时这一块会整个消失
     status.value = { ...(status.value ?? {}), enabled: next }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.mssFlavorDefenseSaveFailed'))
+    message.error(
+      error instanceof Error ? error.message : t('core.edit.mssFlavorDefenseSaveFailed')
+    )
   } finally {
     saving.value = false
   }

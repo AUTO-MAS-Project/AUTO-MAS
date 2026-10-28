@@ -94,10 +94,11 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
     if (!toValue(userId)) return
     try {
       const resp = await ensure(target)
-      if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+      if (resp.code !== 200)
+        throw new Error(resp.message || t('core.edit.configRestoreEnsureFailed'))
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.warning(t('edit.configRestoreEnsureFailed'))
+      message.warning(t('core.edit.configRestoreEnsureFailed'))
     }
   }
 

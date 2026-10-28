@@ -105,7 +105,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     try {
       const response = await Service.stopTaskApiDispatchStopPost({ taskId })
       if (response.code !== 200) {
-        throw new Error(response.message || t('edit.endfieldUpdateStopFailed'))
+        throw new Error(response.message || t('core.edit.endfieldUpdateStopFailed'))
       }
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
@@ -180,7 +180,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (await resyncLog()) return true
     updateModal.running = false
     updateModal.done = true
-    updateModal.log ||= t('edit.endfieldUpdateAlreadyFinished')
+    updateModal.log ||= t('core.edit.endfieldUpdateAlreadyFinished')
     clearSession()
     return false
   }
@@ -236,7 +236,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
         { source: 'script_update' }
       )
       if (response.code !== 200 || !response.taskId) {
-        throw new Error(response.message || t('edit.endfieldUpdateStartFailed'))
+        throw new Error(response.message || t('core.edit.endfieldUpdateStartFailed'))
       }
       updateModal.running = true
       updateModal.done = false
@@ -248,7 +248,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
         // 留着 taskId，让他离开这一页时那条 stopSession 还能追上这一轮
         const stopped = await stopSession(disposed)
         updateModal.running = false
-        if (!disposed && !stopped) message.error(t('edit.endfieldUpdateStopFailed'))
+        if (!disposed && !stopped) message.error(t('core.edit.endfieldUpdateStopFailed'))
         return
       }
       errored = false
@@ -263,7 +263,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
           const data = wsMessage.data as unknown as WSTaskNoticeData
           if (data.level === 'error') {
             errored = true
-            message.error(t('edit.endfieldUpdateFailed', { p0: data.message }))
+            message.error(t('core.edit.endfieldUpdateFailed', { p0: data.message }))
             updateModal.running = false
             updateModal.done = true
             // 弹窗留着：具体原因就在里面那几行日志里。任务已经报错收尾，会话可以清干净
@@ -272,7 +272,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
         }),
         subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
           if (!errored && !aborted) {
-            message.success(t('edit.endfieldUpdateTask'))
+            message.success(t('core.edit.endfieldUpdateTask'))
           }
           updateModal.running = false
           updateModal.done = true
@@ -298,7 +298,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
       logger.error(e instanceof Error ? e.message : String(e))
       // 页面已经销毁就别再往别处弹提示：那条错误属于一个用户已经离开的页面
       if (!disposed) {
-        message.error(e instanceof Error ? e.message : t('edit.endfieldUpdateStartFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.endfieldUpdateStartFailed'))
       }
     } finally {
       updateModal.starting = false
@@ -313,7 +313,7 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     if (running && !stopped) {
       // 后端没答应停止，就还在写游戏目录。这时把弹窗收起来、会话清掉，用户就只剩一句
       // 三秒即散的提示，连再按一次「仍要关闭」的入口都没有了——保持打开让他能重试
-      message.error(t('edit.endfieldUpdateStopFailed'))
+      message.error(t('core.edit.endfieldUpdateStopFailed'))
       return
     }
     updateModal.running = false
@@ -325,10 +325,10 @@ export function useMaaEndUpdate(getScriptId: () => string) {
     // 中止会白下这一轮已下载的部分（下一轮能续传，但这一轮到此为止），先问一句
     if (updateModal.running) {
       Modal.confirm({
-        title: t('edit.endfieldUpdateAbortTitle'),
-        content: t('edit.endfieldUpdateCloseConfirm'),
-        okText: t('edit.endfieldUpdateAbortConfirm'),
-        cancelText: t('edit.cancel'),
+        title: t('core.edit.endfieldUpdateAbortTitle'),
+        content: t('core.edit.endfieldUpdateCloseConfirm'),
+        okText: t('core.edit.endfieldUpdateAbortConfirm'),
+        cancelText: t('core.edit.cancel'),
         onOk: closeAndStop,
       })
       return

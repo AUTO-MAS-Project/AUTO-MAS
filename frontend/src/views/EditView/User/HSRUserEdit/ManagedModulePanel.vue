@@ -14,7 +14,7 @@
 
     <!-- 自己包一层竖排表单：面板里的表单项不挂到页面表单的模型上，且固定上标签下控件 -->
     <a-form layout="vertical">
-      <a-form-item v-if="showEngineSwitch" :label="t('edit.engine')" class="engine-item">
+      <a-form-item v-if="showEngineSwitch" :label="t('core.edit.engine')" class="engine-item">
         <a-segmented
           :value="engine"
           :options="engineOptions"
@@ -38,7 +38,7 @@
             class="notice-toggle"
             @click="noticeExpanded = !noticeExpanded"
           >
-            {{ noticeExpanded ? t('edit.hsrNoticeCollapse') : t('edit.hsrNoticeExpand') }}
+            {{ noticeExpanded ? t('core.edit.hsrNoticeCollapse') : t('core.edit.hsrNoticeExpand') }}
           </a-button>
         </template>
         <template v-if="noticeHasDetails && noticeExpanded" #description>
@@ -47,7 +47,7 @@
           </ul>
           <template v-if="droppedOverrides.length">
             <div v-if="warnings.length" class="notice-subtitle">
-              {{ t('edit.invalidManagedOverridesTitle', { n: droppedOverrides.length }) }}
+              {{ t('core.edit.invalidManagedOverridesTitle', { n: droppedOverrides.length }) }}
             </div>
             <ul class="notice-list">
               <li v-for="item in droppedOverrides" :key="item.key">
@@ -55,7 +55,7 @@
                 <span>{{ droppedReasonLabel(item.reason) }}</span>
                 <span class="dropped-value">
                   {{
-                    t('edit.invalidManagedOverrideSaved', {
+                    t('core.edit.invalidManagedOverrideSaved', {
                       value: formatOverrideValue(item.value),
                     })
                   }}
@@ -64,9 +64,11 @@
             </ul>
             <a-popconfirm
               :overlay-style="{ maxWidth: '360px' }"
-              :title="t('edit.clearInvalidManagedOverridesConfirm', { n: droppedOverrides.length })"
-              :ok-text="t('edit.ok')"
-              :cancel-text="t('edit.cancel')"
+              :title="
+                t('core.edit.clearInvalidManagedOverridesConfirm', { n: droppedOverrides.length })
+              "
+              :ok-text="t('core.edit.ok')"
+              :cancel-text="t('core.edit.cancel')"
               ok-type="danger"
               :disabled="saving"
               @confirm="
@@ -77,7 +79,7 @@
               "
             >
               <a-button size="small" danger :disabled="saving">
-                {{ t('edit.clearInvalidManagedOverrides') }}
+                {{ t('core.edit.clearInvalidManagedOverrides') }}
               </a-button>
             </a-popconfirm>
           </template>
@@ -85,7 +87,7 @@
       </a-alert>
 
       <template v-if="form">
-        <a-empty v-if="!form.fields.length" :description="t('edit.thisVersionHasNothing')" />
+        <a-empty v-if="!form.fields.length" :description="t('core.edit.thisVersionHasNothing')" />
         <template v-else>
           <DynamicManagedFields
             v-if="layout.common.length"
@@ -105,7 +107,7 @@
                 <span class="group-header">
                   <span>{{ groupLabel(group.key) }}</span>
                   <span v-if="group.overriddenCount" class="group-overridden">
-                    {{ t('edit.hsrGroupOverriddenCount', { n: group.overriddenCount }) }}
+                    {{ t('core.edit.hsrGroupOverriddenCount', { n: group.overriddenCount }) }}
                   </span>
                 </span>
               </template>
@@ -119,23 +121,25 @@
           </a-collapse>
         </template>
       </template>
-      <a-empty v-else :description="t('edit.engineReturnedNoDynamic')" />
+      <a-empty v-else :description="t('core.edit.engineReturnedNoDynamic')" />
     </a-form>
 
     <div class="panel-footer">
       <a-popconfirm
         :overlay-style="{ maxWidth: '360px' }"
-        :title="t('edit.hsrModuleResetConfirmTitle', { engine: engineName })"
+        :title="t('core.edit.hsrModuleResetConfirmTitle', { engine: engineName })"
         :description="
-          shared ? t('edit.hsrModuleResetConfirmShared') : t('edit.hsrModuleResetConfirmUser')
+          shared
+            ? t('core.edit.hsrModuleResetConfirmShared')
+            : t('core.edit.hsrModuleResetConfirmUser')
         "
-        :ok-text="t('edit.ok')"
-        :cancel-text="t('edit.cancel')"
+        :ok-text="t('core.edit.ok')"
+        :cancel-text="t('core.edit.cancel')"
         :disabled="loading || saving || !form"
         @confirm="emit('resetModule')"
       >
         <a-button type="link" size="small" class="module-reset" :disabled="saving || !form">
-          {{ t('edit.hsrModuleReset', { engine: engineName }) }}
+          {{ t('core.edit.hsrModuleReset', { engine: engineName }) }}
         </a-button>
       </a-popconfirm>
     </div>
@@ -197,15 +201,15 @@ watch(
 const showEngineSwitch = computed(() => !props.cloud && props.engineOptions.length > 1)
 
 const phaseLabel = computed(() =>
-  props.task?.phase === 'weekly' ? t('edit.weekly') : t('edit.daily')
+  props.task?.phase === 'weekly' ? t('core.edit.weekly') : t('core.edit.daily')
 )
 
 const layout = computed(() => splitFieldsByGroup(props.form?.fields ?? []))
 
 const groupLabel = (group: string) =>
-  te(`edit.hsrFieldGroup.${group}`)
-    ? t(`edit.hsrFieldGroup.${group}`)
-    : t('edit.hsrFieldGroup.misc')
+  te(`core.edit.hsrFieldGroup.${group}`)
+    ? t(`core.edit.hsrFieldGroup.${group}`)
+    : t('core.edit.hsrFieldGroup.misc')
 
 const warnings = computed(() => props.form?.warnings ?? [])
 const droppedOverrides = computed(() => getHSRDroppedOverrides(props.form))
@@ -217,9 +221,9 @@ const noticeHasDetails = computed(
 const noticeHeadline = computed(() => {
   if (!noticeHasDetails.value) return warnings.value[0] ?? ''
   if (!warnings.value.length) {
-    return t('edit.invalidManagedOverridesTitle', { n: droppedOverrides.value.length })
+    return t('core.edit.invalidManagedOverridesTitle', { n: droppedOverrides.value.length })
   }
-  return t('edit.hsrModuleNotices', { n: noticeCount.value })
+  return t('core.edit.hsrModuleNotices', { n: noticeCount.value })
 })
 
 // 失效覆盖尽量显示字段名；当前表单里已经没有这个字段时只能显示原始键
@@ -227,7 +231,9 @@ const droppedLabel = (key: string) =>
   props.form?.fields.find(field => field.key === key)?.label ?? key
 
 const droppedReasonLabel = (reason: HSRDroppedOverrideReason) =>
-  reason === 'type' ? t('edit.invalidManagedOverrideType') : t('edit.invalidManagedOverrideUnknown')
+  reason === 'type'
+    ? t('core.edit.invalidManagedOverrideType')
+    : t('core.edit.invalidManagedOverrideUnknown')
 
 const formatOverrideValue = (value: unknown) =>
   typeof value === 'string' ? value : JSON.stringify(value)

@@ -48,35 +48,35 @@ _POLICY_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
         NotifyChannelField(
             group="Notify",
             name="SendTaskResultTime",
-            label_key="setting.notify.resultTime",
+            label_key="core.setting.notify.resultTime",
             control="select",
             options=(
-                ("不推送", "setting.pushTime.never"),
-                ("任何时刻", "setting.pushTime.always"),
-                ("仅失败时", "setting.pushTime.failOnly"),
+                ("不推送", "core.setting.pushTime.never"),
+                ("任何时刻", "core.setting.pushTime.always"),
+                ("仅失败时", "core.setting.pushTime.failOnly"),
             ),
-            tip_key="setting.notify.resultTimeTip",
+            tip_key="core.setting.notify.resultTimeTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="IfSendStatistic",
-            label_key="setting.notify.statistics",
+            label_key="core.setting.notify.statistics",
             control="bool",
-            tip_key="setting.notify.statisticsTip",
+            tip_key="core.setting.notify.statisticsTip",
         ),
         NotifyChannelField(
             group="Notify",
             name="IfSendSixStar",
-            label_key="setting.notify.recruit",
+            label_key="core.setting.notify.recruit",
             control="bool",
-            tip_key="setting.notify.recruitTip",
+            tip_key="core.setting.notify.recruitTip",
         ),
     )
 }
 
 _POLICY = NotifyChannel(
     key="policy",
-    name_key="setting.notify.contentSection",
+    name_key="core.setting.notify.contentSection",
     desc_key="",
     icon="",
     group="builtin",

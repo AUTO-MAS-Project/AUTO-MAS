@@ -574,6 +574,7 @@ def main():
         emulator2_router,
         emulator_router,
         history_router,
+        i18n_router,
         info_router,
         ocr_router,
         openclaw_qq_router,
@@ -614,6 +615,7 @@ def main():
     app.include_router(queue_router)
     app.include_router(dispatch_router)
     app.include_router(history_router)
+    app.include_router(i18n_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
     app.include_router(share_router)

@@ -32,7 +32,7 @@ export function useClawBinding(
 ) {
   const api = CHANNELS[channel]
   const { t } = useI18n()
-  const label = (key: string) => t(`setting.notify.${api.prefix}${key}`)
+  const label = (key: string) => t(`core.setting.notify.${api.prefix}${key}`)
   const status = ref<OpenClawQQStatusOut | null>(null)
   const statusLoading = ref(false)
   const statusError = ref('')

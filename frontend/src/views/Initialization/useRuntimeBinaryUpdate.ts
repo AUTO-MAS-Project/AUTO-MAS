@@ -13,11 +13,14 @@ export function useRuntimeBinaryUpdate(onUpdated: () => void) {
   const updateHint = computed(() => {
     const check = updateCheck.value
     if (!check || check.status === 'skipped') return ''
-    const current = check.currentVersion || t('init.failure.runtimeVersionUnknown')
+    const current = check.currentVersion || t('bootstrap.init.failure.runtimeVersionUnknown')
     if (check.status === 'available') {
-      return t('init.failure.runtimeUpdateAvailable', { current, latest: check.target?.version })
+      return t('bootstrap.init.failure.runtimeUpdateAvailable', {
+        current,
+        latest: check.target?.version,
+      })
     }
-    return t('init.failure.runtimeVersion', { version: current })
+    return t('bootstrap.init.failure.runtimeVersion', { version: current })
   })
   let disposed = false
 
@@ -34,7 +37,7 @@ export function useRuntimeBinaryUpdate(onUpdated: () => void) {
   async function updateRuntime() {
     if (updating.value || !canUpdateRuntime.value) return
     updating.value = true
-    updateMessage.value = t('init.failure.runtimeUpdating')
+    updateMessage.value = t('bootstrap.init.failure.runtimeUpdating')
     updateProgress.value = undefined
     const api = window.electronAPI
     let restart = false
@@ -47,29 +50,29 @@ export function useRuntimeBinaryUpdate(onUpdated: () => void) {
       const result = await api.updateRuntimeBinary()
       switch (result.status) {
         case 'upgraded':
-          updateMessage.value = t('init.failure.runtimeUpdated', {
+          updateMessage.value = t('bootstrap.init.failure.runtimeUpdated', {
             version: result.target?.version ?? '',
           })
           restart = true
           updateCheck.value = { status: 'current', currentVersion: result.target?.version }
           break
         case 'current':
-          updateMessage.value = t('init.failure.runtimeCurrent', {
+          updateMessage.value = t('bootstrap.init.failure.runtimeCurrent', {
             version: result.target?.version ?? '',
           })
           updateCheck.value = { status: 'current', currentVersion: result.target?.version }
           break
         case 'skipped':
         case 'cancelled':
-          updateMessage.value = t('init.failure.runtimeUpdateSkipped')
+          updateMessage.value = t('bootstrap.init.failure.runtimeUpdateSkipped')
           break
         case 'failed':
-          throw new Error(result.error || t('init.msg.execFailed'))
+          throw new Error(result.error || t('bootstrap.init.msg.execFailed'))
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       api.getLogger('Runtime 更新').error(`更新 Runtime 失败: ${reason}`)
-      updateMessage.value = t('init.failure.runtimeUpdateFailed', { error: reason })
+      updateMessage.value = t('bootstrap.init.failure.runtimeUpdateFailed', { error: reason })
       message.error(updateMessage.value)
     } finally {
       api.removeRuntimeBinaryProgressListener()

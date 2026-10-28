@@ -62,7 +62,7 @@ export const useEndfieldActivitySource = () => {
         sraOverview.value = {
           ...parseEndfieldSraData(JSON.parse(raw)),
           Stale: true,
-          Message: t('home.sra.staleMessage'),
+          Message: t('core.home.sra.staleMessage'),
         }
         return true
       } catch {
@@ -84,13 +84,13 @@ export const useEndfieldActivitySource = () => {
       sraOverview.value = {
         ...sraOverview.value,
         Stale: true,
-        Message: t('home.sra.staleMessage'),
+        Message: t('core.home.sra.staleMessage'),
       }
     },
     markUnavailable: () => {
       sraOverview.value = {
         ...createEmptyEndfieldActivityOverview(),
-        Message: t('home.endfield.unavailable'),
+        Message: t('core.home.endfield.unavailable'),
       }
     },
   })
@@ -124,7 +124,7 @@ export const useEndfieldActivitySource = () => {
       PoolLoading: ake.loading,
       Message: primary.Available
         ? primary === akeOverview.value && primary.Stale
-          ? t('home.endfield.staleMessage')
+          ? t('core.home.endfield.staleMessage')
           : primary.Message
         : sraOverview.value.Message,
     }

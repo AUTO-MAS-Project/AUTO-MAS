@@ -43,12 +43,12 @@ export function useMascotSettings() {
       : Boolean(activeAppearance.value?.mascotUrl)
   )
   const options = computed(() => [
-    { label: t('setting.basic.mascotFollowTheme'), value: 'theme' },
+    { label: t('core.setting.basic.mascotFollowTheme'), value: 'theme' },
     ...mascots.value.map(item => ({ label: item.name, value: `mascot:${item.id}` })),
     ...(selectedId.value && !mascots.value.some(item => item.id === selectedId.value)
       ? [
           {
-            label: t('setting.basic.mascotMissing'),
+            label: t('core.setting.basic.mascotMissing'),
             value: `mascot:${selectedId.value}`,
             disabled: true,
           },
@@ -95,7 +95,7 @@ export function useMascotSettings() {
       selectedId.value = id
     } catch (error) {
       logger.error('保存桌宠选择失败:', error)
-      message.error(t('setting.basic.mascotSaveFailed'))
+      message.error(t('core.setting.basic.mascotSaveFailed'))
     } finally {
       selecting.value = false
     }
@@ -109,7 +109,7 @@ export function useMascotSettings() {
       enabled.value = next
     } catch (error) {
       logger.error('保存桌宠显示设置失败:', error)
-      message.error(t('setting.basic.mascotSaveFailed'))
+      message.error(t('core.setting.basic.mascotSaveFailed'))
     } finally {
       toggling.value = false
     }
@@ -131,7 +131,7 @@ export function useMascotSettings() {
         requestedFps = savedFps
         fps.value = savedFps ?? DEFAULT_CUSTOM_FPS
         fpsMode.value = savedFps === null ? 'package' : 'custom'
-        message.error(t('setting.basic.mascotSaveFailed'))
+        message.error(t('core.setting.basic.mascotSaveFailed'))
       }
       logger.error('保存桌宠帧率失败:', error)
     }
@@ -165,7 +165,7 @@ export function useMascotSettings() {
   const importMascot = async (): Promise<void> => {
     if (busy.value || selecting.value) return
     if (!window.electronAPI.importMascot) {
-      message.error(t('setting.basic.mascotUnsupported'))
+      message.error(t('core.setting.basic.mascotUnsupported'))
       return
     }
     saving.value = true
@@ -173,7 +173,7 @@ export function useMascotSettings() {
     let outcome: 'success' | 'failure' | 'cancelled' | 'partial' | 'unknown' = 'unknown'
     try {
       const paths = await window.electronAPI.selectFile([
-        { name: t('setting.basic.importMascot'), extensions: ['zip'] },
+        { name: t('core.setting.basic.importMascot'), extensions: ['zip'] },
       ])
       if (!paths[0]) {
         outcome = 'cancelled'
@@ -184,12 +184,12 @@ export function useMascotSettings() {
         const confirmed = await new Promise<boolean>(resolve =>
           modal.confirm({
             ...modalOptions,
-            title: t('setting.basic.mascotReplaceTitle'),
-            content: t('setting.basic.mascotReplaceContent', {
-              name: result.existing?.name ?? t('setting.basic.mascotSection'),
+            title: t('core.setting.basic.mascotReplaceTitle'),
+            content: t('core.setting.basic.mascotReplaceContent', {
+              name: result.existing?.name ?? t('core.setting.basic.mascotSection'),
             }),
-            okText: t('setting.basic.replaceAppearance'),
-            cancelText: t('common.cancel'),
+            okText: t('core.setting.basic.replaceAppearance'),
+            cancelText: t('core.common.cancel'),
             onOk: () => resolve(true),
             onCancel: () => resolve(false),
           })
@@ -205,8 +205,8 @@ export function useMascotSettings() {
         message.error(
           t(
             result.code === 'INVALID_ANIMATION'
-              ? 'setting.basic.appearanceAnimationInvalid'
-              : 'setting.basic.mascotImportFailed'
+              ? 'core.setting.basic.appearanceAnimationInvalid'
+              : 'core.setting.basic.mascotImportFailed'
           )
         )
         return
@@ -215,10 +215,10 @@ export function useMascotSettings() {
       await saveConfig({ desktopMascotId: result.mascot.id })
       outcome = 'success'
       await refresh()
-      message.success(t('setting.basic.mascotImported'))
+      message.success(t('core.setting.basic.mascotImported'))
     } catch (error) {
       logger.error('导入桌宠失败:', error)
-      message.error(t('setting.basic.mascotImportFailed'))
+      message.error(t('core.setting.basic.mascotImportFailed'))
     } finally {
       telemetry.finish({ package_kind: 'mascot', action: 'import', outcome })
       saving.value = false
@@ -230,13 +230,13 @@ export function useMascotSettings() {
     const id = selectedId.value
     modal.confirm({
       ...modalOptions,
-      title: t('setting.basic.mascotRemoveTitle'),
-      content: t('setting.basic.mascotRemoveContent', {
+      title: t('core.setting.basic.mascotRemoveTitle'),
+      content: t('core.setting.basic.mascotRemoveContent', {
         name: mascots.value.find(item => item.id === id)?.name ?? id,
       }),
-      okText: t('setting.basic.removeMascot'),
+      okText: t('core.setting.basic.removeMascot'),
       okButtonProps: { danger: true },
-      cancelText: t('common.cancel'),
+      cancelText: t('core.common.cancel'),
       onOk: async () => {
         saving.value = true
         try {
@@ -245,7 +245,7 @@ export function useMascotSettings() {
           await refresh()
         } catch (error) {
           logger.error('移除桌宠失败:', error)
-          message.error(t('setting.basic.mascotRemoveFailed'))
+          message.error(t('core.setting.basic.mascotRemoveFailed'))
         } finally {
           saving.value = false
         }

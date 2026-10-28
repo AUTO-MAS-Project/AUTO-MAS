@@ -25,13 +25,13 @@ const icon = computed(() => channelIcon(props.channel.icon))
 const iconColor = computed(() => channelIconColor(props.channel.icon))
 const groupTag = computed(() =>
   normalizeGroup(props.channel.group) === 'custom'
-    ? t('setting.notify.customGroup')
-    : t('setting.notify.channelsGroup')
+    ? t('core.setting.notify.customGroup')
+    : t('core.setting.notify.channelsGroup')
 )
 const hintText = computed(() =>
   props.channel.customBlock === 'webhook_list'
-    ? t('setting.notify.manage')
-    : t('setting.notify.configure')
+    ? t('core.setting.notify.manage')
+    : t('core.setting.notify.configure')
 )
 </script>
 

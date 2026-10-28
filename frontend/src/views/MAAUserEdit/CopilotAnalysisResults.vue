@@ -3,26 +3,26 @@
     <a-row :gutter="[16, 16]" class="coverage-summary">
       <a-col :xs="12" :md="6"
         ><a-statistic
-          :title="t('maaCopilot.ready')"
+          :title="t('core.maaCopilot.ready')"
           :value="result.ready"
           :suffix="`/ ${result.analyzable}`"
       /></a-col>
       <a-col :xs="12" :md="6"
         ><a-statistic
-          :title="t('maaCopilot.projected')"
+          :title="t('core.maaCopilot.projected')"
           :value="result.projectedReady"
           :suffix="`/ ${result.analyzable}`"
       /></a-col>
       <a-col :xs="12" :md="6"
-        ><a-statistic :title="t('maaCopilot.missingJobs')" :value="result.missing"
+        ><a-statistic :title="t('core.maaCopilot.missingJobs')" :value="result.missing"
       /></a-col>
       <a-col :xs="12" :md="6"
-        ><a-statistic :title="t('maaCopilot.unknown')" :value="result.unknown"
+        ><a-statistic :title="t('core.maaCopilot.unknown')" :value="result.unknown"
       /></a-col>
     </a-row>
     <p class="source-summary">
       {{
-        t('maaCopilot.summary', {
+        t('core.maaCopilot.summary', {
           total: result.total,
           stages: result.stageCount,
           time: capturedTime,
@@ -31,12 +31,12 @@
     </p>
     <div class="analysis-note">
       <InfoCircleOutlined aria-hidden="true" />
-      <span>{{ t('maaCopilot.limitSummary') }}</span>
-      <a-popover :title="t('maaCopilot.analysisNotes')" trigger="click" placement="bottomLeft">
+      <span>{{ t('core.maaCopilot.limitSummary') }}</span>
+      <a-popover :title="t('core.maaCopilot.analysisNotes')" trigger="click" placement="bottomLeft">
         <template #content
-          ><p class="source-detail">{{ t('maaCopilot.limitHint') }}</p></template
+          ><p class="source-detail">{{ t('core.maaCopilot.limitHint') }}</p></template
         >
-        <a-button type="link" size="small">{{ t('maaCopilot.sourceDetails') }}</a-button>
+        <a-button type="link" size="small">{{ t('core.maaCopilot.sourceDetails') }}</a-button>
       </a-popover>
     </div>
     <div
@@ -48,18 +48,18 @@
     >
       <InfoCircleOutlined aria-hidden="true" />
       {{
-        t('maaCopilot.ceiling', {
+        t('core.maaCopilot.ceiling', {
           count: (result.ready ?? 0) + (result.trainable ?? 0),
           total: result.analyzable,
         })
       }}
     </div>
     <a-tabs v-model:active-key="resultTab">
-      <a-tab-pane key="operators" :tab="t('maaCopilot.operators')">
+      <a-tab-pane key="operators" :tab="t('core.maaCopilot.operators')">
         <div class="result-actions">
           <a-input
             v-model:value="operatorFilter"
-            :placeholder="t('maaCopilot.searchOperator')"
+            :placeholder="t('core.maaCopilot.searchOperator')"
             allow-clear
             ><template #prefix><SearchOutlined aria-hidden="true" /></template
           ></a-input>
@@ -69,7 +69,7 @@
             :disabled="disabled || !selectedPlans.length"
             @click="emit('import', selectedPlans)"
           >
-            {{ t('maaCopilot.import', { count: selectedPlans.length }) }}
+            {{ t('core.maaCopilot.import', { count: selectedPlans.length }) }}
           </a-button>
         </div>
         <a-table
@@ -86,24 +86,27 @@
               <a-tag :color="record.owned ? 'blue' : 'orange'">{{
                 t(
                   record.owned
-                    ? 'maaCopilot.training'
+                    ? 'core.maaCopilot.training'
                     : record.optional
-                      ? 'maaCopilot.optionalOperator'
-                      : 'maaCopilot.missingOperator'
+                      ? 'core.maaCopilot.optionalOperator'
+                      : 'core.maaCopilot.missingOperator'
                 )
               }}</a-tag>
             </template>
             <template v-else-if="column.key === 'progress'">
               <span v-if="record.owned"
                 >{{
-                  t('maaCopilot.level', {
+                  t('core.maaCopilot.level', {
                     elite: record.currentElite,
                     level: record.currentLevel,
                   })
                 }}
                 →
                 {{
-                  t('maaCopilot.level', { elite: record.targetElite, level: record.targetLevel })
+                  t('core.maaCopilot.level', {
+                    elite: record.targetElite,
+                    level: record.targetLevel,
+                  })
                 }}</span
               >
               <span v-else>—</span>
@@ -116,9 +119,13 @@
           </template>
         </a-table>
       </a-tab-pane>
-      <a-tab-pane key="jobs" :tab="t('maaCopilot.jobs')">
+      <a-tab-pane key="jobs" :tab="t('core.maaCopilot.jobs')">
         <div class="result-actions">
-          <a-input v-model:value="jobFilter" :placeholder="t('maaCopilot.searchJob')" allow-clear />
+          <a-input
+            v-model:value="jobFilter"
+            :placeholder="t('core.maaCopilot.searchJob')"
+            allow-clear
+          />
           <a-select v-model:value="jobState" :options="jobStateOptions" class="status-select" />
         </div>
         <a-table
@@ -140,13 +147,13 @@
               >
             </template>
             <template v-else-if="column.key === 'state'">{{
-              t(`maaCopilot.state.${record.state}`)
+              t(`core.maaCopilot.state.${record.state}`)
             }}</template>
             <template v-else-if="column.key === 'gaps'">{{
               [
                 ...record.missingOperators,
                 ...(record.missingAlternatives ?? []).map((names: string[]) =>
-                  t('maaCopilot.oneOf', { names: names.join(' / ') })
+                  t('core.maaCopilot.oneOf', { names: names.join(' / ') })
                 ),
                 ...record.gaps,
               ].join('、') || '—'
@@ -209,22 +216,22 @@ const filteredJobs = computed(() =>
   )
 )
 const operatorColumns = computed(() => [
-  { title: t('maaCopilot.name'), dataIndex: 'name', width: 140 },
-  { title: t('maaCopilot.status'), key: 'status', width: 110 },
-  { title: t('maaCopilot.progress'), key: 'progress', width: 220 },
-  { title: t('maaCopilot.goals'), key: 'goals' },
-  { title: t('maaCopilot.demand'), dataIndex: 'demand', width: 100 },
+  { title: t('core.maaCopilot.name'), dataIndex: 'name', width: 140 },
+  { title: t('core.maaCopilot.status'), key: 'status', width: 110 },
+  { title: t('core.maaCopilot.progress'), key: 'progress', width: 220 },
+  { title: t('core.maaCopilot.goals'), key: 'goals' },
+  { title: t('core.maaCopilot.demand'), dataIndex: 'demand', width: 100 },
 ])
 const jobColumns = computed(() => [
-  { title: t('maaCopilot.copilot'), key: 'title', width: 300 },
-  { title: t('maaCopilot.author'), dataIndex: 'author', width: 120 },
-  { title: t('maaCopilot.status'), key: 'state', width: 130 },
-  { title: t('maaCopilot.gaps'), key: 'gaps' },
+  { title: t('core.maaCopilot.copilot'), key: 'title', width: 300 },
+  { title: t('core.maaCopilot.author'), dataIndex: 'author', width: 120 },
+  { title: t('core.maaCopilot.status'), key: 'state', width: 130 },
+  { title: t('core.maaCopilot.gaps'), key: 'gaps' },
 ])
 const jobStateOptions = computed(() =>
   ['all', 'ready', 'training', 'missing', 'unknown'].map(value => ({
     value,
-    label: t(`maaCopilot.state.${value}`),
+    label: t(`core.maaCopilot.state.${value}`),
   }))
 )
 const rowSelection = computed(() => ({
@@ -246,15 +253,15 @@ const goalLines = (operator: MaaCopilotOperator) => {
       const skillIndex = target?.skillIndex
       const skillLabel =
         goal.kind === 'mastery' && (skillIndex === 1 || skillIndex === 2 || skillIndex === 3)
-          ? t(`edit.maaCultivateSkill${skillIndex}`)
+          ? t(`core.edit.maaCultivateSkill${skillIndex}`)
           : null
       const name =
         target && skillLabel
-          ? t('edit.maaCultivateSkillName', { name: target.label, skill: skillLabel })
+          ? t('core.edit.maaCultivateSkillName', { name: target.label, skill: skillLabel })
           : target?.label
-      return `${name ? `${name} · ` : ''}${t(`maaCopilot.kinds.${goal.kind}`)} ${goal.to_level}`
+      return `${name ? `${name} · ` : ''}${t(`core.maaCopilot.kinds.${goal.kind}`)} ${goal.to_level}`
     }),
-    ...(operator.manualLevel ? [t('maaCopilot.manualLevel')] : []),
+    ...(operator.manualLevel ? [t('core.maaCopilot.manualLevel')] : []),
   ]
   return lines.length ? lines : ['—']
 }

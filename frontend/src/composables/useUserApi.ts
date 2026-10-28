@@ -44,7 +44,7 @@ export function useUserApi() {
     const script_type = getAnalyticsScriptType(scriptId)
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
       operation.finish({ script_type, outcome: 'blocked' })
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       addUserErrorCode.value = null
       if (options.showError ?? true) message.warning(errorMsg)
@@ -65,7 +65,7 @@ export function useUserApi() {
 
       if (response.code !== 200) {
         addUserErrorCode.value = response.code ?? null
-        const errorMsg = response.message || t('apiErrors.userAddFailed')
+        const errorMsg = response.message || t('core.apiErrors.userAddFailed')
         throw new Error(errorMsg)
       }
 
@@ -78,7 +78,7 @@ export function useUserApi() {
     } catch (err) {
       operation.finish({ script_type, outcome: 'failure' })
       addUserErrorCode.value ??= getApiErrorCode(err)
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userAddFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userAddFailed'))
       error.value = errorMsg
       if (showError) {
         message.error(errorMsg)
@@ -110,7 +110,7 @@ export function useUserApi() {
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
       finishChanges('blocked')
       operation.finish({ ...dimensions, outcome: 'blocked' })
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -131,7 +131,7 @@ export function useUserApi() {
       logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userSaveFailed')
+        const errorMsg = response.message || t('core.apiErrors.userSaveFailed')
         logger.error(`更新用户失败: ${errorMsg}`)
         throw new Error(errorMsg)
       }
@@ -142,7 +142,7 @@ export function useUserApi() {
     } catch (err) {
       finishChanges('failure')
       operation.finish({ ...dimensions, outcome: 'failure' })
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userSaveFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userSaveFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -165,7 +165,7 @@ export function useUserApi() {
       const response = await Service.getUserApiScriptsUserGetPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userListFailed')
+        const errorMsg = response.message || t('core.apiErrors.userListFailed')
         throw new Error(errorMsg)
       }
 
@@ -173,7 +173,7 @@ export function useUserApi() {
         rememberUserAnalytics(scriptId, id, user.Info)
       return response
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userListFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userListFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return null
@@ -185,7 +185,7 @@ export function useUserApi() {
   // 删除用户
   const deleteUser = async (scriptId: string, userId: string): Promise<boolean> => {
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -208,7 +208,7 @@ export function useUserApi() {
       )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userDeleteFailed')
+        const errorMsg = response.message || t('core.apiErrors.userDeleteFailed')
         throw new Error(errorMsg)
       }
 
@@ -218,7 +218,7 @@ export function useUserApi() {
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userDeleteFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userDeleteFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -230,7 +230,7 @@ export function useUserApi() {
   // 重新排序用户
   const reorderUser = async (scriptId: string, userIds: string[]): Promise<boolean> => {
     if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
-      const errorMsg = t('edit.configLocked')
+      const errorMsg = t('core.edit.configLocked')
       error.value = errorMsg
       message.warning(errorMsg)
       return false
@@ -257,13 +257,13 @@ export function useUserApi() {
       )
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userOrderFailed')
+        const errorMsg = response.message || t('core.apiErrors.userOrderFailed')
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userOrderFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userOrderFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false
@@ -286,24 +286,24 @@ export function useUserApi() {
       const response = await Service.getUserConfigDirApiScriptsUserConfigDirPost(requestData)
 
       if (response.code !== 200) {
-        const errorMsg = response.message || t('apiErrors.userConfigPathFailed')
+        const errorMsg = response.message || t('core.apiErrors.userConfigPathFailed')
         throw new Error(errorMsg)
       }
 
       if (!response.path) {
-        throw new Error(t('apiErrors.userConfigPathFailed'))
+        throw new Error(t('core.apiErrors.userConfigPathFailed'))
       }
 
       const result = await window.electronAPI.openFile(response.path)
       if (!result.success) {
-        const openError = result.error || t('apiErrors.userConfigOpenFailed')
+        const openError = result.error || t('core.apiErrors.userConfigOpenFailed')
         logger.error(`打开用户配置目录失败: ${openError}`)
         throw new Error(openError)
       }
 
       return true
     } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('apiErrors.userConfigOpenFailed'))
+      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.userConfigOpenFailed'))
       error.value = errorMsg
       message.error(errorMsg)
       return false

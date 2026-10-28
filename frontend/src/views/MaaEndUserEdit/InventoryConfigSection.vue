@@ -5,10 +5,10 @@
       v-else-if="!inventory"
       type="warning"
       show-icon
-      :message="t('edit.maaEndImsUnavailable')"
+      :message="t('core.edit.maaEndImsUnavailable')"
     >
       <template #action
-        ><a-button @click="emit('reload')">{{ t('edit.maaEndImsReload') }}</a-button></template
+        ><a-button @click="emit('reload')">{{ t('core.edit.maaEndImsReload') }}</a-button></template
       >
     </a-alert>
     <template v-else>
@@ -16,31 +16,37 @@
         v-if="targets === null || unknownTargets.length"
         type="error"
         show-icon
-        :message="t('edit.maaEndImsInvalidTargets')"
+        :message="t('core.edit.maaEndImsInvalidTargets')"
       >
         <template #action>
           <a-button danger :disabled="disabled" @click="repairTargets">
-            {{ t(targets === null ? 'edit.maaEndImsResetInvalid' : 'edit.maaEndImsRemoveUnknown') }}
+            {{
+              t(
+                targets === null
+                  ? 'core.edit.maaEndImsResetInvalid'
+                  : 'core.edit.maaEndImsRemoveUnknown'
+              )
+            }}
           </a-button>
         </template>
       </a-alert>
       <div class="inventory-toolbar">
         <a-input
           v-model:value="search"
-          :placeholder="t('edit.maaEndImsSearch')"
-          :aria-label="t('edit.maaEndImsSearch')"
+          :placeholder="t('core.edit.maaEndImsSearch')"
+          :aria-label="t('core.edit.maaEndImsSearch')"
           allow-clear
           class="material-search"
         >
           <template #prefix><SearchOutlined /></template>
         </a-input>
         <a-checkbox v-model:checked="plannedOnly">
-          {{ t('edit.maaEndImsPlannedOnly') }}
+          {{ t('core.edit.maaEndImsPlannedOnly') }}
         </a-checkbox>
       </div>
       <div class="inventory-summary">
-        <span>{{ t('edit.maaEndImsPlannedCount', { n: planned.length }) }}</span>
-        <span>{{ t('edit.maaEndImsTargetHint') }}</span>
+        <span>{{ t('core.edit.maaEndImsPlannedCount', { n: planned.length }) }}</span>
+        <span>{{ t('core.edit.maaEndImsTargetHint') }}</span>
       </div>
       <a-tabs v-model:active-key="activeCategory" class="inventory-tabs">
         <a-tab-pane v-for="category in categories" :key="category.key">
@@ -65,7 +71,7 @@
                   :max="INVENTORY_TARGET_MAX"
                   :precision="0"
                   :disabled="disabled || targets === null"
-                  :aria-label="`${record.label} ${t('edit.maaEndImsTarget')}`"
+                  :aria-label="`${record.label} ${t('core.edit.maaEndImsTarget')}`"
                   @change="setTarget(record.value, $event)"
                 />
               </template>
@@ -79,8 +85,8 @@
                   :text="
                     t(
                       isInventoryTargetActive(targets?.[record.value])
-                        ? 'edit.maaEndImsIncluded'
-                        : 'edit.maaEndImsExcluded'
+                        ? 'core.edit.maaEndImsIncluded'
+                        : 'core.edit.maaEndImsExcluded'
                     )
                   "
                 />
@@ -89,7 +95,7 @@
             <template #emptyText
               ><a-empty
                 :image="Empty.PRESENTED_IMAGE_SIMPLE"
-                :description="t('edit.maaEndImsNoMatches')"
+                :description="t('core.edit.maaEndImsNoMatches')"
             /></template>
           </a-table>
         </a-tab-pane>
@@ -97,7 +103,7 @@
       <div class="inventory-preferences">
         <a-row :gutter="[24, 16]">
           <a-col :xs="24" :sm="12">
-            <a-form-item :label="t('edit.maaEndImsClaimMode')">
+            <a-form-item :label="t('core.edit.maaEndImsClaimMode')">
               <a-select
                 :value="formData.Task.ProtocolSpaceObtainModeClaim"
                 :options="inventory.claimModes"
@@ -107,11 +113,11 @@
             </a-form-item>
           </a-col>
           <a-col :xs="24" :sm="12">
-            <a-form-item :label="t('edit.maaEndImsMedication')">
+            <a-form-item :label="t('core.edit.maaEndImsMedication')">
               <a-select
                 :value="formData.Task.IfAutoUseSpMedication ? 'use' : 'skip'"
                 :options="medicationOptions"
-                :aria-label="t('edit.maaEndImsMedication')"
+                :aria-label="t('core.edit.maaEndImsMedication')"
                 :disabled="disabled"
                 @change="saveMedication"
               />
@@ -198,13 +204,13 @@ const filterRows = (items: typeof rows.value) => {
   )
 }
 const columns = computed(() => [
-  { title: t('edit.maaEndImsMaterial'), dataIndex: 'label', key: 'label' },
-  { title: t('edit.maaEndImsTarget'), key: 'target', width: 160 },
-  { title: t('edit.maaEndImsParticipation'), key: 'participation', width: 120 },
+  { title: t('core.edit.maaEndImsMaterial'), dataIndex: 'label', key: 'label' },
+  { title: t('core.edit.maaEndImsTarget'), key: 'target', width: 160 },
+  { title: t('core.edit.maaEndImsParticipation'), key: 'participation', width: 120 },
 ])
 const medicationOptions = computed(() => [
-  { label: t('edit.maaEndImsMedicationUse'), value: 'use' },
-  { label: t('edit.maaEndImsMedicationSkip'), value: 'skip' },
+  { label: t('core.edit.maaEndImsMedicationUse'), value: 'use' },
+  { label: t('core.edit.maaEndImsMedicationSkip'), value: 'skip' },
 ])
 
 function setTarget(key: string, quantity: string | number | null) {
@@ -242,11 +248,11 @@ function repairTargets() {
     return
   }
   Modal.confirm({
-    title: t('edit.maaEndImsResetInvalid'),
-    content: t('edit.maaEndImsResetHint'),
+    title: t('core.edit.maaEndImsResetInvalid'),
+    content: t('core.edit.maaEndImsResetHint'),
     okType: 'danger',
-    okText: t('edit.maaEndImsResetInvalid'),
-    cancelText: t('edit.cancel'),
+    okText: t('core.edit.maaEndImsResetInvalid'),
+    cancelText: t('core.edit.cancel'),
     onOk: save,
   })
 }

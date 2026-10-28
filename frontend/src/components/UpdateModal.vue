@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="t('comp.foundNewVersion', { version: latestVersion || '' })"
+    :title="t('core.comp.foundNewVersion', { version: latestVersion || '' })"
     :width="800"
     :footer="null"
     :mask-closable="false"
@@ -11,14 +11,16 @@
     <div class="update-container">
       <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
-        <ChangelogView :data="updateData" :empty-text="t('comp.changelog.loadFailed')" />
+        <ChangelogView :data="updateData" :empty-text="t('core.comp.changelog.loadFailed')" />
       </div>
 
       <!-- 操作按钮 -->
       <div class="update-footer">
         <div class="update-actions">
-          <a-button @click="handleCancel">{{ t('comp.notNow') }}</a-button>
-          <a-button type="primary" @click="handleDownload">{{ t('comp.downloadUpdate') }}</a-button>
+          <a-button @click="handleCancel">{{ t('core.comp.notNow') }}</a-button>
+          <a-button type="primary" @click="handleDownload">{{
+            t('core.comp.downloadUpdate')
+          }}</a-button>
         </div>
       </div>
     </div>

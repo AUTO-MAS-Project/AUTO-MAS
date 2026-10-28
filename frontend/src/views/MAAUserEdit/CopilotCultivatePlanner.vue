@@ -1,10 +1,10 @@
 <template>
   <div class="copilot-planner">
-    <a-alert v-if="!bound" :message="t('maaCopilot.bindHint')" type="warning" show-icon />
-    <section class="planner-setup" :aria-label="t('maaCopilot.scope')">
+    <a-alert v-if="!bound" :message="t('core.maaCopilot.bindHint')" type="warning" show-icon />
+    <section class="planner-setup" :aria-label="t('core.maaCopilot.scope')">
       <div v-if="result" class="result-context">
         <span>{{
-          t('maaCopilot.analysisContext', {
+          t('core.maaCopilot.analysisContext', {
             scope: scopeOptions.find(option => option.value === source)?.label,
             coverage,
           })
@@ -12,14 +12,18 @@
         <a-button type="text" size="small" @click="showAnalysisSettings = !showAnalysisSettings">
           <template #icon><SettingOutlined aria-hidden="true" /></template>
           {{
-            t(showAnalysisSettings ? 'maaCopilot.collapseSettings' : 'maaCopilot.adjustSettings')
+            t(
+              showAnalysisSettings
+                ? 'core.maaCopilot.collapseSettings'
+                : 'core.maaCopilot.adjustSettings'
+            )
           }}
         </a-button>
       </div>
       <div v-show="!result || showAnalysisSettings" class="scope-heading">
         <div>
-          <h3>{{ t('maaCopilot.scope') }}</h3>
-          <p>{{ t('maaCopilot.hint') }}</p>
+          <h3>{{ t('core.maaCopilot.scope') }}</h3>
+          <p>{{ t('core.maaCopilot.hint') }}</p>
         </div>
         <a-segmented v-model:value="source" :options="scopeOptions" :disabled="busy || disabled" />
       </div>
@@ -28,8 +32,8 @@
              多命中列在下面点选，零命中就地提示 -->
         <a-input-search
           v-model:value="authorKeyword"
-          :placeholder="t('maaCopilot.authorHint')"
-          :aria-label="t('maaCopilot.authorHint')"
+          :placeholder="t('core.maaCopilot.authorHint')"
+          :aria-label="t('core.maaCopilot.authorHint')"
           :loading="searching"
           :disabled="busy || disabled"
           @search="searchAuthors"
@@ -39,8 +43,8 @@
       <div v-else-if="source !== 'all' && (!result || showAnalysisSettings)" class="source-query">
         <a-input
           v-model:value="query"
-          :placeholder="t('maaCopilot.linkHint')"
-          :aria-label="t(source === 'set' ? 'maaCopilot.set' : 'maaCopilot.copilot')"
+          :placeholder="t('core.maaCopilot.linkHint')"
+          :aria-label="t(source === 'set' ? 'core.maaCopilot.set' : 'core.maaCopilot.copilot')"
           :disabled="busy || disabled"
         />
       </div>
@@ -49,7 +53,7 @@
         class="author-candidates"
       >
         <span class="author-candidates-label">
-          {{ t('maaCopilot.authorCandidates', { count: authorCandidates.length }) }}
+          {{ t('core.maaCopilot.authorCandidates', { count: authorCandidates.length }) }}
         </span>
         <a-button
           v-for="author in authorCandidates"
@@ -65,7 +69,7 @@
         v-if="source === 'author' && (!result || showAnalysisSettings) && authorNone"
         class="author-none"
       >
-        {{ t('maaCopilot.noAuthors') }}
+        {{ t('core.maaCopilot.noAuthors') }}
       </div>
       <CopilotSourceStatus
         :state="sourceState"
@@ -76,15 +80,15 @@
       />
       <div v-show="!result || showAnalysisSettings" class="analyze-actions">
         <a-space wrap>
-          <span>{{ t('maaCopilot.coverage') }}</span>
+          <span>{{ t('core.maaCopilot.coverage') }}</span>
           <a-select
             v-model:value="coverage"
             :options="coverageOptions"
-            :aria-label="t('maaCopilot.coverage')"
+            :aria-label="t('core.maaCopilot.coverage')"
             :disabled="busy || disabled"
           />
           <a-checkbox v-model:checked="requireModules" :disabled="busy || disabled">{{
-            t('maaCopilot.modules')
+            t('core.maaCopilot.modules')
           }}</a-checkbox>
         </a-space>
         <a-button
@@ -94,13 +98,13 @@
           @click="analyze"
         >
           <template #icon><SearchOutlined aria-hidden="true" /></template>
-          {{ t('maaCopilot.analyze') }}
+          {{ t('core.maaCopilot.analyze') }}
         </a-button>
       </div>
     </section>
     <a-alert v-if="error" :message="error" type="error" show-icon />
     <div v-if="busy" class="analysis-loading">
-      <a-spin /><span>{{ t('maaCopilot.analyzing') }}</span>
+      <a-spin /><span>{{ t('core.maaCopilot.analyzing') }}</span>
     </div>
     <CopilotAnalysisResults
       v-if="result"
@@ -113,8 +117,8 @@
     />
     <div v-else-if="!busy" class="analysis-placeholder">
       <SolutionOutlined aria-hidden="true" />
-      <h3>{{ t('maaCopilot.emptyTitle') }}</h3>
-      <p>{{ t('maaCopilot.empty') }}</p>
+      <h3>{{ t('core.maaCopilot.emptyTitle') }}</h3>
+      <p>{{ t('core.maaCopilot.empty') }}</p>
     </div>
   </div>
 </template>
@@ -168,7 +172,7 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined
 const scopeOptions = computed(() =>
   ['all', 'author', 'set', 'copilot'].map(value => ({
     value,
-    label: t(`maaCopilot.scopes.${value}`),
+    label: t(`core.maaCopilot.scopes.${value}`),
   }))
 )
 const coverageOptions = [50, 75, 90, 95, 100].map(value => ({ value, label: `${value}%` }))
@@ -231,7 +235,7 @@ const syncSource = async (refresh: boolean) => {
     } catch (e) {
       if (version === generation) {
         if (sourceState.value) sourceState.value = { ...sourceState.value, running: false }
-        error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
+        error.value = e instanceof Error ? e.message : t('core.maaCopilot.failed')
       }
     }
   }
@@ -260,7 +264,8 @@ const searchAuthors = async () => {
     else if (matched.length > 1) authorCandidates.value = matched
     else authorNone.value = true
   } catch (e) {
-    if (isCurrentSearch()) error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
+    if (isCurrentSearch())
+      error.value = e instanceof Error ? e.message : t('core.maaCopilot.failed')
   } finally {
     if (version === searchGeneration) searching.value = false
   }
@@ -299,14 +304,14 @@ const analyze = async () => {
     })
     if (version !== generation) return
     if (response.bindingKey !== bindingKey || bindingKey !== props.bindingKey)
-      throw new Error(t('maaCopilot.roleChanged'))
+      throw new Error(t('core.maaCopilot.roleChanged'))
     if (sourceState.value?.running || response.updatedAt !== sourceState.value?.updatedAt)
-      throw new Error(t('maaCopilot.sourceChanged'))
+      throw new Error(t('core.maaCopilot.sourceChanged'))
     result.value = response
     showAnalysisSettings.value = false
   } catch (e) {
     if (version === generation)
-      error.value = e instanceof Error ? e.message : t('maaCopilot.failed')
+      error.value = e instanceof Error ? e.message : t('core.maaCopilot.failed')
   } finally {
     if (version === generation) busy.value = false
   }
@@ -330,11 +335,11 @@ const importPlans = async (plans: MaaCopilotOperator[] = []) => {
     )
     const imported = await props.importTargets(content, 'targets')
     message.success(
-      t('edit.maaCultivateImportSuccess', { added: imported.added, updated: imported.updated })
+      t('core.edit.maaCultivateImportSuccess', { added: imported.added, updated: imported.updated })
     )
     emit('imported', imported.operatorIds)
   } catch (e) {
-    message.error(e instanceof Error ? e.message : t('maaCopilot.failed'))
+    message.error(e instanceof Error ? e.message : t('core.maaCopilot.failed'))
   } finally {
     importing.value = false
     emit('busy', false)

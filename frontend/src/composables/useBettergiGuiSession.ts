@@ -6,15 +6,15 @@ export function useBettergiGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'BetterGI配置会话',
     keys: {
-      stopFailed: 'edit.bettergiStopFailed',
-      startFailed: 'edit.bettergiStartFailed',
-      setupFailed: 'edit.bettergiSessionFailed',
-      opened: 'edit.bettergiSessionOpened',
-      viewOpened: 'edit.bettergiViewOpened',
-      timeoutWarn: 'edit.bettergiSessionTimeoutWarn',
-      saved: 'edit.bettergiSettingsSaved',
-      saveFailed: 'edit.bettergiSettingsSaveFailed',
-      viewStartFailed: 'edit.bettergiViewStartFailed',
+      stopFailed: 'core.edit.bettergiStopFailed',
+      startFailed: 'core.edit.bettergiStartFailed',
+      setupFailed: 'core.edit.bettergiSessionFailed',
+      opened: 'core.edit.bettergiSessionOpened',
+      viewOpened: 'core.edit.bettergiViewOpened',
+      timeoutWarn: 'core.edit.bettergiSessionTimeoutWarn',
+      saved: 'core.edit.bettergiSettingsSaved',
+      saveFailed: 'core.edit.bettergiSettingsSaveFailed',
+      viewStartFailed: 'core.edit.bettergiViewStartFailed',
     },
   })
   return {

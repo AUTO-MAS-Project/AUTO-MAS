@@ -7,14 +7,14 @@ export function useZzzodGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'ZZZ-OD配置会话',
     keys: {
-      stopFailed: 'edit.zzzodStopFailed',
-      startFailed: 'edit.zzzodStartFailed',
-      setupFailed: 'edit.zzzodSessionFailed',
-      opened: 'edit.zzzodSessionOpened',
-      viewOpened: 'edit.zzzodViewOpened',
-      timeoutWarn: 'edit.zzzodSessionTimeoutWarn',
-      saved: 'edit.zzzodSettingsSaved',
-      saveFailed: 'edit.zzzodSettingsSaveFailed',
+      stopFailed: 'core.edit.zzzodStopFailed',
+      startFailed: 'core.edit.zzzodStartFailed',
+      setupFailed: 'core.edit.zzzodSessionFailed',
+      opened: 'core.edit.zzzodSessionOpened',
+      viewOpened: 'core.edit.zzzodViewOpened',
+      timeoutWarn: 'core.edit.zzzodSessionTimeoutWarn',
+      saved: 'core.edit.zzzodSettingsSaved',
+      saveFailed: 'core.edit.zzzodSettingsSaveFailed',
     },
   })
   return {

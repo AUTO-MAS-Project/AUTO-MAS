@@ -2,15 +2,15 @@
   <a-form-item>
     <template #label>
       <FieldLabelWithHint
-        :text="t('edit.emulator')"
-        :hint="t('edit.pickEmulatorUse')"
+        :text="t('core.edit.emulator')"
+        :hint="t('core.edit.pickEmulatorUse')"
         variant="form"
       />
     </template>
     <a-select
       v-model:value="value"
       size="large"
-      :placeholder="t('edit.pickEmulator')"
+      :placeholder="t('core.edit.pickEmulator')"
       :loading="loading"
       @change="emit('change', $event)"
     >

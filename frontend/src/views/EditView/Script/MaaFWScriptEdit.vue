@@ -188,7 +188,7 @@
           :disabled="shellImporting"
           @click="currentStep -= 1"
         >
-          {{ t('edit.previousStep') }}
+          {{ t('core.edit.previousStep') }}
         </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
@@ -197,7 +197,7 @@
           :disabled="!canLeaveCurrentStep"
           @click="currentStep += 1"
         >
-          {{ t('edit.next') }}
+          {{ t('core.edit.next') }}
         </a-button>
         <a-button
           v-else

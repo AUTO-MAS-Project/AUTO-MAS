@@ -78,14 +78,14 @@ const getPatternTypeLabel = (type: PushLogPatternType): string => {
 }
 
 const typeOptions = [
-  { value: 'split', label: t('edit.stringSplitting') },
-  { value: 'regex', label: t('edit.expression') },
-  { value: 'multiline', label: t('edit.multiLineAggregation') },
+  { value: 'split', label: t('core.edit.stringSplitting') },
+  { value: 'regex', label: t('core.edit.expression') },
+  { value: 'multiline', label: t('core.edit.multiLineAggregation') },
 ]
 
 const logTypeOptions = [
-  { value: '普通', label: t('edit.normal'), color: 'primary' },
-  { value: '失败', label: t('edit.failed'), color: 'error' },
+  { value: '普通', label: t('core.edit.normal'), color: 'primary' },
+  { value: '失败', label: t('core.edit.failed'), color: 'error' },
 ]
 </script>
 
@@ -136,20 +136,20 @@ const logTypeOptions = [
         <a-col :span="24">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.requiredEmptyValueDisables2')">
+              <a-tooltip :title="t('core.edit.requiredEmptyValueDisables2')">
                 <span class="form-label">
-                  {{ t('edit.keyword') }}
+                  {{ t('core.edit.keyword') }}
                   <QuestionCircleOutlined class="help-icon" />
                   <span class="doc-link" @click.stop="$emit('open-docs', 'split')">
                     <BookOutlined />
-                    {{ t('edit.documentation') }}
+                    {{ t('core.edit.documentation') }}
                   </span>
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.match"
-              :placeholder="t('edit.exampleTaskDoneSuccess')"
+              :placeholder="t('core.edit.exampleTaskDoneSuccess')"
               size="middle"
               @blur="commit"
             />
@@ -159,20 +159,20 @@ const logTypeOptions = [
           <a-form-item class="compact-form-item">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.leadingKeyword')"
-                :hint="t('edit.cutFromStartLine')"
+                :text="t('core.edit.leadingKeyword')"
+                :hint="t('core.edit.cutFromStartLine')"
                 variant="form"
               />
             </template>
             <div class="inline-checkbox-row">
               <a-input
                 v-model:value="local.head"
-                :placeholder="t('edit.leaveEmptySkipLeading')"
+                :placeholder="t('core.edit.leaveEmptySkipLeading')"
                 size="middle"
                 @blur="commit"
               />
               <a-checkbox v-model:checked="local.headInclude" @change="commit">{{
-                t('edit.include')
+                t('core.edit.include')
               }}</a-checkbox>
             </div>
           </a-form-item>
@@ -181,20 +181,20 @@ const logTypeOptions = [
           <a-form-item class="compact-form-item">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.trailingKeyword')"
-                :hint="t('edit.cutFromKeywordEnd')"
+                :text="t('core.edit.trailingKeyword')"
+                :hint="t('core.edit.cutFromKeywordEnd')"
                 variant="form"
               />
             </template>
             <div class="inline-checkbox-row">
               <a-input
                 v-model:value="local.tail"
-                :placeholder="t('edit.leaveEmptySkipTrailing')"
+                :placeholder="t('core.edit.leaveEmptySkipTrailing')"
                 size="middle"
                 @blur="commit"
               />
               <a-checkbox v-model:checked="local.tailInclude" @change="commit">{{
-                t('edit.include')
+                t('core.edit.include')
               }}</a-checkbox>
             </div>
           </a-form-item>
@@ -208,20 +208,20 @@ const logTypeOptions = [
         <a-col :span="24">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.requiredEmptyValueDisables4')">
+              <a-tooltip :title="t('core.edit.requiredEmptyValueDisables4')">
                 <span class="form-label">
-                  {{ t('edit.matchPattern') }}
+                  {{ t('core.edit.matchPattern') }}
                   <QuestionCircleOutlined class="help-icon" />
                   <span class="doc-link" @click.stop="$emit('open-docs', 'regex')">
                     <BookOutlined />
-                    {{ t('edit.documentation') }}
+                    {{ t('core.edit.documentation') }}
                   </span>
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.match"
-              :placeholder="t('edit.exampleTaskRun')"
+              :placeholder="t('core.edit.exampleTaskRun')"
               size="middle"
               @blur="commit"
             />
@@ -230,20 +230,20 @@ const logTypeOptions = [
         <a-col :span="24">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.expressionSyntaxHint')">
+              <a-tooltip :title="t('core.edit.expressionSyntaxHint')">
                 <span class="form-label">
-                  {{ t('edit.extractionPattern') }}
+                  {{ t('core.edit.extractionPattern') }}
                   <QuestionCircleOutlined class="help-icon" />
                   <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
                     <BookOutlined />
-                    {{ t('edit.documentation') }}
+                    {{ t('core.edit.documentation') }}
                   </span>
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.extract"
-              :placeholder="t('edit.exampleTaskRunS')"
+              :placeholder="t('core.edit.exampleTaskRunS')"
               size="middle"
               @blur="commit"
             />
@@ -259,14 +259,14 @@ const logTypeOptions = [
           <a-form-item class="compact-form-item">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.startPattern')"
-                :hint="t('edit.requiredEmptyValueDisables')"
+                :text="t('core.edit.startPattern')"
+                :hint="t('core.edit.requiredEmptyValueDisables')"
                 variant="form"
               />
             </template>
             <a-input
               v-model:value="local.start"
-              :placeholder="t('edit.exampleFullRunStarted')"
+              :placeholder="t('core.edit.exampleFullRunStarted')"
               size="middle"
               @blur="commit"
             />
@@ -276,14 +276,14 @@ const logTypeOptions = [
           <a-form-item class="compact-form-item">
             <template #label>
               <FieldLabelWithHint
-                :text="t('edit.endPattern')"
-                :hint="t('edit.lineMatchingThisPattern')"
+                :text="t('core.edit.endPattern')"
+                :hint="t('core.edit.lineMatchingThisPattern')"
                 variant="form"
               />
             </template>
             <a-input
               v-model:value="local.end"
-              :placeholder="t('edit.exampleTaskFinished')"
+              :placeholder="t('core.edit.exampleTaskFinished')"
               size="middle"
               @blur="commit"
             />
@@ -292,20 +292,20 @@ const logTypeOptions = [
         <a-col :span="20">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.windowExtractionHint')">
+              <a-tooltip :title="t('core.edit.windowExtractionHint')">
                 <span class="form-label">
-                  {{ t('edit.extractionPattern') }}
+                  {{ t('core.edit.extractionPattern') }}
                   <QuestionCircleOutlined class="help-icon" />
                   <span class="doc-link" @click.stop="$emit('open-docs', 'expression')">
                     <BookOutlined />
-                    {{ t('edit.documentation') }}
+                    {{ t('core.edit.documentation') }}
                   </span>
                 </span>
               </a-tooltip>
             </template>
             <a-input
               v-model:value="local.extract"
-              :placeholder="t('edit.exampleStartSEnd')"
+              :placeholder="t('core.edit.exampleStartSEnd')"
               size="middle"
               @blur="commit"
             />
@@ -314,8 +314,8 @@ const logTypeOptions = [
         <a-col :span="4">
           <a-form-item class="compact-form-item">
             <template #label>
-              <a-tooltip :title="t('edit.maximumLinesWindowBefore')">
-                <span class="form-label">{{ t('edit.maximumLines') }}</span>
+              <a-tooltip :title="t('core.edit.maximumLinesWindowBefore')">
+                <span class="form-label">{{ t('core.edit.maximumLines') }}</span>
               </a-tooltip>
             </template>
             <a-input-number
@@ -340,7 +340,7 @@ const logTypeOptions = [
         </div>
         <div class="footer-right">
           <a-tag size="small" :color="local.logType === '失败' ? 'error' : 'processing'">
-            {{ local.logType || t('edit.normal') }}
+            {{ local.logType || t('core.edit.normal') }}
           </a-tag>
           <span class="footer-hint">{{ getLogTypeHint(local.logType) }}</span>
         </div>

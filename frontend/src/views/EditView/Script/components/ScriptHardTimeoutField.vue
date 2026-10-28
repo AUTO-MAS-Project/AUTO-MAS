@@ -4,8 +4,8 @@
       <a-form-item>
         <template #label>
           <a-space size="small">
-            {{ t('edit.hardTimeoutMinutes') }}
-            <a-tooltip :title="t('edit.hardTimeoutHint')">
+            {{ t('core.edit.hardTimeoutMinutes') }}
+            <a-tooltip :title="t('core.edit.hardTimeoutHint')">
               <QuestionCircleOutlined />
             </a-tooltip>
           </a-space>

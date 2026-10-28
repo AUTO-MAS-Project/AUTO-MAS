@@ -20,12 +20,12 @@ export function useNotificationTest(
         request_outcome: res?.code === 200 ? 'accepted' : res?.code ? 'rejected' : 'unknown',
       })
       if (res?.code && res.code !== 200)
-        message.warning(res?.message || t('setting.toast.testUnknown'))
-      else message.success(res?.message || t('setting.toast.testSent'))
+        message.warning(res?.message || t('core.setting.toast.testUnknown'))
+      else message.success(res?.message || t('core.setting.toast.testSent'))
     } catch (error) {
       operation.finish({ test_kind: 'configured', request_outcome: 'unknown' })
       logger.error(`测试通知发送失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('setting.toast.testFailed'))
+      message.error(t('core.setting.toast.testFailed'))
     } finally {
       testingNotify.value = false
     }
