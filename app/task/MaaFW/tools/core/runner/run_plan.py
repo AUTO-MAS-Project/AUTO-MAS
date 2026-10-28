@@ -13,6 +13,11 @@ from typing import Any
 from app.task.MaaFW.tools.core.agent_env import (
     build_maafw_agent_command_plans,
 )
+from app.task.MaaFW.tools.core.interface.agent_entry import (
+    bundled_python_escape_path,
+    describe_pretask_exec_outside,
+    describe_pretask_python_fallback,
+)
 from app.task.MaaFW.tools.core.interface.loader import parse_json_text
 from app.task.MaaFW.tools.core.interface.models import (
     SUPPORTED_OPTION_TYPES,
@@ -133,6 +138,10 @@ SENSITIVE_CONFIG_KEYWORDS = (
 
 class MaaFWRunPlanError(ValueError):
     """Raised when a MaaFW project cannot be converted into a runnable plan."""
+
+
+class _PretaskOutsideProjectError(MaaFWRunPlanError):
+    """pretask 的 exec 解析到项目目录之外（``..`` 上跳过头、绝对路径）。"""
 
 
 #: 选中的任务一个都跑不了时的报错；宿主据此判断要不要补上「interface 内已无」的任务名。
@@ -407,7 +416,23 @@ def build_maafw_run_plan(
     if not runnable_tasks and not (excluded_ids and not selected_common_task_ids):
         raise MaaFWRunPlanError(NO_RUNNABLE_TASKS_MESSAGE)
 
-    builder_warnings = [*pipeline_builder.warnings, *input_warnings, *hotkey_warnings]
+    pretask_warnings: list[str] = []
+    pretask_plans = _build_pretask_plans(
+        resolved_base_dir,
+        interface,
+        controller,
+        resource,
+        selected_pretask_ids,
+        selected_task_options,
+        i18n_mapping,
+        warnings=pretask_warnings,
+    )
+    builder_warnings = [
+        *pipeline_builder.warnings,
+        *input_warnings,
+        *hotkey_warnings,
+        *pretask_warnings,
+    ]
     for warning in builder_warnings:
         logger.warning("MaaFW 运行计划：%s", warning)
     # 加载 interface 时的告警（preset 引用不存在的 case、缺 import 文件……）以前只进后端
@@ -431,15 +456,7 @@ def build_maafw_run_plan(
             interface.agent,
             managed_env_root=managed_env_root,
         ),
-        pretasks=_build_pretask_plans(
-            resolved_base_dir,
-            interface,
-            controller,
-            resource,
-            selected_pretask_ids,
-            selected_task_options,
-            i18n_mapping,
-        ),
+        pretasks=pretask_plans,
         piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
         skippedTasks=[*queue_skipped_tasks, *skipped_tasks],
@@ -1202,7 +1219,11 @@ def _build_pretask_plans(
     selected_ids: list[str],
     task_options: MaaFWTaskOptionsByTask,
     i18n_mapping: dict[str, Any],
+    *,
+    warnings: list[str] | None = None,
 ) -> list[MaaFWPretaskRunPlan]:
+    """``warnings`` 收集降级处理的项（越界的 pretask 被跳过或改用项目自带 Python）。"""
+
     plans: list[MaaFWPretaskRunPlan] = []
     pretask_names = {
         build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
@@ -1222,6 +1243,31 @@ def _build_pretask_plans(
             pretask.name or pretask.exec,
             i18n_mapping,
         )
+        try:
+            executable = _resolve_pretask_executable(base_dir, pretask.exec)
+        except _PretaskOutsideProjectError as exc:
+            # 与投影同一口径（``projection.build_projection_rules`` 的 pretask exec）：指向项目
+            # 自带 Python 的越界写法映射回项目里，其余越界的程序不运行、跳过这一项，整个运行
+            # 照常（以前整份计划失败，投影又因同一条拒绝更新）。
+            mapped = bundled_python_escape_path(pretask.exec)
+            fallback = (base_dir / mapped).resolve() if mapped is not None else None
+            if (
+                fallback is None
+                or not _is_within_base_dir(fallback, base_dir)
+                or not fallback.is_file()
+            ):
+                if warnings is not None:
+                    warnings.append(
+                        f"运行前设置「{pretask_label}」（项目 {interface_model.name}）："
+                        f"{describe_pretask_exec_outside(pretask.exec)}（{exc}）"
+                    )
+                continue
+            executable = str(fallback)
+            if warnings is not None:
+                warnings.append(
+                    f"运行前设置「{pretask_label}」（项目 {interface_model.name}）："
+                    f"{describe_pretask_python_fallback(pretask.exec, str(fallback))}"
+                )
         try:
             serialized_options = _collect_pretask_option_values(
                 pretask,
@@ -1249,7 +1295,7 @@ def _build_pretask_plans(
             MaaFWPretaskRunPlan(
                 name=task_name,
                 label=pretask_label,
-                executable=_resolve_pretask_executable(base_dir, pretask.exec),
+                executable=executable,
                 # 并入自 mfwa：pretask 参数里的 {PROJECT_DIR} 也要展开，
                 # 否则声明 args: ["{PROJECT_DIR}/x.json"] 的项目会拿到字面量
                 args=[arg.replace("{PROJECT_DIR}", str(base_dir)) for arg in args],
@@ -1346,7 +1392,11 @@ def _is_bare_command(raw_exec: str) -> bool:
 
 
 def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
-    resolved = _resolve_project_path(base_dir, raw_exec)
+    try:
+        resolved = _resolve_project_path(base_dir, raw_exec)
+    except MaaFWRunPlanError as exc:
+        # 只有越界这一种失败；单独的类型让调用方降级处理，报错文字不变。
+        raise _PretaskOutsideProjectError(str(exc)) from exc
     candidate = Path(resolved.resolved)
     # 并入自 mfwa：补 .exe 仅在 Windows 上进行，且越界判定用 resolve 后的路径，
     # 避免 symlink 绕过 _is_within_base_dir

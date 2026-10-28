@@ -65,7 +65,10 @@ import json5
 
 from ..interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
+    bundled_python_escape_path,
     describe_cfa_agent_entry_fallback,
+    describe_pretask_exec_outside,
+    describe_pretask_python_fallback,
     describe_uv_agent,
     flattened_entry_path,
     is_python_entry_arg,
@@ -1505,7 +1508,25 @@ def build_projection_rules(
             if not isinstance(raw_exec, str) or not looks_like_local_path(raw_exec):
                 continue
             label = f"pretask[{index}].exec"
-            exec_relative = declare_executable(raw_exec, label)
+            try:
+                exec_relative = declare_executable(raw_exec, label)
+            except ProjectionError as exc:
+                # 越出项目目录（``..`` 上跳过头、绝对路径）：以前整份投影作废，运行前更新每次
+                # 失败、导入也进不来（Sentry AUTO-MAS-BACKEND-NM，MFABD2 的
+                # ``../../python/python.exe``）。与运行计划同一口径（``run_plan._build_pretask_plans``）：
+                # 指向项目自带 Python 的映射回项目里，其余这一条 pretask 运行时跳过，只记警告。
+                mapped = bundled_python_escape_path(raw_exec)
+                fallback = base_relative / mapped if mapped is not None else None
+                if fallback is None or not view.is_file(fallback):
+                    warnings.append(
+                        f"{label}：{describe_pretask_exec_outside(raw_exec)}（{exc}）"
+                    )
+                    continue
+                warnings.append(
+                    f"{label}："
+                    f"{describe_pretask_python_fallback(raw_exec, fallback.as_posix())}"
+                )
+                exec_relative = fallback
             if view.exists(exec_relative):
                 add_retention_target(
                     exec_relative,
