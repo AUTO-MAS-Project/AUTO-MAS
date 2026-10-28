@@ -89,8 +89,8 @@ BASE_RUNTIME_PACKAGES = (
     "json5==0.14.0",
     "json-with-comments",
     # worker 子进程自身要用：runner 与 worker 看门狗用 psutil，
-    # runtime_pool 用 packaging。插件形态下它们由插件目录经 PYTHONPATH
-    # 提供，树内没有那层，必须装进 runner venv。
+    # runtime_pool 用 packaging。worker 的 PYTHONPATH 只有 binding 与源码根、
+    # 不带宿主的依赖（见 build_runner_environment），它们必须装进 runner venv。
     "psutil",
     "packaging",
     # maafw binding（maa/**）的 import 期依赖：8 个官方 wheel 的 Requires-Dist 都是这三个。

@@ -174,11 +174,6 @@ export interface MaaFWScriptConfig {
      * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
      */
     ProxyAddress: string
-    /**
-     * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
-     * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
-     */
-    IfAutoUpdate?: boolean
   }
   /**
    * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上。
