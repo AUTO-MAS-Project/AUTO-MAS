@@ -45,6 +45,7 @@ if TYPE_CHECKING:
     import uvicorn
 
     from app.config import ConfigEntry
+    from app.models.task import ScriptTaskResources
     from app.utils import config_restore as _utils_config_restore
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
@@ -1587,6 +1588,15 @@ class AppConfig:
             if isinstance(script, entry_type):
                 return handler
         return None
+
+    def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
+        """读取专项资源声明，不提交配置或访问脚本资源文件。"""
+        from app.models.task import ScriptTaskResources
+
+        handler = self._get_script_config_handler(script)
+        if handler is None or handler.task_resources is None:
+            return ScriptTaskResources()
+        return handler.task_resources(script)
 
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)

@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from app.config import ConfigEntry
+from app.models.task import ScriptTaskResources
 
 
 class ScriptConfigImporter(Protocol):
@@ -49,3 +50,4 @@ class ScriptConfigHandler:
     validate_update: Callable[[dict[str, Any]], None] | None = None
     import_config: ScriptConfigImporter | None = None
     prepare_user_update: UserUpdatePreparer | None = None
+    task_resources: Callable[[ConfigEntry], ScriptTaskResources] | None = None
