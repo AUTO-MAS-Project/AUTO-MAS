@@ -19,6 +19,7 @@ import {
   RuntimeRemediation,
   RuntimeRunResult,
   RuntimeRunControl,
+  RuntimeLogEvent,
   RuntimeSuperviseHandle,
   RuntimeSupervisedLaunchConfig,
   createRuntimeClient,
@@ -46,12 +47,20 @@ const RUNTIME_SHUTDOWN_TIMEOUT_MS = 30000
 // 启动阶段每路输出只保留最近这么多行：后端每行 DEBUG 日志都会以 log 事件到达，
 // 失败界面也只需要尾部；无上限累积会在长驻监督期间把内存吃光。
 const RUNTIME_STARTUP_LOG_LINE_LIMIT = 200
+const RUNTIME_STARTUP_LOG_CHAR_LIMIT = 64 * 1024
 
-/** 尾部保留固定行数的追加：超出上限时丢弃最旧的一行。 */
+/** 按行数与字符数保留日志尾部，单条超限时复制截断后的内容。 */
 function pushBoundedLine(lines: string[], message: string, limit: number): void {
-  lines.push(message)
-  if (lines.length > limit) {
-    lines.splice(0, lines.length - limit)
+  const bounded =
+    message.length > RUNTIME_STARTUP_LOG_CHAR_LIMIT
+      ? Buffer.from(message.slice(-RUNTIME_STARTUP_LOG_CHAR_LIMIT), 'utf8').toString('utf8')
+      : message
+  for (const line of bounded.split(/\r?\n/).slice(-limit)) {
+    lines.push(line)
+    let size = lines.reduce((total, item) => total + item.length + 1, -1)
+    while (lines.length > limit || (size > RUNTIME_STARTUP_LOG_CHAR_LIMIT && lines.length > 1)) {
+      size -= lines.shift()!.length + 1
+    }
   }
 }
 
@@ -402,27 +411,43 @@ export class BackendService {
       const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
       if (failure) return failure
     } else {
+      const stdoutLines: string[] = []
+      const stderrLines: string[] = []
+      const otherLines: string[] = []
+      const captureLog = (event: RuntimeLogEvent) => {
+        const lines =
+          event.stream === 'stdout'
+            ? stdoutLines
+            : event.stream === 'stderr'
+              ? stderrLines
+              : otherLines
+        pushBoundedLine(lines, event.message, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+      }
       try {
-        const current = await this.runRuntimePreparation(client, ['workspace', 'check'])
-        if (!current.success) return this.buildRuntimeStartFailure(current, [], [])
+        const current = await this.runRuntimePreparation(client, ['workspace', 'check'], captureLog)
+        if (!current.success)
+          return this.buildRuntimeStartFailure(current, stdoutLines, stderrLines, otherLines)
+        stdoutLines.length = 0
+        stderrLines.length = 0
+        otherLines.length = 0
         const details = current.result.details
         const version =
           details.healthy === true && typeof details.version === 'string'
             ? details.version
             : resolveRuntimeTargetVersion()
-        const prepared = await this.runRuntimePreparation(client, [
-          'bootstrap',
-          '--version',
-          version,
-          '--if-needed',
-        ])
-        if (!prepared.success) return this.buildRuntimeStartFailure(prepared, [], [])
+        const prepared = await this.runRuntimePreparation(
+          client,
+          ['bootstrap', '--version', version, '--if-needed'],
+          captureLog
+        )
+        if (!prepared.success)
+          return this.buildRuntimeStartFailure(prepared, stdoutLines, stderrLines, otherLines)
         this.runtimeUpdateReady = null
         // 日常启动不检查、不更新 Runtime：版本对齐只发生在完整初始化链路（第 0 步）里，
         // 这条路只把现有 exe 拿来监督后端。exe 被杀软还原、上次替换半途而废等情形由定位
         // exe 的 `resolveRuntimeExecutable()` / `recoverRuntimeBackup()` 在本函数开头处理。
       } catch (error) {
-        return this.buildRuntimeStartFailure(error, [], [])
+        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines, otherLines)
       }
     }
     if (this.runtimeStopping) {
@@ -605,10 +630,16 @@ export class BackendService {
   private buildRuntimeStartFailure(
     reason: RuntimeRunResult | unknown,
     stdoutLines: string[],
-    stderrLines: string[]
+    stderrLines: string[],
+    otherLines: string[] = []
   ): BackendStartResult {
     if (isRuntimeClientError(reason)) {
-      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.details.stderr)
+      const logs = this.formatRuntimeStartupLogs(
+        stdoutLines,
+        stderrLines,
+        reason.details.stderr,
+        otherLines
+      )
       logger.error(`Runtime 调用失败: ${reason.code} ${reason.message}`)
       // details 里带着每次尝试的来源与失败种类（git 克隆会先试 cnb 再试 github）。
       // 只打 code + message 的话，日志里看不出是哪个源为什么挂——例如 cnb 秒答但缺
@@ -637,7 +668,12 @@ export class BackendService {
     }
 
     if (this.isRuntimeRunResult(reason)) {
-      const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.stderr)
+      const logs = this.formatRuntimeStartupLogs(
+        stdoutLines,
+        stderrLines,
+        reason.stderr,
+        otherLines
+      )
       const message = reason.result.message || `后端在就绪前结束（${reason.code}）`
       logger.error(`后端服务启动失败: ${reason.code} ${message}`)
       return {
@@ -655,7 +691,7 @@ export class BackendService {
     return {
       success: false,
       error: message,
-      logs: this.formatRuntimeStartupLogs(stdoutLines, stderrLines),
+      logs: this.formatRuntimeStartupLogs(stdoutLines, stderrLines, undefined, otherLines),
     }
   }
 
@@ -667,11 +703,26 @@ export class BackendService {
   private formatRuntimeStartupLogs(
     stdoutLines: string[],
     stderrLines: string[],
-    runtimeStderr?: string
+    runtimeStderr?: string,
+    otherLines: string[] = []
   ): string | undefined {
-    const diagnostics = runtimeStderr?.trimEnd()
-    const merged = diagnostics ? [...stderrLines, ...diagnostics.split(/\r?\n/)] : stderrLines
-    return formatStartupLogs(stdoutLines, merged)
+    const boundedStdout: string[] = []
+    const boundedStderr: string[] = []
+    for (const line of stdoutLines)
+      pushBoundedLine(boundedStdout, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+    for (const line of stderrLines)
+      pushBoundedLine(boundedStderr, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+    const diagnostics = runtimeStderr?.slice(-RUNTIME_STARTUP_LOG_CHAR_LIMIT).trimEnd()
+    if (diagnostics) {
+      for (const line of diagnostics.split(/\r?\n/)) {
+        pushBoundedLine(boundedStderr, line, RUNTIME_STARTUP_LOG_LINE_LIMIT)
+      }
+    }
+    const formatted = formatStartupLogs(boundedStdout, boundedStderr)
+    const other = otherLines.join('\n').trimEnd()
+    return (
+      [formatted, other ? `[other]\n${other}` : undefined].filter(Boolean).join('\n\n') || undefined
+    )
   }
 
   /**
@@ -1299,11 +1350,13 @@ export class BackendService {
   /** 跟踪一次性准备命令，使退出时的取消覆盖握手和下载两个阶段。 */
   private async runRuntimePreparation(
     client: RuntimeClient,
-    args: string[]
+    args: string[],
+    onLog?: (event: RuntimeLogEvent) => void
   ): Promise<RuntimeRunResult> {
     if (this.runtimeStopping) throw new Error('应用正在关闭，取消后端准备')
     let control: RuntimeRunControl | undefined
     const operation = client.run(args, {
+      onLog,
       onStarted: started => {
         control = started
         this.runtimeCommands.add(started)
