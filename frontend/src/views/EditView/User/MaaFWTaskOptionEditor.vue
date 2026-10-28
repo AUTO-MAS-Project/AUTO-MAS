@@ -48,19 +48,7 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            <span class="case-label">
-              <img
-                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
-                :src="resolveMaaFWAssetUrl(caseItem.icon)"
-                alt=""
-                width="16"
-                height="16"
-                class="case-icon"
-                @error="hideBrokenMaaFWIcon"
-                @load="showLoadedMaaFWIcon"
-              />
-              <span>{{ getCaseLabel(caseItem) }}</span>
-            </span>
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-radio>
         </a-radio-group>
 
@@ -77,19 +65,7 @@
             :key="caseItem.name"
             :value="caseItem.name"
           >
-            <span class="case-label">
-              <img
-                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
-                :src="resolveMaaFWAssetUrl(caseItem.icon)"
-                alt=""
-                width="16"
-                height="16"
-                class="case-icon"
-                @error="hideBrokenMaaFWIcon"
-                @load="showLoadedMaaFWIcon"
-              />
-              <span>{{ getCaseLabel(caseItem) }}</span>
-            </span>
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-select-option>
         </a-select>
 
@@ -106,19 +82,7 @@
             :value="caseItem.name"
             :disabled="isCheckboxCaseLocked(option, getStringListValue(option), caseItem.name)"
           >
-            <span class="case-label">
-              <img
-                v-if="resolveMaaFWAssetUrl(caseItem.icon)"
-                :src="resolveMaaFWAssetUrl(caseItem.icon)"
-                alt=""
-                width="16"
-                height="16"
-                class="case-icon"
-                @error="hideBrokenMaaFWIcon"
-                @load="showLoadedMaaFWIcon"
-              />
-              <span>{{ getCaseLabel(caseItem) }}</span>
-            </span>
+            <MaaFWOptionCaseLabel :case-item="caseItem" :base-path="basePath" />
           </a-checkbox>
         </a-checkbox-group>
 
@@ -226,36 +190,8 @@
           "
         />
 
-        <div
-          v-if="getCheckboxCountHint(option)"
-          class="option-count-hint"
-          :class="{ 'option-count-hint--warning': getCheckboxCountHint(option)?.warning }"
-        >
-          {{ getCheckboxCountHint(option)?.text }}
-        </div>
-
-        <!-- 选中的 case 自己的说明（多选时每个勾选项一段，前面标上是哪一项） -->
-        <div
-          v-for="caseItem in getSelectedCaseDescriptions(option)"
-          :key="`case:${caseItem.name}`"
-          class="case-description"
-        >
-          <div v-if="option.type === 'checkbox'" class="case-description-label">
-            {{ getCaseLabel(caseItem) }}
-          </div>
-          <MaaFWDescriptionView
-            :content="caseItem.description"
-            :base-path="basePath"
-            class="option-description"
-          />
-        </div>
-
-        <MaaFWDescriptionView
-          v-if="option.description"
-          :content="option.description"
-          :base-path="basePath"
-          class="option-description"
-        />
+        <!-- 勾选数要求、选中 case 的说明、选项说明 -->
+        <MaaFWOptionNotes :option="option" :value="getStoredValue(option)" :base-path="basePath" />
 
         <div
           v-for="nestedOptionNames in getActiveNestedOptionGroups(option)"
@@ -286,12 +222,9 @@ import { computed, inject, onBeforeUnmount, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
-import {
-  getCheckboxCountState,
-  hasStoredSecret,
-  isCheckboxCaseLocked,
-  isPasswordInput,
-} from './maafwOptionConstraints'
+import MaaFWOptionCaseLabel from './MaaFWOptionCaseLabel.vue'
+import MaaFWOptionNotes from './MaaFWOptionNotes.vue'
+import { hasStoredSecret, isCheckboxCaseLocked, isPasswordInput } from './maafwOptionConstraints'
 import {
   activeMaaFWNestedOptionGroups,
   effectiveMaaFWInputFieldValue,
@@ -303,7 +236,6 @@ import {
   checkMaaFWInputValue,
   resolveMaaFWCheckboxValue,
   resolveMaaFWChoiceValue,
-  selectedMaaFWCasesWithDescription,
   storedMaaFWInputFieldValue,
 } from './maafwOptionValues'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from './maafwIconImage'
@@ -313,12 +245,7 @@ import {
   parseMaaFWOptionDraftKey,
   retainMaaFWDraftsForUnchangedFields,
 } from './maafwOptionDrafts'
-import type {
-  MaaFWOptionCaseInfo,
-  MaaFWOptionInfo,
-  MaaFWOptionInputInfo,
-  MaaFWTaskOptionValue,
-} from '@/types/script'
+import type { MaaFWOptionInfo, MaaFWOptionInputInfo, MaaFWTaskOptionValue } from '@/types/script'
 
 const { t } = useI18n()
 
@@ -418,8 +345,6 @@ watch(
 
 const getOptionLabel = (option: MaaFWOptionInfo) => option.label || option.name
 
-const getCaseLabel = (caseItem: MaaFWOptionCaseInfo) => caseItem.label || caseItem.name
-
 const getInputLabel = (inputItem: MaaFWOptionInputInfo) => inputItem.label || inputItem.name
 
 const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
@@ -454,9 +379,6 @@ const getStringValue = (option: MaaFWOptionInfo) =>
 
 const getStringListValue = (option: MaaFWOptionInfo) =>
   resolveMaaFWCheckboxValue(option, getStoredValue(option))
-
-const getSelectedCaseDescriptions = (option: MaaFWOptionInfo) =>
-  selectedMaaFWCasesWithDescription(option, getStoredValue(option))
 
 const getInputValueObject = (option: MaaFWOptionInfo): Record<string, string> => {
   const value = getStoredValue(option)
@@ -667,25 +589,6 @@ const unregisterDrafts = draftRegistry?.register({
 })
 onBeforeUnmount(() => unregisterDrafts?.())
 
-const getCheckboxCountHint = (option: MaaFWOptionInfo) => {
-  const state = getCheckboxCountState(option, getStringListValue(option))
-  if (!state) return null
-  let text: string
-  if (state.max === null) {
-    text = t('core.edit.maafwCheckboxCountMin', { min: state.min })
-  } else if (state.min === 0) {
-    text = t('core.edit.maafwCheckboxCountMax', { max: state.max })
-  } else if (state.min === state.max) {
-    text = t('core.edit.maafwCheckboxCountExact', { count: state.min })
-  } else {
-    text = t('core.edit.maafwCheckboxCountRange', { min: state.min, max: state.max })
-  }
-  if (state.violation) {
-    text += t('core.edit.maafwCheckboxCountCurrent', { count: state.count })
-  }
-  return { text, warning: state.violation !== null }
-}
-
 const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   activeMaaFWNestedOptionGroups(option, getStoredValue(option))
 </script>
@@ -735,33 +638,9 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   flex: 0 0 auto;
 }
 
-.option-description,
-.input-description {
-  color: var(--ant-color-text-secondary);
-}
-
 .input-description {
   margin-top: 8px;
-}
-
-.case-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.case-icon {
-  width: 16px;
-  height: 16px;
-  object-fit: contain;
-  flex: 0 0 auto;
-}
-
-.case-description-label {
-  margin-bottom: 2px;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .option-control {
@@ -793,15 +672,6 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) =>
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.option-count-hint {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-}
-
-.option-count-hint--warning {
-  color: var(--ant-color-warning);
 }
 
 .input-label {

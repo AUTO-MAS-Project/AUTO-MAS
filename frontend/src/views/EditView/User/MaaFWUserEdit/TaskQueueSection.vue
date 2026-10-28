@@ -71,74 +71,23 @@
           </div>
         </div>
         <div class="task-list">
-          <!-- 控制方式 / 游戏资源是脚本级设置，这里只显示；不兼容的实例只是不显示，快照原样保留 -->
-          <div v-if="showQueueContext" class="queue-context">
-            <span class="queue-context-text">{{ queueContextText }}</span>
-            <a-tooltip
-              v-if="hiddenQueueTaskNames.length > 0"
-              placement="bottomLeft"
-              :overlay-style="{ maxWidth: '360px' }"
-            >
-              <template #title>
-                <div>{{ t('core.edit.maafwHiddenTaskTooltip') }}</div>
-                <div v-for="name in hiddenQueueTaskNames" :key="name">{{ name }}</div>
-              </template>
-              <span class="queue-context-hidden">
-                {{ t('core.edit.maafwHiddenTaskCount', { count: hiddenQueueTasks.length }) }}
-              </span>
-            </a-tooltip>
-          </div>
-          <!-- 队列为空：先列我的模板，再列项目预设，哪组没有就不显示那组 -->
-          <div
+          <MaaFWQueueContextBar
+            :preview-data="previewData"
+            :task-snapshot="taskSnapshot"
+            :task-by-name="taskByName"
+            :effective-controller-name="effectiveControllerName"
+            :effective-resource-name="effectiveResourceName"
+          />
+          <MaaFWQueueEmptyTemplates
             v-if="
               orderedTasks.length === 0 && (queueTemplates.length > 0 || presetTemplates.length > 0)
             "
-            class="preset-section"
-          >
-            <template v-if="queueTemplates.length > 0">
-              <div class="preset-group-title">{{ t('core.edit.queueTemplateMine') }}</div>
-              <MaaFWQueueCard
-                v-for="template in queueTemplates"
-                :key="template.name"
-                kind="template"
-                :title="template.name"
-                :task-count="template.chips.length"
-                :invalid-count="template.invalidCount"
-                :chips="template.chips"
-              >
-                <template #actions>
-                  <a-button
-                    type="primary"
-                    :disabled="template.entries.length === 0"
-                    @click="emit('applyQueueTemplate', template.name)"
-                  >
-                    {{ t('core.edit.queueTemplateApply') }}
-                  </a-button>
-                </template>
-              </MaaFWQueueCard>
-            </template>
-            <template v-if="presetTemplates.length > 0">
-              <div class="preset-group-title">{{ t('core.edit.queueTemplatePresets') }}</div>
-              <MaaFWQueueCard
-                v-for="template in presetTemplates"
-                :key="template.preset.name"
-                kind="preset"
-                :title="getDisplayName(template.preset)"
-                :description="template.preset.description"
-                :base-path="previewData.path"
-                :chips="presetTemplateChips(template)"
-              >
-                <template #actions>
-                  <a-button
-                    type="primary"
-                    @click="emit('applyPresetTemplate', template.preset.name)"
-                  >
-                    {{ t('core.edit.applyPreset2') }}
-                  </a-button>
-                </template>
-              </MaaFWQueueCard>
-            </template>
-          </div>
+            :queue-templates="queueTemplates"
+            :preset-templates="presetTemplates"
+            :base-path="previewData.path"
+            @apply-queue-template="name => emit('applyQueueTemplate', name)"
+            @apply-preset-template="presetName => emit('applyPresetTemplate', presetName)"
+          />
           <a-empty
             v-else-if="orderedTasks.length === 0"
             :description="t('core.edit.addTaskAbove')"
@@ -380,21 +329,19 @@ import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import { hideBrokenMaaFWIcon, showLoadedMaaFWIcon } from '../maafwIconImage'
 import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
-import MaaFWQueueCard from './MaaFWQueueCard.vue'
+import MaaFWQueueContextBar from './MaaFWQueueContextBar.vue'
+import MaaFWQueueEmptyTemplates from './MaaFWQueueEmptyTemplates.vue'
 import MaaFWQueueTemplateModal from './MaaFWQueueTemplateModal.vue'
 import MaaFWTaskConfigPanel from './MaaFWTaskConfigPanel.vue'
 import { matchesMaaFWAddTaskKeyword } from './maafwAddTaskMenu'
 import { hasEditableMaaFWGlobalOptions } from './maafwGlobalOptions'
-import { listMaaFWHiddenQueueTasks, summarizeMaaFWHiddenQueueTasks } from './maafwHiddenTasks'
 import {
   MAAFW_TASK_LABEL_MAX_LENGTH,
   maafwQueueEntryBaseName,
   maafwQueueEntryTitle,
 } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
-import { isSupportedMaaFWControllerType } from '@/types/script'
 import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
-import { presetTemplateChips } from '../maafwPresetQueue'
 import type {
   MaaFWUserTaskQueueSectionEmits,
   MaaFWUserTaskQueueSectionProps,
@@ -404,11 +351,6 @@ const { t } = useI18n()
 
 /** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
 const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
-
-type DisplayItem = {
-  name: string
-  label?: string | null
-}
 
 type AddTaskCascaderPathOption = {
   label?: unknown
@@ -443,8 +385,6 @@ const showPresetModalModel = computed({
   get: () => props.showPresetModal,
   set: value => emit('update:showPresetModal', value),
 })
-
-const getDisplayName = (item: DisplayItem) => item.label || item.name
 
 const taskCheckedLabel = (taskId: string) =>
   t(
@@ -613,46 +553,6 @@ const checkboxIssueTaskIds = computed(() => {
 
 const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption[]) =>
   matchesMaaFWAddTaskKeyword(inputValue, path)
-
-// 队列框顶部一行：当前控制方式 / 游戏资源（脚本页设的），以及因不兼容而不显示的实例数
-const hiddenQueueTasks = computed(() =>
-  listMaaFWHiddenQueueTasks(
-    props.taskSnapshot.taskOrder,
-    props.taskByName,
-    props.effectiveControllerName,
-    props.effectiveResourceName,
-    props.taskSnapshot.taskLabels
-  )
-)
-const hiddenQueueTaskNames = computed(() => summarizeMaaFWHiddenQueueTasks(hiddenQueueTasks.value))
-// 项目只有一种控制方式、一种资源时这行没有信息量，不显示（有隐藏的实例时照样显示）
-const showQueueContext = computed(() => {
-  const data = props.previewData
-  if (!data) return false
-  const controllerCount = data.controllers.filter(controller =>
-    isSupportedMaaFWControllerType(controller.type)
-  ).length
-  return controllerCount > 1 || data.resources.length > 1 || hiddenQueueTasks.value.length > 0
-})
-const queueContextText = computed(() => {
-  const data = props.previewData
-  const controller = data?.controllers.find(item => item.name === props.effectiveControllerName)
-  const resource = data?.resources.find(item => item.name === props.effectiveResourceName)
-  return [
-    controller &&
-      t('core.edit.maafwQueueContextItem', {
-        label: t('core.edit.controlMode'),
-        value: getDisplayName(controller),
-      }),
-    resource &&
-      t('core.edit.maafwQueueContextItem', {
-        label: t('core.edit.gameResource'),
-        value: getDisplayName(resource),
-      }),
-  ]
-    .filter(Boolean)
-    .join(' · ')
-})
 </script>
 
 <style scoped>
@@ -748,38 +648,6 @@ const queueContextText = computed(() => {
   background: var(--ant-color-bg-container);
 }
 
-/* 队列框顶部一行：当前控制方式 / 游戏资源与隐藏数，滚动时钉在顶上 */
-.queue-context {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 6px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-  /* 填充色是半透明的，垫一层容器底色，滚过去的行不透上来 */
-  background:
-    linear-gradient(var(--ant-color-fill-quaternary), var(--ant-color-fill-quaternary)),
-    var(--ant-color-bg-container);
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.queue-context-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.queue-context-hidden {
-  color: var(--ant-color-warning);
-  cursor: help;
-  white-space: nowrap;
-}
-
 /* 右键菜单的触发区：撑满队列框余下的高度（基准 0 才是定高），拖拽列表的 min-height: 100% 才有定高可依 */
 .task-queue-menu-area {
   flex: 1 0 0;
@@ -787,20 +655,6 @@ const queueContextText = computed(() => {
 
 .task-queue-list {
   min-height: 100%;
-}
-
-.preset-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-}
-
-/* 队列为空时的分组小标题：我的模板 / 项目预设 */
-.preset-group-title {
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
 }
 
 .task-row {
