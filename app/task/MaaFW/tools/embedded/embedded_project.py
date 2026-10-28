@@ -3071,16 +3071,29 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
 
 
 def settle_adopted_latest(
-    base: Path | None = None, *, lineages: Iterable[str] | None = None
+    base: Path | None = None,
+    *,
+    lineages: Iterable[str] | None = None,
+    members: Iterable[GroupMember] | None = None,
 ) -> list[tuple[str, str, str]]:
     """全部采纳完之后，按确定的规则重定每个谱系每个渠道同版本的 latest（不看采纳顺序）。
 
     ``lineages`` 给了就只重定这些谱系（运行前就地采纳一份时只动它自己的谱系）。
+    ``members`` 给了就按本轮同组视图与组现有 latest 决策，避免同版本跨渠道混选。
     返回 ``[(谱系, 渠道, 新 latest id)]``，只列变了的。之后的组同步据此把视图统一过去。
     """
 
     root = payloads_root(base)
     changed: list[tuple[str, str, str]] = []
+    grouped: dict[tuple[str, str], set[str]] | None = None
+    if members is not None:
+        grouped = {}
+        for member in members:
+            marker = read_view_marker(embedded_project_dir(member.script_id, base))
+            if marker is not None:
+                grouped.setdefault((str(marker["lineage"]), member.channel), set()).add(
+                    str(marker["payload"])
+                )
     targets = (
         payloads.list_lineages(root)
         if lineages is None
@@ -3088,8 +3101,16 @@ def settle_adopted_latest(
     )
     for lineage in targets:
         for channel in list(payloads.read_lineage(root, lineage)["latest"]):
+            candidates = None if grouped is None else grouped.get((lineage, channel))
+            if grouped is not None and candidates is None:
+                continue
             try:
-                chosen = payloads.settle_same_version_latest(root, lineage, channel)
+                chosen = payloads.settle_same_version_latest(
+                    root=root,
+                    key=lineage,
+                    channel=channel,
+                    candidate_ids=candidates,
+                )
             except (OSError, payloads.PayloadError) as exc:
                 logger.warning(
                     f"[MFW 内嵌] 重定 {lineage}/{channel} 的 latest 失败: {exc}"

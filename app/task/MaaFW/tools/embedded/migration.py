@@ -147,7 +147,11 @@ async def migrate_embedded_copies_to_payloads(
                 await release_project_path(key)
         # 全部登记完才定同版本 latest，避免「同版本保留先来的」受脚本顺序影响。
         # 没有待采纳副本也要收尾：上次可能在最后一份采纳后、统一之前退出。
-        await _finish_file_work(asyncio.to_thread(settle_adopted_latest))
+        await _finish_file_work(
+            asyncio.to_thread(
+                settle_adopted_latest, members=[entry.member for entry in entries]
+            )
+        )
         await _unify_views_to_group(entries, script_configs=script_configs, held=held)
         logger.info(
             f"MFW 副本迁移完成：采纳 {adopted} 个、失败 {failed} 个、"
