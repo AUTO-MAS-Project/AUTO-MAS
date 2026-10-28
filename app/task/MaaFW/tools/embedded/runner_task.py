@@ -149,6 +149,7 @@ from .run_record import (
     MaaFWRunRecorder,
     format_incident_lines,
 )
+from .run_report import MaaFWAttemptReport, failure_summary, format_timeline
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -1028,6 +1029,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     index + 1,
                     _format_completed_task_labels(self.run_plan, result.completedTasks),
                     message,
+                    user_message=result.userMessage,
+                    failed_task=result.failedTask,
                     screenshots=[
                         (
                             _format_completed_task_labels(self.run_plan, [shot.task])[
@@ -3441,9 +3444,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self.cur_user_item.progress = progress
 
     def run_incident_notice(self) -> str:
-        """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告，
-        后面的重试成功了也照样列出。"""
+        """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告。
 
+        只在最后没成功时列出（各次尝试的都列）；后面的重试成功了就不写，免得一份
+        「全部完成」的报告里还挂着前面尝试的问题。"""
+
+        if self.run_complete:
+            return ""
         return (
             self._run_record_call(
                 lambda: format_incident_lines(self._run_record.incidents())
@@ -3704,11 +3711,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         screenshots: list[tuple[str, Path]] | None = None,
         category: str | None = None,
         signal: str | None = None,
+        user_message: str | None = None,
+        failed_task: str | None = None,
     ) -> None:
         """记下本次尝试的结果，供统计通知的「任务详情」与失败截图用。
 
         ``category`` / ``signal`` 进结构化运行记录；没给类别的失败由记录按任务结局补
         （任务都没开始是初始化失败，否则取第一个计入失败的任务的类别）。
+        ``user_message`` / ``failed_task`` 是 worker 回报的人话摘要与失败任务名，推送里的
+        失败原因只从它们和失败类别来（``failure`` 是日志里那句，可能带节点链等排障细节）。
         """
 
         if self.cur_user_log_started_at is not None:
@@ -3740,6 +3751,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 "completed": list(completed_labels),
                 "failure": failure,
                 "screenshots": list(screenshots or []),
+                # 对上这次尝试的运行记录（键同 _begin_run_record_attempt）
+                "record_key": id(self.cur_user_log),
+                "user_message": user_message,
+                "failed_task": failed_task,
             }
         )
 
@@ -3767,19 +3782,91 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ]
 
     def _build_task_details(self) -> str:
-        """汇总各次尝试的任务详情。
+        """用户级统计报告的任务详情：最后一次尝试的逐任务时间线（见 ``run_report``）。
 
-        与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
-        不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
-        就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
-        有任务被原地打转检测或单任务时限停下过时另起一段（每类一行，最终成功也列），
-        队列里有失效任务时末尾再附一行。
+        最后没成功时另起一段列各次尝试里的原地打转 / 单任务超时（每类一行），队列里有
+        失效任务时末尾再附一行。最后一次一个任务都没开始时没有时间线，原因在运行结果那行。
         """
 
-        details = self._build_attempt_details()
+        details = self._run_record_call(self._task_timeline)
+        if details is None:
+            details = self._completed_tasks_fallback()
         incidents = self.run_incident_notice()
         missing = self.missing_task_notice()
         return "\n\n".join(part for part in (details, incidents, missing) if part)
+
+    def _attempt_outcomes(self) -> list[MaaFWAttemptReport]:
+        """各次尝试的运行记录，配上 worker 回报的人话摘要与失败任务名。"""
+
+        reports = {report.get("record_key"): report for report in self._attempt_reports}
+        outcomes = []
+        for key, record in self._run_record.attempt_items():
+            report = reports.get(key) or {}
+            outcomes.append(
+                MaaFWAttemptReport(
+                    record=record,
+                    user_message=report.get("user_message"),
+                    failed_task=report.get("failed_task"),
+                )
+            )
+        return outcomes
+
+    def _task_timeline(self) -> str | None:
+        """逐任务时间线；没有运行记录返回 None（由调用方退回完成清单）。"""
+
+        outcomes = self._attempt_outcomes()
+        if not outcomes:
+            return None
+        return format_timeline(outcomes)
+
+    def _completed_tasks_fallback(self) -> str:
+        """运行记录出错、没有可用记录时的退路：只列完成了哪些任务，不带失败原文。"""
+
+        reports = getattr(self, "_attempt_reports", None) or []
+        if not reports:
+            return ""
+        if getattr(self, "run_complete", False):
+            merged: list[str] = []
+            for report in reports:
+                for label in report["completed"]:
+                    if label not in merged:
+                        merged.append(label)
+        else:
+            merged = list(reports[-1]["completed"])
+        return "已完成: " + ("、".join(merged) if merged else "无")
+
+    def _report_result(self, *, short: bool = False) -> str:
+        """本用户这次的结果，用户级统计报告与脚本级「代理结果」同一口径。
+
+        成功只说完成；失败说失败在哪些任务、为什么（只用人话，见 ``run_report``）；
+        信号与运行前检查跳过沿用原来那句话。``short``：脚本级每个用户一行用的简短说法。
+        """
+
+        if self.run_complete:
+            if self.missing_task_names:
+                return MISSING_TASK_USER_RESULT
+            return "全部完成" if short else "代理任务全部完成"
+        signal_message = self._signal_user_message()
+        if signal_message is not None:
+            return signal_message
+        if self.check_result != "Pass":
+            return (
+                self.cur_user_log.status
+                if self.cur_user_log is not None
+                else self.check_result
+            )
+        summary = self._run_record_call(
+            lambda: failure_summary(self._attempt_outcomes())
+        )
+        return summary or "代理任务未完成"
+
+    def proxy_report_line(self) -> str | None:
+        """脚本级「代理结果」里本用户的那一行；运行前检查没过、也没记日志的返回 None，
+        由管理器沿用通用的用户结果。"""
+
+        if self.check_result != "Pass" and self.cur_user_log is None:
+            return None
+        return self._report_result(short=True)
 
     def missing_task_notice(self) -> str:
         """队列里 interface 已没有的任务（多半是项目更新改了 name）：进用户与脚本两份报告。"""
@@ -3787,39 +3874,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not self.missing_task_names:
             return ""
         return f"{MISSING_TASK_NOTICE_PREFIX}: " + "、".join(self.missing_task_names)
-
-    def _build_attempt_details(self) -> str:
-        if not self._attempt_reports:
-            return ""
-
-        def block(report: dict[str, Any]) -> str:
-            lines = []
-            if report["completed"]:
-                lines.append("已完成: " + "、".join(report["completed"]))
-            else:
-                lines.append("已完成: 无")
-            if report["failure"]:
-                lines.append("未完成: " + report["failure"])
-            return "\n".join(lines)
-
-        if len(self._attempt_reports) == 1:
-            return block(self._attempt_reports[0])
-
-        if self.run_complete:
-            # 多次尝试最终成功时，逐次罗列意义不大，合并成一份去重清单。
-            merged: list[str] = []
-            for report in self._attempt_reports:
-                for label in report["completed"]:
-                    if label not in merged:
-                        merged.append(label)
-            return "已完成: " + ("、".join(merged) if merged else "无")
-
-        blocks = []
-        for report in self._attempt_reports:
-            blocks.append(
-                f"{report['title']}（{report['time']}）" + "\n" + block(report)
-            )
-        return ("\n\n").join(blocks)
 
     async def _push_user_statistics(self) -> None:
         """按通知设置推送用户级统计信息。
@@ -3847,20 +3901,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 image_id_prefix="maafw",
             )
             statistics["screenshots"] = screenshot_entries(images)
-            signal_message = self._signal_user_message()
-            # 有失效任务时照常算完成（次数、状态不动），但不能说成「全部完成」
-            if self.run_complete and self.missing_task_names:
-                statistics["user_result"] = MISSING_TASK_USER_RESULT
-            elif self.run_complete:
-                statistics["user_result"] = "代理任务全部完成"
-            elif signal_message is not None:
-                statistics["user_result"] = signal_message
-            else:
-                statistics["user_result"] = (
-                    self.cur_user_log.status
-                    if self.cur_user_log is not None
-                    else "代理任务未完成"
-                )
+            # 有失效任务时照常算完成（次数、状态不动），但不能说成「全部完成」；
+            # 失败时不再用日志状态那句（里面可能有节点链、框架事件）
+            statistics["user_result"] = self._report_result()
             if self.run_complete and self.missing_task_names:
                 mark = "!"
             elif self.run_complete:

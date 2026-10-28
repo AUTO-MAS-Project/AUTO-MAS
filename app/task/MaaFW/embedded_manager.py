@@ -396,8 +396,10 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
         # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
         self._missing_task_notices: list[str] = []
         self._missing_task_user_ids: set[str] = set()
-        # 各用户被原地打转检测 / 单任务时限停下过的任务（之后重试成功了也列），随「代理结果」发出
+        # 各用户被原地打转检测 / 单任务时限停下过的任务（只在该用户最后没成功时列），随「代理结果」发出
         self._run_incident_notices: list[str] = []
+        # 各用户在「代理结果」里的那一行（用户 id → 结果），没有的沿用通用的用户结果
+        self._user_report_lines: dict[str, str] = {}
         # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
         # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
         self.signal_tracker = MaaFWSignalTracker()
@@ -1774,6 +1776,11 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     self._missing_task_notices.append(f"{user_item.name}: {notice}")
                     self._missing_task_user_ids.add(user_item.user_id)
             with suppress(Exception):
+                line = self.inner_task.proxy_report_line()
+                if line is not None:
+                    user_item = self.inner_task.cur_user_item
+                    self._user_report_lines[user_item.user_id] = line
+            with suppress(Exception):
                 incidents = self.inner_task.run_incident_notice()
                 if incidents:
                     user_item = self.inner_task.cur_user_item
@@ -1930,7 +1937,7 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
             # 结果框按原样换行
             "result": "\n\n".join(
                 [
-                    self.script_info.result,
+                    self._user_results_text(),
                     *(
                         "\n".join(lines)
                         for lines in (
@@ -1971,6 +1978,17 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                     level="error", message=f"推送 MFW 代理结果时出现异常: {exc}"
                 ),
             )
+
+    def _user_results_text(self) -> str:
+        """「代理结果」里每个用户一行：跑过的用 runner 给的结果（与用户级统计报告同口径，
+        只有人话），没跑的（运行前检查没过、没轮到）沿用通用的用户结果。"""
+
+        if not self.script_info.user_list:
+            return self.script_info.result
+        return "\n".join(
+            f"{user.name}: {self._user_report_lines.get(user.user_id) or user.result}"
+            for user in self.script_info.user_list
+        )
 
     def _signal_summary_title(
         self, title: str, *, has_error: bool, has_completed: bool
