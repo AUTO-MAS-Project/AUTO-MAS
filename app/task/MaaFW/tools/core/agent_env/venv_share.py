@@ -7,6 +7,9 @@
   即 manifest 的 ``requirements``）+ maafw requirement + 宿主身份，sha256 取 16 位，目录名
   ``maafw_venv_<16hex>``（老的按路径哈希的是 12 位，长度不同、不会撞名）。任一不同就是另一个
   目录，不共用，也不会为了迁就某个视图去改别人那份。
+- **本地依赖不共用**：清单里有本地 wheel / 目录 / ``file:`` 链接（``is_local_requirement``）时，
+  同一行文本在两个项目里指向的是各自目录下的东西，内容可能不同；这种清单的键再加视图路径，
+  退回按视图隔离（理由见 ``shared_venv_key_inputs``）。纯 PyPI / 远程 URL 的键不受影响。
 - **宿主身份**：平台、CPU 架构、解释器实现与小版本（``3.12``）。venv 根目录本来就在本机
   这份安装的 ``config/maafw_agent_venvs`` 下，跨安装不会相遇；引导解释器具体是哪一个（便携
   Python、宿主 / worker 自己、PATH 上的）不进目录名——宿主与 worker 挑出来的本来就可能不同，
@@ -37,6 +40,7 @@ import json
 import logging
 import os
 import platform
+import re
 import sys
 import threading
 import time
@@ -114,10 +118,82 @@ def agent_venv_host_identity() -> dict[str, str]:
     }
 
 
+#: pip 认作本地归档的扩展名（照抄 pip ``utils.filetypes.ARCHIVE_EXTENSIONS``）：不带路径分隔符的
+#: ``foo-1.0-py3-none-any.whl`` 也是相对安装 cwd 的本地文件。
+_LOCAL_ARCHIVE_SUFFIXES = (
+    ".whl",
+    ".zip",
+    ".tar.gz",
+    ".tgz",
+    ".tar",
+    ".tar.bz2",
+    ".tbz",
+    ".tar.xz",
+    ".txz",
+    ".tlz",
+    ".tar.lz",
+    ".tar.lzma",
+)
+#: URL 协议名至少两个字符，``C:`` 这种盘符不算协议。
+_URL_SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]+):")
+_WINDOWS_DRIVE_RE = re.compile(r"^[a-zA-Z]:")
+_TRAILING_EXTRAS_RE = re.compile(r"\[[^\]]*\]$")
+
+
+def _is_local_scheme(scheme: str) -> bool:
+    # ``file:``，以及从本地仓库装的 VCS 写法 ``git+file:`` / ``hg+file:`` ……
+    scheme = scheme.lower()
+    return scheme == "file" or scheme.endswith("+file")
+
+
+def _looks_like_path(text: str) -> bool:
+    # 同 pip ``req.constructors._looks_like_path``；两种分隔符都认，宁可多认（多认只是少共用）。
+    return "/" in text or "\\" in text or text.startswith(".")
+
+
+def is_local_requirement(requirement: str) -> bool:
+    """这条（洗过的）requirement 装的是不是本机文件 / 目录。
+
+    认作本地：相对或绝对路径（含分隔符、以 ``.`` 开头、Windows 盘符）、不带路径的本地归档名
+    （``foo-1.0-py3-none-any.whl``）、``file:`` 与 ``git+file:`` 这类链接、``名字 @ file:...`` /
+    ``名字 @ ./...`` 的直接引用。远程 URL（``https://``、``git+https://``、``名字 @ https://...``）
+    与普通的 PyPI 名字 / 版本约束都不算。``-e`` / ``--editable`` 在读清单时就报错，到不了这里。
+    规则偏保守：误认成本地只是这份清单不跨视图共用，漏认才会串用别人的包。
+    """
+
+    spec = requirement.split(";", 1)[0].strip()
+    if not spec:
+        return False
+    if _WINDOWS_DRIVE_RE.match(spec):
+        return True
+    scheme = _URL_SCHEME_RE.match(spec)
+    if scheme:
+        return _is_local_scheme(scheme.group(1))
+    name, at, target = spec.partition("@")
+    if at and not _looks_like_path(name):
+        # PEP 508 直接引用 ``名字 @ URL``：看 URL 指向哪里；不是 URL 的按本地路径算。
+        target = target.strip()
+        if _WINDOWS_DRIVE_RE.match(target):
+            return True
+        scheme = _URL_SCHEME_RE.match(target)
+        return _is_local_scheme(scheme.group(1)) if scheme else True
+    if _looks_like_path(spec):
+        return True
+    return _TRAILING_EXTRAS_RE.sub("", spec).lower().endswith(_LOCAL_ARCHIVE_SUFFIXES)
+
+
 def shared_venv_key_inputs(
     project_path: str | Path, *, runner_maafw_version: str | None = None
 ) -> dict[str, Any]:
-    """算键用的输入。依赖清单读不了（``-r`` 越界等）时照原样抛 ``MaaFWAgentEnvError``。"""
+    """算键用的输入。依赖清单读不了（``-r`` 越界等）时照原样抛 ``MaaFWAgentEnvError``。
+
+    清单里有本地依赖（见 :func:`is_local_requirement`）时键里再加本视图的路径
+    （``isolatedProject``），即退回按视图隔离：相对路径以各自项目目录为 cwd 安装，同一行文本在
+    两个项目里可能是两份不同的 wheel / 目录，按文本共用会让后准备的视图命中前一个的 manifest、
+    跳过安装、用的是别人的包。不按内容哈希：wheel 可能上百 MB、目录没有有界又可靠的指纹，
+    而键在每次建计划、准备、回收时都要算。只有纯 PyPI / 远程 URL 的清单才按文本共用，
+    它们的键与加这条规则前逐字一致（不加字段），已建好的共用目录照常命中。
+    """
 
     # 延迟导入：env 在模块级 import planner，planner 在模块级 import 本模块。
     from app.task.MaaFW.tools.core.runner.environment import (
@@ -127,7 +203,7 @@ def shared_venv_key_inputs(
     from .env import _load_project_agent_requirements
 
     project = Path(project_path).resolve()
-    return {
+    inputs: dict[str, Any] = {
         "schema": SHARED_VENV_KEY_SCHEMA,
         "requirements": _load_project_agent_requirements(
             project, runner_maafw_version=runner_maafw_version
@@ -137,6 +213,12 @@ def shared_venv_key_inputs(
         ),
         "host": agent_venv_host_identity(),
     }
+    if any(
+        is_local_requirement(str(item))
+        for item in [*inputs["requirements"], inputs["maafw"] or ""]
+    ):
+        inputs["isolatedProject"] = _path_key(project)
+    return inputs
 
 
 def shared_venv_name(inputs: dict[str, Any]) -> str:
@@ -492,6 +574,7 @@ __all__ = [
     "collect_stale_venv_refs",
     "default_agent_venv_root",
     "discard_venv_lock_file",
+    "is_local_requirement",
     "is_shared_venv_name",
     "isolated_venv_guard",
     "legacy_isolated_venv_name",

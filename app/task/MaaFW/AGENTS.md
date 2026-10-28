@@ -334,6 +334,17 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `config/maafw_agent_venvs/maafw_venv_<16hex>`，键 = 装进去的依赖清单（洗过、maafw 钉成确切版本、
   补过引导包，即 manifest 的 `requirements`）+ maafw requirement + 宿主身份（平台 / 架构 / 解释器实现
   与小版本），任一不同就是另一个目录；同一项目建几个脚本、依赖没变的新版本都用同一份，只装一次。
+  - **本地依赖退回按视图隔离**（`venv_share.is_local_requirement`，PR #1711 审查 P2）：pip 以各自项目
+    目录为 cwd 安装，`./wheels/foo-1.0-py3-none-any.whl` 这一行在两个项目里可能是两份不同的 wheel；
+    按文本共用时后准备的视图命中前一个的 manifest、跳过安装，用的是别人的包。清单（含 `-r` 展开后的
+    子清单）里只要有一条本地依赖，键里就加视图路径（`isolatedProject`），等同改动前的按路径隔离。
+    认作本地：含 `/` 或 `\`、以 `.` 开头、Windows 盘符、不带路径的本地归档名（`.whl` / `.zip` /
+    `.tar.gz` 等，照 pip）、`file:` 与 `git+file:` 一类链接、`名字 @ file:...` / `名字 @ ./...`；
+    远程 URL（`https://`、`git+https://`、`名字 @ https://...`）照旧按文本；`-e` / `--editable` 读清单时
+    就报错，到不了键。宁可多认（只是少共用）不可漏认（会串用）。**不按内容哈希**：wheel 可能上百 MB、
+    目录没有有界又可靠的指纹，而键在建计划、每次准备、启动期回收都要算；真实语料（walkref 的 m9a、
+    Maa_bbb）没有本地依赖，退回隔离只影响少数项目。纯 PyPI / 远程 URL 清单的键不加字段，与加这条
+    规则前逐字一致，已建好的共用目录照常命中。
   - **宿主身份不含具体的引导解释器**：宿主与 worker 挑出来的本来就可能不同（worker 的
     `sys.executable` 是运行池 venv），按它分会在宿主刚建好的旁边再建一份；它记在 venv 的
     `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。解释器小版本（本进程的
