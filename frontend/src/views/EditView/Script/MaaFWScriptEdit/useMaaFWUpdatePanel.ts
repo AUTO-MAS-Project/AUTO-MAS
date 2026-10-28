@@ -40,6 +40,12 @@ const markUpdateSeen = (scriptId: string, startedAt: string) => {
   }
 }
 
+/** 本页这次应用最后显示的结论：成功显示 `updateResult.message`，失败显示 `updateError` */
+interface ShownUpdateOutcome {
+  success: boolean
+  message: string
+}
+
 interface MaaFWUpdatePanelOptions {
   scriptId: string
   maafwConfig: MaaFWScriptConfig
@@ -143,29 +149,65 @@ export function useMaaFWUpdatePanel({
     updateApplying.value = true
     updateError.value = ''
     beginUpdateProgress()
+    const session = progressSession
+    // 页面卸载（应用内切走）后原请求照样会回来；面板换成别的过程（重新接回等）后这份结果也不再显示
+    const isStale = () => disposed || session !== progressSession
+    // 发起前先记下后端此刻的手动更新：结束后据此认出哪一次是本页这次应用对应的
+    const before = await queryUpdateJobQuietly()
+    let shown: ShownUpdateOutcome
     try {
       updateResult.value = await applyMaaFWUpdate(scriptId)
       settleUpdateProgress(true, updateResult.value.message)
+      shown = { success: true, message: updateResult.value.message }
       if (updateResult.value.updated && maafwConfig.Info.Path) {
         await runPreview()
       }
     } catch (error) {
       updateError.value = error instanceof Error ? error.message : String(error)
       settleUpdateProgress(false, updateError.value)
+      shown = { success: false, message: updateError.value }
     } finally {
       updateApplying.value = false
     }
     // 结果已经在这一页上显示了：记下这一次，之后再打开不必接回
-    await rememberShownUpdate()
+    await rememberShownUpdate(before, shown, isStale)
   }
 
-  const rememberShownUpdate = async () => {
+  const queryUpdateJobQuietly = async (): Promise<MaaFWUpdateJobSnapshot | null> => {
     try {
-      const snapshot = await getMaaFWUpdateJob(scriptId)
-      if (snapshot.state === 'finished') markUpdateSeen(scriptId, snapshot.startedAt)
+      return await getMaaFWUpdateJob(scriptId)
     } catch {
-      // 查不到只是下次打开会再显示一遍
+      return null
     }
+  }
+
+  // 只记本页真正显示出来、且确是本页这次应用对应的那一次：页面已卸载或面板已换掉时不记；
+  // 查询回来的是别的手动更新（发起前就在跑的那份之外的、发起前已有的那份、还在跑的、结果与
+  // 显示的不同）也不记，下次打开照常接回。
+  const rememberShownUpdate = async (
+    before: MaaFWUpdateJobSnapshot | null,
+    shown: ShownUpdateOutcome,
+    isStale: () => boolean
+  ) => {
+    if (!before || isStale()) return
+    const after = await queryUpdateJobQuietly()
+    // 查不到只是下次打开会再显示一遍
+    if (!after || isStale() || after.state !== 'finished') return
+    // 发起时已在跑：本页接上的就是那一份；否则是发起之后新起的那一份
+    const sameJob =
+      before.state === 'running'
+        ? after.startedAt === before.startedAt
+        : after.startedAt !== before.startedAt
+    const sameOutcome = shown.success
+      ? after.result?.message === shown.message
+      : !after.result && after.error === shown.message
+    if (!sameJob || !sameOutcome) {
+      logger.info(
+        `最近一次手动更新（${after.startedAt} 开始）不是本页显示的这次，不记为已看过，下次打开再接回`
+      )
+      return
+    }
+    markUpdateSeen(scriptId, after.startedAt)
   }
 
   // 页面打开时接回手动更新要先问一次后端。问清之前，别的流程（读到 interface 后自动准备运行环境）
