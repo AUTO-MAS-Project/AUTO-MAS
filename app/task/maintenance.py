@@ -6,7 +6,7 @@
 
 from collections.abc import Awaitable, Callable
 
-from app.services.game_maintenance import MaintenanceWindow
+from app.models.game_maintenance import MaintenanceWindow
 
 
 async def get_user_maintenance(

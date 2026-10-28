@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, List, Literal, Optional
 from uuid import UUID
 
+from app.models.game_maintenance import MaintenanceWindow
 from app.models.notification_ports import LocalNotifier, TaskNotifications
 from app.models.notification_report import TaskNotificationState
 from app.runtime_tasks import RuntimeTasks
@@ -40,7 +41,6 @@ from app.utils import get_logger
 if TYPE_CHECKING:
     from app.models.config import UserConfigType
     from app.models.schema import HistoryWrite
-    from app.services.game_maintenance import MaintenanceWindow
 
 logger = get_logger("任务执行")
 

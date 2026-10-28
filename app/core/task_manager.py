@@ -39,6 +39,7 @@ from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
 from app.core.history import history_store
 from app.models.config import CLASS_BOOK, UserConfigType
+from app.models.game_maintenance import MaintenanceWindow
 from app.models.schema import (
     HistoryAttachmentInput,
     HistoryWrite,
@@ -64,7 +65,6 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
-from app.services.game_maintenance import MaintenanceWindow
 from app.task.history_core import UserHistoryDependencies, save_user_history
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
