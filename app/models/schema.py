@@ -637,12 +637,23 @@ class WSAvdUpdateProgressData(BaseModel):
     )
 
 
+class WSTaskUserProgressData(BaseModel):
+    """用户正在跑的任务进度（目前只有 MFW 给）。"""
+
+    current: int = Field(..., description="当前是第几个任务, 从 1 起")
+    total: int = Field(..., description="本次共几个任务")
+    task: str = Field(..., description="当前任务名")
+
+
 class WSTaskUserInfoData(BaseModel):
     """任务快照中的用户状态。"""
 
     user_id: str = Field(..., description="用户 ID")
     name: str = Field(..., description="用户名称")
     status: str = Field(..., description="用户执行状态")
+    progress: Optional[WSTaskUserProgressData] = Field(
+        default=None, description="正在跑的任务进度; 没有任务在跑或该专项不提供时为空"
+    )
 
 
 class WSTaskScriptInfoData(BaseModel):
@@ -1712,6 +1723,7 @@ __all__ = [
     "WSSystemNoticeData",
     "WSAvdUpdateProgressData",
     "WSEmulatorOperationData",
+    "WSTaskUserProgressData",
     "WSTaskUserInfoData",
     "WSTaskScriptInfoData",
     "WSTaskCyclePreviewData",
