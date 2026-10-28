@@ -354,7 +354,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 from .tools.config_dir import ensure_user_config_dir
 
                 await ensure_user_config_dir(
-                    script_id=self.script_info.script_id,
+                    script_config=self.script_config,
                     user_id=str(self.cur_user_uid),
                     base=config_base,
                 )

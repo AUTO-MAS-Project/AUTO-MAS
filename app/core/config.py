@@ -1268,17 +1268,11 @@ class AppConfig:
         uid = uuid.UUID(script_id)
 
         script_config = self.ScriptConfig[uid]
-        if isinstance(script_config, MaaFWConfig):
-            # 新用户的空任务队列按项目默认写成实打实的队列（含特调 M9A / MSS）：用户页
-            # 看到的就是运行时会跑的。建用户时项目可能还没导入，所以读的时候再补一次
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
-
-            await fill_default_task_snapshots(
-                script_id,
+        handler = self._get_script_config_handler(script_config)
+        if handler is not None and handler.prepare_user_read is not None:
+            await handler.prepare_user_read(
                 script_config,
-                None if user_id is None else [str(uuid.UUID(user_id))],
+                user_ids=None if user_id is None else [str(uuid.UUID(user_id))],
             )
 
         if user_id is None:
@@ -1322,79 +1316,25 @@ class AppConfig:
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid = script_config.UserData.add(MaaUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, SrcConfig):
-            uid = script_config.UserData.add(SrcUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, GeneralConfig):
-            uid = script_config.UserData.add(GeneralUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, OkwwConfig):
-            uid = script_config.UserData.add(OkwwUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            try:
-                from app.task.Okww.tools.config_dir import ensure_user_config_dir
+        handler = self._get_script_config_handler(script_config)
+        # 特调脚本自行声明的用户类优先，不能被 MaaFW 父类型处理器覆盖。
+        user_class = getattr(script_config, "USER_CONFIG_CLASS", None)
+        if user_class is None and handler is not None:
+            user_class = handler.user_config_class
+        if user_class is None:
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
-                await ensure_user_config_dir(
-                    script_id=script_id,
-                    user_id=str(uid),
-                    base=str(config.Info.Base or _utils_constants.BASE_SHARED),
-                )
-            except Exception:
-                # 配置初始化失败时回滚用户，避免留下无法运行的半成品用户。
+        uid = script_config.UserData.add(user_class, payload=payload)
+        await script_config.UserData.commit()
+        config = script_config.UserData[uid]
+        if handler is not None and handler.initialize_user is not None:
+
+            async def rollback() -> None:
+                # 只撤回本次集合成员，不递归走完整删除生命周期或碰共享目录。
                 script_config.UserData.remove(uid)
                 await script_config.UserData.commit()
-                raise
-        elif isinstance(script_config, OkNteConfig):
-            uid = script_config.UserData.add(OkNteUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaEndConfig):
-            uid = script_config.UserData.add(MaaEndUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, MaaFWConfig):
-            # 含特调子类（M9A / MSS）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
-            uid = script_config.UserData.add(
-                script_config.USER_CONFIG_CLASS, payload=payload
-            )
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-            # 空任务队列按项目默认写成实打实的队列；项目还没导入时留到读用户、运行前再补
-            from app.task.MaaFW.tools.embedded.default_snapshot import (
-                fill_default_task_snapshots,
-            )
 
-            await fill_default_task_snapshots(script_id, script_config, [str(uid)])
-        elif isinstance(script_config, HSRConfig):
-            uid = script_config.UserData.add(HSRUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BetterGIConfig):
-            uid = script_config.UserData.add(BetterGIUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, ZzzOdConfig):
-            uid = script_config.UserData.add(ZzzOdUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, BAAHConfig):
-            uid = script_config.UserData.add(BAAHUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        elif isinstance(script_config, WhimboxConfig):
-            uid = script_config.UserData.add(WhimboxUserConfig, payload=payload)
-            await script_config.UserData.commit()
-            config = script_config.UserData[uid]
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+            await handler.initialize_user(script_config, config, rollback=rollback)
 
         return uid, config
 
@@ -1558,21 +1498,17 @@ class AppConfig:
         if script_config.is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行，无法导入配置文件")
 
-        # OK-WW 的配置目录布局与导入语义由专项维护
-        # （app/task/Okww/tools/config_dir.py），core 只做分派。
-        if isinstance(script_config, OkwwConfig):
-            from app.task.Okww.tools.config_dir import import_script_config_dir
-
-            await import_script_config_dir(script_id, user_id)
-            return
-
         handler = self._get_script_config_handler(script_config)
         if handler is None or handler.import_config is None:
             raise TypeError("当前脚本类型暂不支持导入配置文件")
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        handler.import_config(script_config, target_config_dir, user_id=user_id)
+        imported = handler.import_config(
+            script_config, target_config_dir, user_id=user_id
+        )
+        if inspect.isawaitable(imported):
+            await imported
 
     def bind_script_config_handler(
         self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
@@ -1602,13 +1538,15 @@ class AppConfig:
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
 
-        if isinstance(script_config, ZzzOdConfig):
-            from app.task.ZzzOd.api_service import get_service
+        handler = self._get_script_config_handler(script_config)
+        cleanup = None
+        if handler is not None and handler.prepare_user_removal is not None:
+            cleanup = handler.prepare_user_removal(script_config, user_uid)
 
-            await get_service(self).recovery.remove_user(script_id, user_id)
-        else:
-            script_config.UserData.remove(user_uid)
-            await script_config.UserData.commit()
+        script_config.UserData.remove(user_uid)
+        await script_config.UserData.commit()
+        if cleanup is not None:
+            await cleanup()
 
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
