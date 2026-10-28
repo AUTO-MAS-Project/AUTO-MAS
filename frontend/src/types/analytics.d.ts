@@ -110,10 +110,10 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     runtime_mode: AnalyticsRuntimeMode
     duration_bucket: AnalyticsDurationBucket
   }
-  initialization_stage_finished: {
+  initialization_stage_finished_v2: {
     stage: AnalyticsInitializationStage
     runtime_mode: AnalyticsRuntimeMode
-    outcome: 'success' | 'failure'
+    outcome: 'success' | 'failure' | 'cancelled'
     known_code: AnalyticsInitializationCode
     failed_stage: AnalyticsInitializationStage | 'none'
     duration_bucket: AnalyticsDurationBucket
@@ -156,12 +156,13 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     outcome: 'success' | 'failure' | 'unknown'
     duration_bucket: AnalyticsDurationBucket
   }
-  initialization_finished: {
-    outcome: 'success' | 'failure' | 'skipped' | 'unconfirmed'
+  initialization_finished_v2: {
+    outcome: 'success' | 'failure' | 'cancelled' | 'skipped' | 'unconfirmed'
     flow_kind: 'first-run' | 'update' | 'startup' | 'skip'
     runtime_mode: AnalyticsRuntimeMode
     failed_stage:
       | 'none'
+      | 'runtime_binary'
       | 'python'
       | 'pip'
       | 'git'
@@ -255,6 +256,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     mode: 'AutoProxy' | 'CycleRun'
     script_type: AnalyticsScriptType
     outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+    partial_failure: 'yes' | 'no' | 'unknown'
     duration_bucket: AnalyticsDurationBucket
   }
   native_config_action_finished: {
@@ -329,7 +331,7 @@ export type RendererAnalyticsEventName = Exclude<
   AnalyticsEventName,
   | 'app_started'
   | 'backend_start_finished'
-  | 'initialization_stage_finished'
+  | 'initialization_stage_finished_v2'
   | (typeof mainOnlyFeatureEvents)[number]
 >
 export type AnalyticsEvent = {

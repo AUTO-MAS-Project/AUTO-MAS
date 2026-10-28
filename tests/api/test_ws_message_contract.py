@@ -27,6 +27,10 @@ CONTRACT: dict[str, frozenset[str]] = {
     "WSTaskInfoUpdatedData": frozenset({"task_info", "cycleNextList"}),
     "WSTaskLogUpdatedData": frozenset({"log", "seq", "append", "firstLine"}),
     "WSTaskScriptIdentityData": frozenset({"scriptId", "scriptType"}),
+    "WSTaskScriptStartedData": frozenset({"taskId", "runId", "scriptType", "mode"}),
+    "WSTaskScriptFinishedData": frozenset(
+        {"taskId", "runId", "scriptType", "mode", "outcome", "partialFailure"}
+    ),
     "WSTaskCompletedData": frozenset({"result", "outcome", "error", "task_info"}),
     "WSTaskCreatedData": frozenset(
         {"taskId", "mode", "scripts", "queueId", "taskName", "taskType"}
