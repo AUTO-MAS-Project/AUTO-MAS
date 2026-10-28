@@ -35,7 +35,7 @@ export const userProgressParams = (
 
 /** 没有任务名时换成只有数字的文案，避免末尾挂一个孤立的「 · 」。 */
 export const userProgressMessageKey = (params: TaskTreeUserProgress): string =>
-  params.task ? 'scheduler.overview.userProgress' : 'scheduler.overview.userProgressCount'
+  params.task ? 'core.scheduler.overview.userProgress' : 'core.scheduler.overview.userProgressCount'
 
 interface SignatureUser {
   name?: string
