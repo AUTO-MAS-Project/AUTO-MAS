@@ -106,12 +106,11 @@ def test_exit_with_inherited_pipes_preserves_result(simulator, code, marker):
         try:
             result = await asyncio.wait_for(session.run(5), timeout=2)
             assert result.returncode == code
-            assert result.success is (code == 0)
+            # 后代始终持有管道；无法确认输出完整时，rc=0 也不能证明成功。
+            assert not result.success
             assert "command timed out" not in result.error
-            if code == 0:
-                assert "native output" in result.summary
-            else:
-                assert "native output" in result.error
+            assert "native output" in result.error
+            assert "输出未完整收集" in result.error
             assert processes[0].returncode == code
             assert session._runner._process_manager.main_process is None
             for fd in (1, 2):
@@ -365,10 +364,10 @@ def test_stream_read_error_stops_the_process(simulator, monkeypatch, error_type)
     async def open_with_broken_reader(*args, **kwargs):
         await original_open(*args, **kwargs)
 
-        async def broken_read():
+        async def broken_read(_):
             raise error_type("stream read failed")
 
-        monkeypatch.setattr(processes[-1].stdout, "readline", broken_read)
+        monkeypatch.setattr(processes[-1].stdout, "read", broken_read)
 
     monkeypatch.setattr(
         runner._process_manager, "open_process", open_with_broken_reader
@@ -411,7 +410,9 @@ def test_blocked_tail_callback_is_bounded_after_process_exit(simulator):
             result = await asyncio.wait_for(
                 runner.run_task("power", timeout=3), timeout=2
             )
-            assert result.success and result.returncode == 0
+            assert not result.success and result.returncode == 0
+            assert result.output == "work completed"
+            assert "输出未完整收集" in result.error
             assert cancelled.is_set()
             await asyncio.sleep(0)
             assert not (set(asyncio.all_tasks()) - before)

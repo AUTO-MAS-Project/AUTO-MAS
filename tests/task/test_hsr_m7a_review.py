@@ -15,6 +15,98 @@ from tests.task.test_hsr_m7a_lifecycle import simulator as simulator
 
 
 @pytest.mark.parametrize("tail_stream", ["stdout", "stderr"])
+@pytest.mark.parametrize("managed", [False, True])
+def test_unterminated_failure_tail_with_inherited_pipe(simulator, tail_stream, managed):
+    build, root, processes = simulator
+    failure = "无法切换到指定游戏界面"
+    session = build(
+        inherited_child(code=0).rsplit("sys.exit", 1)[0]
+        + f"sys.{tail_stream}.write({failure!r})\n"
+        + f"sys.{tail_stream}.flush()\nsys.exit(0)\n",
+        managed=managed,
+    )
+
+    async def scenario():
+        before = set(asyncio.all_tasks())
+        try:
+            operation = (
+                session.run_task("power", timeout=5) if managed else session.run(5)
+            )
+            result = await asyncio.wait_for(operation, timeout=2)
+            assert processes[0].returncode == result.returncode == 0
+            # 客户端后代仍活着并持有管道，不能依赖 EOF 才保存尾部。
+            child = psutil.Process(int((root / "child.pid").read_text()))
+            assert child.is_running() and child.status() != psutil.STATUS_ZOMBIE
+            assert not result.success
+            assert failure in result.error
+            assert "native output" in result.error
+            if managed:
+                assert result.output == "native output" + (
+                    f"\n{failure}" if tail_stream == "stdout" else ""
+                )
+            runner = session if managed else session._runner
+            assert runner._process_manager.main_process is None
+            for fd in (1, 2):
+                assert processes[0]._transport.get_pipe_transport(fd).is_closing()
+            await asyncio.sleep(0)
+            assert not (set(asyncio.all_tasks()) - before)
+        finally:
+            if not managed:
+                await session.close()
+            await cleanup(processes, root)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "gbk", "unicode_escape"])
+def test_fragmented_bytes_keep_complete_line_callbacks(
+    simulator, monkeypatch, encoding
+):
+    build, root, processes = simulator
+    lines = ["正常输出", "停止运行", "正常尾部"]
+    payload = b"\r\n".join(line.encode(encoding) for line in lines)
+    observed = []
+    runner = build(
+        f"import sys\nsys.stdout.buffer.write({payload!r})\nsys.stdout.flush()\n",
+        managed=True,
+        callback=observed.append,
+    )
+    original_open = runner._process_manager.open_process
+
+    async def open_with_fragmented_reader(*args, **kwargs):
+        await original_open(*args, **kwargs)
+        stream = processes[-1].stdout
+        original_read = stream.read
+
+        async def read_byte(_):
+            return await original_read(1)
+
+        monkeypatch.setattr(stream, "read", read_byte)
+
+    monkeypatch.setattr(
+        runner._process_manager, "open_process", open_with_fragmented_reader
+    )
+
+    async def scenario():
+        before = set(asyncio.all_tasks())
+        try:
+            result = await asyncio.wait_for(
+                runner.run_task("power", timeout=3), timeout=2
+            )
+            assert result.success and result.returncode == 0
+            assert result.output == "\n".join(lines)
+            assert observed == lines
+            assert runner.recent_output_lines == lines
+            assert runner._process_manager.main_process is None
+            await asyncio.sleep(0)
+            assert not (set(asyncio.all_tasks()) - before)
+        finally:
+            await cleanup(processes, root)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("tail_stream", ["stdout", "stderr"])
 def test_deadline_exit_drains_already_written_failure(
     simulator, monkeypatch, tail_stream
 ):
@@ -35,13 +127,13 @@ def test_deadline_exit_drains_already_written_failure(
         async def open_with_delayed_reader(*args, **kwargs):
             await original_open(*args, **kwargs)
             stream = getattr(processes[-1], tail_stream)
-            original_readline = stream.readline
+            original_read = stream.read
 
-            async def delayed_readline():
+            async def delayed_read(size):
                 await release_reader.wait()
-                return await original_readline()
+                return await original_read(size)
 
-            monkeypatch.setattr(stream, "readline", delayed_readline)
+            monkeypatch.setattr(stream, "read", delayed_read)
 
         monkeypatch.setattr(
             runner._process_manager, "open_process", open_with_delayed_reader

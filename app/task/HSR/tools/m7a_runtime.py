@@ -38,7 +38,6 @@ from app.utils import ProcessManager, decode_bytes, get_logger
 from .log_detect import (
     HSR_CONSOLE_PAUSE_SUCCESS_MARKER,
     M7A_COMPLETION_MARKERS,
-    can_read_stream_live,
     emit_process_output,
     has_failure_output,
     unescape_backslash_u,
@@ -328,28 +327,35 @@ class M7ARunner:
     def _emit_process_output(self, title: str, text: str) -> None:
         emit_process_output(self._log_callback, title, text)
 
+    @staticmethod
+    def _decode_stream_output(output: bytes | bytearray) -> str:
+        # 按完整字节行解码，避免分块读取切开 UTF-8/GBK 字符或反斜杠转义。
+        return "\n".join(
+            line.strip()
+            for raw_line in bytes(output).split(b"\n")
+            for line in unescape_backslash_u(decode_bytes(raw_line)).splitlines()
+            if line.strip()
+        )
+
     async def _read_stream_live(
         self,
         stream,
         title: str,
-        lines: list[str],
+        output: bytearray,
         completion_event: asyncio.Event | None = None,
     ) -> None:
-        """逐行读取子进程输出并立即转发到日志。"""
+        """先保存已读字节，再逐行转发；无换行尾部不依赖 EOF 才能保留。"""
 
+        pending = b""
         while True:
-            raw = await stream.readline()
-            if not raw:
-                break
-            if isinstance(raw, str):
-                text = raw
+            raw = await stream.read(4096)
+            if raw:
+                output.extend(raw)
+                pending += raw
+                complete, _, pending = pending.rpartition(b"\n")
             else:
-                text = decode_bytes(bytes(raw))
-            for line in unescape_backslash_u(text).rstrip("\r\n").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                lines.append(line)
+                complete = pending
+            for line in self._decode_stream_output(complete).splitlines():
                 self._recent_output.append(line)
                 self._emit_process_output(title, line)
                 if self._output_line_callback is not None:
@@ -358,6 +364,8 @@ class M7ARunner:
                         await result
                 if completion_event is not None and self._is_completion_line(line):
                     completion_event.set()
+            if not raw:
+                break
 
     @staticmethod
     def _is_completion_line(line: str) -> bool:
@@ -438,14 +446,14 @@ class M7ARunner:
         self,
         proc: asyncio.subprocess.Process,
         timeout: int,
-    ) -> tuple[str, str, bool]:
-        """读取输出，返回文本及是否在停止标记后主动终止进程。"""
+    ) -> tuple[str, str, bool, bool]:
+        """返回输出、是否在停止标记后主动终止进程及输出是否完整。"""
 
         stdout_stream = getattr(proc, "stdout", None)
         stderr_stream = getattr(proc, "stderr", None)
-        if not (
-            can_read_stream_live(stdout_stream) or can_read_stream_live(stderr_stream)
-        ):
+        stdout_readable = callable(getattr(stdout_stream, "read", None))
+        stderr_readable = callable(getattr(stderr_stream, "read", None))
+        if not (stdout_readable or stderr_readable):
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(), timeout=timeout
@@ -467,30 +475,30 @@ class M7ARunner:
                     result = self._output_line_callback(line)
                     if isawaitable(result):
                         await result
-            return stdout, stderr, False
+            return stdout, stderr, False, True
 
-        stdout_lines: list[str] = []
-        stderr_lines: list[str] = []
+        stdout_output = bytearray()
+        stderr_output = bytearray()
         read_tasks: list[asyncio.Task] = []
         completion_event = asyncio.Event()
-        if can_read_stream_live(stdout_stream):
+        if stdout_readable:
             read_tasks.append(
                 asyncio.create_task(
                     self._read_stream_live(
                         stdout_stream,
                         "三月七",
-                        stdout_lines,
+                        stdout_output,
                         completion_event,
                     )
                 )
             )
-        if can_read_stream_live(stderr_stream):
+        if stderr_readable:
             read_tasks.append(
                 asyncio.create_task(
                     self._read_stream_live(
                         stderr_stream,
                         "三月七 stderr",
-                        stderr_lines,
+                        stderr_output,
                         completion_event,
                     )
                 )
@@ -501,6 +509,7 @@ class M7ARunner:
         completion_wait = asyncio.create_task(completion_event.wait())
         deadline = asyncio.get_running_loop().time() + timeout
         terminated_after_completion = False
+        output_complete = False
         try:
             pending = {exit_wait, completion_wait, read_group}
             while not exit_wait.done():
@@ -539,10 +548,12 @@ class M7ARunner:
                     # 进程已结束，排空预算独立于命令截止时间，避免丢掉已写出的尾部错误。
                     timeout=self._completion_grace_timeout,
                 )
+                output_complete = True
             except asyncio.TimeoutError:
                 if read_group.done():
                     # 不把回调本身的 TimeoutError 当成输出排空到期。
                     await read_group
+                    output_complete = True
                 else:
                     logger.warning("三月七进程已退出，输出未在宽限期内结束，关闭管道")
         finally:
@@ -567,9 +578,10 @@ class M7ARunner:
                 )
 
         return (
-            "\n".join(stdout_lines).strip(),
-            "\n".join(stderr_lines).strip(),
+            self._decode_stream_output(stdout_output),
+            self._decode_stream_output(stderr_output),
             terminated_after_completion,
+            output_complete,
         )
 
     async def run_task(self, task_name: str, timeout: int = 600) -> M7ACommandResult:
@@ -618,6 +630,7 @@ class M7ARunner:
                 stdout,
                 stderr,
                 terminated_after_completion,
+                output_complete,
             ) = await self._communicate_with_live_output(proc, timeout)
             # rc=0 且没有任何输出不算成功：M7A 未提权时会另起提权进程后原进程
             # 直接 exit(0)，真正干活的进程脱离了 MAS 的视野。
@@ -629,10 +642,18 @@ class M7ARunner:
                 and HSR_CONSOLE_PAUSE_SUCCESS_MARKER in combined_output
             )
             success = (
-                (terminated_after_completion and proc.returncode is not None)
-                or completed_before_pause_crash
-                or (proc.returncode == 0 and bool(stdout or stderr))
-            ) and not has_failure_output(stdout, stderr)
+                (
+                    (terminated_after_completion and proc.returncode is not None)
+                    or completed_before_pause_crash
+                    or (proc.returncode == 0 and bool(stdout or stderr))
+                )
+                and not has_failure_output(stdout, stderr)
+                and output_complete
+            )
+
+            error = stderr if success else combined_output.strip()
+            if not output_complete:
+                error = f"{error}\n三月七输出未完整收集，无法确认任务成功".strip()
 
             logger.info(
                 f"三月七 {task_name} → {'success' if success else 'failed'}"
@@ -643,7 +664,7 @@ class M7ARunner:
                 exe_path=str(self._m7a_exe),
                 success=success,
                 output=stdout,
-                error=stderr if success else combined_output.strip(),
+                error=error,
                 returncode=proc.returncode or 0,
                 started_at=started_at,
                 finished_at=datetime.now(timezone.utc),
