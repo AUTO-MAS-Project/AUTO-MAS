@@ -32,6 +32,7 @@
   <AppClosePrompt
     v-model:open="closePromptOpen"
     :busy="actionInProgress"
+    :default-action="lastAction"
     @choose="handleCloseChoice"
     @cancel="closePromptOpen = false"
   />
