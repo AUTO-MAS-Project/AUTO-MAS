@@ -32,6 +32,8 @@ export interface MaaFWUpdateResult {
  */
 export interface MaaFWUpdateJobSnapshot {
   state: 'idle' | 'running' | 'finished'
+  /** 这次手动更新的开始时刻（后端 ISO 字符串），同一脚本里用来认是不是同一次；idle 时为空 */
+  startedAt: string
   events: WSMaaFWProjectUpdateProgressData[]
   result: MaaFWUpdateResult | null
   error: string
@@ -144,13 +146,20 @@ export function useMaaFWUpdateApi() {
     }))
     const rawState = String(data?.state ?? '')
     const state = rawState === 'running' || rawState === 'finished' ? rawState : 'idle'
+    const startedAt = String(data?.startedAt ?? '')
     const job = data?.result
-    if (state !== 'finished' || !job) return { state, events, result: null, error: '' }
+    if (state !== 'finished' || !job) return { state, startedAt, events, result: null, error: '' }
     const message = job.message ?? ''
     if ((job.code ?? 200) !== 200) {
-      return { state, events, result: null, error: message || 'MFW 项目更新失败' }
+      return { state, startedAt, events, result: null, error: message || 'MFW 项目更新失败' }
     }
-    return { state, events, result: { ...EMPTY_DATA, ...(job.data ?? {}), message }, error: '' }
+    return {
+      state,
+      startedAt,
+      events,
+      result: { ...EMPTY_DATA, ...(job.data ?? {}), message },
+      error: '',
+    }
   }
 
   /**

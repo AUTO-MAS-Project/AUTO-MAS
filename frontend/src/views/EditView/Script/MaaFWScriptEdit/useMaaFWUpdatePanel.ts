@@ -18,6 +18,28 @@ import {
 } from './updateProgress'
 import type { MaaFWScriptChangeHandler } from './useMaaFWScriptDraft'
 
+// 手动更新的结果在这台机器上显示过一次就不再接回：后端把最近一次结果留到下次更新或重启，
+// 不记的话几小时前的一条失败每次打开编辑页都会标红。按脚本记最后显示过的那次的开始时刻，
+// 与「添加任务」的 NEW 一样只是本机提示状态，存在 localStorage，不进配置。
+const seenUpdateStorageKey = (scriptId: string) => `maafw-seen-update:${scriptId}`
+
+const readSeenUpdate = (scriptId: string): string | null => {
+  try {
+    return localStorage.getItem(seenUpdateStorageKey(scriptId))
+  } catch {
+    return null
+  }
+}
+
+const markUpdateSeen = (scriptId: string, startedAt: string) => {
+  if (!startedAt) return
+  try {
+    localStorage.setItem(seenUpdateStorageKey(scriptId), startedAt)
+  } catch {
+    // 本机存不下只是下次打开会再显示一遍
+  }
+}
+
 interface MaaFWUpdatePanelOptions {
   scriptId: string
   maafwConfig: MaaFWScriptConfig
@@ -133,6 +155,17 @@ export function useMaaFWUpdatePanel({
     } finally {
       updateApplying.value = false
     }
+    // 结果已经在这一页上显示了：记下这一次，之后再打开不必接回
+    await rememberShownUpdate()
+  }
+
+  const rememberShownUpdate = async () => {
+    try {
+      const snapshot = await getMaaFWUpdateJob(scriptId)
+      if (snapshot.state === 'finished') markUpdateSeen(scriptId, snapshot.startedAt)
+    } catch {
+      // 查不到只是下次打开会再显示一遍
+    }
   }
 
   // 手动更新在后端后台跑，切走页面、刷新、关掉前端都不打断。页面打开时接回这个脚本当前或
@@ -156,6 +189,7 @@ export function useMaaFWUpdatePanel({
     const pending = pendingEvents ?? []
     pendingEvents = null
     if (snapshot.state === 'idle') return
+    if (snapshot.state === 'finished' && readSeenUpdate(scriptId) === snapshot.startedAt) return
     logger.info(
       `接回手动更新: state=${snapshot.state} 已有事件 ${snapshot.events.length} 条，取快照期间推送 ${pending.length} 条`
     )
@@ -184,12 +218,14 @@ export function useMaaFWUpdatePanel({
       updateResult.value = snapshot.result
       updateError.value = ''
       settleUpdateProgress(true, snapshot.result.message)
+      markUpdateSeen(scriptId, snapshot.startedAt)
       if (waited && snapshot.result.updated && maafwConfig.Info.Path) {
         await runPreview()
       }
     } else if (snapshot.error) {
       updateError.value = snapshot.error
       settleUpdateProgress(false, snapshot.error)
+      markUpdateSeen(scriptId, snapshot.startedAt)
     }
   }
 
