@@ -132,12 +132,13 @@ const normalizePreviewData = (data: MaaFWInterfacePreviewData): MaaFWInterfacePr
     })),
     groups: (data.groups ?? []).map(group => ({
       ...group,
-      defaultExpand: group.defaultExpand ?? false,
+      // PI v2 与后端模型的缺省值都是 true（默认展开）
+      defaultExpand: group.defaultExpand ?? true,
     })),
     settings: (data.settings ?? []).map(setting => ({
       ...setting,
       option: setting.option ?? [],
-      defaultExpand: setting.defaultExpand ?? false,
+      defaultExpand: setting.defaultExpand ?? true,
     })),
     tasks: (data.tasks ?? []).map(task => ({
       ...task,

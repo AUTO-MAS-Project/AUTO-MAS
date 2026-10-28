@@ -11,6 +11,7 @@ worker 在 ``MaaFWRunResult.signal`` 里回报信号（见 ``core/runner/run_sig
 
 from __future__ import annotations
 
+import asyncio
 import html
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field

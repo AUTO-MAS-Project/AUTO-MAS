@@ -13,7 +13,9 @@ import {
 } from '@ant-design/icons-vue'
 import type { ScriptListItem } from '../scriptListModel'
 import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { fallbackToMaaFWLogo } from '@/utils/maafwProjectIcon'
 import {
+  getMaaFWScriptLogo,
   getScriptLogo,
   getScriptLogoAlt,
   isMaaEndPresetSupported,
@@ -68,11 +70,13 @@ export type ScriptCardAction =
         <span class="script-drag-dots" aria-hidden="true"></span>
       </span>
       <div class="script-logo-container">
+        <!-- 特调用注册表里声明的图标；通用 MaaFW 用项目自己的图标，取不到回退 MaaFW 图标 -->
         <img
           v-if="isMaaFWFamily(script.type)"
-          :src="resolveMaaFWFlavor(script.type).logo"
+          :src="getMaaFWScriptLogo(script)"
           :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
           class="script-logo"
+          @error="fallbackToMaaFWLogo($event, resolveMaaFWFlavor(script.type).logo)"
         />
         <img
           v-else

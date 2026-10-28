@@ -14,7 +14,8 @@ import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
+import { useMaaFWApi } from '@/composables/useMaaFWApi'
+import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import {
@@ -22,6 +23,7 @@ import {
   maafwUserConfigTypes,
   prepareMaaFWFlavorPage,
   useMaaFWFlavor,
+  usesMaaFWProjectIcon,
   type MaaFWUserSlotContext,
 } from '@/composables/useMaaFWFlavor'
 import type {
@@ -107,8 +109,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const preferAdbController = ref(false)
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
+  // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 与脚本列表同一个口径取项目图标，
+  // 不等 interface 读完（类型由页面宿主先读好，这里一开始就是对的）
   const projectIconUrl = computed(() =>
-    buildMaaFWAssetUrl(previewData.value?.path, previewData.value?.project.icon)
+    usesMaaFWProjectIcon(flavor.value) ? buildMaaFWScriptIconUrl(scriptId) : ''
   )
 
   const handleProjectIconError = (event: Event) => {

@@ -9,7 +9,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入脚本快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
-  同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
+  同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
   `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
   **MFW 的 API 业务一律在这里实现，
   本目录的 `api.py` 只放端点模型与薄端点**：取参数 → 调这里的一个函数 → `XxxOut(**reply.out_fields())`
@@ -19,7 +19,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`）。
+  `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -54,8 +54,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `register` 允许同版本新登记顶替）。
 - **载荷 + 视图**：项目内容按「谱系 + 版本 + 内容哈希」登记成不可变**载荷**
   （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
-  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 / venv /
-  备份桶都不用改键），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
+  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 /
+  备份桶都不用改键；隔离 venv 不按路径，按依赖跨视图共用），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`、`envConfirmedFor`、
   开发者模式的 `followSource`）是物化事实的唯一来源，不进指纹、不进任何清单，只随目录原子换入、
   不原地改——例外是 `switchedBy` 打完日志后清除、`envConfirmedFor` 确认后写入，以及载荷没换时
@@ -71,6 +71,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   本地改过的导入不能顶掉原版；`_same_version_rank` 同口径）。「只前进」另有一个例外：手动更新
   把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
   `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
+  **换不换只在一处判定**：`payloads.decide_latest` 按有序规则表 `LATEST_RULES`（私有渠道
+  `always_advance` → 组里没有 latest → latest 不完整 → 版本更高 → 发错版本号回退 → 上面三个同版本
+  例外，都不管就保留），迁移时同版本挑一份用同口径的 `same_version_sort_key`；加新例外就往表里加
+  一条，别在 `register` 里另写判断。登记时 debug 日志记下定结论的规则。登记与迁移挑同版本之外，
+  改写 latest 的只有两处，都不是新例外、不进表：投影补齐后的跟随改指（`projection_heal.repoint_latest`：
+  别的渠道已把同一份载荷补齐成新载荷，本渠道 latest 还指着旧的就跟过去，不比版本、不看加载性），
+  以及启动期摘掉不再算引用的私有渠道 latest（`embedded_project._prune_follow_source_latest`，见
+  「跟随来源目录」的「回收」）。
   开发者模式的脚本例外：它的组是
   谱系 + 私有渠道 `dev:<视图名>`，见下一条。
   谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
@@ -80,7 +88,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
     （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
     碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
-    每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
+    每次导入都前进、不比版本；普通渠道不传，语义一字不改（传了照旧前进，`register` 记一行告警）。
+    私有渠道建出的载荷（清单 `channel` 是
     `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest；版本另带 PEP 440 本地段
     `+dev`（`follow_source_payload_version`：`1.5.0` → `1.5.0+dev`，已有本地段的追加 `.dev`），
     所以没有这条过滤的老代码按「版本字符串相等」挑同版本候选时也挑不中它，载荷 id 也与同内容的
@@ -142,7 +151,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     兜底（去掉开头的 `../` → `agent/main.py`），投影（`cfa_agent_entry`）与 planner 共用；CFA 的固定
     兜底 `agent/main.py` 是它的特例。不改写是因为 runner / planner / 预览 / 导入检查都按 base_dir
     解析路径，平铺之后一处兜底就全对，而改写 interface 要在每份载荷里维持一份与来源不同的文件。
-  - **运行时**：裸 `python` → 项目专属隔离 venv（按视图根的 `requirements.txt`）；没自带原生库 →
+  - **运行时**：裸 `python` → 隔离 venv（按视图根的 `requirements.txt`，见下面「隔离 venv 跨视图共用」）；没自带原生库 →
     runner 按声明（范围）解析出确切版本，agent 的 maafw 钉成**同一个确切版本**（宿主准备时传
     `environment.maafw_version`，worker 传实际加载的 binding 版本，见
     `runner.environment.resolve_project_maafw_requirement(runner_maafw_version=…)`）——照抄范围让 pip
@@ -161,7 +170,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     「路径越界」。要支持新的越界写法，先补运行时映射再放行。
   - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
     MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
-- **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
+- **投影**：按 interface 白名单（`project_update/projection.py`；`build_projection_rules` 按声明类别
+  分在 `_ProjectionScan` 的 `_scan_*` 里，扫完再判源码形态、依赖清单、自带原生库、小顶层条目），
+  **白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
@@ -199,7 +210,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   是自己一直在用的目录，里面早有这些文件）。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
   例外中的例外是 `contracts.VERSION_BOUND_STATE_FILES`（M9A 热更新的 `data/manifest_cache.json`）：
   它和随版本发布的 `data/` 表成对，换到另一个载荷时只取新载荷那份（没有就不要），带视图这份会让
-  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。自带解释器里的 maafw
+  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。它必须是
+  `RUNTIME_STATE_FILES` 的子集（`_realize_view` 先判它、再判运行期状态，不在后一张表里的同载荷重建时
+  会按受管文件处理），落点：`contracts.py` 里 `RUNTIME_STATE_FILES` 按构造并入它，加版本绑定的文件
+  只往它里面加。自带解释器里的 maafw
   binding（`…/site-packages/maa/`、`maafw-*.dist-info/`）也不按受管文件处理：它是准备运行环境
   钉回的（或 agent 部署脚本升级的），切换时一律以新载荷为准，不留档、不当私有文件带过去，
   下次准备再按新原生库钉回（`embedded_project._is_maafw_binding_path`）。
@@ -291,8 +305,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
-  （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
-  定位）；其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
+  （PI v2 示例与 MAA_Punish 的写法）→ 隔离 venv（`isolated_venv`，按依赖跨视图共用，见下一条）；
+  其余 → `external`。目录里没有 Python **不是错误**。裸 `python` 不能原样交给 PATH：
   worker 跑在运行池 venv 里，Windows 上 `CreateProcess` 先按父进程（基解释器）所在目录找，
   且用的是父进程的 PATH，传给子进程的 `env["PATH"]` 不参与查找，结果永远是没装 `maa` 的
   基解释器。隔离 venv 只装 `requirements.txt` 写的（`maafw` 钉成自带原生库的版本）；**压根
@@ -304,6 +318,21 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
+  **钉回挡不住 agent 运行期自己升级**（MAA_bbb 的 `agent/deploy/deploy.py` 在 agent 启动后
+  `python -m pip install --upgrade -i <镜像> MaaFw`，新 `maa` 包与 runner 的旧原生库混用、自定义动作
+  静默失败、任务照报成功）：worker 起 Python agent（`project_python` / `isolated_venv`）时给它的环境挂
+  `PIP_CONSTRAINT` / `UV_CONSTRAINT`（`runner._inject_agent_pip_constraint`），约束文件
+  `data/maafw_agent_constraints/maafw_agent_<路径哈希>.txt` 只写 `maafw==<与钉回同一来源的版本>`
+  （`environment.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
+  （requirements.txt / pyproject `[project].dependencies` 的确切版本、离线目录里的 `maafw-*.whl`，或声明
+  的范围不含该版本）——M9A 钉 5.12.3 而自带库 5.13.0、MaaStarResonance 钉 5.12.1 而自带库 5.11.1，
+  挂上约束它们的自装直接 ResolutionImpossible。「自钉」**只认这三处**（根 requirements.txt 及其 `-r`
+  展开、pyproject `[project].dependencies`、离线 wheel）：只在 `agent/requirements.txt`、
+  optional-dependencies、dependency-groups 或 `[tool.poetry]` 里钉版本的项目会被当成没钉而挂上约束，
+  遇到真实项目再扩来源；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
+  变量，装在带空格目录里的裸路径会让项目的 pip 整条报错；**文件只写 ASCII**——pip 读没有 BOM 的约束
+  文件按本机代码页解码。目录由宿主经 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
+  环境），没设就不挂；pip 带 `--isolated` 时会忽略这个变量。
   **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
   MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
   按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志。之后**三个条件同时满足**
@@ -330,6 +359,59 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`agent_env/env._stale_maafw_dist_infos`）。**只有 pip 成功且复读版本一致才删暂放目录**；pip 失败
   （断网、中继挂了、索引缺版本）或复读不一致就原样挪回——dist-info 集合是指纹输入，失败时集合必须
   回到钉回前，否则离线本来能过的项目会被拒绝缓存（钉回「任何一步失败只记日志，不拦准备」）。
+- **隔离 venv 跨视图共用**（`agent_env/venv_share.py`，方案「MFW副本复用与版本切换」§7-5）：目录
+  `config/maafw_agent_venvs/maafw_venv_<16hex>`，键 = 装进去的依赖清单（洗过、maafw 钉成确切版本、
+  补过引导包，即 manifest 的 `requirements`）+ maafw requirement + 宿主身份（平台 / 架构 / 解释器实现
+  与小版本），任一不同就是另一个目录；同一项目建几个脚本、依赖没变的新版本都用同一份，只装一次。
+  - **本地依赖退回按视图隔离**（`venv_share.is_local_requirement`，PR #1711 审查 P2）：pip 以各自项目
+    目录为 cwd 安装，`./wheels/foo-1.0-py3-none-any.whl` 这一行在两个项目里可能是两份不同的 wheel；
+    按文本共用时后准备的视图命中前一个的 manifest、跳过安装，用的是别人的包。清单（含 `-r` 展开后的
+    子清单）里只要有一条本地依赖，键里就加视图路径（`isolatedProject`，manifest 里也记这一项），
+    重建判据也照改动前的按路径隔离：目录名虽仍是 16 位，比完键还比项目路径 + interface + 依赖清单
+    ——视图路径换版本不变，`requirements` 文本不变而本地包内容变了时，只比键会跳过安装、跑上一版的包。
+    认作本地：含 `/` 或 `\`、以 `.` 开头、Windows 盘符、不带路径的本地归档名（`.whl` / `.zip` /
+    `.tar.gz` 等，照 pip）、`file:` 与 `git+file:` 一类链接、`名字 @ file:...` / `名字 @ ./...`；
+    远程 URL（`https://`、`git+https://`、`名字 @ https://...`）照旧按文本；`-e` / `--editable` 读清单时
+    就报错，到不了键。宁可多认（只是少共用）不可漏认（会串用）。**不按内容哈希**：wheel 可能上百 MB、
+    目录没有有界又可靠的指纹，而键在建计划、每次准备、启动期回收都要算；真实语料（walkref 的 m9a、
+    Maa_bbb）没有本地依赖，退回隔离只影响少数项目。纯 PyPI / 远程 URL 清单的键不加字段，与加这条
+    规则前逐字一致，已建好的共用目录照常命中。
+  - **宿主身份不含具体的引导解释器**：宿主与 worker 挑出来的本来就可能不同（worker 的
+    `sys.executable` 是运行池 venv），按它分会在宿主刚建好的旁边再建一份；它记在 venv 的
+    `pyvenv.cfg`，引导解释器没了照旧按「基解释器已不存在」重建。解释器小版本（本进程的
+    `sys.version_info`，引导解释器与它同版本）进键：发版换了 Python 小版本时不沿用旧版本建的那份。
+  - **计划阶段不一定知道最终目录**：项目没自带原生库、只声明范围的，maafw 要等 runner 解析出版本
+    才定。`compute_isolated_venv_path` 先看本视图的引用记录（`.refs/<视图路径哈希>.json`：上次准备
+    实际用的目录 + 当时建计划算出的键，键对得上才信），`prepare_agent_envs` 再按确切版本定一次并
+    **改写计划**（`isolatedVenvPath` / `executable` / `command[0]`），worker 起 agent 与结果里的计划都
+    是改写后的。新增读计划里 venv 路径的地方要在准备之后读，或者走 `compute_isolated_venv_path`。
+  - **重建判据**：共用目录只比 manifest 的 `venvKey` 与 `requirementsHash`；`projectPath` /
+    `interfaceHash` 只记建它的视图，不参与——否则另一个视图、依赖没变的新版本会把别人正在用的
+    删了重建（本地依赖退回隔离的目录例外，见上，它只有本视图用）。目录名与本项目的键对不上直接拒绝（`_prepare_isolated_venv_env`），不按本项目判据动它。
+    重建先把旧目录改名成 `<名>.trash-<随机>` 再删（改名是原子的，不再像 `rmtree(ignore_errors)` 那样
+    删一半）；改名只在有人以不带共享删除的方式开着里面的文件时失败，这时报「正被占用」、不动它。
+  - **运行中的 venv 没有锁保护**：agent 跑着时不持锁，改名也挡不住它（10-27 实测：Windows 上运行中的
+    `Scripts\python.exe`、已由 ctypes 加载的 DLL 都不挡整个 venv 目录改名，删完存活进程再 import 就
+    `ModuleNotFoundError`）。共用 venv 不被别的视图删掉，靠的是「键相同就不重建」：共用目录只在基解释器
+    没了、结构不完整、依赖清单缺失或损坏时重建，那时它对同键的所有视图都已不能用（本地依赖退回隔离的
+    目录另在 interface 变化时重建，键含视图路径、只有本视图用，与改动前相同）。要放宽重建判据，
+    先补运行期的租约（如 worker 起 agent 前持共享锁）。
+  - **并发**：准备期间持 `isolated_venv_guard`（本进程线程锁 + `.locks/<名>.lock` 字节锁，宿主与
+    worker 跨进程也串行），等线程锁、等锁文件都在日志写「正由另一处准备」，两段合计 30 分钟超时；
+    等的一方只会看到建好的或没建的。锁文件一般不删，回收删掉目录后才去掉（`discard_venv_lock_file`：
+    `*.trash-*` 总删，正常名只在 Windows 上删）。
+  - **升级前按路径建的老目录**（`maafw_venv_<12hex>`）不迁移、不改名（venv 不可搬家）：共用目录还没
+    建、老目录按老判据（项目路径 + interface + 依赖清单都没变）还能用时第一跑沿用它，不重建、不联网；
+    项目一更新或同依赖的共用目录建好就换过去。
+  - **回收**（启动期 `MaaFWMaintenanceService.clean_agent_venvs` → `planner.collect_orphan_agent_venvs`）：存活 =
+    各存活视图引用记录里的目录 ∪ 建计划会算出的目录 ∪ 没有引用记录的视图的老目录；存活视图的引用
+    记录读不出来就整轮不回收。照旧跳过刚动过的，锁被占的也跳过；无主的引用记录一并删。
+  - **更新预检不参与共用**：仍建在池根下的 `precheck_agent_venvs`，但每个 staging 一个子目录
+    `s<staging 路径哈希 10 位>`（`precheck.precheck_staging_agent_root`），用完整个删掉
+    （`precheck.cleanup_precheck_agent_venv`）。不能让预检 venv 在 `precheck_agent_venvs` 下按键共用：
+    上次预检被杀或没删干净的同键残留会被判「要重建」，而 `_reset_isolated_venv` 只肯重建
+    `maafw_agent_venvs` 下的目录，预检直接失败、记成 `other`，这个版本的运行前自动更新就停住了；
+    两个同依赖的预检并发时，先结束的也会删掉另一个正在用的那份。没有「预检那份直接提升为正式 venv」。
 - **项目自带 Python 的健康检查要和 agent 真跑时用同一份原生库**（`agent_env/env._build_project_python_probe_env`）：
   M9A 的发行包不在自带解释器的 `site-packages/maa/bin` 放库，agent 在 `import maa` 之前自己把
   `MAAFW_BINARY_PATH` 指到 `runtimes/<rid>/native`（它的 `agent/maafw_paths.py`）。检查沿用 pip 的环境、
@@ -373,6 +455,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `attach.auto_mas`**：`run_signal.parse_signal_spec` 遇到未知键会忽略整个信号节点，而且写了
   `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
   节点时退回命中时按名字查。
+- **结构化运行记录**（第 19 条）：worker 经 `_emit` 发 `{"type": "record", "data": …}`，事件形状、阶段名、
+  结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
+  `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
+  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
+  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
+  （`UserItem.progress`）与推送里单列的原地打转 / 单任务超时。记录是旁路，**不参与重试判断**。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
@@ -391,6 +479,23 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
   看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
   MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
+  - **等的是 pretask 进程退出，不是输出管道 EOF**（`_run_pretasks`）：它拉起的游戏 / 启动器常常继承
+    了输出管道，`communicate()` / `Process.wait()` 都要等管道关闭，会一直卡到游戏退出（本机实测：
+    子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
+    `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
+    打码在 `_PretaskOutputPump` 里做，转去后端日志的那段输出也过同一套打码，别挪回 sink 里。
+    只有到了行尾（`\n`、单独的 `\r`、`\r\n` 算一次）或 EOF 的段落才打码交出，`\r` 一到就交（进度
+    实时可见）；没到行尾的半行留在缓冲里，`detach` 只换 sink、不把它写出——密码被拆在切换前后两段
+    时，两段各自整串替换都匹配不上（PR #1710 审查）。
+  - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
+    「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
+    任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`pretask_cleanup`）：超时清理途中
+    用户点停止，清理照样做完，`_shutdown_runner` 等的是同一个清理任务。
+  - **exec 越出项目目录**（`..` 上跳过头、绝对路径）：投影与运行计划同一口径（`agent_entry.
+    bundled_python_escape_path`）——以 `python/python.exe` 结尾的相对写法映射回项目自带的 Python
+    （MFABD2 发行包的 `../../python/python.exe`，按 MFAA 的工作目录 `resource/base` 写的），其余
+    这一条 pretask 只告警、运行时跳过，不再让整份投影作废（Sentry AUTO-MAS-BACKEND-NM）；越界的任意
+    程序仍然不运行。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
   桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
   游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
@@ -581,6 +686,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+  `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
+  `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
+  代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
+  后台确认）一律走 `tools/embedded/env_confirm`，不要再延迟导入 manager 调
+  `_prepare_project_environment_sync`。`env_confirm` 的 `resolve_*` / `build_update_precheck`
+  与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
+  `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
+  `core/project_update/progress.UpdateProgressEvent.of` 转成类型化模型再读。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的
   载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包；清单里还留着
