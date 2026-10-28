@@ -19,7 +19,6 @@
         <BorderOutlined v-else />
       </button>
       <button
-        v-if="!hideCloseButton"
         class="control-button close-button"
         :title="t('bootstrap.comp.close')"
         :disabled="actionInProgress"
@@ -54,7 +53,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useAppClosePreferences } from '@/composables/useAppClosePreferences'
 import type { AppCloseAction } from '@/utils/appClosePreferences'
 
-defineProps<{ hideCloseButton: boolean; showControls: boolean }>()
+defineProps<{ showControls: boolean }>()
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('窗口控制')

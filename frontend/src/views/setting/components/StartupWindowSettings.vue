@@ -21,64 +21,64 @@ const { t } = useI18n()
       <h3>{{ t('core.setting.basic.startupWindowSection') }}</h3>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-group-title">{{ t('core.setting.basic.startupOptions') }}</div>
-      <div class="setting-check-list">
-        <div class="setting-check-row">
-          <a-checkbox
-            :checked="settings.Start?.IfSelfStart === true"
-            @change="
-              (event: CheckboxChangeEvent) =>
-                handleSettingChange('Start', 'IfSelfStart', event.target.checked)
-            "
-          >
-            {{ t('core.setting.func.autoStart') }}
-          </a-checkbox>
-          <a-tooltip :title="t('core.setting.func.autoStartTip')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
-        </div>
-        <div class="setting-check-row">
-          <a-checkbox
-            :checked="settings.Start?.IfMinimizeDirectly === true"
-            @change="
-              (event: CheckboxChangeEvent) =>
-                handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked)
-            "
-          >
-            {{ t('core.setting.func.startMinimized') }}
-          </a-checkbox>
-          <a-tooltip :title="t('core.setting.func.startMinimizedTip')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
+    <div class="behavior-group">
+      <div class="behavior-row">
+        <span id="startup-options-label" class="behavior-label">
+          {{ t('core.setting.basic.startupOptions') }}
+        </span>
+        <div class="behavior-content" role="group" aria-labelledby="startup-options-label">
+          <div class="behavior-options">
+            <div class="behavior-option">
+              <a-checkbox
+                :checked="settings.Start?.IfSelfStart === true"
+                @change="
+                  (event: CheckboxChangeEvent) =>
+                    handleSettingChange('Start', 'IfSelfStart', event.target.checked)
+                "
+              >
+                {{ t('core.setting.func.autoStart') }}
+              </a-checkbox>
+              <a-tooltip :title="t('core.setting.func.autoStartTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-checkbox
+              :checked="settings.Start?.IfMinimizeDirectly === true"
+              @change="
+                (event: CheckboxChangeEvent) =>
+                  handleSettingChange('Start', 'IfMinimizeDirectly', event.target.checked)
+              "
+            >
+              {{ t('core.setting.func.startMinimized') }}
+            </a-checkbox>
+          </div>
+          <p class="behavior-hint">{{ t('core.setting.basic.startupBehaviorHint') }}</p>
         </div>
       </div>
     </div>
 
-    <div class="setting-group">
-      <div class="setting-group-title">{{ t('core.setting.basic.windowBehavior') }}</div>
-      <div class="setting-radio-heading">
-        <span id="minimize-behavior-label" class="setting-row-label">
+    <div class="behavior-group">
+      <div class="behavior-row">
+        <span id="minimize-behavior-label" class="behavior-label">
           {{ t('core.setting.basic.minimizeBehavior') }}
         </span>
-        <a-tooltip :title="t('core.setting.basic.minToTrayTip')">
-          <QuestionCircleOutlined class="help-icon" />
-        </a-tooltip>
+        <a-radio-group
+          :value="settings.UI?.IfToTray ?? false"
+          class="behavior-options"
+          aria-labelledby="minimize-behavior-label"
+          @change="
+            (event: RadioChangeEvent) => handleSettingChange('UI', 'IfToTray', event.target.value)
+          "
+        >
+          <a-radio :value="true">{{ t('core.setting.basic.minToTray') }}</a-radio>
+          <a-radio :value="false">{{ t('core.setting.basic.minToTaskbar') }}</a-radio>
+        </a-radio-group>
       </div>
-      <a-radio-group
-        :value="settings.UI?.IfToTray ?? false"
-        class="setting-radio-group"
-        aria-labelledby="minimize-behavior-label"
-        @change="
-          (event: RadioChangeEvent) => handleSettingChange('UI', 'IfToTray', event.target.value)
-        "
-      >
-        <a-radio :value="true">{{ t('core.setting.basic.minToTray') }}</a-radio>
-        <a-radio :value="false">{{ t('core.setting.basic.minToTaskbar') }}</a-radio>
-      </a-radio-group>
-
-      <div class="setting-check-list">
-        <div class="setting-check-row">
+      <div class="behavior-row">
+        <span id="tray-display-label" class="behavior-label">
+          {{ t('core.setting.basic.trayDisplay') }}
+        </span>
+        <div class="behavior-option" role="group" aria-labelledby="tray-display-label">
           <a-checkbox
             :checked="settings.UI?.IfShowTray === true"
             @change="
@@ -92,89 +92,86 @@ const { t } = useI18n()
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </div>
-        <div class="setting-check-row">
-          <a-checkbox
-            :checked="settings.UI?.IfHideCloseButton === true"
-            @change="
-              (event: CheckboxChangeEvent) =>
-                handleSettingChange('UI', 'IfHideCloseButton', event.target.checked)
-            "
-          >
-            {{ t('core.setting.basic.hideClose') }}
-          </a-checkbox>
-          <a-tooltip :title="t('core.setting.basic.hideCloseTip')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
+      </div>
+      <div class="behavior-row">
+        <span id="close-behavior-label" class="behavior-label">
+          {{ t('core.setting.basic.closeBehavior') }}
+        </span>
+        <div class="behavior-content" role="group" aria-labelledby="close-behavior-label">
+          <CloseConfirmationSettings />
+          <p class="behavior-hint">{{ t('core.setting.basic.closeBehaviorHint') }}</p>
         </div>
-        <CloseConfirmationSettings />
       </div>
     </div>
 
-    <a-collapse ghost class="tray-menu-collapse">
-      <a-collapse-panel key="tray-menu" :header="t('core.setting.tray.section')">
-        <TrayMenuEditor />
-      </a-collapse-panel>
-    </a-collapse>
+    <TrayMenuEditor />
   </div>
 </template>
 
 <style scoped>
-.setting-group + .setting-group {
-  margin-top: 20px;
+.behavior-group {
+  padding: 0 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
 }
 
-.setting-group-title {
-  margin-bottom: 8px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-}
-
-.setting-check-list {
-  display: grid;
-  gap: 4px;
+.behavior-group + .behavior-group {
   margin-top: 16px;
 }
 
-.setting-check-row,
-.setting-radio-heading {
+.behavior-row {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.behavior-row + .behavior-row {
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.behavior-label {
+  padding-top: 4px;
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.behavior-content {
+  min-width: 0;
+}
+
+.behavior-options,
+.behavior-option {
   display: flex;
   align-items: center;
   min-height: 28px;
   gap: 8px;
 }
 
-.setting-check-row :deep(.ant-checkbox-wrapper),
-.setting-radio-group :deep(.ant-radio-wrapper) {
+.behavior-options {
+  flex-wrap: wrap;
+  column-gap: 24px;
+  row-gap: 8px;
+}
+
+.behavior-options :deep(.ant-checkbox-wrapper),
+.behavior-option :deep(.ant-checkbox-wrapper),
+.behavior-options :deep(.ant-radio-wrapper) {
+  margin-inline-start: 0;
+  margin-inline-end: 0;
   color: var(--ant-color-text);
   font-size: 14px;
 }
 
-.setting-radio-group {
-  display: grid;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.setting-radio-group :deep(.ant-radio-wrapper) {
-  min-height: 28px;
-  margin-inline-end: 0;
-}
-
-.tray-menu-collapse {
-  margin-top: 16px;
-}
-
-.tray-menu-collapse :deep(.ant-collapse-header) {
-  padding-left: 0;
-  color: var(--ant-color-text-secondary);
-}
-
-.tray-menu-collapse :deep(.ant-collapse-content-box) {
-  padding-inline: 0;
-}
-
-.tray-menu-collapse :deep(.tray-menu-section-title) {
-  display: none;
+.behavior-hint {
+  margin: 6px 0 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .help-icon {
@@ -183,8 +180,18 @@ const { t } = useI18n()
   font-size: 13px;
 }
 
-.setting-row-label {
-  color: var(--ant-color-text);
-  font-size: 14px;
+@media (max-width: 760px) {
+  .behavior-group {
+    padding-inline: 16px;
+  }
+
+  .behavior-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .behavior-label {
+    padding-top: 0;
+  }
 }
 </style>

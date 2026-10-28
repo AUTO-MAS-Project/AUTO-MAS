@@ -35,6 +35,7 @@ import TabFunction from './TabFunction.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
+import SettingsSectionLayout from './components/SettingsSectionLayout.vue'
 
 const { t } = useI18n()
 const {
@@ -359,86 +360,84 @@ onMounted(() => {
     <div class="settings-header">
       <h1 class="page-title app-page-title">{{ t('core.setting.title') }}</h1>
     </div>
-    <div class="settings-content">
-      <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
-        <a-tab-pane key="basic" :tab="t('core.setting.tab.basic')">
-          <TabBasic
-            :settings="settings"
-            :theme-mode="themeMode"
-            :appearance-value="appearanceValue"
-            :appearance-options="appearanceOptions"
-            :theme-color="themeColor"
-            :theme-color-disabled="Boolean(activeAppearance)"
-            :appearance-busy="appearanceBusy || themeResetting"
-            :theme-resetting="themeResetting"
-            :theme-mode-options="themeModeOptions"
-            :theme-color-options="themeColorOptions"
-            :cursor-effect="cursorEffectStore.effect"
-            :cursor-effect-options="cursorEffectOptions"
-            :low-performance-mode="performanceStore.lowPerformanceMode"
-            :low-performance-mode-saving="performanceStore.saving"
-            :pause-home-effects-when-running="performanceStore.pauseHomeEffectsWhenRunning"
-            :pause-home-effects-when-running-saving="performanceStore.saving"
-            :home-satellite-style="homeSatelliteStore.style"
-            :home-satellite-style-saving="homeSatelliteStore.saving"
-            :press-sound-enabled="pressSoundStore.enabled"
-            :press-sound-preset="pressSoundStore.preset"
-            :press-sound-custom-path="pressSoundStore.customPath"
-            :press-sound-custom-name="pressSoundStore.customName"
-            :press-sound-custom-release-path="pressSoundStore.customReleasePath"
-            :press-sound-custom-release-name="pressSoundStore.customReleaseName"
-            :press-sound-volume="pressSoundStore.volume"
-            :press-sound-saving="pressSoundStore.saving"
-            :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
-            :handle-press-sound-preset-change="handlePressSoundPresetChange"
-            :handle-press-sound-volume-change="handlePressSoundVolumeChange"
-            :handle-press-sound-import="handlePressSoundImport"
-            :handle-press-sound-preview="handlePressSoundPreview"
-            :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
-            :handle-theme-mode-change="handleThemeModeChange"
-            :handle-appearance-change="handleAppearanceChange"
-            :handle-appearance-import="handleAppearanceImport"
-            :handle-appearance-remove="handleAppearanceRemove"
-            :handle-theme-color-change="handleThemeColorChange"
-            :handle-theme-reset="handleThemeReset"
-            :handle-cursor-effect-change="handleCursorEffectChange"
-            :handle-low-performance-mode-change="handleLowPerformanceModeChange"
-            :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"
-            :handle-setting-change="handleSettingChange"
-          />
-        </a-tab-pane>
-        <a-tab-pane key="function" :tab="t('core.setting.tab.function')">
-          <TabFunction
-            :settings="settings"
-            :history-retention-options="historyRetentionOptions"
-            :voice-type-options="voiceTypeOptions"
-            :handle-setting-change="handleSettingChange"
-          />
-        </a-tab-pane>
-        <a-tab-pane key="notify" :tab="t('core.setting.tab.notify')">
-          <TabNotify
-            :settings="settings"
-            :handle-setting-change="handleSettingChange"
-            :test-notify="testNotify"
-            :testing-notify="testingNotify"
-          />
-        </a-tab-pane>
-        <a-tab-pane key="advanced" :tab="t('core.setting.tab.advanced')">
-          <TabAdvanced :open-dev-tools="openDevTools" />
-        </a-tab-pane>
-        <a-tab-pane key="others" :tab="t('core.setting.tab.others')">
-          <TabOthers
-            :version="version"
-            :backend-update-info="backendUpdateInfo"
-            :settings="settings"
-            :update-source-options="updateSourceOptions"
-            :update-channel-options="updateChannelOptions"
-            :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate"
-          />
-        </a-tab-pane>
-      </a-tabs>
-    </div>
+    <SettingsSectionLayout v-model:active-key="activeKey" :loading="loading">
+      <template #basic>
+        <TabBasic
+          :settings="settings"
+          :theme-mode="themeMode"
+          :appearance-value="appearanceValue"
+          :appearance-options="appearanceOptions"
+          :theme-color="themeColor"
+          :theme-color-disabled="Boolean(activeAppearance)"
+          :appearance-busy="appearanceBusy || themeResetting"
+          :theme-resetting="themeResetting"
+          :theme-mode-options="themeModeOptions"
+          :theme-color-options="themeColorOptions"
+          :cursor-effect="cursorEffectStore.effect"
+          :cursor-effect-options="cursorEffectOptions"
+          :low-performance-mode="performanceStore.lowPerformanceMode"
+          :low-performance-mode-saving="performanceStore.saving"
+          :pause-home-effects-when-running="performanceStore.pauseHomeEffectsWhenRunning"
+          :pause-home-effects-when-running-saving="performanceStore.saving"
+          :home-satellite-style="homeSatelliteStore.style"
+          :home-satellite-style-saving="homeSatelliteStore.saving"
+          :press-sound-enabled="pressSoundStore.enabled"
+          :press-sound-preset="pressSoundStore.preset"
+          :press-sound-custom-path="pressSoundStore.customPath"
+          :press-sound-custom-name="pressSoundStore.customName"
+          :press-sound-custom-release-path="pressSoundStore.customReleasePath"
+          :press-sound-custom-release-name="pressSoundStore.customReleaseName"
+          :press-sound-volume="pressSoundStore.volume"
+          :press-sound-saving="pressSoundStore.saving"
+          :handle-press-sound-enabled-change="handlePressSoundEnabledChange"
+          :handle-press-sound-preset-change="handlePressSoundPresetChange"
+          :handle-press-sound-volume-change="handlePressSoundVolumeChange"
+          :handle-press-sound-import="handlePressSoundImport"
+          :handle-press-sound-preview="handlePressSoundPreview"
+          :handle-home-satellite-style-change="handleHomeSatelliteStyleChange"
+          :handle-theme-mode-change="handleThemeModeChange"
+          :handle-appearance-change="handleAppearanceChange"
+          :handle-appearance-import="handleAppearanceImport"
+          :handle-appearance-remove="handleAppearanceRemove"
+          :handle-theme-color-change="handleThemeColorChange"
+          :handle-theme-reset="handleThemeReset"
+          :handle-cursor-effect-change="handleCursorEffectChange"
+          :handle-low-performance-mode-change="handleLowPerformanceModeChange"
+          :handle-pause-home-effects-when-running-change="handlePauseHomeEffectsWhenRunningChange"
+          :handle-setting-change="handleSettingChange"
+        />
+      </template>
+      <template #function>
+        <TabFunction
+          :settings="settings"
+          :history-retention-options="historyRetentionOptions"
+          :voice-type-options="voiceTypeOptions"
+          :handle-setting-change="handleSettingChange"
+        />
+      </template>
+      <template #notify>
+        <TabNotify
+          :settings="settings"
+          :handle-setting-change="handleSettingChange"
+          :test-notify="testNotify"
+          :testing-notify="testingNotify"
+        />
+      </template>
+      <template #advanced>
+        <TabAdvanced :open-dev-tools="openDevTools" />
+      </template>
+      <template #others>
+        <TabOthers
+          :version="version"
+          :backend-update-info="backendUpdateInfo"
+          :settings="settings"
+          :update-source-options="updateSourceOptions"
+          :update-channel-options="updateChannelOptions"
+          :handle-setting-change="handleSettingChange"
+          :check-update="checkUpdate"
+        />
+      </template>
+    </SettingsSectionLayout>
     <!-- 不再在设置页面直接显示UpdateModal，使用全局的UpdateModal -->
     <!-- UpdateModal现在由App.vue统一管理 -->
   </div>
@@ -447,14 +446,15 @@ onMounted(() => {
 <style scoped>
 /* 统一样式，使用 :deep 作用到子组件内部 */
 .settings-container {
-  /* Allow the settings page to expand with the window width */
   width: 100%;
+  height: 100%;
+  min-height: 0;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  /* Use full viewport min-height so the page can grow and scroll */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .settings-header {
@@ -464,57 +464,6 @@ onMounted(() => {
 
 .page-title {
   margin: 0;
-}
-
-.settings-content {
-  background: var(--ant-color-bg-container);
-  /* Rounded on all corners for a consistent card look */
-  border-radius: 12px;
-  width: 100%;
-  flex: 1;
-  /* allow inner scrolling and cooperate with flexbox
-     min-height:0 prevents flex children from overflowing the container */
-  min-height: 0;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.settings-tabs {
-  margin: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  /* ensure children with overflow:auto can scroll inside this flex item */
-  min-height: 0;
-}
-
-.settings-tabs :deep(.ant-tabs-nav) {
-  padding: 0;
-  margin: 0;
-}
-
-.settings-tabs :deep(.ant-tabs-content-holder) {
-  flex: 1;
-  overflow: auto;
-}
-
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
-  background: transparent;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px 8px 0 0;
-  margin-right: 8px;
-}
-
-.settings-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
-  background: var(--ant-color-bg-container);
-  border-bottom-color: var(--ant-color-bg-container);
-}
-
-:deep(.tab-content) {
-  padding: 24px;
-  width: 100%;
 }
 
 :deep(.form-section:last-child) {

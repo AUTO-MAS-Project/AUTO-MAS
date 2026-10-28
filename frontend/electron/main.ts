@@ -1,6 +1,7 @@
 import { detachPromptVirtualDisplay } from './services/virtualDisplayPromptActions'
 import { observeDiagnosticExport, observeDataBackup } from './services/diagnosticAnalytics'
 import { beginMainFeature, mainCountBucket } from './services/featureAnalytics'
+import { analyticsDuration } from './services/analyticsPolicy'
 import { readBackendDocument } from './services/backendConfig'
 import {
   app,
@@ -363,7 +364,7 @@ function loadConfig(): AppConfig {
 }
 
 // 保存配置
-function saveConfig(config: AppConfig) {
+function saveConfig(config: AppConfig): boolean {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
@@ -374,8 +375,10 @@ function saveConfig(config: AppConfig) {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    return true
   } catch {
     logger.error('保存配置失败')
+    return false
   }
 }
 
@@ -2307,10 +2310,14 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
 
 // 更新托盘自定义菜单项
 ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
+  const telemetryContext = analyticsService.getContext()
+  const startedAt = performance.now()
+  let saved = false
   try {
     const currentConfig = loadConfig()
     currentConfig.UI = { ...currentConfig.UI, TrayItems: normalizeTrayItems(trayItems) }
-    saveConfig(currentConfig)
+    saved = saveConfig(currentConfig)
+    if (!saved) return false
 
     // 销毁并重建托盘，强制右键菜单即时刷新为新配置；刷新失败不应导致配置保存失败
     try {
@@ -2325,6 +2332,17 @@ ipcMain.handle('update-tray-config', async (_event, trayItems: TrayItem[]) => {
   } catch (error) {
     logger.error('更新托盘菜单项失败')
     throw error
+  } finally {
+    analyticsService.recordMainEvent(telemetryContext, {
+      name: 'config_write_finished',
+      props: {
+        owner_kind: 'settings',
+        section_kind: 'ui',
+        script_type: 'none',
+        outcome: saved ? 'success' : 'failure',
+        duration_bucket: analyticsDuration(performance.now() - startedAt),
+      },
+    })
   }
 })
 

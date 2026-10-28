@@ -53,7 +53,7 @@
     <!-- 中间：可拖拽区域 -->
     <div class="title-bar-center drag-region"></div>
 
-    <WindowControls :hide-close-button="hideCloseButton" :show-controls="!isMacOS" />
+    <WindowControls :show-controls="!isMacOS" />
 
     <!-- Runtime 链路的后端更新进度与失败处置 -->
     <a-modal
@@ -141,7 +141,6 @@ import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useBackendRuntimeUpdate } from '@/composables/useBackendRuntimeUpdate'
-import { useUiPreferences } from '@/composables/useUiPreferences'
 import {
   confirmCloseIfRunningTasks,
   hasRunningTasks,
@@ -162,7 +161,6 @@ const isMacOS = window.electronAPI.isMacOS
 const router = useRouter()
 const { isBootstrapping, resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
-const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 let removeTrayActionListener: (() => void) | undefined
 
 const {
@@ -381,14 +379,6 @@ onMounted(async () => {
 
   // 后端更新入口按启动链路分流，模式一个生命周期只查一次
   await ensureLaunchMode()
-
-  try {
-    const config = await window.electronAPI?.loadConfig()
-    syncUiPreferences(config?.UI)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`获取界面设置失败: ${errorMsg}`)
-  }
 })
 
 onBeforeUnmount(() => {
