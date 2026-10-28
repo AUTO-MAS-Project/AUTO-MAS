@@ -19,7 +19,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`、
-  `default_snapshot`）。
+  `default_snapshot`、`env_confirm`、`update_session`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -455,6 +455,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `attach.auto_mas`**：`run_signal.parse_signal_spec` 遇到未知键会忽略整个信号节点，而且写了
   `auto_mas` 的节点会被 MAS 强开。豁免随信号节点同一趟 `get_node_data` 扫描收集，binding 列不出
   节点时退回命中时按名字查。
+- **结构化运行记录**（第 19 条）：worker 经 `_emit` 发 `{"type": "record", "data": …}`，事件形状、阶段名、
+  结局与类别**只在** `tools/core/runner/run_events.py` 定义（换传输通道时只搬它）。runner 的各收尾分支用
+  `_mark_task_outcome` 记结局，task_end 在下一个任务开始或本轮结束时才发——新增收尾分支要跟着记，漏记的
+  按穿出的异常归类。宿主 `tools/embedded/run_record.py` 按尝试归并，存进该尝试 history 的
+  `data["maafw_run_record"]`（snapshot，读用 `read_run_record`，旧历史没有这个键），驱动调度台进度
+  （`UserItem.progress`）与推送里单列的原地打转 / 单任务超时。记录是旁路，**不参与重试判断**。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与
   `AttachOnly`（其他方式启停，MAS 只接管窗口）。关不关只看 `opened_game`，没有开关；
   DirectExe 下发现游戏已在运行时也只接管、不关。`Game.UnityResolution`（Off / 1920x1080 /
@@ -680,6 +686,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+  `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
+  `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
+  代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的
+  后台确认）一律走 `tools/embedded/env_confirm`，不要再延迟导入 manager 调
+  `_prepare_project_environment_sync`。`env_confirm` 的 `resolve_*` / `build_update_precheck`
+  与 `UpdateSession.precheck` / `precheck_builder` 里有函数内导入，只在事件循环上调，交给
+  `asyncio.to_thread` / 核心包工作线程的是解析好的可调用对象。核心包发的进度事件是 dict，消费方先经
+  `core/project_update/progress.UpdateProgressEvent.of` 转成类型化模型再读。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的
   载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包；清单里还留着

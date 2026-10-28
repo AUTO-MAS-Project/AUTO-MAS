@@ -3774,6 +3774,8 @@
   "core.scheduler.overview.title": "タスク概要",
   "core.scheduler.overview.unknownScript": "不明なマネージドスクリプト",
   "core.scheduler.overview.userNotLoaded": "未読み込み",
+  "core.scheduler.overview.userProgress": "{current}/{total} · {task}",
+  "core.scheduler.overview.userProgressCount": "{current}/{total}",
   "core.scheduler.power.hibernate": "休止状態",
   "core.scheduler.power.killSelf": "AUTO-MAS を終了",
   "core.scheduler.power.logoff": "サインアウト",

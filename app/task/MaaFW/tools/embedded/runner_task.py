@@ -29,6 +29,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.notification_ports import LocalNotice
 from app.models.schema import (
     HistoryAttachmentInput,
+    HistorySnapshotStatistic,
     HistoryStatus,
     HistoryWrite,
     WSTaskNoticeData,
@@ -70,6 +71,20 @@ from app.task.MaaFW.tools.core.runner.models import (
 )
 from app.task.MaaFW.tools.core.runner.pipeline_override import (
     SECRET_INPUTS_SNAPSHOT_KEY,
+)
+from app.task.MaaFW.tools.core.runner.run_events import (
+    CATEGORY_ENVIRONMENT,
+    CATEGORY_GAME_UPDATE_REQUIRED,
+    CATEGORY_HOST_ERROR,
+    CATEGORY_PRETASK_FAILED,
+    CATEGORY_RESOURCE_FAILURE,
+    CATEGORY_RUN_TIMEOUT,
+    CATEGORY_SIGNAL,
+    CATEGORY_USER_STOPPED,
+    RUN_RECORD_EVENT_TYPE,
+    STAGE_CLIENT,
+    STAGE_ENVIRONMENT,
+    STAGE_PRETASK,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     ALL_TASKS_SKIPPED_MESSAGE,
@@ -128,6 +143,11 @@ from .resource_failure import (
     describe_resource_failure,
     native_error_excerpt,
     read_native_error_lines,
+)
+from .run_record import (
+    RUN_RECORD_HISTORY_KEY,
+    MaaFWRunRecorder,
+    format_incident_lines,
 )
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
@@ -610,6 +630,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._release_check_done = False
         self._extra_attempts = 0
         self._release_check_task: asyncio.Task[Any] | None = None
+        # 结构化运行记录（每次尝试一份）：worker 推的阶段 / 任务起止 + 宿主自己的阶段，
+        # 进 history 的 data、调度台进度与推送里单列的原地打转 / 单任务超时。
+        self._run_record = MaaFWRunRecorder()
 
     async def check(self) -> str:
         proxy_times = (
@@ -857,6 +880,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     + ("，已重启游戏/模拟器" if previous_restarted else "")
                 )
             previous_label = current_label
+            self._begin_run_record_attempt(index + 1)
 
             try:
                 if index > 0:
@@ -867,19 +891,27 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if not pretasks_done or await self._pretasks_need_rerun(client_reset):
                     # 先清标记：重跑到一半失败时，下一轮不能因为窗口已被拉起就跳过
                     pretasks_done = False
-                    await self._run_pretasks()
+                    # 计划里没有运行前设置时不记这一段（getattr：记录是旁路，不多读计划）
+                    with self._run_record.stage(
+                        STAGE_PRETASK,
+                        enabled=bool(getattr(self.run_plan, "pretasks", None)),
+                    ):
+                        await self._run_pretasks()
                     pretasks_done = True
-                await self._ensure_desktop_game_started()
-                device_config = await self._build_device_config(
-                    self.run_plan,
-                    self.interface_model,
-                )
+                with self._run_record.stage(STAGE_CLIENT):
+                    await self._ensure_desktop_game_started()
+                    device_config = await self._build_device_config(
+                        self.run_plan,
+                        self.interface_model,
+                    )
                 result = await self._run_maafw(device_config)
             except _MaaFWGameUpdateRequired as exc:
                 # 游戏客户端要手动更新：重试多少次都一样，本用户本次直接判失败。
                 # 说明已由 _ensure_game_updated 写进运行日志，这里不再重复。
                 message = str(exc)
-                self._record_attempt(index + 1, [], message)
+                self._record_attempt(
+                    index + 1, [], message, category=CATEGORY_GAME_UPDATE_REQUIRED
+                )
                 if self.cur_user_log is not None:
                     self.cur_user_log.status = message
                 await Publisher.send(
@@ -904,8 +936,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     else f"MaaFW 运行异常: {exc}"
                 )
                 self._append_log(message, warning=True)
-                self._record_attempt(index + 1, [], message)
                 unretryable = _is_unretryable_failure(message)
+                self._record_attempt(
+                    index + 1,
+                    [],
+                    message,
+                    category=(
+                        CATEGORY_PRETASK_FAILED
+                        if isinstance(exc, MaaFWPretaskError)
+                        else CATEGORY_RUN_TIMEOUT
+                        if isinstance(exc, _MaaFWRunTimeoutError)
+                        else CATEGORY_ENVIRONMENT
+                        if unretryable
+                        else CATEGORY_HOST_ERROR
+                    ),
+                )
                 if unretryable:
                     self._append_log(
                         "运行环境不可用，重试也不会有别的结果，已停止本轮",
@@ -992,6 +1037,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         )
                         for shot in result.failureScreenshots
                     ],
+                    category=_result_failure_category(result),
                 )
                 if result.resourceFailure is not None:
                     # 不重启游戏 / 模拟器：资源加载失败不改变游戏状态，换载荷也不碰它们。
@@ -1118,6 +1164,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"
+        self.cur_user_item.progress = None
         logger.exception(f"MaaFW 内置运行任务出现异常: {e}")
         if self.cur_user_log is not None:
             self.cur_user_log.status = f"MaaFW 内置运行任务出现异常: {e}"
@@ -2065,7 +2112,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             asyncio.to_thread(_prepare_environment_with_proxy)
         )
         try:
-            runner_environment = await asyncio.shield(prepare_environment_task)
+            with self._run_record.stage(STAGE_ENVIRONMENT):
+                runner_environment = await asyncio.shield(prepare_environment_task)
         except asyncio.CancelledError:
             # 取消要传进安装线程：置位令牌后正在跑的 uv/pip 子进程会被终止。
             # 然后只等有限时间——后端关机时 Runtime 只给几秒，等不到就放弃，
@@ -2225,6 +2273,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 elif event_type == "result" and isinstance(event.get("data"), dict):
                     result_payload = event["data"]
                     result_received.set()
+                elif event_type == RUN_RECORD_EVENT_TYPE:
+                    # 结构化运行记录：只进记录与调度台进度，不进日志
+                    self._on_run_record_event(event.get("data"))
                 elif event_type == "error":
                     message = str(event.get("message") or "")
                     write_framework_log("runner-error", message)
@@ -2287,6 +2338,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             elif self.runner_process is process:
                 self.runner_process = None
             await drain_readers(propagate_errors=False)
+            # worker 已退出：调度台不再显示「第几个任务」，重试时由新 worker 重新推
+            self.cur_user_item.progress = None
             if framework_log_writer is not None:
                 try:
                     await asyncio.to_thread(framework_log_writer.close)
@@ -3342,6 +3395,62 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 这份日志从零开始，行号也要回到 1，否则会接着上一个用户的行号往下数
         self.script_info.log_first_line = 1
 
+    def _run_record_call(self, action: Callable[[], Any]) -> Any:
+        """运行记录是旁路：记录这一侧出了错只记后端日志、返回 None，不影响运行与收尾。"""
+
+        try:
+            return action()
+        except Exception as exc:  # noqa: BLE001 - 旁路不能拖垮运行
+            logger.opt(exception=True).warning(
+                f"MaaFW 运行记录出错（不影响运行）: {exc}"
+            )
+            return None
+
+    def _begin_run_record_attempt(self, attempt: int) -> None:
+        """这次尝试的结构化记录：与本次尝试的日志（history 记录）同一个键。"""
+
+        def begin() -> None:
+            plan = self.run_plan
+            self._run_record.begin_attempt(
+                id(self.cur_user_log),
+                attempt=attempt,
+                title=self._attempt_title or f"第 {attempt} 次尝试",
+                planned=(
+                    [(task.name, _task_display_name(task)) for task in plan.tasks]
+                    if plan is not None
+                    else []
+                ),
+                retry_skipped=(
+                    len(_retry_skipped_tasks(plan)) if plan is not None else 0
+                ),
+            )
+
+        self._run_record_call(begin)
+
+    def _run_record_statistic(self, key: int) -> HistorySnapshotStatistic | None:
+        """某次尝试的运行记录，包成 history 的 snapshot 统计；没有记录返回 None。"""
+
+        value = self._run_record.history_value(key)
+        return HistorySnapshotStatistic(value=value) if value is not None else None
+
+    def _on_run_record_event(self, data: Any) -> None:
+        """worker 推来的阶段 / 任务起止：归进本次尝试的记录，任务开始时刷新调度台进度。"""
+
+        progress = self._run_record_call(lambda: self._run_record.apply(data))
+        if progress is not None:
+            self.cur_user_item.progress = progress
+
+    def run_incident_notice(self) -> str:
+        """本次运行里被原地打转检测或单任务时限停下的任务：进用户与脚本两份报告，
+        后面的重试成功了也照样列出。"""
+
+        return (
+            self._run_record_call(
+                lambda: format_incident_lines(self._run_record.incidents())
+            )
+            or ""
+        )
+
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
         """worker 回报了信号节点命中：记账、写日志状态。
 
@@ -3378,7 +3487,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             for shot in result.failureScreenshots
             if shot is not evidence
         ]
-        self._record_attempt(attempt, labels, message, screenshots=report_shots)
+        self._record_attempt(
+            attempt,
+            labels,
+            message,
+            screenshots=report_shots,
+            category=CATEGORY_SIGNAL,
+            signal=signal,
+        )
         if self.cur_user_log is not None:
             self.cur_user_log.status = message
 
@@ -3535,6 +3651,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except Exception as error:
             self._append_log(f"冻结通知截图失败：{error}", warning=True)
             logger.opt(exception=True).warning(f"冻结通知截图失败：{error}")
+        # 用户停止 / 崩溃时最后一次尝试没走到 _record_attempt：按停止或宿主异常收尾
+        self._run_record_call(
+            lambda: self._run_record.finish_attempt(
+                outcome="stopped" if self.stopped_manually else "failed",
+                category=CATEGORY_USER_STOPPED
+                if self.stopped_manually
+                else CATEGORY_HOST_ERROR,
+            )
+        )
         records = []
         items = list(self.cur_user_item.iter_history_logs())
         for timestamp, log_item in items:
@@ -3555,6 +3680,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 message=log_item.status,
                 logs="".join(log_item.content),
             )
+            run_record = self._run_record_call(
+                lambda: self._run_record_statistic(id(log_item))
+            )
+            if run_record is not None:
+                record.data[RUN_RECORD_HISTORY_KEY] = run_record
             record.attachments.extend(self._history_attachments.get(id(log_item), []))
             records.append(record)
         if records:
@@ -3572,8 +3702,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         failure: str | None,
         *,
         screenshots: list[tuple[str, Path]] | None = None,
+        category: str | None = None,
+        signal: str | None = None,
     ) -> None:
-        """记下本次尝试的结果，供统计通知的「任务详情」与失败截图用。"""
+        """记下本次尝试的结果，供统计通知的「任务详情」与失败截图用。
+
+        ``category`` / ``signal`` 进结构化运行记录；没给类别的失败由记录按任务结局补
+        （任务都没开始是初始化失败，否则取第一个计入失败的任务的类别）。
+        """
 
         if self.cur_user_log_started_at is not None:
             self._history_statuses[id(self.cur_user_log)] = (
@@ -3583,6 +3719,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if self.run_signal == SERVER_MAINTENANCE
                 else "error"
             )
+        self._run_record_call(
+            lambda: self._run_record.finish_attempt(
+                outcome=(
+                    "success"
+                    if failure is None
+                    else "skipped"
+                    if self.run_signal == SERVER_MAINTENANCE
+                    else "failed"
+                ),
+                category=category,
+                signal=signal,
+            )
+        )
         self._attempt_reports.append(
             {
                 "attempt": attempt,
@@ -3623,12 +3772,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
         不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
         就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
+        有任务被原地打转检测或单任务时限停下过时另起一段（每类一行，最终成功也列），
         队列里有失效任务时末尾再附一行。
         """
 
         details = self._build_attempt_details()
+        incidents = self.run_incident_notice()
         missing = self.missing_task_notice()
-        return "\n\n".join(part for part in (details, missing) if part)
+        return "\n\n".join(part for part in (details, incidents, missing) if part)
 
     def missing_task_notice(self) -> str:
         """队列里 interface 已没有的任务（多半是项目更新改了 name）：进用户与脚本两份报告。"""
@@ -4607,6 +4758,21 @@ def _signal_evidence_shot(result: Any) -> Any | None:
 
 def _is_unretryable_failure(message: str) -> bool:
     return any(marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS)
+
+
+def _result_failure_category(result: MaaFWRunResult) -> str | None:
+    """worker 回报失败时尝试级的类别：只看结果里已有的字段与现有的环境级判定。
+
+    返回 None 时由运行记录按任务结局补（任务都没开始是初始化失败）。
+    """
+
+    if result.resourceFailure is not None:
+        return CATEGORY_RESOURCE_FAILURE
+    if result.timedOut:
+        return CATEGORY_RUN_TIMEOUT
+    if _is_unretryable_failure(result.errorMessage or ""):
+        return CATEGORY_ENVIRONMENT
+    return None
 
 
 _FAILURE_REASON_MAX_CHARS = 300

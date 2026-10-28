@@ -3774,6 +3774,8 @@
   "core.scheduler.overview.title": "Task overview",
   "core.scheduler.overview.unknownScript": "Unknown managed script",
   "core.scheduler.overview.userNotLoaded": "Not loaded yet",
+  "core.scheduler.overview.userProgress": "{current}/{total} · {task}",
+  "core.scheduler.overview.userProgressCount": "{current}/{total}",
   "core.scheduler.power.hibernate": "Hibernate",
   "core.scheduler.power.killSelf": "Quit AUTO-MAS",
   "core.scheduler.power.logoff": "Sign out",
