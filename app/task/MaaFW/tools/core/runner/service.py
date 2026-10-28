@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
 import threading
@@ -447,23 +446,6 @@ class MaaFWRunnerService:
         finally:
             if environment is not None:
                 self.release_environment(environment, runtime_pool=runtime_pool)
-
-    def write_job_file(
-        self,
-        payload: MaaFWRunnerJobPayload,
-        work_dir: str | Path,
-        *,
-        job_name: str | None = None,
-    ) -> Path:
-        path = Path(work_dir).resolve()
-        path.mkdir(parents=True, exist_ok=True)
-        name = job_name or f"maafw-runner-job-{uuid.uuid4().hex}.json"
-        job_path = path / name
-        job_path.write_text(
-            json.dumps(payload.model_dump(mode="json"), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return job_path
 
     @staticmethod
     def _coerce_interface(interface: MaaFWInterface | dict[str, Any]) -> MaaFWInterface:

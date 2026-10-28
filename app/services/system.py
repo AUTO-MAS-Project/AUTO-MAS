@@ -56,6 +56,8 @@ class _SystemHandler:
     frontend_close_timeout = 10.0
 
     def __init__(self) -> None:
+        # 应用生命周期注入，仅提供 AVD 关闭能力，不把宿主配置带进系统服务。
+        self.avd_instance_closer: Callable[[], Awaitable[object]] | None = None
         self.power_task: Optional[asyncio.Task] = None
         self._power_cancelled_event_task: Optional[asyncio.Task] = None
         self.current_power_operation: Optional[str] = None
@@ -317,9 +319,9 @@ class _SystemHandler:
         不拦住电源操作。
         """
         try:
-            from app.utils import emulator2 as _utils_emulator2
-
-            await _utils_emulator2.avd.service.close_running_instances()
+            if self.avd_instance_closer is None:
+                raise RuntimeError("未注入魔改 AVD 关闭能力")
+            await self.avd_instance_closer()
         except Exception as e:  # noqa: BLE001 - 关不掉也要继续关机
             logger.warning(f"关闭魔改 AVD 实例失败，继续电源操作: {e}")
 
