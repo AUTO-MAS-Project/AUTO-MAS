@@ -21,10 +21,8 @@
 
 from __future__ import annotations
 
-import calendar
-import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -46,14 +44,10 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
-from app.utils import MATERIALS_MAP, RESOURCE_STAGE_INFO
 
 from .base import DomainEntry
 from .queue import Webhook
-from .shared import (
-    local_timezone,
-    logger,
-)
+from .shared import local_timezone
 
 
 class FluxdownRecord(BaseModel):
@@ -147,9 +141,6 @@ class GlobalConfig(DomainEntry):
             description="分享站外观上传记录：{用户名: {外观 ID: {fileId, fileKey, displayName, updatedAt}}}",
         )
 
-        Stage: Virtual[str] = Field(
-            default_factory=lambda: None, description="关卡信息"
-        )
         StageData: Annotated[JsonDictString, legacy(group="Data", name="Stage")] = (
             Field(default_factory=lambda: "{ }", description="关卡信息数据")
         )
@@ -440,84 +431,6 @@ class GlobalConfig(DomainEntry):
     Voice: VoiceFields = Field(default_factory=VoiceFields)
     Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
     startup_notices: list = Field(default_factory=list, exclude=True)
-
-    def getStage(self) -> str:
-        """获取关卡信息"""
-        try:
-            raw_stage_data = json.loads(self.Data.StageData)
-            if "Official" in raw_stage_data:
-                stage_data_by_server = {
-                    server: data.get("sideStoryStage", {})
-                    for server, data in raw_stage_data.items()
-                    if isinstance(data, dict)
-                }
-            else:
-                stage_data_by_server = {"Official": raw_stage_data}
-            all_stage_data = {}
-            for server, server_stage_data in stage_data_by_server.items():
-                activity_stage_drop_info = []
-                activity_stage_combox = []
-                for side_story in server_stage_data.values():
-                    activity = side_story["Activity"]
-                    activity_timezone = timezone(
-                        timedelta(hours=activity.get("TimeZone", 8))
-                    )
-                    if (
-                        datetime.strptime(
-                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                        < datetime.now(tz=activity_timezone)
-                        < datetime.strptime(
-                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                    ):
-                        for stage in side_story["Stages"]:
-                            activity_stage_combox.append(
-                                {"label": stage["Display"], "value": stage["Value"]}
-                            )
-                            if "SSReopen" not in stage["Display"]:
-                                if stage["Drop"] in MATERIALS_MAP:
-                                    drop_id = stage["Drop"]
-                                elif "玉" in stage["Drop"]:
-                                    drop_id = "30012"
-                                else:
-                                    drop_id = "NotFound"
-                                activity_stage_drop_info.append(
-                                    {
-                                        "Display": stage["Display"],
-                                        "Value": stage["Value"],
-                                        "Drop": drop_id,
-                                        "DropName": MATERIALS_MAP.get(
-                                            stage["Drop"], stage["Drop"]
-                                        ),
-                                        "Activity": activity,
-                                    }
-                                )
-                stage_data = {"Info": activity_stage_drop_info}
-                for day in range(0, 8):
-                    res_stage = []
-                    for stage in RESOURCE_STAGE_INFO:
-                        if day in stage["days"] or day == 0:
-                            res_stage.append(
-                                {"label": stage["text"], "value": stage["value"]}
-                            )
-                    stage_data[calendar.day_name[day - 1] if day > 0 else "ALL"] = (
-                        res_stage[0:1] + activity_stage_combox + res_stage[1:]
-                    )
-                all_stage_data[server] = stage_data
-        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
-            logger.warning(
-                f"解析活动关卡信息失败, 按空关卡处理: {type(e).__name__}: {e}"
-            )
-            return "{ }"
-        return json.dumps(all_stage_data, ensure_ascii=False)
-
-    @virtual_field("Data.Stage")
-    def compute_Data_Stage(self):
-        try:
-            return self.getStage()
-        except Exception as exc:
-            return str(exc)
 
 
 __all__ = ["GlobalConfig"]
