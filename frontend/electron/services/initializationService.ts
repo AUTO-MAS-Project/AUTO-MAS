@@ -65,6 +65,7 @@ export interface InitializationResult {
   error?: string
   completedStages: string[]
   failedStage?: string
+  failureOrigin?: 'runtime_binary'
   /** 以下五项只有 Runtime 链路产生，旧链路保持 undefined；界面（W9d）按需消费。 */
   code?: string
   retryable?: boolean
@@ -552,6 +553,7 @@ export class InitializationService {
       error: outcome.error,
       completedStages,
       failedStage: outcome.failedStage,
+      failureOrigin: outcome.failureOrigin,
       code: outcome.code,
       retryable: outcome.retryable,
       remediation: outcome.remediation,
