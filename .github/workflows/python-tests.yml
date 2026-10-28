@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: python-tests-${{ github.event.pull_request.number }}
+  group: python-tests-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: true
 
 jobs:
