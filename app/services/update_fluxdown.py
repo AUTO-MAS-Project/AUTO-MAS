@@ -403,13 +403,14 @@ class FluxdownResumableError(RuntimeError):
 
 
 def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
-    """httpx.Proxy → 字符串（FluxDown CLI --proxy 参数需要）。"""
+    """恢复 CLI 需要的代理 URL；httpx 将 userinfo 单独保存在 auth 中。"""
     if proxy is None:
         return None
-    try:
-        return str(proxy.url)
-    except Exception:
-        return None
+    url = proxy.url
+    if proxy.auth is not None:
+        username, password = proxy.auth
+        url = url.copy_with(username=username, password=password)
+    return str(url)
 
 
 async def _append_history(

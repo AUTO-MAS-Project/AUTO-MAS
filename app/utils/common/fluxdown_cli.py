@@ -62,6 +62,7 @@ except ImportError:
 from app.utils import get_logger, process_platform, resource_path, update_native
 
 logger = get_logger("FluxDown")
+_LOCAL_CLI_LOCK = threading.Lock()
 
 DownloadProgress = Callable[[int, int, float], Awaitable[None]]
 
@@ -84,13 +85,20 @@ class FluxdownDownloadRecord:
     timestamp: str = field(default_factory=lambda: time.strftime("%Y-%m-%d %H:%M:%S"))
 
     def to_dict(self) -> dict:
+        # --proxy 需要认证信息，但下载历史和导出记录不应保留账号密码。
+        from urllib.parse import urlsplit, urlunsplit
+
+        proxy = self.proxy
+        if proxy:
+            parts = urlsplit(proxy)
+            proxy = urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[-1]))
         return {
             "url": self.url,
             "destination": self.destination,
             "size": self.size,
             "duration_ms": self.duration_ms,
             "segments": self.segments,
-            "proxy": self.proxy,
+            "proxy": proxy,
             "checksum": self.checksum,
             "status": self.status,
             "error": self.error,
@@ -727,22 +735,24 @@ def _local_cli_exe(cli_exe: Path) -> Path:
     """
     root = Path.cwd() / "data" / "fluxdown_local"
     try:
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "portable").touch()
-        target = root / cli_exe.name
-        src_stat = cli_exe.stat()
-        stale = True
-        if target.is_file():
-            dst_stat = target.stat()
-            stale = (dst_stat.st_size, dst_stat.st_mtime_ns) != (
-                src_stat.st_size,
-                src_stat.st_mtime_ns,
-            )
-        if stale:
-            # 先写临时名再替换，避免复制中断留下半个不可执行文件
-            tmp = root / f".{cli_exe.name}.tmp"
-            shutil.copy2(cli_exe, tmp)
-            os.replace(tmp, target)
+        with _LOCAL_CLI_LOCK:
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "portable").touch()
+            target = root / cli_exe.name
+            src_stat = cli_exe.stat()
+            stale = True
+            if target.is_file():
+                dst_stat = target.stat()
+                stale = (dst_stat.st_size, dst_stat.st_mtime_ns) != (
+                    src_stat.st_size,
+                    src_stat.st_mtime_ns,
+                )
+            if stale:
+                # 先写临时名再替换，避免复制中断留下半个不可执行文件。
+                # 并行管理命令共用锁，避免争用同一个临时副本。
+                tmp = root / f".{cli_exe.name}.tmp"
+                shutil.copy2(cli_exe, tmp)
+                os.replace(tmp, target)
         return target
     except OSError as error:
         raise RuntimeError(f"无法准备 MAS 私有 FluxDown CLI 副本: {error}") from error
@@ -786,8 +796,10 @@ def _run_cli(
 ) -> tuple[int, str]:
     """同步跑一条 CLI 命令，返回 (exit_code, stdout+stderr)。"""
     try:
+        # 管理命令也会初始化 CLI 的便携日志，不能写进用户自己的安装目录。
+        private_cli = _local_cli_exe(cli_exe)
         out = subprocess.run(
-            [str(cli_exe), *args],
+            [str(private_cli), *args],
             env=env,
             capture_output=True,
             text=True,
@@ -848,14 +860,24 @@ def _mgmt_ready(cli_exe: Path, gateway_port: int, token: str) -> bool:
 def _kill_pid(pid: int) -> None:
     """按 PID 精确结束进程（含子进程树），禁止按进程名。"""
     try:
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True,
-            timeout=10,
-            creationflags=process_platform.platform_process.creation_flags,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+        process = psutil.Process(pid)
+        processes = [process, *process.children(recursive=True)]
+        # taskkill /T 依赖系统进程查询，在受限 Windows 环境中会失败；
+        # 直接结束本服务的进程句柄，并检查结果，避免静默遗留下载进程。
+        for target in processes:
+            try:
+                target.kill()
+            except psutil.NoSuchProcess:
+                pass
+        _, alive = psutil.wait_procs(processes, timeout=5)
+        if alive:
+            logger.warning(
+                f"FluxDown 服务进程未能退出: {[target.pid for target in alive]}"
+            )
+    except psutil.NoSuchProcess:
         pass
+    except psutil.Error as error:
+        logger.warning(f"结束 FluxDown 服务进程失败（PID={pid}）: {error}")
 
 
 def fluxdown_server_available(cli_exe: Path, enabled: bool) -> bool:
@@ -1041,7 +1063,12 @@ def _map_pop(cli_exe: Path, key: str) -> None:
 
 
 def _map_put(
-    cli_exe: Path, key: str, task_id: str, url: str, destination: Path
+    cli_exe: Path,
+    key: str,
+    task_id: str,
+    url: str,
+    destination: Path,
+    proxy: str | None = None,
 ) -> None:
     """带锁写入/更新一个映射条目（重读全表，fail_count 跨写入保留）。"""
     with _TASK_MAP_LOCK:
@@ -1052,8 +1079,16 @@ def _map_put(
             "save_path": str(destination),
             "updated": time.time(),
             "fail_count": int((m.get(key) or {}).get("fail_count") or 0),
+            "proxy_hash": _proxy_hash(proxy),
         }
         _save_task_map(cli_exe, m)
+
+
+def _proxy_hash(proxy: str | None) -> str:
+    """本地续传配置指纹，避免将代理认证信息写进任务映射。"""
+    import hashlib
+
+    return hashlib.sha256((proxy or "").encode("utf-8")).hexdigest()
 
 
 def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
@@ -1244,7 +1279,8 @@ async def fluxdown_server_download(
 
     env = _cli_env(handle.gateway_port, handle.token)
     key = _map_key(url, destination)
-    task_id: str | None = (_load_task_map(cli_exe).get(key) or {}).get("task_id")
+    mapping = _load_task_map(cli_exe).get(key) or {}
+    task_id: str | None = mapping.get("task_id")
 
     def _status(tid: str) -> dict | None:
         code, out = _run_cli(cli_exe, env, ["status", tid, "--json"], timeout=15)
@@ -1283,6 +1319,8 @@ async def fluxdown_server_download(
             )
         except Exception:
             return False
+        if code == 3:
+            return True  # 服务端明确报告任务不存在，文件写入权已释放。
         if code != 0:
             return False
         try:
@@ -1306,6 +1344,19 @@ async def fluxdown_server_download(
     # 取消作用域：任一阶段被取消都走同一套清理（确认暂停），不吞掉取消，
     # 也不会继续走完成路径。
     try:
+        if task_id and mapping.get("proxy_hash") != _proxy_hash(proxy):
+            # resume 不接受 --proxy，必须停下旧任务后重建。旧版映射没有指纹，
+            # 同样不能假定其网络配置；不删除旧任务的文件，残包沿用下方隔离路径。
+            if not await _confirm_paused():
+                raise RuntimeError("代理已变更，但 FluxDown 旧任务未确认停止")
+            code, _ = await _to_thread_strong(
+                _run_cli, cli_exe, env, ["rm", task_id], 15, propagate_cancel=True
+            )
+            if code not in (0, 3):
+                raise RuntimeError("代理已变更，但 FluxDown 旧任务未能移除，保留映射")
+            await _to_thread_strong(_map_pop, cli_exe, key, propagate_cancel=True)
+            task_id = None
+            logger.info("代理配置已变更，使用当前代理重建 FluxDown 下载任务")
         if task_id:
             st0 = await asyncio.to_thread(_status, task_id)
             if st0 is None:
@@ -1471,7 +1522,7 @@ async def fluxdown_server_download(
                     task_id = new_id
                     # 强等待：取消时也必须落盘+暂停，否则 daemon 后台继续下载
                     await _to_thread_strong(
-                        _map_put, cli_exe, key, task_id, url, destination
+                        _map_put, cli_exe, key, task_id, url, destination, proxy
                     )
                     try:
                         await _to_thread_strong(
@@ -1491,7 +1542,14 @@ async def fluxdown_server_download(
         # propagate_cancel=True：等待期间被取消时，落盘完成后立刻把取消
         # 抛给 except，由统一清理负责暂停；避免吞掉取消后继续轮询。
         await _to_thread_strong(
-            _map_put, cli_exe, key, task_id, url, destination, propagate_cancel=True
+            _map_put,
+            cli_exe,
+            key,
+            task_id,
+            url,
+            destination,
+            proxy,
+            propagate_cancel=True,
         )
 
         # 轮询进度至终态。timeout 语义 = 停滞上限（持续无新字节的秒数），不是总时长：
