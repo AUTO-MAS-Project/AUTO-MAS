@@ -22,6 +22,7 @@
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import time
@@ -198,11 +199,14 @@ class UpdateHandler:
             speed=0,
             message=message,
         )
-        await Publisher.send(
-            id=protocol.ID_UPDATE,
-            type=protocol.UPDATE_FAILED,
-            data=WSUpdateFailedData(message=message),
-        )
+        try:
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data=WSUpdateFailedData(message=message),
+            )
+        except Exception as error:
+            logger.warning(f"更新下载失败通知发送异常: {type(error).__name__}: {error}")
 
     async def _publish_completed(self, file: Path) -> None:
         file_path = str(file)
@@ -212,11 +216,16 @@ class UpdateHandler:
             file=file_path,
             message=None,
         )
-        await Publisher.send(
-            id=protocol.ID_UPDATE,
-            type=protocol.UPDATE_COMPLETED,
-            data=WSUpdateCompletedData(file=file_path),
-        )
+        try:
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_COMPLETED,
+                data=WSUpdateCompletedData(file=file_path),
+            )
+        except Exception as error:
+            logger.warning(
+                f"更新包已就绪, 完成通知发送异常: {type(error).__name__}: {error}"
+            )
 
     async def start_download(
         self, *, target_version: Optional[str] = None, downloader: Optional[str] = None
@@ -340,9 +349,8 @@ class UpdateHandler:
                 self.is_locked = False
 
     def _cleanup_download(self) -> None:
-        # 不删 download.temp：取消/中断时保留它作为断点续传状态（httpx 追加、
-        # FluxDown server resume 都依赖它），仅在彻底放弃（重试耗尽）与成功
-        # 改名两条路径处理该文件
+        # 不删 download.temp：取消/中断时保留下载结果，供 FluxDown server 续传；
+        # 保存失败也保留，仅在重试耗尽与成功保存两条路径处理该文件。
         if not self.is_switching_source:
             self.is_locked = False
 
@@ -555,10 +563,18 @@ class UpdateHandler:
             self.is_locked = False
             return None
 
-        if (Path.cwd() / f"UpdatePack_{download_version}.zip").exists():
-            existing_package = Path.cwd() / f"UpdatePack_{download_version}.zip"
-            logger.info(f"更新包已存在: {existing_package}")
-            await self._publish_completed(existing_package)
+        final_path = Path.cwd() / f"UpdatePack_{download_version}.zip"
+        temp_file = Path.cwd() / "download.temp"
+        if final_path.exists() or final_path.is_symlink():
+            # 只检查 ZIP 格式，不解压或逐项校验；来源不明的同名文件不自动删除。
+            if not final_path.is_file() or not zipfile.is_zipfile(final_path):
+                await self._publish_failed(
+                    f"同名更新包不是可用的 ZIP 文件, 请手动检查后重试: {final_path}"
+                )
+                self.is_locked = False
+                return None
+            logger.info(f"更新包已存在: {final_path}")
+            await self._publish_completed(final_path)
             self.is_locked = False
             return None
 
@@ -593,30 +609,32 @@ class UpdateHandler:
 
         check_times = 3
         while check_times != 0:
+            # 保存后清理失败可能留下硬链接，直接续写会改坏已经完成的更新包。
+            if (
+                os.name != "nt"
+                and temp_file.is_file()
+                and temp_file.stat().st_nlink > 1
+            ):
+                await self._publish_failed(
+                    f"临时下载文件与其他文件共享数据, 请手动移除该临时路径后重试: {temp_file}"
+                )
+                self.is_locked = False
+                return
+
             try:
-                # 注意：这里不能删 download.temp —— httpx（ab+Range 追加）与
-                # FluxDown server 的断点续传都以它为续传状态，删掉会让重试从头下载
+                # 保留 download.temp，供 FluxDown server 重试时断点续传。
 
                 start_time = time.time()
 
                 downloaded_size = await self._download(
                     download_url,
-                    Path.cwd() / "download.temp",
+                    temp_file,
                     timeout=30,
                     progress=report_progress,
                     downloader=download_job.downloader,
                     source=download_job.source,
                 )
 
-                # 重命名临时文件为最终包
-                final_path = Path.cwd() / f"UpdatePack_{download_version}.zip"
-                (Path.cwd() / "download.temp").rename(final_path)
-
-                logger.success(
-                    f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {final_path}"
-                )
-                await self._publish_completed(final_path)
-                self.is_locked = False
                 break
 
             except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
@@ -644,10 +662,40 @@ class UpdateHandler:
                 await asyncio.sleep(1)
 
         else:
-            if (Path.cwd() / "download.temp").exists():
-                (Path.cwd() / "download.temp").unlink()
+            if temp_file.exists():
+                temp_file.unlink()
             await self._publish_failed(f"下载失败: {download_url}")
             self.is_locked = False
+            return
+
+        # 保存失败不是网络失败，保留下载结果，不重新传输或覆盖同名目标。
+        try:
+            if os.name == "nt":
+                temp_file.rename(final_path)
+            else:
+                # POSIX rename 会覆盖目标；同目录硬链接可原子地拒绝已有目标。
+                os.link(temp_file, final_path)
+        except OSError as error:
+            await self._publish_failed(
+                f"更新包保存失败: {type(error).__name__}: {error}; 临时下载路径: {temp_file}"
+            )
+            self.is_locked = False
+            return
+
+        if os.name != "nt":
+            try:
+                temp_file.unlink()
+            except OSError as error:
+                # 最终包已保存，清理失败不能回滚成功状态或触发重新下载。
+                logger.warning(
+                    f"更新包已保存, 临时文件清理失败: {temp_file}, {type(error).__name__}: {error}"
+                )
+
+        logger.success(
+            f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {final_path}"
+        )
+        await self._publish_completed(final_path)
+        self.is_locked = False
 
     async def install_update(self):
 
