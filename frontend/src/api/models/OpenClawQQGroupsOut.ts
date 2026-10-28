@@ -32,6 +32,10 @@ export type OpenClawQQGroupsOut = {
      */
     groups?: Array<OpenClawQQGroup>;
     /**
+     * 群控制成员 OpenID 白名单，空列表允许所有成员
+     */
+    groupCommandWhitelist?: Array<string>;
+    /**
      * 可本地化的错误标识
      */
     errorCode?: string;

@@ -1,9 +1,9 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('edit.runConfiguration')">
+  <MaaFWFormSection :title="t('core.edit.runConfiguration')">
     <a-row :gutter="24">
       <a-col :span="8">
-        <a-form-item :label="t('edit.runsPerDayThis')">
+        <a-form-item :label="t('core.edit.runsPerDayThis')">
           <a-input-number
             v-model:value="maafwConfig.Run.ProxyTimesLimit"
             :min="0"
@@ -16,7 +16,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item :label="t('edit.retryLimit')">
+        <a-form-item :label="t('core.edit.retryLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimesLimit"
             :min="1"
@@ -29,7 +29,7 @@
         </a-form-item>
       </a-col>
       <a-col :span="8">
-        <a-form-item :label="t('edit.singleRunTimeLimit')">
+        <a-form-item :label="t('core.edit.singleRunTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimeLimit"
             :min="1"
@@ -47,7 +47,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.skipOnceDoneToday') }}</span>
+            <span class="form-label">{{ t('core.edit.skipOnceDoneToday') }}</span>
           </template>
           <a-select
             :value="dailyOnceTasks"
@@ -65,7 +65,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.skipOnceDoneThis') }}</span>
+            <span class="form-label">{{ t('core.edit.skipOnceDoneThis') }}</span>
           </template>
           <a-select
             :value="weeklyOnceTasks"
@@ -83,7 +83,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('edit.skipOnceDoneThis2') }}</span>
+            <span class="form-label">{{ t('core.edit.skipOnceDoneThis2') }}</span>
           </template>
           <a-select
             :value="monthlyOnceTasks"
@@ -102,7 +102,7 @@
 
     <a-row :gutter="24" class="task-time-limit-row">
       <a-col :span="12">
-        <a-form-item :label="t('edit.singleTaskTimeLimit')">
+        <a-form-item :label="t('core.edit.singleTaskTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.TaskTimeLimit"
             :min="0"

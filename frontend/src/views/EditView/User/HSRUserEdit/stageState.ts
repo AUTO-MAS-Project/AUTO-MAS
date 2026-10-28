@@ -33,20 +33,20 @@ export const CATEGORY_KEYS_BY_CHANNEL: Record<HSRStageChannel, string[]> = {
 
 /** 副本类型的显示名词条（组件里再 t()）。 */
 export const CHANNEL_LABEL_KEYS: Record<HSRStageChannel, string> = {
-  CalyxGolden: 'edit.calyxGolden',
-  CalyxCrimson: 'edit.calyxCrimson',
-  Relic: 'edit.cavernsCorrosion',
-  Ornament: 'edit.ornamentExtraction',
+  CalyxGolden: 'core.edit.calyxGolden',
+  CalyxCrimson: 'core.edit.calyxCrimson',
+  Relic: 'core.edit.cavernsCorrosion',
+  Ornament: 'core.edit.ornamentExtraction',
 }
 
 export const EOW_WEEKDAY_LABEL_KEYS: Record<string, string> = {
-  Monday: 'edit.mon',
-  Tuesday: 'edit.tue',
-  Wednesday: 'edit.wed',
-  Thursday: 'edit.thu',
-  Friday: 'edit.fri',
-  Saturday: 'edit.sat',
-  Sunday: 'edit.sun',
+  Monday: 'core.edit.mon',
+  Tuesday: 'core.edit.tue',
+  Wednesday: 'core.edit.wed',
+  Thursday: 'core.edit.thu',
+  Friday: 'core.edit.fri',
+  Saturday: 'core.edit.sat',
+  Sunday: 'core.edit.sun',
 }
 
 export const isEowCategory = (categoryKey: string) =>

@@ -42,14 +42,14 @@ export function useAvdUpdateApi() {
   const getStatus = (root: string, check = false): Promise<Emulator2AvdUpdateStatusOut> =>
     call(
       () => Emulator20Service.avdUpdateStatusApiEmulator2AvdUpdateStatusPost({ root, check }),
-      'emulator2.avd.update.toast.statusFailed'
+      'core.emulator2.avd.update.toast.statusFailed'
     )
 
   /** 有实例开着或正在开机时后端什么都不动，返回 ``instances_running`` */
   const update = (root: string): Promise<Emulator2AvdUpdateActionOut> =>
     call(
       () => Emulator20Service.avdUpdateApiEmulator2AvdUpdatePost({ root }),
-      'emulator2.avd.update.toast.actionFailed'
+      'core.emulator2.avd.update.toast.actionFailed'
     )
 
   return { loading, error, getStatus, update }

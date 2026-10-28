@@ -21,14 +21,15 @@ export function useScriptList() {
   ): Promise<{ users: ScriptListUser[]; error: string | null }> => {
     try {
       const response = await Service.getUserApiScriptsUserGetPost({ scriptId })
-      if (response.code !== 200) throw new Error(response.message || t('apiErrors.userListFailed'))
+      if (response.code !== 200)
+        throw new Error(response.message || t('core.apiErrors.userListFailed'))
       const users = response.index.flatMap(index => {
         const user = toScriptListUser(scriptId, index, response.data[index.uid])
         return user ? [user] : []
       })
       return { users, error: null }
     } catch (err) {
-      const detail = getApiErrorMessage(err, t('apiErrors.userListFailed'))
+      const detail = getApiErrorMessage(err, t('core.apiErrors.userListFailed'))
       logger.warn(`获取脚本 ${scriptId} 的用户数据失败: ${detail}`)
       return { users: [], error: detail }
     }

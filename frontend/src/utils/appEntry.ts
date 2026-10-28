@@ -5,11 +5,13 @@ import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLi
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { readUpdatePauseState, useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
+import { useBackendI18nStore } from '@/stores/backendI18n'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
 // 标记版本服务是否已启动，避免重复启动
 let versionServicesStarted = false
+let pendingEntryReason: string | null = null
 
 /**
  * 启动所有版本检查服务
@@ -96,21 +98,9 @@ export async function enterApp(
       logger.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
     }
 
-    // 标记应用已初始化完成
-    markAsInitialized()
-
-    // 预加载调度中心
-    preloadSchedulerView(reason)
-
-    // 跳转到主页
-    if (router.currentRoute.value.path !== '/home') {
-      router.push('/home')
-    }
-    logger.info(`${reason}：已进入应用`)
-
-    // 启动版本检查服务
-    startVersionServices()
-
+    pendingEntryReason = reason
+    if (!(await useBackendI18nStore().ensure())) return false
+    resumePendingEntry()
     return true
   } else {
     logger.error(`${reason}：WebSocket连接失败且不允许强制进入`)
@@ -118,45 +108,38 @@ export async function enterApp(
   }
 }
 
-/**
- * 跳过初始化（忽略WebSocket连接状态）
- * @param reason 进入原因
- */
-export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
-  logger.info(`${reason}：跳过初始化流程开始`)
-  logger.info(`${reason}：尝试建立WebSocket连接...`)
+/** 只重试资源请求，不重新启动后端或安装环境。 */
+export async function retryAppEntry(): Promise<boolean> {
+  const hadPendingEntry = pendingEntryReason !== null
+  if (!(await useBackendI18nStore().refresh())) return false
+  if (hadPendingEntry) resumePendingEntry()
+  else
+    completeAppEntry('语言资源重试完成', {
+      navigateHome: router.currentRoute.value.name === 'Initialization',
+    })
+  return true
+}
 
-  bootstrapRealtimeResidents()
-  initializeAppLifecycle()
+/** 资源在重连后恢复时，续接此前失败的进入请求。 */
+export function resumePendingEntry(): void {
+  if (pendingEntryReason === null || !useBackendI18nStore().ready) return
+  const reason = pendingEntryReason
+  pendingEntryReason = null
+  completeAppEntry(reason, { navigateHome: true })
+}
 
-  try {
-    const wsConnected = await connectWithRetry()
-    if (wsConnected) {
-      logger.info(`${reason}：WebSocket连接成功！`)
-    } else {
-      logger.warn(`${reason}：WebSocket连接失败，但继续进入应用`)
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`${reason}：WebSocket连接异常: ${errorMsg}`)
-  }
+export function cancelAppEntry(): void {
+  pendingEntryReason = null
+}
 
-  // 无论WebSocket是否成功，都进入应用
-  logger.info(`${reason}：跳转到主页...`)
-
-  // 标记应用已初始化完成
+function completeAppEntry(reason: string, { navigateHome }: { navigateHome: boolean }): void {
   markAsInitialized()
-
-  if (router.currentRoute.value.path !== '/home') {
-    router.push('/home')
+  if (navigateHome && router.currentRoute.value.path !== '/home') {
+    void router.push('/home')
   }
-  logger.info(`${reason}：已跳过初始化`)
-
-  // 启动版本检查服务
+  logger.info(`${reason}：语言资源就绪，已进入应用`)
   startVersionServices()
-
-  // 预加载调度中心
-  preloadSchedulerView(reason)
+  void preloadSchedulerView(reason)
 }
 
 /**

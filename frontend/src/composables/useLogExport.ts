@@ -3,9 +3,9 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 
 const ERROR_KEYS = {
-  'window-unavailable': 'logs.toast.windowUnavailable',
-  'directory-missing': 'logs.toast.directoryMissing',
-  'no-files': 'logs.toast.noFiles',
+  'window-unavailable': 'bootstrap.logs.toast.windowUnavailable',
+  'directory-missing': 'bootstrap.logs.toast.directoryMissing',
+  'no-files': 'bootstrap.logs.toast.noFiles',
 } as const
 
 /** 初始化失败时后端可能还没启动，直接通过 Electron 导出日志。 */
@@ -20,11 +20,11 @@ export function useLogExport() {
     exportingLogs.value = true
     try {
       const result = await window.electronAPI.exportLogs?.({
-        title: t('logs.package'),
-        zipFilterName: t('misc.zipArchive'),
+        title: t('bootstrap.logs.package'),
+        zipFilterName: t('bootstrap.misc.zipArchive'),
       })
       if (!result) {
-        message.error(t('logs.toast.packageNoResponse'))
+        message.error(t('bootstrap.logs.toast.packageNoResponse'))
         logger.error('打包日志失败: 未收到响应')
         return
       }
@@ -36,13 +36,13 @@ export function useLogExport() {
           message.error(t(ERROR_KEYS[result.errorCode]))
           return
         }
-        throw new Error(result.error || t('logs.toast.packageFailed'))
+        throw new Error(result.error || t('bootstrap.logs.toast.packageFailed'))
       }
 
       message.success(
         result.skippedPaths?.length
-          ? t('logs.toast.packageIncomplete', { paths: result.skippedPaths.join(', ') })
-          : t('logs.toast.packageExported')
+          ? t('bootstrap.logs.toast.packageIncomplete', { paths: result.skippedPaths.join(', ') })
+          : t('bootstrap.logs.toast.packageExported')
       )
       logger.info(`日志打包成功: ${result.zipPath}`)
       if (result.zipPath) {
@@ -50,13 +50,13 @@ export function useLogExport() {
           await window.electronAPI.showItemInFolder?.(result.zipPath)
         } catch (error) {
           logger.error(`打开压缩包所在文件夹失败: ${String(error)}`)
-          message.error(t('logs.toast.openFolderFailed'))
+          message.error(t('bootstrap.logs.toast.openFolderFailed'))
         }
       }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       logger.error(`打包日志失败: ${reason}`)
-      message.error(t('logs.toast.packageError', { error: reason }))
+      message.error(t('bootstrap.logs.toast.packageError', { error: reason }))
     } finally {
       exportingLogs.value = false
     }

@@ -18,24 +18,33 @@
 
 from pathlib import Path
 from typing import (
+    Annotated,
     List,
     Literal,
     Optional,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, Request
 from pydantic import (
     BaseModel,
     Field,
 )
 
-from app.core import Config
 from app.models.schema import (
     ComboBoxItem,
     OutBase,
     ScriptDeleteIn,
 )
 from app.utils import get_logger
+
+from .api_service import MaaEndConfigService
+
+
+def get_maaend_config_service(request: Request) -> MaaEndConfigService:
+    return request.app.state.maaend_config_service
+
+
+MaaEndService = Annotated[MaaEndConfigService, Depends(get_maaend_config_service)]
 
 
 class MaaEndLogBundleIn(BaseModel):
@@ -132,16 +141,16 @@ logger = get_logger("脚本管理 API")
     response_model=MaaEndLauncherPathOut,
     status_code=200,
 )
-async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
+async def get_maaend_launcher_path_api(
+    scriptId: str, service: MaaEndService
+) -> MaaEndLauncherPathOut:
     """按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
 
     只回答「在哪」：不改配置；识别不到时返回 400 与说明，由前端提示手动选择。
     """
 
     try:
-        from app.task.MaaEnd import api_service as domain_api
-
-        launcher_path = domain_api.resolve_launcher_path(scriptId)
+        launcher_path = service.resolve_launcher_path(scriptId)
         return MaaEndLauncherPathOut(
             code=200,
             status="success",
@@ -171,13 +180,12 @@ async def get_maaend_launcher_path_api(scriptId: str) -> MaaEndLauncherPathOut:
     summary="打开已有 MaaEnd 日志包或保存当前日志",
     response_model=MaaEndLogBundleOut,
 )
-async def resolve_maaend_log_bundle(options: MaaEndLogBundleIn) -> MaaEndLogBundleOut:
-    from app.task.MaaEnd import api_service as domain_api
-
-    scripts = Config.ScriptConfig.values()
+async def resolve_maaend_log_bundle(
+    options: MaaEndLogBundleIn, service: MaaEndService
+) -> MaaEndLogBundleOut:
     try:
-        result = await domain_api.resolve_log_bundle(
-            scripts, output_directory=options.outputDirectory
+        result = await service.resolve_log_bundle(
+            output_directory=options.outputDirectory
         )
         return MaaEndLogBundleOut(
             directories=result.directories,
@@ -195,9 +203,11 @@ async def resolve_maaend_log_bundle(options: MaaEndLogBundleIn) -> MaaEndLogBund
     response_model=MaaEndOptionsOut,
     status_code=200,
 )
-async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptionsOut:
+async def get_maaend_options(
+    service: MaaEndService, options: ScriptDeleteIn = Body(...)
+) -> MaaEndOptionsOut:
     try:
-        data = await Config.get_maaend_options(options.scriptId)
+        data = await service.get_options(options.scriptId)
         return MaaEndOptionsOut(
             crisisDrills=[ComboBoxItem(**item) for item in data["crisisDrills"]],
             launchGameControllers=data["launchGameControllers"],

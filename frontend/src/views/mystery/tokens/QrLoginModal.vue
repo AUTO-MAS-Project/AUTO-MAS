@@ -14,7 +14,7 @@
         v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
         class="qr-code-wrapper"
       >
-        <img :src="qrCodeDataUrl" :alt="t('gamesign.qr.alt')" class="qr-code-img" />
+        <img :src="qrCodeDataUrl" :alt="t('core.gamesign.qr.alt')" class="qr-code-img" />
       </div>
 
       <!-- 加载中 -->
@@ -52,7 +52,7 @@
       <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
         <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
           <template #icon><ReloadOutlined /></template>
-          {{ t('gamesign.qr.retry') }}
+          {{ t('core.gamesign.qr.retry') }}
         </a-button>
       </div>
     </div>
@@ -85,10 +85,10 @@ const props = defineProps<{
 const { t } = useI18n()
 
 const modalTitle = computed(() =>
-  t(props.provider === 'skland' ? 'gamesign.qr.sklandTitle' : 'gamesign.qr.title')
+  t(props.provider === 'skland' ? 'core.gamesign.qr.sklandTitle' : 'core.gamesign.qr.title')
 )
 const modalHint = computed(() =>
-  t(props.provider === 'skland' ? 'gamesign.qr.sklandHint' : 'gamesign.qr.hint')
+  t(props.provider === 'skland' ? 'core.gamesign.qr.sklandHint' : 'core.gamesign.qr.hint')
 )
 
 /**

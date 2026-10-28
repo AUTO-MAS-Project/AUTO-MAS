@@ -66,23 +66,23 @@ export interface BuildCultivateViewsOptions {
 }
 
 const GOAL_STATE_BADGE: Record<string, CultivateGoalLineState> = {
-  in_progress: { i18n: 'edit.maaCultivateStateInProgress', color: 'processing' },
-  achieved: { i18n: 'edit.maaCultivateStateAchieved', color: 'success' },
-  pending_confirm: { i18n: 'edit.maaCultivateStatePending', color: 'warning' },
+  in_progress: { i18n: 'core.edit.maaCultivateStateInProgress', color: 'processing' },
+  achieved: { i18n: 'core.edit.maaCultivateStateAchieved', color: 'success' },
+  pending_confirm: { i18n: 'core.edit.maaCultivateStatePending', color: 'warning' },
 }
 
 const goalStateBadge = (state: string) => GOAL_STATE_BADGE[state] ?? null
 
 const ELITE_LABEL_KEYS: Record<number, string> = {
-  0: 'edit.maaCultivateElite0',
-  1: 'edit.maaCultivateElite1',
-  2: 'edit.maaCultivateElite2',
+  0: 'core.edit.maaCultivateElite0',
+  1: 'core.edit.maaCultivateElite1',
+  2: 'core.edit.maaCultivateElite2',
 }
 
 const SKILL_LABEL_KEYS: Record<number, string> = {
-  1: 'edit.maaCultivateSkill1',
-  2: 'edit.maaCultivateSkill2',
-  3: 'edit.maaCultivateSkill3',
+  1: 'core.edit.maaCultivateSkill1',
+  2: 'core.edit.maaCultivateSkill2',
+  3: 'core.edit.maaCultivateSkill3',
 }
 
 // 精英化只认 local/default 也算未知（无任何档案）；专精/模组只有
@@ -121,14 +121,14 @@ const currentTextOf = (
   targetId: string
 ): string => {
   const unknown = kind === 'elite' ? currentUnknownOf(prog) : dimensionUnknownOf(prog, kind)
-  if (unknown) return t('edit.maaCultivateCurrentUnknown')
+  if (unknown) return t('core.edit.maaCultivateCurrentUnknown')
   if (kind === 'elite') {
     const eliteLabel = ELITE_LABEL_KEYS[prog!.elite]
-    return `${t('edit.maaCultivateCurrent')} ${eliteLabel ? t(eliteLabel) : prog!.elite}`
+    return `${t('core.edit.maaCultivateCurrent')} ${eliteLabel ? t(eliteLabel) : prog!.elite}`
   }
-  if (kind === 'skill') return `${t('edit.maaCultivateCurrent')} ${prog!.skillLevel}`
+  if (kind === 'skill') return `${t('core.edit.maaCultivateCurrent')} ${prog!.skillLevel}`
   const levels = kind === 'mastery' ? prog!.masteries : prog!.modules
-  return `${t('edit.maaCultivateCurrent')} ${levels?.[targetId] ?? 0}`
+  return `${t('core.edit.maaCultivateCurrent')} ${levels?.[targetId] ?? 0}`
 }
 
 // 当前档位数值；维度未知（精英化无档案 / 专精模组非森空岛观测）返回 null
@@ -197,13 +197,13 @@ const buildOptions = (
     const max = ctx.entry?.maxSkillLevel ?? 0
     return levelOptionsWithSaved(max, savedLevel)
       .filter(level => level >= 2)
-      .map(level => ({ value: level, label: ctx.t('edit.maaCultivateSkillLevel', { level }) }))
+      .map(level => ({ value: level, label: ctx.t('core.edit.maaCultivateSkillLevel', { level }) }))
   }
   const options = kind === 'mastery' ? (ctx.entry?.skills ?? []) : (ctx.entry?.modules ?? [])
   const max = options.find(option => option.value === targetId)?.maxLevel ?? 3
   return levelOptionsWithSaved(max, savedLevel).map(level => ({
     value: level,
-    label: ctx.t(`edit.maaCultivateGoalLevel${level}`),
+    label: ctx.t(`core.edit.maaCultivateGoalLevel${level}`),
   }))
 }
 
@@ -251,7 +251,7 @@ const buildLine = (
           : String(savedLevel)
         : ''
       : savedLevel >= 1 && savedLevel <= 3
-        ? ctx.t(`edit.maaCultivateGoalLevel${savedLevel}`)
+        ? ctx.t(`core.edit.maaCultivateGoalLevel${savedLevel}`)
         : String(savedLevel)
   return {
     key: kind === 'elite' || kind === 'skill' ? kind : `${kind}-${targetId}`,
@@ -281,9 +281,9 @@ const eliteGroupOf = (row: CultivateTargetRow, ctx: GoalContext): CultivateGoalG
   if (!options.length && !saved) return null
   return {
     kind: 'elite',
-    label: ctx.t('edit.maaCultivateGoalElite'),
+    label: ctx.t('core.edit.maaCultivateGoalElite'),
     hint: '',
-    lines: [buildLine(ctx, 'elite', '', saved, ctx.t('edit.maaCultivateGoalElite'), options)],
+    lines: [buildLine(ctx, 'elite', '', saved, ctx.t('core.edit.maaCultivateGoalElite'), options)],
   }
 }
 
@@ -296,11 +296,11 @@ const skillGroupOf = (row: CultivateTargetRow, ctx: GoalContext): CultivateGoalG
     'skill',
     '',
     saved,
-    ctx.t('edit.maaCultivateGoalSkill'),
+    ctx.t('core.edit.maaCultivateGoalSkill'),
     buildOptions(ctx, 'skill', '', saved?.toLevel ?? 0)
   )
   if (line.achieved || maxedOf(ctx.prog, 'skill', '', maxLevel)) return null
-  return { kind: 'skill', label: ctx.t('edit.maaCultivateGoalSkill'), hint: '', lines: [line] }
+  return { kind: 'skill', label: ctx.t('core.edit.maaCultivateGoalSkill'), hint: '', lines: [line] }
 }
 
 const itemGroupOf = (
@@ -313,7 +313,7 @@ const itemGroupOf = (
       const skillLabel = kind === 'mastery' ? SKILL_LABEL_KEYS[item.skillIndex ?? 0] : null
       const saved = listGoals(row.rawGoals, kind).find(goal => goal.targetId === item.value)
       const label = skillLabel
-        ? ctx.t('edit.maaCultivateSkillName', { name: item.label, skill: ctx.t(skillLabel) })
+        ? ctx.t('core.edit.maaCultivateSkillName', { name: item.label, skill: ctx.t(skillLabel) })
         : item.label
       return {
         item,
@@ -331,8 +331,8 @@ const itemGroupOf = (
       ({ item, line }) => !line.achieved && !maxedOf(ctx.prog, kind, item.value, item.maxLevel)
     )
     .map(({ line }) => line)
-  const hint = kind === 'mastery' ? ctx.t('edit.maaCultivateMasterySkillHint') : ''
-  return { kind, label: ctx.t(`maaCopilot.kinds.${kind}`), hint, lines }
+  const hint = kind === 'mastery' ? ctx.t('core.edit.maaCultivateMasterySkillHint') : ''
+  return { kind, label: ctx.t(`core.maaCopilot.kinds.${kind}`), hint, lines }
 }
 
 // 头部摘要：全部已存目标的密度概览（折叠时也能一眼看清培养内容）
@@ -344,12 +344,12 @@ const summaryOf = (row: CultivateTargetRow, ctx: GoalContext): string => {
     parts.push(key ? ctx.t(key) : String(elite.toLevel))
   }
   const skill = listGoals(row.rawGoals, 'skill')[0]
-  if (skill?.toLevel) parts.push(`${ctx.t('edit.maaCultivateGoalSkill')} ${skill.toLevel}`)
+  if (skill?.toLevel) parts.push(`${ctx.t('core.edit.maaCultivateGoalSkill')} ${skill.toLevel}`)
   const masteryCount = listGoals(row.rawGoals, 'mastery').length
-  if (masteryCount) parts.push(ctx.t('maaCopilot.summaryMastery', { count: masteryCount }))
+  if (masteryCount) parts.push(ctx.t('core.maaCopilot.summaryMastery', { count: masteryCount }))
   const moduleCount = listGoals(row.rawGoals, 'module').length
-  if (moduleCount) parts.push(ctx.t('maaCopilot.summaryModule', { count: moduleCount }))
-  return parts.length ? parts.join(' · ') : ctx.t('maaCopilot.summaryNoGoals')
+  if (moduleCount) parts.push(ctx.t('core.maaCopilot.summaryModule', { count: moduleCount }))
+  return parts.length ? parts.join(' · ') : ctx.t('core.maaCopilot.summaryNoGoals')
 }
 
 /** 把目标行 + 目录 + 练度快照合成干员卡片视图（达成分组剔除、模组按开关）。 */

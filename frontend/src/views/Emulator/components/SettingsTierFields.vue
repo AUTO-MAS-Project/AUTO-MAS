@@ -56,11 +56,13 @@ const resolutionNote = computed(() => {
   const parts: string[] = []
   if (snapped.resolution) parts.push(`${snapped.resolution.width}×${snapped.resolution.height}`)
   if (snapped.dpi !== null) parts.push(`DPI ${snapped.dpi}`)
-  return parts.length ? t('emulator2.tierActual', { value: parts.join(' · ') }) : ''
+  return parts.length ? t('core.emulator2.tierActual', { value: parts.join(' · ') }) : ''
 })
 
 const note = (value: number | null | undefined, format: (v: number) => string = String) =>
-  value === null || value === undefined ? '' : t('emulator2.tierActual', { value: format(value) })
+  value === null || value === undefined
+    ? ''
+    : t('core.emulator2.tierActual', { value: format(value) })
 
 const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined) => {
   model.value = { ...model.value, [key]: value ?? null }
@@ -69,37 +71,37 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
 
 <template>
   <div class="settings-tier-fields">
-    <a-form-item v-if="showResolution" :label="t('emulator2.fieldResolution')">
+    <a-form-item v-if="showResolution" :label="t('core.emulator2.fieldResolution')">
       <a-select
         :value="model.resolution ?? undefined"
         :options="resolutionOptions"
         :disabled="isAvd"
         :allow-clear="clearable"
-        :placeholder="t('emulator2.keepCurrent')"
+        :placeholder="t('core.emulator2.keepCurrent')"
         size="large"
         style="width: 100%"
         @update:value="(value: TierForm['resolution']) => update('resolution', value)"
       />
       <div v-if="resolutionNote" class="tier-actual">{{ resolutionNote }}</div>
     </a-form-item>
-    <a-form-item :label="t('emulator2.fieldFps')">
+    <a-form-item :label="t('core.emulator2.fieldFps')">
       <a-select
         :value="model.fps ?? undefined"
         :options="fpsOptions"
         :allow-clear="clearable"
-        :placeholder="t('emulator2.keepCurrent')"
+        :placeholder="t('core.emulator2.keepCurrent')"
         size="large"
         style="width: 100%"
         @update:value="(value: number) => update('fps', value)"
       />
       <div v-if="note(snapped?.fps)" class="tier-actual">{{ note(snapped?.fps) }}</div>
     </a-form-item>
-    <a-form-item :label="t('emulator2.fieldCpu')">
+    <a-form-item :label="t('core.emulator2.fieldCpu')">
       <a-select
         :value="model.cpu ?? undefined"
         :options="cpuOptions"
         :allow-clear="clearable"
-        :placeholder="t('emulator2.keepCurrent')"
+        :placeholder="t('core.emulator2.keepCurrent')"
         size="large"
         style="width: 100%"
         @update:value="(value: number) => update('cpu', value)"
@@ -107,14 +109,14 @@ const update = <K extends keyof TierForm>(key: K, value: TierForm[K] | undefined
       <div v-if="note(snapped?.cpu)" class="tier-actual">{{ note(snapped?.cpu) }}</div>
     </a-form-item>
     <a-form-item
-      :label="t('emulator2.fieldMemory')"
-      :extra="isAvd ? t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
+      :label="t('core.emulator2.fieldMemory')"
+      :extra="isAvd ? t('core.emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB) : undefined"
     >
       <a-select
         :value="model.memoryMb ?? undefined"
         :options="memoryOptions"
         :allow-clear="clearable"
-        :placeholder="t('emulator2.keepCurrent')"
+        :placeholder="t('core.emulator2.keepCurrent')"
         size="large"
         style="width: 100%"
         @update:value="(value: number) => update('memoryMb', value)"

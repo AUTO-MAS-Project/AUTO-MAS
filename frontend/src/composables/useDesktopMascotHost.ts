@@ -50,7 +50,7 @@ export function useDesktopMascotHost(options: DesktopMascotHostOptions): () => v
           options.trackStartedTask({
             ...task,
             selectedMode: TaskCreateIn.mode.AUTO_PROXY,
-            modeLabel: t('scheduler.mode.autoProxy'),
+            modeLabel: t('core.scheduler.mode.autoProxy'),
           })
           void options
             .playSound('task_started')
@@ -89,19 +89,19 @@ export function useDesktopMascotHost(options: DesktopMascotHostOptions): () => v
         menuLabels: computed(() => {
           void antdLocale.value
           return {
-            pauseAnimation: t('setting.basic.mascotPauseAnimation'),
-            resumeAnimation: t('setting.basic.mascotResumeAnimation'),
-            pauseIdleMessage: t('setting.basic.mascotPauseIdleMessage'),
-            resumeIdleMessage: t('setting.basic.mascotResumeIdleMessage'),
-            refreshIdleMessage: t('setting.basic.mascotRefreshIdleMessage'),
-            refreshUnavailable: t('setting.basic.mascotRefreshUnavailable'),
-            quickStart: t('setting.basic.mascotQuickStart'),
-            stopTask: t('setting.basic.mascotStopTask'),
-            noTasks: t('setting.basic.mascotNoTasks'),
-            noRunningTasks: t('setting.basic.mascotNoRunningTasks'),
-            tasksUnavailable: t('setting.basic.mascotTasksUnavailable'),
-            loadingTasks: t('setting.basic.mascotLoadingTasks'),
-            capabilityUnavailable: t('setting.basic.mascotCapabilityUnavailable'),
+            pauseAnimation: t('core.setting.basic.mascotPauseAnimation'),
+            resumeAnimation: t('core.setting.basic.mascotResumeAnimation'),
+            pauseIdleMessage: t('core.setting.basic.mascotPauseIdleMessage'),
+            resumeIdleMessage: t('core.setting.basic.mascotResumeIdleMessage'),
+            refreshIdleMessage: t('core.setting.basic.mascotRefreshIdleMessage'),
+            refreshUnavailable: t('core.setting.basic.mascotRefreshUnavailable'),
+            quickStart: t('core.setting.basic.mascotQuickStart'),
+            stopTask: t('core.setting.basic.mascotStopTask'),
+            noTasks: t('core.setting.basic.mascotNoTasks'),
+            noRunningTasks: t('core.setting.basic.mascotNoRunningTasks'),
+            tasksUnavailable: t('core.setting.basic.mascotTasksUnavailable'),
+            loadingTasks: t('core.setting.basic.mascotLoadingTasks'),
+            capabilityUnavailable: t('core.setting.basic.mascotCapabilityUnavailable'),
           }
         }),
         greeting: computed(() => greeting.greeting),
@@ -121,7 +121,7 @@ export function useDesktopMascotHost(options: DesktopMascotHostOptions): () => v
         refreshIdleMessage: greeting.refreshGreeting,
         translate: t,
         reportError: (text, error) => logger.error(text, error),
-        showError: () => message.error(t('setting.basic.desktopMascotFailed')),
+        showError: () => message.error(t('core.setting.basic.desktopMascotFailed')),
       }
     )
   })

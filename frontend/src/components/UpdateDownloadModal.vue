@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="modalVisible"
-    :title="t('comp.downloadUpdateVersion', { version: latestVersion })"
+    :title="t('core.comp.downloadUpdateVersion', { version: latestVersion })"
     :width="600"
     :footer="null"
     :mask-closable="false"
@@ -24,8 +24,8 @@
               <span class="download-title">
                 {{
                   status === 'switchingSource'
-                    ? t('comp.switchingDownloadSource')
-                    : t('comp.downloadProgress')
+                    ? t('core.comp.switchingDownloadSource')
+                    : t('core.comp.downloadProgress')
                 }}
               </span>
             </div>
@@ -49,7 +49,7 @@
           />
 
           <div v-if="sourceLabel" class="download-source">
-            {{ t('comp.downloadingFrom', { source: sourceLabel }) }}
+            {{ t('core.comp.downloadingFrom', { source: sourceLabel }) }}
           </div>
 
           <div class="progress-info-row">
@@ -60,7 +60,7 @@
               <span class="download-speed">{{ formatSpeed(speed) }}</span>
             </div>
             <div v-if="estimatedTimeRemaining" class="right-info">
-              <span class="eta-label">{{ t('comp.estimatedTimeLeft') }}</span>
+              <span class="eta-label">{{ t('core.comp.estimatedTimeLeft') }}</span>
               <span class="eta-value">{{ estimatedTimeRemaining }}</span>
             </div>
           </div>
@@ -72,10 +72,10 @@
               :disabled="status === 'switchingSource'"
               @click="confirmCancel"
             >
-              {{ t('comp.cancelDownload') }}
+              {{ t('core.comp.cancelDownload') }}
             </a-button>
             <a-button type="primary" ghost @click="background">{{
-              t('comp.downloadBackground')
+              t('core.comp.downloadBackground')
             }}</a-button>
           </div>
         </div>
@@ -83,14 +83,14 @@
 
       <!-- 下载失败区域 -->
       <div v-if="status === 'failed'" class="download-failed-section">
-        <a-result status="error" :title="t('comp.downloadFailed')" :sub-title="failureReason">
+        <a-result status="error" :title="t('core.comp.downloadFailed')" :sub-title="failureReason">
           <template #extra>
             <div class="failed-actions">
-              <a-button type="primary" @click="retry">{{ t('comp.retryDownload') }}</a-button>
+              <a-button type="primary" @click="retry">{{ t('core.comp.retryDownload') }}</a-button>
               <a-button v-if="showBuiltinRetry" @click="retryWithBuiltin">
-                {{ t('comp.retryWithBuiltin') }}
+                {{ t('core.comp.retryWithBuiltin') }}
               </a-button>
-              <a-button @click="reset">{{ t('comp.close') }}</a-button>
+              <a-button @click="reset">{{ t('core.comp.close') }}</a-button>
             </div>
           </template>
         </a-result>
@@ -100,13 +100,13 @@
       <div v-if="status === 'completed'" class="download-success-section">
         <a-result
           status="success"
-          :title="t('comp.downloadFinished')"
-          :sub-title="t('comp.updateHasFinishedDownloading')"
+          :title="t('core.comp.downloadFinished')"
+          :sub-title="t('core.comp.updateHasFinishedDownloading')"
         >
           <template #extra>
             <div class="success-actions">
-              <a-button type="primary" @click="install">{{ t('comp.installNow') }}</a-button>
-              <a-button @click="installLater">{{ t('comp.installLater') }}</a-button>
+              <a-button type="primary" @click="install">{{ t('core.comp.installNow') }}</a-button>
+              <a-button @click="installLater">{{ t('core.comp.installLater') }}</a-button>
             </div>
           </template>
         </a-result>
@@ -150,10 +150,10 @@ const showBuiltinRetry = computed(() => (failureReason.value ?? '').includes('ht
 
 const confirmCancel = () => {
   Modal.confirm({
-    title: t('comp.cancelUpdateDownload'),
-    content: t('comp.cancellingDeletesUnfinishedDownload'),
-    okText: t('comp.confirmCancellation'),
-    cancelText: t('comp.continueDownload'),
+    title: t('core.comp.cancelUpdateDownload'),
+    content: t('core.comp.cancellingDeletesUnfinishedDownload'),
+    okText: t('core.comp.confirmCancellation'),
+    cancelText: t('core.comp.continueDownload'),
     okType: 'danger',
     centered: true,
     zIndex: 10001,

@@ -249,7 +249,7 @@ const columnKeys = computed(() =>
 )
 
 const columnTitle = (key: string) =>
-  key === 'ALL' ? t('plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
+  key === 'ALL' ? t('core.plan.week.ALL') : t(planDayLabel(key).key, planDayLabel(key).params)
 
 const syncLocalTableData = (tableData: Record<string, any> | null) => {
   localTableData.value = Object.fromEntries(
@@ -266,7 +266,7 @@ watch(
 
 const configColumns = computed(() => [
   {
-    title: t('plan.table.field'),
+    title: t('core.plan.table.field'),
     dataIndex: 'fieldName',
     key: 'fieldName',
     width: 120,
@@ -284,7 +284,7 @@ const configColumns = computed(() => [
 
 const simpleColumns = computed(() => [
   {
-    title: t('plan.table.time'),
+    title: t('core.plan.table.time'),
     dataIndex: 'timeLabel',
     key: 'timeLabel',
     width: 120,
@@ -292,7 +292,7 @@ const simpleColumns = computed(() => [
     align: 'center',
   },
   {
-    title: t('plan.table.taskType'),
+    title: t('core.plan.table.taskType'),
     dataIndex: 'SanityTaskType',
     key: 'SanityTaskType',
     width: 140,
@@ -306,14 +306,14 @@ const simpleColumns = computed(() => [
     align: 'center',
   },
   {
-    title: t('plan.table.currentTask'),
+    title: t('core.plan.table.currentTask'),
     dataIndex: 'CurrentTask',
     key: 'CurrentTask',
     width: 220,
     align: 'center',
   },
   {
-    title: t('plan.table.rewardsSet'),
+    title: t('core.plan.table.rewardsSet'),
     dataIndex: 'RewardsSetOption',
     key: 'RewardsSetOption',
     width: 160,
@@ -379,7 +379,7 @@ const isRewardGroupEnabledForTime = (key: string) => {
 const configRows = computed(() => [
   {
     rowKey: 'SanityTaskType',
-    fieldName: t('plan.table.sanityTask'),
+    fieldName: t('core.plan.table.sanityTask'),
     ...Object.fromEntries(columnKeys.value.map(key => [key, getDayConfig(key).SanityTaskType])),
   },
   {
@@ -389,14 +389,14 @@ const configRows = computed(() => [
   },
   {
     rowKey: 'CurrentTask',
-    fieldName: t('plan.table.currentTask'),
+    fieldName: t('core.plan.table.currentTask'),
     ...Object.fromEntries(
       columnKeys.value.map(key => [key, getCurrentTaskValue(getDayConfig(key))])
     ),
   },
   {
     rowKey: 'RewardsSetOption',
-    fieldName: t('plan.table.rewardsSet'),
+    fieldName: t('core.plan.table.rewardsSet'),
     ...Object.fromEntries(columnKeys.value.map(key => [key, getDayConfig(key).RewardsSetOption])),
   },
 ])

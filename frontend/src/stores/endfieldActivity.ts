@@ -63,7 +63,7 @@ export const useEndfieldActivityStore = defineStore('endfield-activity', () => {
         akeOverview.value = {
           ...buildEndfieldOverview(restored, new Date()),
           Stale: true,
-          Message: t('home.endfield.poolStaleMessage'),
+          Message: t('core.home.endfield.poolStaleMessage'),
         } as EndfieldActivityOverview
         return true
       } catch {
@@ -142,13 +142,13 @@ export const useEndfieldActivityStore = defineStore('endfield-activity', () => {
       akeOverview.value = {
         ...akeOverview.value,
         Stale: true,
-        Message: t('home.endfield.poolStaleMessage'),
+        Message: t('core.home.endfield.poolStaleMessage'),
       }
     },
     markUnavailable: () => {
       akeOverview.value = {
         ...createEmptyEndfieldActivityOverview(),
-        Message: t('home.endfield.poolUnavailable'),
+        Message: t('core.home.endfield.poolUnavailable'),
       }
     },
   })

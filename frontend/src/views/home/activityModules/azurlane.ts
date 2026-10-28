@@ -19,7 +19,9 @@ export const buildAzurlaneActivityPresentation = (
 ): ActivityPresentation => {
   const presentation = buildSraActivityPresentation(context)
   presentation.activities.source = {
-    label: context.t('home.sra.poweredBy', { name: context.t('home.azurlane.sourceName') }),
+    label: context.t('core.home.sra.poweredBy', {
+      name: context.t('core.home.azurlane.sourceName'),
+    }),
     url: CALENDAR_URL,
   }
   return presentation

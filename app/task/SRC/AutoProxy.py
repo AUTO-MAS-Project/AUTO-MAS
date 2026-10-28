@@ -21,12 +21,13 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
+from app import core
 from app.config import ConfigCollection
 from app.core import Config
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.models.notification_ports import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
@@ -238,11 +239,18 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             ):
                 break
 
+            # 在线时先初始化宿主，初始化异常继续上抛，不归入登录失败重试。
+            if emulator_info.status == DeviceStatus.ONLINE:
+                _ = core.MaaFWManager
+
             if await login(
-                emulator_info,
-                STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
-                self.cur_user_config.Info.Id,
-                self.cur_user_config.Info.Password,
+                emulator_info=emulator_info,
+                package_name=STARRAIL_PACKAGE_NAME[self.cur_user_config.Info.Server],
+                id=self.cur_user_config.Info.Id,
+                password=self.cur_user_config.Info.Password,
+                get_agree_bilibili=lambda: Config.setting.Function.IfAgreeBilibili,
+                get_adb_tasker=lambda device: core.MaaFWManager.get_adb_tasker(device),
+                do_job=lambda job: core.MaaFWManager.do_job(job),
             ):
                 logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
             else:
@@ -793,38 +801,12 @@ class AutoProxyTask(ScriptAutoProxyBase[SrcConfig, SrcUserConfig]):
             )
 
         if history_records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                history_records[-1].attachments.extend(attachments)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "收集用户历史附件失败，继续保存日志与执行结果"
-                )
-            try:
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
         if self.run_book:
             try:

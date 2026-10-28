@@ -14,7 +14,7 @@
           <template #icon>
             <EditOutlined />
           </template>
-          {{ t('home.editLayout') }}
+          {{ t('core.home.editLayout') }}
         </a-button>
         <a-button
           type="primary"
@@ -26,7 +26,7 @@
           <template #icon>
             <BellOutlined />
           </template>
-          {{ t('home.viewNotice') }}
+          {{ t('core.home.viewNotice') }}
         </a-button>
       </div>
     </div>
@@ -220,15 +220,15 @@ for (const [moduleKey, source] of activities.sources) {
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return t('home.greeting.morning')
+    return t('core.home.greeting.morning')
   } else if (hour >= 11 && hour < 14) {
-    return t('home.greeting.noon')
+    return t('core.home.greeting.noon')
   } else if (hour >= 14 && hour < 18) {
-    return t('home.greeting.afternoon')
+    return t('core.home.greeting.afternoon')
   } else if (hour >= 18 && hour < 23) {
-    return t('home.greeting.evening')
+    return t('core.home.greeting.evening')
   } else {
-    return t('home.greeting.night')
+    return t('core.home.greeting.night')
   }
 })
 

@@ -22,11 +22,11 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
 | `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
 | `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
-| `initialization_finished` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
+| `initialization_finished` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
-| `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功固定 1/10 采样 |
+| `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功独立随机 1/10 采样 |
 | `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
 | `task_stop_result` | 共享单任务停止请求的受理结果 | `source`、`mode`、`request_outcome`、耗时桶 | 每次实际请求 |
@@ -173,6 +173,7 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 整任务完成不提前清掉逐轮观察，以容纳晚到的最后一轮终态。
 
 原生配置的 `open/view/save/close/timeout` 只记录请求受理或失败，不宣称 GUI 已打开或配置已保存；
+六条原生 GUI 会话共用生命周期实现，启动与停止仍由 `useTaskApi` 观察；并发停止共享一次请求，不重复计数。
 手动保存、关闭及自动超时由实际调用入口明确分类，与停止失败时是否保留会话无关。
 主列表保存共用同一入口；仅清理页面观察、没有发出停止请求的超时不虚构请求事件。
 MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类，不取原因正文。
@@ -196,10 +197,11 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
 
 主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
-共享配置写入事件 `config_write_finished` 的成功样本按进程内成功序号固定抽取每 10 次中的第 1 次，
-其他事件族不沿用该采样序号；失败不参与此采样，输出
-`sample_rate=10/1`；限频、断网、关闭、并发上限仍会丢弃，不能把乘以采样倍率的数量当精确总数。
-采样序号不落盘，导航采用相邻去重和同一频率预算。没有后台心跳、进度或逐日志事件。
+共享配置写入事件 `config_write_finished` 的成功结果分别以 1/10 概率独立随机抽样；失败不参与此采样，输出
+`sample_rate=10/1`。未入样的成功结果不占事件族调用预算；入样后仍受限频、断网、关闭、并发上限影响，
+不能把乘以采样倍率的数量当精确总数。旧版本按进程内成功序号固定抽取，每个进程的第一次保存必定入样，
+短会话会产生偏差，分析历史数据时不能直接当作随机样本。导航采用相邻去重和同一频率预算。
+没有后台心跳、进度或逐日志事件。
 
 ## 开关与传输
 
@@ -253,3 +255,10 @@ ClickHouse 在后台处理 TTL，不保证过期时刻立即物理删除。本�
 
 这不等于 84 个真实业务场景逐一通过：真实游戏、扫码、升级、虚拟屏硬件及真实混合队列/循环逐轮
 运行仍缺作者环境的执行证据。没有完成信号的原生保存和安装仍只报告请求受理。
+
+QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
+由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
+`script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
+不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
+
+群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。

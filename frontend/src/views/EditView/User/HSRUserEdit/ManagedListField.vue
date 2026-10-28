@@ -4,7 +4,9 @@
       <div v-for="(row, index) in rows" :key="index" class="list-row">
         <a-input
           v-model:value="row.first"
-          :placeholder="isTeams ? t('edit.hsrInstanceName') : t('edit.hsrBorrowCharacter')"
+          :placeholder="
+            isTeams ? t('core.edit.hsrInstanceName') : t('core.edit.hsrBorrowCharacter')
+          "
           :disabled="disabled"
           class="list-first"
           @blur="commit"
@@ -14,7 +16,7 @@
           :value="teamNumber(row.second)"
           :min="1"
           :precision="0"
-          :placeholder="t('edit.hsrTeamNumber')"
+          :placeholder="t('core.edit.hsrTeamNumber')"
           :disabled="disabled"
           class="list-second-number"
           @change="handleTeamChange(row, $event)"
@@ -22,7 +24,7 @@
         <a-input
           v-else
           v-model:value="row.second"
-          :placeholder="t('edit.hsrBorrowFriend')"
+          :placeholder="t('core.edit.hsrBorrowFriend')"
           :disabled="disabled"
           class="list-second"
           @blur="commit"
@@ -31,7 +33,7 @@
           type="text"
           size="small"
           :disabled="disabled"
-          :aria-label="t('edit.hsrRemoveRow')"
+          :aria-label="t('core.edit.hsrRemoveRow')"
           @click="removeRow(index)"
         >
           <template #icon>
@@ -40,12 +42,12 @@
         </a-button>
       </div>
     </div>
-    <div v-else class="list-empty">{{ t('edit.hsrListEmpty') }}</div>
+    <div v-else class="list-empty">{{ t('core.edit.hsrListEmpty') }}</div>
     <a-button size="small" type="dashed" :disabled="disabled" class="list-add" @click="addRow">
       <template #icon>
         <PlusOutlined />
       </template>
-      {{ t('edit.hsrAddRow') }}
+      {{ t('core.edit.hsrAddRow') }}
     </a-button>
   </div>
 </template>

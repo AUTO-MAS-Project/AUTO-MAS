@@ -11,7 +11,7 @@
         <template #icon>
           <HistoryOutlined />
         </template>
-        {{ t('edit.configRestoreTitle') }}
+        {{ t('core.edit.configRestoreTitle') }}
       </a-button>
     </template>
   </UserEditHeader>

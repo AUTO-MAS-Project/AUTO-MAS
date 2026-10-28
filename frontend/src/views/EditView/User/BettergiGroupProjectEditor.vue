@@ -4,12 +4,12 @@
     <a-tabs :active-key="shellPaneKey" class="bgi-project-shell-tabs">
       <!-- 标签栏最右：放大图标（点击后居中大弹窗展示更大编辑区） -->
       <template #tabBarExtraContent>
-        <a-tooltip :title="t('edit.bettergiProjectZoom')" placement="top">
+        <a-tooltip :title="t('core.edit.bettergiProjectZoom')" placement="top">
           <a-button
             type="text"
             size="small"
             class="bgi-project-zoom-btn"
-            :aria-label="t('edit.bettergiProjectZoom')"
+            :aria-label="t('core.edit.bettergiProjectZoom')"
             @click="zoomed = true"
           >
             <template #icon><FullscreenOutlined /></template>
@@ -92,7 +92,7 @@ const zoomBodyRef = ref<InstanceType<typeof BettergiGroupProjectBody> | null>(nu
 
 const shellPaneKey = 'project-editor'
 // 标签栏标题：脚本/路径/录制本质都是「配置组 + 脚本队列」，统一显示为「配置组」
-const shellTabLabel = computed<string>(() => t('edit.bettergiGroupKindScriptGroup'))
+const shellTabLabel = computed<string>(() => t('core.edit.bettergiGroupKindScriptGroup'))
 // 放大弹窗标题：当前组/脚本显示名
 const zoomTitle = computed<string>(
   () => props.displayName || props.groupName || shellTabLabel.value

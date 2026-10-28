@@ -80,11 +80,15 @@ const addModal = reactive({
 
 // 添加弹窗标题/确定按钮文案（按模式分流）
 const addModalTitle = computed<string>(() =>
-  addModal.addToGroupMode ? t('edit.bettergiAddScriptToGroup') : t('edit.bettergiAddToDragon')
+  addModal.addToGroupMode
+    ? t('core.edit.bettergiAddScriptToGroup')
+    : t('core.edit.bettergiAddToDragon')
 )
 
 const addModalOkText = computed<string>(() =>
-  addModal.addToGroupMode ? t('edit.bettergiAddScriptToGroupOk') : t('edit.bettergiAddToDragonOk')
+  addModal.addToGroupMode
+    ? t('core.edit.bettergiAddScriptToGroupOk')
+    : t('core.edit.bettergiAddToDragonOk')
 )
 
 const addModalOkButtonProps = computed(() => ({
@@ -320,7 +324,7 @@ const commitAddDraft = (): boolean => {
   if (!names.length) return true
   const unknown = names.filter(n => !resolveInputName(n))
   if (unknown.length) {
-    message.warning(t('edit.bettergiGroupNamesUnknown', { names: unknown.join('、') }))
+    message.warning(t('core.edit.bettergiGroupNamesUnknown', { names: unknown.join('、') }))
     return false
   }
   for (const n of names) {
@@ -334,12 +338,12 @@ const commitAddDraft = (): boolean => {
 // 确认：加入一条龙 或（配置组模式）作为项目写入当前配置组 json
 const confirmAddToDragon = async () => {
   if (configLocked.value) {
-    message.error(t('edit.configLocked'))
+    message.error(t('core.edit.configLocked'))
     return
   }
   if (addModal.draft.trim() && !commitAddDraft()) return
   if (!addModal.items.length) {
-    message.warning(t('edit.bettergiPickCandidateFirst'))
+    message.warning(t('core.edit.bettergiPickCandidateFirst'))
     return
   }
   const items = [...addModal.items]
@@ -354,7 +358,7 @@ const confirmAddToDragon = async () => {
       clearChipSelection()
       addModal.addToGroupMode = false
       addModal.open = false
-      message.warning(t('edit.bettergiAddScriptUnsupported'))
+      message.warning(t('core.edit.bettergiAddScriptUnsupported'))
       return
     }
     try {
@@ -362,7 +366,7 @@ const confirmAddToDragon = async () => {
       if (!added) return
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
-      message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.bettergiProjectSaveFailed'))
       return
     }
     addModal.items = []
@@ -388,7 +392,7 @@ defineExpose({ open: openAddToDragonModal, openForGroup: openAddScriptToGroup })
     :title="addModalTitle"
     :ok-text="addModalOkText"
     :ok-button-props="addModalOkButtonProps"
-    :cancel-text="t('edit.cancel')"
+    :cancel-text="t('core.edit.cancel')"
     width="920px"
     :z-index="1200"
     class="add-dragon-modal"
@@ -409,35 +413,35 @@ defineExpose({ open: openAddToDragonModal, openForGroup: openAddScriptToGroup })
           <a-space size="small">
             <a-button size="small" @click="openBettergiScriptSite">
               <template #icon><GlobalOutlined /></template>
-              {{ t('edit.bettergiOpenScriptRepo') }}
+              {{ t('core.edit.bettergiOpenScriptRepo') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('jsScript')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenScriptDir') }}
+              {{ t('core.edit.bettergiOpenScriptDir') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('autoPathing')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenTaskDir') }}
+              {{ t('core.edit.bettergiOpenTaskDir') }}
             </a-button>
           </a-space>
           <a-space size="small">
             <a-button size="small" @click="openBettergiScheduler">
               <template #icon><PlayCircleOutlined /></template>
-              {{ t('edit.bettergiOpenBgi') }}
+              {{ t('core.edit.bettergiOpenBgi') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('keyMouse')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenKeyMouseDir') }}
+              {{ t('core.edit.bettergiOpenKeyMouseDir') }}
             </a-button>
             <a-button size="small" @click="openBettergiDir('scriptGroup')">
               <template #icon><FolderOpenOutlined /></template>
-              {{ t('edit.bettergiOpenScriptGroupDir') }}
+              {{ t('core.edit.bettergiOpenScriptGroupDir') }}
             </a-button>
           </a-space>
         </a-space>
       </div>
     </div>
-    <p class="add-dragon-input-tip">{{ t('edit.bettergiInputGroupNamesTip') }}</p>
+    <p class="add-dragon-input-tip">{{ t('core.edit.bettergiInputGroupNamesTip') }}</p>
 
     <BettergiAddSources
       ref="sourcePicker"
