@@ -65,6 +65,18 @@ class LogRecord:
     phase: str = ""
 
 
+@dataclass(frozen=True)
+class UserTaskProgress:
+    """调度台用户行上的任务进度：第几个任务（从 1 数）、共几个、当前任务名。
+
+    目前只有 MFW 给（worker 推的任务开始事件），其余专项一直是 None。
+    """
+
+    current: int
+    total: int
+    task: str
+
+
 @dataclass
 class UserItem:
     user_id: str  # 用户ID
@@ -81,13 +93,18 @@ class UserItem:
     )  # 节点详情推送模式（关闭/逐条/汇总），由 AutoProxy 从用户配置注入
     # 本次由 MAS 维护检查跳过，供通知与循环排期使用；不落盘、不进入 API。
     maintenance_skipped: bool = field(default=False, repr=False)
+    # 正在跑的任务进度（见 UserTaskProgress），随任务快照推给调度台；不落盘。
+    progress: Optional[UserTaskProgress] = None
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
         previous = getattr(self, name, None)
         super().__setattr__(name, value)
         # 监听所有字段变化
-        if name in ("user_id", "name", "status") and self._task_item_ref is not None:
+        if (
+            name in ("user_id", "name", "status", "progress")
+            and self._task_item_ref is not None
+        ):
             ti = self._task_item_ref()
             if ti is not None:
                 if name == "status" and previous != value:
@@ -346,6 +363,15 @@ class TaskItem(ABC):
                         "user_id": user_item.user_id,
                         "name": user_item.name,
                         "status": user_item.status,
+                        "progress": (
+                            {
+                                "current": user_item.progress.current,
+                                "total": user_item.progress.total,
+                                "task": user_item.progress.task,
+                            }
+                            if user_item.progress is not None
+                            else None
+                        ),
                     }
                     for user_item in script_item.user_list
                 ],
