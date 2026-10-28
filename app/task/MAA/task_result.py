@@ -38,13 +38,9 @@ class MaaTaskResult:
 
 
 def _canonical_task(name: str) -> str | None:
+    name = name.removesuffix(" (仓库识别)").partition(" #")[0]
     for task, aliases in _ALIASES.items():
-        if any(
-            name == alias
-            or name.startswith(f"{alias} #")
-            or name == f"{alias} (仓库识别)"
-            for alias in aliases
-        ):
+        if name in aliases:
             return task
     return None
 

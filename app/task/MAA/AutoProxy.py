@@ -265,29 +265,6 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
     return (current, total) if total > 0 else None
 
 
-def _has_completed_annihilation_week(log: str) -> bool:
-    """判断剿灭日志是否表明本周额度已完成。
-
-    MAA 剿灭结束都会打印「完成任务: 剿灭作战」，以理智识别行区分战斗流程：
-
-    - 无理智识别行：MAA 未进到副本门口，完成即周内剿灭在代理开始前已完成；
-    - 有理智识别行但无进度行：进到门口却因理智不足没有开战，未达标；
-    - 有进度行但 current < total：开战了但理智不足没能打满进度，未达标；
-    - 进度 current >= total：本周剿灭已完成。
-
-    未达标时不记周完成标记，宁可下次代理重试。
-    """
-
-    if "完成任务: 剿灭作战" not in log:
-        return False
-
-    if not _MAA_SANITY_RECOGNITION_RE.search(log):
-        return True
-
-    progress = _parse_annihilation_weekly_progress(log)
-    return progress is not None and progress[0] >= progress[1]
-
-
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
     """判断日志记录中是否已经完成过体力任务。"""
 
@@ -1134,6 +1111,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     _event_depot_completed: bool = False
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
     _stock_depot_completed: bool = False
+    # 正数理智消耗在同一模式的重试间保留，仓库识别完成不能代替它。
+    _stock_sanity_spent: bool = False
 
     def __init__(
         self,
@@ -1319,6 +1298,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             self._event_depot_completed = False
             self._stock_depot_completed = False
+            self._stock_sanity_spent = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.Info.IfQuickConfig:
@@ -2772,7 +2752,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         if self.mode == "Annihilation":
             progress = _parse_annihilation_weekly_progress(log)
-            completed = _has_completed_annihilation_week(log)
+            # 未进入副本（无理智识别）即完成，表示此前已满周额度；
+            # 进入后必须有达标周进度，理智不足或进度缺失均不记完成。
+            completed = "完成任务: 剿灭作战" in log and (
+                not _MAA_SANITY_RECOGNITION_RE.search(log)
+                or progress is not None
+                and progress[0] >= progress[1]
+            )
             if completed:
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True
@@ -2854,34 +2840,30 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self.task_dict.get("DepotMaintain") or self._stock_depot_completed
             )
             stock_sanity_spent = stock_task_enabled and (
-                "DepotMaintain" in task_result.sanity_spent
+                self._stock_sanity_spent or "DepotMaintain" in task_result.sanity_spent
             )
+            self._stock_sanity_spent = stock_sanity_spent
+            if stock_task_enabled and "DepotMaintain" in task_result.completed:
+                self._stock_depot_completed = True
             for en_task in MAA_TASKS:
                 if en_task in task_result.completed or en_task in task_result.skipped:
-                    if (
-                        en_task == "DepotMaintain"
-                        and self.task_dict.get(en_task)
-                        and en_task in task_result.completed
-                    ):
-                        self._stock_depot_completed = True
                     self.task_dict[en_task] = False
 
-            if stock_task_enabled:
-                if stock_sanity_spent:
-                    self.task_dict["DepotMaintain"] = False
-                    self._stock_depot_completed = True
-                elif "DepotMaintain" in task_result.errors:
-                    self.task_dict["DepotMaintain"] = True
-                    self._stock_depot_completed = False
+            if stock_task_enabled and (
+                stock_sanity_spent or "DepotMaintain" in task_result.errors
+            ):
+                self.task_dict["DepotMaintain"] = not stock_sanity_spent
+                self._stock_depot_completed = stock_sanity_spent
 
-            if self.task_dict.get("EventDepotMaintain"):
-                if "EventDepotMaintain" in task_result.completed:
-                    # 库存充足时只有仓库识别，也由 MAA 收尾确认为整段完成。
-                    self.task_dict["EventDepotMaintain"] = False
-                    self._event_depot_completed = True
-                elif "EventDepotMaintain" in task_result.skipped:
-                    # 来源时段跳过只结束本次尝试，下一次仍重新判断条件。
-                    self.task_dict["EventDepotMaintain"] = False
+            if self.task_dict.get("EventDepotMaintain") and (
+                "EventDepotMaintain" in task_result.completed
+                or "EventDepotMaintain" in task_result.skipped
+            ):
+                # MAA 确认完成才保留阶段标记；时段跳过只结束本次尝试。
+                self.task_dict["EventDepotMaintain"] = False
+                self._event_depot_completed |= (
+                    "EventDepotMaintain" in task_result.completed
+                )
 
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 库存阶段有理智消耗即完成本轮，其余任务仍以 MAA 收尾错误为准。
