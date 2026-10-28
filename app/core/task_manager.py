@@ -38,7 +38,8 @@ from app.config import ConfigEntry
 from app.core.custom_script import execute_script_task
 from app.core.desktop_guard import ensure_desktop_available
 from app.core.history import history_store
-from app.models.config import CLASS_BOOK
+from app.models.config import CLASS_BOOK, UserConfigType
+from app.models.game_maintenance import MaintenanceWindow
 from app.models.schema import (
     HistoryAttachmentInput,
     HistoryWrite,
@@ -85,6 +86,7 @@ from .config import (
     WhimboxConfig,
     ZzzOdConfig,
 )
+from .game_maintenance import GameMaintenance
 from .queue_cycle import (
     SUCCESS_USER_STATUSES,
     CycleEntry,
@@ -328,6 +330,23 @@ class TaskInfo(TaskItem):
     _history_capture_files: dict[tuple[str, str], Path] = field(
         default_factory=dict, init=False, repr=False
     )
+
+    def get_script_user_configs(
+        self, script_id: str
+    ) -> Iterable[tuple[uuid.UUID, UserConfigType]]:
+        return Config.ScriptConfig[uuid.UUID(script_id)].UserData.items()
+
+    async def get_active_maintenance(self, game: str) -> MaintenanceWindow | None:
+        return await GameMaintenance.get_active(game, proxy=Config.proxy)
+
+    async def send_notice(
+        self, *, level: Literal["info", "warning", "error"], message: str
+    ) -> None:
+        await Publisher.send(
+            id=self.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level=level, message=message),
+        )
 
     def begin_script_run(self, script: ScriptItem) -> None:
         previous = self._replay_runs.get(script.script_id)

@@ -49,6 +49,9 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 class OkNteManager(ScriptManagerBase):
     """OK-NTE 控制器（ok-script 线）"""
 
+    maintenance_message = "异环正在维护"
+    # 公告数据尚未接入，沿用 AutoProxy 的游戏画面检测。
+
     def __init__(self, script_info: ScriptItem):
         super().__init__()
 
