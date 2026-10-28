@@ -1280,7 +1280,7 @@ const {
 })
 
 const handleMAAConfig = async () => {
-  await startConfiguration(userId)
+  await startConfiguration(userId, 'user')
 }
 
 // 编辑托管设置：MAA 编辑页自己管会话，离开本页的路由守卫会停会话。
@@ -1469,11 +1469,11 @@ const restoreBackup = async (target: string, time: string, viewOnly = false, for
       if (target === 'mas' && !(await loadUserData())) return false
       return true
     },
-    viewOnly ? (target === 'mas' ? userId : scriptId) : undefined
+    viewOnly ? (target === 'mas' ? userId : scriptId) : undefined,
+    target === 'mas' ? 'user' : target === 'native' ? 'script' : 'unknown'
   )
-  if (restored && response) return response
   // 保留 409 给恢复基座执行损坏配置的二次确认；已恢复但重载/启动失败不能报成功。
-  if (response && response.code !== 200) return response
+  if (response && (restored || response.code !== 200)) return response
   return { code: 400, message: t('core.edit.configRestoreFailed') }
 }
 

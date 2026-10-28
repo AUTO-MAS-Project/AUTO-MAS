@@ -72,12 +72,16 @@ from app.task.MaaFW.tools.core.agent_env import (
 from app.task.MaaFW.tools.core.agent_env.env import AGENT_PROGRAM_MISSING_HINT
 from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
+    AGENT_PIP_CONSTRAINT_DIR_ENV,
     _read_runtime_maafw_version,
+    agent_maafw_pip_constraint,
+    apply_agent_pip_constraint,
     describe_runtime_architecture_mismatch,
     detect_pe_architecture,
     host_architecture,
     host_runtime_rid_dirs,
     project_maafw_runtime_path,
+    write_agent_pip_constraint,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     set_project_pycache_prefix,
@@ -645,6 +649,71 @@ def describe_loaded_maafw() -> tuple[str, str]:
     except Exception:  # pragma: no cover
         binding = ""
     return loaded, binding
+
+
+def _agent_runner_maafw_version(plan: Any) -> str | None:
+    """agent 的 maafw 要对齐的 runner 版本：本 worker 实际加载的 binding 版本（宿主备 runner
+    环境时解析出的同一个，也在 job 的 PI_CLIENT_MAAFW_VERSION 里）。"""
+
+    _loaded, binding_version = describe_loaded_maafw()
+    return binding_version or (getattr(plan, "piEnv", None) or {}).get(
+        "PI_CLIENT_MAAFW_VERSION"
+    )
+
+
+#: 准备运行环境时会把 maafw 钉住的 agent 解释器种类；其余（原生 agent、用户自己的解释器）不注入约束。
+_PIP_CONSTRAINED_AGENT_KINDS = frozenset({"project_python", "isolated_venv"})
+
+
+def _inject_agent_pip_constraint(
+    env: dict[str, str],
+    plan: Any,
+    agent_plan: Any,
+    send_log: Callable[[str], None],
+) -> None:
+    """给 agent 子进程环境挂上 maafw 的 pip 约束（见 ``agent_maafw_pip_constraint``）。
+
+    只改传进来的 ``env``（agent 子进程与它派生的 pip），worker 自己、准备运行环境的 pip、
+    宿主侧的 pretask 都不受影响。约束文件放在宿主经 ``AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR``
+    指定的 AUTO-MAS 数据目录里，不写进项目视图。任何一步失败都只记日志、照常起 agent。
+    """
+
+    constraint_dir = str(os.environ.get(AGENT_PIP_CONSTRAINT_DIR_ENV) or "").strip()
+    if not constraint_dir:
+        return
+    if getattr(agent_plan, "runtimeKind", None) not in _PIP_CONSTRAINED_AGENT_KINDS:
+        return
+    project_path = Path(plan.path)
+    try:
+        decision = agent_maafw_pip_constraint(
+            project_path, runner_maafw_version=_agent_runner_maafw_version(plan)
+        )
+    except Exception as exc:  # noqa: BLE001 - 判定失败不挡运行
+        send_log(f"[Python环境] 判定 Agent 运行期 pip 约束失败，本次不注入: {exc}")
+        return
+    if decision.version is None:
+        send_log(f"[Python环境] 不给 Agent 注入运行期 pip 约束：{decision.reason}")
+        return
+    try:
+        constraint_file = write_agent_pip_constraint(
+            Path(constraint_dir), project_path, decision.version
+        )
+    except Exception as exc:  # noqa: BLE001 - 写不了只是少一道保险
+        send_log(
+            mask_home_path(
+                f"[Python环境] 写 Agent 运行期 pip 约束文件失败，本次不注入: {exc}"
+            )
+        )
+        return
+    applied = apply_agent_pip_constraint(env, constraint_file)
+    if applied:
+        send_log(
+            mask_home_path(
+                f"[Python环境] Agent 运行期 pip 约束 maafw=={decision.version}"
+                f"（{decision.reason}）：{' / '.join(applied)} → {constraint_file}；"
+                "agent 自己 pip 升级 maafw 时会停在这个版本"
+            )
+        )
 
 
 def _file_fingerprint(path: Path) -> tuple[int, str] | None:
@@ -2599,13 +2668,11 @@ class MaaFWRunner:
 
         # 项目没自带原生库时 agent 的 maafw 钉成本 worker 实际加载的 binding 版本（宿主备 runner
         # 环境时解析出的同一个，也在 job 的 PI_CLIENT_MAAFW_VERSION 里）。
-        _loaded, binding_version = describe_loaded_maafw()
         result = prepare_agent_envs(
             Path(self.plan.path),
             process_agents,
             send_log=self.send_log,
-            runner_maafw_version=binding_version
-            or (self.plan.piEnv or {}).get("PI_CLIENT_MAAFW_VERSION"),
+            runner_maafw_version=_agent_runner_maafw_version(self.plan),
             # 运行时口径「报错照跑」：项目自带 Python 检查没通过也照常起 agent，原因留着，
             # agent 很快退出时带进「Agent 进程已退出」的报错（_connect_agent_client）。
             lenient_health_check=True,
@@ -2970,6 +3037,8 @@ class MaaFWRunner:
         # 这里从 os.environ 复制会一并带上，项目 agent 进程因此也走这个代理——
         # 有意为之：agent 自己 pip 装依赖、拉资源同样在用户的网络环境里。
         env = strip_host_python_environment()
+        # 宿主给 worker 的约束目录指向只给 worker 用，不往 agent 里传。
+        env.pop(AGENT_PIP_CONSTRAINT_DIR_ENV, None)
         env.update(self.plan.piEnv)
 
         project_path = Path(self.plan.path)
@@ -3045,6 +3114,10 @@ class MaaFWRunner:
             if current_path
             else os.pathsep.join(path_items)
         )
+
+        # 项目部署脚本在 agent 启动后自己 pip install --upgrade maafw（MAA_bbb）会把准备时钉住的
+        # 版本升掉、与 runner 混用：给 agent 挂上 pip 约束，项目自己钉了版本的不挂。
+        _inject_agent_pip_constraint(env, self.plan, agent_plan, self.send_log)
         return env
 
     def _post_self_stop(self) -> None:

@@ -1,7 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import {
-  buildPresetAppliedSnapshot,
-  selectPresetQueueEntries,
+  buildProjectPresetAppliedSnapshot,
+  selectPresetTemplateQueue,
   type MaaFWPresetQueueEntry,
 } from '../maafwPresetQueue'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
@@ -161,23 +161,27 @@ export function useMaaFWTaskQueue({
   const presetTemplates = computed(() => {
     // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
     const activeTaskByName = availableTaskByName.value
-    return presetOptions.value
-      .map(preset => {
-        const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-        // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
-        const entries = selectPresetQueueEntries(
-          snapshot.taskOrder,
-          activeTaskByName,
-          validTaskNames.value
-        )
-        return {
+    // 只有前置任务设置（`task` 为空、或普通任务当前全不可用）的预设也列出来，
+    // 什么都做不了的不列，规则见 selectPresetTemplateQueue
+    return presetOptions.value.flatMap(preset => {
+      const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
+      const queue = selectPresetTemplateQueue(
+        snapshot.taskOrder,
+        preset.snapshot,
+        activeTaskByName,
+        validTaskNames.value,
+        isPretaskId
+      )
+      if (!queue) return []
+      return [
+        {
           preset,
-          entries,
+          ...queue,
           taskOptions: snapshot.taskOptions,
           globalOptions: snapshot.globalOptions || {},
-        }
-      })
-      .filter(template => template.entries.length > 0)
+        },
+      ]
+    })
   })
   const selectedQueuedTask = computed(
     () =>
@@ -257,22 +261,22 @@ export function useMaaFWTaskQueue({
     const template = presetTemplates.value.find(item => item.preset.name === presetName)
     if (!template) return
 
-    // 项目预设不带显示名与运行日；保留下来的前置任务留着自己的显示名
-    const nextSnapshot = buildPresetAppliedSnapshot(
+    // 项目预设不带显示名与运行日；前置任务按预设的 pretask 声明处理，没声明就原样保留
+    // （勾选、选项、显示名、运行日），规则见 buildProjectPresetAppliedSnapshot
+    const nextSnapshot = buildProjectPresetAppliedSnapshot(
       template.entries,
       template.taskOptions,
-      taskSnapshot.value.taskOrder,
+      template.pretasks,
+      template.pretaskEntries,
+      taskSnapshot.value,
       isPretaskId,
-      pickMaaFWTaskLabels(
-        taskSnapshot.value.taskLabels,
-        taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
-      )
+      resolveTaskName
     )
     taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
     taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
     taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
     setTaskLabels(nextSnapshot.taskLabels || {})
-    setTaskSchedules({})
+    setTaskSchedules(nextSnapshot.taskSchedules || {})
     // 预设里写了的全局选项值并进用户的全局表；没写的保持用户自己的设置
     if (Object.keys(template.globalOptions).length > 0) {
       taskSnapshot.value.globalOptions = {

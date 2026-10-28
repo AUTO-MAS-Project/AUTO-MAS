@@ -2,6 +2,7 @@ import {
   requestTaskStart,
   stopNativeConfig,
   type NativeConfigStopAction,
+  type TaskTargetKind,
 } from '@/composables/useTaskApi'
 // 原生设置会话通用实现（原生 GUI 配置 / 只读查看）
 import { ref } from 'vue'
@@ -140,6 +141,7 @@ export function useNativeGuiSession(options: {
   const startSession = (
     startTaskId: string,
     viewOnly = false,
+    targetKind: TaskTargetKind = 'unknown',
     startOptions: Pick<TaskCreateIn, 'instanceIdx'> = {}
   ): Promise<boolean> => {
     // 同一页面只持有一条会话；收尾帧窗口结束前也不覆盖旧订阅。
@@ -159,7 +161,7 @@ export function useNativeGuiSession(options: {
             mode: TaskCreateIn.mode.SCRIPT_CONFIG,
             viewOnly,
           },
-          { source: 'script_config' }
+          { source: 'script_config', target_kind: targetKind }
         )
         if (response.code !== 200 || !response.taskId) {
           throw new Error(response.message || t(keys.startFailed))

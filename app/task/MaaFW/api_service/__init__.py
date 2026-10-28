@@ -21,7 +21,7 @@
 
 - ``common``：解析 MFW 脚本、按脚本解析有效项目根、同组候选、``MaaFWApiReply``。
 - ``embedded``：内嵌副本的状态 / 导入 / 克隆 / 候选来源，导入后的换类型与同组同步。
-- ``interface``：interface 预览、游戏包名推断、项目内图片资源。
+- ``interface``：interface 预览、游戏包名推断、项目内图片资源、按脚本取项目图标。
 - ``update``：手动检查 / 应用项目更新，查 Mirror 酱 CDK 状态。
 - ``update_job``：手动更新放到后台执行，按脚本登记过程与结果，供页面刷新后接回。
 - ``agent_env``：预备运行环境。

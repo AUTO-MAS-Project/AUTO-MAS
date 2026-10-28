@@ -119,20 +119,21 @@ export function useInitializationFlow() {
   const runtimeFallbackLogPath = ref('')
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
   let analyticsAttempt: ReturnType<
-    typeof beginAnalyticsOperation<'initialization_finished'>
+    typeof beginAnalyticsOperation<'initialization_finished_v2'>
   > | null = null
   let skippedStage = false
   const ensureAnalyticsAttempt = () => {
     if (!analyticsAttempt) {
-      analyticsAttempt = beginAnalyticsOperation('initialization_finished')
+      analyticsAttempt = beginAnalyticsOperation('initialization_finished_v2')
       skippedStage = false
     }
   }
   const failAnalyticsAttempt = (
-    stage: AnalyticsEventProps['initialization_finished']['failed_stage']
+    stage: AnalyticsEventProps['initialization_finished_v2']['failed_stage'],
+    outcome: 'failure' | 'cancelled' = 'failure'
   ) => {
     analyticsAttempt?.finish({
-      outcome: 'failure',
+      outcome,
       flow_kind: flowKind.value,
       runtime_mode: runtimeMode.value,
       failed_stage: stage,
@@ -364,7 +365,10 @@ export function useInitializationFlow() {
     errorMessage: string,
     failure: RuntimeFailureFields
   ) {
-    failAnalyticsAttempt(stepKey)
+    failAnalyticsAttempt(
+      failure.failureOrigin === 'runtime_binary' ? 'runtime_binary' : stepKey,
+      failure.code === 'OPERATION_CANCELLED' ? 'cancelled' : 'failure'
+    )
     const state = stepStates.value[stepKey]
     state.status = 'failed'
     state.message = errorMessage
@@ -616,7 +620,10 @@ export function useInitializationFlow() {
       markStepFailed('dependency', errorMessage, failure)
       await loadMirrorConfigs()
     }
-    failAnalyticsAttempt('backend')
+    failAnalyticsAttempt(
+      'backend',
+      failure.code === 'OPERATION_CANCELLED' ? 'cancelled' : 'failure'
+    )
   }
 
   async function handleFailureAction(kind: FailureActionKind) {

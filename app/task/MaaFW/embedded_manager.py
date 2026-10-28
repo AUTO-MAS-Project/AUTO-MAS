@@ -56,6 +56,7 @@ from app.task.MaaFW.tools.backup_archive import (
     archive_native_backup,
     read_overlay_values,
 )
+from app.task.MaaFW.tools.core.file_lockers import describe_lockers_async
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     fill_default_task_snapshots,
 )
@@ -650,9 +651,8 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
     def _resolve_runtime_pool_route():
         """解析 Runtime Pool 路由（root + poolId）。
 
-        插件形态下这一步由 `adapter.py` 查 `maafw.runtime_pool.v1` 服务契约后
-        注入；树内没有服务注册表，直接实例化服务再走同一个解析函数。
-        `_run_maafw` 缺这两个值会直接拒绝运行。
+        直接实例化运行池服务，交给 `runtime_route.runtime_pool_route_from_service`
+        解析。`_run_maafw` 缺这两个值会直接拒绝运行。
 
         **只在工作线程里调**（``asyncio.to_thread``）：构造服务要拿进程级的池锁，
         别的线程正持锁建 base venv / 装解释器 / 回收时会等上几秒到几分钟，放在事件
@@ -1078,10 +1078,15 @@ class MaaFWEmbeddedManager(NotificationTaskBase):
                 script_id, channel, reservation_held=reservation_held
             )
         except Exception as exc:  # noqa: BLE001 - 同步失败不挡运行，视图留在原版本
+            # 换视图被占用（rename 拒绝访问）时尽力点出占用者；查不到就什么都不加。
+            lockers = await describe_lockers_async(exc)
+            suffix = f"（{lockers}）" if lockers else ""
             logger.opt(exception=True).warning(
-                f"MFW 组同步失败，本轮沿用当前版本：{exc}"
+                f"MFW 组同步失败，本轮沿用当前版本：{exc}{suffix}"
             )
-            self._append_update_log(f"切换到同组版本失败，本轮沿用当前版本：{exc}")
+            self._append_update_log(
+                f"切换到同组版本失败，本轮沿用当前版本：{exc}{suffix}"
+            )
             return False
         if result is None:
             return False

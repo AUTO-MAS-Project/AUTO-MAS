@@ -779,6 +779,7 @@ class WSTaskScriptFinishedData(WSTaskScriptStartedData):
     outcome: Literal[
         "success", "failed", "skipped", "no_user", "incomplete", "error", "cancelled"
     ]
+    partialFailure: Literal["yes", "no", "unknown"] = "unknown"
 
 
 class WSTaskCreatedData(BaseModel):

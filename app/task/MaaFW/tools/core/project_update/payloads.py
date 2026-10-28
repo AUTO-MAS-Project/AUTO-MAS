@@ -29,7 +29,7 @@ import stat
 import uuid
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1020,6 +1020,57 @@ def _now_text() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def _merge_existing_manifest(
+    existing: Mapping[str, Any],
+    files: Mapping[str, Mapping[str, Any]],
+    *,
+    source: Mapping[str, Any],
+    version: str,
+    projection_revision: int,
+    release_check: Mapping[str, Any] | None,
+) -> tuple[dict[str, Any], bool]:
+    """同 id 的载荷已在（内容相同、目录不动）：只把这次登记带来的事实并进既有清单。
+
+    返回 (合并后的清单, 有没有改动)；没有改动时 ``files`` 不重写，与既有清单相同。
+    """
+
+    merged = dict(existing)
+    merged_files = manifest_files(existing)
+    changed = False
+    for rel, entry in files.items():
+        current = merged_files.get(rel)
+        if (
+            current is not None
+            and entry["origin"] == ORIGIN_PACKAGE
+            and current["origin"] != ORIGIN_PACKAGE
+        ):
+            current["origin"] = ORIGIN_PACKAGE
+            changed = True
+    if (
+        str(source.get("kind") or "") == "update"
+        and str((existing.get("source") or {}).get("kind") or "") != "update"
+    ):
+        # 同一份内容这次有更新器清单背书：来源升成 update（下次更新可要差量包）。
+        # 与 origin 合并同一口径，结果不取决于谁先登记。
+        merged["source"] = dict(source)
+        changed = True
+    if projection_revision > _non_negative_int(existing.get(PROJECTION_REVISION_FIELD)):
+        # 同一份内容按新规则又建出了一遍：它本来就是完整的，记上。
+        merged[PROJECTION_REVISION_FIELD] = int(projection_revision)
+        changed = True
+    if (
+        release_check
+        and release_verified({"version": version, RELEASE_CHECK_FIELD: release_check})
+        and not release_verified(existing)
+    ):
+        # 同一份内容这次核对过发行包：记上（同版本例外三据此判断）。
+        merged[RELEASE_CHECK_FIELD] = dict(release_check)
+        changed = True
+    if changed:
+        merged["files"] = merged_files
+    return merged, changed
+
+
 def register(
     root: Path,
     staging: Path,
@@ -1043,6 +1094,8 @@ def register(
 
     - 同 id 已存在：丢弃 staging、既有目录不动，只把清单里的 ``origin`` 合并（``package``
       胜过 ``import``）。
+    - 换不换 ``latest[channel]`` 只由 :func:`decide_latest` 按有序规则表 :data:`LATEST_RULES`
+      判定（下面几条是它的摘要，细节以规则函数的说明为准）。
     - ``latest[channel]`` **只在版本严格更高时前进**；版本相同而 id 不同时保留既有 id
       （新建的这份不登记为 latest，等启动期回收）。返回的 ``latest_id`` 就是调用方该把
       视图切到的那个。``latest`` 指向的载荷不完整（目录丢了，或清单没了 / 读不出，见
@@ -1121,46 +1174,16 @@ def register(
         existing = _read_json(manifest_file) if target.is_dir() else None
         if existing is not None:
             created = False
-            merged = dict(existing)
-            merged_files = manifest_files(existing)
-            changed = False
-            for rel, entry in files.items():
-                current = merged_files.get(rel)
-                if (
-                    current is not None
-                    and entry["origin"] == ORIGIN_PACKAGE
-                    and current["origin"] != ORIGIN_PACKAGE
-                ):
-                    current["origin"] = ORIGIN_PACKAGE
-                    changed = True
-            if (
-                str(source.get("kind") or "") == "update"
-                and str((existing.get("source") or {}).get("kind") or "") != "update"
-            ):
-                # 同一份内容这次有更新器清单背书：来源升成 update（下次更新可要差量包）。
-                # 与 origin 合并同一口径，结果不取决于谁先登记。
-                merged["source"] = dict(source)
-                changed = True
-            if projection_revision > _non_negative_int(
-                existing.get(PROJECTION_REVISION_FIELD)
-            ):
-                # 同一份内容按新规则又建出了一遍：它本来就是完整的，记上。
-                merged[PROJECTION_REVISION_FIELD] = int(projection_revision)
-                changed = True
-            if (
-                release_check
-                and release_verified(
-                    {"version": version, RELEASE_CHECK_FIELD: release_check}
-                )
-                and not release_verified(existing)
-            ):
-                # 同一份内容这次核对过发行包：记上（下面的同版本例外三据此判断）。
-                merged[RELEASE_CHECK_FIELD] = dict(release_check)
-                changed = True
+            manifest, changed = _merge_existing_manifest(
+                existing,
+                files,
+                source=source,
+                version=version,
+                projection_revision=projection_revision,
+                release_check=release_check,
+            )
             if changed:
-                merged["files"] = merged_files
-                write_json_atomic(manifest_file, merged)
-            manifest = merged
+                write_json_atomic(manifest_file, manifest)
             remove_tree(staging)
         else:
             created = True
@@ -1182,72 +1205,48 @@ def register(
             if str(info_value or "").strip():
                 data[info_key] = str(info_value)
         current_latest = data["latest"].get(channel)
-        if (
-            always_advance
-            or not isinstance(current_latest, Mapping)
-            or not current_latest.get("id")
-        ):
-            advanced = True
-        else:
-            current_version = str(current_latest.get("version") or "")
-            latest_dir = lineage_dir(root, lineage) / str(current_latest["id"])
-            if payload_complete(root, lineage, str(current_latest["id"])):
-                same_id = str(current_latest["id"]) == payload_id
-                same_version = not version_newer(current_version, version)
-                newer = (
-                    version_newer(version, current_version)
-                    if version_checked
-                    else _version_strictly_newer(version, current_version)
-                )
-                latest_manifest = _read_json(
-                    manifest_path(root, lineage, str(current_latest["id"]))
-                )
-                advanced = (
-                    newer
-                    or (
-                        misnumbered_rollback
-                        and _misnumbered_above(current_version, version)
-                    )
-                    or _replaces_unloadable_latest(
-                        latest_dir,
-                        target,
-                        same_id=same_id,
-                        same_version=same_version,
-                    )
-                    or _replaces_older_projection_latest(
-                        latest_manifest,
-                        manifest,
-                        latest_dir=latest_dir,
-                        candidate_dir=target,
-                        same_id=same_id,
-                        same_version=same_version,
-                    )
-                    or _replaces_unverified_latest(
-                        latest_manifest,
-                        manifest,
-                        latest_dir=latest_dir,
-                        candidate_dir=target,
-                        same_id=same_id,
-                        same_version=same_version,
-                    )
-                )
-            else:
-                # latest 指的目录丢了（或只剩目录、清单没了 / 读不出——同样建不了视图、当不了
-                # 更新基准）：只有新登记的不比它旧才顶上去，否则组会后退；保留原 latest，缺失的
-                # 载荷由自愈 / 迁移处理。
-                advanced = not version_newer(current_version, version) or (
-                    misnumbered_rollback
-                    and _misnumbered_above(current_version, version)
-                )
-                if not advanced:
-                    logger.warning(
-                        "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机或不完整，新登记的 %s 更旧，"
-                        "保留原 latest",
-                        lineage,
-                        channel,
-                        current_latest["id"],
-                        payload_id,
-                    )
+        if always_advance and not is_private_channel(channel):
+            # 不变量（AGENTS.md「跟随来源目录」）：always_advance 只给开发者模式的私有渠道用。
+            # 违反时照旧前进（不改行为），只留一行告警，免得普通渠道被一份不比版本的登记推着走
+            # 而没人察觉。
+            logger.warning(
+                "谱系 %s 渠道 %s 不是私有渠道却按 always_advance 登记 %s（应只给开发者模式用）",
+                lineage,
+                channel,
+                payload_id,
+            )
+        facts = _latest_facts(
+            root,
+            lineage,
+            current_latest,
+            payload_id=payload_id,
+            version=version,
+            manifest=manifest,
+            candidate_dir=target,
+            always_advance=always_advance,
+            version_checked=version_checked,
+            misnumbered_rollback=misnumbered_rollback,
+        )
+        decision = decide_latest(facts)
+        advanced = decision.advance
+        logger.debug(
+            "谱系 %s 渠道 %s 登记 %s：%s latest（规则 %s，原 latest %s）",
+            lineage,
+            channel,
+            payload_id,
+            "推进" if advanced else "保留",
+            decision.rule,
+            facts.latest_id or "无",
+        )
+        if decision.rule == RULE_LATEST_INCOMPLETE and not advanced:
+            logger.warning(
+                "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机或不完整，新登记的 %s 更旧，"
+                "保留原 latest",
+                lineage,
+                channel,
+                facts.latest_id,
+                payload_id,
+            )
         if advanced:
             data["latest"][channel] = {
                 "id": payload_id,
@@ -1279,97 +1278,285 @@ def register(
     )
 
 
-def _replaces_unloadable_latest(
-    latest_dir: Path, candidate_dir: Path, *, same_id: bool, same_version: bool
-) -> bool:
-    """同版本重新登记时，新的这份该不该顶替组的 latest。
+# --------------------------------------------------------------------------
+# 组 latest 换不换：有序规则表（纯判定）
+# --------------------------------------------------------------------------
+#
+# 「只前进」与它的全部例外都在这一处：:func:`register` 把比较双方的事实收进
+# :class:`LatestFacts`，:func:`decide_latest` 按 :data:`LATEST_RULES` 的顺序逐条看，第一条
+# 给出结论的规则说了算，都不管就保留原 latest（``keep``）。迁移时「同版本多份挑一份」
+# （:func:`settle_same_version_latest`）的排序键 :func:`same_version_sort_key` 也在这里，
+# 与登记时的同版本例外同一口径。规则本身不碰盘：加载性由调用方以按需探测的函数传进来，
+# 走到要看它的规则才调用（与短路求值的顺序一致）。
 
-    只有一种情况：latest 自带的 MaaFramework 在本机加载不了（PE 架构不符——旧版在来源
-    ``runtimes/`` 同时带 win-arm64 与 win-x64 时按名字选中了 arm64，x64 机器上副本只剩
-    arm64），而这份能加载。不开这个口子，「在脚本页重新导入」永远换不掉坏的那份，只能等
-    项目出新版本。两边都读不出架构、或都能 / 都不能加载时照旧不换。
+LoadableProbe = Callable[[], "bool | None"]
+
+RULE_ALWAYS_ADVANCE = "always-advance"
+RULE_NO_LATEST = "no-latest"
+RULE_LATEST_INCOMPLETE = "latest-incomplete"
+RULE_NEWER = "newer"
+RULE_MISNUMBERED_ROLLBACK = "misnumbered-rollback"
+RULE_UNLOADABLE_LATEST = "unloadable-latest"
+RULE_OLDER_PROJECTION = "older-projection"
+RULE_UNVERIFIED_LATEST = "unverified-latest"
+RULE_KEEP = "keep"
+
+
+def _loadability_unknown() -> bool | None:
+    return None
+
+
+@dataclass(frozen=True)
+class LatestFacts:
+    """登记时比较「这份」（candidate）与组 ``latest[channel]`` 的全部事实。
+
+    ``latest_id`` 为空表示组里还没有 latest（这时其余 ``latest_*`` 不看）。
+    ``latest_complete``：latest 指的载荷在本机完整（:func:`payload_complete`）。
+    ``*_loadable``：自带的 MaaFramework 在本机能不能加载（True / False / None 读不出），
+    零参函数，按需调用。
     """
 
-    if same_id or not same_version:
-        return False
-    from app.task.MaaFW.tools.core.runner.environment import (
-        project_runtime_loadable_on_host,
+    version: str
+    payload_id: str
+    manifest: Mapping[str, Any]
+    latest_id: str = ""
+    latest_version: str = ""
+    latest_manifest: Mapping[str, Any] | None = None
+    latest_complete: bool = True
+    always_advance: bool = False
+    version_checked: bool = False
+    misnumbered_rollback: bool = False
+    candidate_loadable: LoadableProbe = _loadability_unknown
+    latest_loadable: LoadableProbe = _loadability_unknown
+
+    @property
+    def same_id(self) -> bool:
+        return self.latest_id == self.payload_id
+
+    @property
+    def same_version(self) -> bool:
+        """latest 不比这份新（:func:`version_newer` 口径）。同版本例外只在这时才看；这份
+        确实更新的情况在前面的 ``newer`` 规则就定了。"""
+
+        return not version_newer(self.latest_version, self.version)
+
+
+@dataclass(frozen=True)
+class LatestDecision:
+    advance: bool
+    # 定下结论的规则（``LATEST_RULES`` 里的名字，都不管时是 ``keep``）
+    rule: str
+
+
+# 一条规则：返回 True（前进）/ False（保留）即为结论，None 表示不管、交给下一条。
+LatestRule = Callable[[LatestFacts], "bool | None"]
+
+
+def _misnumbered_rollback_applies(facts: LatestFacts) -> bool:
+    """手动更新的回退候选，且 latest 正是发错的高主版本号（:func:`_misnumbered_above`）。
+    自动更新不传 ``misnumbered_rollback``，所以从不回退。"""
+
+    return facts.misnumbered_rollback and _misnumbered_above(
+        facts.latest_version, facts.version
     )
 
-    if project_runtime_loadable_on_host(latest_dir) is not False:
+
+def _swaps_loadable_for_unloadable(facts: LatestFacts) -> bool:
+    """这份自带的 MaaFramework 在本机加载不了、而 latest 的能加载（或读不出）。同版本例外
+    二、三里的「例外中的例外」：重新导入一份别的架构的包不该把组换坏。"""
+
+    return facts.candidate_loadable() is False and facts.latest_loadable() is not False
+
+
+def _rule_always_advance(facts: LatestFacts) -> bool | None:
+    """开发者模式的私有渠道：不比版本，这次登记的就是 latest（AGENTS.md「跟随来源目录」）。"""
+
+    return True if facts.always_advance else None
+
+
+def _rule_no_latest(facts: LatestFacts) -> bool | None:
+    """组里还没有 latest：这份就是。"""
+
+    return None if facts.latest_id else True
+
+
+def _rule_latest_incomplete(facts: LatestFacts) -> bool | None:
+    """latest 指的目录丢了（或只剩目录、清单没了 / 读不出——同样建不了视图、当不了更新
+    基准）：只有这份不比它旧（或正是发错版本号的回退）才顶上去，否则组会后退；保留原
+    latest，缺失的载荷由自愈 / 迁移处理。这条给出终局结论，后面的规则不再看。"""
+
+    if facts.latest_complete:
+        return None
+    return not version_newer(
+        facts.latest_version, facts.version
+    ) or _misnumbered_rollback_applies(facts)
+
+
+def _rule_newer(facts: LatestFacts) -> bool | None:
+    """「只前进」本身：这份版本更高才前进。``version_checked``（更新器已按
+    ``_is_remote_newer`` 确认过）沿用 :func:`version_newer`；其余（导入、采纳、补齐）用
+    :func:`_version_strictly_newer`——非 PEP 440 的版本号比不出先后时不前进。"""
+
+    newer = (
+        version_newer(facts.version, facts.latest_version)
+        if facts.version_checked
+        else _version_strictly_newer(facts.version, facts.latest_version)
+    )
+    return True if newer else None
+
+
+def _rule_misnumbered_rollback(facts: LatestFacts) -> bool | None:
+    """「只前进」的例外：手动更新把项目发错的高主版本号拉回权威源的版本，只在 latest 是
+    主版本号更高的正式版时顶替它（判定见 ``updater._is_misnumbered_current``）。"""
+
+    return True if _misnumbered_rollback_applies(facts) else None
+
+
+def _replaces_unloadable_latest(facts: LatestFacts) -> bool:
+    """同版本例外一：latest 自带的 MaaFramework 在本机加载不了，这份能加载。
+
+    PE 架构不符——旧版在来源 ``runtimes/`` 同时带 win-arm64 与 win-x64 时按名字选中了
+    arm64，x64 机器上副本只剩 arm64。不开这个口子，「在脚本页重新导入」永远换不掉坏的那份，
+    只能等项目出新版本。两边都读不出架构、或都能 / 都不能加载时照旧不换。
+    """
+
+    if facts.same_id or not facts.same_version:
         return False
-    return project_runtime_loadable_on_host(candidate_dir) is True
+    if facts.latest_loadable() is not False:
+        return False
+    return facts.candidate_loadable() is True
 
 
-def _replaces_older_projection_latest(
-    latest_manifest: Mapping[str, Any] | None,
-    candidate_manifest: Mapping[str, Any],
-    *,
-    latest_dir: Path,
-    candidate_dir: Path,
-    same_id: bool,
-    same_version: bool,
-) -> bool:
-    """同版本重新登记时，按更新的投影规则建的这份该不该顶替组的 latest。
+def _replaces_older_projection_latest(facts: LatestFacts) -> bool:
+    """同版本例外二：这份按更新的投影规则建。
 
     旧规则漏装了文件的载荷（MaaFgo v2.0.03 的 ``agent/battle/runtime/``）按同一版本补齐后
     重新登记、或用户按新规则重新导入同一版本：不开这个口子，同版本永远换不掉，运行前
     检查还会说「已是最新」。看规则版本：这份清单记的 ``projectionRevision`` 比 latest
     的有效规则版本（:func:`projection_revision_of`，含「按新规则查过没缺文件」）高才换；
-    但这份自带的 MaaFramework 在本机加载不了、latest 的能加载时不换（与
-    :func:`_replaces_unloadable_latest` 同一判据，重新导入一份别的架构的包不该把组换坏）。
+    但这份自带的 MaaFramework 在本机加载不了、latest 的能加载时不换
+    （:func:`_swaps_loadable_for_unloadable`）。
     """
 
-    if same_id or not same_version or latest_manifest is None:
+    if facts.same_id or not facts.same_version or facts.latest_manifest is None:
         return False
-    candidate = _non_negative_int(candidate_manifest.get(PROJECTION_REVISION_FIELD))
-    if candidate <= projection_revision_of(latest_manifest):
+    candidate = _non_negative_int(facts.manifest.get(PROJECTION_REVISION_FIELD))
+    if candidate <= projection_revision_of(facts.latest_manifest):
         return False
-    from app.task.MaaFW.tools.core.runner.environment import (
-        project_runtime_loadable_on_host,
-    )
-
-    return not (
-        project_runtime_loadable_on_host(candidate_dir) is False
-        and project_runtime_loadable_on_host(latest_dir) is not False
-    )
+    return not _swaps_loadable_for_unloadable(facts)
 
 
-def _replaces_unverified_latest(
-    latest_manifest: Mapping[str, Any] | None,
-    candidate_manifest: Mapping[str, Any],
-    *,
-    latest_dir: Path,
-    candidate_dir: Path,
-    same_id: bool,
-    same_version: bool,
-) -> bool:
-    """同版本重新登记时，核对过官方发行包的这份该不该顶替没核对过的 latest。
+def _replaces_unverified_latest(facts: LatestFacts) -> bool:
+    """同版本例外三：这份核对过官方发行包，latest 是没核对过的导入。
 
     导入目录里留着旧版本文件（被新包覆盖过的解压目录）时，登记出的载荷资源目录里多了
     新版本已删掉的 pipeline，节点重名让 MaaFramework 整包拒收；同版本重新导入以前顶不掉
     它，只能等项目出下一版。核对过（:func:`release_verified`：清掉了残留，或核对后本来就没有）
-    而 latest 是导入来的、又没核对过（:func:`release_settled` 为假）才换：更新得来的 latest
-    就是发行包的精确投影，视同核对过——核对不比内容，本地改过的导入不能顶掉原版。
-    与 :func:`_same_version_rank` 同一口径：规则版本不能比 latest 低（否则迁移时会按规则版本
-    又换回去），也不能是「本机加载不了换掉能加载的」。
+    而 latest 是导入来的、又没核对过（:func:`release_settled` 为假）才换。例外中的例外：
+    更新得来的 latest 就是发行包的精确投影，视同核对过——核对不比内容，本地改过的导入不能
+    顶掉原版；规则版本不能比 latest 低（否则迁移时会按 :func:`same_version_sort_key` 又换
+    回去）；也不能是「本机加载不了换掉能加载的」。
     """
 
-    if same_id or not same_version or latest_manifest is None:
+    if facts.same_id or not facts.same_version or facts.latest_manifest is None:
         return False
-    if not release_verified(candidate_manifest) or release_settled(latest_manifest):
+    if not release_verified(facts.manifest) or release_settled(facts.latest_manifest):
         return False
-    if projection_revision_of(candidate_manifest) < projection_revision_of(
-        latest_manifest
+    if projection_revision_of(facts.manifest) < projection_revision_of(
+        facts.latest_manifest
     ):
         return False
-    from app.task.MaaFW.tools.core.runner.environment import (
-        project_runtime_loadable_on_host,
-    )
+    return not _swaps_loadable_for_unloadable(facts)
 
-    return not (
-        project_runtime_loadable_on_host(candidate_dir) is False
-        and project_runtime_loadable_on_host(latest_dir) is not False
+
+def _advance_if(predicate: Callable[[LatestFacts], bool]) -> LatestRule:
+    def rule(facts: LatestFacts) -> bool | None:
+        return True if predicate(facts) else None
+
+    rule.__doc__ = predicate.__doc__
+    return rule
+
+
+# 顺序就是优先级：规则返回 True / False 即为结论，None 交给下一条；都不管时保留（``keep``）。
+LATEST_RULES: tuple[tuple[str, LatestRule], ...] = (
+    (RULE_ALWAYS_ADVANCE, _rule_always_advance),
+    (RULE_NO_LATEST, _rule_no_latest),
+    (RULE_LATEST_INCOMPLETE, _rule_latest_incomplete),
+    (RULE_NEWER, _rule_newer),
+    (RULE_MISNUMBERED_ROLLBACK, _rule_misnumbered_rollback),
+    (RULE_UNLOADABLE_LATEST, _advance_if(_replaces_unloadable_latest)),
+    (RULE_OLDER_PROJECTION, _advance_if(_replaces_older_projection_latest)),
+    (RULE_UNVERIFIED_LATEST, _advance_if(_replaces_unverified_latest)),
+)
+
+
+def decide_latest(facts: LatestFacts) -> LatestDecision:
+    """组 latest 换不换成这次登记的这份：按 :data:`LATEST_RULES` 逐条看，第一条给出结论的
+    说了算；都不管就保留原 latest。只看 ``facts``，不碰盘（加载性经传入的探测函数取）。"""
+
+    for name, rule in LATEST_RULES:
+        verdict = rule(facts)
+        if verdict is not None:
+            return LatestDecision(advance=bool(verdict), rule=name)
+    return LatestDecision(advance=False, rule=RULE_KEEP)
+
+
+def _loadable_probe(directory: Path) -> LoadableProbe:
+    """``directory`` 自带的 MaaFramework 在本机能不能加载，调用时才探测（读 PE 头）。"""
+
+    def probe() -> bool | None:
+        from app.task.MaaFW.tools.core.runner.environment import (
+            project_runtime_loadable_on_host,
+        )
+
+        return project_runtime_loadable_on_host(directory)
+
+    return probe
+
+
+def _latest_facts(
+    root: Path,
+    lineage: str,
+    current_latest: Any,
+    *,
+    payload_id: str,
+    version: str,
+    manifest: Mapping[str, Any],
+    candidate_dir: Path,
+    always_advance: bool,
+    version_checked: bool,
+    misnumbered_rollback: bool,
+) -> LatestFacts:
+    """:func:`register` 在谱系锁内收集比较事实。``always_advance`` 或组里还没有 latest 时
+    不读 latest 的任何东西（与改造前相同）。"""
+
+    latest_id = (
+        str(current_latest.get("id") or "")
+        if isinstance(current_latest, Mapping)
+        else ""
+    )
+    facts = LatestFacts(
+        version=version,
+        payload_id=payload_id,
+        manifest=manifest,
+        latest_id=latest_id,
+        always_advance=always_advance,
+        version_checked=version_checked,
+        misnumbered_rollback=misnumbered_rollback,
+        candidate_loadable=_loadable_probe(candidate_dir),
+    )
+    if always_advance or not latest_id:
+        return facts
+    latest_dir = lineage_dir(root, lineage) / latest_id
+    complete = payload_complete(root, lineage, latest_id)
+    return replace(
+        facts,
+        latest_version=str(current_latest.get("version") or ""),
+        latest_complete=complete,
+        latest_manifest=(
+            _read_json(manifest_path(root, lineage, latest_id)) if complete else None
+        ),
+        latest_loadable=_loadable_probe(latest_dir),
     )
 
 
@@ -1412,12 +1599,40 @@ def _same_version_rank(
     )
 
 
-def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None:
+def same_version_sort_key(
+    candidate: str,
+    manifests: Mapping[str, Mapping[str, Any]],
+    loadable: Mapping[str, int],
+) -> tuple[int, tuple[int, int, int, int, int, int], tuple[int, ...]]:
+    """:func:`settle_same_version_latest` 挑同版本 latest 的排序键（降序取第一个）。
+
+    最先看自带的 MaaFramework 在本机能不能加载（``loadable``：能或读不出记 1；与
+    :func:`_replaces_unloadable_latest` 同一判据）——更新得来的坏 arm64 载荷不能因为
+    「有清单背书」压过导入的好载荷；其次 :func:`_same_version_rank`；全部打平时按 id 升序。
+    """
+
+    return (
+        loadable[candidate],
+        _same_version_rank(candidate, manifests),
+        _reverse_text(candidate),
+    )
+
+
+def settle_same_version_latest(
+    root: Path,
+    key: str,
+    channel: str,
+    *,
+    candidate_ids: Iterable[str] | None = None,
+) -> str | None:
     """``latest[channel]`` 所在版本有多份载荷时，确定地挑一份：本机能加载自带 MaaFramework
     的优先，其次按 :func:`_same_version_rank`。
 
     迁移先把全部副本登记完再调它（登记是「同版本保留先来的」，先来的可能是残缺的那份），
     然后才统一切换。返回换成的 id；没变返回 None。损坏（``damaged``）或目录不在的不参选。
+
+    ``candidate_ids``：宿主已知属于本组的候选；给了则只在它们与当前 latest 中排名。
+    不以清单的初次登记渠道推断共享载荷的组归属（同内容可被多个渠道复用）。
     """
 
     if is_private_channel(channel):
@@ -1432,8 +1647,15 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
         if not version:
             return None
         damaged = {str(item) for item in data.get("damaged") or []}
+        candidates = (
+            None
+            if candidate_ids is None
+            else {str(item) for item in candidate_ids} | {str(entry["id"])}
+        )
         manifests: dict[str, dict[str, Any]] = {}
         for payload_id in list_ids(root, key):
+            if candidates is not None and payload_id not in candidates:
+                continue
             if payload_id in damaged or not payload_dir(root, key, payload_id).is_dir():
                 continue
             manifest = read_manifest(root, key, payload_id)
@@ -1441,11 +1663,14 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
                 continue
             if str(manifest.get("version") or "").strip().lstrip("vV") != version:
                 continue
-            if payload_id != str(entry["id"]) and is_private_channel(
-                str(manifest.get("channel") or "")
+            if (
+                candidates is None
+                and payload_id != str(entry["id"])
+                and is_private_channel(str(manifest.get("channel") or ""))
             ):
                 # 开发者模式导入建出来的载荷（来源目录里本地改过、版本号没变）不参选普通
                 # 渠道的 latest：否则「文件多 / 规则新」会把同组的正式版换成某人的本地修改。
+                # 显式候选已有宿主的组归属证明，不再按初次登记渠道排除共享载荷。
                 continue
             manifests[payload_id] = manifest
         if len(manifests) < 2:
@@ -1465,11 +1690,7 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
         }
         chosen = sorted(
             manifests,
-            key=lambda pid: (
-                loadable[pid],
-                _same_version_rank(pid, manifests),
-                _reverse_text(pid),
-            ),
+            key=lambda pid: same_version_sort_key(pid, manifests, loadable),
             reverse=True,
         )[0]
         if chosen == str(entry["id"]):
@@ -1567,6 +1788,7 @@ def collect_unreferenced(
 
 
 __all__ = [
+    "LATEST_RULES",
     "LINEAGE_FILE_NAME",
     "ORIGIN_IMPORT",
     "ORIGIN_PACKAGE",
@@ -1578,6 +1800,8 @@ __all__ = [
     "RELEASE_CHECK_CLEAN",
     "RELEASE_CHECK_FIELD",
     "FinalizeResult",
+    "LatestDecision",
+    "LatestFacts",
     "PackageBuild",
     "PayloadError",
     "RegisterResult",
@@ -1588,6 +1812,7 @@ __all__ = [
     "clone_payload_into",
     "collect_unreferenced",
     "content_id",
+    "decide_latest",
     "finalize",
     "inherited_projection_revision",
     "is_private_channel",
@@ -1620,6 +1845,7 @@ __all__ = [
     "release_settled",
     "release_verified",
     "remove_tree",
+    "same_version_sort_key",
     "version_newer",
     "write_json_atomic",
     "write_lineage",

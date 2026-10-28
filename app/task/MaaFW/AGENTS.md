@@ -7,9 +7,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 布局与边界
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
-- `tools/embedded/maintenance.py`：宿主资源维护；公共 Config 注入脚本快照、完整加载状态与保留天数，main 编排迁移后的启动清理，timer 触发每日原生日志清理。
+- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入脚本快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
-  同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
+  同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源 / 项目图标，
   `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
   **MFW 的 API 业务一律在这里实现，
   本目录的 `api.py` 只放端点模型与薄端点**：取参数 → 调这里的一个函数 → `XxxOut(**reply.out_fields())`
@@ -71,6 +71,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   本地改过的导入不能顶掉原版；`_same_version_rank` 同口径）。「只前进」另有一个例外：手动更新
   把项目发错的高主版本号拉回权威源的版本（`register(misnumbered_rollback=True)`，判定见
   `updater._is_misnumbered_current`），只在 latest 是主版本号更高的正式版时顶替它；自动更新不回退。
+  **换不换只在一处判定**：`payloads.decide_latest` 按有序规则表 `LATEST_RULES`（私有渠道
+  `always_advance` → 组里没有 latest → latest 不完整 → 版本更高 → 发错版本号回退 → 上面三个同版本
+  例外，都不管就保留），迁移时同版本挑一份用同口径的 `same_version_sort_key`；加新例外就往表里加
+  一条，别在 `register` 里另写判断。登记时 debug 日志记下定结论的规则。登记与迁移挑同版本之外，
+  改写 latest 的只有两处，都不是新例外、不进表：投影补齐后的跟随改指（`projection_heal.repoint_latest`：
+  别的渠道已把同一份载荷补齐成新载荷，本渠道 latest 还指着旧的就跟过去，不比版本、不看加载性），
+  以及启动期摘掉不再算引用的私有渠道 latest（`embedded_project._prune_follow_source_latest`，见
+  「跟随来源目录」的「回收」）。
   开发者模式的脚本例外：它的组是
   谱系 + 私有渠道 `dev:<视图名>`，见下一条。
   谱系 / 载荷 / 版本都不进 `ScriptConfig.json`；**唯一新增的配置项**是下一条的开关
@@ -80,7 +88,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   - **组换成私有渠道** `dev:<视图名>`（`embedded_project.effective_channel`）：组同步、同组传播
     （`GroupMember.channel`）、导入登记、启动期统一到组版本都按它，所以同项目的其它脚本与官方更新
     碰不到它，它的导入也推不动普通渠道。登记用 `payloads.register(always_advance=True)`：私有渠道
-    每次导入都前进、不比版本；普通渠道不传，语义一字不改。私有渠道建出的载荷（清单 `channel` 是
+    每次导入都前进、不比版本；普通渠道不传，语义一字不改（传了照旧前进，`register` 记一行告警）。
+    私有渠道建出的载荷（清单 `channel` 是
     `dev:`）不参与 `settle_same_version_latest` 挑普通渠道的 latest；版本另带 PEP 440 本地段
     `+dev`（`follow_source_payload_version`：`1.5.0` → `1.5.0+dev`，已有本地段的追加 `.dev`），
     所以没有这条过滤的老代码按「版本字符串相等」挑同版本候选时也挑不中它，载荷 id 也与同内容的
@@ -161,7 +170,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
     「路径越界」。要支持新的越界写法，先补运行时映射再放行。
   - `"child_exec": "uv"`（`uv run …`）**不支持**：uv 按项目自己的锁文件另建环境，maafw 未必与运行用的
     MaaFramework 同版本。导入时报清楚的错（`agent_entry.describe_uv_agent`），老副本在准备运行环境时报同一句。
-- **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
+- **投影**：按 interface 白名单（`project_update/projection.py`；`build_projection_rules` 按声明类别
+  分在 `_ProjectionScan` 的 `_scan_*` 里，扫完再判源码形态、依赖清单、自带原生库、小顶层条目），
+  **白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
@@ -199,7 +210,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   是自己一直在用的目录，里面早有这些文件）。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
   例外中的例外是 `contracts.VERSION_BOUND_STATE_FILES`（M9A 热更新的 `data/manifest_cache.json`）：
   它和随版本发布的 `data/` 表成对，换到另一个载荷时只取新载荷那份（没有就不要），带视图这份会让
-  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。自带解释器里的 maafw
+  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。它必须是
+  `RUNTIME_STATE_FILES` 的子集（`_realize_view` 先判它、再判运行期状态，不在后一张表里的同载荷重建时
+  会按受管文件处理），落点：`contracts.py` 里 `RUNTIME_STATE_FILES` 按构造并入它，加版本绑定的文件
+  只往它里面加。自带解释器里的 maafw
   binding（`…/site-packages/maa/`、`maafw-*.dist-info/`）也不按受管文件处理：它是准备运行环境
   钉回的（或 agent 部署脚本升级的），切换时一律以新载荷为准，不留档、不当私有文件带过去，
   下次准备再按新原生库钉回（`embedded_project._is_maafw_binding_path`）。
@@ -267,7 +281,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
-- **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前，整段
+- **启动期一次性迁移**（`MaaFWMaintenanceService.migrate_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
   副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface
   算投影白名单，白名单内、不是已知运行期状态 / 日志的全部进载荷，内容取视图现状；更新器清单与来源
@@ -278,6 +292,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
   `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
   清单里没有导入目录）。
+  没有待采纳副本时仍复核 latest 与视图，补完上次在采纳后中断的收尾；候选只取采纳标记的
+  `adoptedChannel` 与本轮渠道相符的视图及组现有 latest，不用当前配置渠道给旧视图重新归组，也不以
+  清单初次登记渠道推断共享载荷归属。`adoptedChannel` 只随成功采纳的标记原子换入，重建丢失载荷时
+  保留原事实、普通切换不继承；缺少此事实的旧标记仅沿用组现有 latest。采纳也跳过运行中脚本。
+  取消先等正在执行的文件操作结束，再释放尚未移交的预约并清除 `migration_active`。
 - **发行包形态与源码形态**：发行包（interface 在包根，自带 `python/` / `maafw/` 或不带）照常导入、
   照常更新。M9A 式源码仓（`assets/interface.json`、agent 在 `assets/` 外）按上面「源码形态」平铺导入，
   始终跟随来源目录、不做项目更新（`child_exec: uv` 不支持，见「源码形态」）。被 CFA（MFW-PyQt6）源码热更新过
@@ -299,6 +318,21 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
+  **钉回挡不住 agent 运行期自己升级**（MAA_bbb 的 `agent/deploy/deploy.py` 在 agent 启动后
+  `python -m pip install --upgrade -i <镜像> MaaFw`，新 `maa` 包与 runner 的旧原生库混用、自定义动作
+  静默失败、任务照报成功）：worker 起 Python agent（`project_python` / `isolated_venv`）时给它的环境挂
+  `PIP_CONSTRAINT` / `UV_CONSTRAINT`（`runner._inject_agent_pip_constraint`），约束文件
+  `data/maafw_agent_constraints/maafw_agent_<路径哈希>.txt` 只写 `maafw==<与钉回同一来源的版本>`
+  （`environment.agent_maafw_pip_constraint`）。三条别改错：**项目自己钉了 maafw 就不挂**
+  （requirements.txt / pyproject `[project].dependencies` 的确切版本、离线目录里的 `maafw-*.whl`，或声明
+  的范围不含该版本）——M9A 钉 5.12.3 而自带库 5.13.0、MaaStarResonance 钉 5.12.1 而自带库 5.11.1，
+  挂上约束它们的自装直接 ResolutionImpossible。「自钉」**只认这三处**（根 requirements.txt 及其 `-r`
+  展开、pyproject `[project].dependencies`、离线 wheel）：只在 `agent/requirements.txt`、
+  optional-dependencies、dependency-groups 或 `[tool.poetry]` 里钉版本的项目会被当成没钉而挂上约束，
+  遇到真实项目再扩来源；**值写 `file:` URI**——pip 与 uv 都按空格拆这两个
+  变量，装在带空格目录里的裸路径会让项目的 pip 整条报错；**文件只写 ASCII**——pip 读没有 BOM 的约束
+  文件按本机代码页解码。目录由宿主经 `AUTO_MAS_MAAFW_AGENT_CONSTRAINT_DIR` 交给 worker（不进 agent
+  环境），没设就不挂；pip 带 `--isolated` 时会忽略这个变量。
   **没装也补装**：健康检查报缺模块、自带解释器里压根没有 binding 时（换版本时视图不带它，而
   MaaTOT 这类「首次启动自己装依赖」的项目有自己的「已装过」标记、不会再装），走同一条钉回路径
   按原生库版本补装一次，装上再检查一次；补装失败与钉回失败一样只记日志。之后**三个条件同时满足**
@@ -386,6 +420,23 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   对着已在运行的游戏再走一遍。重跑前先清掉「已成功」标记：重跑到一半失败（窗口已被拉起）时，下一轮
   看到窗口在也不能跳过。2026-10-17 生产：以前放在重试循环外，第 2、3 次各 2 ms 报「未找到匹配
   MaaFW Win32 controller 的窗口」；启动器失败时整次运行一轮都不重试。
+  - **等的是 pretask 进程退出，不是输出管道 EOF**（`_run_pretasks`）：它拉起的游戏 / 启动器常常继承
+    了输出管道，`communicate()` / `Process.wait()` 都要等管道关闭，会一直卡到游戏退出（本机实测：
+    子进程不重定向输出就继承，`close_fds` 管不住）。所以只轮询 `returncode`，退出后最多再读
+    `_PRETASK_OUTPUT_DRAIN_SECONDS`，剩下的交给后台读到 EOF（只写后端日志），输出按行实时进运行日志。
+    打码在 `_PretaskOutputPump` 里做，转去后端日志的那段输出也过同一套打码，别挪回 sink 里。
+    只有到了行尾（`\n`、单独的 `\r`、`\r\n` 算一次）或 EOF 的段落才打码交出，`\r` 一到就交（进度
+    实时可见）；没到行尾的半行留在缓冲里，`detach` 只换 sink、不把它写出——密码被拆在切换前后两段
+    时，两段各自整串替换都匹配不上（PR #1710 审查）。
+  - **时限沿用 `Run.RunTimeLimit`**，一次尝试里全部 pretask 合计；超时与停止只结束 pretask 进程和
+    「一路都是脚本解释器」的后代（`_snapshot_pretask_script_descendants`），游戏、启动器及它们起的
+    任何进程都不碰。清理跑在独立任务里、用 `asyncio.shield` 等（`pretask_cleanup`）：超时清理途中
+    用户点停止，清理照样做完，`_shutdown_runner` 等的是同一个清理任务。
+  - **exec 越出项目目录**（`..` 上跳过头、绝对路径）：投影与运行计划同一口径（`agent_entry.
+    bundled_python_escape_path`）——以 `python/python.exe` 结尾的相对写法映射回项目自带的 Python
+    （MFABD2 发行包的 `../../python/python.exe`，按 MFAA 的工作目录 `resource/base` 写的），其余
+    这一条 pretask 只告警、运行时跳过，不再让整份投影作废（Sentry AUTO-MAS-BACKEND-NM）；越界的任意
+    程序仍然不运行。
 - 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**才生效——
   桌面游戏是 MAS 拉起、或接管时窗口是等出来的，从窗口出现起算；模拟器（ADB）是 MAS 随模拟器把
   游戏冷启动（进程原本不在，`DeviceInfo.app_launch == "launched"`，见 `emulator2/applaunch.py`），从拉起
