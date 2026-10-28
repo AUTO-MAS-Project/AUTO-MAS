@@ -29,7 +29,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from packaging import version
 
@@ -44,13 +44,28 @@ from app.utils import LazyProxy, ProcessRunner, get_logger, process_platform
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 
 from .system import System
-from .update_fluxdown import FluxdownResumableError, download_file
-from .update_transport import request_mirror_resource
+from .update_fluxdown import FluxdownResumableError
+from .update_transport import DownloadProgress, request_mirror_resource
 
 logger = get_logger("更新服务")
 
 # 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
+
+
+class UpdateDownloader(Protocol):
+    """更新器只依赖下载能力，默认选项与历史由宿主装配。"""
+
+    async def __call__(
+        self,
+        url: str,
+        destination: Path,
+        *,
+        timeout: float,
+        progress: DownloadProgress | None = None,
+        downloader: str | None = None,
+        source: str | None = None,
+    ) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -148,8 +163,9 @@ def parse_release_note(release_note: object) -> Dict[str, Any]:
     return parsed
 
 
-class _UpdateHandler:
-    def __init__(self) -> None:
+class UpdateHandler:
+    def __init__(self, *, download: UpdateDownloader) -> None:
+        self._download = download
         self.is_locked: bool = False
         self.download_task: Optional[asyncio.Task[None]] = None
         self.is_switching_source: bool = False
@@ -583,7 +599,7 @@ class _UpdateHandler:
 
                 start_time = time.time()
 
-                downloaded_size = await download_file(
+                downloaded_size = await self._download(
                     download_url,
                     Path.cwd() / "download.temp",
                     timeout=30,
@@ -712,6 +728,3 @@ class _UpdateHandler:
             creationflags=process_platform.platform_process.detached_flags,
         )
         await System.set_power("KillSelf")
-
-
-Updater = _UpdateHandler()

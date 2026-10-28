@@ -67,21 +67,21 @@ const jumpFromTaskCard = (appId: string) => {
 <template>
   <div class="section-header">
     <h3>
-      {{ t('edit.zzzodOneDragonConfig') }}
-      <a-tooltip :title="t('edit.zzzodOneDragonConfigHint')">
+      {{ t('core.edit.zzzodOneDragonConfig') }}
+      <a-tooltip :title="t('core.edit.zzzodOneDragonConfigHint')">
         <QuestionCircleOutlined class="help-icon" />
       </a-tooltip>
     </h3>
     <div class="section-header-actions">
-      <a-tooltip :title="t('edit.zzzodSortTasksHint')">
+      <a-tooltip :title="t('core.edit.zzzodSortTasksHint')">
         <a-button size="small" class="restore-entry" @click="handleSortTasks">
           <template #icon><SortAscendingOutlined /></template>
-          {{ t('edit.zzzodSortTasks') }}
+          {{ t('core.edit.zzzodSortTasks') }}
         </a-button>
       </a-tooltip>
       <a-button size="small" class="restore-entry" @click="openRestoreModal">
         <template #icon><HistoryOutlined /></template>
-        {{ t('edit.configRestoreTitle') }}
+        {{ t('core.edit.configRestoreTitle') }}
       </a-button>
     </div>
   </div>
@@ -103,8 +103,8 @@ const jumpFromTaskCard = (appId: string) => {
         <div class="task-card-main">
           <span
             class="drag-handle"
-            :title="t('edit.zzzodDragSortHint')"
-            :aria-label="t('edit.zzzodDragSortHint')"
+            :title="t('core.edit.zzzodDragSortHint')"
+            :aria-label="t('core.edit.zzzodDragSortHint')"
           >
             <span class="drag-dots" aria-hidden="true"></span>
           </span>
@@ -152,7 +152,7 @@ const jumpFromTaskCard = (appId: string) => {
                 </div>
               </template>
               <a-tooltip
-                :title="t('edit.zzzodTaskConfigHint')"
+                :title="t('core.edit.zzzodTaskConfigHint')"
                 :open="taskTipVisible[card.app_id] === true"
                 @open-change="(o: boolean) => (taskTipVisible[card.app_id] = o)"
               >
@@ -169,7 +169,7 @@ const jumpFromTaskCard = (appId: string) => {
             </a-popover>
             <a-tooltip
               v-if="card.jump"
-              :title="t('edit.zzzodTaskJumpHint')"
+              :title="t('core.edit.zzzodTaskJumpHint')"
               :open="jumpTipVisible[card.app_id] === true"
               @open-change="(o: boolean) => (jumpTipVisible[card.app_id] = o)"
             >

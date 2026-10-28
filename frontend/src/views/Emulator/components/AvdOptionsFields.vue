@@ -30,8 +30,8 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
 <template>
   <div class="avd-options-fields">
     <a-form-item
-      :label="t('emulator2.avd.fieldMemory')"
-      :extra="t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB)"
+      :label="t('core.emulator2.avd.fieldMemory')"
+      :extra="t('core.emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB)"
     >
       <a-select
         :value="model.memoryMb"
@@ -40,7 +40,7 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
         @update:value="(value: number) => update('memoryMb', value)"
       />
     </a-form-item>
-    <a-form-item :label="t('emulator2.fieldFps')">
+    <a-form-item :label="t('core.emulator2.fieldFps')">
       <a-select
         :value="model.fps"
         :options="fpsOptions"

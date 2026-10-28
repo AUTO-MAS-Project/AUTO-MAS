@@ -14,11 +14,11 @@
         <!-- 基本信息 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
             <div class="section-header-actions">
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
-                {{ t('edit.configRestoreTitle') }}
+                {{ t('core.edit.configRestoreTitle') }}
               </a-button>
             </div>
           </div>
@@ -28,8 +28,8 @@
                 name="userName"
                 required
                 v-model="formData.userName"
-                :hint="t('edit.displayNameUsedIdentify')"
-                :placeholder="t('edit.enterUsername')"
+                :hint="t('core.edit.displayNameUsedIdentify')"
+                :placeholder="t('core.edit.enterUsername')"
                 :disabled="loading"
                 enhanced
                 @save="handleFieldSave('userName', formData.userName)"
@@ -39,7 +39,7 @@
               <UserStatusField
                 name="status"
                 v-model="formData.Info.Status"
-                :hint="t('edit.whetherThisUserEnabled')"
+                :hint="t('core.edit.whetherThisUserEnabled')"
                 :disabled="loading"
                 @save="handleFieldSave('Info.Status', formData.Info.Status)"
               />
@@ -48,7 +48,7 @@
               <UserRemainedDayField
                 name="remainedDay"
                 v-model="formData.Info.RemainedDay"
-                :hint="t('edit.daysLeftAccount1')"
+                :hint="t('core.edit.daysLeftAccount1')"
                 placeholder="-1"
                 :disabled="loading"
                 @save="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
@@ -58,14 +58,14 @@
               <a-form-item name="configName">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahConfigName')"
-                    :hint="t('edit.baahConfigNameHint')"
+                    :text="t('core.edit.baahConfigName')"
+                    :hint="t('core.edit.baahConfigNameHint')"
                     variant="form"
                   />
                 </template>
                 <a-select
                   v-model:value="formData.Info.ConfigName"
-                  :placeholder="t('edit.baahConfigNamePlaceholder')"
+                  :placeholder="t('core.edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
                   :loading="configNamesLoading"
                   :options="configNameOptions"
@@ -90,8 +90,8 @@
               <a-form-item name="stageMode">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahStageMode')"
-                    :hint="t('edit.baahStageModeHint')"
+                    :text="t('core.edit.baahStageMode')"
+                    :hint="t('core.edit.baahStageModeHint')"
                     variant="form"
                   />
                 </template>
@@ -111,7 +111,7 @@
                   @click="handleGoToPlans"
                 >
                   <template #icon><CalendarOutlined /></template>
-                  {{ t('edit.goPlan') }}
+                  {{ t('core.edit.goPlan') }}
                 </a-button>
               </a-form-item>
             </a-col>
@@ -119,8 +119,8 @@
               <a-form-item name="ifEventFirst">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahIfEventFirst')"
-                    :hint="t('edit.baahIfEventFirstHint')"
+                    :text="t('core.edit.baahIfEventFirst')"
+                    :hint="t('core.edit.baahIfEventFirstHint')"
                     variant="form"
                   />
                 </template>
@@ -131,8 +131,8 @@
                   style="width: 100%"
                   @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -141,8 +141,8 @@
               <a-form-item name="activityLineType">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahActivityLineType')"
-                    :hint="t('edit.baahActivityLineTypeHint')"
+                    :text="t('core.edit.baahActivityLineType')"
+                    :hint="t('core.edit.baahActivityLineTypeHint')"
                     variant="form"
                   />
                 </template>
@@ -154,13 +154,13 @@
                   @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
                 >
                   <a-select-option value="CN">
-                    {{ t('edit.baahActivityLineCN') }}
+                    {{ t('core.edit.baahActivityLineCN') }}
                   </a-select-option>
                   <a-select-option value="JP">
-                    {{ t('edit.baahActivityLineJP') }}
+                    {{ t('core.edit.baahActivityLineJP') }}
                   </a-select-option>
                   <a-select-option value="Globle">
-                    {{ t('edit.baahActivityLineGloble') }}
+                    {{ t('core.edit.baahActivityLineGloble') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -172,8 +172,8 @@
               <UserNotesField
                 name="notes"
                 v-model="formData.Info.Notes"
-                :hint="t('edit.addNoteAboutThis')"
-                :placeholder="t('edit.enterNote3')"
+                :hint="t('core.edit.addNoteAboutThis')"
+                :placeholder="t('core.edit.enterNote3')"
                 :disabled="loading"
                 :rows="3"
                 enhanced
@@ -184,8 +184,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahUserTag')"
-                    :hint="t('edit.baahUserTagHint')"
+                    :text="t('core.edit.baahUserTag')"
+                    :hint="t('core.edit.baahUserTagHint')"
                     variant="form"
                   />
                 </template>
@@ -209,7 +209,7 @@
                 :model-value="formData.Info.Base"
                 :options="baahConfigModeOptions"
                 :disabled="loading"
-                :alert-message="t('edit.configSourceHintBase')"
+                :alert-message="t('core.edit.configSourceHintBase')"
                 @change="handleConfigModeChange"
               />
             </a-col>
@@ -219,15 +219,15 @@
         <!-- 数据统计（只读，由本软件自动写入） -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.statistics') }}</h3>
+            <h3>{{ t('core.edit.statistics') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahLastProxyDate')"
-                    :hint="t('edit.baahDataReadOnlyHint')"
+                    :text="t('core.edit.baahLastProxyDate')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
                     variant="form"
                   />
                 </template>
@@ -242,8 +242,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.baahProxyTimes')"
-                    :hint="t('edit.baahDataReadOnlyHint')"
+                    :text="t('core.edit.baahProxyTimes')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
                     variant="form"
                   />
                 </template>
@@ -265,15 +265,15 @@
     :script-name="BAAH_DISPLAY_NAME"
     :targets="restoreTargets"
     :api="restoreApi"
-    :user-desc="t('edit.baahConfigRestoreUserDesc')"
-    :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+    :user-desc="t('core.edit.baahConfigRestoreUserDesc')"
+    :script-desc="t('core.edit.baahConfigRestoreScriptDesc')"
     :on-restored="handleRestored"
   >
     <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
     <template #preview="{ raw }">
       <a-empty
         v-if="!previewSections(raw).length"
-        :description="t('edit.configRestorePreviewEmpty')"
+        :description="t('core.edit.configRestorePreviewEmpty')"
       />
       <div v-else>
         <template v-for="s in previewSections(raw)" :key="s.name">
@@ -412,7 +412,7 @@ const loadConfigNames = async () => {
 // 关卡计划表下拉候选：后端按消费方 baah 返回 BAAH 计划表；「固定」始终排在第一项
 // 用本地词表的固定项，保证在英文/日文界面下也是自己的语言
 const stageModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.fixed'), value: 'Fixed' },
+  { label: t('core.edit.fixed'), value: 'Fixed' },
 ])
 const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
 const loadStageModeOptions = async () => {
@@ -425,7 +425,7 @@ const loadStageModeOptions = async () => {
         .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
         .filter(item => item.value !== 'Fixed')
         .map(item => ({ label: item.label, value: item.value }))
-      stageModeOptions.value = [{ label: t('edit.fixed'), value: 'Fixed' }, ...planOptions]
+      stageModeOptions.value = [{ label: t('core.edit.fixed'), value: 'Fixed' }, ...planOptions]
     }
   } catch (error) {
     logger.error(`加载关卡计划表失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -439,8 +439,8 @@ const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
-      { required: true, message: t('edit.enterUsername'), trigger: 'blur' },
-      { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
+      { required: true, message: t('core.edit.enterUsername'), trigger: 'blur' },
+      { min: 1, max: 50, message: t('core.edit.usernameMustBe1'), trigger: 'blur' },
     ],
   }
   return baseRules
@@ -479,26 +479,26 @@ const baahConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    label: t('edit.script'),
+    label: t('core.edit.script'),
     value: 'shared',
-    title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    title: t('core.edit.script'),
+    description: t('core.edit.useScriptS'),
     icon: 'database',
     disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
+    disabledReason: t('core.edit.scriptModeDisabled'),
   },
   {
-    label: t('edit.user'),
+    label: t('core.edit.user'),
     value: 'independent',
-    title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    title: t('core.edit.user'),
+    description: t('core.edit.useThisUserS'),
     icon: 'database',
   },
   {
-    label: t('edit.directControl'),
+    label: t('core.edit.directControl'),
     value: 'native',
-    title: t('edit.directControl'),
-    description: t('edit.nativeConfigSourceDescription'),
+    title: t('core.edit.directControl'),
+    description: t('core.edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
@@ -562,13 +562,13 @@ const loadScriptInfo = async () => {
         await createUserImmediately()
       }
     } else {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist2'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist2'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript2'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript2'))
   }
 }
 
@@ -590,13 +590,13 @@ const createUserImmediately = async () => {
       // 加载新创建用户的数据
       await loadUserData()
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`创建用户失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotCreateUser'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotCreateUser'))
     handleCancel()
   }
 }
@@ -630,17 +630,17 @@ const loadUserData = async () => {
         // 数据加载完成，允许自动保存
         isInitializing.value = false
       } else {
-        message.error(t('edit.userDoesNotExist'))
+        message.error(t('core.edit.userDoesNotExist'))
         handleCancel()
       }
     } else {
-      if (!userApiError.value) message.error(t('edit.couldNotFetchUser'))
+      if (!userApiError.value) message.error(t('core.edit.couldNotFetchUser'))
       handleCancel()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载用户数据失败: ${errorMsg}`)
-    if (!userApiError.value) message.error(t('edit.couldNotLoadUser2'))
+    if (!userApiError.value) message.error(t('core.edit.couldNotLoadUser2'))
   }
 }
 
@@ -706,7 +706,7 @@ const ensureBAAHBackup = ensureBackup
 
 onMounted(async () => {
   if (!scriptId) {
-    message.error(t('edit.missingScriptIdParameter'))
+    message.error(t('core.edit.missingScriptIdParameter'))
     handleCancel()
     return
   }

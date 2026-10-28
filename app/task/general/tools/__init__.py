@@ -19,8 +19,3 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
-
-
-from .ExecuteScript import execute_script_task
-
-__all__ = ["execute_script_task"]

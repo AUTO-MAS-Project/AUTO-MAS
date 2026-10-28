@@ -3,7 +3,7 @@
   <a-col v-if="options.length > 0" :span="6">
     <a-form-item>
       <template #label>
-        <span class="form-label">{{ t('edit.mfwHotkey') }}</span>
+        <span class="form-label">{{ t('core.edit.mfwHotkey') }}</span>
       </template>
       <a-input-group compact class="path-input-group">
         <a-input :value="summary" size="large" class="path-input" readonly />
@@ -11,7 +11,7 @@
           <template #icon>
             <SettingOutlined />
           </template>
-          {{ t('edit.mfwHotkeySet') }}
+          {{ t('core.edit.mfwHotkeySet') }}
         </a-button>
       </a-input-group>
     </a-form-item>
@@ -79,7 +79,9 @@ const gates = computed(() =>
 
 const summary = computed(() => {
   const changed = countChangedHotkeys(options.value, storedMap.value)
-  return changed > 0 ? t('edit.mfwHotkeyChanged', { n: changed }) : t('edit.mfwHotkeyDefault')
+  return changed > 0
+    ? t('core.edit.mfwHotkeyChanged', { n: changed })
+    : t('core.edit.mfwHotkeyDefault')
 })
 
 // 「从项目导入」：第一次打开弹窗时读一次外壳配置实例，读不到（没有外壳配置、接口失败）就当没有

@@ -42,9 +42,9 @@ const currentChangelog: ChangelogData = {
 
 const buildCopyText = () =>
   [
-    t('setting.others.copyVersion', { version }),
-    t('setting.others.copyBackendHash', {
-      hash: backendUpdateInfo?.current_hash || t('common.unknown'),
+    t('core.setting.others.copyVersion', { version }),
+    t('core.setting.others.copyBackendHash', {
+      hash: backendUpdateInfo?.current_hash || t('core.common.unknown'),
     }),
   ].join('\n')
 
@@ -54,7 +54,7 @@ const copyAllInfo = async () => {
     const copyText = buildCopyText()
 
     await navigator.clipboard.writeText(copyText)
-    message.success(t('setting.toast.versionCopied'))
+    message.success(t('core.setting.toast.versionCopied'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`复制失败: ${errorMsg}`)
@@ -65,11 +65,11 @@ const copyAllInfo = async () => {
     textArea.select()
     try {
       document.execCommand('copy')
-      message.success(t('setting.toast.versionCopied'))
+      message.success(t('core.setting.toast.versionCopied'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`降级复制也失败: ${errorMsg}`)
-      message.error(t('setting.toast.copyFailed'))
+      message.error(t('core.setting.toast.copyFailed'))
     }
     document.body.removeChild(textArea)
   }
@@ -88,7 +88,7 @@ const copyAllInfo = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.others.linkSection') }}</h3>
+        <h3>{{ t('core.setting.others.linkSection') }}</h3>
       </div>
       <div class="link-grid">
         <div class="link-item">
@@ -97,10 +97,10 @@ const copyAllInfo = async () => {
               <HomeOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.site') }}</h4>
-              <p>{{ t('setting.others.siteDesc') }}</p>
+              <h4>{{ t('core.setting.others.site') }}</h4>
+              <p>{{ t('core.setting.others.siteDesc') }}</p>
               <a href="https://auto-mas.top" class="link-button" @click="handleExternalLink">{{
-                t('setting.others.visitSite')
+                t('core.setting.others.visitSite')
               }}</a>
             </div>
           </div>
@@ -111,13 +111,13 @@ const copyAllInfo = async () => {
               <GithubOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.repo') }}</h4>
-              <p>{{ t('setting.others.repoDesc') }}</p>
+              <h4>{{ t('core.setting.others.repo') }}</h4>
+              <p>{{ t('core.setting.others.repoDesc') }}</p>
               <a
                 href="https://github.com/AUTO-MAS-Project/AUTO-MAS"
                 class="link-button"
                 @click="handleExternalLink"
-                >{{ t('setting.others.visitRepo') }}</a
+                >{{ t('core.setting.others.visitRepo') }}</a
               >
             </div>
           </div>
@@ -128,10 +128,10 @@ const copyAllInfo = async () => {
               <QqOutlined />
             </div>
             <div class="link-content">
-              <h4>{{ t('setting.others.qq') }}</h4>
-              <p>{{ t('setting.others.qqDesc') }}</p>
+              <h4>{{ t('core.setting.others.qq') }}</h4>
+              <p>{{ t('core.setting.others.qqDesc') }}</p>
               <a :href="MAS_QQ_GROUP_URL" class="link-button" @click="handleExternalLink">{{
-                t('setting.others.joinQq')
+                t('core.setting.others.joinQq')
               }}</a>
             </div>
           </div>
@@ -141,26 +141,26 @@ const copyAllInfo = async () => {
 
     <div class="form-section">
       <div class="section-header">
-        <h3>{{ t('setting.others.appSection') }}</h3>
+        <h3>{{ t('core.setting.others.appSection') }}</h3>
       </div>
       <div class="app-info-container">
         <div class="app-info-left">
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.appName') }}</span>
+            <span class="info-label">{{ t('core.setting.others.appName') }}</span>
             <span class="info-value">AUTO-MAS</span>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.developer') }}</span>
+            <span class="info-label">{{ t('core.setting.others.developer') }}</span>
             <span class="info-value">AUTO-MAS Team</span>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.license') }}</span>
+            <span class="info-label">{{ t('core.setting.others.license') }}</span>
             <span class="info-value">AGPL-3.0 license</span>
           </div>
         </div>
         <div class="app-info-right">
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.appVersion') }}</span>
+            <span class="info-label">{{ t('core.setting.others.appVersion') }}</span>
             <a-tag color="blue" class="info-badge" @click="copyAllInfo">
               {{ version }}
             </a-tag>
@@ -170,16 +170,16 @@ const copyAllInfo = async () => {
               class="changelog-button"
               @click="changelogVisible = true"
             >
-              {{ t('setting.others.viewChangelog') }}
+              {{ t('core.setting.others.viewChangelog') }}
             </a-button>
           </div>
           <div class="info-item">
-            <span class="info-label">{{ t('setting.others.backendHash') }}</span>
+            <span class="info-label">{{ t('core.setting.others.backendHash') }}</span>
             <a-tag color="purple" class="info-badge" @click="copyAllInfo">
               {{
                 backendUpdateInfo?.current_hash
                   ? backendUpdateInfo.current_hash.substring(0, 8)
-                  : t('common.unknown')
+                  : t('core.common.unknown')
               }}
             </a-tag>
           </div>
@@ -190,7 +190,7 @@ const copyAllInfo = async () => {
 
   <a-modal
     v-model:open="changelogVisible"
-    :title="t('setting.others.changelogTitle', { version })"
+    :title="t('core.setting.others.changelogTitle', { version })"
     :width="800"
     :footer="null"
     class="changelog-modal"

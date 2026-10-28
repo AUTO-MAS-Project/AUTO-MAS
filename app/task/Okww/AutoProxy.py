@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.config import ConfigCollection
-from app.core.history import aggregate_data, history_store
+from app.core.history import aggregate_data
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
@@ -354,7 +354,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 from .tools.config_dir import ensure_user_config_dir
 
                 await ensure_user_config_dir(
-                    script_id=self.script_info.script_id,
+                    script_config=self.script_config,
                     user_id=str(self.cur_user_uid),
                     base=config_base,
                 )
@@ -1111,38 +1111,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             )
 
         if history_records:
-            try:
-                attachments = await self.task_info.collect_user_history_attachments(
-                    self.script_info, self.cur_user_item
-                )
-                history_records[-1].attachments.extend(attachments)
-            except Exception:
-                logger.opt(exception=True).warning(
-                    "收集用户历史附件失败，继续保存日志与执行结果"
-                )
-            try:
-                for record in history_records:
-                    try:
-                        await history_store.record(record)
-                    except Exception as error:
-                        logger.opt(exception=True).warning(f"保存历史失败：{error}")
-                        try:
-                            await Publisher.send(
-                                id=self.task_info.task_id,
-                                type=protocol.TASK_NOTICE,
-                                data=WSTaskNoticeData(
-                                    level="warning",
-                                    message=f"历史记录保存失败：{error}",
-                                ),
-                            )
-                        except Exception:
-                            logger.opt(exception=True).warning(
-                                "发送历史保存失败提示时出现异常"
-                            )
-            finally:
-                await self.task_info.discard_user_history_capture(
-                    self.script_info, self.cur_user_item
-                )
+            await self.task_info.save_user_history(
+                history_records,
+                script=self.script_info,
+                user=self.cur_user_item,
+                log_warning=logger.opt(exception=True).warning,
+            )
 
         if history_records:
             try:

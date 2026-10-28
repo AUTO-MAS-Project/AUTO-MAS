@@ -246,10 +246,10 @@ export const getSignDetailAlias = (
 
 /** Tooltip 里单行游戏的状态文案对应的词表 key */
 export const getSignStatusKey = (status: string): string => {
-  if (SIGNED_STATUSES.includes(status)) return 'gamesign.signStatus.signed'
-  if (status === '风控') return 'gamesign.signStatus.risk'
-  if (status === '失败') return 'gamesign.signStatus.failed'
-  return 'gamesign.signStatus.unsigned'
+  if (SIGNED_STATUSES.includes(status)) return 'core.gamesign.signStatus.signed'
+  if (status === '风控') return 'core.gamesign.signStatus.risk'
+  if (status === '失败') return 'core.gamesign.signStatus.failed'
+  return 'core.gamesign.signStatus.unsigned'
 }
 
 /** Tooltip 里单行游戏的状态样式类 */

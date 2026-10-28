@@ -5,8 +5,8 @@
         <a-form-item name="mode">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.stageConfigMode')"
-              :hint="t('edit.stageConfigModeHint')"
+              :text="t('core.edit.stageConfigMode')"
+              :hint="t('core.edit.stageConfigModeHint')"
             />
           </template>
           <a-select
@@ -22,7 +22,7 @@
           <template #icon>
             <CalendarOutlined />
           </template>
-          {{ t('edit.goPlan') }}
+          {{ t('core.edit.goPlan') }}
         </a-button>
       </a-col>
     </a-row>
@@ -30,7 +30,7 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="medicineNumb">
           <template #label>
-            <FieldLabelWithHint :text="t('edit.medicineNumb')" />
+            <FieldLabelWithHint :text="t('core.edit.medicineNumb')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -40,7 +40,7 @@
                 <!-- eslint-disable vue/no-v-html -- formatTooltip escapes all HTML before converting newlines to br tags. -->
                 <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示输入框 -->
@@ -59,7 +59,10 @@
       <a-col :xs="24" :md="12" :xl="6">
         <a-form-item name="mode">
           <template #label>
-            <FieldLabelWithHint :text="t('edit.seriesNumb')" :hint="t('edit.seriesNumbHint')" />
+            <FieldLabelWithHint
+              :text="t('core.edit.seriesNumb')"
+              :hint="t('core.edit.seriesNumbHint')"
+            />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
@@ -68,7 +71,7 @@
                 displaySeriesNumb === '0'
                   ? 'AUTO'
                   : displaySeriesNumb === '-1'
-                    ? t('edit.doNotSwitch')
+                    ? t('core.edit.doNotSwitch')
                     : displaySeriesNumb
               }}
             </div>
@@ -76,7 +79,7 @@
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(seriesNumbTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -91,7 +94,7 @@
               { label: '4', value: '4' },
               { label: '5', value: '5' },
               { label: '6', value: '6' },
-              { label: t('edit.doNotSwitch'), value: '-1' },
+              { label: t('core.edit.doNotSwitch'), value: '-1' },
             ]"
             :disabled="loading"
             @update:value="$emit('update-series-numb', $event)"
@@ -102,18 +105,22 @@
       <a-col :xs="24" :xl="12">
         <a-form-item name="mode">
           <template #label>
-            <FieldLabelWithHint :text="t('edit.stageSelection')" />
+            <FieldLabelWithHint :text="t('core.edit.stageSelection')" />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
-              {{ displayStage === '-' ? t('edit.currentOrLast') : displayStage || t('edit.none') }}
+              {{
+                displayStage === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage || t('core.edit.none')
+              }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stageTooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -122,7 +129,7 @@
             :value="displayStage"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage', $event)"
             @add-custom-stage="handleAddCustomStage"
           />
@@ -134,22 +141,24 @@
         <a-form-item name="mode">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.alternateStage', { n: 1 })"
-              :hint="t('edit.alternateStageHint')"
+              :text="t('core.edit.alternateStage', { n: 1 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
               {{
-                displayStage1 === '-' ? t('edit.currentOrLast') : displayStage1 || t('edit.none')
+                displayStage1 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage1 || t('core.edit.none')
               }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage1Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -158,7 +167,7 @@
             :value="displayStage1"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage1', $event)"
             @add-custom-stage="handleAddCustomStage1"
           />
@@ -168,22 +177,24 @@
         <a-form-item name="mode">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.alternateStage', { n: 2 })"
-              :hint="t('edit.alternateStageHint')"
+              :text="t('core.edit.alternateStage', { n: 2 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
               {{
-                displayStage2 === '-' ? t('edit.currentOrLast') : displayStage2 || t('edit.none')
+                displayStage2 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage2 || t('core.edit.none')
               }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage2Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -192,7 +203,7 @@
             :value="displayStage2"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage2', $event)"
             @add-custom-stage="handleAddCustomStage2"
           />
@@ -202,22 +213,24 @@
         <a-form-item name="mode">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.alternateStage', { n: 3 })"
-              :hint="t('edit.alternateStageHint')"
+              :text="t('core.edit.alternateStage', { n: 3 })"
+              :hint="t('core.edit.alternateStageHint')"
             />
           </template>
           <!-- 计划模式：显示只读文本 -->
           <div v-if="isPlanMode" class="plan-mode-display">
             <div class="plan-value">
               {{
-                displayStage3 === '-' ? t('edit.currentOrLast') : displayStage3 || t('edit.none')
+                displayStage3 === '-'
+                  ? t('core.edit.currentOrLast')
+                  : displayStage3 || t('core.edit.none')
               }}
             </div>
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stage3Tooltip)"></div>
               </template>
-              <div class="plan-source">{{ t('edit.fromPlan') }}</div>
+              <div class="plan-source">{{ t('core.edit.fromPlan') }}</div>
             </a-tooltip>
           </div>
           <!-- 固定模式：显示选择框 -->
@@ -226,7 +239,7 @@
             :value="displayStage3"
             :options="stageOptions"
             :loading="loading"
-            :placeholder="t('edit.pickTypeCustomStage')"
+            :placeholder="t('core.edit.pickTypeCustomStage')"
             @update:value="$emit('update-stage3', $event)"
             @add-custom-stage="handleAddCustomStage3"
           />

@@ -3,8 +3,8 @@
     <a-form-item class="bundle-item">
       <template #label>
         <span class="form-label">
-          {{ t('edit.errorLogBundle') }}
-          <a-tooltip :title="t('edit.errorLogBundleHint')">
+          {{ t('core.edit.errorLogBundle') }}
+          <a-tooltip :title="t('core.edit.errorLogBundleHint')">
             <QuestionCircleOutlined class="help-icon" />
           </a-tooltip>
         </span>
@@ -14,15 +14,15 @@
         <a-space-compact block size="large" class="bundle-directory">
           <a-input
             :value="run.LogBundlePath ?? ''"
-            :placeholder="t('edit.errorLogBundleDirPlaceholder')"
-            :aria-label="t('edit.errorLogBundleDir')"
+            :placeholder="t('core.edit.errorLogBundleDirPlaceholder')"
+            :aria-label="t('core.edit.errorLogBundleDir')"
             :disabled="!run.IfSaveLogBundle"
             size="large"
             readonly
             class="bundle-path-input"
           />
           <a-button size="large" :disabled="!run.IfSaveLogBundle" @click="pickBundleDir">
-            {{ t('edit.pickFolder') }}
+            {{ t('core.edit.pickFolder') }}
           </a-button>
         </a-space-compact>
       </div>
@@ -46,7 +46,7 @@ const { t } = useI18n()
 /** 目录只能通过桌面端目录选择器指定；取消或环境不支持时返回 null。 */
 const pickBundleDir = async () => {
   if (!window.electronAPI?.selectFolder) {
-    message.warning(t('edit.errorLogBundleNoPicker'))
+    message.warning(t('core.edit.errorLogBundleNoPicker'))
     return
   }
   const picked = await window.electronAPI.selectFolder()

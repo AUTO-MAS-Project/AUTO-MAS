@@ -182,12 +182,12 @@ const RETRY_KINDS = new Set<FailureActionKind>([
 ])
 
 const ACTION_LABEL_KEYS: Readonly<Record<FailureActionKind, string>> = {
-  'restore-workspace': 'init.failure.restoreWorkspace',
-  retry: 'init.step.retry',
-  'retry-other-mirror': 'init.failure.retryOtherMirror',
-  'rebuild-environment': 'init.failure.rebuildEnvironment',
-  'open-log': 'launch.viewLog',
-  'run-doctor': 'init.failure.runDoctor',
+  'restore-workspace': 'bootstrap.init.failure.restoreWorkspace',
+  retry: 'bootstrap.init.step.retry',
+  'retry-other-mirror': 'bootstrap.init.failure.retryOtherMirror',
+  'rebuild-environment': 'bootstrap.init.failure.rebuildEnvironment',
+  'open-log': 'bootstrap.launch.viewLog',
+  'run-doctor': 'bootstrap.init.failure.runDoctor',
 }
 
 /** Runtime 自身的缺陷，重试多少次都是同一个结果。 */
@@ -205,7 +205,7 @@ function pushUnique(kinds: FailureActionKind[], kind: FailureActionKind): void {
 function legacyPlan(): FailureActionPlan {
   return {
     actions: [
-      { kind: 'retry-other-mirror', labelKey: 'init.step.retryWithMirror' },
+      { kind: 'retry-other-mirror', labelKey: 'bootstrap.init.step.retryWithMirror' },
       toAction('open-log'),
     ],
     showMirrorSelection: true,

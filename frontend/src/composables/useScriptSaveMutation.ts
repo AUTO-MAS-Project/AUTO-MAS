@@ -63,7 +63,7 @@ export function useScriptSaveMutation({
     return enqueue(async () => {
       try {
         const success = await updateScript(scriptId, data)
-        if (!success) throw new Error(apiError.value || t('edit.couldNotSaveConfiguration'))
+        if (!success) throw new Error(apiError.value || t('core.edit.couldNotSaveConfiguration'))
         logger.info(key ? `配置已保存: ${key}` : '配置已保存')
       } catch (error) {
         // updateScript 已负责用户提示，这里只记录失败，避免重复弹出提示。

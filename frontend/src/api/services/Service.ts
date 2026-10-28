@@ -65,6 +65,8 @@ import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { HSRUpdateIn } from '../models/HSRUpdateIn';
 import type { HSRUpdateOut } from '../models/HSRUpdateOut';
+import type { I18nLocalesOut } from '../models/I18nLocalesOut';
+import type { I18nMessagesOut } from '../models/I18nMessagesOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaCopilotAnalyzeIn } from '../models/MaaCopilotAnalyzeIn';
 import type { MaaCopilotAnalyzeOut } from '../models/MaaCopilotAnalyzeOut';
@@ -3866,6 +3868,39 @@ export class Service {
             },
             query: {
                 'download': download,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Locales
+     * 列出可用语言及当前资源版本。
+     * @returns I18nLocalesOut Successful Response
+     * @throws ApiError
+     */
+    public static getLocalesApiI18NLocalesGet(): CancelablePromise<I18nLocalesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/i18n/locales',
+        });
+    }
+    /**
+     * Get Messages
+     * 读取指定语言的原始词表；回退和字符串插值由前端处理。
+     * @param locale
+     * @returns I18nMessagesOut Successful Response
+     * @throws ApiError
+     */
+    public static getMessagesApiI18NMessagesGet(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP',
+    ): CancelablePromise<I18nMessagesOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/i18n/messages',
+            query: {
+                'locale': locale,
             },
             errors: {
                 422: `Validation Error`,

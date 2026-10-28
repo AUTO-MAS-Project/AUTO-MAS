@@ -8,7 +8,7 @@
   >
     <div class="baah-editor-title">{{ title }}</div>
     <a-form layout="vertical" class="baah-editor-form">
-      <a-form-item :label="t('plan.baah.rowState')">
+      <a-form-item :label="t('core.plan.baah.rowState')">
         <a-radio-group
           :value="state"
           :disabled="saving"
@@ -35,18 +35,18 @@
         </a-form-item>
       </template>
       <p v-else class="baah-editor-hint">
-        {{ t(state === 'off' ? 'plan.baah.skipToday' : 'plan.baah.upstreamSettings') }}
+        {{ t(state === 'off' ? 'core.plan.baah.skipToday' : 'core.plan.baah.upstreamSettings') }}
       </p>
       <a-alert
         v-if="saveError"
         type="error"
         show-icon
-        :message="t('plan.baah.saveFailed')"
+        :message="t('core.plan.baah.saveFailed')"
         :description="saveErrorReason || undefined"
       >
         <template #action>
           <a-button size="small" :loading="saving" @click="$emit('retry')">{{
-            t('plan.baah.retry')
+            t('core.plan.baah.retry')
           }}</a-button>
         </template>
       </a-alert>
@@ -85,32 +85,38 @@ const editorElement = ref<HTMLElement | null>(null)
 const spec = computed(() => BAAH_KEY_FIELD_BY_NAME[props.field])
 const title = computed(() => `${t(spec.value.labelKey)} · ${props.dayTitle}`)
 const stateOptions = computed(() => [
-  { value: 'on', label: t('plan.baah.stateOn') },
-  { value: 'off', label: t('plan.baah.stateOff') },
-  { value: 'auto', label: t('plan.baah.stateAuto') },
+  { value: 'on', label: t('core.plan.baah.stateOn') },
+  { value: 'off', label: t('core.plan.baah.stateOff') },
+  { value: 'auto', label: t('core.plan.baah.stateAuto') },
 ])
 
 const partOptions = (hintKey: string, min: number, current: number) => {
   const options = Array.from({ length: partOptionMax(hintKey, props.field) }, (_, index) => ({
     value: index + 1,
-    label: hintKey === 'plan.baah.partRegion' ? baahRegionLabel(index + 1, t) : String(index + 1),
+    label:
+      hintKey === 'core.plan.baah.partRegion' ? baahRegionLabel(index + 1, t) : String(index + 1),
   }))
   if (min === -1)
     options.unshift({
       value: -1,
-      label: t(hintKey === 'plan.baah.partTimes' ? 'plan.baah.timesMax' : 'plan.baah.stageHighest'),
+      label: t(
+        hintKey === 'core.plan.baah.partTimes'
+          ? 'core.plan.baah.timesMax'
+          : 'core.plan.baah.stageHighest'
+      ),
     })
-  if (hintKey === 'plan.baah.partTimes')
-    options.splice(1, 0, { value: 0, label: t('plan.baah.timesNumber', { value: 0 }) })
+  if (hintKey === 'core.plan.baah.partTimes')
+    options.splice(1, 0, { value: 0, label: t('core.plan.baah.timesNumber', { value: 0 }) })
   // 已存的合法大数照样能看见、保存，预设下拉范围不能截断旧配置。
   if (
-    hintKey !== 'plan.baah.partRegion' &&
-    hintKey !== 'plan.baah.partAcademy' &&
+    hintKey !== 'core.plan.baah.partRegion' &&
+    hintKey !== 'core.plan.baah.partAcademy' &&
     !options.some(option => option.value === current)
   )
     options.push({
       value: current,
-      label: hintKey === 'plan.baah.partRegion' ? baahRegionLabel(current, t) : String(current),
+      label:
+        hintKey === 'core.plan.baah.partRegion' ? baahRegionLabel(current, t) : String(current),
     })
   return options
 }

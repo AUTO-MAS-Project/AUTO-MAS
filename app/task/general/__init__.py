@@ -21,6 +21,15 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .manager import GeneralManager
+from importlib import import_module
+
+
+def __getattr__(name: str):
+    if name != "GeneralManager":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(".manager", __name__), name)
+    globals()[name] = value
+    return value
+
 
 __all__ = ["GeneralManager"]

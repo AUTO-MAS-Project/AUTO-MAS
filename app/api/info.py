@@ -366,7 +366,7 @@ async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
 
-    from app.task.MAA.tools.stage_service import maa_stage_service
+    from app.core.maa_stage import maa_stage_service
 
     try:
         raw_data = await maa_stage_service.get_stage_info(stage.type)
@@ -569,7 +569,7 @@ async def confirm_notice() -> OutBase:
 async def get_overview(
     refresh: bool = False,
 ) -> InfoOut:
-    from app.task.MAA.tools.stage_service import maa_stage_service
+    from app.core.maa_stage import maa_stage_service
 
     try:
         if refresh:

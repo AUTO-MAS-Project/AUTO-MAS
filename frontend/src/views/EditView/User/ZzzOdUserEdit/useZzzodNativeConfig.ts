@@ -35,8 +35,8 @@ export function useZzzodNativeConfig(
   const nativeAfterDone = ref<AfterDoneValue>('无')
 
   const instanceRunOptions = [
-    { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
-    { label: t('edit.zzzodInstanceRunAll'), value: '全部实例' },
+    { label: t('core.edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
+    { label: t('core.edit.zzzodInstanceRunAll'), value: '全部实例' },
   ]
 
   const nativeLoading = ref(false)
@@ -115,12 +115,12 @@ export function useZzzodNativeConfig(
         instanceIdx
       )
       if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodNativeLoadFailed'))
+        throw new Error(resp.message || t('core.edit.zzzodNativeLoadFailed'))
       }
       if (current()) applyNativeConfig(resp)
     } catch (e) {
       if (!current()) return
-      message.error(e instanceof Error ? e.message : t('edit.zzzodNativeLoadFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.zzzodNativeLoadFailed'))
       nativeAccountFields.value = []
       nativeTasks.value = []
       nativeAfterDone.value = '无'
@@ -143,10 +143,10 @@ export function useZzzodNativeConfig(
         instanceRun: nativeInstanceRun.value,
       })
       if (resp.code !== 200) {
-        throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
+        throw new Error(resp.message || t('core.edit.zzzodNativeSaveFailed'))
       }
     } catch (e) {
-      message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
+      message.error(e instanceof Error ? e.message : t('core.edit.zzzodNativeSaveFailed'))
     } finally {
       runModeCount.value--
     }
@@ -195,7 +195,7 @@ export function useZzzodNativeConfig(
     silent = false
   ): Promise<boolean> => {
     if (configLocked.value) {
-      message.error(t('edit.configLocked'))
+      message.error(t('core.edit.configLocked'))
       return Promise.resolve(false)
     }
     if (nativeInstanceIdx.value === null) return Promise.resolve(false)
@@ -221,7 +221,7 @@ export function useZzzodNativeConfig(
           ...payload,
         })
         if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.zzzodNativeSaveFailed'))
+          throw new Error(resp.message || t('core.edit.zzzodNativeSaveFailed'))
         }
         if (context === contextVersion) {
           if (section === 'all') {
@@ -252,10 +252,10 @@ export function useZzzodNativeConfig(
           )
             nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
         }
-        if (!silent) message.success(t('edit.zzzodNativeSaved'))
+        if (!silent) message.success(t('core.edit.zzzodNativeSaved'))
         return true
       } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.zzzodNativeSaveFailed'))
+        message.error(e instanceof Error ? e.message : t('core.edit.zzzodNativeSaveFailed'))
         return false
       } finally {
         pendingCount.value--

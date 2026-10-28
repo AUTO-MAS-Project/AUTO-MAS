@@ -263,13 +263,39 @@ def main():
 
     from app.core import Config
     from app.core.restore_bindings import resolve_restore_pools
+    from app.core.script_config_bindings import bind_script_config_handlers
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+    from app.task.BAAH.api_service import BAAHConfigService
+    from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.MaaFW.tools.embedded.game_resolution import (
+        read_unity_display_type,
+        read_unity_resolution,
+    )
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     Config.set_restore_pool_resolver(resolve_restore_pools)
+    baah_config_service = BAAHConfigService(
+        get_script=lambda script_id: Config.ScriptConfig[script_id],
+    )
+    maaend_config_service = MaaEndConfigService(
+        scripts=Config.ScriptConfig,
+        read_resolution=read_unity_resolution,
+        read_display_type=read_unity_display_type,
+    )
+    bind_script_config_handlers(
+        Config.bind_script_config_handler,
+        maaend=maaend_config_service,
+        zzzod=ZzzOdRecovery(
+            ZzzOdContext(
+                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
+            )
+        ),
+    )
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -312,17 +338,26 @@ def main():
 
         await ObsReplay.cleanup_temporary()
 
+        from functools import partial
+
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
         from app.core.game_calendar import GameCalendar
+        from app.core.notification_commands import execute_notification_command
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
 
+        RuntimeTasks.spawn(
+            maaend_config_service.preload_resources(), name="maaend-resource-preload"
+        )
         notifications = create_notification_service(
             config=Config,
             transactions=config_manager,
             runtime=RuntimeTasks,
             command_executor=execute_ws_command,
+            notification_command_executor=partial(
+                execute_notification_command, config=Config, task_manager=TaskManager
+            ),
         )
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)
@@ -386,7 +421,7 @@ def main():
                 await avd_update.startup()
 
             async def init_stage_info() -> None:
-                from app.task.MAA.tools.stage_service import maa_stage_service
+                from app.core.maa_stage import maa_stage_service
 
                 # 启动不等待远端检查：缓存过期时后台拉取，页面打开时再等结果
                 await maa_stage_service.get_stage(wait_stale=False)
@@ -402,12 +437,12 @@ def main():
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
                         await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        await Config.maafw_maintenance.clean_agent_venvs()
+                        await Config.maafw_maintenance.clean_embedded_copies()
+                        await Config.maafw_maintenance.clean_runtime_blobs()
+                        await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
@@ -473,9 +508,10 @@ def main():
         async def shutdown_services() -> None:
             """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
 
+            from app.core import Updater
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System, Updater
+            from app.services import Matomo, System
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -548,6 +584,7 @@ def main():
         emulator2_router,
         emulator_router,
         history_router,
+        i18n_router,
         info_router,
         ocr_router,
         openclaw_qq_router,
@@ -568,6 +605,8 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
+    app.state.baah_config_service = baah_config_service
+    app.state.maaend_config_service = maaend_config_service
 
     app.add_middleware(
         CORSMiddleware,
@@ -586,6 +625,7 @@ def main():
     app.include_router(queue_router)
     app.include_router(dispatch_router)
     app.include_router(history_router)
+    app.include_router(i18n_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
     app.include_router(share_router)

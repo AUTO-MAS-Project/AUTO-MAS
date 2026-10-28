@@ -21,11 +21,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from copy import deepcopy
 from datetime import datetime
-from pathlib import Path
 from pathlib import Path as NativePath
 from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID
@@ -1195,59 +1193,6 @@ class MaaEndConfig(DomainEntry):
 
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
-    _loaded_resource: dict = PrivateAttr(default_factory=dict)
-    _preload_task: Any = PrivateAttr(default=None)
-
-    async def _activate_from_payload(
-        self, payload: dict[str, Any], *, regenerate_uuids: bool = False
-    ) -> None:
-        """按当前资源入口迁移历史 Client 启动方式，再激活配置。"""
-        from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-        payload = type(self).normalize_payload(payload)
-        game = payload.get("Game", {})
-        if isinstance(game, dict) and game.get("LaunchMode") == "Client":
-            root_path = payload.get("Info", {}).get("Path")
-            root = Path(root_path) if root_path else None
-            if root is not None and (root / "interface.json").is_file():
-                options = await asyncio.to_thread(try_load_maaend_options, root)
-                if options is not None:
-                    game["LaunchMode"] = (
-                        "MaaEnd"
-                        if game.get("ControllerType")
-                        in options["launchGameControllers"]
-                        else "MAS"
-                    )
-        await super()._activate_from_payload(payload, regenerate_uuids=regenerate_uuids)
-
-    async def preload_resource(self) -> None:
-        """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            return
-
-        def _try_load_in_thread():
-            from app.task.MaaEnd.resource_loader import try_load_maaend_options
-
-            return try_load_maaend_options(Path(root_path))
-
-        resource = await asyncio.to_thread(_try_load_in_thread)
-        if resource is None:
-            return
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-
-    def get_loaded_resource(self) -> dict[str, Any]:
-        """读取已经载入内存的 MaaEnd 动态资源。"""
-        root_path = str(self.Info.Path or "").strip()
-        if not root_path:
-            raise ValueError("MaaEnd 路径未配置")
-        from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
-
-        resource = get_loaded_maaend_options(Path(root_path))
-        for user_config in self.UserData.values():
-            user_config.cache_maaend_resource(resource)
-        return resource
 
     @classmethod
     def normalize_payload(cls, data):

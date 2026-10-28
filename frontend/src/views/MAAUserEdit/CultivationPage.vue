@@ -5,21 +5,21 @@
       <div class="cultivation-header-main">
         <a-breadcrumb class="cultivation-breadcrumb">
           <a-breadcrumb-item>
-            <router-link to="/scripts">{{ t('edit.scripts') }}</router-link>
+            <router-link to="/scripts">{{ t('core.edit.scripts') }}</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
             <router-link :to="{ name: 'MAAUserEdit', params: { scriptId, userId } }">
               {{ formData?.Info?.Name || scriptName }}
             </router-link>
           </a-breadcrumb-item>
-          <a-breadcrumb-item>{{ t('maaCopilot.pageTitle') }}</a-breadcrumb-item>
+          <a-breadcrumb-item>{{ t('core.maaCopilot.pageTitle') }}</a-breadcrumb-item>
         </a-breadcrumb>
-        <h1 class="page-title">{{ t('maaCopilot.pageTitle') }}</h1>
-        <p class="cultivation-desc">{{ t('maaCopilot.saveHint') }}</p>
+        <h1 class="page-title">{{ t('core.maaCopilot.pageTitle') }}</h1>
+        <p class="cultivation-desc">{{ t('core.maaCopilot.saveHint') }}</p>
       </div>
       <a-button class="cultivation-back" size="large" :loading="leavingPage" @click="emit('back')">
         <template #icon><ArrowLeftOutlined aria-hidden="true" /></template>
-        {{ t('edit.back') }}
+        {{ t('core.edit.back') }}
       </a-button>
     </header>
 
@@ -52,7 +52,7 @@
       <!-- 内容卡：培养目标 / 作业规划 -->
       <section class="cultivation-content" :inert="editorBusy">
         <a-tabs v-model:active-key="activeTab" type="card" class="cultivation-tabs">
-          <a-tab-pane key="targets" :tab="t('maaCopilot.targetsTab')">
+          <a-tab-pane key="targets" :tab="t('core.maaCopilot.targetsTab')">
             <!-- tab-content 类承接页面的标签页内容内边距（与游戏社区/设置页同款） -->
             <CultivateTargetEditor
               ref="editorRef"
@@ -73,7 +73,7 @@
               @busy="clipboardImporting = $event"
             />
           </a-tab-pane>
-          <a-tab-pane key="copilot" :tab="t('maaCopilot.analysisTab')">
+          <a-tab-pane key="copilot" :tab="t('core.maaCopilot.analysisTab')">
             <CopilotCultivatePlanner
               class="tab-content"
               :disabled="loading || clipboardImporting"

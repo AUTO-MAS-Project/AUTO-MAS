@@ -70,8 +70,8 @@ async def _cmcc_send(
 def register() -> NotifyChannel:
     return NotifyChannel(
         key="cmcc",
-        name_key="setting.notify.cmccNewMsgName",
-        desc_key="setting.notify.cmccNewMsgTip",
+        name_key="core.setting.notify.cmccNewMsgName",
+        desc_key="core.setting.notify.cmccNewMsgTip",
         icon="signal",
         group="builtin",
         order=40,
@@ -80,17 +80,17 @@ def register() -> NotifyChannel:
         kind="fields",
         custom_block=None,
         enable_field=("Notify", "IfCMCCNewMsg"),
-        summary_key="setting.notify.summary.cmcc",
+        summary_key="core.setting.notify.summary.cmcc",
         summary_fields=("CMCCNewMsgApiKey",),
         fields={
             SCOPE_GLOBAL: (
                 NotifyChannelField(
                     group="Notify",
                     name="CMCCNewMsgApiKey",
-                    label_key="setting.notify.cmccNewMsgApiKey",
+                    label_key="core.setting.notify.cmccNewMsgApiKey",
                     control="password",
-                    placeholder_key="setting.notify.cmccNewMsgApiKeyPlaceholder",
-                    tip_key="setting.notify.cmccNewMsgApiKeyTip",
+                    placeholder_key="core.setting.notify.cmccNewMsgApiKeyPlaceholder",
+                    tip_key="core.setting.notify.cmccNewMsgApiKeyTip",
                 ),
             )
         },
