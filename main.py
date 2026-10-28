@@ -263,13 +263,25 @@ def main():
 
     from app.core import Config
     from app.core.restore_bindings import resolve_restore_pools
+    from app.models.config import MaaEndConfig
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
         resolve_sentry_dist,
     )
+    from app.task.MaaEnd.api_service import MaaEndConfigService
+    from app.task.MaaFW.tools.embedded.game_resolution import (
+        read_unity_display_type,
+        read_unity_resolution,
+    )
 
     Config.set_restore_pool_resolver(resolve_restore_pools)
+    maaend_config_service = MaaEndConfigService(
+        scripts=Config.ScriptConfig,
+        read_resolution=read_unity_resolution,
+        read_display_type=read_unity_display_type,
+    )
+    Config.bind_script_config_handler(MaaEndConfig, maaend_config_service)
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -318,6 +330,9 @@ def main():
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
 
+        RuntimeTasks.spawn(
+            maaend_config_service.preload_resources(), name="maaend-resource-preload"
+        )
         notifications = create_notification_service(
             config=Config,
             transactions=config_manager,
@@ -568,6 +583,7 @@ def main():
         version="1.0.0",
         lifespan=lifespan,
     )
+    app.state.maaend_config_service = maaend_config_service
 
     app.add_middleware(
         CORSMiddleware,
