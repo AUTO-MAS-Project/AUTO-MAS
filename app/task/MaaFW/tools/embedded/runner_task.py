@@ -128,6 +128,7 @@ from .resource_failure import (
     native_error_excerpt,
     read_native_error_lines,
 )
+from .shell_instances import read_instance_win32_input_methods
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
     MAINTENANCE_SKIP_MESSAGE,
@@ -1360,6 +1361,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if mouse is None and keyboard is None and win32_config is not None:
                 # MFAA 的写法：只写 input 时鼠标、键盘都用它
                 mouse = keyboard = win32_config.input
+            # 外壳设置页里存着的输入方式优先于 interface 声明：内置运行不经过外壳，用户在那儿
+            # 调过就按他调的跑，别用 interface 或默认的 Seize 把他的选择顶掉
+            project_input = read_instance_win32_input_methods(self.project_path)
+            if project_input:
+                mouse = project_input.get("mouse") or mouse
+                keyboard = project_input.get("keyboard") or keyboard
+                self._append_log(
+                    "Win32 输入方式取自项目实例设置："
+                    f"鼠标={_describe_win32_method(mouse)}；"
+                    f"键盘={_describe_win32_method(keyboard)}"
+                )
             return MaaFWDeviceConfig(
                 type="Win32",
                 hWnd=await self._resolve_window_handle(controller),

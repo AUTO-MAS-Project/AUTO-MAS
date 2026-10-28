@@ -92,6 +92,11 @@ SOURCE_MXU: ShellSource = "MXU"
 SOURCE_MFW: ShellSource = "MFW-PyQt6"
 
 _MFAA_SETTINGS_FILE = "appsettings.json"
+#: 外壳实例里 Win32 鼠标 / 键盘输入方式的键（MFAAvalonia 设置页那两项）
+_MFAA_WIN32_INPUT_KEYS = {
+    "mouse": "Win32ControlMouseType",
+    "keyboard": "Win32ControlKeyboardType",
+}
 #: MFW-PyQt6 配置里不是任务的四条（按 ``item_id`` 认）
 _MFW_SPECIAL_ITEMS = frozenset({"PreTask", "Controller", "Resource", "Post-Action"})
 #: switch 的布尔值按 case 名对应（PI v2 的 switch 两个 case 通常叫 Yes / No，顺序不固定，
@@ -195,6 +200,47 @@ def _mfaa_settings(root: Path, config_dir: Path) -> dict[str, Any]:
 
 def _split_ids(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
+    """项目（MFAAvalonia）实例里记着的 Win32 鼠标、键盘输入方式，没有就返回空表。
+
+    ``config/instances/*.json`` 的 ``Win32ControlMouseType`` / ``Win32ControlKeyboardType``
+    就是外壳设置页那两个下拉的值。内置运行不经过外壳，以前只认 interface 与脚本级配置，
+    于是用户在外壳设置里调过的方式在 MAS 里等于没配，跑起来还是 interface 写的或默认的
+    ``Seize``。这里只读、不改任何文件：认 ``appsettings.json`` 的
+    ``Instances.LastActive``，其次 ``default``，最后按文件名扫一遍，取第一个真有值的实例。
+    """
+
+    config_dir = root / "config"
+    instances_dir = config_dir / "instances"
+    if not instances_dir.is_dir():
+        return {}
+    candidates: list[Path] = []
+    last_active = str(
+        _mfaa_settings(root, config_dir).get("Instances.LastActive") or ""
+    ).strip()
+    if last_active:
+        candidates.append(instances_dir / f"{last_active}.json")
+    candidates.append(instances_dir / "default.json")
+    seen = set(candidates)
+    candidates.extend(
+        path for path in sorted(instances_dir.glob("*.json")) if path not in seen
+    )
+    for path in candidates:
+        if not path.is_file():
+            continue
+        payload = _read_json_object(path)
+        if payload is None:
+            continue
+        methods: dict[str, str] = {}
+        for field_name, key in _MFAA_WIN32_INPUT_KEYS.items():
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                methods[field_name] = value.strip()
+        if methods:
+            return methods
+    return {}
 
 
 def _scan_mfaa(root: Path, config_dir: Path) -> list[ShellInstance]:
