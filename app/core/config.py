@@ -2973,8 +2973,8 @@ class AppConfig:
         if not root.is_dir():
             return
 
-        # 按有效根算存活集合：内嵌脚本的 venv 是按副本路径哈希的，拿来源目录去算
-        # 会把副本的 venv 当孤儿删掉。
+        # 按有效根算存活集合：引用记录和建计划都按副本（视图）路径算，拿来源目录去算
+        # 会把副本引用的 venv 当孤儿删掉。
         live_paths = [
             path
             for uid, config in self.ScriptConfig.items()
