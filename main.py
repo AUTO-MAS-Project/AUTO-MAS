@@ -462,7 +462,7 @@ def main():
                     # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
-                        await Config.migrate_maafw_embedded_copies_to_payloads()
+                        await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
                         await Config.maafw_maintenance.clean_agent_venvs()
                         await Config.maafw_maintenance.clean_embedded_copies()
                         await Config.maafw_maintenance.clean_runtime_blobs()

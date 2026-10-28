@@ -7,7 +7,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 布局与边界
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
-- `tools/embedded/maintenance.py`：宿主资源维护；公共 Config 注入脚本快照、完整加载状态与保留天数，main 编排迁移后的启动清理，timer 触发每日原生日志清理。
+- `tools/embedded/maintenance.py`：宿主资源维护入口；公共 Config 注入脚本快照、完整加载状态与保留天数，`migration.py` 承接老副本采纳、组版本统一和旧更新状态清理。main 编排迁移后的启动清理，timer 触发每日原生日志清理。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
   `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
@@ -267,7 +267,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中（Mirror 酱按包的 sha256：它的一次性下载地址每次都变），启动期 `MaaFWMaintenanceService.clean_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
-- **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前，整段
+- **启动期一次性迁移**（`MaaFWMaintenanceService.migrate_embedded_copies_to_payloads`，排在各项回收之前，整段
   在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
   副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface
   算投影白名单，白名单内、不是已知运行期状态 / 日志的全部进载荷，内容取视图现状；更新器清单与来源
@@ -278,6 +278,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
   `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
   清单里没有导入目录）。
+  没有待采纳副本时仍复核 latest 与视图，补完上次在采纳后中断的收尾；采纳也跳过运行中脚本。
+  取消先等正在执行的文件操作结束，再释放尚未移交的预约并清除 `migration_active`。
 - **发行包形态与源码形态**：发行包（interface 在包根，自带 `python/` / `maafw/` 或不带）照常导入、
   照常更新。M9A 式源码仓（`assets/interface.json`、agent 在 `assets/` 外）按上面「源码形态」平铺导入，
   始终跟随来源目录、不做项目更新（`child_exec: uv` 不支持，见「源码形态」）。被 CFA（MFW-PyQt6）源码热更新过
