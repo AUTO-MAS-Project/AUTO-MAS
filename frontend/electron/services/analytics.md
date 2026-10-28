@@ -20,9 +20,9 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket`、`visibility` | 每进程最多一次 |
 | `backend_start_finished` | 串行启动作业的真实结果 | `outcome`、`runtime_mode`、耗时桶 | 合并的启动请求不重复 |
 | `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
-| `initialization_stage_finished` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
+| `initialization_stage_finished_v2` | Runtime 实际命令及旧安装阶段的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
 | `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
-| `initialization_finished` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
+| `initialization_finished_v2` | 初始化尝试的整体结局 | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
 | `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
@@ -108,6 +108,10 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 初始化准备步骤完成不代表成功；确认主连接可用后才记成功，跳过步骤、强行进入但未确认连接、
 失败分别记录。启动时自动跳过已完成的安装步骤仍需确认连接，单独标记 `flow_kind=skip`。
+
+初始化统计使用版本化事件：旧事件的 failure 包含取消，旧整体事件的 python 也可能是 Runtime 对齐失败；
+从 v2 起取消独立记为 cancelled，对齐失败记为 runtime_binary，不能直接合并新旧分类。
+界面仍使用原有失败步骤，不采集原始错误文本。
 
 阶段统计在主进程执行边界记录：Runtime 自身校验/更新为 `runtime_binary`，完整准备命令为
 `bootstrap`，单项命令对应 `python`、`repository` 或 `dependency`；失败时另带有限枚举的

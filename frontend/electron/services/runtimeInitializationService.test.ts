@@ -381,6 +381,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
       retryable: true,
       remediation: ['retry', 'open-log'],
       failedStage: 'python',
+      failureOrigin: 'runtime_binary',
     })
     expect(FakeRuntimeClient.calls).toHaveLength(0)
     expect(updates.at(-1)).toMatchObject({
@@ -432,6 +433,7 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
     expect(observedCancel).toBe(true)
     expect(outcome.success).toBe(false)
     expect(outcome.code).toBe(RUNTIME_BINARY_CANCELLED)
+    expect(outcome.failureOrigin).toBe('runtime_binary')
     expect(FakeRuntimeClient.calls).toHaveLength(0)
   })
 })
@@ -439,6 +441,23 @@ describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
 // ==================== 单步重试 ====================
 
 describe('单步重试', () => {
+  it('运行环境重试的 Runtime 对齐失败保留实际来源和界面失败段', async () => {
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_LATEST_UNAVAILABLE,
+      error: '无法确认线上最新的 Runtime 版本',
+    }
+
+    const outcome = await createService().retryStage('python', () => undefined)
+
+    expect(outcome).toMatchObject({
+      success: false,
+      failedStage: 'python',
+      failureOrigin: 'runtime_binary',
+    })
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+
   it('依赖段重试走 dependencies sync', async () => {
     FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('dependencies.sync')] }]
 

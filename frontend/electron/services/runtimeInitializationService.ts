@@ -510,6 +510,8 @@ export interface RuntimeStageOutcome {
   logPath?: string
   /** 映射后的失败段名。 */
   failedStage?: InitializationRunStage
+  /** 仅用于区分第 0 步与界面上的 Python 失败段。 */
+  failureOrigin?: 'runtime_binary'
 }
 
 /** 第 0 步被取消时的结局：与 Runtime 自己的取消同码，调用方按「源码一动没动」处置。 */
@@ -828,7 +830,7 @@ export class RuntimeInitializationService {
       !this.cancelRequested
     if (!aligned.success && !reuseEnvironment) {
       bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
-      return aligned
+      return { ...aligned, failureOrigin: 'runtime_binary' }
     }
 
     const command = ['bootstrap', '--version', version]
@@ -920,7 +922,7 @@ export class RuntimeInitializationService {
       const aligned = await this.alignRuntime(bridge)
       if (!aligned.success) {
         bridge.fail('python', aligned.error ?? '解析并下载最新 Runtime 失败')
-        return aligned
+        return { ...aligned, failureOrigin: 'runtime_binary' }
       }
     }
     let outcome = await this.execute(command, mirror, bridge)

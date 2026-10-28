@@ -18,7 +18,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
   const { beginBootstrap, finishBootstrap, resetInitializationStatus } = useAppInitialization()
   beginBootstrap()
-  const operation = beginAnalyticsOperation('initialization_finished')
+  const operation = beginAnalyticsOperation('initialization_finished_v2')
 
   startupPromise = (async () => {
     const api = window.electronAPI
