@@ -237,10 +237,15 @@ def _read_job() -> tuple[dict[str, Any], Path | None]:
 
 def main() -> int:
     if len(sys.argv) > 2:
+        # 原文案保留在前；不带路径也合法（job 从 stdin 读），补在后面
         _emit(
             {
                 "type": "error",
-                "message": "runner worker reads its job from stdin (or one legacy job json path)",
+                "message": (
+                    "runner worker requires one job json path"
+                    " (or none: the job is then read from stdin),"
+                    f" got {len(sys.argv) - 1} arguments"
+                ),
             }
         )
         return 64
