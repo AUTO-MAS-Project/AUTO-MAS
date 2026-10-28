@@ -1537,6 +1537,9 @@ class MaaFWProjectUpdateJobData(BaseModel):
         default="idle",
         description="idle 本次后端启动以来没有手动更新；running 正在更新；finished 已结束",
     )
+    jobId: Optional[str] = Field(
+        default=None, description="这次手动更新的唯一作业 ID；idle 时为空"
+    )
     startedAt: Optional[str] = Field(default=None, description="开始时间（ISO 8601）")
     finishedAt: Optional[str] = Field(
         default=None, description="结束时间（ISO 8601）；进行中为空"

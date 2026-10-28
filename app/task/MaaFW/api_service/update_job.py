@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -61,6 +62,7 @@ _logger = get_logger("MaaFW 项目更新")
 class _ManualUpdateJob:
     script_id: str
     started_at: datetime
+    job_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     task: asyncio.Task[MaaFWApiReply] | None = None
     finished_at: datetime | None = None
     events: list[WSMaaFWProjectUpdateProgressData] = field(default_factory=list)
@@ -147,15 +149,25 @@ async def _run_apply(job: _ManualUpdateJob) -> MaaFWApiReply:
     _current_job.set(job)
     try:
         reply = await update_project(job.script_id, "apply")
+        reply = MaaFWApiReply(
+            code=reply.code,
+            message=reply.message,
+            data=reply.data,
+            job_id=job.job_id,
+        )
         return reply
     except asyncio.CancelledError:
-        reply = MaaFWApiReply.error(500, UPDATE_INTERRUPTED)
+        reply = MaaFWApiReply(code=500, message=UPDATE_INTERRUPTED, job_id=job.job_id)
         raise
     except Exception as exc:
         _logger.opt(exception=True).warning(
             f"MFW 后台手动更新异常: script={job.script_id} {type(exc).__name__}: {exc}"
         )
-        reply = MaaFWApiReply.error(500, f"MFW 项目更新失败: {exc}")
+        reply = MaaFWApiReply(
+            code=500,
+            message=f"MFW 项目更新失败: {exc}",
+            job_id=job.job_id,
+        )
         return reply
     finally:
         with _jobs_lock:
@@ -220,6 +232,7 @@ def _job_data(job: _ManualUpdateJob) -> MaaFWProjectUpdateJobData:
         )
     return MaaFWProjectUpdateJobData(
         state="running" if finished_at is None else "finished",
+        jobId=job.job_id,
         startedAt=job.started_at.isoformat(timespec="seconds"),
         finishedAt=(finished_at.isoformat(timespec="seconds") if finished_at else None),
         events=events,

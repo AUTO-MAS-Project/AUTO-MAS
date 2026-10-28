@@ -14,6 +14,10 @@ export type MaaFWProjectUpdateJobData = {
      */
     state?: MaaFWProjectUpdateJobData.state;
     /**
+     * 这次手动更新的唯一作业 ID；idle 时为空
+     */
+    jobId?: (string | null);
+    /**
      * 开始时间（ISO 8601）
      */
     startedAt?: (string | null);

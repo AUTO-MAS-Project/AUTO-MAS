@@ -198,6 +198,9 @@ class MaaFWProjectUpdateIn(BaseModel):
 
 
 class MaaFWProjectUpdateOut(OutBase):
+    jobId: Optional[str] = Field(
+        default=None, description="apply 对应的后台手动更新作业 ID；check 时为空"
+    )
     data: Optional[MaaFWProjectUpdateData] = Field(
         default=None, description="MaaFW 项目更新结果"
     )

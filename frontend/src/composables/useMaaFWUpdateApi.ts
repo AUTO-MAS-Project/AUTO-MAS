@@ -6,6 +6,8 @@ import type { WSMaaFWProjectUpdateProgressData } from '@/services/websocket/type
 
 /** MaaFW 项目更新：复用生成客户端，统一页面结果与错误提示。 */
 export interface MaaFWUpdateResult {
+  /** 后台 apply 的唯一作业 ID；check 或旧后端时为空。 */
+  jobId: string | null
   checked: boolean
   updated: boolean
   updateAvailable: boolean
@@ -32,7 +34,9 @@ export interface MaaFWUpdateResult {
  */
 export interface MaaFWUpdateJobSnapshot {
   state: 'idle' | 'running' | 'finished'
-  /** 这次手动更新的开始时刻（后端 ISO 字符串），同一脚本里用来认是不是同一次；idle 时为空 */
+  /** 这次手动更新的唯一作业 ID；idle 或旧后端时为空。 */
+  jobId: string
+  /** 这次手动更新的开始时刻（后端 ISO 字符串），用于展示与日志；idle 时为空 */
   startedAt: string
   events: WSMaaFWProjectUpdateProgressData[]
   result: MaaFWUpdateResult | null
@@ -46,6 +50,7 @@ export interface MaaFWMirrorCdkState {
 }
 
 const EMPTY_DATA: Omit<MaaFWUpdateResult, 'message'> = {
+  jobId: null,
   checked: false,
   updated: false,
   updateAvailable: false,
@@ -96,9 +101,18 @@ export function useMaaFWUpdateApi() {
     }
 
     if (payload.code !== 200) {
-      throw new Error(payload.message || 'MFW 项目更新请求失败')
+      const error = new Error(payload.message || 'MFW 项目更新请求失败') as Error & {
+        jobId?: string | null
+      }
+      error.jobId = payload.jobId ?? null
+      throw error
     }
-    return { ...EMPTY_DATA, ...(payload.data ?? {}), message: payload.message ?? '' }
+    return {
+      ...EMPTY_DATA,
+      ...(payload.data ?? {}),
+      jobId: payload.jobId ?? null,
+      message: payload.message ?? '',
+    }
   }
 
   const checkMaaFWUpdate = (scriptId: string): Promise<MaaFWUpdateResult> =>
@@ -146,18 +160,29 @@ export function useMaaFWUpdateApi() {
     }))
     const rawState = String(data?.state ?? '')
     const state = rawState === 'running' || rawState === 'finished' ? rawState : 'idle'
+    const jobId = String(data?.jobId ?? '')
     const startedAt = String(data?.startedAt ?? '')
     const job = data?.result
-    if (state !== 'finished' || !job) return { state, startedAt, events, result: null, error: '' }
+    if (state !== 'finished' || !job) {
+      return { state, jobId, startedAt, events, result: null, error: '' }
+    }
     const message = job.message ?? ''
     if ((job.code ?? 200) !== 200) {
-      return { state, startedAt, events, result: null, error: message || 'MFW 项目更新失败' }
+      return {
+        state,
+        jobId,
+        startedAt,
+        events,
+        result: null,
+        error: message || 'MFW 项目更新失败',
+      }
     }
     return {
       state,
+      jobId,
       startedAt,
       events,
-      result: { ...EMPTY_DATA, ...(job.data ?? {}), message },
+      result: { ...EMPTY_DATA, ...(job.data ?? {}), jobId, message },
       error: '',
     }
   }
