@@ -25,7 +25,7 @@ import asyncio
 import time
 import weakref
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -38,7 +38,9 @@ from app.runtime_tasks import RuntimeTasks
 from app.utils import get_logger
 
 if TYPE_CHECKING:
+    from app.models.config import UserConfigType
     from app.models.schema import HistoryWrite
+    from app.services.game_maintenance import MaintenanceWindow
 
 logger = get_logger("任务执行")
 
@@ -237,6 +239,22 @@ class TaskItem(ABC):
     @property
     def local_notifier(self) -> LocalNotifier:
         return self.notifications
+
+    def get_script_user_configs(
+        self, script_id: str
+    ) -> Iterable[tuple[UUID, UserConfigType]]:
+        """在预检尚未加载配置时查询当前账号，具体来源由宿主提供。"""
+        raise NotImplementedError
+
+    async def get_active_maintenance(self, game: str) -> MaintenanceWindow | None:
+        """查询专项声明的维护对象，代理与公告客户端由宿主装配。"""
+        raise NotImplementedError
+
+    async def send_notice(
+        self, *, level: Literal["info", "warning", "error"], message: str
+    ) -> None:
+        """发送任务提示，具体传输由宿主提供。"""
+        raise NotImplementedError
 
     async def save_user_history(
         self,

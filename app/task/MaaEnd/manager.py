@@ -22,7 +22,7 @@ from app.config import ConfigCollection, config_manager
 from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb, capture_win32
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models.config import MaaEndConfig, MaaEndUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification_report import TaskResultReport
 from app.models.schema import WSTaskNoticeData
@@ -60,6 +60,16 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 
 class MaaEndManager(ScriptManagerBase):
     """MaaEnd 控制器"""
+
+    maintenance_message = "终末地正在维护"
+
+    def maintenance_game(self, user_config: UserConfigType) -> str | None:
+        if (
+            isinstance(user_config, MaaEndUserConfig)
+            and user_config.Info.Resource == "官服"
+        ):
+            return "endfield"
+        return None
 
     wait_for_finalizer_on_cancel = True
 
