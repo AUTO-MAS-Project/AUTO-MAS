@@ -1,7 +1,7 @@
 <template>
   <a-drawer
     :open="open"
-    :title="t('home.layout.title')"
+    :title="t('core.home.layout.title')"
     :width="360"
     :mask="false"
     :root-style="drawerRootStyle"
@@ -25,8 +25,8 @@
               class="home-layout-drag-handle"
               role="button"
               tabindex="0"
-              :aria-label="t('home.layout.drag')"
-              :title="t('home.layout.drag')"
+              :aria-label="t('core.home.layout.drag')"
+              :title="t('core.home.layout.drag')"
             >
               <MenuOutlined />
             </span>
@@ -34,7 +34,7 @@
             <a-switch
               size="small"
               :checked="module.visible"
-              :aria-label="t('home.layout.visibility', { name: module.title })"
+              :aria-label="t('core.home.layout.visibility', { name: module.title })"
               @change="onVisibilityChange(module.key, $event)"
             />
           </div>
@@ -45,8 +45,8 @@
             class="home-layout-children"
             :class="{ 'is-muted': !module.visible }"
           >
-            <div class="home-layout-children-hint">{{ t('home.layout.activityGroup') }}</div>
-            <div class="home-layout-master-hint">{{ t('home.layout.activityDefaults') }}</div>
+            <div class="home-layout-children-hint">{{ t('core.home.layout.activityGroup') }}</div>
+            <div class="home-layout-master-hint">{{ t('core.home.layout.activityDefaults') }}</div>
 
             <draggable
               :model-value="activityModules"
@@ -64,8 +64,8 @@
                     class="home-layout-sub-drag-handle"
                     role="button"
                     tabindex="0"
-                    :aria-label="t('home.layout.drag')"
-                    :title="t('home.layout.drag')"
+                    :aria-label="t('core.home.layout.drag')"
+                    :title="t('core.home.layout.drag')"
                   >
                     <MenuOutlined />
                   </span>
@@ -73,7 +73,7 @@
                   <a-switch
                     size="small"
                     :checked="game.visible"
-                    :aria-label="t('home.layout.visibility', { name: game.title })"
+                    :aria-label="t('core.home.layout.visibility', { name: game.title })"
                     @change="onVisibilityChange(game.key, $event)"
                   />
                 </div>
@@ -81,17 +81,19 @@
             </draggable>
 
             <div class="home-layout-extra is-sub">
-              <span class="home-layout-title">{{ t('home.layout.carouselAutoplay') }}</span>
+              <span class="home-layout-title">{{ t('core.home.layout.carouselAutoplay') }}</span>
               <a-switch
                 size="small"
                 :checked="carouselAutoplay"
-                :aria-label="t('home.layout.carouselAutoplayVisibility')"
+                :aria-label="t('core.home.layout.carouselAutoplayVisibility')"
                 @change="emit('autoplay-change', Boolean($event))"
               />
             </div>
 
             <!-- 首页签到情况与便笺：总开关在游戏社区设置里，这里按游戏控制显示 -->
-            <div class="home-layout-children-hint">{{ t('home.layout.activityNotesGroup') }}</div>
+            <div class="home-layout-children-hint">
+              {{ t('core.home.layout.activityNotesGroup') }}
+            </div>
             <div class="home-layout-note-list" :class="{ 'is-muted': !activityNotesVisible }">
               <div
                 v-for="key in HOME_ACTIVITY_NOTE_KEYS"
@@ -100,20 +102,20 @@
               >
                 <!-- 与上方游戏开关行一致：第一个 28px 列放占位，标题在中间列、开关贴右 -->
                 <span class="home-layout-spacer" aria-hidden="true"></span>
-                <span class="home-layout-title">{{ t(`home.game.${key}`) }}</span>
+                <span class="home-layout-title">{{ t(`core.home.game.${key}`) }}</span>
                 <a-switch
                   size="small"
                   :checked="!hiddenActivityNotes.includes(key)"
                   :aria-label="
-                    t('home.layout.activityNoteVisibility', {
-                      name: t(`home.game.${key}`),
+                    t('core.home.layout.activityNoteVisibility', {
+                      name: t(`core.home.game.${key}`),
                     })
                   "
                   @change="emit('activity-note-visibility-change', key, Boolean($event))"
                 />
               </div>
               <div v-if="!activityNotesVisible" class="home-layout-master-hint">
-                {{ t('home.layout.activityNotesMasterOff') }}
+                {{ t('core.home.layout.activityNotesMasterOff') }}
               </div>
             </div>
           </div>
@@ -124,11 +126,11 @@
     <a-divider style="margin: 16px 0" />
 
     <div class="home-layout-extra">
-      <span class="home-layout-title">{{ t('home.layout.scrollHint') }}</span>
+      <span class="home-layout-title">{{ t('core.home.layout.scrollHint') }}</span>
       <a-switch
         size="small"
         :checked="!scrollHintHidden"
-        :aria-label="t('home.layout.scrollHintVisibility')"
+        :aria-label="t('core.home.layout.scrollHintVisibility')"
         @change="emit('scroll-hint-change', !$event)"
       />
     </div>

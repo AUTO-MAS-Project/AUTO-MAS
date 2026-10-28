@@ -6,20 +6,20 @@
         <a-form-item name="Channel">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.farmType')"
-              :hint="t('edit.pickStageTypeFarm')"
+              :text="t('core.edit.farmType')"
+              :hint="t('core.edit.pickStageTypeFarm')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.Channel"
             size="large"
-            :placeholder="t('edit.pickFarmType')"
+            :placeholder="t('core.edit.pickFarmType')"
             @change="emitSave('Stage.Channel', formData.Stage.Channel)"
           >
-            <a-select-option value="Relic">{{ t('edit.relic') }}</a-select-option>
-            <a-select-option value="Materials">{{ t('edit.material') }}</a-select-option>
-            <a-select-option value="Ornament">{{ t('edit.ornament') }}</a-select-option>
+            <a-select-option value="Relic">{{ t('core.edit.relic') }}</a-select-option>
+            <a-select-option value="Materials">{{ t('core.edit.material') }}</a-select-option>
+            <a-select-option value="Ornament">{{ t('core.edit.ornament') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -27,8 +27,8 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.activeStage')"
-              :hint="t('edit.activeStageTakenFrom')"
+              :text="t('core.edit.activeStage')"
+              :hint="t('core.edit.activeStageTakenFrom')"
               variant="form"
             />
           </template>
@@ -47,20 +47,22 @@
         <a-form-item name="Relic">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.relicStage')"
-              :hint="t('edit.pickRelicStageFarm')"
+              :text="t('core.edit.relicStage')"
+              :hint="t('core.edit.pickRelicStageFarm')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.Relic"
             size="large"
-            :placeholder="t('edit.pickRelicStage')"
+            :placeholder="t('core.edit.pickRelicStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Relic', formData.Stage.Relic)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{
+              t('core.edit.keepOriginalConfiguration')
+            }}</a-select-option>
             <a-select-option value="Cavern_of_Corrosion_Path_of_Insight"
               >遗器：领航员 & 名冶（观火之径）</a-select-option
             >
@@ -116,20 +118,22 @@
         <a-form-item name="Ornament">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.ornamentStage')"
-              :hint="t('edit.pickOrnamentStageFarm')"
+              :text="t('core.edit.ornamentStage')"
+              :hint="t('core.edit.pickOrnamentStageFarm')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.Ornament"
             size="large"
-            :placeholder="t('edit.pickOrnamentStage')"
+            :placeholder="t('core.edit.pickOrnamentStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Ornament', formData.Stage.Ornament)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{
+              t('core.edit.keepOriginalConfiguration')
+            }}</a-select-option>
             <a-select-option value="Divergent_Universe_Bugs_Incoming"
               >饰品：坠星 & 寰宇（虫虫来袭）</a-select-option
             >
@@ -183,17 +187,19 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.materialCategory')"
-              :hint="t('edit.filteredByMaterialStage')"
+              :text="t('core.edit.materialCategory')"
+              :hint="t('core.edit.filteredByMaterialStage')"
               variant="form"
             />
           </template>
-          <a-select v-model:value="materialCategory" size="large" :placeholder="t('edit.all')">
-            <a-select-option value="">{{ t('edit.all') }}</a-select-option>
-            <a-select-option value="Calyx_Golden">{{ t('edit.calyxGolden') }}</a-select-option>
-            <a-select-option value="Calyx_Crimson">{{ t('edit.calyxCrimson') }}</a-select-option>
+          <a-select v-model:value="materialCategory" size="large" :placeholder="t('core.edit.all')">
+            <a-select-option value="">{{ t('core.edit.all') }}</a-select-option>
+            <a-select-option value="Calyx_Golden">{{ t('core.edit.calyxGolden') }}</a-select-option>
+            <a-select-option value="Calyx_Crimson">{{
+              t('core.edit.calyxCrimson')
+            }}</a-select-option>
             <a-select-option value="Stagnant_Shadow">{{
-              t('edit.stagnantShadow')
+              t('core.edit.stagnantShadow')
             }}</a-select-option>
           </a-select>
         </a-form-item>
@@ -202,20 +208,22 @@
         <a-form-item name="Materials">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.materialStage')"
-              :hint="t('edit.pickMaterialStageFarm')"
+              :text="t('core.edit.materialStage')"
+              :hint="t('core.edit.pickMaterialStageFarm')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.Materials"
             size="large"
-            :placeholder="t('edit.pickMaterialStage')"
+            :placeholder="t('core.edit.pickMaterialStage')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.Materials', formData.Stage.Materials)"
           >
-            <a-select-option value="-">{{ t('edit.keepOriginalConfiguration') }}</a-select-option>
+            <a-select-option value="-">{{
+              t('core.edit.keepOriginalConfiguration')
+            }}</a-select-option>
             <template v-for="option in filteredMaterialOptions" :key="option.value">
               <a-select-option :value="option.value">{{ option.label }}</a-select-option>
             </template>
@@ -230,20 +238,20 @@
         <a-form-item name="EchoOfWar">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.echoOfWar')"
-              :hint="t('edit.pickDivergentUniverseStage3')"
+              :text="t('core.edit.echoOfWar')"
+              :hint="t('core.edit.pickDivergentUniverseStage3')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.EchoOfWar"
             size="large"
-            :placeholder="t('edit.pickDivergentUniverseStage2')"
+            :placeholder="t('core.edit.pickDivergentUniverseStage2')"
             show-search
             :filter-option="filterOption"
             @change="emitSave('Stage.EchoOfWar', formData.Stage.EchoOfWar)"
           >
-            <a-select-option value="-">{{ t('edit.disabled') }}</a-select-option>
+            <a-select-option value="-">{{ t('core.edit.disabled') }}</a-select-option>
             <a-select-option value="Echo_of_War_The_Comedy_of_Doom"
               >坏灭的喜剧（二相乐园）</a-select-option
             >
@@ -278,36 +286,36 @@
         <a-form-item name="SimulatedUniverseWorld">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.simulatedUniverse')"
-              :hint="t('edit.pickSimulatedUniverseWorld2')"
+              :text="t('core.edit.simulatedUniverse')"
+              :hint="t('core.edit.pickSimulatedUniverseWorld2')"
               variant="form"
             />
           </template>
           <a-select
             v-model:value="formData.Stage.SimulatedUniverseWorld"
             size="large"
-            :placeholder="t('edit.pickSimulatedUniverseWorld')"
+            :placeholder="t('core.edit.pickSimulatedUniverseWorld')"
             show-search
             :filter-option="filterOption"
             @change="
               emitSave('Stage.SimulatedUniverseWorld', formData.Stage.SimulatedUniverseWorld)
             "
           >
-            <a-select-option value="-">{{ t('edit.disabled') }}</a-select-option>
+            <a-select-option value="-">{{ t('core.edit.disabled') }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_3">{{
-              t('edit.world3')
+              t('core.edit.world3')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_4">{{
-              t('edit.world4')
+              t('core.edit.world4')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_5">{{
-              t('edit.world5')
+              t('core.edit.world5')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_6">{{
-              t('edit.world6')
+              t('core.edit.world6')
             }}</a-select-option>
             <a-select-option value="Simulated_Universe_World_8">{{
-              t('edit.world8')
+              t('core.edit.world8')
             }}</a-select-option>
           </a-select>
         </a-form-item>
@@ -320,8 +328,8 @@
         <a-form-item name="ExtractReservedTrailblazePower">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.useReservedTrailblazePower')"
-              :hint="t('edit.whetherReservedTrailblazePower')"
+              :text="t('core.edit.useReservedTrailblazePower')"
+              :hint="t('core.edit.whetherReservedTrailblazePower')"
               variant="form"
             />
           </template>
@@ -335,8 +343,8 @@
               )
             "
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -344,8 +352,8 @@
         <a-form-item name="UseFuel">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.useFuel')"
-              :hint="t('edit.whetherFuelUsed')"
+              :text="t('core.edit.useFuel')"
+              :hint="t('core.edit.whetherFuelUsed')"
               variant="form"
             />
           </template>
@@ -354,8 +362,8 @@
             size="large"
             @change="emitSave('Stage.UseFuel', formData.Stage.UseFuel)"
           >
-            <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -363,8 +371,8 @@
         <a-form-item name="FuelReserve">
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.fuelKeep')"
-              :hint="t('edit.fuelKeepReserveWhen')"
+              :text="t('core.edit.fuelKeep')"
+              :hint="t('core.edit.fuelKeepReserveWhen')"
               variant="form"
             />
           </template>
@@ -411,324 +419,324 @@ const materialOptions = [
   // 拟造花萼（金）
   {
     value: 'Calyx_Golden_Memories_Planarcadia',
-    label: t('edit.materialCharacterExp'),
+    label: t('core.edit.materialCharacterExp'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Aether_Planarcadia',
-    label: t('edit.materialLightConeExp'),
+    label: t('core.edit.materialLightConeExp'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Treasures_Planarcadia',
-    label: t('edit.materialCredits'),
+    label: t('core.edit.materialCredits'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Memories_Amphoreus',
-    label: t('edit.materialCharacterExp4'),
+    label: t('core.edit.materialCharacterExp4'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Aether_Amphoreus',
-    label: t('edit.materialLightConeExp4'),
+    label: t('core.edit.materialLightConeExp4'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Treasures_Amphoreus',
-    label: t('edit.materialCredits4'),
+    label: t('core.edit.materialCredits4'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Memories_Penacony',
-    label: t('edit.materialCharacterExp3'),
+    label: t('core.edit.materialCharacterExp3'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Aether_Penacony',
-    label: t('edit.materialLightConeExp3'),
+    label: t('core.edit.materialLightConeExp3'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Treasures_Penacony',
-    label: t('edit.materialCredits3'),
+    label: t('core.edit.materialCredits3'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Memories_The_Xianzhou_Luofu',
-    label: t('edit.materialCharacterExp2'),
+    label: t('core.edit.materialCharacterExp2'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Aether_The_Xianzhou_Luofu',
-    label: t('edit.materialLightConeExp2'),
+    label: t('core.edit.materialLightConeExp2'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Treasures_The_Xianzhou_Luofu',
-    label: t('edit.materialCredits2'),
+    label: t('core.edit.materialCredits2'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Memories_Jarilo_VI',
-    label: t('edit.materialCharacterExp5'),
+    label: t('core.edit.materialCharacterExp5'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Aether_Jarilo_VI',
-    label: t('edit.materialLightConeExp5'),
+    label: t('core.edit.materialLightConeExp5'),
     category: 'Calyx_Golden',
   },
   {
     value: 'Calyx_Golden_Treasures_Jarilo_VI',
-    label: t('edit.materialCredits5'),
+    label: t('core.edit.materialCredits5'),
     category: 'Calyx_Golden',
   },
   // 拟造花萼（赤）
   {
     value: 'Calyx_Crimson_Destruction_Herta_StorageZone',
-    label: t('edit.traceMaterialDestruction'),
+    label: t('core.edit.traceMaterialDestruction'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape',
-    label: t('edit.traceMaterialDestruction3'),
+    label: t('core.edit.traceMaterialDestruction3'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Destruction_Planarcadia_InkfordHermitage',
-    label: t('edit.traceMaterialDestruction2'),
+    label: t('core.edit.traceMaterialDestruction2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Preservation_Herta_SupplyZone',
-    label: t('edit.traceMaterialPreservation2'),
+    label: t('core.edit.traceMaterialPreservation2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark',
-    label: t('edit.traceMaterialPreservation'),
+    label: t('core.edit.traceMaterialPreservation'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains',
-    label: t('edit.traceMaterialHunt'),
+    label: t('core.edit.traceMaterialHunt'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_The_Hunt_Penacony_SoulGladScorchsandAuditionVenue',
-    label: t('edit.traceMaterialHunt2'),
+    label: t('core.edit.traceMaterialHunt2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_The_Hunt_Amphoreus_MemortisShoreRuinsofTime',
-    label: t('edit.traceMaterialHunt3'),
+    label: t('core.edit.traceMaterialHunt3'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Abundance_Jarilo_BackwaterPass',
-    label: t('edit.traceMaterialAbundance2'),
+    label: t('core.edit.traceMaterialAbundance2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Abundance_Luofu_FyxestrollGarden',
-    label: t('edit.traceMaterialAbundance'),
+    label: t('core.edit.traceMaterialAbundance'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Erudition_Jarilo_RivetTown',
-    label: t('edit.traceMaterialErudition3'),
+    label: t('core.edit.traceMaterialErudition3'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater',
-    label: t('edit.traceMaterialErudition'),
+    label: t('core.edit.traceMaterialErudition'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Erudition_Planarcadia_SeafeldTVTower',
-    label: t('edit.traceMaterialErudition2'),
+    label: t('core.edit.traceMaterialErudition2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Harmony_Jarilo_RobotSettlement',
-    label: t('edit.traceMaterialHarmony'),
+    label: t('core.edit.traceMaterialHarmony'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape',
-    label: t('edit.traceMaterialHarmony2'),
+    label: t('core.edit.traceMaterialHarmony2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Nihility_Jarilo_GreatMine',
-    label: t('edit.traceMaterialNihility2'),
+    label: t('core.edit.traceMaterialNihility2'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Nihility_Luofu_AlchemyCommission',
-    label: t('edit.traceMaterialNihility'),
+    label: t('core.edit.traceMaterialNihility'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Nihility_Amphoreus_RadiantScarwoodGroveofEpiphany',
-    label: t('edit.traceMaterialNihility3'),
+    label: t('core.edit.traceMaterialNihility3'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos',
-    label: t('edit.traceMaterialRemembrance'),
+    label: t('core.edit.traceMaterialRemembrance'),
     category: 'Calyx_Crimson',
   },
   {
     value: 'Calyx_Crimson_Elation_Planarcadia_WorldEndTavern',
-    label: t('edit.traceMaterialJoy'),
+    label: t('core.edit.traceMaterialJoy'),
     category: 'Calyx_Crimson',
   },
   // 凝滞虚影
   {
     value: 'Stagnant_Shadow_Spike',
-    label: t('edit.ascensionMaterialPhysical2'),
+    label: t('core.edit.ascensionMaterialPhysical2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Perdition',
-    label: t('edit.ascensionMaterialPhysical3'),
+    label: t('core.edit.ascensionMaterialPhysical3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Duty',
-    label: t('edit.ascensionMaterialPhysical'),
+    label: t('core.edit.ascensionMaterialPhysical'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Deepsheaf',
-    label: t('edit.ascensionMaterialPhysical4'),
+    label: t('core.edit.ascensionMaterialPhysical4'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Blaze',
-    label: t('edit.ascensionMaterialFire2'),
+    label: t('core.edit.ascensionMaterialFire2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Scorch',
-    label: t('edit.ascensionMaterialFire3'),
+    label: t('core.edit.ascensionMaterialFire3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Roast',
-    label: t('edit.ascensionMaterialQuantum2'),
+    label: t('core.edit.ascensionMaterialQuantum2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Ire',
-    label: t('edit.ascensionMaterialFire4'),
+    label: t('core.edit.ascensionMaterialFire4'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Ashes',
-    label: t('edit.ascensionMaterialFire'),
+    label: t('core.edit.ascensionMaterialFire'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Rime',
-    label: t('edit.ascensionMaterialIce'),
+    label: t('core.edit.ascensionMaterialIce'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Icicle',
-    label: t('edit.ascensionMaterialIce2'),
+    label: t('core.edit.ascensionMaterialIce2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Nectar',
-    label: t('edit.ascensionMaterialIce3'),
+    label: t('core.edit.ascensionMaterialIce3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Sirens',
-    label: t('edit.ascensionMaterialIce4'),
+    label: t('core.edit.ascensionMaterialIce4'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Fulmination',
-    label: t('edit.ascensionMaterialLightning4'),
+    label: t('core.edit.ascensionMaterialLightning4'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Doom',
-    label: t('edit.ascensionMaterialLightning2'),
+    label: t('core.edit.ascensionMaterialLightning2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Mechwolf',
-    label: t('edit.ascensionMaterialLightning3'),
+    label: t('core.edit.ascensionMaterialLightning3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Soundburst',
-    label: t('edit.ascensionMaterialLightning'),
+    label: t('core.edit.ascensionMaterialLightning'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Gust',
-    label: t('edit.ascensionMaterialWind'),
+    label: t('core.edit.ascensionMaterialWind'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Celestial',
-    label: t('edit.ascensionMaterialWind2'),
+    label: t('core.edit.ascensionMaterialWind2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Gloam',
-    label: t('edit.ascensionMaterialWindSaber'),
+    label: t('core.edit.ascensionMaterialWindSaber'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Cinders',
-    label: t('edit.ascensionMaterialWind3'),
+    label: t('core.edit.ascensionMaterialWind3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Quanta',
-    label: t('edit.ascensionMaterialQuantum4'),
+    label: t('core.edit.ascensionMaterialQuantum4'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Abomination',
-    label: t('edit.ascensionMaterialQuantum'),
+    label: t('core.edit.ascensionMaterialQuantum'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Gelidmoon',
-    label: t('edit.ascensionMaterialQuantumArcher'),
+    label: t('core.edit.ascensionMaterialQuantumArcher'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Devour',
-    label: t('edit.ascensionMaterialQuantum3'),
+    label: t('core.edit.ascensionMaterialQuantum3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Mirage',
-    label: t('edit.ascensionMaterialImaginary3'),
+    label: t('core.edit.ascensionMaterialImaginary3'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Puppetry',
-    label: t('edit.ascensionMaterialImaginary'),
+    label: t('core.edit.ascensionMaterialImaginary'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Timbre',
-    label: t('edit.ascensionMaterialImaginary2'),
+    label: t('core.edit.ascensionMaterialImaginary2'),
     category: 'Stagnant_Shadow',
   },
   {
     value: 'Stagnant_Shadow_Sloggyre',
-    label: t('edit.ascensionMaterialImaginaryLv'),
+    label: t('core.edit.ascensionMaterialImaginaryLv'),
     category: 'Stagnant_Shadow',
   },
 ]

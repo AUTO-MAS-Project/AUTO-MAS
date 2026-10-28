@@ -6,7 +6,7 @@
         class="config-lock-alert"
         type="warning"
         show-icon
-        :message="t('edit.configLocked')"
+        :message="t('core.edit.configLocked')"
       />
       <slot />
     </ConfigProvider>

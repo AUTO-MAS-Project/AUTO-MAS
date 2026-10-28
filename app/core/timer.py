@@ -220,12 +220,14 @@ class _MainTimer:
                     retention_days=Config.setting.Function.HistoryRetentionTime,
                 ),
             )
-            for name, clean in (
-                ("诊断文件清理", Config.clean_debug_diagnostics),
-                ("MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs),
-            ):
-                # 诊断清理函数是纯同步文件 IO，丢工作线程执行，别占用事件循环
-                await self._run_loop_step(name, partial(asyncio.to_thread, clean))
+            await self._run_loop_step(
+                "诊断文件清理",
+                partial(asyncio.to_thread, Config.clean_debug_diagnostics),
+            )
+            await self._run_loop_step(
+                "MaaFW 原生日志清理",
+                Config.maafw_maintenance.clean_native_debug_logs,
+            )
 
         while True:
             await self._run_loop_step("统计上报", upload_statistics)

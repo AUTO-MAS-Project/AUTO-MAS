@@ -60,25 +60,25 @@ export const buildShellImportReportLines = (
 ): string[] => {
   const lines: string[] = []
   if (summary.failed.length > 0) {
-    lines.push(t('edit.shellImportFailedHead', { count: summary.failed.length }))
+    lines.push(t('core.edit.shellImportFailedHead', { count: summary.failed.length }))
     for (const item of summary.failed) {
       lines.push(
-        t('edit.shellImportFailedLine', {
+        t('core.edit.shellImportFailedLine', {
           name: shellImportItemName(item, names),
           reason: item.error || '-',
         })
       )
     }
   }
-  const separator = t('edit.shellImportListSeparator')
+  const separator = t('core.edit.shellImportListSeparator')
   for (const item of summary.partial) {
     const skipped = item.skipped ?? []
     const { shown, rest } = truncateItems(skipped)
     const named = { name: item.name, count: skipped.length, items: shown.join(separator) }
     lines.push(
       rest > 0
-        ? t('edit.shellImportSkippedLineMore', { ...named, rest })
-        : t('edit.shellImportSkippedLine', named)
+        ? t('core.edit.shellImportSkippedLineMore', { ...named, rest })
+        : t('core.edit.shellImportSkippedLine', named)
     )
   }
   return lines

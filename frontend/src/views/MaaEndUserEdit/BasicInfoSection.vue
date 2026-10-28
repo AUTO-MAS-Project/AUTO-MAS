@@ -5,12 +5,12 @@
         <a-form-item name="userName" required>
           <template #label>
             <span class="form-label">
-              {{ t('edit.username') }}
+              {{ t('core.edit.username') }}
             </span>
           </template>
           <a-input
             v-model:value="formData.userName"
-            :placeholder="t('edit.enterUsername')"
+            :placeholder="t('core.edit.enterUsername')"
             :disabled="loading"
             @blur="emitSave('userName', formData.userName)"
           />
@@ -20,8 +20,8 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.daysLeft')"
-              :hint="t('edit.daysLeftAccount1')"
+              :text="t('core.edit.daysLeft')"
+              :hint="t('core.edit.daysLeftAccount1')"
               variant="form"
             />
           </template>
@@ -39,13 +39,13 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              {{ t('edit.enabled') }}
+              {{ t('core.edit.enabled') }}
             </span>
           </template>
           <a-switch
             v-model:checked="formData.Info.Status"
             :disabled="loading"
-            :aria-label="t('edit.enabled')"
+            :aria-label="t('core.edit.enabled')"
             @change="emitSave('Info.Status', formData.Info.Status)"
           />
         </a-form-item>
@@ -57,14 +57,14 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.accountId')"
-              :hint="t('edit.usedSwitchAccountsCn2')"
+              :text="t('core.edit.accountId')"
+              :hint="t('core.edit.usedSwitchAccountsCn2')"
               variant="form"
             />
           </template>
           <a-input
             v-model:value="formData.Info.Id"
-            :placeholder="t('edit.enterAccountId')"
+            :placeholder="t('core.edit.enterAccountId')"
             :disabled="loading"
             @blur="emitSave('Info.Id', formData.Info.Id)"
           />
@@ -74,14 +74,14 @@
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
-              :text="t('edit.password')"
-              :hint="t('edit.userSPasswordStored')"
+              :text="t('core.edit.password')"
+              :hint="t('core.edit.userSPasswordStored')"
               variant="form"
             />
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            :placeholder="t('edit.passwordStoredOnlySo2')"
+            :placeholder="t('core.edit.passwordStoredOnlySo2')"
             :disabled="loading"
             @blur="emitSave('Info.Password', formData.Info.Password)"
           />
@@ -91,8 +91,8 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              {{ t('edit.collectNodeDetails') }}
-              <a-tooltip :mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+              {{ t('core.edit.collectNodeDetails') }}
+              <a-tooltip :mouse-enter-delay="0.5" :title="t('core.edit.collectsKeyMomentsFrom')">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -112,12 +112,12 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              {{ t('edit.gameResource') }}
+              {{ t('core.edit.gameResource') }}
             </span>
           </template>
           <a-select
             v-model:value="formData.Info.Resource"
-            :placeholder="t('edit.pickResource')"
+            :placeholder="t('core.edit.pickResource')"
             :disabled="loading"
             :options="resourceOptions"
             @change="emitSave('Info.Resource', formData.Info.Resource)"
@@ -129,12 +129,12 @@
     <a-form-item>
       <template #label>
         <span class="form-label">
-          {{ t('edit.note') }}
+          {{ t('core.edit.note') }}
         </span>
       </template>
       <a-textarea
         v-model:value="formData.Info.Notes"
-        :placeholder="t('edit.enterNote')"
+        :placeholder="t('core.edit.enterNote')"
         :auto-size="{ minRows: 2, maxRows: 4 }"
         :disabled="loading"
         @blur="emitSave('Info.Notes', formData.Info.Notes)"
@@ -159,9 +159,9 @@ defineProps<{
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
 const pushLogModeOptions = [
-  { label: t('edit.pushLogModeOff'), value: '关闭' },
-  { label: t('edit.pushLogModeList'), value: '逐条' },
-  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+  { label: t('core.edit.pushLogModeOff'), value: '关闭' },
+  { label: t('core.edit.pushLogModeList'), value: '逐条' },
+  { label: t('core.edit.pushLogModeSummary'), value: '汇总' },
 ]
 
 const emitSave = (key: string, value: any) => {

@@ -34,9 +34,8 @@ from pydantic import (
     Field,
 )
 
-from app.core import Config
+from app.core import Config, Updater
 from app.models.schema import OutBase, UpdateDownloadSnapshot
-from app.services import Updater
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
 from app.utils import get_logger
 

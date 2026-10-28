@@ -22,11 +22,11 @@ export const withActivityCompletion = ({
       ? [
           {
             id: 'retry-completion',
-            message: t('home.activity.completionUnavailable'),
+            message: t('core.home.activity.completionUnavailable'),
             description: completion.errorMessage.value,
             type: 'warning' as const,
             action: {
-              label: t('home.activity.retryCompletion'),
+              label: t('core.home.activity.retryCompletion'),
               loading: completion.loading.value,
             },
           },
@@ -46,17 +46,20 @@ export const withActivityCompletion = ({
         status: {
           label: t(
             completed
-              ? 'home.activity.completed'
+              ? 'core.home.activity.completed'
               : upcoming
-                ? 'home.activity.upcoming'
-                : 'home.activity.running'
+                ? 'core.home.activity.upcoming'
+                : 'core.home.activity.running'
           ),
           color: completed ? undefined : upcoming ? 'blue' : 'green',
         },
         action: {
-          label: t(completed ? 'home.activity.undoCompletion' : 'home.activity.markCompleted', {
-            name: item.name,
-          }),
+          label: t(
+            completed ? 'core.home.activity.undoCompletion' : 'core.home.activity.markCompleted',
+            {
+              name: item.name,
+            }
+          ),
           disabled:
             !completion.ready.value ||
             completion.isSaving(activity) ||

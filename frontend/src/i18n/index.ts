@@ -3,9 +3,9 @@
 
 import { createI18n } from 'vue-i18n'
 
-import enUS from './locales/en-US'
-import jaJP from './locales/ja-JP'
-import zhCN from './locales/zh-CN'
+import enUS from './bootstrap/en-US.json'
+import jaJP from './bootstrap/ja-JP.json'
+import zhCN from './bootstrap/zh-CN.json'
 
 export type AppLocale = 'zh-CN' | 'en-US' | 'ja-JP'
 
@@ -21,6 +21,22 @@ const SOURCE_LOCALE: AppLocale = 'zh-CN'
 export const UNRECOGNIZED_LOCALE: AppLocale = 'en-US'
 
 export const SUPPORTED_LOCALES: AppLocale[] = ['zh-CN', 'en-US', 'ja-JP']
+
+export type LocaleMessages = { [key: string]: string | LocaleMessages }
+
+/** 初始化词表由前端独立维护，不依赖后端资源或业务词表缓存。 */
+export const bootstrapMessages: Record<AppLocale, LocaleMessages> = {
+  'zh-CN': zhCN,
+  'en-US': enUS,
+  'ja-JP': jaJP,
+}
+
+export const fallbackLocales = (locale: AppLocale): AppLocale[] =>
+  locale === 'ja-JP'
+    ? ['ja-JP', 'en-US', 'zh-CN']
+    : locale === 'en-US'
+      ? ['en-US', 'zh-CN']
+      : ['zh-CN']
 
 /** 把任意语言标记归一到受支持的语言。 */
 export function normalizeLocale(raw: string | null | undefined): AppLocale {
@@ -45,9 +61,9 @@ export const i18n = createI18n({
   missingWarn: false,
   fallbackWarn: false,
   messages: {
-    'zh-CN': zhCN,
-    'en-US': enUS,
-    'ja-JP': jaJP,
+    'zh-CN': { bootstrap: zhCN },
+    'en-US': { bootstrap: enUS },
+    'ja-JP': { bootstrap: jaJP },
   },
 })
 

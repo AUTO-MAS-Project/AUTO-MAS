@@ -19,7 +19,7 @@
         >
           <div class="stat-section-header">
             <TeamOutlined class="section-icon" />
-            <span class="section-title">{{ t('history.stats.recruit') }}</span>
+            <span class="section-title">{{ t('core.history.stats.recruit') }}</span>
           </div>
           <div class="stat-items">
             <template v-for="(count, star, index) in recruitStatistics" :key="star">
@@ -46,7 +46,7 @@
         <div v-if="dropStatistics && Object.keys(dropStatistics).length > 0" class="stat-section">
           <div class="stat-section-header">
             <GiftOutlined class="section-icon" />
-            <span class="section-title">{{ t('history.stats.drops') }}</span>
+            <span class="section-title">{{ t('core.history.stats.drops') }}</span>
           </div>
           <div class="drop-container">
             <div class="drop-stages">
@@ -80,25 +80,25 @@
         <div v-if="pullCountStatistics" class="stat-section">
           <div class="stat-section-header">
             <BarChartOutlined class="section-icon" />
-            <span class="section-title">{{ t('history.stats.pulls') }}</span>
+            <span class="section-title">{{ t('core.history.stats.pulls') }}</span>
           </div>
           <div class="pull-count-items">
             <div class="pull-count-item primary">
-              <span>{{ t('history.stats.currentAvailable') }}</span>
+              <span>{{ t('core.history.stats.currentAvailable') }}</span>
               <strong>{{ pullCountStatistics.current_pool_total }}</strong>
-              <span>{{ t('history.stats.pullUnit') }}</span>
+              <span>{{ t('core.history.stats.pullUnit') }}</span>
             </div>
             <div class="pull-count-item">
-              <span>{{ t('history.stats.nextTotal') }}</span>
+              <span>{{ t('core.history.stats.nextTotal') }}</span>
               <strong>{{ pullCountStatistics.next_pool_total }}</strong>
-              <span>{{ t('history.stats.pullUnit') }}</span>
+              <span>{{ t('core.history.stats.pullUnit') }}</span>
             </div>
             <div class="pull-count-item compact">
               <span>{{
-                t('history.stats.resourcePulls', { n: pullCountStatistics.resource_pulls })
+                t('core.history.stats.resourcePulls', { n: pullCountStatistics.resource_pulls })
               }}</span>
               <span>{{
-                t('history.stats.voucherPulls', { n: pullCountStatistics.carry_over_pulls })
+                t('core.history.stats.voucherPulls', { n: pullCountStatistics.carry_over_pulls })
               }}</span>
             </div>
           </div>
@@ -113,7 +113,7 @@
         <div v-if="hasMatrixStatistics" class="stat-section">
           <div class="stat-section-header">
             <InboxOutlined class="section-icon" />
-            <span class="section-title">{{ t('history.stats.matrix') }}</span>
+            <span class="section-title">{{ t('core.history.stats.matrix') }}</span>
           </div>
           <div
             v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0"
@@ -142,7 +142,7 @@
               </a-popover>
             </div>
           </div>
-          <div v-else class="matrix-empty">{{ t('history.stats.noMatrix') }}</div>
+          <div v-else class="matrix-empty">{{ t('core.history.stats.noMatrix') }}</div>
         </div>
       </template>
 
@@ -155,7 +155,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { BarChartOutlined, GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'

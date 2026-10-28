@@ -254,7 +254,7 @@ else:
 | 进程管理 | `ProcessManager`、`ProcessInfo`、`System.kill_process` |
 | 日志监控 | `LogMonitor` 三参构造 |
 | 状态 | `log_record[start_time] = LogRecord()`，只写 `status` |
-| pre/post 脚本 | `from app.task.general.tools import execute_script_task` |
+| pre/post 脚本 | `from app.core.custom_script import execute_script_task` |
 | 配置同步 | `ConfigFile` 目录约定 |
 | 跨类型重构 | 仅当已有多个真实调用者时上提共用逻辑；专项差异保留在所属模块 |
 

@@ -62,12 +62,13 @@ export function useMaaFWEnvPrepare(
     envPercent.value = null
     envLogs.value = []
     envOutcome.value = null
-    envMessage.value = t('edit.envPreparingHint')
+    envMessage.value = t('core.edit.envPreparingHint')
     try {
       const response = await prepareMaaFWAgentEnv(path, scriptId, force)
       if (!response || response.code !== 200 || !response.data) {
         envFailed.value = true
-        envMessage.value = response?.message || scriptApiError.value || t('edit.envStatusFailed')
+        envMessage.value =
+          response?.message || scriptApiError.value || t('core.edit.envStatusFailed')
         // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
         // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
         if (response?.data?.logs?.length) envLogs.value = response.data.logs

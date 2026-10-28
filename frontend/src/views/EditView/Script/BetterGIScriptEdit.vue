@@ -1,14 +1,14 @@
 <template>
   <ScriptEditHeader
     script-type="BetterGI"
-    :title="t('edit.editScript')"
+    :title="t('core.edit.editScript')"
     :doc-url="MAS_DOC_URLS.scripts"
     @cancel="handleCancel"
   />
 
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
-      :title="t('edit.bettergiScriptConfiguration')"
+      :title="t('core.edit.bettergiScriptConfiguration')"
       :loading="pageLoading"
       class="config-card"
     >
@@ -19,21 +19,21 @@
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.basicInfo') }}</h3>
+            <h3>{{ t('core.edit.basicInfo') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.scriptName')"
-                    :hint="t('edit.bettergiInstanceNameHint')"
+                    :text="t('core.edit.scriptName')"
+                    :hint="t('core.edit.bettergiInstanceNameHint')"
                     variant="form"
                   />
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  :placeholder="t('edit.enterScriptName')"
+                  :placeholder="t('core.edit.enterScriptName')"
                   size="large"
                   class="modern-input"
                   @blur="handleChange('Info', 'Name', formData.name)"
@@ -44,16 +44,16 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.bettergiPath')"
-                    :hint="t('edit.bettergiPickExeDir')"
+                    :text="t('core.edit.bettergiPath')"
+                    :hint="t('core.edit.bettergiPickExeDir')"
                     variant="form"
                   />
                 </template>
                 <PathPickerField
                   v-model="formData.path"
                   mode="folder"
-                  :placeholder="t('edit.bettergiPickExeDirPlaceholder')"
-                  :pick-label="t('edit.pickDirectory')"
+                  :placeholder="t('core.edit.bettergiPickExeDirPlaceholder')"
+                  :pick-label="t('core.edit.pickDirectory')"
                   :disabled="isSaving"
                   @pick="selectRootPath"
                 />
@@ -64,15 +64,15 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.gameConfiguration') }}</h3>
+            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.controller')"
-                    :hint="t('edit.bettergiControllerHint')"
+                    :text="t('core.edit.controller')"
+                    :hint="t('core.edit.bettergiControllerHint')"
                     variant="form"
                   />
                 </template>
@@ -83,13 +83,13 @@
                   @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
                 >
                   <a-select-option value="电脑端-前台">
-                    {{ t('edit.bettergiControllerForeground') }}
+                    {{ t('core.edit.bettergiControllerForeground') }}
                   </a-select-option>
                   <a-select-option value="电脑端-云原神" disabled>
-                    {{ t('edit.bettergiControllerCloud') }}
+                    {{ t('core.edit.bettergiControllerCloud') }}
                   </a-select-option>
                   <a-select-option value="电脑端-桌面分身" disabled>
-                    {{ t('edit.bettergiControllerDesktopClone') }}
+                    {{ t('core.edit.bettergiControllerDesktopClone') }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -98,8 +98,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.bettergiCloseGameOnFinish')"
-                    :hint="t('edit.bettergiCloseGameOnFinishHint')"
+                    :text="t('core.edit.bettergiCloseGameOnFinish')"
+                    :hint="t('core.edit.bettergiCloseGameOnFinishHint')"
                     variant="form"
                   />
                 </template>
@@ -109,8 +109,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -121,8 +121,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.genshinUpdateAuto')"
-                    :hint="t('edit.genshinUpdateAutoHint')"
+                    :text="t('core.edit.genshinUpdateAuto')"
+                    :hint="t('core.edit.genshinUpdateAutoHint')"
                     variant="form"
                   />
                 </template>
@@ -132,8 +132,8 @@
                   style="width: 100%"
                   @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
                 >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -141,8 +141,8 @@
               <a-form-item>
                 <template #label>
                   <FieldLabelWithHint
-                    :text="t('edit.bettergiAccountSwitchMethod')"
-                    :hint="t('edit.bettergiAccountSwitchMethodHint')"
+                    :text="t('core.edit.bettergiAccountSwitchMethod')"
+                    :hint="t('core.edit.bettergiAccountSwitchMethodHint')"
                     variant="form"
                   />
                 </template>
@@ -153,13 +153,13 @@
                   @change="handleAccountSwitchMethodChange"
                 >
                   <a-select-option value="BGI">
-                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                    {{ t('core.edit.bettergiAccountSwitchMethodBgi') }}
                   </a-select-option>
                   <a-select-option value="MAS">
-                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                    {{ t('core.edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
-                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
+                <span class="control-hint">{{ t('core.edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -167,7 +167,7 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.runConfiguration') }}</h3>
+            <h3>{{ t('core.edit.runConfiguration') }}</h3>
           </div>
           <ScriptHardTimeoutField
             v-model:value="bettergiConfig.Run.HardTimeLimit"
@@ -178,8 +178,8 @@
               <ScriptRunLimitField
                 v-model="bettergiConfig.Run.ProxyTimesLimit"
                 kind="daily"
-                :label="t('edit.runsPerDay')"
-                :hint="t('edit.k0MeansNoLimit')"
+                :label="t('core.edit.runsPerDay')"
+                :hint="t('core.edit.k0MeansNoLimit')"
                 @save="handleChange('Run', 'ProxyTimesLimit', bettergiConfig.Run.ProxyTimesLimit)"
               />
             </a-col>
@@ -187,8 +187,8 @@
               <ScriptRunLimitField
                 v-model="bettergiConfig.Run.RunTimesLimit"
                 kind="retry"
-                :label="t('edit.retryLimit2')"
-                :hint="t('edit.bettergiRetryLimitHint')"
+                :label="t('core.edit.retryLimit2')"
+                :hint="t('core.edit.bettergiRetryLimitHint')"
                 @save="handleChange('Run', 'RunTimesLimit', bettergiConfig.Run.RunTimesLimit)"
               />
             </a-col>
@@ -196,8 +196,8 @@
               <ScriptRunLimitField
                 v-model="bettergiConfig.Run.RunTimeLimit"
                 kind="timeout"
-                :label="t('edit.runTimeoutMinutes')"
-                :hint="t('edit.bettergiRunTimeoutHint')"
+                :label="t('core.edit.runTimeoutMinutes')"
+                :hint="t('core.edit.bettergiRunTimeoutHint')"
                 @save="handleChange('Run', 'RunTimeLimit', bettergiConfig.Run.RunTimeLimit)"
               />
             </a-col>
@@ -296,8 +296,8 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
 })
 
 const rules = computed(() => ({
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [{ required: true, message: t('edit.bettergiPathRequired'), trigger: 'blur' }],
+  name: [{ required: true, message: t('core.edit.enterScriptName'), trigger: 'blur' }],
+  path: [{ required: true, message: t('core.edit.bettergiPathRequired'), trigger: 'blur' }],
 }))
 
 const handleCancel = () => router.push('/scripts')
@@ -310,7 +310,7 @@ const handleAccountSwitchMethodChange = async (
 
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
-    message.warning(t('edit.pickScriptRootDirectory'))
+    message.warning(t('core.edit.pickScriptRootDirectory'))
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -323,7 +323,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
         Info: { RootPath: norm },
       })
       if (success) {
-        message.success(t('edit.bettergiRootPathSaved'))
+        message.success(t('core.edit.bettergiRootPathSaved'))
         return true
       }
       bettergiConfig.Info.RootPath = previousPath
@@ -341,12 +341,12 @@ const loadScript = async () => {
   try {
     const detail = await getScript(scriptId)
     if (!detail) {
-      if (!scriptApiError.value) message.error(t('edit.scriptDoesNotExist'))
+      if (!scriptApiError.value) message.error(t('core.edit.scriptDoesNotExist'))
       handleCancel()
       return
     }
     if (detail.type !== 'BetterGI') {
-      message.error(t('edit.bettergiNotBettergiScript'))
+      message.error(t('core.edit.bettergiNotBettergiScript'))
       handleCancel()
       return
     }
@@ -356,7 +356,7 @@ const loadScript = async () => {
     Object.assign(bettergiConfig.Run, config.Run || {})
     Object.assign(bettergiConfig.Game, config.Game || {})
   } catch {
-    if (!scriptApiError.value) message.error(t('edit.couldNotLoadScript'))
+    if (!scriptApiError.value) message.error(t('core.edit.couldNotLoadScript'))
   } finally {
     isInitializing.value = false
     pageLoading.value = false
@@ -371,9 +371,9 @@ const selectRootPath = async () => {
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
     Modal.error({
-      title: t('edit.bettergiInvalidDirectory'),
-      content: t('edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
-      okText: t('edit.gotIt'),
+      title: t('core.edit.bettergiInvalidDirectory'),
+      content: t('core.edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
+      okText: t('core.edit.gotIt'),
     })
     return
   }

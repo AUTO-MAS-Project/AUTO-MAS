@@ -29,7 +29,8 @@ const describeValue = (
     const matched = option?.cases.find(item => item.name === caseName)
     return matched ? displayName(matched) : caseName
   }
-  if (Array.isArray(value)) return value.map(caseLabel).join(t('edit.missingTaskValueSeparator'))
+  if (Array.isArray(value))
+    return value.map(caseLabel).join(t('core.edit.missingTaskValueSeparator'))
   if (value && typeof value === 'object') {
     return Object.entries(value)
       .map(([field, fieldValue]) => {
@@ -42,7 +43,7 @@ const describeValue = (
           ? text
           : `${input ? displayName(input) : field}: ${text}`
       })
-      .join(t('edit.missingTaskFieldSeparator'))
+      .join(t('core.edit.missingTaskFieldSeparator'))
   }
   const text = String(value ?? '')
   if (text.startsWith(SECRET_VALUE_PREFIX)) return MASKED_VALUE

@@ -41,7 +41,7 @@ export function useDevtoolsApi() {
       if (disposed) return
       health.value = null
       latency.value = null
-      error.value = t(timedOut ? 'devtools.probeTimedOut' : 'devtools.probeFailed')
+      error.value = t(timedOut ? 'core.devtools.probeTimedOut' : 'core.devtools.probeFailed')
     } finally {
       clearTimeout(timeout)
       timeout = undefined

@@ -1,14 +1,14 @@
 <template>
   <a-button :disabled="disabled" :loading="busy" @click="readClipboard">
-    {{ t(busy ? 'edit.maaCultivateImporting' : 'edit.maaCultivateImportClipboard') }}
+    {{ t(busy ? 'core.edit.maaCultivateImporting' : 'core.edit.maaCultivateImportClipboard') }}
   </a-button>
   <a-modal
     v-model:open="manualOpen"
     wrap-class-name="maa-plan-settings-modal"
     centered
-    :title="t('edit.maaCultivateImportClipboard')"
-    :ok-text="t('edit.maaCultivateImportSubmit')"
-    :cancel-text="t('common.cancel')"
+    :title="t('core.edit.maaCultivateImportClipboard')"
+    :ok-text="t('core.edit.maaCultivateImportSubmit')"
+    :cancel-text="t('core.common.cancel')"
     :confirm-loading="busy"
     :ok-button-props="{ disabled: disabled || !manualText.trim() }"
     :cancel-button-props="{ disabled: busy }"
@@ -17,17 +17,17 @@
     :keyboard="!busy"
     @ok="importText(manualText)"
   >
-    <p>{{ t('edit.maaCultivateImportPasteHint') }}</p>
+    <p>{{ t('core.edit.maaCultivateImportPasteHint') }}</p>
     <a-textarea
       v-model:value="manualText"
       :disabled="disabled || busy"
-      :placeholder="t('edit.maaCultivateImportPlaceholder')"
+      :placeholder="t('core.edit.maaCultivateImportPlaceholder')"
       :auto-size="{ minRows: 5, maxRows: 10 }"
     />
   </a-modal>
   <a-modal
     v-model:open="reportOpen"
-    :title="t('edit.maaCultivateImportSkipped', { count: skippedMessages.length })"
+    :title="t('core.edit.maaCultivateImportSkipped', { count: skippedMessages.length })"
     wrap-class-name="maa-plan-settings-modal"
     centered
     destroy-on-close
@@ -36,7 +36,7 @@
       <li v-for="(text, index) in skippedMessages" :key="index">{{ text }}</li>
     </ul>
     <template #footer>
-      <a-button type="primary" @click="reportOpen = false">{{ t('common.confirm') }}</a-button>
+      <a-button type="primary" @click="reportOpen = false">{{ t('core.common.confirm') }}</a-button>
     </template>
   </a-modal>
 </template>
@@ -65,7 +65,7 @@ const setBusy = (value: boolean) => {
 }
 
 const applyImport = async (content: string) => {
-  if (!content.trim()) throw new Error(t('edit.maaCultivateImportEmpty'))
+  if (!content.trim()) throw new Error(t('core.edit.maaCultivateImportEmpty'))
   // 提前说明等级限制，只有等级目标、没有其他可导入目标时也能看到提示。
   try {
     const payload: unknown = JSON.parse(content.trim())
@@ -73,7 +73,7 @@ const applyImport = async (content: string) => {
       Array.isArray(payload) &&
       payload.some(item => item && typeof item === 'object' && 'level' in item)
     ) {
-      message.warning(t('edit.maaCultivateImportLevelIgnored'))
+      message.warning(t('core.edit.maaCultivateImportLevelIgnored'))
     }
   } catch {
     // 格式校验和错误提示仍由后端统一处理。
@@ -81,11 +81,11 @@ const applyImport = async (content: string) => {
   const result = await props.importTargets(content)
   if (result.added || result.updated) {
     message.success(
-      t('edit.maaCultivateImportSuccess', { added: result.added, updated: result.updated })
+      t('core.edit.maaCultivateImportSuccess', { added: result.added, updated: result.updated })
     )
     emit('imported', result.operatorIds)
   } else if (!result.skipped?.length) {
-    message.info(t('edit.maaCultivateImportUnchanged'))
+    message.info(t('core.edit.maaCultivateImportUnchanged'))
   }
   if (result.added || result.updated || !result.skipped?.length) {
     manualOpen.value = false
@@ -103,7 +103,7 @@ const importText = async (content: string) => {
   try {
     await applyImport(content)
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.maaCultivateImportFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.maaCultivateImportFailed'))
   } finally {
     setBusy(false)
   }
@@ -122,7 +122,7 @@ const readClipboard = async () => {
     }
     await applyImport(content)
   } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.maaCultivateImportFailed'))
+    message.error(error instanceof Error ? error.message : t('core.edit.maaCultivateImportFailed'))
   } finally {
     setBusy(false)
   }
