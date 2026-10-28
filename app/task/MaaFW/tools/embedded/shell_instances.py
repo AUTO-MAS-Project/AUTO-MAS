@@ -202,14 +202,31 @@ def _split_ids(value: Any) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
 
+def _mfaa_last_active(root: Path, config_dir: Path) -> str:
+    """两个位置的 appsettings.json 里找非空的 ``Instances.LastActive``。
+
+    只取第一个存在的文件是不够的：老版本把设置写在 ``config/`` 下，项目根同名文件可能
+    只有别的内容，那样会误判成「没有活动实例」。
+    """
+
+    for candidate in (root / _MFAA_SETTINGS_FILE, config_dir / _MFAA_SETTINGS_FILE):
+        if not candidate.is_file():
+            continue
+        payload = _read_json_object(candidate) or {}
+        value = str(payload.get("Instances.LastActive") or "").strip()
+        if value:
+            return value
+    return ""
+
+
 def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     """项目（MFAAvalonia）实例里记着的 Win32 鼠标、键盘输入方式，没有就返回空表。
 
     ``config/instances/*.json`` 的 ``Win32ControlMouseType`` / ``Win32ControlKeyboardType``
     就是外壳设置页那两个下拉的值。内置运行不经过外壳，以前只认 interface 与脚本级配置，
     于是用户在外壳设置里调过的方式在 MAS 里等于没配，跑起来还是 interface 写的或默认的
-    ``Seize``。这里只读、不改任何文件：认 ``appsettings.json`` 的
-    ``Instances.LastActive``，其次 ``default``，最后按文件名扫一遍，取第一个真有值的实例。
+    ``Seize``。这里只读、不改任何文件：按 ``Instances.LastActive``、``default``、文件名
+    的顺序逐个实例取，取到一个键就继续找另一个键，缺的那项才回落到 interface。
     """
 
     config_dir = root / "config"
@@ -217,9 +234,7 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     if not instances_dir.is_dir():
         return {}
     candidates: list[Path] = []
-    last_active = str(
-        _mfaa_settings(root, config_dir).get("Instances.LastActive") or ""
-    ).strip()
+    last_active = _mfaa_last_active(root, config_dir)
     if last_active:
         candidates.append(instances_dir / f"{last_active}.json")
     candidates.append(instances_dir / "default.json")
@@ -227,20 +242,22 @@ def read_instance_win32_input_methods(root: Path) -> dict[str, str]:
     candidates.extend(
         path for path in sorted(instances_dir.glob("*.json")) if path not in seen
     )
+    methods: dict[str, str] = {}
     for path in candidates:
         if not path.is_file():
             continue
         payload = _read_json_object(path)
         if payload is None:
             continue
-        methods: dict[str, str] = {}
         for field_name, key in _MFAA_WIN32_INPUT_KEYS.items():
+            if field_name in methods:
+                continue
             value = payload.get(key)
             if isinstance(value, str) and value.strip():
                 methods[field_name] = value.strip()
-        if methods:
-            return methods
-    return {}
+        if len(methods) == len(_MFAA_WIN32_INPUT_KEYS):
+            break
+    return methods
 
 
 def _scan_mfaa(root: Path, config_dir: Path) -> list[ShellInstance]:

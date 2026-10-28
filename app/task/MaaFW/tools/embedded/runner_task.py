@@ -1362,16 +1362,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # MFAA 的写法：只写 input 时鼠标、键盘都用它
                 mouse = keyboard = win32_config.input
             # 外壳设置页里存着的输入方式优先于 interface 声明：内置运行不经过外壳，用户在那儿
-            # 调过就按他调的跑，别用 interface 或默认的 Seize 把他的选择顶掉
+            # 调过就按他调的跑，别用 interface 或默认的 Seize 把他的选择顶掉。
+            # 这里只改取值，不打日志：最终生效值与来源由核心 runner 的控制器日志负责，
+            # 在有脚本级配置、实例值认不出来时提前说「取自实例」会与实际不符。
             project_input = read_instance_win32_input_methods(self.project_path)
             if project_input:
                 mouse = project_input.get("mouse") or mouse
                 keyboard = project_input.get("keyboard") or keyboard
-                self._append_log(
-                    "Win32 输入方式取自项目实例设置："
-                    f"鼠标={_describe_win32_method(mouse)}；"
-                    f"键盘={_describe_win32_method(keyboard)}"
-                )
             return MaaFWDeviceConfig(
                 type="Win32",
                 hWnd=await self._resolve_window_handle(controller),
