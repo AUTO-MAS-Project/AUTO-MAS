@@ -28,4 +28,10 @@ class ScriptConfigHandler(Protocol):
 
     def validate_update(self, data: dict[str, Any]) -> None: ...
 
-    def import_config(self, script: ConfigEntry, target_directory: Path) -> None: ...
+    def import_config(
+        self,
+        script: ConfigEntry,
+        target_directory: Path,
+        *,
+        user_id: str | None = None,
+    ) -> None: ...

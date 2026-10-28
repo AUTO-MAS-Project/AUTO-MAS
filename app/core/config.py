@@ -1822,7 +1822,7 @@ class AppConfig:
 
         config_owner = user_id or "Default"
         target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
-        handler.import_config(script_config, target_config_dir)
+        handler.import_config(script_config, target_config_dir, user_id=user_id)
 
     def bind_script_config_handler(
         self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler

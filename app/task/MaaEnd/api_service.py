@@ -26,9 +26,13 @@ from typing import TYPE_CHECKING, Any, Protocol
 from app.config import ConfigCollection, ConfigEntry
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.services.endfield_launcher import discover_launcher_exe, is_launcher_exe
+from app.utils import BASE_INDEPENDENT, BASE_SHARED, get_logger, normalize_base_source
 from app.utils import io as _utils_io
 
 from .resource_loader import get_loaded_maaend_options, try_load_maaend_options
+from .tools.backup_archive import archive_mas_backup, read_overlay_values
+
+logger = get_logger("MaaEnd 配置服务")
 
 if TYPE_CHECKING:
     from .tools.log_bundle import LogBundleSelection
@@ -123,7 +127,12 @@ class MaaEndConfigService:
             )
 
     @staticmethod
-    def import_config(script: ConfigEntry, target_directory: Path) -> None:
+    def import_config(
+        script: ConfigEntry,
+        target_directory: Path,
+        *,
+        user_id: str | None = None,
+    ) -> None:
         """按原目录完整透传上游配置，不解释私有格式。"""
         if not isinstance(script, RuntimeMaaEndConfig):
             raise TypeError("脚本配置类型错误, 不是 MaaEnd 类型")
@@ -134,6 +143,32 @@ class MaaEndConfigService:
             raise FileNotFoundError(
                 "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
+        owner = user_id or "Default"
+        base = BASE_SHARED if owner == "Default" else BASE_INDEPENDENT
+        # 共享导入没有单一账号，按所有受影响用户归桶，让各自恢复页都能找到旧设置。
+        archive_users: list[tuple[str, ConfigEntry | None]] = [
+            (str(uid), user)
+            for uid, user in script.UserData.items()
+            if str(uid) == owner
+            or (
+                owner == "Default"
+                and normalize_base_source(user.Info.Base) == BASE_SHARED
+            )
+        ]
+        for archive_user_id, user in archive_users or [(owner, None)]:
+            try:
+                archive_mas_backup(
+                    script_id=str(script.uid),
+                    user_id=archive_user_id,
+                    mas_dir=target_directory,
+                    overlay=read_overlay_values(user) if user is not None else None,
+                    force=True,
+                    base=base,
+                )
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "MaaEnd 导入前 MAS 配置归档失败，已跳过（不阻断导入）"
+                )
         # 只读文件也须清理，避免残留内容导致覆盖失败。
         _utils_io.force_rmtree(target_directory)
         target_directory.mkdir(parents=True, exist_ok=True)
