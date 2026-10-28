@@ -62,7 +62,8 @@ yarn playwright show-report playwright-report/real
 
 | 层 | 内容 | 谁跑 | 是否阻断合并 |
 | --- | --- | --- | --- |
-| 阻断 | 格式检查、changelog 碎片、revert 检查、uv lock、打包检查、E2E 基础设施契约自检（`yarn e2e:check` 里的 `node --test`，秒级） | CI 托管 runner | 是 |
+| 阻断 | Windows 与 Ubuntu 全量 pytest、格式检查、changelog 碎片、uv lock、打包检查、E2E 基础设施契约自检（`yarn e2e:check` 里的 `node --test`，秒级） | CI 托管 runner | 是 |
+| 提示 | revert 检查（标注近期删除的他人代码，不阻断合并） | CI 托管 runner | 否 |
 | 不阻断 | 浏览器 E2E（`@smoke` 等） | 贡献者本机，按改动选择 | 否 |
 | 永不进 CI | `@real` 真实调度 / 游戏 / 账号流程 | 作者本机 | 否 |
 
