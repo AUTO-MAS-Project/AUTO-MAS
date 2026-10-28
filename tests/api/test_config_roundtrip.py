@@ -24,6 +24,7 @@ import app.api.setting as setting_api
 from app.config import config_manager
 from app.core.config import AppConfig
 from app.models.config import GlobalConfig as RuntimeGlobalConfig
+from app.utils import IS_WINDOWS
 from app.utils import io as _utils_io
 from tests.config_support import activate_config
 
@@ -39,6 +40,7 @@ class _TempConfig(AppConfig):
         self.setting = RuntimeGlobalConfig.build()
 
 
+@unittest.skipUnless(IS_WINDOWS, "secret storage uses Windows DPAPI")
 class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self._temp_directory = TemporaryDirectory()

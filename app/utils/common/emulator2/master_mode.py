@@ -37,6 +37,7 @@ MuMu 处理宿主缓存及五个桌面组件，关闭时撤销占位并恢复组
 
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from app.utils import get_logger
@@ -64,12 +65,10 @@ MUMU_SH_TIMEOUT = 20.0
 MUMU_SH_HELPER_IMAGE = "NemuShell.exe"
 
 
-def is_master_mode_enabled() -> bool:
-    """从旧版全局开关读取「大雷主人模式」状态，读取失败按关闭处理。"""
+def is_master_mode_enabled(block_ads_enabled: Callable[[], bool]) -> bool:
+    """从宿主策略读取「大雷主人模式」状态，读取失败按关闭处理。"""
     try:
-        from app.core import Config
-
-        return bool(Config.setting.Function.IfBlockAd)
+        return bool(block_ads_enabled())
     except Exception as e:  # noqa: BLE001 - 配置层的问题不该拖垮启动
         logger.warning(f"读取「大雷主人模式」配置失败，按关闭处理: {e}")
         return False

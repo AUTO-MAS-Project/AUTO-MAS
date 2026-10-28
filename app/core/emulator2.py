@@ -37,6 +37,7 @@ from app.utils import emulator2 as _utils_emulator2
 from app.utils import get_logger
 
 from .config import Config
+from .emulator_manager import EmulatorManager
 
 logger = get_logger("Emulator2 服务")
 
@@ -192,7 +193,9 @@ async def _record_baseline(emulator_id: str, slot: str, applied: dict) -> None:
 
 async def build_manager(emulator_id: str) -> _utils_emulator2.facade.Emulator2Manager:
     """按配置 id 构造门面。"""
-    return _utils_emulator2.facade.Emulator2Manager(_emulator_config(emulator_id))
+    return _utils_emulator2.facade.Emulator2Manager(
+        _emulator_config(emulator_id), runtime_policy=EmulatorManager.runtime_policy
+    )
 
 
 def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedScript]:

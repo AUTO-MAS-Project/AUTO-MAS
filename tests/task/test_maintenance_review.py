@@ -19,6 +19,7 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services.game_maintenance import MaintenanceWindow
 from app.task import maintenance
 from app.task import manager_base as base
+from app.utils import IS_WINDOWS
 
 
 class TestManager(base.ScriptManagerBase):
@@ -139,6 +140,7 @@ async def test_update_runs_before_maintenance_and_all_skip_bypasses_proxy(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("enabled,cdk", [(False, ""), (True, "review-cdk")])
+@pytest.mark.skipif(not IS_WINDOWS, reason="secret storage uses Windows DPAPI")
 async def test_maa_resource_update_keeps_takeover_credentials(
     monkeypatch, enabled, cdk
 ):

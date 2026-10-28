@@ -31,6 +31,15 @@ from typing import Any
 
 import psutil
 
+from app.task.MaaFW.tools.core.worker_protocol import (
+    AUDIENCE_WORKER_LOG,
+    LEVEL_WARNING,
+    EventChannelClient,
+    decode_job,
+    log_event,
+    with_log_fields,
+)
+
 # 并入自 mfwa：宿主进程存活探测间隔
 _OWNER_CHECK_INTERVAL_SECONDS = 1.0
 
@@ -62,16 +71,83 @@ else:
 
 
 _EMIT_LOCK = threading.Lock()
+# 宿主的事件通道（worker_protocol，命名管道）。None 表示走 stdout：宿主没给通道、打不开，
+# 或打开后写入出错。
+_CHANNEL: EventChannelClient | None = None
 
 
 def _emit(payload: dict[str, Any]) -> None:
-    # 一行一次 write 并加锁：focus 文案和失败摘要来自框架回调线程，和主线程的
+    """发一个事件给宿主：有事件通道走通道，否则一行一个 JSON 写 stdout（旧格式，宿主照样认）。
+
+    日志 / 错误事件先补上 audience 与 level（worker_protocol.with_log_fields）：只传了文案的
+    按 forwards_to_ui 的规则定去向，宿主照字段办。其它类型（结果、以后新增的）原样发。
+    """
+
+    global _CHANNEL
+    payload = with_log_fields(payload)
+    with _EMIT_LOCK:
+        channel = _CHANNEL
+        if channel is not None:
+            try:
+                channel.send(payload)
+                return
+            except OSError as exc:
+                # 宿主关了管道（读到坏数据、或正在收尾）：后面的事件全走 stdout，这一条也补发过去
+                _CHANNEL = None
+                with suppress(OSError):
+                    channel.close()
+                _write_stdout_event(
+                    log_event(
+                        f"MaaFW worker 事件通道发送失败（{exc!r}），之后的事件改走标准输出",
+                        audience=AUDIENCE_WORKER_LOG,
+                        level=LEVEL_WARNING,
+                    )
+                )
+        _write_stdout_event(payload)
+
+
+def _write_stdout_event(payload: dict[str, Any]) -> None:
+    # 一行一次 write 并在锁内调用：focus 文案和失败摘要来自框架回调线程，和主线程的
     # 日志并发写 stdout；print 是内容、换行两次 write，会把两条 JSON 粘成一行，
     # 宿主 json.loads 失败就整行当框架噪声丢掉。
     line = json.dumps(payload, ensure_ascii=False) + "\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
+
+
+def _open_event_channel(spec: Any) -> None:
+    """按 job 里的参数打开宿主的事件通道；打不开就留在 stdout，原因记进 .worker.log。"""
+
+    global _CHANNEL
+    if not isinstance(spec, dict):
+        return
+    try:
+        channel = EventChannelClient.connect(spec)
+    except (OSError, ValueError) as exc:
+        _emit(
+            log_event(
+                f"MaaFW worker 连不上宿主的事件通道（{exc!r}），本次运行事件改走标准输出",
+                audience=AUDIENCE_WORKER_LOG,
+                level=LEVEL_WARNING,
+            )
+        )
+        return
     with _EMIT_LOCK:
-        sys.stdout.write(line)
-        sys.stdout.flush()
+        _CHANNEL = channel
+
+
+def _close_event_channel() -> None:
+    global _CHANNEL
+    with _EMIT_LOCK:
+        channel, _CHANNEL = _CHANNEL, None
+    if channel is not None:
+        with suppress(OSError):
+            channel.close()
+
+
+def _emit_tagged_log(message: str, audience: str | None, level: str) -> None:
+    # runner 自己标了去向 / 级别的日志（详情行、失败原文回显、告警）；只传文案的走 _emit_log
+    _emit(log_event(message, audience=audience, level=level))
 
 
 def _emit_log(message: str) -> None:
@@ -99,9 +175,11 @@ def _owner_is_alive(owner_pid: int, owner_create_time: float) -> bool:
         return False
 
 
-def _cleanup_job_files(job_path: Path) -> None:
-    with suppress(OSError):
-        job_path.unlink()
+def _cleanup_job_files(job_path: Path | None) -> None:
+    # job 走 stdin 时没有文件；只有旧宿主传进来的 job 文件路径要删
+    if job_path is not None:
+        with suppress(OSError):
+            job_path.unlink()
     option_dir = str(os.environ.get("AUTO_MAS_MAAFW_OPTION_DIR") or "").strip()
     if option_dir:
         with suppress(OSError):
@@ -121,7 +199,9 @@ def _terminate_descendants() -> None:
         psutil.wait_procs(alive, timeout=2)
 
 
-def _watch_owner(job_path: Path, owner_pid: int, owner_create_time: float) -> None:
+def _watch_owner(
+    job_path: Path | None, owner_pid: int, owner_create_time: float
+) -> None:
     while _owner_is_alive(owner_pid, owner_create_time):
         time.sleep(_OWNER_CHECK_INTERVAL_SECONDS)
     _cleanup_job_files(job_path)
@@ -132,7 +212,7 @@ def _watch_owner(job_path: Path, owner_pid: int, owner_create_time: float) -> No
 # -----------------------------------------------------------------------------
 
 
-def _start_owner_watchdog(job_path: Path, payload: dict[str, Any]) -> None:
+def _start_owner_watchdog(job_path: Path | None, payload: dict[str, Any]) -> None:
     owner_pid = int(payload.get("ownerPid") or 0)
     owner_create_time = float(payload.get("ownerCreateTime") or 0)
     if owner_pid <= 0 or owner_create_time <= 0:
@@ -145,20 +225,44 @@ def _start_owner_watchdog(job_path: Path, payload: dict[str, Any]) -> None:
     ).start()
 
 
+def _read_job() -> tuple[dict[str, Any], Path | None]:
+    """读 job：宿主写在 stdin 里（不落盘：计划里可能有解密后的密码选项）。
+
+    带一个参数时按旧宿主的 job 文件读：升级时旧的宿主进程还在跑、源码已换成新的，它拉起的
+    是新 worker。那份文件读完就删，看门狗与 finally 里的删除照旧兜底。
+    """
+
+    if len(sys.argv) == 2:
+        job_path = Path(sys.argv[1])
+        try:
+            return decode_job(job_path.read_bytes()), job_path
+        finally:
+            with suppress(OSError):
+                job_path.unlink()
+    return decode_job(sys.stdin.buffer.read()), None
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
-        _emit({"type": "error", "message": "runner worker requires one job json path"})
+    if len(sys.argv) > 2:
+        # 原文案保留在前；不带路径也合法（job 从 stdin 读），补在后面
+        _emit(
+            {
+                "type": "error",
+                "message": (
+                    "runner worker requires one job json path"
+                    " (or none: the job is then read from stdin),"
+                    f" got {len(sys.argv) - 1} arguments"
+                ),
+            }
+        )
         return 64
 
-    job_path = Path(sys.argv[1])
+    job_path: Path | None = Path(sys.argv[1]) if len(sys.argv) == 2 else None
     runner: MaaFWRunner | None = None
     try:
-        payload = json.loads(job_path.read_text(encoding="utf-8"))
-        # 计划里可能有解密后的密码选项：读完就删，不让明文在盘上留一整轮。
-        # 看门狗、finally 与宿主收尾里的删除照旧保留作兜底。
-        with suppress(OSError):
-            job_path.unlink()
+        payload, job_path = _read_job()
         _start_owner_watchdog(job_path, payload)
+        _open_event_channel(payload.get("eventChannel"))
         plan = MaaFWRunPlan.model_validate(payload["plan"])
         device_config = MaaFWDeviceConfig.model_validate(payload["deviceConfig"])
         screenshot_dir = payload.get("failureScreenshotDir")
@@ -184,6 +288,7 @@ def main() -> int:
                 else None
             ),
             loop_guard_enabled=payload.get("loopGuard") is True,
+            send_log_event=_emit_tagged_log,
         )
         result = runner.run(device_config)
         _emit({"type": "result", "data": result.model_dump(mode="json")})
@@ -207,6 +312,8 @@ def main() -> int:
         if runner is not None:
             with suppress(Exception):
                 runner.shutdown()
+        # shutdown 里还会发日志（agent 退出等），发完再关通道：宿主随即读到 EOF
+        _close_event_channel()
         # 并入自 mfwa：正常收尾也清掉 job 文件与临时 option 目录
         _cleanup_job_files(job_path)
 

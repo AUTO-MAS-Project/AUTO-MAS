@@ -20,23 +20,28 @@
 #   Contact: DLmaster_361@163.com
 
 
+from app.models.config import EmulatorConfig
+from app.models.emulator import EmulatorRuntimePolicy
+
 from .general import GeneralDeviceManager
 from .ldplayer import LDManager
 from .mumu import MumuManager
 from .tools import search_all_emulators
 
 
-def _build_emulator2_manager(config):
+def _build_emulator2_manager(
+    config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+):
     """Emulator 2.0 管理器的工厂。
 
     ``app.utils.emulator2`` 复用本包里的旧管理器实现（继承 ``LDManager``），
     在这里直接 import 它会形成导入环——谁先被导入谁就拿到半初始化的对方。
-    表里的值只会被当成 ``EMULATOR_TYPE_BOOK[type](config)`` 调用，
+    表里的值只会被当成 ``EMULATOR_TYPE_BOOK[type](config, runtime_policy=...)`` 调用，
     所以放一个延迟导入的工厂函数即可，无需在模块加载期建立依赖。
     """
     from app.utils import emulator2 as _utils_emulator2
 
-    return _utils_emulator2.Emulator2Manager(config)
+    return _utils_emulator2.Emulator2Manager(config, runtime_policy=runtime_policy)
 
 
 EMULATOR_TYPE_BOOK = {
