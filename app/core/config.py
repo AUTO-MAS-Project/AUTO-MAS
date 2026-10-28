@@ -49,6 +49,8 @@ if TYPE_CHECKING:
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config_upgrade import (
     CONFIG_FILES,
+    LegacyEntryMigrations,
+    contains_legacy_type,
     convert_legacy,
     is_blank_file,
     preserve_pre_upgrade,
@@ -505,6 +507,7 @@ class AppConfig:
                     self.startup_notices = self.setting.startup_notices
                     await self.setting.activate(fast_init=True)
 
+            entry_migrations: LegacyEntryMigrations = {}
             script_path = self.config_path / "ScriptConfig.json"
             if script_path.exists():
                 self._m9a_migration = await asyncio.to_thread(
@@ -520,7 +523,18 @@ class AppConfig:
                 self._m9a_managed = await asyncio.to_thread(
                     normalize_m9a_managed_entries, script_path
                 )
-                await self._archive_legacy_hsr_direct_snapshots(script_path)
+                if await asyncio.to_thread(
+                    contains_legacy_type, script_path, HSRConfig.__name__
+                ):
+                    from app.task.HSR.migration import (
+                        archive_legacy_direct_for_upgrade,
+                        migrate_legacy_user_payload,
+                    )
+
+                    entry_migrations = {HSRUserConfig: migrate_legacy_user_payload}
+                    notice = await archive_legacy_direct_for_upgrade(script_path)
+                    if notice is not None:
+                        self.startup_notices.append(notice)
             prepared = {
                 key: await node.to_dict()
                 for key, node in self._config_nodes.items()
@@ -531,6 +545,7 @@ class AppConfig:
                 self.config_path,
                 self._config_nodes,
                 prepared_documents=prepared,
+                entry_migrations=entry_migrations,
             )
         if self._m9a_managed is None:
             self._m9a_managed = await asyncio.to_thread(
@@ -2827,36 +2842,6 @@ class AppConfig:
                 "lines": lines,
             }
         )
-
-    async def _archive_legacy_hsr_direct_snapshots(
-        self, script_config_path: Path
-    ) -> None:
-        """HSR 旧直控快照停用前的留档，结果攒成启动通知；见 ``app.task.HSR.tools.legacy_direct``。
-
-        没有 HSR 脚本时不导入 HSR 专项（导入要近 1 秒），先按字节找一次类型标签。
-        """
-
-        def _has_hsr_script() -> bool:
-            try:
-                return b'"HSRConfig"' in script_config_path.read_bytes()
-            except OSError:
-                return False
-
-        try:
-            if not await asyncio.to_thread(_has_hsr_script):
-                return
-            from app.task.HSR.tools.legacy_direct import (
-                archive_legacy_direct_snapshots,
-            )
-
-            report = await asyncio.to_thread(
-                archive_legacy_direct_snapshots, script_config_path
-            )
-        except Exception as exc:  # noqa: BLE001 - 留档失败不该挡住启动
-            logger.opt(exception=True).warning(f"HSR 旧直控快照留档失败：{exc}")
-            return
-        if report.needs_notice:
-            self.startup_notices.append(report.notice())
 
     async def push_system_notice(
         self, *, level: str, title: str, lines: list[str]
