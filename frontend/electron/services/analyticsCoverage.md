@@ -143,3 +143,10 @@
 测试进程启动；正式 Release 看板筛选 `0.0.0-telemetry-validation` 后可查询 1 个会话和 1 条
 `app_started`。关闭前后、旧代次和额外字段未增加生产请求。原始 ASAR/配置已恢复。
 仅证明该传输与开关边界，未把契约样本当成真实游戏、扫码、升级、硬件或真实混合/循环队列验收。
+
+QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
+由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
+`script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
+不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
+
+群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。

@@ -113,6 +113,7 @@ def register() -> NotifyChannel:
                 read_proxy=deps.read_proxy,
                 http_factory=deps.http_factory,
                 websocket_connect=deps.websocket_connect,
+                notification_command_executor=deps.notification_command_executor,
             )
         ),
         start_adapter=Sender.start,

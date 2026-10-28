@@ -328,9 +328,12 @@ def main():
 
         await ObsReplay.cleanup_temporary()
 
+        from functools import partial
+
         from app.api.ws_command import execute_ws_command
         from app.config import config_manager
         from app.core.game_calendar import GameCalendar
+        from app.core.notification_commands import execute_notification_command
         from app.core.notify_channels import create_notification_service
         from app.runtime_tasks import RuntimeTasks
 
@@ -342,6 +345,9 @@ def main():
             transactions=config_manager,
             runtime=RuntimeTasks,
             command_executor=execute_ws_command,
+            notification_command_executor=partial(
+                execute_notification_command, config=Config, task_manager=TaskManager
+            ),
         )
         app.state.notifications = notifications
         TaskManager.bind_notifications(notifications)

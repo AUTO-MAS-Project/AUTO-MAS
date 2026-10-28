@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import QRCode from 'qrcode'
@@ -44,6 +44,15 @@ export function useClawBinding(
   const state = ref('idle')
   const hint = ref('')
   const groups = ref<OpenClawQQGroupsOut | null>(null)
+  const groupWhitelistDraft = ref('')
+  watch(groups, (current, previous) => {
+    if (!current) return
+    if (
+      current.bindingId !== previous?.bindingId ||
+      groupWhitelistDraft.value === (previous?.groupCommandWhitelist || []).join('\n')
+    )
+      groupWhitelistDraft.value = (current.groupCommandWhitelist || []).join('\n')
+  })
   const groupsLoading = ref(false)
   const targetSaving = ref(false)
   const groupsError = ref('')
@@ -89,17 +98,16 @@ export function useClawBinding(
       groups.value = result
     } catch {
       if (disposed || id !== groupsRunId) return
-      groups.value = null
       groupsError.value = label('GroupsError')
     } finally {
       if (id === groupsRunId) groupsLoading.value = false
     }
   }
 
-  const selectTarget = async (value: string) => {
-    if (!groups.value?.bindingId || targetSaving.value) return
+  const selectTarget = async (value: string, groupCommandWhitelist?: string[]) => {
+    if (!groups.value?.bindingId || targetSaving.value) return false
     const targetType = Object.values(OpenClawQQTargetIn.targetType).find(type => type === value)
-    if (!targetType) return
+    if (!targetType) return false
     const id = ++groupsRunId
     targetSaving.value = true
     groupsLoading.value = false
@@ -108,16 +116,20 @@ export function useClawBinding(
       const result = await QqService.setTargetApiSettingOpenclawQqTargetPost({
         bindingId: groups.value.bindingId,
         targetType,
+        groupCommandWhitelist,
       })
-      if (disposed || id !== groupsRunId) return
+      if (disposed || id !== groupsRunId) return false
       if (result.code !== 200) {
         groupsError.value = groupError(result.errorCode)
-        return
+        return false
       }
       groups.value = result
-      message.success(label('TargetSaved'))
+      if (groupCommandWhitelist === undefined) message.success(label('TargetSaved'))
+      else groupWhitelistDraft.value = (result.groupCommandWhitelist || []).join('\n')
+      return true
     } catch {
       if (!disposed && id === groupsRunId) groupsError.value = label('TargetError')
+      return false
     } finally {
       targetSaving.value = false
     }
@@ -286,11 +298,14 @@ export function useClawBinding(
     state,
     hint,
     groups,
+    groupWhitelistDraft,
     groupsLoading,
     groupsError,
     targetSaving,
     loadGroups,
     selectTarget,
+    saveGroupWhitelist: (values: string[]) =>
+      selectTarget(groups.value?.targetType || 'c2c', values),
     loadStatus,
     close,
     start,

@@ -31,6 +31,7 @@ from app.config import ConfigManager
 from app.models.notification_channel import (
     SCOPE_GLOBAL,
     CommandExecutor,
+    NotificationCommandExecutor,
     NotificationSourceConfig,
     NotifyChannel,
     NotifyChannelField,
@@ -210,6 +211,7 @@ def create_notification_service(
     transactions: ConfigManager,
     runtime: OwnedTaskRegistry,
     command_executor: CommandExecutor | None = None,
+    notification_command_executor: NotificationCommandExecutor | None = None,
 ) -> HostNotificationService:
     """配置就绪后创建独立通知服务；连接仍在后台初始化阶段启动。"""
     import smtplib
@@ -261,6 +263,7 @@ def create_notification_service(
         system_icon=resource_path("icons", "AUTO-MAS.ico").as_posix(),
         logger=get_logger("通知服务"),
         command_executor=command_executor,
+        notification_command_executor=notification_command_executor,
     )
     transport = Notification(registry.bind(dependencies))
     return HostNotificationService(

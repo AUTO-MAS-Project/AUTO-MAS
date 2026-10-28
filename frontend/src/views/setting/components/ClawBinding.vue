@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
 import type { useClawBinding } from '../useClawBinding'
+import QQGroupCommands from './QQGroupCommands.vue'
 
 // 提升后的绑定状态：useClawBinding 的返回值经 reactive() 包一层传入，
 // 嵌套 ref 在模板里自动解包。整个对象只由 TabNotify 构造一份。
@@ -138,6 +139,14 @@ onBeforeUnmount(() => clearInterval(groupsTimer))
           </a-button>
         </div>
       </a-form-item>
+      <QQGroupCommands
+        v-if="binding.groups && binding.groups.targetType !== 'c2c'"
+        v-model="binding.groupWhitelistDraft"
+        :members="binding.groups.groupCommandWhitelist || []"
+        :saving="binding.targetSaving"
+        :disabled="binding.unbinding || binding.open || binding.targetSaving"
+        :save="binding.saveGroupWhitelist"
+      />
       <a-alert v-if="binding.groupsError" type="error" show-icon :message="binding.groupsError" />
       <a-typography-paragraph v-if="binding.groups" class="binding-hint">
         {{
