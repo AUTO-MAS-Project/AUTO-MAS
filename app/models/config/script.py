@@ -611,6 +611,9 @@ class MaaConfig(DomainEntry):
             default_factory=lambda: False,
             description="是否接管 MAA 本体与资源更新（关=完全由 MAA 自行处理）",
         )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MAA 更新通道：正式版或公测版"
+        )
 
     Update: UpdateFields = Field(default_factory=UpdateFields)
     UserData: ConfigCollection[MaaUserConfig] = collection(MaaUserConfig)

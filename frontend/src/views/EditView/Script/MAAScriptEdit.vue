@@ -270,10 +270,8 @@
           </a-row>
         </div>
         <MaaUpdateSettings
-          :update="maaConfig.Update"
+          v-model:update="maaConfig.Update"
           :ready="!isInitializing"
-          @update:cdk="maaConfig.Update.MirrorChyanCDK = $event"
-          @update:enabled="maaConfig.Update.TakeoverEnabled = $event"
           @change="(key, value) => handleChange('Update', key, value)"
         />
       </a-form>

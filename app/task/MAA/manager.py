@@ -13,6 +13,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
+import time
 import uuid
 from contextlib import ExitStack, suppress
 from datetime import datetime
@@ -61,16 +62,20 @@ from .tools.backup_archive import (
     collect_native_files,
     native_backup_root,
 )
+from .tools.fluxdown_update import prepare_maa_fluxdown_update, query_latest_maa_version
 from .tools.game_update import ensure_game_updated
 from .tools.notify import SIGNATURE_SEP
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
     get_resource_write_lock,
-    prepare_queue_resources,
+    latest_resource_clock,
+    prepare_install_resources,
+    read_resource_clock,
 )
 from .tools.software_package import (
     clear_deferred_update,
+    has_delegated_update_failure,
     load_deferred_update,
     read_pending_update,
     save_deferred_update,
@@ -80,10 +85,13 @@ from .tools.software_update import (
     cancel_maa_software_update_precheck,
     compare_versions,
     parse_version,
-    prepare_maa_software_update,
+    prepare_maa_software_before_run,
     read_installed_release,
 )
-from .tools.update_credentials import resolve_takeover_credentials
+from .tools.update_credentials import (
+    resolve_takeover_credentials,
+    use_maa_github_update,
+)
 from .tools.UpdateMAA import MaaUpdaterRunningError
 
 logger = get_logger("MAA 调度器")
@@ -219,19 +227,6 @@ class MaaManager(ScriptManagerBase):
                 )
         except (OSError, ValueError) as error:
             logger.warning(f"MAA 本体更新: 无法恢复原生待更新登记: {error}")
-
-    async def _run_main_task(self) -> None:
-        # 仅自动代理更新资源，配置会话不触发；在维护判断与配置锁之前执行。
-        # 保留更新接管开关与脚本优先的 CDK，失败只记日志，不阻断本轮任务。
-        if self.task_info.mode == "AutoProxy" and self.selected_user_configs():
-
-            async def report_progress(line: str) -> None:
-                self.script_info.log = line
-
-            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-            _, cdk = resolve_takeover_credentials(script_config)
-            await prepare_queue_resources(progress=report_progress, cdk=cdk)
-        await super()._run_main_task()
 
     async def update_game_before_run(self) -> None:
         """更新游戏客户端，不执行代理或账号前后置脚本。"""
@@ -541,8 +536,11 @@ class MaaManager(ScriptManagerBase):
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
-                # 一次只安装一个版本，批尾沿用最后实际执行账号的通道；其他通道只缓存。
+                # 所有托管更新都在本账号启动前完成，运行期不再创建下载任务。
                 self._update_config_dir = task.update_config_dir
+                task.software_update_prepared = await self._prepare_software_update(
+                    task
+                )
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
@@ -552,20 +550,114 @@ class MaaManager(ScriptManagerBase):
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
 
-        # 完整包会替换 resource，整批账号全部结束后才允许安装；下一轮再按需补资源。
-        if self._update_config_dir is not None:
-            await self._restore_pending_update()
-            await prepare_maa_software_update(
-                self.maa_set_path.parent,
-                config_dir=self._update_config_dir,
-                config=self.script_config,
+    async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
+        """全部更新后重新查询两个版本，版本仍变化则重做准备，不能带旧版启动。"""
+        for _ in range(3):
+            if not await self._prepare_updates_once(task):
+                return False
+            release = read_installed_release(self.maa_set_path.parent)
+            clock = read_resource_clock(self.maa_set_path.parent)
+            if release is None or clock is None:
+                raise RuntimeError("无法确认 MAA 本体或资源版本，已停止启动")
+            github = use_maa_github_update(
+                self.script_config,
+                config_dirs=[task.update_config_dir, self.maa_set_path],
             )
-            self._remember_pending_update()
-            try:
-                await update_maa(self.maa_set_path.parent)
-            except MaaUpdaterRunningError:
-                self._updater_running = True
-                raise
+            latest = await query_latest_maa_version(
+                release[1], self.script_config.Update.Channel, github=github
+            )
+            target_clock = await latest_resource_clock(github=github, current=clock)
+            enabled, _ = resolve_takeover_credentials(self.script_config)
+            if not github and not enabled:
+                raise RuntimeError("MAA 更新配置已变更，请重新运行")
+            if (
+                compare_versions(parse_version(release[0]), parse_version(latest)) == 0
+                and clock >= target_clock
+            ):
+                self.script_info.log = "MAA 本体及资源均已是最新版本，开始运行"
+                return True
+        raise RuntimeError("MAA 更新期间上游版本持续变化，请稍后重新运行")
+
+    async def _prepare_updates_once(self, task: AutoProxyTask) -> bool:
+        """运行账号前下载更新，并等待官方安装链结束后才允许注入任务配置。"""
+        github = use_maa_github_update(
+            self.script_config,
+            config_dirs=[task.update_config_dir, self.maa_set_path],
+        )
+        mirror_enabled, cdk = resolve_takeover_credentials(self.script_config)
+        if not github and not mirror_enabled:
+            if self.script_config.Update.TakeoverEnabled:
+                raise RuntimeError(
+                    "无法代理 MAA 原生 CDK 的启动前下载；请在此脚本的更新配置中填写 CDK"
+                )
+            return False
+        # 上次下载后被中止或 MAA 原生下载留下的包先交还官方入口，不能让
+        # 账号配置注入清掉它。消费后再查最新版本，不覆盖既有登记。
+        pending_version, pending = read_pending_update(self.maa_set_path.parent)
+        if pending and (self.maa_set_path.parent / pending).is_file():
+            await self._install_pending_software_update(target=pending_version)
+        last_log = 0.0
+
+        async def report(downloaded: int, total: int, speed: float) -> None:
+            nonlocal last_log
+            amount = f"{downloaded / 1024**2:.1f} MB"
+            if total > 0:
+                amount = f"{downloaded * 100 / total:.1f}% ({amount}/{total / 1024**2:.1f} MB)"
+            line = f"MAA 更新下载: {amount}，{speed / 1024**2:.1f} MB/s"
+            self.script_info.log = line
+            if time.monotonic() - last_log >= 1 or downloaded == total:
+                logger.info(line)
+                last_log = time.monotonic()
+
+        if github:
+            target = await prepare_maa_fluxdown_update(
+                self.maa_set_path.parent,
+                config=self.script_config,
+                config_dir=task.update_config_dir,
+                progress=report,
+            )
+        else:
+            target = await prepare_maa_software_before_run(
+                self.maa_set_path.parent,
+                config=self.script_config,
+                config_dir=task.update_config_dir,
+            )
+        if target is None:
+            raise RuntimeError("MAA 更新设置在准备期间发生变化，请重新运行")
+        await self._install_pending_software_update(target=target)
+
+        async def resource_progress(line: str) -> None:
+            self.script_info.log = line
+
+        # 本体包可能覆盖 resource，资源必须在官方本体安装完成后再应用。
+        await prepare_install_resources(
+            self.maa_set_path.parent,
+            cdk=cdk,
+            github=github,
+            progress=resource_progress,
+        )
+        return True
+
+    async def _install_pending_software_update(
+        self, *, target: str | None = None
+    ) -> None:
+        """复用官方安装入口；进程未退出或上游报告失败时停止后续账号任务。"""
+        self.script_info.log = "正在等待 MAA 官方更新器处理本地更新包"
+        try:
+            await update_maa(self.maa_set_path.parent)
+        except MaaUpdaterRunningError:
+            self._updater_running = True
+            raise
+        if has_delegated_update_failure(self.maa_set_path.parent):
+            raise RuntimeError("MAA 官方更新器报告安装失败，请先在 MAA 内完成修复")
+        if target is not None:
+            installed = read_installed_release(self.maa_set_path.parent)
+            actual = parse_version(installed[0]) if installed else None
+            expected = parse_version(target)
+            if not (actual and expected and compare_versions(actual, expected) >= 0):
+                raise RuntimeError(
+                    "未确认 MAA 已完成更新，已停止后续账号任务，请先完成更新"
+                )
 
     async def final_task(self):
         """运行结束后的收尾工作"""

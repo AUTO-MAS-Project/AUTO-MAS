@@ -98,7 +98,7 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
                 shutil.copyfileobj(src, dst, _CHUNK)
 
 
-def count_zip_entries(zip_path: Path) -> int:
+def count_zip_entries(zip_path: Path, *, prefix: str = "resource/") -> int:
     """zip 内位于 ``resource/`` 下的非目录条目数。
 
     供换位前后的暂存树核账：任何原因（并发清理、AV 删文件）造成的残缺树
@@ -108,7 +108,7 @@ def count_zip_entries(zip_path: Path) -> int:
         return sum(
             1
             for info in archive.infolist()
-            if not info.is_dir() and _fix_zip_name(info).startswith("resource/")
+            if not info.is_dir() and _fix_zip_name(info).startswith(prefix)
         )
 
 

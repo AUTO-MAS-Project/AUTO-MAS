@@ -103,7 +103,9 @@ async def update_maa(maa_path: Path):
     # 更新配置
     update_set = maa_new_set.setdefault("Update", {})
     update_set["UpdatePackage"] = maa_update_package
+    update_set["CheckOnStartup"] = False
     update_set["CheckOnSchedule"] = False
+    update_set["UpdateSource"] = "GitHub"
     update_set["AutoDownloadUpdatePackage"] = False
     update_set["AutoInstallUpdatePackage"] = True
 
