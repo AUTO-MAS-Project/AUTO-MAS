@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import type { HistoryIndexItem } from '@/api'

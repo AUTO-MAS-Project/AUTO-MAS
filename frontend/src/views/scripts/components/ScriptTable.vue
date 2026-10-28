@@ -96,7 +96,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import noDataImage from '@/assets/NoData.png'
+import noDataImage from '@/assets/NoData.svg'
 import ScriptCardHeader, {
   type ScriptCardAction,
 } from '@/views/scripts/components/ScriptCardHeader.vue'
