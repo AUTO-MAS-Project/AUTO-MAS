@@ -2856,8 +2856,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             stock_sanity_spent = stock_task_enabled and (
                 "DepotMaintain" in task_result.sanity_spent
             )
-            stock_error = stock_task_enabled and task_result.stock_error
-            other_error = stock_task_enabled and task_result.other_error
             for en_task in MAA_TASKS:
                 if en_task in task_result.completed or en_task in task_result.skipped:
                     if (
@@ -2872,39 +2870,28 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 if stock_sanity_spent:
                     self.task_dict["DepotMaintain"] = False
                     self._stock_depot_completed = True
-                elif stock_error:
+                elif "DepotMaintain" in task_result.errors:
                     self.task_dict["DepotMaintain"] = True
                     self._stock_depot_completed = False
 
             if self.task_dict.get("EventDepotMaintain"):
-                if (
-                    task_result.event_completed
-                    and not task_result.event_failed
-                    and task_result.event_completion_known
-                ):
+                if "EventDepotMaintain" in task_result.completed:
                     # 库存充足时只有仓库识别，也由 MAA 收尾确认为整段完成。
                     self.task_dict["EventDepotMaintain"] = False
                     self._event_depot_completed = True
-                elif (
-                    "EventDepotMaintain" in task_result.skipped
-                    and not task_result.event_failed
-                ):
+                elif "EventDepotMaintain" in task_result.skipped:
                     # 来源时段跳过只结束本次尝试，下一次仍重新判断条件。
                     self.task_dict["EventDepotMaintain"] = False
 
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 库存阶段有理智消耗即完成本轮，其余任务仍以 MAA 收尾错误为准。
-            stock_failure_ignored = (
-                stock_sanity_spent and stock_error and not other_error
-            )
+            stock_failure_ignored = stock_sanity_spent and task_result.errors == {
+                "DepotMaintain"
+            }
             if (
-                task_result.partial_completion_title
+                any(self.task_dict.values())
+                or task_result.failed
                 and not stock_failure_ignored
-                or any(self.task_dict.values())
-                or (
-                    not stock_failure_ignored
-                    and task_result.error_after_completion
-                )
             ):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
             else:
