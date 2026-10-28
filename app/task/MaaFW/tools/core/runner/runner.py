@@ -1577,7 +1577,9 @@ class MaaFWRunner:
         特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
         报它声明的那句话。特调声明的收尾任务（``nonFatalMessage``，如 M9A 的关闭游戏）
         超时只截图、记一行，不计入本轮失败；停下时恰好又被脚本侧强停，就跳过本轮剩余
-        任务（``_nonfatal_script_stopped``），同样不计入失败。
+        任务（``_nonfatal_script_stopped``），同样不计入失败。例外：收尾任务排在中间时
+        要先等停止生效才能投下一个任务，等满 ``TASK_STOP_SETTLE_SECONDS`` 仍停不下来
+        就不再放过，结束本轮并计入失败；排在队尾时不等。
 
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
@@ -1727,7 +1729,8 @@ class MaaFWRunner:
 
         口径与 ``_handle_task_deadline`` 完全一致：计划里的第一个任务或特调声明的关键
         任务（``abortRoundMessage``）结束本轮，收尾任务（``nonFatalMessage``）放过（恰好
-        又被脚本侧强停时跳过剩余任务），其余记一条任务失败再继续。必须早于
+        又被脚本侧强停时跳过剩余任务；排在中间且等满仍停不下来时结束本轮并计入失败），
+        其余记一条任务失败再继续。必须早于
         ``_external_stop_active``：停止是我们自己 post_stop 的，tasker 的 stopping 会置位，
         晚了就被当成脚本侧强停、跳过本轮剩余任务。
         """
