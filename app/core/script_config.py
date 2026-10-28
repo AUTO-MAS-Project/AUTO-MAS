@@ -22,6 +22,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from app.config import ConfigEntry
+from app.models.task import ScriptTaskResources
 
 
 class ScriptConfigImporter(Protocol):
@@ -80,3 +81,4 @@ class ScriptConfigHandler:
     prepare_user_read: UserReadPreparer | None = None
     initialize_user: UserInitializer | None = None
     prepare_user_removal: UserRemovalPreparer | None = None
+    task_resources: Callable[[ConfigEntry], ScriptTaskResources] | None = None

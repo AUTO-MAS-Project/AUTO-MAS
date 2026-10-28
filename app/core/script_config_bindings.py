@@ -45,16 +45,25 @@ from app.models.config import (
     ZzzOdConfig,
     ZzzOdUserConfig,
 )
+from app.task.BAAH.resources import declare_task_resources as baah_task_resources
 from app.task.BetterGI.api_service import (
     prepare_user_update as prepare_bettergi_user_update,
 )
+from app.task.general.resources import (
+    declare_task_resources as general_task_resources,
+)
+from app.task.MAA.resources import declare_task_resources as maa_task_resources
 from app.task.MAA.user_update import prepare_user_update as prepare_maa_user_update
 from app.task.MaaEnd.api_service import MaaEndConfigService
+from app.task.MaaEnd.resources import declare_task_resources as maaend_task_resources
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     initialize_user as initialize_maafw_user,
 )
 from app.task.MaaFW.tools.embedded.default_snapshot import (
     prepare_user_read as prepare_maafw_user_read,
+)
+from app.task.MaaFW.tools.embedded.resources import (
+    declare_task_resources as maafw_task_resources,
 )
 from app.task.MaaFW.tools.embedded.user_update import (
     prepare_user_update as prepare_maafw_user_update,
@@ -65,6 +74,7 @@ from app.task.Okww.tools.config_dir import (
 from app.task.Okww.tools.config_dir import (
     initialize_user as initialize_okww_user,
 )
+from app.task.SRC.resources import declare_task_resources as src_task_resources
 from app.task.SRC.user_update import prepare_user_update as prepare_src_user_update
 from app.task.ZzzOd.recovery import ZzzOdRecovery
 from app.task.ZzzOd.user_update import prepare_user_update as prepare_zzzod_user_update
@@ -83,6 +93,7 @@ def bind_script_config_handlers(
             initialize=maaend.initialize,
             validate_update=maaend.validate_update,
             import_config=maaend.import_config,
+            task_resources=maaend_task_resources,
         ),
         BetterGIConfig: ScriptConfigHandler(
             user_config_class=BetterGIUserConfig,
@@ -91,10 +102,12 @@ def bind_script_config_handlers(
         MaaConfig: ScriptConfigHandler(
             user_config_class=MaaUserConfig,
             prepare_user_update=prepare_maa_user_update,
+            task_resources=maa_task_resources,
         ),
         SrcConfig: ScriptConfigHandler(
             user_config_class=SrcUserConfig,
             prepare_user_update=prepare_src_user_update,
+            task_resources=src_task_resources,
         ),
         ZzzOdConfig: ScriptConfigHandler(
             user_config_class=ZzzOdUserConfig,
@@ -106,16 +119,21 @@ def bind_script_config_handlers(
             prepare_user_update=prepare_maafw_user_update,
             prepare_user_read=prepare_maafw_user_read,
             initialize_user=initialize_maafw_user,
+            task_resources=maafw_task_resources,
         ),
         OkwwConfig: ScriptConfigHandler(
             user_config_class=OkwwUserConfig,
             initialize_user=initialize_okww_user,
             import_config=import_okww_config,
         ),
-        GeneralConfig: ScriptConfigHandler(user_config_class=GeneralUserConfig),
+        GeneralConfig: ScriptConfigHandler(
+            user_config_class=GeneralUserConfig, task_resources=general_task_resources
+        ),
         OkNteConfig: ScriptConfigHandler(user_config_class=OkNteUserConfig),
         HSRConfig: ScriptConfigHandler(user_config_class=HSRUserConfig),
-        BAAHConfig: ScriptConfigHandler(user_config_class=BAAHUserConfig),
+        BAAHConfig: ScriptConfigHandler(
+            user_config_class=BAAHUserConfig, task_resources=baah_task_resources
+        ),
         WhimboxConfig: ScriptConfigHandler(user_config_class=WhimboxUserConfig),
     }
     for entry_type, handler in handlers.items():
