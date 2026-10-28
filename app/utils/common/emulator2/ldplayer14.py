@@ -40,7 +40,12 @@ from pathlib import Path
 import psutil
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
+from app.models.emulator import (
+    DeviceInfo,
+    DeviceRef,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
 from app.utils import window as platform_window
@@ -152,9 +157,7 @@ class LDPlayer14Manager(AppLaunchMixin, _utils_emulator.ldplayer.LDManager):
         （上一个后端进程藏的），接着巡检其名下弹窗——BAAH、MaaEnd、SRC 只调 ``open``
         不调 :meth:`setVisible`，不在这里起就没人起。
         """
-        from app.core import Config
-
-        if not IS_WINDOWS or not Config.setting.Function.IfSilence:
+        if not IS_WINDOWS or not self.runtime_policy.silence_enabled():
             return await super().open(idx, package_name)
         if await self.getStatus(idx) == DeviceStatus.ONLINE:
             info = await super().open(idx, package_name)
@@ -928,7 +931,7 @@ class LDPlayer14Manager(AppLaunchMixin, _utils_emulator.ldplayer.LDManager):
         宿主窗口那层（加载页轮播、开机全屏页）``cleanmode`` 管不到，由门面按安装统一处理，
         见 :func:`~.master_mode.apply_host_mode`。设不上只记警告，不拦启动。
         """
-        enabled = is_master_mode_enabled()
+        enabled = is_master_mode_enabled(self.runtime_policy.block_ads_enabled)
         try:
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -1023,7 +1026,11 @@ class LDPlayer14Manager(AppLaunchMixin, _utils_emulator.ldplayer.LDManager):
 
 
 async def build_manager(
-    manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
+    manager_exe: str,
+    max_wait_time: int,
+    force_kill_on_close: bool = False,
+    *,
+    runtime_policy: EmulatorRuntimePolicy,
 ) -> LDPlayer14Manager:
     """为一条雷电安装合成配置并构造管理器。
 
@@ -1041,4 +1048,4 @@ async def build_manager(
         }
     )
     await config.activate()
-    return LDPlayer14Manager(config)
+    return LDPlayer14Manager(config, runtime_policy=runtime_policy)

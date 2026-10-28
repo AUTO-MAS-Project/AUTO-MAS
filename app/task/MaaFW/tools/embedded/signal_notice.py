@@ -21,15 +21,17 @@ from typing import Any
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
 from app.models.notification_channel import DispatchResult, NotifyTarget
 from app.models.notification_ports import TaskNotifications
+
+# 信号取值与 worker 共用 worker_protocol 那一份；不经 core.runner 包导入（它的 __init__
+# 会拉起 runner 子树）。
+from app.task.MaaFW.tools.core.worker_protocol import (
+    CLIENT_UPDATE_REQUIRED,
+    SERVER_MAINTENANCE,
+)
 from app.task.notify_core import prepare_screenshot_images
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 信号通知")
-
-# 与 core/runner/run_signal.py 的取值一致；这里不导入 core.runner 包（它的 __init__
-# 会拉起 runner 子树），只按字符串比较。
-SERVER_MAINTENANCE = "server_maintenance"
-CLIENT_UPDATE_REQUIRED = "client_update_required"
 
 # 用户日志状态、统计信息与「任务详情」里用的一句话。
 # 执行器按显式信号提供历史状态；这些文案仅用于展示。

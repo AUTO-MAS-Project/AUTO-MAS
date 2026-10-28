@@ -22,7 +22,12 @@ from pathlib import Path
 import psutil
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
 from app.utils import window as platform_window
@@ -49,7 +54,9 @@ class MumuManager(DeviceBase):
     基于MuMuManager.exe的模拟器管理
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(
+        self, config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+    ) -> None:
         emulator_path = config.Info.Path
         if emulator_path is None or not emulator_path.exists():
             raise FileNotFoundError(f"MuMuManager.exe文件不存在: {emulator_path}")
@@ -58,6 +65,7 @@ class MumuManager(DeviceBase):
             raise ValueError("配置的模拟器类型不是mumu")
 
         self.config = config
+        self.runtime_policy = runtime_policy
 
         self.emulator_path = emulator_path
 
@@ -321,8 +329,6 @@ class MumuManager(DeviceBase):
         started_at = time.monotonic()
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
-        from app.core import Config
-
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         deadline = time.monotonic() + self.config.Info.MaxWaitTime
         while time.monotonic() < deadline:
@@ -341,7 +347,7 @@ class MumuManager(DeviceBase):
                     f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
                     f"用时: {time.monotonic() - started_at:.3f}秒"
                 )
-                if Config.setting.Function.IfBlockAd:
+                if self.runtime_policy.block_ads_enabled():
                     await self._block_store_overlay_ads(idx)
                 return info
             elif status == DeviceStatus.OFFLINE:
@@ -416,14 +422,17 @@ class MumuManager(DeviceBase):
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
                 if_close_mumu_nx = not await self.close_mumu_nx_window()
-            if Config.setting.Function.IfSilence and status == DeviceStatus.STARTING:
+            if (
+                self.runtime_policy.silence_enabled()
+                and status == DeviceStatus.STARTING
+            ):
                 await self.setVisible(idx, False)
             elif status == DeviceStatus.ONLINE:
                 logger.info(
                     f"模拟器已在线: {idx} - {package_name} - 用时: "
                     f"{time.monotonic() - online_started_at:.3f}秒"
                 )
-                if Config.setting.Function.IfBlockAd:
+                if self.runtime_policy.block_ads_enabled():
                     await self._block_store_overlay_ads(idx)
                 if package_name:
                     try:
@@ -440,6 +449,7 @@ class MumuManager(DeviceBase):
                     states_store=self._audio_mute_states,
                     idx=idx,
                     resolve_pids=lambda: self._resolve_audio_pids(idx),
+                    silence_enabled=self.runtime_policy.silence_enabled,
                 )
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)

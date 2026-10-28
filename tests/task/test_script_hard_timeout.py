@@ -121,7 +121,7 @@ def test_adapter_coverage_and_exemptions():
     }
     actual = set()
     for path in root.rglob("*.py"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef) and any(
                 isinstance(

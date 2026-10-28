@@ -62,7 +62,8 @@ yarn playwright show-report playwright-report/real
 
 | 层 | 内容 | 谁跑 | 是否阻断合并 |
 | --- | --- | --- | --- |
-| 阻断 | 格式检查、changelog 碎片、revert 检查、uv lock、打包检查、E2E 基础设施契约自检（`yarn e2e:check` 里的 `node --test`，秒级） | CI 托管 runner | 是 |
+| 阻断 | Windows 与 Ubuntu 全量 pytest、格式检查、changelog 碎片、uv lock、打包检查、E2E 基础设施契约自检（`yarn e2e:check` 里的 `node --test`，秒级） | CI 托管 runner | 是 |
+| 提示 | revert 检查（标注近期删除的他人代码，不阻断合并） | CI 托管 runner | 否 |
 | 不阻断 | 浏览器 E2E（`@smoke` 等） | 贡献者本机，按改动选择 | 否 |
 | 永不进 CI | `@real` 真实调度 / 游戏 / 账号流程 | 作者本机 | 否 |
 
@@ -115,7 +116,7 @@ yarn playwright show-report playwright-report/real
 - 用 `test.describe('@标签', ...)` 命名流程；有真实游戏副作用的用例必须带 `@real`。`--grep` 接收正则：`@queue|@scheduler` 是 OR；`(?=.*@real)(?=.*@my-feature)` 是 AND。`'@real @my-feature'` 只匹配标题中相邻且顺序一致的文本，不是通用 AND 选择器。
 - 普通一次性流程用 `yarn e2e --grep '@my-feature'` 运行。新增长期标签只需要在对应 spec 和本文档中说明用途，不需要维护 CI 标签映射。
 - 真实一次性流程用 `pwsh -NoProfile -File ./e2e/run-real.ps1 -Grep '(?=.*@real)(?=.*@my-feature)'` 运行；它直接使用当前检出里已调配好的脚本、用户和模拟器配置。入口按脚本是否绑定模拟器决定是否执行模拟器步骤。新增专项只需声明公开前置条件（脚本、用户、可选模拟器）并在本机配置里准备好。
-- 功能或 bugfix 的一次性流程属于 PR 验证产物；跑完并检查证据后，按仓库规则在合并前删除。跨功能且长期稳定的公共流程才保留。
+- 本条只指无法复用的浏览器端一次性流程：跑完并检查证据后，在合并前删除；稳定、可重复的用户路径应转为长期 E2E 用例。可隔离、可重复运行的 pytest 回归测试不属于一次性流程，应按开发文档站「测试提交与维护规范」随实现提交并长期维护。
 - 凭据从本机已有配置读取，不写进 spec、仓库、PR 输入或证据。真实流程只分享精选截图和摘要，完整报告不能视为已脱敏。
 
 一次性真实流程的最小结构：

@@ -26,6 +26,14 @@ from enum import IntEnum
 from pathlib import Path
 
 
+@dataclass(frozen=True)
+class EmulatorRuntimePolicy:
+    """宿主提供的实时运行策略；读取异常由各消费点按原有语义处理。"""
+
+    silence_enabled: Callable[[], bool]
+    block_ads_enabled: Callable[[], bool]
+
+
 class DeviceStatus(IntEnum):
     ONLINE = 0
     """设备在线"""
