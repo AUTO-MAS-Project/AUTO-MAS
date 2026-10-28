@@ -427,12 +427,12 @@ def main():
                     # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
                     try:
                         await Config.migrate_maafw_embedded_copies_to_payloads()
-                        await Config.clean_maafw_agent_venvs()
-                        await Config.clean_maafw_embedded_copies()
-                        await Config.clean_maafw_runtime_blobs()
-                        await Config.clean_maafw_update_cache()
+                        await Config.maafw_maintenance.clean_agent_venvs()
+                        await Config.maafw_maintenance.clean_embedded_copies()
+                        await Config.maafw_maintenance.clean_runtime_blobs()
+                        await Config.maafw_maintenance.clean_update_cache()
                         # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        await Config.clean_maafw_runtime_pool()
+                        await Config.maafw_maintenance.clean_runtime_pool()
                     except asyncio.CancelledError:
                         raise
                     except Exception:
