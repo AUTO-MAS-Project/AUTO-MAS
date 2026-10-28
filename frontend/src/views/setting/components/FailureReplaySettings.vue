@@ -348,8 +348,8 @@ const runSaveReplay = async () => {
             style="width: 100%"
             @change="(value: any) => updateReplaySetting('FrameReplay', value)"
           >
-            <a-select-option :value="true">{{ t('common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('common.no') }}</a-select-option>
+            <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
+            <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
           </a-select>
         </div>
       </a-col>
