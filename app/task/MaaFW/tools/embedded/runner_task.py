@@ -284,6 +284,9 @@ _PRETASK_SCRIPT_HOST_NAMES = frozenset(
 # 不读的话那个程序写满管道缓冲就会卡在写输出上；任务要有强引用，不然会被回收。
 _PRETASK_BACKGROUND_DRAINS: set[asyncio.Task[None]] = set()
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+# 判断运行前设置留下的半行有没有看得见的内容时要去掉的部分：完整或被截断的 CSI 控制序列
+# （含 \x1b[?25h 这类带私有参数的）与其余控制字符
+_PRETASK_TAIL_NOISE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]?|[\x00-\x1f\x7f]")
 _VERBOSE_FRAMEWORK_LOG_MARKERS = (
     "Transceiver::send] send canceled",
     "Transceiver::send_and_recv] failed to send req",
@@ -4147,7 +4150,12 @@ class _PretaskOutputPump:
             logger.info(f"[运行前设置 {display_name} 退出后的输出] {line}")
 
         self._sink = to_backend_log
-        return bool(self._pending)
+        # 只剩空白或颜色 / 光标控制码的尾巴（很多命令行程序退出前补一个不带换行的复位码）
+        # 不算半行：它不含报错正文，失败原因照常从已写出的行里摘
+        visible = _PRETASK_TAIL_NOISE_RE.sub(
+            "", _decode_subprocess_output(self._pending)
+        )
+        return bool(visible.strip())
 
     def _emit_line(self, raw: bytes) -> None:
         text = _decode_subprocess_output(raw)
