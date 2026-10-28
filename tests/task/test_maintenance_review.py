@@ -74,9 +74,11 @@ async def test_server_matching(monkeypatch, adapter, cls, field, value, game):
             type(user).model_validate({"Info": {field: value}}), check_visibility=False
         )
     lookup = AsyncMock(return_value=object())
-    info = TaskInfo("AutoProxy", "test", None, None, None)
+    info = TaskInfo(
+        mode="AutoProxy", task_id="test", queue_id=None, script_id=None, user_id=None
+    )
     monkeypatch.setattr(info, "schedule_on_change", lambda: None)
-    script = ScriptItem(str(uuid.uuid4()), "test", "等待")
+    script = ScriptItem(script_id=str(uuid.uuid4()), name="test", status="等待")
     info.script_list = [script]
     instance = adapter(script)
     result = await maintenance.get_user_maintenance(

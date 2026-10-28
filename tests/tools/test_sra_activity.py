@@ -66,6 +66,8 @@ async def test_fetch_failure_preserves_module_and_exception(
     record = messages[0].record
     assert record["extra"]["module"] == "SRA活动"
     assert record["exception"].type is error_type
+    assert record["exception"].traceback is not None
     for text in (log_path.read_text(encoding="utf-8"), str(messages[0])):
         assert record["extra"]["module"] in text
         assert error_type.__name__ in text
+        assert "Traceback" in text
