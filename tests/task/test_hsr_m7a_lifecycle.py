@@ -7,7 +7,9 @@ from contextlib import suppress
 import psutil
 import pytest
 
+from app.models.config import HSRConfig
 from app.task.HSR.tools import m7a_runtime, native_control
+from app.task.HSR.tools.account_switch import configure_m7a_runner
 from app.utils import ProcessManager
 
 
@@ -37,15 +39,21 @@ def simulator(tmp_path, monkeypatch):
     monkeypatch.setattr(ProcessManager, "open_process", open_python)
     monkeypatch.setattr(native_control, "M7ARunner", short_grace)
 
-    def build(body, *, callback=None, managed=False):
+    def build(body, *, callback=None, managed=False, platform=None):
         (tmp_path / "simulate.py").write_text(body, encoding="utf-8")
+        config = HSRConfig(Game={"Platform": platform}) if platform else None
         if managed:
-            return m7a_runtime.M7ARunner(
+            runner = m7a_runtime.M7ARunner(
                 tmp_path,
                 completion_grace_timeout=0.15,
                 output_line_callback=callback,
             )
-        return native_control.M7ADirectControlSession(tmp_path, lambda _: None)
+            if config is not None:
+                configure_m7a_runner(runner, config)
+            return runner
+        return native_control.M7ADirectControlSession(
+            tmp_path, lambda _: None, script_config=config
+        )
 
     yield build, tmp_path, processes
     assert config.read_bytes() == b"sentinel: unchanged\n"
@@ -100,7 +108,10 @@ def test_exit_with_inherited_pipes_preserves_result(simulator, code, marker):
             assert result.returncode == code
             assert result.success is (code == 0)
             assert "command timed out" not in result.error
-            assert ("native output" in result.summary) if code == 0 else result.error
+            if code == 0:
+                assert "native output" in result.summary
+            else:
+                assert "native output" in result.error
             assert processes[0].returncode == code
             assert session._runner._process_manager.main_process is None
             for fd in (1, 2):
@@ -521,8 +532,9 @@ def test_cloud_policy_terminates_the_owned_subtree(simulator, cancel):
         + ("print('停止运行', flush=True)\n" if not cancel else "")
         + "import time\ntime.sleep(30)\n",
         managed=True,
+        platform="Cloud",
     )
-    runner.kill_tree = True
+    assert runner.kill_tree is True
 
     async def scenario():
         before = set(asyncio.all_tasks())

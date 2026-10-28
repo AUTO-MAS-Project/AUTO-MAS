@@ -22,6 +22,7 @@
 
 import asyncio
 import os
+import time
 from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass
@@ -141,6 +142,11 @@ class M7ARunner:
         self._m7a_dir = Path(m7a_dir)
         self._m7a_exe = self._m7a_dir / "March7th Assistant.exe"
         self._process_manager = ProcessManager()
+        # 同一运行器跨模块/用户复用；命令连同收尾串行，排队取消不触碰当前进程。
+        self._command_lock = asyncio.Lock()
+        self._termination_lock = asyncio.Lock()
+        self._tree_root: psutil.Process | None = None
+        self._tree_children: set[psutil.Process] = set()
         self._log_callback = log_callback
         self._output_line_callback = output_line_callback
         self._completion_grace_timeout = completion_grace_timeout
@@ -172,12 +178,18 @@ class M7ARunner:
     async def terminate_current_process(self) -> bool:
         """终止当前 M7A 子进程。"""
 
-        if not await self._process_manager.is_running():
-            return False
+        process = self._process_manager.main_process
+        async with self._termination_lock:
+            if process is not self._process_manager.main_process:
+                return False
+            if not await self._process_manager.is_running():
+                return False
 
-        logger.warning("正在终止三月七当前子进程")
-        await self._process_manager.kill()
-        return True
+            logger.warning("正在终止三月七当前子进程")
+            await self._wait_for_cleanup(
+                asyncio.create_task(self._process_manager.kill())
+            )
+            return True
 
     async def terminate(self) -> bool:
         """停止、超时、收尾统一走这里：按 ``kill_tree`` 选按树终止或只杀主进程。
@@ -199,31 +211,119 @@ class M7ARunner:
         期间它不再派生新的。
         """
 
-        pid = self._process_manager.main_pid
-        if pid is None or not await self._process_manager.is_running():
-            return False
+        process = self._process_manager.main_process
+        async with self._termination_lock:
+            # 后台停止可能在上一命令清理后才获得执行机会，不能清理下一命令。
+            if process is not self._process_manager.main_process:
+                return False
+            if isinstance(process, asyncio.subprocess.Process):
+                await self._remember_process_tree(process)
+            root = self._tree_root
+            children = set(self._tree_children)
+            if process is None and not children:
+                return False
 
-        def _kill_descendants() -> int:
-            try:
-                root = psutil.Process(pid)
-            except psutil.Error:
-                return 0
-            with suppress(psutil.Error):
-                root.suspend()
-            try:
-                children = root.children(recursive=True)
-            except psutil.Error:
-                children = []
-            for child in children:
-                with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-                    child.kill()
-            psutil.wait_procs(children, timeout=3)
-            return len(children)
+            def _kill_descendants() -> int:
+                if root is not None and root.is_running():
+                    with suppress(psutil.Error):
+                        root.suspend()
+                    with suppress(psutil.Error):
+                        for child in root.children(recursive=True):
+                            # 只有可读取创建时间的对象才可用于稍后的身份校验。
+                            with suppress(psutil.Error):
+                                child.create_time()
+                                children.add(child)
+                killed = []
+                failed = 0
+                for child in children:
+                    try:
+                        # psutil 按 PID + 创建时间校验，禁止用旧 PID 重建对象来杀。
+                        if (
+                            child.is_running()
+                            and child.status() != psutil.STATUS_ZOMBIE
+                        ):
+                            child.kill()
+                            killed.append(child)
+                    except psutil.NoSuchProcess:
+                        pass
+                    except psutil.AccessDenied:
+                        failed += 1
+                count = len(killed)
+                # 已退出的孤儿在部分宿主上暂为 zombie；不能等宿主回收 PID 才继续。
+                deadline = time.monotonic() + 3
+                while killed and time.monotonic() < deadline:
+                    _, alive = psutil.wait_procs(killed, timeout=0.05)
+                    killed = []
+                    for child in alive:
+                        try:
+                            if child.status() != psutil.STATUS_ZOMBIE:
+                                killed.append(child)
+                        except psutil.NoSuchProcess:
+                            pass
+                        except psutil.AccessDenied:
+                            failed += 1
+                if killed or failed:
+                    raise RuntimeError(
+                        f"有 {len(killed) + failed} 个三月七云端后代未能终止"
+                    )
+                return count
 
-        count = await asyncio.to_thread(_kill_descendants)
-        logger.warning(f"正在按进程树终止三月七（子进程 {count} 个）")
-        await self._process_manager.kill()
-        return True
+            try:
+                kill_task = asyncio.create_task(asyncio.to_thread(_kill_descendants))
+                await self._wait_for_cleanup(kill_task)
+                count = kill_task.result()
+            finally:
+                # 后代处理异常也必须结束可能已被冻结的主进程，不能直接丢掉跟踪。
+                await self._wait_for_cleanup(
+                    asyncio.create_task(self._process_manager.kill())
+                )
+            if root is None and process is not None:
+                logger.warning(
+                    "未能在三月七退出前确认后代归属，仅清理已知进程，不扫描孤儿进程"
+                )
+            logger.warning(f"正在按进程树终止三月七（子进程 {count} 个）")
+            return True
+
+    async def _remember_process_tree(self, proc: asyncio.subprocess.Process) -> None:
+        """在父进程仍可确认时记录云端后代身份，供父进程退出后清理。
+
+        首次采样前或快照间隙产生且已脱离的后代无法补认，不按名称或裸 PID 扫描。
+        """
+
+        known_root = self._tree_root
+
+        def _snapshot():
+            root = known_root
+            children = []
+            try:
+                if root is None:
+                    if proc.returncode is not None:
+                        return None, children
+                    candidate = psutil.Process(proc.pid)
+                    candidate.create_time()
+                    root = candidate
+                if root.is_running():
+                    for child in root.children(recursive=True):
+                        with suppress(psutil.Error):
+                            child.create_time()
+                            children.append(child)
+            except psutil.Error:
+                pass
+            return root, children
+
+        # 退出观察器也可能在快照期间被取消，先接收已确认的身份，再传播取消。
+        snapshot = asyncio.create_task(asyncio.to_thread(_snapshot))
+        cancelled = False
+        try:
+            await self._wait_for_cleanup(snapshot)
+        except asyncio.CancelledError:
+            cancelled = True
+        root, children = snapshot.result()
+        if self._process_manager.main_process is proc:
+            self._tree_root = root
+            self._tree_children.update(children)
+        if cancelled:
+            raise asyncio.CancelledError
 
     def _emit_process_output(self, title: str, text: str) -> None:
         emit_process_output(self._log_callback, title, text)
@@ -282,11 +382,16 @@ class M7ARunner:
             return False
         return True
 
-    @staticmethod
-    async def _wait_for_process_exit(proc: asyncio.subprocess.Process) -> None:
+    async def _wait_for_process_exit(self, proc: asyncio.subprocess.Process) -> None:
         # asyncio 的 wait() 在部分平台会连同管道 EOF 一起等待；returncode
         # 由子进程退出通知更新，不受后代继承 stdout/stderr 的影响。
+        next_snapshot = 0.0
         while proc.returncode is None:
+            now = asyncio.get_running_loop().time()
+            if self.kill_tree and now >= next_snapshot:
+                async with self._termination_lock:
+                    await self._remember_process_tree(proc)
+                next_snapshot = now + 0.25
             await asyncio.sleep(0.05)
 
     @staticmethod
@@ -312,6 +417,8 @@ class M7ARunner:
                 await self.terminate()
             finally:
                 await self._process_manager.clear()
+                self._tree_root = None
+                self._tree_children.clear()
 
     @staticmethod
     async def _wait_for_cleanup(cleanup: asyncio.Future) -> None:
@@ -429,13 +536,8 @@ class M7ARunner:
             try:
                 await asyncio.wait_for(
                     asyncio.shield(read_group),
-                    timeout=max(
-                        0,
-                        min(
-                            self._completion_grace_timeout,
-                            deadline - asyncio.get_running_loop().time(),
-                        ),
-                    ),
+                    # 进程已结束，排空预算独立于命令截止时间，避免丢掉已写出的尾部错误。
+                    timeout=self._completion_grace_timeout,
                 )
             except asyncio.TimeoutError:
                 if read_group.done():
@@ -449,15 +551,20 @@ class M7ARunner:
             for task in (*read_tasks, exit_wait, completion_wait):
                 task.cancel()
             self._close_process_pipes(proc)
-            await self._wait_for_cleanup(
-                asyncio.gather(
-                    *read_tasks,
-                    read_group,
-                    exit_wait,
-                    completion_wait,
-                    return_exceptions=True,
+            try:
+                # 超时/取消时先停主进程，再等回调的 finally，避免清理拖延实际执行。
+                if proc.returncode is None:
+                    await self._wait_for_cleanup(asyncio.create_task(self.terminate()))
+            finally:
+                await self._wait_for_cleanup(
+                    asyncio.gather(
+                        *read_tasks,
+                        read_group,
+                        exit_wait,
+                        completion_wait,
+                        return_exceptions=True,
+                    )
                 )
-            )
 
         return (
             "\n".join(stdout_lines).strip(),
@@ -468,8 +575,14 @@ class M7ARunner:
     async def run_task(self, task_name: str, timeout: int = 600) -> M7ACommandResult:
         """执行一条 M7A 命令。"""
 
+        async with self._command_lock:
+            return await self._run_task(task_name, timeout)
+
+    async def _run_task(self, task_name: str, timeout: int) -> M7ACommandResult:
         started_at = datetime.now(timezone.utc)
         self._recent_output.clear()
+        self._tree_root = None
+        self._tree_children.clear()
         proc: asyncio.subprocess.Process | None = None
 
         if not self._m7a_exe.exists():
@@ -498,6 +611,9 @@ class M7ARunner:
             if not isinstance(process, asyncio.subprocess.Process):
                 raise RuntimeError("三月七子进程启动后未能被 ProcessManager 跟踪")
             proc = process
+            if self.kill_tree:
+                async with self._termination_lock:
+                    await self._remember_process_tree(proc)
             (
                 stdout,
                 stderr,
@@ -527,7 +643,7 @@ class M7ARunner:
                 exe_path=str(self._m7a_exe),
                 success=success,
                 output=stdout,
-                error=stderr or (stdout if not success else ""),
+                error=stderr if success else combined_output.strip(),
                 returncode=proc.returncode or 0,
                 started_at=started_at,
                 finished_at=datetime.now(timezone.utc),
