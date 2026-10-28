@@ -46,7 +46,7 @@ import json
 from pathlib import Path
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceInfo, DeviceRef
+from app.models.emulator import DeviceInfo, DeviceRef, EmulatorRuntimePolicy
 from app.utils import ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
 
@@ -254,7 +254,7 @@ class MuMu6Manager(AppLaunchMixin, _utils_emulator.mumu.MumuManager):
         禁用之后桌面已经画好的 widget 不会自己消失，要重启一次桌面才看得到；恢复时不动桌面，
         桌面内容下次自然刷新。任何一步失败只记警告。
         """
-        enabled = is_master_mode_enabled()
+        enabled = is_master_mode_enabled(self.runtime_policy.block_ads_enabled)
         output = await self._root_shell(idx, mumu_component_shell(enabled))
         if output is None:
             return
@@ -613,7 +613,11 @@ class MuMu6Manager(AppLaunchMixin, _utils_emulator.mumu.MumuManager):
 
 
 async def build_manager(
-    manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
+    manager_exe: str,
+    max_wait_time: int,
+    force_kill_on_close: bool = False,
+    *,
+    runtime_policy: EmulatorRuntimePolicy,
 ) -> MuMu6Manager:
     """为一条 MuMu 安装合成配置并构造管理器。
 
@@ -631,4 +635,4 @@ async def build_manager(
         }
     )
     await config.activate()
-    return MuMu6Manager(config)
+    return MuMu6Manager(config, runtime_policy=runtime_policy)

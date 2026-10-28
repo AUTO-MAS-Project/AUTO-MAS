@@ -21,7 +21,12 @@ import psutil
 from pydantic import BaseModel
 
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimePolicy,
+)
 from app.utils import IS_WINDOWS, ProcessRunner, get_logger
 from app.utils import emulator as _utils_emulator
 from app.utils import window as platform_window
@@ -51,7 +56,9 @@ class LDManager(DeviceBase):
     基于dnconsole.exe的模拟器管理
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(
+        self, config: EmulatorConfig, *, runtime_policy: EmulatorRuntimePolicy
+    ) -> None:
         emulator_path = config.Info.Path
         if emulator_path is None or not emulator_path.exists():
             raise FileNotFoundError(f"LDPlayerManager.exe文件不存在: {emulator_path}")
@@ -60,6 +67,7 @@ class LDManager(DeviceBase):
             raise ValueError("配置的模拟器类型不是ldplayer")
 
         self.config = config
+        self.runtime_policy = runtime_policy
 
         self.emulator_path = emulator_path
 
@@ -83,12 +91,9 @@ class LDManager(DeviceBase):
             self.emulator_path.parent / "vms" / "config" / f"leidian{idx_text}.config"
         )
 
-    @staticmethod
-    def _is_config_guard_enabled() -> bool:
+    def _is_config_guard_enabled(self) -> bool:
         try:
-            from app.core import Config
-
-            return bool(Config.setting.Function.IfBlockAd)
+            return bool(self.runtime_policy.block_ads_enabled())
         except Exception as e:
             logger.warning(f"读取雷电模拟器配置保护开关失败: {e}")
             return False
@@ -172,7 +177,9 @@ class LDManager(DeviceBase):
         # 延迟导入：本模块是 2.0 的基类，模块加载期导入 emulator2 会形成导入环
         from app.utils import emulator2 as _utils_emulator2
 
-        enabled = _utils_emulator2.master_mode.is_master_mode_enabled()
+        enabled = _utils_emulator2.master_mode.is_master_mode_enabled(
+            self.runtime_policy.block_ads_enabled
+        )
         try:
             result = await ProcessRunner.run_process(
                 self.emulator_path,
@@ -230,14 +237,13 @@ class LDManager(DeviceBase):
                     if package_name != "" and self.config.Info.MaxWaitTime > 60
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
-                from app.core import Config
-
-                if Config.setting.Function.IfBlockAd:
+                if self.runtime_policy.block_ads_enabled():
                     await self._block_ads_via_adb(idx)
                 await _utils_emulator.tools.apply_launch_audio_mute(
                     states_store=self._audio_mute_states,
                     idx=idx,
                     resolve_pids=lambda: self._resolve_audio_pids(idx),
+                    silence_enabled=self.runtime_policy.silence_enabled,
                 )
                 return (await self.getInfo(idx))[idx]
 

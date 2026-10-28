@@ -491,6 +491,8 @@ async def apply_launch_audio_mute(
     states_store: Dict[str, AudioMuteRecord],
     idx: str,
     resolve_pids: Callable[[], Awaitable[List[int]]],
+    *,
+    silence_enabled: Callable[[], bool],
 ) -> None:
     """静默模式下静音全新启动实例的声音，把记录存入 ``states_store``。
 
@@ -502,9 +504,7 @@ async def apply_launch_audio_mute(
     if not IS_WINDOWS:
         return
     try:
-        from app.core import Config
-
-        if not Config.setting.Function.IfSilence:
+        if not silence_enabled():
             return
         pids = await resolve_pids()
         if not pids:
