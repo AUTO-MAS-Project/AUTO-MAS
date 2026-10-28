@@ -742,6 +742,7 @@ class Task(TaskExecuteBase):
         from app.services.telemetry import record_count
 
         outcome = "error"
+        partial_failure = "unknown"
         run = (
             WSTaskScriptStartedData(
                 taskId=self.task_info.task_id,
@@ -777,6 +778,7 @@ class Task(TaskExecuteBase):
                 outcome = "failed" if script_item.status == "异常" else "no_user"
             elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
                 outcome = "success"
+                partial_failure = "yes" if "部分失败" in user_statuses else "no"
             elif "异常" in user_statuses:
                 outcome = "failed"
             else:
@@ -798,7 +800,11 @@ class Task(TaskExecuteBase):
             if run is not None and started is not None:
                 _publish_script_observation(
                     message_type=protocol.TASK_SCRIPT_FINISHED,
-                    data=WSTaskScriptFinishedData(**run.model_dump(), outcome=outcome),
+                    data=WSTaskScriptFinishedData(
+                        **run.model_dump(),
+                        outcome=outcome,
+                        partialFailure=partial_failure,
+                    ),
                     after=started,
                 )
 

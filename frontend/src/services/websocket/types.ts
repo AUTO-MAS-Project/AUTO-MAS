@@ -164,6 +164,7 @@ export interface WSTaskScriptStartedData {
 
 export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
   outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+  partialFailure?: 'yes' | 'no' | 'unknown'
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */

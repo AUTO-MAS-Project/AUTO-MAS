@@ -255,6 +255,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     mode: 'AutoProxy' | 'CycleRun'
     script_type: AnalyticsScriptType
     outcome: 'success' | 'failed' | 'skipped' | 'no_user' | 'incomplete' | 'error' | 'cancelled'
+    partial_failure: 'yes' | 'no' | 'unknown'
     duration_bucket: AnalyticsDurationBucket
   }
   native_config_action_finished: {

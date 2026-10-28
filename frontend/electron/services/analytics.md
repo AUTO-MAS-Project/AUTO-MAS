@@ -35,7 +35,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `queue_schedule_changed` | 定时、循环及启动调度设置 | `schedule_kind`、`action`、`outcome`、耗时桶 | 实际写入结果，不记录日期时刻 |
 | `plan_manage_finished` | 计划基础记录创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket`、`outcome`、耗时桶 | 每次实际管理请求 |
 | `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
-| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、耗时桶 | 开始、结束都收到的样本 |
+| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、`partial_failure`、耗时桶 | 开始、结束都收到的样本 |
 | `native_config_action_finished` | 原生配置打开、查看、保存/关闭请求及丢弃通知 | `script_type`、`operation`、`outcome`、耗时桶 | 每次实际请求；重复丢弃帧去重 |
 | `config_restore_finished` | MAS/原生备份恢复与强制确认结果 | `script_type`、`target_kind`、`forced`、`outcome`、耗时桶 | 每次实际恢复请求 |
 | `community_login_finished` | 米游社、森空岛扫码会话的终态 | `provider`、`stage`、`outcome`、耗时桶 | 每次生成尝试一个终态，不逐次轮询 |
@@ -139,6 +139,7 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 专项独有保存、导入与计划编辑使用下述显式事件边界，不把配置内容带入共享统计。
 
 四种任务模式独立标记；受理不代表执行成功，跨专项整体结果标为 `multi`，不复制为各专项成功。
+整任务 `success` 只表示任务执行器正常收尾，不保证各脚本或账号的执行均成功。
 任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
 进程重启或集合淘汰后不保证精确一次。没有完整收到创建和完成的任务不推断结局，
 不能以观察完成数除以全部请求数声称全量成功率。
@@ -161,6 +162,10 @@ Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unkn
 `script_run_started` 表示进入执行流程，可能随后预检失败、无用户或因维护全部跳过，
 不等于游戏内任务已执行或已成功。结束结果分别为 `success`、`failed`、`skipped`、`no_user`、
 `incomplete`、`error`、`cancelled`，复用现有 MAS 状态，不读取上游内部数据。
+`success` 沿用调度口径，包含 BetterGI 的「部分失败」；新增 `partial_failure=yes/no/unknown`
+分别表示 MAS 状态中出现部分失败、未出现部分失败及无法判断；`no` 不保证上游每一步均成功。
+非成功结果、旧后端与历史事件不推断该字段；
+缺少字段的历史 `success` 不能视作 `no`。
 轮次 ID 和任务 ID 仅用于本机 WS 关联与最多 128 项的内存去重，不发送至 Aptabase。
 重复边界不增加次数，恢复快照不补报；缺失开始、断线、退出或关闭遥测造成的样本不推测结局。
 后端逐轮消息通过运行时任务注册表后台发送，最多 32 项在途，拥塞时直接丢弃；
