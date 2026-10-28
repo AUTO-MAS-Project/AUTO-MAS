@@ -9,7 +9,6 @@ on:
       - opened
       - synchronize
       - reopened
-      - edited
     branches:
       - dev
 
