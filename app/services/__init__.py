@@ -24,7 +24,7 @@ from importlib import import_module
 
 _EXPORTS = {
     "ConfigCenter": ".config_center",
-    "ConfigCenterError": ".config_center",
+    "ConfigCenterError": ".config_center_errors",
     "Matomo": ".matomo",
     "System": ".system",
 }
