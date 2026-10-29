@@ -70,6 +70,7 @@ from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
     get_resource_write_lock,
+    has_incomplete_resource_update,
     latest_resource_clock,
     prepare_install_resources,
     read_resource_clock,
@@ -89,6 +90,7 @@ from .tools.software_update import (
     prepare_maa_software_before_run,
     read_installed_release,
 )
+from .tools.update_config import restore_maa_update_config
 from .tools.update_credentials import (
     resolve_takeover_credentials,
     use_maa_github_update,
@@ -179,6 +181,11 @@ class MaaManager(ScriptManagerBase):
                                 "请等待更新结束并退出 MAA 后，从原生配置备份恢复"
                             )
                         else:
+                            restore_maa_update_config(
+                                self.maa_set_path.parent,
+                                snapshot_path=self.temp_path,
+                                script_id=self.script_info.script_id,
+                            )
                             # 通知、用户收尾异常或中止也必须恢复，再保留尚未安装的登记。
                             if (
                                 self.temp_path.exists()
@@ -433,6 +440,13 @@ class MaaManager(ScriptManagerBase):
                     files=files,
                     store_root=native_backup_root(self.maa_set_path),
                 )
+        # prepare 已确认官方更新器退出；先撤销首次账号注入之前的安装配置。
+        # 按字段比较注入值，其他现场修改仍交给原快照指纹保护。
+        restore_maa_update_config(
+            self.maa_set_path.parent,
+            snapshot_path=self.temp_path,
+            script_id=self.script_info.script_id,
+        )
         result = _utils_io.recover_native_config(
             self.temp_path,
             self.maa_set_path,
@@ -563,6 +577,10 @@ class MaaManager(ScriptManagerBase):
     async def _prepare_software_update(self, task: AutoProxyTask) -> bool:
         """启动前尽力更新；普通准备失败时沿用当前安装继续任务。"""
         if not self.script_config.Update.TakeoverEnabled:
+            if has_incomplete_resource_update(self.maa_set_path.parent):
+                raise MaaUpdateUnsafeError(
+                    "MAA 资源更新未完成，请开启更新接管修复后重试"
+                )
             return False
         try:
             return await self._prepare_software_update_strict(task)
@@ -590,6 +608,7 @@ class MaaManager(ScriptManagerBase):
                 or parse_version(installed[0]) is None
                 or read_resource_clock(root) is None
                 or has_delegated_update_failure(root)
+                or has_incomplete_resource_update(root)
             ):
                 raise MaaUpdateUnsafeError(
                     "MAA 当前安装或资源状态无法确认，不能安全沿用旧版运行"
@@ -634,6 +653,7 @@ class MaaManager(ScriptManagerBase):
             if (
                 compare_versions(parse_version(release[0]), parse_version(latest)) == 0
                 and clock >= target_clock
+                and not has_incomplete_resource_update(self.maa_set_path.parent)
             ):
                 self.script_info.log = "MAA 本体及资源均已是最新版本，开始运行"
                 return True
@@ -705,7 +725,11 @@ class MaaManager(ScriptManagerBase):
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
         self.script_info.log = "正在等待 MAA 官方更新器处理本地更新包"
         try:
-            await update_maa(self.maa_set_path.parent)
+            await update_maa(
+                self.maa_set_path.parent,
+                snapshot_path=self.temp_path,
+                script_id=self.script_info.script_id,
+            )
         except MaaUpdaterRunningError:
             self._updater_running = True
             raise

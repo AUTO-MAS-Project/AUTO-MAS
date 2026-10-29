@@ -5,7 +5,7 @@ import json
 import zipfile
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -355,8 +355,9 @@ async def test_manager_installs_software_before_resources(installation, monkeypa
     root, _, _ = installation
     instance = object.__new__(manager.MaaManager)
     instance.script_config = script_config()
-    instance.script_info = SimpleNamespace(log="")
+    instance.script_info = SimpleNamespace(log="", script_id="test-script")
     instance.maa_set_path = root / "config"
+    instance.temp_path = root / "Temp"
     instance._updater_running = False
     steps = []
     monkeypatch.setattr(manager, "read_pending_update", lambda root: ("", ""))
@@ -391,8 +392,9 @@ async def test_unconfirmed_installation_never_updates_resources(
     root, _, _ = installation
     instance = object.__new__(manager.MaaManager)
     instance.script_config = script_config()
-    instance.script_info = SimpleNamespace(log="")
+    instance.script_info = SimpleNamespace(log="", script_id="test-script")
     instance.maa_set_path = root / "config"
+    instance.temp_path = root / "Temp"
     instance._updater_running = False
     monkeypatch.setattr(manager, "read_pending_update", lambda root: ("", ""))
     monkeypatch.setattr(
@@ -696,3 +698,88 @@ async def test_resource_write_failure_cannot_be_ignored(
     with pytest.raises(expected):
         await resource.prepare_install_resources(install, cdk=None, github=True)
     assert not resource._prepare_install_lock.locked()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["partial", "after_version"])
+async def test_interrupted_resource_merge_blocks_next_run_until_repaired(
+    resource_install, monkeypatch, failure
+):
+    from app.task.MAA.tools import resource_package
+    from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+
+    install, target, downloader = resource_install
+    (install / "MAA.exe").touch()
+    tasks = install / "resource/tasks"
+    tasks.mkdir()
+    (tasks / "a.json").write_text("old-a")
+    (tasks / "b.json").write_text("old-b")
+    download = downloader.side_effect
+
+    async def package(url, path, **kwargs):
+        await download(url, path, **kwargs)
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("MaaResource-main/resource/tasks/a.json", "new-a")
+            archive.writestr("MaaResource-main/resource/tasks/b.json", "new-b")
+
+    downloader.side_effect = package
+    copy = resource_package._copy_if_changed
+
+    def interrupted(src, dst, **kwargs):
+        if failure == "partial" and str(dst).endswith("b.json"):
+            raise OSError("injected resource write failure")
+        result = copy(src, dst, **kwargs)
+        if failure == "after_version" and str(dst).endswith("version.json"):
+            raise OSError("interrupted after version commit")
+        return result
+
+    monkeypatch.setattr(resource_package, "_copy_if_changed", interrupted)
+    with pytest.raises(MaaUpdateUnsafeError):
+        await resource.prepare_install_resources(install, cdk=None, github=True)
+    assert resource.has_incomplete_resource_update(install)
+    assert (tasks / "a.json").read_text() == "new-a"
+    assert (tasks / "b.json").read_text() == (
+        "old-b" if failure == "partial" else "new-b"
+    )
+    assert (resource.read_resource_clock(install) == target) is (
+        failure == "after_version"
+    )
+
+    scheduler = object.__new__(manager.MaaManager)
+    scheduler.script_config = script_config()
+    scheduler.script_info = SimpleNamespace(log="")
+    scheduler.task_info = SimpleNamespace(task_id="test-task")
+    scheduler.maa_set_path = install / "config"
+    scheduler._updater_running = False
+    monkeypatch.setattr(
+        scheduler, "_prepare_updates_once", AsyncMock(side_effect=TimeoutError())
+    )
+    monkeypatch.setattr(scheduler, "_remember_pending_update", Mock())
+    monkeypatch.setattr(
+        manager, "read_installed_release", lambda root: ("v6.0.0", "x64")
+    )
+    monkeypatch.setattr(manager, "has_delegated_update_failure", lambda root: False)
+    monkeypatch.setattr(
+        manager.System, "is_process_running", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(manager.Publisher, "send", AsyncMock())
+    task = SimpleNamespace(update_config_dir=install / "config")
+    # 上一轮旧时钟仍可读，或版本文件已写完，都不能在本轮断网后放行。
+    with pytest.raises(MaaUpdateUnsafeError):
+        await scheduler._prepare_software_update(task)
+    scheduler._remember_pending_update.assert_not_called()
+    scheduler.script_config.Update.TakeoverEnabled = False
+    with pytest.raises(MaaUpdateUnsafeError):
+        await scheduler._prepare_software_update(task)
+    scheduler.script_config.Update.TakeoverEnabled = True
+
+    monkeypatch.setattr(resource_package, "_copy_if_changed", copy)
+    await resource.prepare_install_resources(install, cdk=None, github=True)
+    assert not resource.has_incomplete_resource_update(install)
+    assert (tasks / "a.json").read_text() == "new-a"
+    assert (tasks / "b.json").read_text() == "new-b"
+    assert resource.read_resource_clock(install) == target
+    downloader.assert_awaited_once()
+    # 已完整修复后，后续单纯断网可重新沿用当前安装。
+    assert await scheduler._prepare_software_update(task) is False
+    scheduler._remember_pending_update.assert_called_once()

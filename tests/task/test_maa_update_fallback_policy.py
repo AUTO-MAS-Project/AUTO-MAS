@@ -19,9 +19,10 @@ def managed_run(tmp_path, monkeypatch):
     instance.script_config = SimpleNamespace(
         Update=SimpleNamespace(TakeoverEnabled=True)
     )
-    instance.script_info = SimpleNamespace(log="")
+    instance.script_info = SimpleNamespace(log="", script_id="script-test")
     instance.task_info = SimpleNamespace(task_id="test-task")
     instance.maa_set_path = tmp_path / "config"
+    instance.temp_path = tmp_path / "snapshot"
     instance._updater_running = False
     monkeypatch.setattr(instance, "_remember_pending_update", Mock())
     monkeypatch.setattr(

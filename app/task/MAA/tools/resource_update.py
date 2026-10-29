@@ -606,14 +606,31 @@ def _stage_reusable(stage: dict[str, object] | None, target: datetime) -> bool:
     return stage_target >= target
 
 
+def has_incomplete_resource_update(install: Path) -> bool:
+    """安装目录曾开始覆盖资源但尚未完成校验；跨任务保留，不能按旧时钟放行。"""
+    return (install / ".automas-resource-update.json").exists()
+
+
 def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
     """合并前复读版本并检查暂存有效，写完核对时钟；跳过返回 False。"""
     current = read_resource_clock(install)
-    if current is None or current >= stage_clock:
+    incomplete = has_incomplete_resource_update(install)
+    if current is None or (current >= stage_clock and not incomplete):
         return False
+    if current > stage_clock:
+        raise MaaUpdateUnsafeError("资源修复缓存早于当前安装，请重新下载资源")
+    marker = install / ".automas-resource-update.json"
+    if incomplete:
+        interrupted_target = parse_iso(_utils_io.read_dict_file(marker).get("target"))
+        if interrupted_target is None or stage_clock < interrupted_target:
+            raise MaaUpdateUnsafeError(
+                "资源修复缓存未达到上次中断的目标，请重新下载资源"
+            )
     manifest = _load_valid_manifest()
     if manifest is None:
         return False
+    # 标记先于第一次覆盖落盘；异常、取消或进程退出均不得清除。
+    _utils_io.write_file(marker, {"target": stage_clock.isoformat()})
     merge_package_tree(
         _STAGE_DIR / "resource",
         install / "resource",
@@ -622,6 +639,8 @@ def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
     done = read_resource_clock(install)
     if done is None or done < stage_clock:
         raise RuntimeError(f"合并后时钟为 {done}，期望 {stage_clock}")
+    # merge_package_tree 已逐文件验证摘要及清单，版本复核通过后才提交完成。
+    marker.unlink()
     return True
 
 
@@ -771,7 +790,11 @@ async def _distribute_resource_stage(
         _MANIFEST_FILE.unlink(missing_ok=True)
         return
 
-    candidates = [install for install, clock in clocks.items() if clock < stage_clock]
+    candidates = [
+        install
+        for install, clock in clocks.items()
+        if clock < stage_clock or has_incomplete_resource_update(install)
+    ]
 
     if not candidates:
         return
@@ -985,7 +1008,7 @@ async def prepare_install_resources(
                 raise RuntimeError("MAA 缺少资源版本，请先在 MAA 内完成修复")
             await _report(progress, "启动前检查 MAA 资源更新…")
             target = await latest_resource_clock(github=github, current=current)
-            if current >= target:
+            if current >= target and not has_incomplete_resource_update(install):
                 return
             stage = await asyncio.to_thread(_load_valid_manifest)
             if not _stage_reusable(stage, target):
@@ -1033,7 +1056,11 @@ async def prepare_install_resources(
             try:
                 await _run_write_thread(_apply_stage, install, stage_clock, cdk or "")
                 installed = await asyncio.to_thread(read_resource_clock, install)
-                if installed is None or installed < target:
+                if (
+                    installed is None
+                    or installed < target
+                    or has_incomplete_resource_update(install)
+                ):
                     raise RuntimeError("MAA 资源更新未完成，已停止启动")
             except Exception as error:
                 raise MaaUpdateUnsafeError(
