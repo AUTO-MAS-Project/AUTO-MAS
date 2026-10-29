@@ -67,9 +67,11 @@ async def test_installs_and_verifies_before_clearing_marker(installation):
     await update.ensure_backend_updated(installation)
     assert not update.pending_marker(installation).exists()
     calls = update.run_python.await_args_list
-    assert "download" in calls[0].args
+    assert "wheel" in calls[0].args
+    assert "--no-build-isolation" not in calls[0].args
     assert "install" in calls[1].args
     assert "--no-index" in calls[1].args
+    assert "--only-binary=:all:" in calls[1].args
     assert "--upgrade" in calls[1].args
     assert calls[2].args[1:] == ("-m", "pip", "check")
     assert update.download_file.await_args.kwargs["downloader"] == "builtin"
@@ -297,3 +299,91 @@ def test_release_must_match_official_package_and_digest():
                 ],
             }
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repairing", [False, True])
+async def test_wheel_build_failure_preserves_previous_install_state(
+    installation, repairing
+):
+    marker = update.pending_marker(installation)
+    if repairing:
+        marker.write_text("previous-attempt", encoding="utf-8")
+    directories = []
+
+    async def fail_build(root, *args, **kwargs):
+        assert "wheel" in args
+        assert "--no-build-isolation" not in args
+        directories.append(update.Path(args[args.index("--wheel-dir") + 1]))
+        assert marker.exists() is repairing
+        raise RuntimeError("build dependency unavailable")
+
+    update.run_python.side_effect = fail_build
+    with pytest.raises(RuntimeError, match="build dependency unavailable"):
+        await update.ensure_backend_updated(installation)
+    assert marker.exists() is repairing
+    if repairing:
+        assert marker.read_text(encoding="utf-8") == "previous-attempt"
+    assert directories and all(not directory.exists() for directory in directories)
+    assert update.run_python.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_wheelhouse_is_fresh_and_install_is_binary_only(installation):
+    directories = []
+    marker = update.pending_marker(installation)
+
+    async def run(root, *args, **kwargs):
+        if "wheel" in args:
+            directory = update.Path(args[args.index("--wheel-dir") + 1])
+            assert not list(directory.iterdir())
+            directories.append(directory)
+            assert not marker.exists()
+        elif "install" in args:
+            assert marker.exists()
+            assert "--no-index" in args and "--only-binary=:all:" in args
+            assert update.Path(args[args.index("--find-links") + 1]) == directories[-1]
+        return ""
+
+    update.run_python.side_effect = run
+    update.installed_version.side_effect = [
+        Version("3.1.0"),
+        Version("3.1.1"),
+        Version("3.1.0"),
+        Version("3.1.1"),
+    ]
+    await update.ensure_backend_updated(installation)
+    await update.ensure_backend_updated(installation)
+    assert len(directories) == 2 and directories[0] != directories[1]
+    assert all(not directory.exists() for directory in directories)
+    assert not marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_build_uses_configured_proxy_without_credentials_in_arguments(
+    installation, monkeypatch
+):
+    import httpx
+
+    proxy = httpx.Proxy("http://127.0.0.1:7890", auth=("user", "secret-password"))
+    monkeypatch.setattr(update.Config, "proxy", proxy)
+    update.installed_version.side_effect = [Version("3.1.0"), Version("3.1.1")]
+    await update.ensure_backend_updated(installation)
+    build = update.run_python.await_args_list[0]
+    assert build.kwargs["env"]["https_proxy"] == (
+        "http://user:secret-password@127.0.0.1:7890"
+    )
+    assert "secret-password" not in repr(build.args)
+    assert "env" not in update.run_python.await_args_list[1].kwargs
+
+
+@pytest.mark.asyncio
+async def test_app_repair_does_not_bypass_pending_marker(installation):
+    marker = update.pending_marker(installation)
+    marker.write_text("3.1.1", encoding="utf-8")
+    update.installed_version.return_value = Version("3.1.1")
+    with pytest.raises(update.WhimboxUpdateUnsafeError) as error:
+        await update.confirm_usable_installation(installation)
+    assert str(error.value) == update.RECOVERY_HINT
+    assert marker.exists()
+    update.installed_version.assert_not_awaited()

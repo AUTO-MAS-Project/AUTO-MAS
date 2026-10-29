@@ -13,6 +13,7 @@ import hashlib
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
@@ -24,11 +25,17 @@ from packaging.version import Version
 from app.core import Config
 from app.core.update import download_file
 from app.utils import ProcessRunner
+from app.utils.common.proxy_env import proxy_environment
 
 from .launcher import find_upstream_pids
 from .upstream import APP_EXE_NAME, REL_PYTHON_EXE, WheelAssetsConfigSurface
 
 REPOSITORY = "nikkigallery/Whimbox"
+RECOVERY_HINT = (
+    "奇想盒后端安装尚未确认完成。请关闭奇想盒 app 和后端，"
+    "开启 MAS 的“运行前更新后端”后重新运行，由 MAS 完成安装与校验；"
+    "即使已在 app 内修复，仍需完成这一步。"
+)
 
 
 class WhimboxUpdateUnsafeError(RuntimeError):
@@ -37,9 +44,7 @@ class WhimboxUpdateUnsafeError(RuntimeError):
 
 async def confirm_usable_installation(root: Path) -> None:
     if pending_marker(root).exists():
-        raise WhimboxUpdateUnsafeError(
-            "奇想盒后端安装未完成，请开启运行前更新修复后重试"
-        )
+        raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     if await asyncio.to_thread(find_upstream_pids, root):
         raise WhimboxUpdateUnsafeError("奇想盒仍在运行，请先关闭 app 和后端")
     error = WheelAssetsConfigSurface(root).check_install()
@@ -135,7 +140,12 @@ def select_wheel(release: dict) -> tuple[Version, str, str, str]:
     raise ValueError("奇想盒正式版没有可安装的后端更新包")
 
 
-async def run_python(root: Path, *args: str, timeout: float = 30) -> str:
+async def run_python(
+    root: Path,
+    *args: str,
+    timeout: float = 30,
+    env: Mapping[str, str] | None = None,
+) -> str:
     result = await ProcessRunner.run_process(
         root / REL_PYTHON_EXE,
         "-I",
@@ -143,8 +153,11 @@ async def run_python(root: Path, *args: str, timeout: float = 30) -> str:
         cwd=root,
         timeout=timeout,
         kill_tree_on_cancel=True,
+        env=env,
     )
     if result.returncode != 0:
+        if pending_marker(root).exists():
+            raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
         raise RuntimeError(
             "奇想盒内置 Python 执行失败，请检查目录写入权限或在 app 内修复后端"
         )
@@ -195,47 +208,50 @@ async def ensure_backend_updated(root: Path) -> str:
         source="GitHub",
     )
     await asyncio.to_thread(verify_digest, wheel, digest)
-    # 依赖下载也属于准备阶段：网络失败不修改当前安装，允许沿用旧版。
-    packages = stage / "packages"
-    packages.mkdir(exist_ok=True)
-    await run_python(
-        root,
-        "-m",
-        "pip",
-        "--isolated",
-        "download",
-        "--disable-pip-version-check",
-        "--no-input",
-        "--index-url",
-        "https://pypi.org/simple/",
-        "--dest",
-        str(packages),
-        str(wheel),
-        timeout=10 * 60,
-    )
-    if await asyncio.to_thread(find_upstream_pids, root):
-        raise RuntimeError("下载期间奇想盒已启动，请退出后重试")
-    # pip 是官方安装入口；不自行展开 wheel 或替换 site-packages。
-    marker.write_text(str(target), encoding="utf-8")
-    flags = ("--force-reinstall",) if repairing else ()
-    await run_python(
-        root,
-        "-m",
-        "pip",
-        "--isolated",
-        "install",
-        "--disable-pip-version-check",
-        "--no-input",
-        "--no-index",
-        "--find-links",
-        str(packages),
-        "--upgrade",
-        *flags,
-        str(wheel),
-        timeout=10 * 60,
-    )
+    # 源码依赖在准备阶段隔离构建成 wheel，不往现有后端安装构建工具。
+    # 每轮使用独立目录，避免旧缓存的源码包或版本参与离线安装。
+    with tempfile.TemporaryDirectory(prefix="packages-", dir=stage) as directory:
+        packages = Path(directory)
+        await run_python(
+            root,
+            "-m",
+            "pip",
+            "--isolated",
+            "wheel",
+            "--disable-pip-version-check",
+            "--no-input",
+            "--index-url",
+            "https://pypi.org/simple/",
+            "--wheel-dir",
+            str(packages),
+            str(wheel),
+            timeout=10 * 60,
+            env=proxy_environment(Config.proxy),
+        )
+        if await asyncio.to_thread(find_upstream_pids, root):
+            raise RuntimeError("依赖准备期间奇想盒已启动，请退出后重试")
+        # 只有准备完成才进入写盘阶段；安装失败或取消仍保留标记。
+        marker.write_text(str(target), encoding="utf-8")
+        flags = ("--force-reinstall",) if repairing else ()
+        await run_python(
+            root,
+            "-m",
+            "pip",
+            "--isolated",
+            "install",
+            "--disable-pip-version-check",
+            "--no-input",
+            "--no-index",
+            "--find-links",
+            str(packages),
+            "--only-binary=:all:",
+            "--upgrade",
+            *flags,
+            str(wheel),
+            timeout=10 * 60,
+        )
     if await installed_version(root) != target:
-        raise RuntimeError("奇想盒更新后版本不一致，请重新更新或在 app 内修复后端")
+        raise WhimboxUpdateUnsafeError(RECOVERY_HINT)
     await run_python(root, "-m", "pip", "check")
     await run_python(
         root, "-c", "import importlib.util as u; assert u.find_spec('whimbox.main')"

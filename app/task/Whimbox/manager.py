@@ -43,6 +43,7 @@ from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.update import (
+    RECOVERY_HINT,
     WhimboxUpdateUnsafeError,
     confirm_usable_installation,
     ensure_backend_updated,
@@ -194,9 +195,7 @@ class WhimboxManager(ScriptManagerBase):
                 await push_dispatch_log(self.script_info, result)
             self.check_result = "Pass"
         elif pending_marker(root).exists():
-            self.check_result = (
-                "奇想盒后端安装未完成，请开启运行前更新重试，或在 app 内修复后端"
-            )
+            self.check_result = RECOVERY_HINT
             raise RuntimeError(self.check_result)
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
