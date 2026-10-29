@@ -32,6 +32,7 @@ import {
   resolveRuntimeInitContext,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
   isAnalyticsSender,
   isApplicationWindowSender,
@@ -2526,6 +2527,7 @@ app.on('before-quit', event => {
 
 app.whenReady().then(async () => {
   registerAnalyticsHandlers(() => mainWindow)
+  registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
   refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isAutoStart ? 'auto_start' : 'manual',
