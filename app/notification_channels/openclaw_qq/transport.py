@@ -798,6 +798,54 @@ class Sender:
             message="QQ 已绑定，正在连接消息网关",
         )
 
+    def credential_details(self) -> tuple[str, str, str, bool]:
+        """返回高级配置所需信息，密钥仅返回是否已设置。"""
+
+        app_id, client_secret, user_openid = self._credentials()
+        return self._binding_id, app_id, user_openid, bool(client_secret)
+
+    async def set_credentials(
+        self,
+        *,
+        binding_id: str,
+        app_id: str,
+        client_secret: str | None,
+        user_openid: str,
+    ) -> None:
+        """验证手动凭据后替换绑定，保留失败前的有效配置。"""
+
+        async with self._send_lock, self._credential_lock:
+            if binding_id != self._binding_id:
+                raise ValueError("binding_changed")
+            old_app_id, old_secret, _ = self._credentials()
+            if client_secret is None:
+                if app_id != old_app_id or not old_secret:
+                    raise ValueError("secret_required")
+                client_secret = old_secret
+            if not client_secret.strip():
+                raise ValueError("secret_required")
+            # 不复用令牌缓存，避免新密钥尚未验证就被旧令牌掩盖。
+            response = await self._request_json(
+                "POST",
+                TOKEN_URL,
+                body={"appId": app_id, "clientSecret": client_secret},
+                headers=_headers(),
+                timeout=API_REQUEST_TIMEOUT_SECONDS,
+            )
+            if _business_code(response) not in (None, 0) or not response.get(
+                "access_token"
+            ):
+                raise ValueError("invalid_credentials")
+            async with self._session_lock:
+                self._sessions.clear()
+                self._session_generation += 1
+                await self._save_credentials_locked(
+                    app_id=app_id,
+                    client_secret=client_secret,
+                    user_openid=user_openid,
+                )
+                await self._start_gateway(app_id, client_secret)
+
     async def unbind(self) -> None:
         """解除绑定并清理本地保存的 QQ 协议状态。"""
 
@@ -1301,7 +1349,7 @@ class Sender:
     async def _save_credentials_locked(
         self, *, app_id: str, client_secret: str, user_openid: str
     ) -> None:
-        """在发送与凭据锁已取得时保存扫码返回的凭据。"""
+        """在发送与凭据锁已取得时保存机器人凭据。"""
 
         normalized = _RuntimeCredentials(
             app_id=app_id.strip(),
@@ -1337,7 +1385,7 @@ class Sender:
                 await self.dependencies.config.update(values)
                 logger.warning(
                     "当前平台不支持 Windows DPAPI，QQ 凭据仅保存在本次运行内；"
-                    "应用重启后需要重新扫码"
+                    "应用重启后需要重新绑定"
                 )
             self._runtime_credentials = (
                 None if self._can_persist_secrets() else normalized

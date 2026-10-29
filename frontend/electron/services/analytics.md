@@ -270,3 +270,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
+
+QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。

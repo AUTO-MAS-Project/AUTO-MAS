@@ -4654,5 +4654,13 @@
   "core.themeStore.upload.unchanged": "Neither the package nor the cover has changed",
   "core.themeStore.upload.usePackageCover": "Use the package preview instead",
   "core.themeStore.upload.versionTargetGone": "The resource you uploaded before is no longer on the share site. Switched to uploading a new resource; check the name and submit again",
-  "core.themeStore.version": "Version"
+  "core.themeStore.version": "Version",
+  "core.setting.notify.openclawQqManualTitle": "Advanced: manual bot configuration",
+  "core.setting.notify.openclawQqManualHint": "Enter the AppID, AppSecret and private recipient OpenID from QQ (not a QQ number). Update the OpenID when switching bots and add the bot as a friend first. Saving replaces the current binding; use a test notification to verify the recipient.",
+  "core.setting.notify.openclawQqManualOpenId": "Private recipient OpenID",
+  "core.setting.notify.openclawQqManualKeepSecret": "Leave blank to keep the existing secret",
+  "core.setting.notify.openclawQqManualSave": "Validate and save",
+  "core.setting.notify.openclawQqManualSaved": "Credentials validated and saved; connecting to the gateway",
+  "core.setting.notify.openclawQqManualLoadError": "Unable to load credentials. Please retry.",
+  "core.setting.notify.openclawQqManualSaveError": "Unable to save credentials. Please retry."
 }

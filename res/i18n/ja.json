@@ -4654,5 +4654,13 @@
   "core.themeStore.upload.unchanged": "パッケージもカバーも変更されていません",
   "core.themeStore.upload.usePackageCover": "パッケージのプレビューに戻す",
   "core.themeStore.upload.versionTargetGone": "以前アップロードしたリソースが共有サイトに見つかりません。新しいリソースとしてアップロードするよう切り替えました。名前を確認して再送信してください",
-  "core.themeStore.version": "バージョン"
+  "core.themeStore.version": "バージョン",
+  "core.setting.notify.openclawQqManualTitle": "詳細：ボットを手動設定",
+  "core.setting.notify.openclawQqManualHint": "QQ の AppID、AppSecret と個人宛先 OpenID（QQ 番号ではありません）を入力してください。ボット変更時は OpenID も変更し、先にボットを友だちに追加してください。保存すると現在の連携を置き換えます。宛先はテスト通知で確認してください。",
+  "core.setting.notify.openclawQqManualOpenId": "個人宛先 OpenID",
+  "core.setting.notify.openclawQqManualKeepSecret": "空欄で現在のシークレットを保持",
+  "core.setting.notify.openclawQqManualSave": "検証して保存",
+  "core.setting.notify.openclawQqManualSaved": "認証情報を検証・保存しました。ゲートウェイに接続中です",
+  "core.setting.notify.openclawQqManualLoadError": "設定の読み込みに失敗しました。再試行してください",
+  "core.setting.notify.openclawQqManualSaveError": "保存に失敗しました。再試行してください"
 }

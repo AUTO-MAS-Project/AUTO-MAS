@@ -893,6 +893,8 @@ export type { OkwwUserConfig_NotifyInput } from './models/OkwwUserConfig_NotifyI
 export type { OkwwUserConfig_Task } from './models/OkwwUserConfig_Task';
 export type { OkwwUserConfig_TaskInput } from './models/OkwwUserConfig_TaskInput';
 export type { OkwwUserConfigInput } from './models/OkwwUserConfigInput';
+export type { OpenClawQQCredentialsIn } from './models/OpenClawQQCredentialsIn';
+export type { OpenClawQQCredentialsOut } from './models/OpenClawQQCredentialsOut';
 export type { OpenClawQQGroup } from './models/OpenClawQQGroup';
 export { OpenClawQQGroupsOut } from './models/OpenClawQQGroupsOut';
 export type { OpenClawQQQrCheckIn } from './models/OpenClawQQQrCheckIn';
