@@ -9,6 +9,9 @@
 节点状态，report 统一渲染节点报告和调度台结果。实际通知订阅、渠道发送及
 任务状态仍由宿主负责；app.tools.push_log 仅保留兼容导出。
 
+宿主可声明 LogSpec，通过 get_user_session 绑定用户；session 负责规则注册、
+异常兜底和异步收尾。原有 get_collect 的同步接口继续兼容。
+
 hooks 是采集管线入口的日志预处理层：按配置规则丢弃/改写日志行，供
 LogMonitor（line_hook）与 LogCollect（open 前置处理器）共用同一份规则。
 
@@ -19,12 +22,15 @@ from .collect import LogCollect
 from .factory import LogBox, log_box
 from .hooks import LogHook, apply_hooks, load_hooks, make_line_hook, validate_hook
 from .logtype import LogType
+from .session import LogSpec, UserLogSession
 
 __all__ = [
     "log_box",
     "LogBox",
     "LogCollect",
     "LogType",
+    "LogSpec",
+    "UserLogSession",
     "LogHook",
     "load_hooks",
     "apply_hooks",

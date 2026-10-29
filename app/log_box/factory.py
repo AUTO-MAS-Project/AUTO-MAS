@@ -9,12 +9,33 @@ from pathlib import Path
 from typing import Callable, Iterable, Optional, Union
 
 from .collect import LogCollect
+from .session import LogSpec, LogUser, UserLogSession
 
 PathLike = Union[str, Path]
 
 
 class LogBox:
-    """log_box 采集工厂：get_collect 创建日志采集会话"""
+    """采集工厂：兼容原始会话，并提供按用户声明的托管会话。"""
+
+    def get_user_session(
+        self,
+        spec: LogSpec,
+        *,
+        user: LogUser,
+        mode: str,
+        paths: Optional[Union[PathLike, Iterable[PathLike]]] = None,
+        start_from_end: bool = True,
+        rotated_name: Optional[str] = None,
+    ) -> UserLogSession:
+        """按专项声明创建用户会话；关闭模式不读来源、不编译规则。"""
+        return UserLogSession(
+            spec,
+            user=user,
+            mode=mode,
+            paths=paths,
+            start_from_end=start_from_end,
+            rotated_name=rotated_name,
+        )
 
     def get_collect(
         self,

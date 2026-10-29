@@ -98,11 +98,19 @@ class LogCollect:
 
     def _finalize(self) -> None:
         """内部结束：采集剩余日志、冲刷残留、后置处理并推送。幂等。"""
+        results = self._finish()
+        if results is not None:
+            self._deliver(results)
+
+    def _finish(self, processor: PostProcessor | None = None) -> list[LogEntry] | None:
+        """冻结结果，与宿主交付分离；托管会话可在线程中读取与解析。"""
         if self._closed:
-            return
+            return None
         self._closed = True
+        if processor is not None:
+            self._pipeline.postprocessors.append(processor)
         self._capture()
-        self._deliver(self._pipeline.finish())
+        return self._pipeline.finish()
 
     # ---------- 规则注册 ----------
 

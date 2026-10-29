@@ -71,6 +71,45 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 两者共用同一套采集/前置/匹配/后置逻辑，仅「结果如何落进 push_log」这一跳因宿主而异。
 
+## 声明式用户会话（NTE 已接入）
+
+`push_log.py` 用 `LogSpec` 集中声明规则、前后处理和已有失败提示：
+
+```python
+from app.log_box import LogSpec
+
+LOG_SPEC = LogSpec(
+    rules=tuple(PUSH_RULES),
+    postprocessor=resolve,
+    error_message="专项节点采集失败",
+    failure_text="⚠️ 节点采集失败",  # 沿用该专项原有文案；原来无提示时不填
+)
+```
+
+任务准备时绑定用户和日志位置，收尾时等待交付：
+
+```python
+self.log_collect = log_box.get_user_session(
+    LOG_SPEC,
+    user=self.cur_user_item,
+    mode=self.cur_user_config.Notify.PushLogMode,
+    paths=[self.script_log_path],
+    rotated_name="ok-script.%Y-%m-%d.log",
+)
+# 日志来源声明后再启动脚本，避免把本轮开头的日志当作历史跳过。
+# final_task：返回前已交付最终节点，后续报告继续使用原有公共渲染。
+await self.log_collect.close()
+```
+
+- box 设置用户的展示模式、注册规则、写入 `push_log`，专项不再自写 sink。
+- 关闭模式不创建底层采集器、不编译规则、不读取文件。
+- 来源在绑定时记录偏移；读取、匹配和前后处理在收尾线程执行，交付回到宿主事件循环。
+- 处理器必须是已加载的纯转换函数，不访问宿主配置、任务状态或在函数内冷导入模块。
+- 初始化、处理和交付异常由会话隔离；失败提示只输出一次，不改变脚本结果。
+- 并发和重复收尾共享同一次处理；取消等待时先交付已开始的收尾结果，再传播取消。
+- 这是线程卸载，不提供正则硬超时或强制终止线程；保持等待交付以避免报告漏节点。
+- 当前只迁移 NTE；其他专项的同步 `get_collect`、失败兜底和报告出口保持原样。
+
 ## get_collect 工厂
 
 ```python
@@ -330,8 +369,9 @@ def resolve(results):
 不要在两处分别实现。`results.py` 定义不可变的 `LogEntry` 与节点状态 `Node`；
 存量二元组/三元组在报告边界转换，原始文本、日志类型与时间戳保留。
 `pipeline.py` 只执行文本规则与前后处理，`collect.py` 管理文件来源、会话与 sink。
-本次内部拆分不改变同步 `open/close`、异常传播、宿主兜底或通知订阅范围；
-不要据此宣称异步采集、内部故障隔离或脚本宿主通道已经完成。
+存量 `get_collect` 的同步 `open/close`、异常传播和宿主兜底仍然保留；
+声明式用户会话单独托管异步收尾与异常隔离，不改变任何通知订阅范围。
+脚本宿主通道仍未端到端接通。
 
 push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type, text)`
 或 `(log_type, text, ts)`）后，聚合统一走 `app/log_box/report.py` 的
