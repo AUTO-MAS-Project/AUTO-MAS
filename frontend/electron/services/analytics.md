@@ -51,6 +51,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
 
 完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
+托盘菜单的显式保存复用 `config_write_finished`，由主进程确认配置写入结果；菜单文本、任务标识、草稿编辑及取消均不采集。
 新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
 
 | 新增事件族 | 含义 | 固定属性（另含 outcome/耗时桶） |
@@ -60,8 +61,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
 | `renderer_recovery_decided` | 白屏、崩溃后自动恢复或放弃的比例 | `reason_kind`、`recovery_action`、`count_bucket` |
 | `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
-| `app_close_finished` | 正常收尾、用户取消、强制关闭占比 | `close_kind` |
-| `tray_action_requested` | 托盘入口是否有实际使用 | `action_kind` |
+| `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
+| `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
 | `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
@@ -80,7 +81,7 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
 | `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind` |
+| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关 |
 | `appearance_preference_changed` | 主题、语言、低性能模式需求 | `preference_kind`、`preset_value` |
 | `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
 | `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
@@ -270,3 +271,7 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
+
+脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
+专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
+官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。

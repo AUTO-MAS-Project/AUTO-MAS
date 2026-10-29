@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { DeleteOutlined, UploadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import { useI18n } from 'vue-i18n'
 import { useMascotSettings } from '../useMascotSettings'
 
@@ -95,7 +96,14 @@ const handleFpsChange = (next: SelectValue): void => {
       <a-col :span="12">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.basic.desktopMascot') }}</span>
+            <a-checkbox
+              :checked="enabled"
+              :aria-busy="toggling"
+              :disabled="busy || toggling || !available || loadFailed"
+              @change="(event: CheckboxChangeEvent) => setEnabled(event.target.checked)"
+            >
+              {{ t('core.setting.basic.desktopMascot') }}
+            </a-checkbox>
             <a-tooltip>
               <template #title>
                 <div>{{ t('core.setting.basic.desktopMascotTip') }}</div>
@@ -106,18 +114,6 @@ const handleFpsChange = (next: SelectValue): void => {
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="enabled"
-            :loading="toggling"
-            :disabled="busy || toggling || !available || loadFailed"
-            size="large"
-            style="width: 100%"
-            :aria-label="t('core.setting.basic.desktopMascot')"
-            @change="(next: unknown) => setEnabled(next === true)"
-          >
-            <a-select-option :value="true">{{ t('core.common.on') }}</a-select-option>
-            <a-select-option :value="false">{{ t('core.common.off') }}</a-select-option>
-          </a-select>
         </div>
       </a-col>
     </a-row>

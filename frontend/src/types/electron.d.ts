@@ -1,4 +1,4 @@
-import type { GlobalConfig_UI, GlobalConfig_Update } from '@/api'
+import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { AppearanceCategory, MascotImportResult, MascotSummary } from '@/types/mascotPack'
 import type {
@@ -41,6 +41,8 @@ export interface RelatedProcess {
 }
 
 export interface ElectronConfig {
+  confirmBeforeClose?: boolean
+  lastCloseAction?: 'quit' | 'tray'
   UI?: GlobalConfig_UI & {
     TrayItems?: unknown[]
     [key: string]: unknown
@@ -230,6 +232,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void
   }
   isMacOS: boolean
+  installFluxdown: (mirror: string) => Promise<FluxdownInstallOut>
   listMascots?: () => Promise<MascotSummary[]>
   importMascot?: (zipPath: string, replace?: boolean) => Promise<MascotImportResult>
   removeMascot?: (id: string) => Promise<{ success: boolean; error?: string }>
@@ -249,15 +252,18 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   discoverWutheringWavesPath: () => Promise<PathDiscoveryResult>
 
   // 窗口控制
-  windowMinimize: () => Promise<void>
+  windowMinimize: () => Promise<boolean>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  windowHideToTray: () => Promise<boolean>
+  notifyNativeCloseHandlerReady?: () => void
   appRestart: () => Promise<void>
   /** 只标记「这次退出后重新拉起」，退出本身仍走 appQuit；后端请求的重启用它 */
   appRestartOnQuit?: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   onWindowMaximizedChange: (callback: (maximized: boolean) => void) => () => void
   windowFocus: () => Promise<void>
+  onNativeWindowCloseRequested?: (callback: () => void) => () => void
   /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
   powerWarningStart?: () => Promise<void>
   /** 倒计时结束或取消：撤回置顶 */
@@ -316,11 +322,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   updateTraySettings: (uiSettings: unknown) => Promise<boolean>
   updateTrayConfig: (trayItems: unknown) => Promise<boolean>
   onTrayActionRequest: (
-    callback: (request: {
-      action: 'quit' | 'restart' | 'startTask'
-      taskId?: string
-      label?: string
-    }) => void
+    callback: (request: { action: 'quit' | 'startTask'; taskId?: string; label?: string }) => void
   ) => () => void
   syncBackendConfig: (backendSettings: unknown) => Promise<boolean>
 

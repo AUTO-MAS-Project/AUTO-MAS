@@ -262,8 +262,7 @@ def main():
         )
 
     from app.core import Config
-    from app.core.restore_bindings import resolve_restore_pools
-    from app.core.script_config_bindings import bind_script_config_handlers
+    from app.core.script_config_bindings import build_builtin_script_capabilities
     from app.services.telemetry import (
         init_sentry,
         is_telemetry_enabled,
@@ -278,7 +277,6 @@ def main():
     from app.task.ZzzOd.config_context import ZzzOdContext
     from app.task.ZzzOd.recovery import ZzzOdRecovery
 
-    Config.set_restore_pool_resolver(resolve_restore_pools)
     baah_config_service = BAAHConfigService(
         get_script=lambda script_id: Config.ScriptConfig[script_id],
     )
@@ -287,8 +285,7 @@ def main():
         read_resolution=read_unity_resolution,
         read_display_type=read_unity_display_type,
     )
-    bind_script_config_handlers(
-        Config.bind_script_config_handler,
+    script_capabilities = build_builtin_script_capabilities(
         maaend=maaend_config_service,
         zzzod=ZzzOdRecovery(
             ZzzOdContext(
@@ -296,6 +293,10 @@ def main():
             )
         ),
     )
+
+    for entry_type, handler in script_capabilities.config_handlers:
+        Config.bind_script_config_handler(entry_type, handler)
+    Config.set_restore_pool_resolver(script_capabilities.resolve_restore_pools)
 
     # 开发环境不上报遥测数据
     init_sentry(
@@ -320,6 +321,7 @@ def main():
         from app.core import Config, EmulatorManager, MainTimer, TaskManager
         from app.services import System
 
+        TaskManager.bind_manager_factories(script_capabilities.manager_factories)
         System.avd_instance_closer = EmulatorManager.close_running_avd_instances
 
         asyncio.create_task(asyncio.to_thread(ssl.create_default_context))
@@ -514,7 +516,7 @@ def main():
             from app.core import Updater
             from app.core.ws import Dispatcher, MainConnection
             from app.runtime_tasks import RuntimeTasks
-            from app.services import Matomo, System
+            from app.services import System
 
             # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
             if background_task is not None and not background_task.done():
@@ -566,7 +568,6 @@ def main():
             from app.config import config_manager
 
             await config_manager.flush()
-            await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")
 
         from app.core.lifecycle import ShutdownCoordinator

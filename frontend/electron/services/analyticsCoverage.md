@@ -5,7 +5,7 @@
 “已接入”描述代码边界，不表示已经完成真实游戏、扫码、升级或正式服务入库验收。
 
 运行环境隔离统一使用 Electron 打包状态和 preload 下发值；Runtime 启动模式不改变采集环境。
-此次复用既有事件族与结果所有者，业务覆盖范围不变，受控探针不作为正式服务入库证据。
+此次复用既有事件族与结果所有者；关闭应用二次确认开关复用 `settings_change_finished`，托盘菜单保存由主进程按真实写入结果补齐 `config_write_finished`（settings/ui/none），不发送菜单文本、任务标识或草稿操作。分区目录、打开编辑和取消不采集，托盘隐藏动作不单独采集；受控探针不作为正式服务入库证据。
 
 | 编号 | 场景 | 当前进度 |
 | --- | --- | --- |
@@ -20,8 +20,8 @@
 | T009 | backend_update_finished：后端热更新完成或停在什么阶段 | 已接入，持续复核 |
 | T010 | renderer_recovery_decided：白屏、崩溃后自动恢复或放弃的比例 | 已接入，持续复核 |
 | T011 | renderer_responsiveness_changed：卡死后能否恢复响应 | 已接入，持续复核 |
-| T012 | app_close_finished：正常收尾、用户取消、强制关闭占比 | 已接入，持续复核 |
-| T013 | tray_action_requested：托盘入口是否有实际使用 | 已接入，持续复核 |
+| T012 | app_close_finished：正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | 已接入，持续复核 |
+| T013 | tray_action_requested：显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | 已接入，持续复核 |
 | T014 | stop_all_requested：紧急停止入口的需求 | 已接入，持续复核 |
 | T015 | virtual_display_action_finished：虚拟屏检查、拆除、用户选择的效果 | 已接入，持续复核 |
 | T016 | virtual_display_prompt_answered：显示器恢复后用户怎样处理提示 | 已接入，持续复核 |
@@ -66,7 +66,7 @@
 | T055 | notification_channel_changed：各内置通知渠道的启用情况 | 已接入，持续复核 |
 | T056 | notification_binding_finished：二维码绑定、取消和解绑是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
-| T058 | settings_change_finished：设置修改成功率及主要功能采用情况 | 已接入，持续复核 |
+| T058 | settings_change_finished：设置修改成功率及主要功能采用情况（含关闭确认开关） | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |
 | T060 | appearance_package_finished：本地外观导入、启用、删除是否顺利 | 已接入，持续复核 |
 | T061 | appearance_store_install_finished：主题商店发现到安装的转化 | 已接入，持续复核 |
@@ -125,6 +125,8 @@
 - PR 复审 P3（6369303497/6369397213）：旧模拟器请求超过 120 秒仍可能返回，不能覆盖为新请求；已按未决/歧义键保留并在本地验证 A=0s、B=200s、A终态=300s 的顺序，禁止把 A 终态记到 B。
 
 ## 设置、外观和首页批次补充
+
+- T058：脚本更新下载器开关经 `useSettingsApi.updateSettings` 复用保存终态，固定键 `script_update_takeover`；专项更新流程由各专项接入，沿用脚本任务终态，不推断上游安装成功。
 
 - T058/T059：固定设置键只保留内置分类与 enabled/disabled/default/custom，不读取凭据或发送地址、日期等原值，遥测开关本身不发事件。主题、语言和性能只在显式修改时记录，初始化回填不记采用。语言选择在所需词表就绪、Electron 偏好保存后完成；后台词表刷新不新增事件。
 - T003：后端已启动但业务词表不可用时，本次初始化结果为 failure、failed_stage 为 unknown；仅词表就绪并进入应用才记录完成。初始化页主动重试词表是新的进入尝试，断线自动恢复不补发已结束尝试的成功结果。

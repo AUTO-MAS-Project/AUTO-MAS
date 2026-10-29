@@ -29,8 +29,9 @@ CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空�
 不触发）按需更新启用「更新接管」脚本的 MAA 实例的资源。
 由触发脚本的接管开关与生效 CDK 驱动：脚本 CDK 优先、空则回退 MAS 全局
 配置；未开接管时完全不创建更新任务，检查与分发也只覆盖开了接管的安装。
-不使用 GitHub 资源源。
-每个 MAS 按本地日期每天最多尝试申请一次资源包，失败和取消也保留当天记账；
+启动前入口 prepare_install_resources 也支持 GitHub 全量资源包，无 CDK 时由
+脚本更新开关启用；下载器独立跟随全局 FluxDown 接管开关。
+Mirror 酱路径按本地日期每天最多尝试申请一次资源包，失败和取消也保留当天记账；
 免费版本查询与有效缓存分发不受每日限额影响。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
@@ -47,7 +48,8 @@ GetResourceVersionByClientType——外服分支读 defaultJsonPath）与镜像�
 MaaResource/latest 的 version_name；包文件只整体覆盖不解析；不判断资源与
 本体版本的兼容性。
 
-失败语义：更新失败只写日志，主动取消正常传播。阶段级进度经可选的
+失败语义：旧的跨安装扫描失败只写日志；启动前入口失败则停止本轮启动。
+主动取消正常传播。阶段级进度经可选的
 progress 回调上报，回调异常被忽略。重文件 I/O（进程扫描、解压、合并、逐安装复读
 时钟）一律运行在 asyncio.to_thread 内、下载写盘用 aiofiles——MAS 后端是
 单事件循环 uvicorn，阻塞 I/O 会冻结整个后端；KB 级状态/清单文件是唯一
@@ -68,6 +70,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
+import httpx
 import psutil
 
 from app.core import Config
@@ -84,6 +87,7 @@ from .resource_package import (
     resource_tree_hashes,
 )
 from .update_credentials import resolve_takeover_credentials
+from .update_errors import MaaUpdateUnsafeError
 from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
 logger = get_logger("MAA 资源更新")
@@ -93,6 +97,7 @@ _CLOCK_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 
 _QUERY_TIMEOUT = 10  # 秒
 _DOWNLOAD_TIMEOUT = 10 * 60  # 秒，单次网络操作上限（无下载总时限，停滞由操作超时兜底）
+_RESOURCE_LOCK_TIMEOUT = 60
 _QUERY_FLOOR = 10 * 60  # 秒，两次成功查询最小间隔（只作用于刷新检查）
 _RETRY_INTERVAL = 60 * 60  # 秒，更新失败后的重试间隔
 _MB = 1024 * 1024
@@ -401,7 +406,7 @@ async def _stream_download(url: str, progress: _Progress | None) -> None:
         raise _DownloadError(f"资源包下载失败: {e}") from e
 
 
-def _build_stage(zip_path: Path, target: datetime) -> None:
+def _build_stage(zip_path: Path, target: datetime, *, github: bool = False) -> None:
     """解压 → 校验 → 单调把关 → 换位 → 核账 → manifest。线程内执行；任何
     失败都抛 _DownloadError（进下载退避）。
 
@@ -423,7 +428,13 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
             _utils_io.force_rmtree(leftover)
     try:
         extract_zip(zip_path, stage_tmp)
-        root = stage_tmp / "resource"
+        prefix = "MaaResource-main/resource/" if github else "resource/"
+        root = stage_tmp / prefix
+        # 当前上游的 Mirror 酱导入同样使用 MaaResource-main/resource；
+        # 保留对既有平铺缓存包的兼容，只接受这两种已知发行目录结构。
+        if not github and not (root / "version.json").is_file():
+            prefix = "MaaResource-main/resource/"
+            root = stage_tmp / prefix
         if not (root / "version.json").is_file():
             raise _DownloadError("资源包内未找到 resource/version.json")
         new_clock = _read_clock_file(root / "version.json")
@@ -445,7 +456,7 @@ def _build_stage(zip_path: Path, target: datetime) -> None:
                     f"资源包版本({_format_clock(new_clock)})旧于现有暂存"
                     f"({_format_clock(old_clock)})，拒绝替换"
                 )
-        expected = count_zip_entries(zip_path)
+        expected = count_zip_entries(zip_path, prefix=prefix)
         file_hashes = resource_tree_hashes(root)
         _MANIFEST_FILE.unlink(missing_ok=True)
         if _STAGE_DIR.exists():
@@ -595,14 +606,31 @@ def _stage_reusable(stage: dict[str, object] | None, target: datetime) -> bool:
     return stage_target >= target
 
 
+def has_incomplete_resource_update(install: Path) -> bool:
+    """安装目录曾开始覆盖资源但尚未完成校验；跨任务保留，不能按旧时钟放行。"""
+    return (install / ".automas-resource-update.json").exists()
+
+
 def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
     """合并前复读版本并检查暂存有效，写完核对时钟；跳过返回 False。"""
     current = read_resource_clock(install)
-    if current is None or current >= stage_clock:
+    incomplete = has_incomplete_resource_update(install)
+    if current is None or (current >= stage_clock and not incomplete):
         return False
+    if current > stage_clock:
+        raise MaaUpdateUnsafeError("资源修复缓存早于当前安装，请重新下载资源")
+    marker = install / ".automas-resource-update.json"
+    if incomplete:
+        interrupted_target = parse_iso(_utils_io.read_dict_file(marker).get("target"))
+        if interrupted_target is None or stage_clock < interrupted_target:
+            raise MaaUpdateUnsafeError(
+                "资源修复缓存未达到上次中断的目标，请重新下载资源"
+            )
     manifest = _load_valid_manifest()
     if manifest is None:
         return False
+    # 标记先于第一次覆盖落盘；异常、取消或进程退出均不得清除。
+    _utils_io.write_file(marker, {"target": stage_clock.isoformat()})
     merge_package_tree(
         _STAGE_DIR / "resource",
         install / "resource",
@@ -611,6 +639,8 @@ def _apply_stage(install: Path, stage_clock: datetime, cdk: str) -> bool:
     done = read_resource_clock(install)
     if done is None or done < stage_clock:
         raise RuntimeError(f"合并后时钟为 {done}，期望 {stage_clock}")
+    # merge_package_tree 已逐文件验证摘要及清单，版本复核通过后才提交完成。
+    marker.unlink()
     return True
 
 
@@ -760,7 +790,11 @@ async def _distribute_resource_stage(
         _MANIFEST_FILE.unlink(missing_ok=True)
         return
 
-    candidates = [install for install, clock in clocks.items() if clock < stage_clock]
+    candidates = [
+        install
+        for install, clock in clocks.items()
+        if clock < stage_clock or has_incomplete_resource_update(install)
+    ]
 
     if not candidates:
         return
@@ -912,3 +946,127 @@ async def prepare_queue_resources(
         raise
     finally:
         _update_waiters.pop(token, None)
+
+
+_prepare_install_lock = asyncio.Lock()
+
+
+async def latest_resource_clock(*, github: bool, current: datetime) -> datetime:
+    """重新查询上游资源版本，供更新与启动前最终核对共用。"""
+    if not github:
+        return await _fetch_latest_version(_format_clock(current))
+    async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+        response = await client.get(
+            "https://raw.githubusercontent.com/MaaAssistantArknights/"
+            "MaaResource/main/resource/version.json"
+        )
+        response.raise_for_status()
+        return _parse_clock(response.json()["last_updated"])
+
+
+async def prepare_install_resources(
+    install: Path,
+    *,
+    cdk: str | None,
+    github: bool,
+    progress: _Progress | None = None,
+) -> None:
+    """本体安装之后、账号启动之前补齐资源；调用方已持有安装访问锁。
+
+    GitHub 复用上游公开的 MaaResource-main 整包与既有临时合并入口。
+    上游仍无程序化资源导入入口；提供 CLI 后删除此补位并改用官方导入。
+    普通准备失败由调用方处理；实际写入失败必须阻止启动，不延后到运行中下载。
+    """
+    if not github and cdk is None:
+        return
+    try:
+        async with asyncio.timeout(_RESOURCE_LOCK_TIMEOUT):
+            if _prepare_install_lock.locked():
+                await _report(progress, "正在等待其他 MAA 资源更新完成…")
+            await _prepare_install_lock.acquire()
+    except TimeoutError as error:
+        raise RuntimeError("等待 MAA 资源更新超时，请稍后重试") from error
+    try:
+        deadline = time.monotonic() + _RESOURCE_LOCK_TIMEOUT
+        waiting = False
+        while True:
+            machine = _MachineLock()
+            access = machine.__enter__()
+            if access is not None:
+                break
+            if not machine.contended:
+                raise RuntimeError("无法取得 MAA 资源缓存锁，请稍后重试")
+            if not waiting:
+                await _report(progress, "正在等待其他 MAS 实例释放资源更新锁…")
+                waiting = True
+            if time.monotonic() >= deadline:
+                raise RuntimeError("等待 MAA 资源锁超时，请等待其他实例完成更新后重试")
+            await asyncio.sleep(0.1)
+        try:
+            current = await asyncio.to_thread(read_resource_clock, install)
+            if current is None:
+                raise RuntimeError("MAA 缺少资源版本，请先在 MAA 内完成修复")
+            await _report(progress, "启动前检查 MAA 资源更新…")
+            target = await latest_resource_clock(github=github, current=current)
+            if current >= target and not has_incomplete_resource_update(install):
+                return
+            stage = await asyncio.to_thread(_load_valid_manifest)
+            if not _stage_reusable(stage, target):
+                if github:
+                    _WORK_DIR.mkdir(parents=True, exist_ok=True)
+                    await _report(progress, "启动前下载 GitHub 全量资源包…")
+                    await download_file(
+                        "https://github.com/MaaAssistantArknights/MaaResource/"
+                        "archive/refs/heads/main.zip",
+                        _STAGE_ZIP,
+                        proxy=Config.proxy,
+                        timeout=_DOWNLOAD_TIMEOUT,
+                        source="GitHub",
+                        downloader=(
+                            "fluxdown"
+                            if Config.setting.Update.FluxdownTakeoverAll
+                            else "builtin"
+                        ),
+                    )
+                    try:
+                        await _run_write_thread(
+                            _build_stage, _STAGE_ZIP, target, github=True
+                        )
+                    finally:
+                        # _run_write_thread 在取消时也会等写盘结束，之后才可删除归档。
+                        _STAGE_ZIP.unlink(missing_ok=True)
+                else:
+                    _WORK_DIR.mkdir(parents=True, exist_ok=True)
+                    stage = await _refresh_resource_stage(
+                        clocks={install: current},
+                        stage=stage,
+                        target=target,
+                        state=load_state(_STATE_FILE),
+                        progress=progress,
+                        cdk=cdk,
+                    )
+                    if not _stage_reusable(stage, target):
+                        raise RuntimeError(
+                            "MAA 资源包未准备完成，请检查 CDK、额度或网络后重试"
+                        )
+            await _report(progress, "启动前安装 MAA 资源更新…")
+            stage_clock = await asyncio.to_thread(read_resource_clock, _STAGE_DIR)
+            if stage_clock is None or stage_clock < target:
+                raise RuntimeError("MAA 资源缓存未达到目标版本，请重新运行")
+            try:
+                await _run_write_thread(_apply_stage, install, stage_clock, cdk or "")
+                installed = await asyncio.to_thread(read_resource_clock, install)
+                if (
+                    installed is None
+                    or installed < target
+                    or has_incomplete_resource_update(install)
+                ):
+                    raise RuntimeError("MAA 资源更新未完成，已停止启动")
+            except Exception as error:
+                raise MaaUpdateUnsafeError(
+                    "MAA 资源写入未确认完成，不能安全启动任务"
+                ) from error
+        finally:
+            machine.__exit__(None, None, None)
+    finally:
+        _prepare_install_lock.release()

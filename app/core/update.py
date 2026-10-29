@@ -22,7 +22,15 @@ async def _write_history(record: _utils_fluxdown_cli.FluxdownDownloadRecord) -> 
     """串行追加历史并保留最近 50 条，复制列表后整体提交。"""
     # 读、改、提交共用配置事务，避免并发下载覆盖历史，也不持线程锁等待异步提交。
     async with config_manager.transaction():
-        history = list(Config.setting.Update.LastUpdateHistory or [])
+        # 旧版本记录也去除 userinfo，避免下次保存继续保留历史代理凭据。
+        history = [
+            FluxdownRecord(
+                **_utils_fluxdown_cli.FluxdownDownloadRecord(
+                    **item.model_dump()
+                ).to_dict()
+            )
+            for item in (Config.setting.Update.LastUpdateHistory or [])
+        ]
         history.append(FluxdownRecord(**record.to_dict()))
         await Config.setting.update(
             type(Config.setting).model_validate(

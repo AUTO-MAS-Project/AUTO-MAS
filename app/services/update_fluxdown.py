@@ -73,6 +73,35 @@ async def download_file(
     downloader: str | None = None,
     source: str | None = None,
 ) -> int:
+    """同一输出文件的下载、回退和清映射共用跨进程锁。"""
+    async with _utils_fluxdown_cli.fluxdown_destination_lock(
+        Path(options.cli_path), destination
+    ):
+        return await _download_file(
+            url,
+            destination,
+            timeout=timeout,
+            options=options,
+            write_history=write_history,
+            proxy=proxy,
+            progress=progress,
+            downloader=downloader,
+            source=source,
+        )
+
+
+async def _download_file(
+    url: str,
+    destination: Path,
+    *,
+    timeout: float,
+    options: FluxdownOptions,
+    write_history: HistoryWriter | None = None,
+    proxy: httpx.Proxy | None = None,
+    progress: DownloadProgress | None = None,
+    downloader: str | None = None,
+    source: str | None = None,
+) -> int:
     """根据宿主选项分发下载：FluxDown 或内置 httpx。
 
     FluxDown 链路：server 模式（断点续传）→ --local（仅 server 异常）→ httpx。
@@ -97,9 +126,15 @@ async def download_file(
     proxy_str = _proxy_to_str(proxy)
 
     # Mirror 酱或无 FluxDown 需求 → 直接走 httpx
-    if downloader != "fluxdown" or frozen_source.lower() == "mirrorchyan":
+    if (
+        downloader != "fluxdown"
+        or frozen_source.lower() == "mirrorchyan"
+        or (proxy is not None and proxy.auth is not None)
+    ):
         if downloader == "fluxdown":
-            logger.info("Mirror 酱源跳过 FluxDown,走内置 httpx 下载")
+            logger.info(
+                "Mirror 酱源或认证代理使用内置 httpx 下载，避免凭据进入 CLI 参数"
+            )
         # 无论是显式选内置还是配置默认走内置，只要此前可能经 FluxDown 下载过
         # 同一 (url, destination)，都需先确认旧 server 任务已停止再覆写；
         # 显式内置成功后再清理映射，避免残留任务在下次同 url 下载时被无谓 resume
@@ -403,13 +438,11 @@ class FluxdownResumableError(RuntimeError):
 
 
 def _proxy_to_str(proxy: httpx.Proxy | None) -> str | None:
-    """httpx.Proxy → 字符串（FluxDown CLI --proxy 参数需要）。"""
+    """仅返回不含凭据的代理端点，认证保留在 httpx.Proxy 中。"""
     if proxy is None:
         return None
-    try:
-        return str(proxy.url)
-    except Exception:
-        return None
+    # CLI 无安全传递认证的入口；认证代理由 httpx 处理，此处仅用于记录端点。
+    return str(proxy.url)
 
 
 async def _append_history(

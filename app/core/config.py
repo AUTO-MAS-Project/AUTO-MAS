@@ -218,7 +218,9 @@ class AppConfig:
 
     def __init__(self) -> None:
 
-        self._script_config_handlers: dict[type[ConfigEntry], ScriptConfigHandler] = {}
+        self._script_config_handlers: dict[
+            type[ConfigEntry], ScriptConfigHandler | None
+        ] = {}
         self._restore_pool_resolver: (
             Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
             | None
@@ -397,6 +399,15 @@ class AppConfig:
                 global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
             ):
                 logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
+            if (
+                isinstance(script, MaaConfig)
+                and not script.Update.ChannelMigrationVersion
+            ):
+                from app.task.MAA.tools.software_update import (
+                    migrate_maa_update_channel,
+                )
+
+                await migrate_maa_update_channel(script)
         if self._m9a_migration is not None:
             if self._m9a_migration.changed or self._m9a_migration.failure:
                 await self._settle_m9a_migration(self._m9a_migration)
@@ -1443,9 +1454,11 @@ class AppConfig:
             await imported
 
     def bind_script_config_handler(
-        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
+        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler | None
     ) -> None:
         """由宿主将专项操作绑定到当前配置实例。"""
+        if entry_type in self._script_config_handlers:
+            raise ValueError(f"重复的配置处理器登记: {entry_type.__name__}")
         self._script_config_handlers[entry_type] = handler
 
     def _get_script_config_handler(
@@ -1454,7 +1467,7 @@ class AppConfig:
         for entry_type, handler in self._script_config_handlers.items():
             if isinstance(script, entry_type):
                 return handler
-        return None
+        raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
 
     def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
         """读取专项资源声明，不提交配置或访问脚本资源文件。"""
@@ -2339,10 +2352,11 @@ class AppConfig:
             return None
 
         try:
-            logger.info(f"使用代理: {proxy_addr}")
-            return httpx.Proxy(proxy_addr)
-        except Exception as e:
-            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+            proxy = httpx.Proxy(proxy_addr)
+            logger.info(f"使用代理: {proxy.url}")
+            return proxy
+        except Exception:
+            logger.warning("代理配置无效，请检查代理地址")
             return None
 
     @property

@@ -7,8 +7,10 @@ import FluxdownSection from '@/views/setting/FluxdownSection.vue'
 import MirrorCdkSettings from './components/MirrorCdkSettings.vue'
 import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from '@/composables/updatePause'
 import { formatConfigDate, serializeConfigTime } from '@/utils/configDateTime'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 
 const { t } = useI18n()
+const emit = defineEmits<{ fluxdownInstalled: [] }>()
 
 const { settings, updateSourceOptions, updateChannelOptions, handleSettingChange, checkUpdate } =
   defineProps<{
@@ -91,20 +93,19 @@ const handlePauseUntilChange = (value: string | null) => {
       <a-col :span="8">
         <div class="form-item-vertical">
           <div class="form-label-wrapper">
-            <span class="form-label">{{ t('core.setting.others.updateBackend') }}</span>
+            <a-checkbox
+              :checked="!!settings.Update?.IfAutoUpdate"
+              @change="
+                (event: CheckboxChangeEvent) =>
+                  handleSettingChange('Update', 'IfAutoUpdate', event.target.checked)
+              "
+            >
+              {{ t('core.setting.others.updateBackend') }}
+            </a-checkbox>
             <a-tooltip :title="t('core.setting.others.updateBackendTip')">
               <QuestionCircleOutlined class="help-icon" />
             </a-tooltip>
           </div>
-          <a-select
-            :value="settings.Update?.IfAutoUpdate"
-            size="large"
-            style="width: 100%"
-            @change="(checked: any) => handleSettingChange('Update', 'IfAutoUpdate', checked)"
-          >
-            <a-select-option :value="true">{{ t('core.common.yes') }}</a-select-option>
-            <a-select-option :value="false">{{ t('core.common.no') }}</a-select-option>
-          </a-select>
         </div>
       </a-col>
       <a-col :span="8">
@@ -190,7 +191,11 @@ const handlePauseUntilChange = (value: string | null) => {
     </a-row>
 
     <!-- FluxDown 下载器配置：抽出独立子组件以控制本组件尺寸 -->
-    <FluxdownSection :settings="settings" :handle-setting-change="handleSettingChange" />
+    <FluxdownSection
+      :settings="settings"
+      :handle-setting-change="handleSettingChange"
+      @installed="emit('fluxdownInstalled')"
+    />
   </div>
 </template>
 

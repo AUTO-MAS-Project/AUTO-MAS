@@ -159,6 +159,7 @@ async def download_file(
     timeout: float,
     proxy: httpx.Proxy | None = None,
     progress: DownloadProgress | None = None,
+    max_bytes: int | None = None,
 ) -> int:
     """流式写入目标文件，返回字节数；进度每秒上报并在开始、结束时上报。
 
@@ -180,12 +181,16 @@ async def download_file(
                 total = int(response.headers.get("content-length") or 0)
             except ValueError:
                 total = 0
+            if max_bytes is not None and total > max_bytes:
+                raise ValueError("下载大小超过上限")
             if progress is not None:
                 await progress(0, total, 0.0)
             downloaded = window_bytes = 0
             window_start = time.monotonic()
             async with aiofiles.open(destination, "wb") as handle:
                 async for chunk in response.aiter_bytes(chunk_size=8192):
+                    if max_bytes is not None and downloaded + len(chunk) > max_bytes:
+                        raise ValueError("下载大小超过上限")
                     await handle.write(chunk)
                     downloaded += len(chunk)
                     window_bytes += len(chunk)
