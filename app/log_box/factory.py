@@ -56,7 +56,7 @@ class LogBox:
         self,
         paths: Optional[Union[PathLike, Iterable[PathLike]]] = None,
         *,
-        sink: Optional[Callable[[str, str, float], None]] = None,
+        sink: Optional[Callable[[str, str, float | None], None]] = None,
         start_from_end: bool = True,
         rotated_name: Optional[str] = None,
     ) -> LogCollect:

@@ -171,3 +171,20 @@ def test_cleanup_failure_preserves_first_failure_and_known_delivery_count(
         failure_stage="read" if read_fails else "cleanup",
     )
     assert len(target.push_log) == (0 if read_fails else 1)
+
+
+def test_user_delivery_preserves_missing_timestamp_and_legacy_pair():
+    from app.log_box.report import build_user_result_text
+    from app.models.task import UserItem
+
+    target = UserItem(user_id="test", name="测试用户", status="完成")
+    target.push_log.append(("普通", "旧二元组"))
+    spec = EntrySpec(
+        bind=lambda: LogBinding(read=lambda: [LogEntry("普通", "✅ 成功: 邮件")])
+    )
+    session = log_box.get_user_session(spec, user=target, mode="逐条")
+    asyncio.run(session.close())
+    assert target.push_log == [("普通", "旧二元组"), ("普通", "✅ 成功: 邮件", None)]
+    assert session.result == SessionResult("succeeded", entry_count=1)
+    text = build_user_result_text([target], False)
+    assert text.endswith("旧二元组\n✅ 成功: 邮件")

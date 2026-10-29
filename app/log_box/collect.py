@@ -23,7 +23,7 @@ from .sources import LogSource, resolve_sources
 PathLike = Union[str, Path]
 
 # sink：MAS 进程宿主注入的 push_log 写入回调（接收日志类型、文本与采集时间戳）
-_Sink = Callable[[str, str, float], None]
+_Sink = Callable[[str, str, float | None], None]
 
 
 class LogCollect:

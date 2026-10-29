@@ -70,7 +70,7 @@ class LogSpec:
 
 class LogUser(Protocol):
     push_log_mode: str
-    push_log: list[tuple[str, str, float]]
+    push_log: list[tuple[str, str] | tuple[str, str, float | None]]
 
 
 FailureStage = Literal["initialize", "bind", "read", "deliver", "cleanup"]
@@ -225,7 +225,7 @@ class UserLogSession(_ManagedSession):
             self._record_failure("initialize")
             logger.opt(exception=True).warning(spec.error_message)
 
-    def _append(self, log_type: str, text: str, timestamp: float) -> None:
+    def _append(self, log_type: str, text: str, timestamp: float | None) -> None:
         self.user.push_log.append((log_type, text, timestamp))
 
     def _deliver(self, entries: list[LogEntry]) -> None:

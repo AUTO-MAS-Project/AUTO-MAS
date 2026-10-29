@@ -139,3 +139,18 @@ async read、流式 feed。未发现当前未接入专项必须依赖这些新�
 收尾结果补充实测复核：2026-10-29 17:36 BGI 返回 Success，分步表 6 行，统计通知发起，
 任务报告 Webhook 成功；用户确认推送与结果正常。本轮未发现新的节点交付异常。
 提交前相关回归再次 146 passed，Ruff 与 git diff --check 通过。
+
+
+## 审核后类型契约修正
+
+dev 至 c846c0d6c 双方独立审核后发现一项 P3：LogEntry 允许无时间戳，用户与 sink
+落点仍标注 float。现已同步 UserItem、LogUser、_append 及同步采集 sink/factory 类型，
+并明确兼容旧二元组；未改运行时输出或外部 API。回归使用真实 UserItem 接收
+无时间戳三元组，与旧二元组共同逐条渲染；相关测试 116 passed，Ruff 通过。
+此修正经用户授权提交推送。最终全量回归 684 passed、3 skipped、29 subtests passed，
+仍为 7 项既有前后置脚本失败；Ruff check/format 与 git diff --check 通过。
+
+非日志来源推荐在专项 push_log.py 声明 EntrySpec，由宿主准备只读快照。
+bind 在宿主返回 LogBinding，read 在工作线程把快照转为 LogEntry 列表。
+普通用户节点用 get_user_session；特殊报告落点用 get_entry_session 并提供 deliver。
+调用方必须 await close 后再组装报告，可从 result 区分成功空结果与失败。
