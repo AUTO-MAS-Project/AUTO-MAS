@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import LogCollect, LogSpec, LogType, log_box
+from app.log_box import LogCollect, LogSpec, LogType, TranslationSpec, log_box
 from app.log_box.report import build_user_result_text
 
 
@@ -205,3 +205,137 @@ def test_concurrent_close_delivers_once_for_each_user(tmp_path):
 
     asyncio.run(scenario())
     assert [len(user.push_log) for user in users] == [1, 1]
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_translation_is_released_after_delivery_or_processing_error(
+    tmp_path, monkeypatch, fail
+):
+    from app.utils.common.i18n import PoTranslator
+
+    native, supplement, path = [
+        tmp_path / name for name in ("native.po", "extra.po", "run.log")
+    ]
+    native.write_text('msgid "Mail"\nmsgstr "原生译文"\n', encoding="utf-8")
+    supplement.write_text('msgid "Mail"\nmsgstr "邮件"\n', encoding="utf-8")
+    path.write_text("Mail\n", encoding="utf-8")
+    user, releases = make_user(), []
+    original_clear = PoTranslator.clear
+
+    def clear(translator):
+        releases.append(list(user.push_log))
+        original_clear(translator)
+
+    def process(line):
+        if fail:
+            raise RuntimeError("翻译之后的处理器失败")
+        return line
+
+    monkeypatch.setattr(PoTranslator, "clear", clear)
+    session = log_box.get_user_session(
+        LogSpec(
+            rules=(("邮件", ""),),
+            preprocessor=process,
+            translation=TranslationSpec(paths=(native,), supplements=(supplement,)),
+            failure_text="采集失败",
+        ),
+        user=user,
+        mode="汇总",
+        paths=path,
+        start_from_end=False,
+    )
+
+    async def scenario():
+        await session.close()
+        await session.close()
+
+    asyncio.run(scenario())
+    assert len(releases) == 1
+    assert user.status == "完成"
+    assert user.push_log[0][1] == ("采集失败" if fail else "邮件")
+    assert bool(releases[0]) is not fail
+
+
+def test_disabled_collection_does_not_load_translation(tmp_path, monkeypatch):
+    from app.utils.common.i18n import PoTranslator
+
+    def fail(*args, **kwargs):
+        raise AssertionError("关闭的采集器不得加载翻译文件")
+
+    monkeypatch.setattr(PoTranslator, "load", fail)
+    user = make_user()
+    session = log_box.get_user_session(
+        LogSpec(rules=(("[", ""),), translation=TranslationSpec(paths=("missing.po",))),
+        user=user,
+        mode="汇总",
+        enabled=False,
+        paths=tmp_path / "run.log",
+    )
+    asyncio.run(session.close())
+    assert user.push_log == []
+
+
+def test_explicit_collection_switch_is_independent_of_display_mode(tmp_path):
+    path = tmp_path / "run.log"
+    path.write_text("任务完成\n", encoding="utf-8")
+    user = make_user()
+    session = log_box.get_user_session(
+        LogSpec(rules=(("任务完成", ""),)),
+        user=user,
+        mode="关闭",
+        enabled=True,
+        paths=path,
+        start_from_end=False,
+    )
+    asyncio.run(session.close())
+    assert len(user.push_log) == 1
+    assert build_user_result_text([user], False) == "账号: 全部完成"
+
+
+@pytest.mark.parametrize("failure", ["load", "clear"])
+def test_translation_resource_errors_keep_script_success_and_existing_marker(
+    tmp_path, monkeypatch, failure
+):
+    from app.utils.common.i18n import PoTranslator
+
+    path = tmp_path / "run.log"
+    path.write_text("邮件\n", encoding="utf-8")
+    released = []
+    original_clear = PoTranslator.clear
+
+    def clear(translator):
+        released.append(True)
+        if failure == "clear":
+            raise RuntimeError("词表清理失败")
+        original_clear(translator)
+
+    def fail_load(*args, **kwargs):
+        raise RuntimeError("词表加载失败")
+
+    monkeypatch.setattr(PoTranslator, "clear", clear)
+    if failure == "load":
+        monkeypatch.setattr(PoTranslator, "load", fail_load)
+    user = make_user()
+    session = log_box.get_user_session(
+        LogSpec(
+            rules=(("邮件", ""),),
+            translation=TranslationSpec(paths=()),
+            failure_text="原有采集失败提示",
+        ),
+        user=user,
+        mode="汇总",
+        paths=path,
+        start_from_end=False,
+    )
+
+    async def scenario():
+        await session.close()
+        await session.close()
+
+    asyncio.run(scenario())
+    assert released == [True]
+    assert user.status == "完成"
+    expected = (
+        ["邮件", "原有采集失败提示"] if failure == "clear" else ["原有采集失败提示"]
+    )
+    assert [entry[1] for entry in user.push_log] == expected

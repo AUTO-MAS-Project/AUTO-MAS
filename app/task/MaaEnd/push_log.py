@@ -74,7 +74,7 @@ import re
 from contextlib import suppress
 from datetime import datetime
 
-from app.log_box.logtype import LogType
+from app.log_box import LogSpec, LogType
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -259,3 +259,10 @@ def maaend_resolve(
         )
         for node in order
     ]
+
+
+MAAEND_LOG_SPEC = LogSpec(
+    rules=tuple(MAAEND_PUSH_RULES),
+    postprocessor=maaend_resolve,
+    error_message="MaaEnd 节点采集推送失败",
+)

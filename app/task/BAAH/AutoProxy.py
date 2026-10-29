@@ -38,7 +38,7 @@ from typing import Any
 from app.config import ConfigCollection
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.log_box import LogCollect, LogType, log_box
+from app.log_box import UserLogSession, log_box
 from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
 from app.models.emulator import DeviceBase
 from app.models.notification_ports import LocalNotice
@@ -47,19 +47,16 @@ from app.models.task import LogRecord, ScriptItem
 from app.services import System
 from app.task.base import ScriptAutoProxyBase
 from app.task.notify_core import build_script_statistics_payload
-from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import UTC4, LogMonitor, ProcessManager, compile_log_signs, get_logger
 from app.utils import update_files as _utils_update_files
 
 from .tools import (
-    BAAH_PUSH_RULES,
     CONFIG_DIR_NAME,
     LOG_DIR_RELATIVE,
     SOFTWARE_CONFIG_RELATIVE,
     ManagedConfigBackup,
     apply_managed_config,
-    baah_resolve,
     latest_log_file,
     read_json,
     resolve_config_name,
@@ -67,6 +64,7 @@ from .tools import (
     resolve_user_config_path,
     restore_managed_config,
 )
+from .tools.push_log import BAAH_LOG_SPEC
 
 logger = get_logger("BAAH 自动代理")
 
@@ -249,7 +247,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         ## 本次活动使用的配置文件名：check() 里确定，prepare() 复用
         self.effective_config_name: str | None = None
         ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
-        self.log_collect: LogCollect | None = None
+        self.log_collect: UserLogSession | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
         ## 本用户的开始时刻，用于统计信息通知
@@ -644,7 +642,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             ## 放在 finally 里则是因为 BAAH 每次运行各有自己的日志文件，采集
             ## 会话必须随着本次运行一起收尾（close 幂等）
             try:
-                self._close_log_collect()
+                await self._close_log_collect()
             finally:
                 await self._restore_managed_config()
 
@@ -782,39 +780,19 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         if not self.push_log_enabled or self.script_log_path is None:
             return
 
-        self.log_collect = log_box.get_collect(
+        self.log_collect = log_box.get_user_session(
+            BAAH_LOG_SPEC,
+            user=self.cur_user_item,
+            mode=self.cur_user_item.push_log_mode,
+            enabled=self.push_log_enabled,
             paths=[self.script_log_path],
-            sink=self._append_push_log,
             start_from_end=True,
         )
-        self.log_collect.open()
-        for rule in BAAH_PUSH_RULES:
-            self.log_collect.collect(*rule)
 
-    def _append_push_log(self, log_type: str, text: str, ts: float) -> None:
-        """sink：把 log_box 采集结果写入当前用户的推送日志（供调度器聚合到报告）"""
-
-        append_push_log(self.cur_user_item, log_type, text, ts)
-
-    def _close_log_collect(self) -> None:
-        """结束采集会话：冲刷本次运行剩余日志、解析任务节点并写入推送日志。
-
-        采集失败时既记日志也写入报告，避免节点详情缺失却仍呈现为正常结果；
-        ``close`` 幂等，收尾与异常路径都可以重复调用，未创建会话时直接返回。
-        """
-
-        if self.log_collect is None:
-            return
-
-        try:
-            self.log_collect.close(baah_resolve)
-        except Exception:
-            logger.opt(exception=True).warning(
-                "BAAH log_box 收尾推送失败（baah_resolve）"
-            )
-            self.cur_user_item.push_log.append(
-                (LogType.NORMAL, "⚠️ 节点采集失败", time.time())
-            )
+    async def _close_log_collect(self) -> None:
+        """本轮与崩溃兜底共用幂等收尾，返回前节点已交付。"""
+        if self.log_collect is not None:
+            await self.log_collect.close()
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调：判定本次运行的结果"""
@@ -1038,7 +1016,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             )
 
         ## 异常可能发生在 run_once 的 finally 之前，这里兜底收尾采集（close 幂等）
-        self._close_log_collect()
+        await self._close_log_collect()
 
         await Publisher.send(
             id=self.task_info.task_id,

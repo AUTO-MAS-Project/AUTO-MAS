@@ -22,7 +22,7 @@ from .collect import LogCollect
 from .factory import LogBox, log_box
 from .hooks import LogHook, apply_hooks, load_hooks, make_line_hook, validate_hook
 from .logtype import LogType
-from .session import LogSpec, UserLogSession
+from .session import LogSpec, TranslationSpec, UserLogSession
 
 __all__ = [
     "log_box",
@@ -30,6 +30,7 @@ __all__ = [
     "LogCollect",
     "LogType",
     "LogSpec",
+    "TranslationSpec",
     "UserLogSession",
     "LogHook",
     "load_hooks",

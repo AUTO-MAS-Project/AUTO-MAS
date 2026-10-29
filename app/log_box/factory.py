@@ -26,8 +26,9 @@ class LogBox:
         paths: Optional[Union[PathLike, Iterable[PathLike]]] = None,
         start_from_end: bool = True,
         rotated_name: Optional[str] = None,
+        enabled: bool | None = None,
     ) -> UserLogSession:
-        """按专项声明创建用户会话；关闭模式不读来源、不编译规则。"""
+        """按声明绑定用户；采集开关缺省跟随展示模式，也可承接脚本级开关。"""
         return UserLogSession(
             spec,
             user=user,
@@ -35,6 +36,7 @@ class LogBox:
             paths=paths,
             start_from_end=start_from_end,
             rotated_name=rotated_name,
+            enabled=enabled,
         )
 
     def get_collect(
