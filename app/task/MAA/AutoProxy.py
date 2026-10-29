@@ -18,7 +18,6 @@ import calendar
 import json
 import re
 import shutil
-import tempfile
 import time
 import uuid
 from collections.abc import Sequence
@@ -3155,44 +3154,23 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             logger.warning(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
             self.cur_user_item.status = "异常"
 
-        snapshot_directory = None
         if failure_shot is not None and history_records:
-            try:
-                snapshot_directory = tempfile.TemporaryDirectory(
-                    prefix="mas-history-maa-"
+            # 原图还供上游诊断与问题包使用，归档只复制，不接管源文件。
+            history_records[-1].attachments.append(
+                HistoryAttachmentInput(
+                    path=failure_shot,
+                    kind="image",
+                    role="failure_screenshot",
+                    display_name="失败截图",
+                    archive_mode="copy",
                 )
-                snapshot = Path(snapshot_directory.name) / failure_shot.name
-                try:
-                    await asyncio.to_thread(shutil.copy2, failure_shot, snapshot)
-                    history_records[-1].attachments.append(
-                        HistoryAttachmentInput(
-                            path=snapshot,
-                            kind="image",
-                            role="failure_screenshot",
-                            display_name="失败截图",
-                        )
-                    )
-                except OSError as error:
-                    diagnostic = f"失败截图快照失败：{error}"
-                    logger.warning(diagnostic)
-                    history_records[-1].logs += f"\n{diagnostic}\n"
-            except OSError as error:
-                diagnostic = f"创建失败截图快照目录失败：{error}"
-                logger.warning(diagnostic)
-                history_records[-1].logs += f"\n{diagnostic}\n"
-        try:
-            await self.task_info.save_user_history(
-                history_records,
-                script=self.script_info,
-                user=self.cur_user_item,
-                log_warning=logger.opt(exception=True).warning,
             )
-        finally:
-            if snapshot_directory is not None:
-                try:
-                    snapshot_directory.cleanup()
-                except OSError as error:
-                    logger.warning(f"清理失败截图快照目录失败：{error}")
+        await self.task_info.save_user_history(
+            history_records,
+            script=self.script_info,
+            user=self.cur_user_item,
+            log_warning=logger.opt(exception=True).warning,
+        )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
             await self.task_info.local_notifier.send_notice(

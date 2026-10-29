@@ -528,24 +528,27 @@ class HistoryStore:
                             ),
                         ).close()
                         connection.commit()
-                        try:
-                            if cancel.is_set():
-                                raise HistoryStorageError(
-                                    "历史服务正在关闭，归档已停止"
+                        move_issue = None
+                        if source.archive_mode == "move":
+                            try:
+                                if cancel.is_set():
+                                    raise HistoryStorageError(
+                                        "历史服务正在关闭，归档已停止"
+                                    )
+                                _ = source.path.rename(target)
+                                attachment.saved_via = "move"
+                                attachment.available = True
+                            except OSError as error:
+                                move_issue = HistoryStorageIssue(
+                                    stage="move",
+                                    attachment_index=index,
+                                    source_path=str(source.path),
+                                    target_path=str(target),
+                                    error_type=type(error).__name__,
+                                    message=str(error),
                                 )
-                            _ = source.path.rename(target)
-                            attachment.saved_via = "move"
-                            attachment.available = True
-                        except OSError as error:
-                            move_issue = HistoryStorageIssue(
-                                stage="move",
-                                attachment_index=index,
-                                source_path=str(source.path),
-                                target_path=str(target),
-                                error_type=type(error).__name__,
-                                message=str(error),
-                            )
-                            errors.append(move_issue)
+                                errors.append(move_issue)
+                        if not attachment.available:
                             temporary = target.with_name(target.name + ".temp")
                             try:
                                 with (
@@ -570,7 +573,8 @@ class HistoryStore:
                                 _ = temporary.rename(target)
                                 attachment.saved_via = "copy"
                                 attachment.available = True
-                                move_issue.recovered = True
+                                if move_issue is not None:
+                                    move_issue.recovered = True
                             except OSError as copy_error:
                                 errors.append(
                                     HistoryStorageIssue(
@@ -599,17 +603,7 @@ class HistoryStore:
                     except OSError as error:
                         errors.append(
                             HistoryStorageIssue(
-                                stage="move",
-                                attachment_index=index,
-                                source_path=str(source.path),
-                                target_path=str(target),
-                                error_type=type(error).__name__,
-                                message=str(error),
-                            )
-                        )
-                        errors.append(
-                            HistoryStorageIssue(
-                                stage="copy",
+                                stage=source.archive_mode,
                                 attachment_index=index,
                                 source_path=str(source.path),
                                 target_path=str(target),
@@ -703,7 +697,7 @@ class HistoryStore:
             raise HistorySaveError(
                 record_id=record_id, record_saved=False, errors=errors
             ) from error
-        if errors:
+        if any(not issue.recovered for issue in errors):
             raise HistorySaveError(
                 record_id=record_id, record_saved=True, errors=errors
             )

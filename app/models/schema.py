@@ -111,6 +111,7 @@ class HistoryAttachmentInput(BaseModel):
     kind: HistoryAttachmentKind
     role: str
     display_name: str
+    archive_mode: Literal["move", "copy"] = "move"
 
 
 class HistoryWrite(BaseModel):
