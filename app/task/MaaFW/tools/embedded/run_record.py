@@ -117,6 +117,11 @@ class MaaFWRunRecorder:
     def attempts(self) -> list[MaaFWAttemptRecord]:
         return list(self._attempts.values())
 
+    def attempt_items(self) -> list[tuple[int, MaaFWAttemptRecord]]:
+        """各次尝试连同它的键（该尝试日志的 id），按开始先后。"""
+
+        return list(self._attempts.items())
+
     def begin_attempt(
         self,
         key: int,

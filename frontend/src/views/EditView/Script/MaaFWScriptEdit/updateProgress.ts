@@ -167,6 +167,50 @@ export function reduceUpdateProgress(
   return next
 }
 
+const EVENT_KEY_FIELDS = [
+  'stage',
+  'status',
+  'message',
+  'log',
+  'logLevel',
+  'percent',
+  'downloadedBytes',
+  'totalBytes',
+  'speedBytesPerSec',
+  'packageKind',
+  'appliedFiles',
+  'totalFiles',
+  'extractedFiles',
+  'extractTotalFiles',
+  'extractedBytes',
+  'extractTotalBytes',
+] as const satisfies ReadonlyArray<keyof WSMaaFWProjectUpdateProgressData>
+
+function eventKey(data: WSMaaFWProjectUpdateProgressData): string {
+  return JSON.stringify(EVENT_KEY_FIELDS.map(name => data[name] ?? null))
+}
+
+/**
+ * 页面打开时接回后台的手动更新：按顺序重放后端登记的过程（`/maafw/update/job` 的 events），
+ * 再接上取快照期间已经推过来的事件（`pending`）。
+ *
+ * 后端先登记再推送，所以 `pending` 里靠前的那些可能已在快照里：与快照末尾若干条逐条相同的跳过，
+ * 免得日志行重复；其余照常折叠（同阶段的进度以后到的为准，终态之后的 running 事件照旧忽略）。
+ */
+export function replayUpdateProgress(
+  events: readonly WSMaaFWProjectUpdateProgressData[],
+  pending: readonly WSMaaFWProjectUpdateProgressData[] = []
+): MaaFWUpdateProgressState {
+  let state = createUpdateProgressState('checking')
+  for (const data of events) state = reduceUpdateProgress(state, data)
+  const seen = new Set((pending.length ? events.slice(-pending.length) : []).map(eventKey))
+  for (const data of pending) {
+    if (seen.has(eventKey(data))) continue
+    state = reduceUpdateProgress(state, data)
+  }
+  return state
+}
+
 /**
  * HTTP 响应回来时的兜底收尾：WS 断连或迟到时也要能落到终态。
  * 已经由 WS 收尾的不再改写（后端那句更具体）。

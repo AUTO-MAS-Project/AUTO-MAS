@@ -23,7 +23,7 @@ from app.core import Config, EmulatorManager
 from app.core.maa_capture import capture_adb
 from app.core.maa_stage import maa_stage_service
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig
+from app.models.config import MaaConfig, MaaUserConfig, UserConfigType
 from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
 from app.models.notification_report import TaskResultReport
@@ -96,6 +96,16 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 
 class MaaManager(ScriptManagerBase):
     """MAA控制器"""
+
+    maintenance_message = "明日方舟正在维护"
+
+    def maintenance_game(self, user_config: UserConfigType) -> str | None:
+        if isinstance(user_config, MaaUserConfig) and user_config.Info.Server in (
+            "Official",
+            "Bilibili",
+        ):
+            return "arknights"
+        return None
 
     wait_for_finalizer_on_cancel = True
 
