@@ -399,6 +399,15 @@ class AppConfig:
                 global_cdk=str(self.setting.Update.MirrorChyanCDK or "")
             ):
                 logger.info("MAA 更新接管迁移：已为配置 CDK 的旧脚本开启接管")
+            if (
+                isinstance(script, MaaConfig)
+                and not script.Update.ChannelMigrationVersion
+            ):
+                from app.task.MAA.tools.software_update import (
+                    migrate_maa_update_channel,
+                )
+
+                await migrate_maa_update_channel(script)
         if self._m9a_migration is not None:
             if self._m9a_migration.changed or self._m9a_migration.failure:
                 await self._settle_m9a_migration(self._m9a_migration)

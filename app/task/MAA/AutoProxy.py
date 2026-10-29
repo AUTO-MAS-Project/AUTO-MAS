@@ -132,10 +132,8 @@ from .tools.screenshot import (
 from .tools.software_package import read_pending_update, save_deferred_update
 from .tools.software_update import (
     compare_versions,
-    has_cached_maa_software_update,
     parse_version,
     read_installed_release,
-    start_maa_software_update_precheck,
 )
 from .tools.task_templates import (
     MAA_ANNIHILATION_FIGHT_BASE,
@@ -329,7 +327,9 @@ _MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect", "PlanList"})
 
 _MAA_UPDATE_CONFIG_KEYS = {
     "gui.new.json": (
+        ("Update", "CheckOnStartup"),
         ("Update", "CheckOnSchedule"),
+        ("Update", "UpdateSource"),
         ("Update", "AutoDownloadUpdatePackage"),
         ("Update", "AutoInstallUpdatePackage"),
     ),
@@ -1271,16 +1271,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     f"用户 {self.cur_user_item.name} 本次跳过剿灭：开始日={start_weekday}，本周记录={self.cur_user_config.Data.AnnihilationCompletedWeek}"
                 )
 
-        # MAA 本体更新预检查：任务开始即检查版本并把完整包预下载进 MAS 共享
-        # 缓存，整批账号结束后统一登记安装，避免完整包覆盖同轮后续任务所需的新资源；
-        # 未开启更新接管、无生效 CDK 或无法识别安装信息时不创建任务，失败
-        # 只写日志。通道跟随本用户的配置来源，原生来源才读任务前快照。
-        start_maa_software_update_precheck(
-            self.maa_root_path,
-            config_dir=self.update_config_dir,
-            config=self.script_config,
-        )
-
     def _resolve_log_file_path(self) -> Path:
         return self.maa_log_path
 
@@ -2130,17 +2120,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if self.cur_user_config.Info.IfQuickConfig:
             self._apply_depot_context(gui_new_set)
 
-        takeover_ready = await has_cached_maa_software_update(
-            self.maa_root_path,
-            config_dir=self.update_config_dir,
-            config=self.script_config,
-        )
         self._configure_maa_runtime(
             gui_new_set=gui_new_set,
             emulator_info=emulator_info,
-            takeover_ready=takeover_ready,
         )
-        # MAA 启动时会直接安装已登记的包，不受自动安装开关控制；延后到整批结束。
+        # 待更新包已保留；本次任务启动不再触发安装，结束后恢复登记。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
         _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -2546,8 +2530,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self,
         gui_new_set: dict,
         emulator_info: DeviceInfo,
-        *,
-        takeover_ready: bool = False,
     ) -> None:
         """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
@@ -2626,9 +2608,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 "AutoInstallUpdatePackage": False,
             }
         )
-        # 完整包已缓存才压制原生下载；CDK 错误、下载失败或尚未完成时保留原生更新。
-        if takeover_ready:
+        # 接管开启即暂停原生更新，不因本轮更新失败而重新启用。
+        # GitHub 资源源仅支持手动下载，临时选择随快照恢复，不改变 CDK。
+        if self.script_config.Update.TakeoverEnabled:
+            update_settings["CheckOnStartup"] = False
             update_settings["AutoDownloadUpdatePackage"] = False
+            update_settings["UpdateSource"] = "GitHub"
         if Config.setting.Function.IfSilence:
             # 启动即最小化是同一开关的新键，新 MAA 只读 gui.new.json。
             gui_new_set["Gui"].update(
@@ -2691,13 +2676,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
     @property
     def update_config_dir(self) -> Path:
-        """更新通道与本用户实际使用的配置来源一致。"""
+        """当前用户的配置来源目录，用于保留其原生更新来源选择。"""
         return self._config_archive_dir() or (
             Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         )
 
     def _remember_pending_update(self) -> None:
-        """保留原生下载登记，供整批结束后交还官方更新入口。"""
+        """保留原生下载登记，供下次启动前交还官方更新入口。"""
         try:
             pending = read_pending_update(self.maa_root_path)
         except (OSError, ValueError) as error:
