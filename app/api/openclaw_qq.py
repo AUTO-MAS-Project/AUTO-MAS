@@ -26,7 +26,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr, StringConstraints
 
 from app.api.notification_dependencies import get_notification_service
 from app.core.notify import HostNotificationService
@@ -104,6 +104,28 @@ class OpenClawQQTargetIn(BaseModel):
     groupCommandWhitelist: QQGroupCommandWhitelist | None = Field(
         default=None,
         description="群控制成员 OpenID 白名单；省略保持现值，空列表允许所有成员",
+    )
+
+
+class OpenClawQQCredentialsOut(OutBase):
+    """手动配置的回填信息，绝不返回密钥。"""
+
+    bindingId: str = Field(default="", description="当前绑定版本")
+    appId: str = Field(default="", description="机器人 AppID")
+    userOpenId: str = Field(default="", description="私聊接收者 OpenID，不是 QQ 号")
+    secretSet: bool = Field(default=False, description="是否已设置 AppSecret")
+
+
+class OpenClawQQCredentialsIn(BaseModel):
+    """手动替换机器人凭据。"""
+
+    bindingId: str = Field(min_length=1, description="读取配置时返回的绑定版本")
+    appId: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = (
+        Field(description="机器人 AppID")
+    )
+    userOpenId: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    clientSecret: SecretStr | None = Field(
+        default=None, description="新 AppSecret；省略时仅允许同一 AppID 保留原密钥"
     )
 
 
@@ -324,3 +346,58 @@ async def unbind(
             message=f"解除 QQ 绑定失败: {type(exc).__name__}: {exc}",
         )
     return OutBase(message="QQ 官方机器人已解除绑定")
+
+
+@router.post(
+    "/credentials/get",
+    response_model=OpenClawQQCredentialsOut,
+    summary="读取 QQ 机器人高级配置，不返回密钥",
+)
+async def get_credentials(
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OpenClawQQCredentialsOut:
+    sender = notifications.channel_sender("openclaw_qq")
+    binding_id, app_id, user_openid, secret_set = sender.credential_details()
+    return OpenClawQQCredentialsOut(
+        bindingId=binding_id, appId=app_id, userOpenId=user_openid, secretSet=secret_set
+    )
+
+
+@router.post(
+    "/credentials/set", response_model=OutBase, summary="验证并保存 QQ 机器人手动凭据"
+)
+async def set_credentials(
+    body: OpenClawQQCredentialsIn = Body(...),
+    *,
+    notifications: Annotated[
+        HostNotificationService, Depends(get_notification_service)
+    ],
+) -> OutBase:
+    try:
+        await notifications.channel_sender("openclaw_qq").set_credentials(
+            binding_id=body.bindingId,
+            app_id=body.appId,
+            client_secret=body.clientSecret.get_secret_value()
+            if body.clientSecret
+            else None,
+            user_openid=body.userOpenId,
+        )
+    except ValueError as exc:
+        messages = {
+            "binding_changed": "机器人绑定已变化，请重新打开高级配置",
+            "secret_required": "请填写 AppSecret；更换 AppID 时必须提供新密钥",
+            "invalid_credentials": "AppID 或 AppSecret 无效，请核对后重试",
+        }
+        return OutBase(
+            code=400, status="error", message=messages.get(str(exc), "保存失败")
+        )
+    except Exception:
+        # 外部错误可能包含凭据，不回传或记录原始异常。
+        logger.warning("QQ 手动凭据验证或保存失败")
+        return OutBase(
+            code=500, status="error", message="验证或保存失败，请检查网络后重试"
+        )
+    return OutBase(message="凭据已验证并保存，正在连接消息网关")

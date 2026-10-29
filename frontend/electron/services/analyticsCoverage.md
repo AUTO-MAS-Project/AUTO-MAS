@@ -64,7 +64,7 @@
 | T053 | community_activity_requested：社区活动工具是否有需求 | 已接入，持续复核 |
 | T054 | notification_test_finished：配置通知后测试是否顺利 | 已接入，持续复核 |
 | T055 | notification_channel_changed：各内置通知渠道的启用情况 | 已接入，持续复核 |
-| T056 | notification_binding_finished：二维码绑定、取消和解绑是否完成 | 已接入，持续复核 |
+| T056 | notification_binding_finished：二维码绑定、取消、解绑及高级手动配置保存是否完成 | 已接入，持续复核 |
 | T057 | webhook_test_finished：自定义通知配置是否容易出错 | 已接入，持续复核 |
 | T058 | settings_change_finished：设置修改成功率及主要功能采用情况 | 已接入，持续复核 |
 | T059 | appearance_preference_changed：主题、语言、低性能模式需求 | 已接入，持续复核 |

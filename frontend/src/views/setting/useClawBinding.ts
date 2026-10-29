@@ -37,6 +37,7 @@ export function useClawBinding(
   const statusLoading = ref(false)
   const statusError = ref('')
   const unbinding = ref(false)
+  const manualSaving = ref(false)
   const open = ref(false)
   const loading = ref(false)
   const checking = ref(false)
@@ -218,7 +219,7 @@ export function useClawBinding(
   }
 
   const start = async () => {
-    if (targetSaving.value) return
+    if (targetSaving.value || manualSaving.value) return
     groupsRunId++
     groupsLoading.value = false
     isBound ||= status.value?.connected === true
@@ -253,7 +254,7 @@ export function useClawBinding(
   }
 
   const unbind = async () => {
-    if (targetSaving.value) return
+    if (targetSaving.value || manualSaving.value) return
     const activeBinding = bindingAttempt
     const operation = beginAnalyticsOperation('notification_binding_finished')
     groupsRunId++
@@ -277,6 +278,28 @@ export function useClawBinding(
     }
   }
 
+  const saveCredentials = async (
+    body: Parameters<typeof QqService.setCredentialsApiSettingOpenclawQqCredentialsSetPost>[0]
+  ) => {
+    if (manualSaving.value || targetSaving.value || unbinding.value || open.value) return false
+    manualSaving.value = true
+    const operation = beginAnalyticsOperation('notification_binding_finished')
+    try {
+      checkResponse(await QqService.setCredentialsApiSettingOpenclawQqCredentialsSetPost(body))
+      operation.finish({ channel_kind: 'openclaw_qq', action: 'manual_bind', outcome: 'saved' })
+      isBound = true
+      qqBindingObserved = true
+      await loadStatus()
+      await loadGroups()
+      return true
+    } catch (error) {
+      operation.finish({ channel_kind: 'openclaw_qq', action: 'manual_bind', outcome: 'failure' })
+      throw error
+    } finally {
+      manualSaving.value = false
+    }
+  }
+
   onMounted(loadStatus)
   onBeforeUnmount(() => {
     disposed = true
@@ -291,6 +314,8 @@ export function useClawBinding(
     statusLoading,
     statusError,
     unbinding,
+    manualSaving,
+    saveCredentials,
     open,
     loading,
     checking,

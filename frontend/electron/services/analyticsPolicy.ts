@@ -121,8 +121,17 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   },
   notification_binding_finished: {
     channel_kind: ['openclaw_qq'],
-    action: ['bind', 'rebind', 'unbind'],
-    outcome: ['connected', 'unbound', 'failure', 'expired', 'cancelled', 'replaced', 'unmounted'],
+    action: ['bind', 'rebind', 'unbind', 'manual_bind'],
+    outcome: [
+      'connected',
+      'saved',
+      'unbound',
+      'failure',
+      'expired',
+      'cancelled',
+      'replaced',
+      'unmounted',
+    ],
     duration_bucket: duration,
   },
   webhook_test_finished: {

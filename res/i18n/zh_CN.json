@@ -4654,5 +4654,13 @@
   "core.themeStore.upload.unchanged": "资源包和封面都没有变化",
   "core.themeStore.upload.usePackageCover": "改用包里的预览图",
   "core.themeStore.upload.versionTargetGone": "分享站上找不到之前上传的那个资源，已改为按新资源上传，请确认名称后重新提交",
-  "core.themeStore.version": "版本"
+  "core.themeStore.version": "版本",
+  "core.setting.notify.openclawQqManualTitle": "高级：手动配置机器人",
+  "core.setting.notify.openclawQqManualHint": "填写 QQ 开放平台的 AppID、AppSecret 和私聊接收者 OpenID（不是 QQ 号）。更换机器人时请同时更换 OpenID，并先将机器人添加为好友；保存会替换当前绑定，接收者是否可用请通过测试通知确认。",
+  "core.setting.notify.openclawQqManualOpenId": "私聊接收者 OpenID",
+  "core.setting.notify.openclawQqManualKeepSecret": "留空保留现有密钥",
+  "core.setting.notify.openclawQqManualSave": "验证并保存",
+  "core.setting.notify.openclawQqManualSaved": "凭据已验证并保存，正在连接消息网关",
+  "core.setting.notify.openclawQqManualLoadError": "读取高级配置失败，请重试",
+  "core.setting.notify.openclawQqManualSaveError": "保存失败，请重试"
 }
