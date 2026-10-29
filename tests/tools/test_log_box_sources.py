@@ -25,7 +25,7 @@ def test_append_rotation_and_truncation_keep_exact_offsets(
             st_dev=result.st_dev,
             st_mode=result.st_mode,
             st_size=result.st_size,
-            st_ctime_ns=result.st_ctime_ns + state["ctime_delta"],
+            st_ctime_ns=100 + state["ctime_delta"],
         )
 
     monkeypatch.setattr(type(path), "stat", stat)
