@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -14,6 +14,7 @@ from app.utils.common.i18n import PoTranslator
 from .collect import LogCollect, PathLike
 from .logtype import LogType
 from .pipeline import PostProcessor, PreProcessor
+from .results import LogEntry
 
 logger = get_logger("节点采集")
 
@@ -30,6 +31,14 @@ class TranslationSpec:
 
 
 @dataclass(frozen=True)
+class LogBinding:
+    """宿主收尾时固定的扩展：解析使用快照，交付回调只在宿主线程执行。"""
+
+    postprocessor: PostProcessor | None = None
+    deliver: Callable[[list[LogEntry]], None] | None = None
+
+
+@dataclass(frozen=True)
 class LogSpec:
     """专项声明规则、翻译与处理器；脚本特有的语义保留在处理器中。
 
@@ -43,6 +52,7 @@ class LogSpec:
     error_message: str = "节点采集失败"
     failure_text: str | None = None
     translation: TranslationSpec | None = None
+    bind: Callable[[], LogBinding] | None = None
 
 
 class LogUser(Protocol):
@@ -51,7 +61,7 @@ class LogUser(Protocol):
 
 
 class UserLogSession:
-    """单用户、单事件循环会话；关闭后报告可直接读取最终节点。
+    """绑定用户或专项路由的单事件循环会话；关闭后报告可读最终节点。
 
     来源在创建时记录偏移，不能延后到脚本启动后。读取、规则匹配与后处理
     在线程收尾，用户数据只在事件循环写入。关闭被取消时先等待结果交付，
@@ -123,12 +133,26 @@ class UserLogSession:
     async def _finish(self) -> None:
         if self._collector is not None:
             try:
+                # 动态账号等宿主数据先在事件循环固定，不能让工作线程读取可变任务状态。
+                binding = (
+                    self.spec.bind() if self.spec.bind is not None else LogBinding()
+                )
+                postprocessor = (
+                    binding.postprocessor
+                    if binding.postprocessor is not None
+                    else self.spec.postprocessor
+                )
                 entries = await asyncio.to_thread(
-                    self._collector._finish, self.spec.postprocessor
+                    self._collector._finish, postprocessor
                 )
                 if entries is not None:
                     # 不在线程内调用 sink：用户状态和报告组装归宿主线程。
-                    self._collector._deliver(entries)
+                    deliver = (
+                        binding.deliver
+                        if binding.deliver is not None
+                        else self._collector._deliver
+                    )
+                    deliver(entries)
             except Exception:
                 self._failed = True
                 logger.opt(exception=True).warning(self.spec.error_message)

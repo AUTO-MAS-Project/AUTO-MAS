@@ -6,7 +6,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.log_box import LogCollect, LogSpec, LogType, TranslationSpec, log_box
+from app.log_box import (
+    LogBinding,
+    LogCollect,
+    LogSpec,
+    LogType,
+    TranslationSpec,
+    log_box,
+)
 from app.log_box.report import build_user_result_text
 
 
@@ -339,3 +346,107 @@ def test_translation_resource_errors_keep_script_success_and_existing_marker(
         ["邮件", "原有采集失败提示"] if failure == "clear" else ["原有采集失败提示"]
     )
     assert [entry[1] for entry in user.push_log] == expected
+
+
+@pytest.mark.parametrize("cancel_waiter", [False, True])
+def test_runtime_binding_is_once_on_host_and_precedes_background_processing(
+    tmp_path, cancel_waiter
+):
+    path = tmp_path / "run.log"
+    path.write_text("节点\n", encoding="utf-8")
+    user = make_user()
+    owner = threading.get_ident()
+    started, release = threading.Event(), threading.Event()
+    calls, delivered = [], []
+    state = {"name": "绑定前"}
+
+    def bind():
+        calls.append(threading.get_ident())
+        name = state["name"]
+
+        def resolve(entries):
+            assert threading.get_ident() != owner
+            started.set()
+            assert release.wait(timeout=5)
+            return [(kind, name, ts) for kind, _, ts in entries]
+
+        def deliver(entries):
+            assert threading.get_ident() == owner
+            delivered.extend(entry.text for entry in entries)
+
+        return LogBinding(postprocessor=resolve, deliver=deliver)
+
+    session = log_box.get_user_session(
+        LogSpec(rules=(("节点", ""),), bind=bind),
+        user=user,
+        mode="汇总",
+        paths=path,
+        start_from_end=False,
+    )
+    state["name"] = "收尾时快照"
+
+    async def scenario():
+        closings = [asyncio.create_task(session.close()) for _ in range(2)]
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            state["name"] = "后台运行期间变化"
+            if cancel_waiter:
+                closings[0].cancel()
+                await asyncio.sleep(0)
+        finally:
+            release.set()
+        results = await asyncio.gather(*closings, return_exceptions=True)
+        if cancel_waiter:
+            assert isinstance(results[0], asyncio.CancelledError)
+            assert results[1] is None
+        else:
+            assert results == [None, None]
+        await session.close()
+
+    asyncio.run(scenario())
+    assert calls == [owner]
+    assert delivered == ["收尾时快照"]
+    assert user.push_log == []  # 已交给专项交付，不再重复写默认用户。
+
+
+@pytest.mark.parametrize("failure", ["bind", "deliver"])
+def test_runtime_extension_failure_isolated_and_reported_once(tmp_path, failure):
+    path = tmp_path / "run.log"
+    path.write_text("节点\n", encoding="utf-8")
+    user = make_user()
+
+    def deliver(entries):
+        raise RuntimeError("专项交付失败")
+
+    def bind():
+        if failure == "bind":
+            raise RuntimeError("专项快照失败")
+        return LogBinding(deliver=deliver)
+
+    session = log_box.get_user_session(
+        LogSpec(rules=(("节点", ""),), bind=bind, failure_text="原有提示"),
+        user=user,
+        mode="汇总",
+        paths=path,
+        start_from_end=False,
+    )
+
+    async def scenario():
+        await session.close()
+        await session.close()
+
+    asyncio.run(scenario())
+    assert user.status == "完成"
+    assert [entry[1] for entry in user.push_log] == ["原有提示"]
+
+
+def test_off_does_not_bind_runtime_context():
+    def bind():
+        raise AssertionError("关闭采集时不得取得运行上下文")
+
+    user = make_user()
+    session = log_box.get_user_session(
+        LogSpec(rules=(), bind=bind), user=user, mode="关闭"
+    )
+    asyncio.run(session.close())
+    assert user.push_log == []

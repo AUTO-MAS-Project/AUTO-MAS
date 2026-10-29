@@ -51,8 +51,12 @@ ZZZ-OD 专项作为 log_box 的一个实例：本模块只提供参数（规则�
 """
 
 import re
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
-from app.log_box.logtype import LogType
+from app.log_box import LogBinding, LogSpec, LogType
+from app.log_box.results import LogEntry
+from app.log_box.session import LogUser
 
 # 推送规则：(匹配正则, 提取表达式)；均为普通类型，节点级失败由文本「❌ 失败:」
 # 体现（始终展示），推送时机由全局 SendTaskResultTime 控制。
@@ -84,7 +88,7 @@ ZZZOD_PUSH_RULES: list[tuple[str, str]] = [
     (r"应用已完成 (.+)$", r'"SKIP:" + $((?:应用已完成 )(.+))'),
 ]
 
-# 「【账号名】」前缀（多账号节点行），AutoProxy 的 sink 也用它做路由拆分
+# 「【账号名】」前缀（多账号节点行），交付扩展据此做路由拆分。
 ACCOUNT_PREFIX_RE = re.compile(r"^【(.+?)】(.*)$")
 
 _KIND_STATUS = {"OK": "✅ 成功", "FAIL": "❌ 失败", "SKIP": "⏭ 跳过"}
@@ -230,3 +234,51 @@ def make_zzzod_resolve(app_names: set[str], idx_names: dict[int, str]):
         return output
 
     return resolve
+
+
+@dataclass(frozen=True)
+class ZzzLogSnapshot:
+    """本次运行结束后的目录与账号映射；只从 MAS 宿主取得，不读上游私有状态。"""
+
+    app_names: frozenset[str]
+    idx_names: Mapping[int, str]
+    users: Mapping[str, LogUser]
+    fallback_user: LogUser
+
+
+def make_zzzod_log_spec(snapshot: Callable[[], ZzzLogSnapshot]) -> LogSpec:
+    """声明运行后才确定的账号归属；box 负责快照时机、异步处理与交付。"""
+
+    def bind() -> LogBinding:
+        current = snapshot()
+        # 解析线程只持有目录、实例名的副本，用户对象仅供宿主交付使用。
+        app_names = set(current.app_names)
+        idx_names = dict(current.idx_names)
+        users = dict(current.users)
+        fallback = current.fallback_user
+
+        def deliver(entries: list[LogEntry]) -> None:
+            for entry in entries:
+                match = ACCOUNT_PREFIX_RE.match(entry.text)
+                if match is not None and match.group(1) in users:
+                    target = users[match.group(1)]
+                    if target.push_log_mode != "关闭":
+                        target.push_log.append(
+                            (entry.log_type, match.group(2), entry.timestamp)
+                        )
+                else:
+                    # 原生账号或无归属行保留前缀落到触发用户，由公共报告区分账号。
+                    fallback.push_log.append(
+                        (entry.log_type, entry.text, entry.timestamp)
+                    )
+
+        return LogBinding(
+            postprocessor=make_zzzod_resolve(app_names, idx_names),
+            deliver=deliver,
+        )
+
+    return LogSpec(
+        rules=tuple(ZZZOD_PUSH_RULES),
+        bind=bind,
+        error_message="ZZZ-OD 节点采集推送失败",
+    )
