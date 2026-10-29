@@ -10,19 +10,14 @@
       :hint="eventDepotHint"
       @change="emitSave('Task.IfEventDepotMaintain', $event)"
     >
-      <DepotMaintainPlanEditor
+      <EventDepotPlanEditor
         :editor="eventDepotPlanEditor"
-        :form-data="formData"
         :loading="loading"
-        :stage-options="stageOptions"
+        :stages="activityStages"
+        :template="activityTemplate"
         :item-options="depotItemOptions"
-        :item-options-loading="depotItemOptionsLoading"
-        :item-options-error="depotItemOptionsError"
-        :stage-candidates="{}"
-        :stage-candidates-loading="[]"
         :inventory="depotInventory"
         :depot-inventory-time="depotInventoryTime"
-        :activity-stages="activityStages"
         :activity-loading="activityStageLoading"
         :activity-error="activityStageError"
         @retry-activity="emit('retryActivity')"
@@ -149,6 +144,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PipelineRow from './PipelineRow.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+import EventDepotPlanEditor from './EventDepotPlanEditor.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -182,6 +178,7 @@ const props = defineProps<{
   loading: boolean
   stageOptions: SelectOption[]
   activityStages: ActivityItem[]
+  activityTemplate?: ('material' | 'orundum')[]
   activityStageLoading: boolean
   activityStageError: string
   depotItemOptions: SelectOption[]
