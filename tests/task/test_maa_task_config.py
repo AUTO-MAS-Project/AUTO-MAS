@@ -30,32 +30,20 @@ def _source_task(*, use_expiring: bool) -> dict:
 
 
 @pytest.mark.parametrize("use_expiring", [True, False])
-def test_cultivate_task_preserves_expiring_medicine_settings(use_expiring: bool):
+def test_cultivate_tasks_preserve_expiring_medicine_settings(use_expiring: bool):
     source = _source_task(use_expiring=use_expiring)
 
-    task = _build_cultivate_task(
-        _cultivate_plan(),
-        source,
-        skip_during_activity=False,
-        skip_during_resource_collection=False,
-    )
-
-    assert task is not None
-    assert task["UseExpiringMedicine"] is use_expiring
-    assert task["MedicineExpireDays"] == 1
-    assert task["UseExpireMedicineForActivity"] is False
-    assert source["UseExpiringMedicine"] is use_expiring
-
-
-@pytest.mark.parametrize("use_expiring", [True, False])
-def test_merged_stock_cultivate_task_preserves_user_setting(use_expiring: bool):
-    source = _source_task(use_expiring=use_expiring)
     cultivate = _build_cultivate_task(
         _cultivate_plan(),
         source,
         skip_during_activity=False,
         skip_during_resource_collection=False,
     )
+
+    assert cultivate is not None
+    assert cultivate["UseExpiringMedicine"] is use_expiring
+    assert cultivate["MedicineExpireDays"] == 1
+    assert cultivate["UseExpireMedicineForActivity"] is False
 
     task = _build_stock_cultivate_task(source, cultivate, _cultivate_plan())
 

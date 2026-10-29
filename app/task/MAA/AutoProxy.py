@@ -197,6 +197,10 @@ _MAA_OPER_BOX_CHAIN_COMPLETION_MARKERS = (
     f"完成任务: {_MAA_DATA_UPDATE_TASK_NAME} (干员识别)",
 )
 _MAA_FIGHT_COMPLETION_MARKER = "Completed Task Chain: Fight"
+_MAA_TASK_FAILURE_MARKERS = (
+    "任务已完成，但出现错误！",
+    "任务已结束，以下任务出现错误",
+)
 # MAA 的停滞提示：只说明任务没有推进，本身不是推进信号。若让它参与 latest_time
 # 更新，MAA 每隔一个提醒间隔（默认 30 分钟）写一条就会把停滞计时重置一次，卡死的
 # 任务永远攒不满超时阈值，等不到 "MAA 进程超时"。这些片段仅从 latest_time 活跃度
@@ -1483,24 +1487,22 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                             )
                         )
 
+                maa_log: str | None = None
                 if self.cur_user_config.Info.IfQuickConfig:
-                    self._collect_cultivate_archive(
-                        "".join(self.cur_user_log.content), finalizing=True
-                    )
+                    maa_log = "".join(self.cur_user_log.content)
+                    self._collect_cultivate_archive(maa_log, finalizing=True)
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
-                maa_log = "".join(self.cur_user_log.content)
                 if (
                     self.mode == "Annihilation"
                     and self.cur_user_log.status == "MAA 部分任务执行失败"
-                    and (
-                        "任务已完成，但出现错误！" in maa_log
-                        or "任务已结束，以下任务出现错误" in maa_log
-                    )
                 ):
-                    logger.warning("剿灭任务已失败，本次不再重试，继续执行日常任务")
-                    break
+                    if maa_log is None:
+                        maa_log = "".join(self.cur_user_log.content)
+                    if any(marker in maa_log for marker in _MAA_TASK_FAILURE_MARKERS):
+                        logger.warning("剿灭任务已失败，本次不再重试，继续执行日常任务")
+                        break
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
@@ -2859,10 +2861,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 只有全部成功才打「任务已全部完成！」；v6.19.0-beta.1（5e502a811）又把
         # 出错标题改为「任务已结束，以下任务出现错误:」并附失败任务清单，
         # 完成判定三个都要认。
-        elif (
-            "任务已全部完成！" in log
-            or "任务已完成，但出现错误！" in log
-            or "任务已结束，以下任务出现错误" in log
+        elif "任务已全部完成！" in log or any(
+            marker in log for marker in _MAA_TASK_FAILURE_MARKERS
         ):
             # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
@@ -2920,8 +2920,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
-                "任务已完成，但出现错误！" in log
-                or "任务已结束，以下任务出现错误" in log
+                any(marker in log for marker in _MAA_TASK_FAILURE_MARKERS)
                 or any(self.task_dict.values())
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
