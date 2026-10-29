@@ -170,3 +170,12 @@ bind 在宿主返回 LogBinding，read 在工作线程把快照转为 LogEntry �
 upstream/dev 隔离导出副本中同样失败（stable != beta），未扩大本 PR 修复范围。
 完整命令：python -m pytest tests -q -p no:cacheprovider --tb=no
 --basetemp=test-results/logbox-dev-review-full。
+
+
+## Ubuntu CI 文件身份修正
+
+原 LogSource 用 inode + ctime 识别轮转，但 POSIX ctime 在普通追加时会变化，
+导致从头重读历史内容。现按平台识别：Windows 保留 inode + 创建时间；POSIX 使用
+inode + 设备号。新增确定性平台测试覆盖追加、轮转尾部、截断及无 inode 的 Windows 替换。
+旧算法运行 POSIX 用例稳定失败，修正后相关回归 161 passed。未修改原 CI 断言。
+本机无已安装的 WSL Linux 发行版，实际 Ubuntu 验证交由新一轮 CI。
