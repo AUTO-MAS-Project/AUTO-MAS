@@ -3,6 +3,7 @@ import type {
   HSRConfig,
   HSRConfig_TaskMapping,
   MaaConfig,
+  MaaEndConfig_Update,
   GeneralConfig,
   SrcConfig,
   ScriptCreateIn,
@@ -72,6 +73,7 @@ export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
 
 // MaaEnd脚本配置
 export interface MaaEndScriptConfig {
+  Update: MaaEndConfig_Update
   Info: {
     Name: string
     Path: string | null

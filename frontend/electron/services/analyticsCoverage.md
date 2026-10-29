@@ -153,3 +153,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
+
+- MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。

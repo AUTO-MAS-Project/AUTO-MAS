@@ -279,3 +279,5 @@ QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队�
 脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
 专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
 官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。
+
+- MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。

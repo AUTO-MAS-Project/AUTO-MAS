@@ -80,6 +80,11 @@ from .shared import (
 DepotQuotaNumb = Annotated[int | None, Field(ge=0, le=9999)]
 """库存保持与干员养成每条计划的理智药/源石额度；留空即沿用 MAA 原设置。"""
 
+MaaEndInstallPath = Annotated[
+    NativePath | None, path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS)
+]
+"""保留更新中断时暂缺的安装路径，供恢复入口定位相邻的原安装备份。"""
+
 
 class MaaUserConfig(DomainEntry):
     "MAA用户配置"
@@ -1189,7 +1194,8 @@ class MaaEndConfig(DomainEntry):
             default_factory=lambda: "新 MaaEnd 脚本", description="MaaEnd 脚本名称"
         )
 
-        Path: FolderPath = Field(
+        # 目录切换中断时路径可能暂时不存在，必须保留以便运行前恢复原安装。
+        Path: MaaEndInstallPath = Field(
             default_factory=lambda: None, description="MaaEnd 路径"
         )
 
@@ -1234,6 +1240,21 @@ class MaaEndConfig(DomainEntry):
 
     Run: RunFields = Field(default_factory=RunFields)
     UserData: ConfigCollection[MaaEndUserConfig] = collection(MaaEndUserConfig)
+
+    class UpdateFields(ConfigGroup):
+        TakeoverEnabled: bool = Field(
+            default_factory=lambda: False,
+            description="运行前由 MAS 下载、校验并安装 MaaEnd 更新，托管期间暂停 MXU 更新",
+        )
+        Channel: Literal["stable", "beta"] = Field(
+            default_factory=lambda: "stable", description="MaaEnd 更新通道"
+        )
+        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
+            default_factory=lambda: "",
+            description="MaaEnd Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
+        )
+
+    Update: UpdateFields = Field(default_factory=UpdateFields)
 
     @classmethod
     def normalize_payload(cls, data):

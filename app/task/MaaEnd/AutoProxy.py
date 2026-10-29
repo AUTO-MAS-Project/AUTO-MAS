@@ -425,6 +425,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         capture_adb: AdbCapture,
         capture_win32: Win32Capture,
         on_error_screenshot: Callable[[Path], None] | None = None,
+        launch_env: dict[str, str] | None = None,
     ):
         super().__init__()
 
@@ -440,6 +441,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.capture_adb = capture_adb
         self.capture_win32 = capture_win32
         self.on_error_screenshot = on_error_screenshot
+        self.launch_env = launch_env
         self._attempt_start_ns: int | None = None
         self._attempt_screenshot_paths: list[Path] = []
         # 失败日志包：MXU 每次启动都会清空 debug/（开启日志包时由 set_maaend 强制打开），
@@ -1668,7 +1670,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 snapshot_mxu_logs, self.maaend_root_path
             )
             update_log_offsets = (
-                stage_log_offsets if self.mode == self.first_run_mode else None
+                stage_log_offsets
+                if self.mode == self.first_run_mode
+                and not self.script_config.Update.TakeoverEnabled
+                else None
             )
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
@@ -1678,6 +1683,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 self.maaend_instance_name,
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
+                env=self.launch_env,
             )
             # 只有进程真的起来了才算一次 MXU 启动；否则 debug/ 里还是上一轮的残留。
             self._mxu_launch_count += 1
