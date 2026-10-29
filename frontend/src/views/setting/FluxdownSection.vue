@@ -257,7 +257,13 @@ const handleMasInstall = async () => {
     <a-col :span="8">
       <div class="form-item-vertical">
         <div class="form-label-wrapper">
-          <a-checkbox :checked="!!settings.Update?.FluxdownTakeoverAll" disabled>
+          <a-checkbox
+            :checked="!!settings.Update?.FluxdownTakeoverAll"
+            @change="
+              (event: CheckboxChangeEvent) =>
+                handleSettingChange('Update', 'FluxdownTakeoverAll', event.target.checked)
+            "
+          >
             {{ t('core.setting.others.fluxdownTakeover') }}
           </a-checkbox>
           <a-tooltip :title="t('core.setting.others.fluxdownTakeoverTip')">
