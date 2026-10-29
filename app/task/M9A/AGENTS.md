@@ -78,8 +78,8 @@
 
 配置类在 `app/models/config.py`：`M9AConfig(MaaFWConfig)` / `M9AUserConfig(MaaFWUserConfig)` 同形，只改
 `DEFAULT_SCRIPT_NAME`、`USER_CONFIG_CLASS`、`FLAVOR`。`FLAVOR` 是字符串 `"app.task.M9A.flavor:FLAVOR"`，
-由引擎按需导入——`app.models` 不能反向 import `app.task`。`app/core/task_manager.py` 的 `_MANAGER_BOOK`
-按类型精确查表，`M9AConfig` 单独登记到 `MaaFWEmbeddedManager`；`app/core/config.py` 里所有
+由引擎按需导入——`app.models` 不能反向 import `app.task`。`app/task/MaaFW/registration.py` 的家族声明
+显式把 `M9AConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配；`app/core/config.py` 里所有
 `isinstance(…, MaaFWConfig)` 分支天然覆盖 M9A，不要再加 `isinstance(…, M9AConfig)` 分支。
 
 前端没有 M9A 专用页面：脚本页 / 用户页 / 创建流程都是 MaaFW 的组件，按脚本实际类型取特调注册表里

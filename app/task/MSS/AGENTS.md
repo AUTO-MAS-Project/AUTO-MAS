@@ -36,7 +36,7 @@
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）与一项 `Data.PersonalMssDefense`（上面那份记账）。全局的
 `Function.IfPersonalMss` 是个人版总开关——设置页那个「并非神秘入口」与用户页那一块共用它。
-`_MANAGER_BOOK` 里 `MSSConfig` 单独登记到 `MaaFWEmbeddedManager`。
+`app/task/MaaFW/registration.py` 的家族声明显式把 `MSSConfig` 登记到 `MaaFWEmbeddedManager`，宿主生成的运行索引按类型精确匹配。
 
 前端没有 MSS 专用脚本页 / 用户页：用 MaaFW 的两个页面，按脚本实际类型取特调注册表里 MSS 的描述对象
 （`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`，写法见 `frontend/src/composables/useMaaFWFlavor.ts`
