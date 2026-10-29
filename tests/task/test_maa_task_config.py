@@ -122,7 +122,6 @@ def test_depot_medicine_override_applies_to_every_merged_plan(
     assert source["UseMedicine"] is True
 
 
-@pytest.mark.parametrize("mode", ["Routine", "Annihilation"])
 @pytest.mark.parametrize(
     "failure_summary",
     [
@@ -130,10 +129,10 @@ def test_depot_medicine_override_applies_to_every_merged_plan(
         "任务已结束，以下任务出现错误:\n理智作战",
     ],
 )
-def test_maa_final_task_failure_is_not_retried(mode: str, failure_summary: str):
+def test_maa_final_task_failure_is_not_retried(failure_summary: str):
     log = f"干员培养完成：成功 0，失败 6，跳过 0\n{failure_summary}"
 
-    assert not _should_retry_maa(mode, "MAA 部分任务执行失败", log)
+    assert not _should_retry_maa("MAA 部分任务执行失败", log)
 
 
 @pytest.mark.parametrize(
@@ -141,10 +140,8 @@ def test_maa_final_task_failure_is_not_retried(mode: str, failure_summary: str):
     ["MAA 的 ADB 连接异常", "MAA 进程超时", "MAA 在完成任务前退出"],
 )
 def test_maa_runtime_failures_remain_retryable(status: str):
-    assert _should_retry_maa("Routine", status, "连接异常")
+    assert _should_retry_maa(status, "连接异常")
 
 
 def test_maa_partial_result_without_final_failure_marker_remains_retryable():
-    assert _should_retry_maa(
-        "Routine", "MAA 部分任务执行失败", "任务出错: 理智作战"
-    )
+    assert _should_retry_maa("MAA 部分任务执行失败", "任务出错: 理智作战")

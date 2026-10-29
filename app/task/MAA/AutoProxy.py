@@ -236,15 +236,12 @@ _MAA_STALL_NOTICE_MARKERS = (
 _MAA_OUT_OF_MEMORY_MARKER = "任务因内存不足停止，请关闭部分程序或重启 MAA 后重试"
 
 
-def _should_retry_maa(mode: str, status: str, log: str) -> bool:
+def _should_retry_maa(status: str, log: str) -> bool:
     """仅对尚未形成 MAA 任务失败终态的运行异常重试。"""
 
-    if status == "Success!" or mode == "GreenTicketStore":
+    if status == "Success!":
         return False
-    return not (
-        status == "MAA 部分任务执行失败"
-        and _has_maa_task_failure(log)
-    )
+    return not (status == "MAA 部分任务执行失败" and _has_maa_task_failure(log))
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -1518,18 +1515,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                             )
                         )
 
-                maa_log: str | None = None
+                maa_log = "".join(self.cur_user_log.content)
                 if self.cur_user_config.Info.IfQuickConfig:
-                    maa_log = "".join(self.cur_user_log.content)
                     self._collect_cultivate_archive(maa_log, finalizing=True)
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
 
-                if maa_log is None:
-                    maa_log = "".join(self.cur_user_log.content)
-                if not _should_retry_maa(
-                    self.mode, self.cur_user_log.status, maa_log
-                ):
+                if not _should_retry_maa(self.cur_user_log.status, maa_log):
                     if self.cur_user_log.status != "Success!":
                         logger.warning(
                             f"用户 {self.cur_user_item.name} 的"

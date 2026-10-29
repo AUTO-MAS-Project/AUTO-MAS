@@ -349,9 +349,7 @@ class MaaUserConfig(DomainEntry):
             description="森空岛绑定：绑定角色的游戏 uid（非森空岛 userId）",
         )
 
-        DepotMaintainMedicineNumb: Annotated[
-            int | None, Field(ge=0, le=9999)
-        ] = Field(
+        DepotMaintainMedicineNumb: Annotated[int | None, Field(ge=0, le=9999)] = Field(
             default_factory=lambda: None,
             description="库存保持及干员养成每条计划使用理智药数量；留空沿用 MAA 配置",
         )
@@ -374,11 +372,11 @@ class MaaUserConfig(DomainEntry):
             description="活动库存保持计划，保存材料关序号及目标库存，运行时解析当前活动",
         )
 
-        EventDepotMaintainMedicineNumb: Annotated[
-            int | None, Field(ge=0, le=9999)
-        ] = Field(
-            default_factory=lambda: None,
-            description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+        EventDepotMaintainMedicineNumb: Annotated[int | None, Field(ge=0, le=9999)] = (
+            Field(
+                default_factory=lambda: None,
+                description="活动库存保持每条计划使用理智药数量；留空沿用 MAA 配置",
+            )
         )
 
         IfActivityFirst: bool = Field(
