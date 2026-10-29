@@ -491,7 +491,9 @@ async def test_mirror_unconfirmed_fluxdown_writer_keeps_download_target(
         destination.write_bytes(b"pending download")
         raise FluxdownResumableError("writer status not confirmed")
 
-    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=blocked_download))
+    monkeypatch.setattr(
+        update, "download_file", AsyncMock(side_effect=blocked_download)
+    )
     with pytest.raises(FluxdownResumableError):
         await update.update_before_run(root, config)
     downloads = list((root.parent / "data/maaend_update").glob("download-*"))
