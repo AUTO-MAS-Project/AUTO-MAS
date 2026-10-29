@@ -2,6 +2,8 @@
 
 import asyncio
 import hashlib
+
+import httpx
 import json
 import shutil
 import threading
@@ -425,3 +427,73 @@ async def test_unconfirmed_downloader_keeps_its_private_destination(
     assert len(downloads) == 1
     assert next(downloads[0].iterdir()).read_bytes() == b"partial download"
     assert update.read_install(root)[0] == Version("2.1.0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["GitHub", "MirrorChyan"])
+async def test_interrupted_builtin_download_does_not_accumulate_partial_archives(
+    installation, monkeypatch, source
+):
+    root, config = installation
+    if source == "MirrorChyan":
+        config.Update.MirrorChyanCDK = "test-cdk"
+        monkeypatch.setattr(
+            update,
+            "request_mirror_resource",
+            AsyncMock(
+                return_value={
+                    "data": {
+                        "update_type": "full",
+                        "version_name": "v2.2.0",
+                        "url": "https://mirror.example/official.zip",
+                    }
+                }
+            ),
+        )
+    else:
+        update.Config.setting.Update.FluxdownTakeoverAll = False
+
+    async def broken_download(_url, destination, **_kwargs):
+        destination.write_bytes(b"partial ZIP")
+        raise httpx.ReadError("connection interrupted")
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=broken_download))
+    cache = root.parent / "data/maaend_update"
+    for _ in range(2):
+        with pytest.raises(httpx.ReadError, match="connection interrupted"):
+            await update.update_before_run(root, config)
+        assert not list(cache.glob("download-*"))
+        assert update.read_install(root)[0] == Version("2.1.0")
+    assert update.download_file.await_args.kwargs["source"] == source
+
+
+@pytest.mark.asyncio
+async def test_mirror_unconfirmed_fluxdown_writer_keeps_download_target(
+    installation, monkeypatch
+):
+    root, config = installation
+    config.Update.MirrorChyanCDK = "test-cdk"
+    monkeypatch.setattr(
+        update,
+        "request_mirror_resource",
+        AsyncMock(
+            return_value={
+                "data": {
+                    "update_type": "full",
+                    "version_name": "v2.2.0",
+                    "url": "https://mirror.example/official.zip",
+                }
+            }
+        ),
+    )
+
+    async def blocked_download(_url, destination, **_kwargs):
+        destination.write_bytes(b"pending download")
+        raise FluxdownResumableError("writer status not confirmed")
+
+    monkeypatch.setattr(update, "download_file", AsyncMock(side_effect=blocked_download))
+    with pytest.raises(FluxdownResumableError):
+        await update.update_before_run(root, config)
+    downloads = list((root.parent / "data/maaend_update").glob("download-*"))
+    assert len(downloads) == 1
+    assert next(downloads[0].iterdir()).read_bytes() == b"pending download"

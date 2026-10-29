@@ -25,7 +25,9 @@ from app.core import Config
 from app.core.update import download_file
 from app.models.config import MaaEndConfig
 from app.services import script_install
+from app.services.update_fluxdown import FluxdownResumableError
 from app.services.update_transport import DownloadProgress, request_mirror_resource
+from app.utils import fluxdown_cli as _fluxdown_cli
 from app.utils import io as _utils_io
 
 REPOSITORY = "MaaEnd/MaaEnd"
@@ -188,17 +190,36 @@ async def update_before_run(
     cache = Path.cwd() / "data" / "maaend_update"
     cache.mkdir(parents=True, exist_ok=True)
     destination = Path(tempfile.mkdtemp(dir=cache, prefix="download-")) / name
-    await download_file(
-        url,
-        destination,
-        timeout=30 * 60,
-        proxy=Config.proxy,
-        downloader="fluxdown"
-        if Config.setting.Update.FluxdownTakeoverAll
-        else "builtin",
-        source=source,
-        progress=progress,
-    )
+    downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
+    try:
+        await download_file(
+            url,
+            destination,
+            timeout=30 * 60,
+            proxy=Config.proxy,
+            downloader=downloader,
+            source=source,
+            progress=progress,
+        )
+    except (
+        _fluxdown_cli.FluxdownCancelUnconfirmed,
+        FluxdownResumableError,
+    ):
+        # FluxDown 未确认停止或保留了续传任务，不能删除其输出目标。
+        raise
+    except Exception as error:
+        # 内置 httpx 的异常返回时流和文件已经关闭，可回收本轮部分包。
+        # 其余 FluxDown 异常不保证写入者退出，仍保留独立下载目标。
+        if (
+            downloader == "builtin"
+            or source == "MirrorChyan"
+            or (Config.proxy is not None and Config.proxy.auth is not None)
+            or isinstance(error, httpx.HTTPError)
+        ):
+            with suppress(OSError):
+                destination.unlink(missing_ok=True)
+                destination.parent.rmdir()
+        raise
 
     def validate(path: Path) -> None:
         version, actual_arch = read_install(path)
