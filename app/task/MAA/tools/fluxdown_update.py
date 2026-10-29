@@ -194,4 +194,4 @@ async def prepare_maa_fluxdown_update(
     except _utils_fluxdown_cli.FluxdownCancelUnconfirmed:
         raise  # 用户已取消但 daemon 尚未确认停止，不能继续启动脚本。
     except Exception as error:
-        raise RuntimeError(f"MAA 更新准备失败，已停止启动: {error}") from error
+        raise RuntimeError(f"MAA 更新准备失败: {error}") from error

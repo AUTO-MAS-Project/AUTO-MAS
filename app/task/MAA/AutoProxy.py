@@ -1167,7 +1167,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.check_result = "-"
         self.maa_root_path: Path | None = None
         self.pending_update: tuple[str, str] | None = None
-        self.software_update_prepared: bool = False
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -2125,9 +2124,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self._configure_maa_runtime(
             gui_new_set=gui_new_set,
             emulator_info=emulator_info,
-            takeover_ready=self.software_update_prepared,
         )
-        # 托管包已在启动前安装；来源存档中的旧登记不能再次触发更新重启。
+        # 待更新包已保留；本次任务启动不再触发安装，结束后恢复登记。
         gui_new_set.setdefault("Update", {})["UpdatePackage"] = ""
 
         _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -2533,8 +2531,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self,
         gui_new_set: dict,
         emulator_info: DeviceInfo,
-        *,
-        takeover_ready: bool = False,
     ) -> None:
         """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
 
@@ -2613,9 +2609,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 "AutoInstallUpdatePackage": False,
             }
         )
-        # 托管更新已完成；关闭启动检查、自动下载，并防止运行中资源回调取包。
+        # 接管开启即暂停原生更新，不因本轮更新失败而重新启用。
         # GitHub 资源源仅支持手动下载，临时选择随快照恢复，不改变 CDK。
-        if takeover_ready:
+        if self.script_config.Update.TakeoverEnabled:
             update_settings["CheckOnStartup"] = False
             update_settings["AutoDownloadUpdatePackage"] = False
             update_settings["UpdateSource"] = "GitHub"

@@ -87,6 +87,7 @@ from .resource_package import (
     resource_tree_hashes,
 )
 from .update_credentials import resolve_takeover_credentials
+from .update_errors import MaaUpdateUnsafeError
 from .update_state import attempted_today, backoff_active, load_state, parse_iso
 
 logger = get_logger("MAA 资源更新")
@@ -951,7 +952,7 @@ async def prepare_install_resources(
 
     GitHub 复用上游公开的 MaaResource-main 整包与既有临时合并入口。
     上游仍无程序化资源导入入口；提供 CLI 后删除此补位并改用官方导入。
-    失败直接阻止本轮启动，不能延后到运行中下载。
+    普通准备失败由调用方处理；实际写入失败必须阻止启动，不延后到运行中下载。
     """
     if not github and cdk is None:
         return
@@ -1029,10 +1030,15 @@ async def prepare_install_resources(
             stage_clock = await asyncio.to_thread(read_resource_clock, _STAGE_DIR)
             if stage_clock is None or stage_clock < target:
                 raise RuntimeError("MAA 资源缓存未达到目标版本，请重新运行")
-            await _run_write_thread(_apply_stage, install, stage_clock, cdk or "")
-            installed = await asyncio.to_thread(read_resource_clock, install)
-            if installed is None or installed < target:
-                raise RuntimeError("MAA 资源更新未完成，已停止启动")
+            try:
+                await _run_write_thread(_apply_stage, install, stage_clock, cdk or "")
+                installed = await asyncio.to_thread(read_resource_clock, install)
+                if installed is None or installed < target:
+                    raise RuntimeError("MAA 资源更新未完成，已停止启动")
+            except Exception as error:
+                raise MaaUpdateUnsafeError(
+                    "MAA 资源写入未确认完成，不能安全启动任务"
+                ) from error
         finally:
             machine.__exit__(None, None, None)
     finally:

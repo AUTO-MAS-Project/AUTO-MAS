@@ -440,13 +440,13 @@ async def test_final_gate_requeries_and_repeats_when_upstream_changes(
     )
     monkeypatch.setattr(manager, "query_latest_maa_version", query)
     if succeeds:
-        assert await instance._prepare_software_update(
+        assert await instance._prepare_software_update_strict(
             SimpleNamespace(update_config_dir=root / "config")
         )
         assert prepared.await_count == (2 if changed else 1)
     else:
         with pytest.raises(RuntimeError, match="版本持续变化"):
-            await instance._prepare_software_update(
+            await instance._prepare_software_update_strict(
                 SimpleNamespace(update_config_dir=root / "config")
             )
         assert prepared.await_count == 3
@@ -482,6 +482,7 @@ def test_runtime_disables_update_download_and_restores_source(
     root, _, _ = installation
     instance = object.__new__(AutoProxyTask)
     instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=True),
         Run=SimpleNamespace(TaskTransitionMethod="ExitEmulator"),
         Emulator=SimpleNamespace(Index=""),
     )
@@ -518,7 +519,6 @@ def test_runtime_disables_update_download_and_restores_source(
     instance._configure_maa_runtime(
         gui_new_set=gui,
         emulator_info=SimpleNamespace(adb_address="127.0.0.1:5555"),
-        takeover_ready=True,
     )
     assert gui["Update"]["CheckOnStartup"] is False
     assert gui["Update"]["CheckOnSchedule"] is False
@@ -673,3 +673,26 @@ def test_resource_archive_limits_reject_before_extracting(tmp_path, monkeypatch,
     with pytest.raises(ValueError):
         resource_package.extract_zip(archive, destination)
     assert not list(destination.rglob("*.json"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["write", "unconfirmed", "cancel"])
+async def test_resource_write_failure_cannot_be_ignored(
+    resource_install, monkeypatch, failure
+):
+    from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+
+    install, _, _ = resource_install
+
+    def apply(*args):
+        if failure == "cancel":
+            raise asyncio.CancelledError()
+        if failure == "write":
+            raise OSError("resource write failed")
+        return False
+
+    monkeypatch.setattr(resource, "_apply_stage", apply)
+    expected = asyncio.CancelledError if failure == "cancel" else MaaUpdateUnsafeError
+    with pytest.raises(expected):
+        await resource.prepare_install_resources(install, cdk=None, github=True)
+    assert not resource._prepare_install_lock.locked()
