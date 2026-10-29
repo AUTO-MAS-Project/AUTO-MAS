@@ -1,4 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -19,6 +21,19 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .manager import SrcManager
+from importlib import import_module
 
 __all__ = ["SrcManager"]
+
+
+# 路由注册只加载 HTTP 契约；执行入口仍按需导入。
+def __getattr__(name: str):
+    if name != "SrcManager":
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(".manager", __name__), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | {"SrcManager"})

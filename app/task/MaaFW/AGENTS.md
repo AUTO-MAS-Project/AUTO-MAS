@@ -722,6 +722,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+  手动更新的「应用」在后台跑（`api_service/update_job.py`）：同一脚本进行中再点只接上那一份，HTTP
+  请求断开不影响更新；过程（推送过的进度事件）与结果按脚本登记在进程内，编辑页打开时经
+  `/maafw/update/job` 接回，保留到这个脚本下一次手动更新开始或后端重启。没有停止入口。
   `run_view_update` 的四个调用方（自动、手动、投影补齐、发行包核对）一律经
   `tools/embedded/update_session.UpdateSession` 组装参数（组与候选、预约、锁时限、停止令牌、
   代理 `UpdateProxy`、进度出口、预检）；更新编排里的运行环境确认（预检、切换后确认、传播后的

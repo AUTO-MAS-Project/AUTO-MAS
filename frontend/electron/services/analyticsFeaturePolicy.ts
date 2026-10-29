@@ -68,7 +68,7 @@ export const featureAnalyticsSchemas = {
   renderer_responsiveness_changed: finished({ state: ['unresponsive', 'responsive'] as const }),
   app_close_finished: finished({ close_kind: ['user', 'backend', 'force'] as const }),
   tray_action_requested: finished({
-    action_kind: ['show', 'hide', 'stopAll', 'startTask', 'restartApp', 'quit', 'unknown'] as const,
+    action_kind: ['show', 'hide', 'stopAll', 'startTask', 'quit', 'unknown'] as const,
   }),
   stop_all_requested: finished({
     source: ['shortcut', 'tray', 'scheduler', 'home', 'mascot', 'unknown'] as const,
@@ -147,6 +147,7 @@ export const featureAnalyticsSchemas = {
       'show_tray',
       'close_to_tray',
       'hide_close',
+      'close_confirmation',
       'history_retention',
       'allow_sleep',
       'block_ads',

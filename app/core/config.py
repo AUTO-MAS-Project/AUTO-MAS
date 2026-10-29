@@ -218,7 +218,9 @@ class AppConfig:
 
     def __init__(self) -> None:
 
-        self._script_config_handlers: dict[type[ConfigEntry], ScriptConfigHandler] = {}
+        self._script_config_handlers: dict[
+            type[ConfigEntry], ScriptConfigHandler | None
+        ] = {}
         self._restore_pool_resolver: (
             Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
             | None
@@ -1452,9 +1454,11 @@ class AppConfig:
             await imported
 
     def bind_script_config_handler(
-        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler
+        self, entry_type: type[ConfigEntry], handler: ScriptConfigHandler | None
     ) -> None:
         """由宿主将专项操作绑定到当前配置实例。"""
+        if entry_type in self._script_config_handlers:
+            raise ValueError(f"重复的配置处理器登记: {entry_type.__name__}")
         self._script_config_handlers[entry_type] = handler
 
     def _get_script_config_handler(
@@ -1463,7 +1467,7 @@ class AppConfig:
         for entry_type, handler in self._script_config_handlers.items():
             if isinstance(script, entry_type):
                 return handler
-        return None
+        raise RuntimeError(f"专项配置处理器未登记: {type(script).__name__}")
 
     def get_script_task_resources(self, script: ConfigEntry) -> "ScriptTaskResources":
         """读取专项资源声明，不提交配置或访问脚本资源文件。"""

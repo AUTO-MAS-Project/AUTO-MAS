@@ -8,6 +8,11 @@ import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 const logger = window.electronAPI.getLogger('配置管理')
 
 export interface FrontendConfig {
+  /** 关闭窗口时是否先显示退出/最小化到托盘确认。 */
+  confirmBeforeClose?: boolean
+  /** 关闭确认弹窗中上次选择的动作。 */
+  lastCloseAction?: 'quit' | 'tray'
+
   // 主题设置
   themeMode: ThemeMode
   themeColor: ThemeColor
@@ -72,6 +77,8 @@ export interface FrontendConfig {
 }
 
 const DEFAULT_CONFIG: FrontendConfig = {
+  confirmBeforeClose: true,
+  lastCloseAction: 'quit',
   themeMode: 'system',
   themeColor: 'blue',
   desktopMascotFps: null,

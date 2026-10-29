@@ -1,2 +1,3 @@
 project: maa
+beta-only: true
 托管更新支持增量包，并在运行前完成本体及资源更新。

@@ -603,6 +603,10 @@ export type { MaaFWPresetInfo } from './models/MaaFWPresetInfo';
 export type { MaaFWProjectInfo } from './models/MaaFWProjectInfo';
 export type { MaaFWProjectUpdateData } from './models/MaaFWProjectUpdateData';
 export { MaaFWProjectUpdateIn } from './models/MaaFWProjectUpdateIn';
+export { MaaFWProjectUpdateJobData } from './models/MaaFWProjectUpdateJobData';
+export type { MaaFWProjectUpdateJobIn } from './models/MaaFWProjectUpdateJobIn';
+export type { MaaFWProjectUpdateJobOut } from './models/MaaFWProjectUpdateJobOut';
+export type { MaaFWProjectUpdateJobResult } from './models/MaaFWProjectUpdateJobResult';
 export type { MaaFWProjectUpdateOut } from './models/MaaFWProjectUpdateOut';
 export type { MaaFWResourceInfo } from './models/MaaFWResourceInfo';
 export type { MaaFWSettingInfo } from './models/MaaFWSettingInfo';
@@ -1094,6 +1098,7 @@ export type { WhimboxUserConfig_OneDragonInput } from './models/WhimboxUserConfi
 export type { WhimboxUserConfig_Task } from './models/WhimboxUserConfig_Task';
 export type { WhimboxUserConfig_TaskInput } from './models/WhimboxUserConfig_TaskInput';
 export type { WhimboxUserConfigInput } from './models/WhimboxUserConfigInput';
+export type { WSMaaFWProjectUpdateProgressData } from './models/WSMaaFWProjectUpdateProgressData';
 export type { WSTaskCyclePreviewData } from './models/WSTaskCyclePreviewData';
 export type { WSTaskScriptIdentityData } from './models/WSTaskScriptIdentityData';
 export type { WSTaskScriptInfoData } from './models/WSTaskScriptInfoData';

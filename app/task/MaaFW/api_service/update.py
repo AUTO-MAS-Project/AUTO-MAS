@@ -47,6 +47,10 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
+from app.task.MaaFW.api_service.update_job import (
+    current_update_job,
+    record_update_progress,
+)
 from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
@@ -315,10 +319,15 @@ class _UpdatePanel:
         self.script_id = script_id
         self.tracker = MaaFWUpdateProgressTracker()
         self._loop = asyncio.get_running_loop()
+        # 这次请求若是后台手动更新（update_job）就记下是哪一次；检查更新为 None。
+        # 在这里取而不是推送时取：核心包的回调线程不一定带着上下文。
+        self._job = current_update_job()
 
     def publish(self, data: WSMaaFWProjectUpdateProgressData | None) -> None:
         if data is None:
             return
+        # 后台手动更新记一份过程，页面刷新后据此还原面板；只记这次应用自己的事件
+        record_update_progress(self._job, data)
         asyncio.run_coroutine_threadsafe(
             self._publisher.send(id=self.script_id, type=self._message_type, data=data),
             self._loop,
