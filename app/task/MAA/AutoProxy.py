@@ -808,7 +808,7 @@ def _build_depot_maintain_task(
 def _apply_depot_medicine_override(
     task: dict | None, medicine_count: int | None
 ) -> None:
-    """将 MAS 的库存用药设置覆盖到任务及其全部计划。"""
+    """将 MAS 的理智药设置覆盖到任务及其全部计划。"""
 
     if task is None or medicine_count is None:
         return
@@ -999,7 +999,8 @@ def _build_stock_cultivate_task(
     task["PlanList"] = (
         deepcopy(cultivate_task["PlanList"]) if cultivate_task is not None else []
     ) + task["PlanList"]
-    # 两组共用 MAA 任务级设置；只改当轮副本，不回写来源配置。
+    # 两组共用 MAA 任务级设置；药石数量已在合并前分别写入各组计划。
+    # 只改当轮副本，不回写来源配置。
     task.update(
         {
             "OnlyFirstInsufficientPlan": False,
@@ -2369,20 +2370,28 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
             elif cultivate_plan is not None and stock_task["PlanList"]:
+                if not self._stock_depot_completed:
+                    _apply_depot_medicine_override(
+                        stock_task,
+                        self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                    )
+                    _apply_depot_medicine_override(
+                        cultivate_task,
+                        self.cur_user_config.Task.CultivateMedicineNumb,
+                    )
                 task_set["DepotMaintain"] = _build_stock_cultivate_task(
                     stock_task, cultivate_task, cultivate_plan
                 )
                 cultivate_task = None
-            if not stock_skipped and not self._stock_depot_completed:
+            elif not self._stock_depot_completed:
                 _apply_depot_medicine_override(
-                    task_set["DepotMaintain"],
+                    stock_task,
                     self.cur_user_config.Task.DepotMaintainMedicineNumb,
                 )
 
         if cultivate_task is not None and not self._stock_depot_completed:
             _apply_depot_medicine_override(
-                cultivate_task,
-                self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                cultivate_task, self.cur_user_config.Task.CultivateMedicineNumb
             )
 
         # 加载关卡号配置

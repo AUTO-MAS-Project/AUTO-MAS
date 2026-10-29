@@ -221,6 +221,9 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
         restored = group_overlay(restored_overlay)
         if task := restored.get("Task"):
             task.setdefault("DepotMaintainMedicineNumb", None)
+            task.setdefault(
+                "CultivateMedicineNumb", task.get("DepotMaintainMedicineNumb")
+            )
             task.setdefault("EventDepotMaintainMedicineNumb", None)
         if "StaminaPipelineVersion" not in restored.get("Data", {}):
             # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。

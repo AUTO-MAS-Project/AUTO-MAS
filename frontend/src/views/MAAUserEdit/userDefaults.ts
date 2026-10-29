@@ -41,6 +41,7 @@ export const getDefaultMAAUserData = () => ({
     IfDepotMaintain: true,
     DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
     DepotMaintainMedicineNumb: null,
+    CultivateMedicineNumb: null,
     IfEventDepotMaintain: true,
     EventDepotMaintainPlans: JSON.stringify(getEventDepotPresets()),
     EventDepotMaintainMedicineNumb: null,

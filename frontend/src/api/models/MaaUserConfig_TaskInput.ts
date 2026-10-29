@@ -40,9 +40,13 @@ export type MaaUserConfig_TaskInput = {
      */
     CultivateSklandUid?: (string | null);
     /**
-     * 库存保持及干员养成每条计划使用理智药数量；留空沿用 MAA 配置
+     * 普通库存保持每条计划使用理智药数量；留空沿用 MAA 配置
      */
     DepotMaintainMedicineNumb?: (number | null);
+    /**
+     * 干员养成每条计划使用理智药数量；留空沿用 MAA 配置
+     */
+    CultivateMedicineNumb?: (number | null);
     /**
      * 干员养成目标
      */

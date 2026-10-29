@@ -1,5 +1,6 @@
 import pytest
 
+from app.models.config import MaaUserConfig
 from app.task.MAA.AutoProxy import (
     _apply_depot_medicine_override,
     _build_cultivate_task,
@@ -7,6 +8,7 @@ from app.task.MAA.AutoProxy import (
     _build_stock_cultivate_task,
     _should_retry_maa,
 )
+from app.task.MAA.tools.backup_archive import group_overlay, read_overlay_values
 from app.task.MAA.tools.cultivate.types import CultivatePlan, FarmEntry, Requirement
 
 
@@ -120,6 +122,73 @@ def test_depot_medicine_override_applies_to_every_merged_plan(
     assert all(plan["UseMedicine"] is expected_use for plan in task["PlanList"])
     assert all(plan["MedicineCount"] == medicine_count for plan in task["PlanList"])
     assert source["UseMedicine"] is True
+
+
+def test_stock_and_cultivate_medicine_overrides_remain_independent():
+    source = _source_task(use_expiring=True)
+    stock_task = _build_depot_maintain_task(
+        '[{"Stage":"1-7","DropId":"1","DropCount":1}]',
+        source,
+    )
+    cultivate_task = _build_cultivate_task(
+        _cultivate_plan(),
+        source,
+        skip_during_activity=False,
+        skip_during_resource_collection=False,
+    )
+
+    _apply_depot_medicine_override(stock_task, 2)
+    _apply_depot_medicine_override(cultivate_task, 3)
+    merged = _build_stock_cultivate_task(stock_task, cultivate_task, _cultivate_plan())
+
+    assert merged is not None
+    assert [plan["MedicineCount"] for plan in merged["PlanList"]] == [3, 2]
+    assert [plan["UseMedicine"] for plan in merged["PlanList"]] == [True, True]
+
+
+def test_legacy_shared_medicine_setting_seeds_cultivate_setting():
+    normalized = MaaUserConfig.normalize_payload(
+        {"Task": {"DepotMaintainMedicineNumb": 4}}
+    )
+
+    assert normalized["Task"]["CultivateMedicineNumb"] == 4
+
+
+def test_explicit_cultivate_medicine_setting_is_preserved():
+    normalized = MaaUserConfig.normalize_payload(
+        {
+            "Task": {
+                "DepotMaintainMedicineNumb": 4,
+                "CultivateMedicineNumb": None,
+            }
+        }
+    )
+
+    assert normalized["Task"]["CultivateMedicineNumb"] is None
+
+
+def test_medicine_settings_round_trip_through_maa_overlay():
+    user = MaaUserConfig.model_validate(
+        {
+            "Task": {
+                "DepotMaintainMedicineNumb": 2,
+                "CultivateMedicineNumb": 3,
+                "EventDepotMaintainMedicineNumb": 4,
+            }
+        }
+    )
+
+    overlay = read_overlay_values(user)
+    keys = (
+        "DepotMaintainMedicineNumb",
+        "CultivateMedicineNumb",
+        "EventDepotMaintainMedicineNumb",
+    )
+    expected = {key: index for index, key in enumerate(keys, start=2)}
+
+    assert {key: overlay[key] for key in keys} == expected
+    grouped = group_overlay(overlay)
+    assert {key: grouped["Task"][key] for key in keys} == expected
 
 
 @pytest.mark.parametrize(

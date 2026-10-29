@@ -54,7 +54,6 @@
       :summary="cultivateSummary"
       :checked="formData.Task.IfCultivate"
       :disabled="loading"
-      :has-detail="false"
       :hint="t('core.maaStaminaPipeline.executionHint')"
       @change="emitSave('Task.IfCultivate', $event)"
     >
@@ -63,6 +62,24 @@
           {{ t('core.maaCopilot.openPage') }}
         </a-button>
       </template>
+      <a-form-item class="medicine-count-field">
+        <template #label>
+          <FieldLabelWithHint
+            :text="t('core.maaStaminaPipeline.cultivateMedicineCount')"
+            :hint="t('core.maaStaminaPipeline.medicineCountHint')"
+          />
+        </template>
+        <a-input-number
+          :value="formData.Task.CultivateMedicineNumb"
+          :min="0"
+          :max="9999"
+          :precision="0"
+          allow-clear
+          :placeholder="t('core.maaStaminaPipeline.medicineCountPlaceholder')"
+          :disabled="loading"
+          @change="emitSave('Task.CultivateMedicineNumb', $event)"
+        />
+      </a-form-item>
     </PipelineRow>
     <PipelineRow
       :name="t('core.edit.maaDepot')"
