@@ -227,6 +227,7 @@ async def update_before_run(
             destination.unlink(missing_ok=True)
             destination.parent.rmdir()
 
+
 async def confirm_current_install(root: Path) -> None:
     if (script_install.workspace(root) / "transaction.json").exists():
         raise script_install.InstallUnsafeError(
