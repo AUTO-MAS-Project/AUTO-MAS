@@ -29,6 +29,10 @@ import re
 from collections import defaultdict
 from collections.abc import Iterable
 
+from app.utils import get_logger
+
+logger = get_logger("MAA 日志统计")
+
 
 def parse_cultivate_progress(logs: Iterable[str]) -> list[str]:
     """收集 MAA 明确输出成功的培养步骤，保留阶段结果而不判定目标达成。"""
@@ -225,25 +229,33 @@ def parse_maa_statistics(logs: list[str]) -> tuple[dict, bool]:
     # 公招统计（仅统计招募到的）
     confirmed_recruit = False
     current_star_level = None
-    log_lines = iter(logs)
-    for log_line in log_lines:
-        if "公招识别结果:" in log_line:
+    i = 0
+    while i < len(logs):
+        if "公招识别结果:" in logs[i]:
             current_star_level = None  # 每次识别公招时清空之前的星级
-            log_line = next((line for line in log_lines if "Tags" in line), None)
-            if log_line is None:
-                break  # 中止时公招结果可能尚未完整输出。
-            star_match = re.search(r"(\d+)\s*★ Tags", log_line)
-            if star_match:
-                current_star_level = f"{star_match.group(1)}★"
-                if_six_star |= current_star_level == "6★"
+            i += 1
+            while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
+                i += 1
 
-        if "已确认招募" in log_line:  # 只有确认招募后才统计
+            if i >= len(logs):
+                break  # 中止时公招结果可能尚未完整输出。
+
+            if i < len(logs) and "Tags" in logs[i]:  # 识别星级
+                star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
+                if star_match:
+                    current_star_level = f"{star_match.group(1)}★"
+                    if current_star_level == "6★":
+                        if_six_star = True
+
+        if "已确认招募" in logs[i]:  # 只有确认招募后才统计
             confirmed_recruit = True
 
         if confirmed_recruit and current_star_level:
             data["recruit_statistics"][current_star_level] += 1
             confirmed_recruit = False  # 重置, 等待下一次公招
             current_star_level = None  # 清空已处理的星级
+
+        i += 1
 
     # 掉落统计收集所有由理智任务产生的有效 Fight 任务链，包括活动关优先
     # 和库存保持任务。

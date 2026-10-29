@@ -84,7 +84,6 @@ from .constants import (
     MAA_TASKS,
     MAA_TASKS_ZH,
 )
-from .task_result import parse_maa_task_result
 from .tools import (
     agree_bilibili,
     build_recruitment_payload,
@@ -263,6 +262,29 @@ def _parse_annihilation_weekly_progress(log: str) -> tuple[int, int] | None:
         return None
     current, total = (int(value) for value in matches[-1])
     return (current, total) if total > 0 else None
+
+
+def _has_completed_annihilation_week(log: str) -> bool:
+    """判断剿灭日志是否表明本周额度已完成。
+
+    MAA 剿灭结束都会打印「完成任务: 剿灭作战」，以理智识别行区分战斗流程：
+
+    - 无理智识别行：MAA 未进到副本门口，完成即周内剿灭在代理开始前已完成；
+    - 有理智识别行但无进度行：进到门口却因理智不足没有开战，未达标；
+    - 有进度行但 current < total：开战了但理智不足没能打满进度，未达标；
+    - 进度 current >= total：本周剿灭已完成。
+
+    未达标时不记周完成标记，宁可下次代理重试。
+    """
+
+    if "完成任务: 剿灭作战" not in log:
+        return False
+
+    if not _MAA_SANITY_RECOGNITION_RE.search(log):
+        return True
+
+    progress = _parse_annihilation_weekly_progress(log)
+    return progress is not None and progress[0] >= progress[1]
 
 
 def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
@@ -876,7 +898,8 @@ def _build_cultivate_task(
 ) -> dict | None:
     """把内核养成计划映射为 MAA 养成任务（MAA 字段名唯一出现点，方案 §4.1）。
 
-    药剂/源石按决策 5 硬编码关闭；计划无可用刷取条目时不生成任务。
+    养成计划的药剂/源石按决策 5 关闭；临期药设置沿用 MAA 原任务配置。
+    计划无可用刷取条目时不生成任务。
     DropCount 是 MAA 的"保有量目标"语义（need = DropCount − 该材料现存，
     只比对本材料），故写净缺口 + 档案现存，MAA 现算后落回净缺口。
     """
@@ -917,7 +940,15 @@ def _build_cultivate_task(
         "UseAutoSeries": source_task.get("UseAutoSeries", False),
         "UseMedicine": False,
         "UseStone": False,
-        "UseExpiringMedicine": False,
+        **{
+            key: source_task[key]
+            for key in (
+                "UseExpiringMedicine",
+                "MedicineExpireDays",
+                "UseExpireMedicineForActivity",
+            )
+            if key in source_task
+        },
         "PlanList": plans,
     }
 
@@ -937,15 +968,13 @@ def _build_stock_cultivate_task(
         deepcopy(cultivate_task["PlanList"]) if cultivate_task is not None else []
     ) + task["PlanList"]
     # 两组共用 MAA 任务级设置；只改当轮副本，不回写来源配置。
-    # 合并时执行所有库存不足计划，避免养成计划阻断后续库存计划。
     task.update(
         {
             "OnlyFirstInsufficientPlan": False,
             "SortByProgress": False,
-            "UseExpiringMedicine": False,
             "SkipDuringActivity": False,
             "SkipDuringResourceCollection": False,
-            # 养成行单独关闭药石；保留库存行原本的额度及整段显示开关。
+            # 养成行单独关闭药石；保留库存行原本的临期药设置。
         }
     )
     return task
@@ -1111,8 +1140,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     _event_depot_completed: bool = False
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
     _stock_depot_completed: bool = False
-    # 正数理智消耗在同一模式的重试间保留，仓库识别完成不能代替它。
-    _stock_sanity_spent: bool = False
 
     def __init__(
         self,
@@ -1298,7 +1325,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
             self._event_depot_completed = False
             self._stock_depot_completed = False
-            self._stock_sanity_spent = False
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
 
             if not self.cur_user_config.Info.IfQuickConfig:
@@ -1463,6 +1489,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     )
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
+
+                maa_log = "".join(self.cur_user_log.content)
+                if (
+                    self.mode == "Annihilation"
+                    and self.cur_user_log.status == "MAA 部分任务执行失败"
+                    and (
+                        "任务已完成，但出现错误！" in maa_log
+                        or "任务已结束，以下任务出现错误" in maa_log
+                    )
+                ):
+                    logger.warning("剿灭任务已失败，本次不再重试，继续执行日常任务")
+                    break
 
     def _cultivate_archive_dir(self) -> Path:
         """当前用户的识别数据档案目录（方案决策 31：归属以写入时的
@@ -2282,9 +2320,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             stock_task = task_set["DepotMaintain"]
             if self._stock_depot_completed:
                 # 重试保留库存目标，但不重新领取已执行阶段的药石额度。
-                stock_task.update(
-                    UseMedicine=False, UseStone=False, UseExpiringMedicine=False
-                )
+                stock_task.update(UseMedicine=False, UseStone=False)
             stock_skipped = (
                 activity_open and stock_task.get("SkipDuringActivity", False)
             ) or (
@@ -2752,13 +2788,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         if self.mode == "Annihilation":
             progress = _parse_annihilation_weekly_progress(log)
-            # 未进入副本（无理智识别）即完成，表示此前已满周额度；
-            # 进入后必须有达标周进度，理智不足或进度缺失均不记完成。
-            completed = "完成任务: 剿灭作战" in log and (
-                not _MAA_SANITY_RECOGNITION_RE.search(log)
-                or progress is not None
-                and progress[0] >= progress[1]
-            )
+            completed = _has_completed_annihilation_week(log)
             if completed:
                 self.task_dict["Fight"] = False
                 self.run_book["Annihilation"] = True
@@ -2835,45 +2865,68 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             or "任务已结束，以下任务出现错误" in log
         ):
             # 常规任务的完成状态取自 MAA 本轮输出。
-            task_result = parse_maa_task_result(log)
-            stock_task_enabled = bool(
-                self.task_dict.get("DepotMaintain") or self._stock_depot_completed
-            )
-            stock_sanity_spent = stock_task_enabled and (
-                self._stock_sanity_spent or "DepotMaintain" in task_result.sanity_spent
-            )
-            self._stock_sanity_spent = stock_sanity_spent
-            if stock_task_enabled and "DepotMaintain" in task_result.completed:
-                self._stock_depot_completed = True
-            for en_task in MAA_TASKS:
-                if en_task in task_result.completed or en_task in task_result.skipped:
+            for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
+                names = {zh_task}
+                if en_task == "DepotMaintain":
+                    names.update(("库存保持", _MAA_CULTIVATE_TASK_NAME))
+                elif en_task == "Fight":
+                    names.update(("理智作战", "剿灭作战"))
+                task_completed = any(f"完成任务: {name}" in log for name in names)
+                if task_completed or any(f"{name} 任务跳过" in log for name in names):
+                    if (
+                        en_task == "DepotMaintain"
+                        and self.task_dict.get(en_task)
+                        and task_completed
+                    ):
+                        self._stock_depot_completed = True
                     self.task_dict[en_task] = False
 
-            if stock_task_enabled and (
-                stock_sanity_spent or "DepotMaintain" in task_result.errors
-            ):
-                self.task_dict["DepotMaintain"] = not stock_sanity_spent
-                self._stock_depot_completed = stock_sanity_spent
-
-            if self.task_dict.get("EventDepotMaintain") and (
-                "EventDepotMaintain" in task_result.completed
-                or "EventDepotMaintain" in task_result.skipped
-            ):
-                # MAA 确认完成才保留阶段标记；时段跳过只结束本次尝试。
-                self.task_dict["EventDepotMaintain"] = False
-                self._event_depot_completed |= (
-                    "EventDepotMaintain" in task_result.completed
+            if self.task_dict.get("EventDepotMaintain"):
+                event_names = ("活动关均衡理智", "活动库存保持")
+                # 新版 MAA 收尾明确列出失败的队列名称；识别链或某条 #N 成功
+                # 不能覆盖同阶段其他计划的失败，不读取原生 TaskId 等内部状态。
+                error_summaries = re.findall(
+                    r"任务已结束，以下任务出现错误[:：]\s*([^\r\n]+)", log
                 )
+                event_failed = any(
+                    name in error_summary
+                    for name in event_names
+                    for error_summary in error_summaries
+                ) or any(
+                    re.search(
+                        rf"任务出错:\s*{re.escape(name)}(?:\s+#\d+| \(仓库识别\))?\s*$",
+                        log,
+                        re.M,
+                    )
+                    for name in event_names
+                )
+                event_completed = re.search(
+                    r"完成任务: (?:活动关均衡理智|活动库存保持)(?:\s+#\d+| \(仓库识别\))?\s*$",
+                    log,
+                    re.M,
+                )
+                # 旧版只有「部分失败」标题，无法归属失败阶段时仍允许重试。
+                completion_known = "任务已全部完成！" in log or bool(error_summaries)
+                if event_completed and not event_failed and completion_known:
+                    # 库存充足时只有仓库识别，也由 MAA 收尾确认为整段完成。
+                    self.task_dict["EventDepotMaintain"] = False
+                    self._event_depot_completed = True
+                elif not event_failed and any(
+                    f"{name} 任务跳过" in log for name in event_names
+                ):
+                    # 来源时段跳过只结束本次尝试，下一次仍重新判断条件。
+                    self.task_dict["EventDepotMaintain"] = False
 
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
-            # 库存阶段有理智消耗即完成本轮，其余任务仍以 MAA 收尾错误为准。
-            stock_failure_ignored = stock_sanity_spent and task_result.errors == {
-                "DepotMaintain"
-            }
+            # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
-                any(self.task_dict.values())
-                or task_result.failed
-                and not stock_failure_ignored
+                "任务已完成，但出现错误！" in log
+                or "任务已结束，以下任务出现错误" in log
+                or any(self.task_dict.values())
+                or any(
+                    log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
+                    for name in re.findall(r"任务出错: ([^\r\n]+)", log)
+                )
             ):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
             else:
