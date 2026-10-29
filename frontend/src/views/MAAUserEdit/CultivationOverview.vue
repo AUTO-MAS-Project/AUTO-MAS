@@ -62,6 +62,21 @@
           </a-tooltip>
         </div>
       </div>
+      <div class="setting-row">
+        <span class="setting-label">{{ t('core.maaStaminaPipeline.cultivateMedicineCount') }}</span>
+        <span class="setting-desc">{{ t('core.maaStaminaPipeline.medicineCountHint') }}</span>
+        <a-input-number
+          class="setting-control medicine-control"
+          :value="formData?.Task?.CultivateMedicineNumb"
+          :min="0"
+          :max="9999"
+          :precision="0"
+          allow-clear
+          :placeholder="t('core.maaStaminaPipeline.medicineCountPlaceholder')"
+          :disabled="loading"
+          @change="emit('save', 'Task.CultivateMedicineNumb', $event)"
+        />
+      </div>
     </div>
     <div class="overview-stats" :class="{ 'overview-stats-paused': !enabled }">
       <a-statistic
@@ -226,6 +241,10 @@ const statSanity = computed(() => props.cultivatePreview?.totalExpectedSanity ??
 
 .binding-control .ant-select {
   width: 220px;
+}
+
+.medicine-control {
+  width: 160px;
 }
 
 .setting-error {
