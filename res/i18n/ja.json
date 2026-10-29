@@ -3425,7 +3425,7 @@
   "core.maaCopilot.targetsTab": "育成目標と素材",
   "core.maaCopilot.training": "育成が必要",
   "core.maaCopilot.unknown": "条件を判断できない作戦",
-  "core.maaStaminaPipeline.executionHint": "両方を実行する場合は、育成素材、育成消費分と目標在庫の順に補充してから育成します。今回はこの順序で単発周回し、期限間近の回復剤は使わず、達成率順と最初の不足計画のみの設定は適用しません。元の在庫設定は保持します。",
+  "core.maaStaminaPipeline.executionHint": "両方を実行する場合は、育成素材、育成消費分と目標在庫の順に補充してから育成します。今回はこの順序で単発周回し、達成率順と最初の不足計画のみの設定は適用しません。元の在庫設定と期限間近の回復剤の設定は保持します。",
   "core.maaStaminaPipeline.cultivateMedicineCount": "育成の回復剤数",
   "core.maaStaminaPipeline.depotMedicineCount": "通常在庫維持の回復剤数",
   "core.maaStaminaPipeline.eventDepotMedicineCount": "イベント在庫維持の回復剤数",

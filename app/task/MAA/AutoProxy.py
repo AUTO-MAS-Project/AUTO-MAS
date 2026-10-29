@@ -808,12 +808,17 @@ def _build_depot_maintain_task(
 def _apply_depot_medicine_override(
     task: dict | None, medicine_count: int | None
 ) -> None:
-    """将 MAS 的理智药设置覆盖到任务及其全部计划。"""
+    """按 MAS 填写的数量覆盖该组每条计划的理智药额度。
+
+    MAA 的任务级 UseMedicine 是整组总开关，关闭时序列化会把计划数量强制写成 0，
+    所以填正数时一并打开；填 0 只落到计划上，不影响共用任务的另一组。
+    """
 
     if task is None or medicine_count is None:
         return
     use_medicine = medicine_count > 0
-    task.update(UseMedicine=use_medicine, MedicineCount=medicine_count)
+    if use_medicine:
+        task["UseMedicine"] = True
     for plan in task.get("PlanList", []):
         if isinstance(plan, dict):
             plan.update(UseMedicine=use_medicine, MedicineCount=medicine_count)
@@ -930,7 +935,7 @@ def _build_cultivate_task(
 ) -> dict | None:
     """把内核养成计划映射为 MAA 养成任务（MAA 字段名唯一出现点，方案 §4.1）。
 
-    养成计划的药剂/源石按决策 5 关闭；临期药设置沿用 MAA 原任务配置。
+    药石与临期药设置整段沿用 MAA 原任务与计划，MAS 只在显式填写数量时覆盖；
     计划无可用刷取条目时不生成任务。
     DropCount 是 MAA 的"保有量目标"语义（need = DropCount − 该材料现存，
     只比对本材料），故写净缺口 + 档案现存，MAA 现算后落回净缺口。
@@ -945,10 +950,6 @@ def _build_cultivate_task(
         plans.append(
             {
                 **source_plan,
-                "UseMedicine": False,
-                "MedicineCount": 0,
-                "UseStone": False,
-                "StoneCount": 0,
                 "Stage": entry.stage_code,
                 "DropId": entry.item_id,
                 "DropCount": entry.amount + entry.held,
@@ -970,11 +971,11 @@ def _build_cultivate_task(
         "OnlyFirstInsufficientPlan": False,
         "SortByProgress": False,
         "UseAutoSeries": source_task.get("UseAutoSeries", False),
-        "UseMedicine": False,
-        "UseStone": False,
         **{
             key: source_task[key]
             for key in (
+                "UseMedicine",
+                "UseStone",
                 "UseExpiringMedicine",
                 "MedicineExpireDays",
                 "UseExpireMedicineForActivity",
@@ -985,6 +986,26 @@ def _build_cultivate_task(
     }
 
 
+def _materialize_depot_medicine_gate(task: dict) -> None:
+    """把任务级药石总开关摊平到本组计划。
+
+    MAA 的 DepotMaintain 用任务级 UseMedicine/UseStone 当整组开关，关闭时序列化
+    会把每条计划的数量强制写成 0。合并后的任务只剩一个总开关，先摊平才能让一组
+    原本关闭的额度在另一组打开总开关时不复活。
+    """
+
+    plans = task.get("PlanList", [])
+    for gate, count_key in (
+        ("UseMedicine", "MedicineCount"),
+        ("UseStone", "StoneCount"),
+    ):
+        if task.get(gate, True):
+            continue
+        for plan in plans:
+            if isinstance(plan, dict):
+                plan.update({gate: False, count_key: 0})
+
+
 def _build_stock_cultivate_task(
     stock_task: dict | None, cultivate_task: dict | None, plan: CultivatePlan
 ) -> dict | None:
@@ -992,25 +1013,31 @@ def _build_stock_cultivate_task(
 
     if stock_task is None:
         return cultivate_task
+    stock = deepcopy(stock_task)
+    cultivate = deepcopy(cultivate_task) if cultivate_task is not None else None
+    for group in (stock, cultivate):
+        if group is not None:
+            _materialize_depot_medicine_gate(group)
     reservations = {item.item_id: item.amount for item in plan.reservations}
-    task = deepcopy(stock_task)
-    for item in task["PlanList"]:
+    for item in stock["PlanList"]:
         item["DropCount"] += reservations.get(item["DropId"], 0)
-    task["PlanList"] = (
-        deepcopy(cultivate_task["PlanList"]) if cultivate_task is not None else []
-    ) + task["PlanList"]
-    # 两组共用 MAA 任务级设置；药石数量已在合并前分别写入各组计划。
-    # 只改当轮副本，不回写来源配置。
-    task.update(
+    stock["PlanList"] = (
+        cultivate["PlanList"] if cultivate is not None else []
+    ) + stock["PlanList"]
+    stock.update(
         {
             "OnlyFirstInsufficientPlan": False,
             "SortByProgress": False,
             "SkipDuringActivity": False,
             "SkipDuringResourceCollection": False,
-            # 养成行单独关闭药石；保留库存行原本的临期药设置。
+            **{
+                gate: stock.get(gate, True)
+                or (cultivate is not None and cultivate.get(gate, True))
+                for gate in ("UseMedicine", "UseStone")
+            },
         }
     )
-    return task
+    return stock
 
 
 def _merge_cultivate_target_updates(
@@ -2337,6 +2364,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if affected:
                 await self._warn_missing_task_source("理智任务", "、".join(affected))
 
+        # 养成组本轮已花掉的额度不影响库存计划，反之亦然，两组各按自己的设置覆盖。
+        _apply_depot_medicine_override(
+            cultivate_task, self.cur_user_config.Task.CultivateMedicineNumb
+        )
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
         # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
@@ -2349,6 +2380,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if self._stock_depot_completed:
                 # 重试保留库存目标，但不重新领取已执行阶段的药石额度。
                 stock_task.update(UseMedicine=False, UseStone=False)
+            else:
+                _apply_depot_medicine_override(
+                    stock_task,
+                    self.cur_user_config.Task.DepotMaintainMedicineNumb,
+                )
             stock_skipped = (
                 activity_open and stock_task.get("SkipDuringActivity", False)
             ) or (
@@ -2370,29 +2406,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 del task_set["DepotMaintain"]
                 self.task_dict["DepotMaintain"] = False
             elif cultivate_plan is not None and stock_task["PlanList"]:
-                if not self._stock_depot_completed:
-                    _apply_depot_medicine_override(
-                        stock_task,
-                        self.cur_user_config.Task.DepotMaintainMedicineNumb,
-                    )
-                    _apply_depot_medicine_override(
-                        cultivate_task,
-                        self.cur_user_config.Task.CultivateMedicineNumb,
-                    )
                 task_set["DepotMaintain"] = _build_stock_cultivate_task(
                     stock_task, cultivate_task, cultivate_plan
                 )
                 cultivate_task = None
-            elif not self._stock_depot_completed:
-                _apply_depot_medicine_override(
-                    stock_task,
-                    self.cur_user_config.Task.DepotMaintainMedicineNumb,
-                )
-
-        if cultivate_task is not None and not self._stock_depot_completed:
-            _apply_depot_medicine_override(
-                cultivate_task, self.cur_user_config.Task.CultivateMedicineNumb
-            )
 
         # 加载关卡号配置
         if self.cur_user_config.Stage.StageMode == "Fixed":
@@ -2900,17 +2917,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             if getattr(self, "_avd_screencap_guard", False)
             else None
         )
+        # 整份脚本日志可达数 MB，check_log 又每秒轮询一次，收尾判定只扫一遍。
+        completed_log = "任务已全部完成！" in log
+        failed_log = _has_maa_task_failure(log)
         if avd_fallback is not None:
             self.cur_user_log.status = avd_fallback
         elif "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
-        # MAA v6.18.0-beta.3 起任务出错时收尾标题改为「任务已完成，但出现错误！」，
-        # 只有全部成功才打「任务已全部完成！」；v6.19.0-beta.1（5e502a811）又把
-        # 出错标题改为「任务已结束，以下任务出现错误:」并附失败任务清单，
-        # 完成判定三个都要认。
-        elif "任务已全部完成！" in log or _has_maa_task_failure(log):
+        elif completed_log or failed_log:
             # 常规任务的完成状态取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 names = {zh_task}
@@ -2953,7 +2969,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     re.M,
                 )
                 # 旧版只有「部分失败」标题，无法归属失败阶段时仍允许重试。
-                completion_known = "任务已全部完成！" in log or bool(error_summaries)
+                completion_known = completed_log or bool(error_summaries)
                 if event_completed and not event_failed and completion_known:
                     # 库存充足时只有仓库识别，也由 MAA 收尾确认为整段完成。
                     self.task_dict["EventDepotMaintain"] = False
@@ -2967,7 +2983,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             # 培养目标未完成不算整轮错误，不根据培养失败计数触发重试。
             # 最终失败结论以 MAA 收尾日志为准，已完成的仓库识别或刷关子链不能覆盖它。
             if (
-                _has_maa_task_failure(log)
+                failed_log
                 or any(self.task_dict.values())
                 or any(
                     log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")

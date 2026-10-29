@@ -3425,7 +3425,7 @@
   "core.maaCopilot.targetsTab": "Targets and materials",
   "core.maaCopilot.training": "Needs upgrades",
   "core.maaCopilot.unknown": "Unknown requirements",
-  "core.maaStaminaPipeline.executionHint": "When both participate, prepare cultivation materials, then replenish cultivation costs plus target stock, and finally raise operators. This run uses that fixed order, single battles, and no expiring potions; ratio sorting and first-insufficient-plan-only are disabled. Original stock settings are retained.",
+  "core.maaStaminaPipeline.executionHint": "When both participate, prepare cultivation materials, then replenish cultivation costs plus target stock, and finally raise operators. This run uses that fixed order and single battles; ratio sorting and first-insufficient-plan-only are disabled. Original stock and expiring-medicine settings are retained.",
   "core.maaStaminaPipeline.cultivateMedicineCount": "Medicine count for cultivation",
   "core.maaStaminaPipeline.depotMedicineCount": "Medicine count for ordinary stock",
   "core.maaStaminaPipeline.eventDepotMedicineCount": "Medicine count for event stock",

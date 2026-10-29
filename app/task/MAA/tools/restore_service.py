@@ -220,10 +220,10 @@ async def _restore_mas(ctx: _utils_config_restore.RestoreContext, ts: str) -> No
         # 保存会静默覆盖回滚结果
         restored = group_overlay(restored_overlay)
         if task := restored.get("Task"):
+            # 三段理智的用药数量各自独立、留空即沿用 MAA；旧备份缺字段补 None，
+            # 不能拿一个字段的值去填另一个，否则会把库存额度当成养成额度。
             task.setdefault("DepotMaintainMedicineNumb", None)
-            task.setdefault(
-                "CultivateMedicineNumb", task.get("DepotMaintainMedicineNumb")
-            )
+            task.setdefault("CultivateMedicineNumb", None)
             task.setdefault("EventDepotMaintainMedicineNumb", None)
         if "StaminaPipelineVersion" not in restored.get("Data", {}):
             # 历史侧车没有新字段：只从该备份恢复旧意图，不能继承当前轮生成的计划。

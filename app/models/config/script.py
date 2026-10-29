@@ -526,10 +526,6 @@ class MaaUserConfig(DomainEntry):
     def normalize_payload(cls, data):
         data = deepcopy(data)
         migrated_data, migrated = migrate_maa_stamina_pipeline(data)
-        task = migrated_data.get("Task")
-        if isinstance(task, dict) and "CultivateMedicineNumb" not in task:
-            # 新字段沿用旧的共享配置，避免已有账号升级后改变用药行为。
-            task["CultivateMedicineNumb"] = task.get("DepotMaintainMedicineNumb")
         return migrated_data
 
     @virtual_field("Info.Tag")
